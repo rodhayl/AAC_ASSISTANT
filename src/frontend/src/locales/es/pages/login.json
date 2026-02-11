@@ -1,0 +1,16 @@
+{
+  "title": "AAC Assistant",
+  "subtitle": "Inicia sesión para continuar aprendiendo",
+  "username": "Usuario",
+  "password": "Contraseña",
+  "placeholderUser": "Ingresa tu usuario",
+  "placeholderPass": "Ingresa tu contraseña",
+  "login": "Iniciar sesión",
+  "defaults": {
+    "title": "Configuración inicial:",
+    "student": "Crea una cuenta para empezar a usar la aplicación.",
+    "teacher": "Las cuentas de profesor y admin se gestionan tras el registro.",
+    "admin": "Las cuentas demo son opcionales y están desactivadas por defecto."
+  },
+  "register": "Crear una cuenta"
+}

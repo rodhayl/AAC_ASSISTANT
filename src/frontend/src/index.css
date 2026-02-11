@@ -1,0 +1,202 @@
+@import "tailwindcss";
+@config "../tailwind.config.js";
+
+/* Enable dark mode via class */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+
+  /* Light Mode (Clean, High Contrast) */
+  --bg-background: 249 250 251;
+  /* gray-50 */
+  --bg-surface: 255 255 255;
+  /* white */
+  --bg-surface-hover: 243 244 246;
+  /* gray-100 */
+  --border-color: 229 231 235;
+  /* gray-200 */
+  --text-primary: 17 24 39;
+  /* gray-900 */
+  --text-secondary: 55 65 81;
+  /* gray-700 */
+  --text-muted: 107 114 128;
+  /* gray-500 */
+  --color-brand: 79 70 229;
+  /* indigo-600 */
+  --color-brand-light: 129 140 248;
+  /* indigo-400 */
+
+  color-scheme: light;
+}
+
+.dark {
+  /* Midnight Glass (Void Palette) */
+  --bg-background: 5 5 10;
+  /* #05050A - Deepest Void */
+  --bg-surface: 20 20 25;
+  /* Slightly lighter for cards */
+  --bg-surface-hover: 30 30 35;
+  --border-color: 40 40 50;
+  /* Subtle border */
+
+  /* Text */
+  --text-primary: 237 237 239;
+  /* #EDEDEF - Off-white */
+  --text-secondary: 161 161 170;
+  /* #A1A1AA - Zinc-400 */
+  --text-muted: 82 82 91;
+  /* #52525B - Zinc-600 */
+
+  /* Brand/Accent */
+  --color-brand: 99 102 241;
+  /* indigo-500 - Brighter for dark mode */
+  --color-brand-light: 165 180 252;
+  /* indigo-300 */
+
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: rgb(var(--bg-background));
+  color: rgb(var(--text-primary));
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Utility fallbacks used by components */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes zoom-in-95 {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slide-in-from-bottom-10 {
+  from {
+    opacity: 0;
+    transform: translateY(2.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-in-from-right-full {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-in {
+  animation-duration: 200ms;
+  animation-fill-mode: both;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.fade-in {
+  animation-name: fade-in;
+}
+
+.zoom-in-95 {
+  animation-name: zoom-in-95;
+}
+
+.slide-in-from-bottom-10 {
+  animation-name: slide-in-from-bottom-10;
+}
+
+.slide-in-from-right-full {
+  animation-name: slide-in-from-right-full;
+}
+
+.hide-scrollbar,
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar,
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Glassmorphism Utilities */
+.glass-panel {
+  @apply bg-surface/80 dark:bg-surface/40 backdrop-blur-md border border-border/50 shadow-sm;
+}
+
+.glass-card {
+  @apply bg-surface dark:bg-white/5 border border-border dark:border-white/10 shadow-sm transition-all duration-300;
+}
+
+.glass-card:hover {
+  @apply border-brand/50 shadow-lg dark:shadow-neon transform hover:-translate-y-0.5;
+}
+
+/* High Contrast Mode (token-driven) */
+html.high-contrast {
+  --bg-background: 255 255 255;
+  --bg-surface: 255 255 255;
+  --bg-surface-hover: 245 245 245;
+  --border-color: 0 0 0;
+  --text-primary: 0 0 0;
+  --text-secondary: 0 0 0;
+  --text-muted: 0 0 0;
+  --color-brand: 0 0 0;
+  --color-brand-light: 0 0 0;
+  color-scheme: light;
+}
+
+html.high-contrast.dark {
+  --bg-background: 0 0 0;
+  --bg-surface: 0 0 0;
+  --bg-surface-hover: 20 20 20;
+  --border-color: 255 255 255;
+  --text-primary: 255 255 255;
+  --text-secondary: 255 255 255;
+  --text-muted: 255 255 255;
+  --color-brand: 255 255 255;
+  --color-brand-light: 255 255 255;
+  color-scheme: dark;
+}
+
+html.high-contrast * {
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+html.high-contrast button,
+html.high-contrast a,
+html.high-contrast input,
+html.high-contrast select,
+html.high-contrast textarea,
+html.high-contrast div[role="button"] {
+  border-width: 2px !important;
+  border-color: currentColor !important;
+}
+
+html.high-contrast *:focus-visible {
+  outline: 4px solid currentColor !important;
+  outline-offset: 2px !important;
+}

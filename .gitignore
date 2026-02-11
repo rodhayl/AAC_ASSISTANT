@@ -1,0 +1,83 @@
+# Node / frontend
+node_modules/
+src/frontend/dist/
+src/frontend/.vite/
+src/frontend/playwright/.auth/
+src/frontend/build_log.txt
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python / venv
+.venv/
+env/
+*.pyc
+__pycache__/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+htmlcov/
+.coverage*
+pip-wheel-metadata/
+*.egg-info/
+
+# Local data and uploads
+data/
+logs/
+uploads/
+tmp/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+*.swp
+*.orig
+*.rej
+*.bak
+
+# Test artifacts
+.pytest_cache/
+coverage/
+artifacts/
+dist*/
+.trae/
+.gemini/
+src/frontend/test-results/
+src/frontend/coverage/
+results-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
+
+# DB files
+*.db
+
+# Environment variables
+.env
+.env.local
+.env.*
+!.env.example
+!src/frontend/.env.example
+env.properties
+
+# PyInstaller / Build artifacts
+build/
+*.spec
+!AAC_Assistant.spec
+run.pid
+*.log
+*.exe
+
+# Export staging
+_export/
+_node/
+_node.zip
+
+
+tools_local/
+test_localsystem.txt
+_input_*.txt
+
+# IDE
+.vscode/
+.idea/

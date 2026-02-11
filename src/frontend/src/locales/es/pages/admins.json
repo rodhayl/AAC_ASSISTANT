@@ -1,0 +1,57 @@
+{
+  "title": "Administradores",
+  "subtitle": "Gestionar cuentas de administrador",
+  "create": "+ Crear Administrador",
+  "deleteConfirm": "¿Estás seguro de que quieres eliminar este administrador? Esta acción no se puede deshacer.",
+  "table": {
+    "name": "Nombre",
+    "username": "Usuario",
+    "email": "Email",
+    "actions": "Acciones"
+  },
+  "edit": "Editar",
+  "delete": "Eliminar",
+  "noAdmins": "No se encontraron administradores",
+  "createTitle": "Crear Nuevo Administrador",
+  "resetPasswordTitle": "Restablecer Contraseña para {{name}}",
+  "labels": {
+    "username": "Usuario *",
+    "displayName": "Nombre *",
+    "email": "Email",
+    "password": "Contraseña *",
+    "passwordHint": "Mínimo 8 caracteres, 1 mayúscula, 1 minúscula, 1 número",
+    "confirmPassword": "Confirmar Contraseña *",
+    "newPassword": "Nueva Contraseña"
+  },
+  "cancel": "Cancelar",
+  "createBtn": "Crear Administrador",
+  "you": "Tú",
+  "roles": {
+    "student": "Estudiante",
+    "teacher": "Profesor",
+    "admin": "Admin"
+  },
+  "placeholders": {
+    "username": "ej., admin1",
+    "displayName": "ej., Administrador",
+    "email": "ej., admin@ejemplo.com"
+  },
+  "errors": {
+    "loadFailed": "Error al cargar administradores",
+    "updateFailed": "Error al actualizar",
+    "createFailed": "Error al crear administrador",
+    "deleteFailed": "Error al eliminar",
+    "deleteSelf": "No puedes eliminar tu propia cuenta",
+    "resetPasswordFailed": "Error al restablecer contraseña",
+    "passwordsDoNotMatch": "Las contraseñas no coinciden"
+  },
+  "actions": {
+    "editAria": "Editar {{name}}",
+    "editTitle": "Editar administrador",
+    "deleteAria": "Eliminar {{name}}",
+    "deleteTitle": "Eliminar administrador",
+    "resetPassword": "Reset",
+    "resetPasswordAria": "Restablecer contraseña para {{name}}",
+    "resetPasswordTitle": "Restablecer Contraseña"
+  }
+}

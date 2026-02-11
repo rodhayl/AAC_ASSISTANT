@@ -1,0 +1,142 @@
+{
+  "navbar": {
+    "welcome": "¡Bienvenido de nuevo, {{name}}!",
+    "apiDocs": "Documentación API"
+  },
+  "notifications": {
+    "title": "Notificaciones",
+    "markAll": "Marcar todas como leídas",
+    "empty": "Sin notificaciones",
+    "close": "Cerrar",
+    "defaultTitle": "Notificación",
+    "defaultMessage": "Sin contenido de mensaje"
+  },
+  "language": {
+    "switcher": {
+      "label": "Idioma",
+      "es": "Español",
+      "en": "Inglés"
+    }
+  },
+  "errors": {
+    "unauthorized": "No autorizado",
+    "forbidden": "Acceso denegado",
+    "notFound": "Recurso no encontrado",
+    "unknown": "Error desconocido",
+    "validation": "Error de validación",
+    "credentialsInvalid": "No se pudieron validar las credenciales",
+    "inactiveAccount": "La cuenta de usuario está inactiva. Por favor contacte a un administrador.",
+    "insufficientPrivileges": "El usuario no tiene suficientes privilegios",
+    "passwordRequired": "Se requiere contraseña",
+    "passwordLength": "La contraseña debe tener al menos 8 caracteres",
+    "passwordUppercase": "La contraseña debe contener al menos una letra mayúscula",
+    "passwordLowercase": "La contraseña debe contener al menos una letra minúscula",
+    "passwordNumber": "La contraseña debe contener al menos un número",
+    "accountLocked": "La cuenta está temporalmente bloqueada debido a múltiples intentos fallidos. Intente de nuevo después de {{time}}.",
+    "incorrectCredentials": "Nombre de usuario o contraseña incorrectos",
+    "accountConfigurationError": "Error de configuración de cuenta",
+    "invalidRefreshToken": "Token de actualización inválido o expirado",
+    "invalidTokenType": "Tipo de token inválido. Se esperaba token de actualización.",
+    "invalidTokenClaims": "Reclamaciones de token inválidas",
+    "userNotFound": "Usuario no encontrado",
+    "provider": {
+       "invalid": "El proveedor debe ser 'ollama' o 'openrouter'",
+       "unavailable": "El servicio de Ollama no está disponible. Asegúrate de que Ollama se esté ejecutando.",
+       "fetchModelsFailed": "Error al obtener modelos de Ollama: {{error}}",
+       "openRouterKeyMissing": "Clave API de OpenRouter no configurada. Configúrala en ajustes primero.",
+       "fetchOpenRouterModelsFailed": "Error al obtener modelos de OpenRouter: {{error}}"
+    },
+    "settings": {
+       "maxTokensPositive": "max_tokens debe ser un entero positivo",
+       "temperatureRange": "temperature debe ser un número entre 0.0 y 1.5",
+       "unsupportedLanguage": "Idioma no soportado"
+    },
+    "notifications": {
+       "invalidToken": "Token inválido",
+       "unauthorizedView": "No autorizado para ver estas notificaciones",
+       "notFound": "Notificación no encontrada",
+       "userNotFound": "Usuario no encontrado"
+    },
+    "arasaac": {
+       "downloadFailed": "Error al descargar imagen de ARASAAC",
+       "importFailed": "Importación fallida: {{error}}"
+    },
+    "guardian": {
+       "onlyTeachersAdmins": "Solo profesores y administradores pueden acceder a los perfiles de tutor",
+       "studentNotFound": "Estudiante no encontrado",
+       "onlyForStudents": "Los perfiles de tutor son solo para estudiantes",
+       "templateNotFound": "Plantilla '{{name}}' no encontrada",
+       "noProfileCreateFirst": "No existe perfil para este estudiante. Crea uno primero.",
+       "templateNotExist": "La plantilla '{{name}}' no existe. Usa /templates para ver las plantillas disponibles.",
+       "profileExists": "Ya existe un perfil para este estudiante. Usa PUT para actualizar.",
+       "noChanges": "No se proporcionaron cambios",
+       "onlyAdminsDelete": "Solo los administradores pueden eliminar perfiles de tutor",
+       "noProfile": "No existe perfil para este estudiante"
+    },
+    "auth": {
+       "emailInvalid": "Formato de correo electrónico inválido",
+       "usernameTaken": "Nombre de usuario ya registrado",
+       "emailTaken": "Correo electrónico ya registrado",
+       "invalidCredentials": "Credenciales inválidas",
+       "accountInactive": "La cuenta está inactiva. Por favor contacte a un administrador.",
+       "configError": "Error de configuración de cuenta. Por favor contacte al administrador.",
+       "passwordConfirmationRequired": "Se requiere confirmación de contraseña",
+       "passwordsDoNotMatch": "Las contraseñas no coinciden",
+       "unauthorizedUserList": "No autorizado para ver la lista de usuarios",
+       "unauthorizedUserView": "No autorizado para ver este usuario",
+       "currentPasswordIncorrect": "Contraseña actual incorrecta",
+       "cannotChangeOtherUserPassword": "No se puede cambiar la contraseña de otro usuario a través de este punto final",
+       "emailInUse": "El correo electrónico ya está en uso",
+       "invalidUserType": "Tipo de usuario inválido. Debe ser uno de: {{types}}"
+    },
+    "export": {
+       "unauthorizedExport": "No autorizado para exportar datos de este usuario",
+       "checksumMismatch": "No coinciden las sumas de comprobación",
+       "unauthorizedImport": "No autorizado para importar datos de otro usuario"
+    },
+    "boards": {
+       "invalidFileType": "Tipo de archivo inválido; solo se permiten imágenes",
+       "fileTooLarge": "Archivo demasiado grande; máx 5MB",
+       "symbolNotFound": "Símbolo no encontrado",
+       "symbolInUse": "El símbolo está en uso en tableros; elimine o use force=true",
+       "unauthorizedAssignments": "No autorizado para ver estas asignaciones",
+       "cannotCreateBoardForOther": "No se puede crear tablero para otro usuario",
+       "aiProviderRequired": "Se requieren proveedor y modelo de IA cuando la IA está habilitada",
+       "aiProviderInvalid": "El proveedor de IA debe ser 'ollama' u 'openrouter'",
+       "boardNotFound": "Tablero no encontrado",
+       "unauthorizedSuggestions": "No autorizado para generar sugerencias para este tablero",
+       "aiNotEnabled": "IA no habilitada para este tablero",
+       "aiNotConfigured": "Proveedor o modelo de IA no configurado para este tablero",
+       "unauthorizedModifyBoard": "No autorizado para modificar este tablero",
+       "suggestionLabelRequired": "Se requiere un elemento de sugerencia con etiqueta",
+       "unauthorizedViewBoard": "No autorizado para ver este tablero",
+       "symbolNotFoundOnBoard": "Símbolo no encontrado en este tablero",
+       "invalidStudent": "Estudiante inválido",
+       "assignmentNotFound": "Asignación no encontrada",
+       "unauthorizedAssign": "No autorizado para asignar este tablero",
+       "unauthorizedUnassign": "No autorizado para desasignar este tablero",
+       "suggestionsFailed": "Error al generar sugerencias: {{error}}",
+       "reorderFailed": "Error al reordenar símbolos: {{error}}"
+    },
+    "analytics": {
+       "logSymbolFailed": "Error al registrar uso de símbolo",
+       "frequentSequencesFailed": "Error al recuperar secuencias frecuentes: {{error}}",
+       "suggestionsFailed": "Error al generar sugerencias: {{error}}",
+       "preferencesFailed": "Error al recuperar preferencias de categoría: {{error}}",
+       "statsFailed": "Error al recuperar estadísticas de uso: {{error}}",
+       "logFailed": "Error al registrar uso de símbolo: {{error}}"
+    },
+    "achievements": {
+       "unauthorizedView": "No autorizado para ver estos logros",
+       "unauthorizedCheck": "No autorizado para verificar estos logros",
+       "unauthorizedViewPoints": "No autorizado para ver puntos"
+    },
+    "admin": {
+       "databaseResetFailed": "Error al restablecer la base de datos: {{error}}"
+    },
+    "collab": {
+       "policyViolation": "Violación de política de conexión",
+       "accessDenied": "Acceso denegado a este tablero"
+    }
+  }
+}

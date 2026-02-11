@@ -1,0 +1,65 @@
+{
+  "title": "Estudiantes",
+  "subtitle": "Gestiona cuentas de estudiantes",
+  "create": "+ Crear Estudiante",
+  "deleteConfirm": "¿Estás seguro de que quieres eliminar este estudiante? Esta acción no se puede deshacer.",
+  "table": {
+    "name": "Nombre",
+    "username": "Usuario",
+    "assigned": "Tableros asignados",
+    "actions": "Acciones"
+  },
+  "noneAssigned": "Sin tableros asignados",
+  "assign": "Asignar",
+  "edit": "Editar",
+  "delete": "Eliminar",
+  "noStudents": "No se encontraron estudiantes",
+  "assignTitle": "Asignar Tablero a {{name}}",
+  "alreadyAssigned": "Ya asignado",
+  "noBoardsAvail": "No hay tableros disponibles",
+  "close": "Cerrar",
+  "createTitle": "Crear Nuevo Estudiante",
+  "resetPasswordTitle": "Restablecer Contraseña para {{name}}",
+  "labels": {
+    "username": "Usuario *",
+    "displayName": "Nombre para mostrar *",
+    "email": "Correo (opcional)",
+    "password": "Contraseña *",
+    "passwordHint": "Mínimo 6 caracteres",
+    "newPassword": "Nueva Contraseña"
+  },
+  "cancel": "Cancelar",
+  "createBtn": "Crear Estudiante",
+  "roles": {
+    "student": "Estudiante",
+    "teacher": "Profesor",
+    "admin": "Admin"
+  },
+  "placeholders": {
+    "username": "ej., estudiante123",
+    "displayName": "ej., Alex Smith",
+    "email": "ej., alex@ejemplo.com"
+  },
+  "errors": {
+    "loadFailed": "Error al cargar estudiantes",
+    "assignFailed": "Error al asignar tablero",
+    "unassignFailed": "Error al desasignar tablero",
+    "updateFailed": "Error al actualizar",
+    "createFailed": "Error al crear estudiante",
+    "deleteFailed": "Error al eliminar",
+    "resetPasswordFailed": "Error al restablecer contraseña"
+  },
+  "actions": {
+    "unassignAria": "Desasignar {{board}}",
+    "unassignTitle": "Desasignar tablero",
+    "assignAria": "Asignar tablero a {{student}}",
+    "assignTitle": "Asignar tablero",
+    "editAria": "Editar {{student}}",
+    "editTitle": "Editar estudiante",
+    "deleteAria": "Eliminar {{student}}",
+    "deleteTitle": "Eliminar estudiante",
+    "resetPassword": "Res. Contra.",
+    "resetPasswordAria": "Restablecer contraseña para {{student}}",
+    "resetPasswordTitle": "Restablecer Contraseña"
+  }
+}

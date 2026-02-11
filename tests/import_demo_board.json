@@ -1,0 +1,12 @@
+{
+  "boards": [
+    {
+      "name": "Imported Demo Board",
+      "description": "Board imported via E2E test",
+      "category": "general",
+      "is_public": false,
+      "is_template": false,
+      "symbols": []
+    }
+  ]
+}

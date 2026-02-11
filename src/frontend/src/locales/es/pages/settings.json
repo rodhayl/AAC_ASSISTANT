@@ -1,0 +1,126 @@
+{
+  "title": "Ajustes",
+  "subtitle": "Gestiona tu cuenta y preferencias de la aplicación",
+  "profile": {
+    "edit": "Editar",
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "updated": "Perfil actualizado correctamente",
+    "username": "Nombre de usuario",
+    "displayName": "Nombre para mostrar",
+    "email": "Correo electrónico",
+    "emailPlaceholder": "Ingresa correo",
+    "noEmail": "Sin correo"
+  },
+  "preferences": {
+    "title": "Preferencias",
+    "saved": "Guardado",
+    "savePrefs": "Guardar preferencias",
+    "language": "Idioma de la Interfaz",
+    "languageHelp": "Elige tu idioma preferido",
+    "languages": {
+      "en-US": "Inglés",
+      "es-ES": "Español"
+    },
+    "tts": "Voz de Texto a Voz",
+    "ttsHelp": "Elige la voz para leer símbolos",
+    "voiceMode": "Modo de voz",
+    "voiceModeHelp": "Habilitar/deshabilitar funciones de voz",
+    "notifications": "Notificaciones",
+    "notificationsHelp": "Recibir actualizaciones de tu progreso",
+    "dark": "Modo oscuro",
+    "darkHelp": "Cambiar entre temas claro y oscuro",
+    "voices": {
+      "default": "Predeterminado (Español)",
+      "female": "Femenina (Español)",
+      "male": "Masculina (Español)"
+    },
+    "dwellTime": "Tiempo de espera",
+    "dwellTimeHelp": "Auto-seleccionar al pasar el cursor (0 = desactivado)",
+    "ignoreRepeats": "Ignorar clics repetidos",
+    "ignoreRepeatsHelp": "Periodo de espera para el mismo símbolo",
+    "highContrast": "Modo de alto contraste",
+    "highContrastHelp": "Mejorar visibilidad para discapacidad visual"
+  },
+  "languages": {
+    "es-ES": "Español",
+    "en-US": "Inglés"
+  },
+  "security": {
+    "title": "Seguridad",
+    "change": "Cambiar contraseña",
+    "current": "Contraseña actual",
+    "new": "Nueva contraseña",
+    "confirm": "Confirmar nueva contraseña",
+    "saving": "Guardando...",
+    "save": "Guardar"
+  },
+  "data": {
+    "title": "Gestión de Datos",
+    "subtitle": "Exporta e importa tus tableros y ajustes",
+    "exportClient": "Exportar Mis Datos",
+    "exportClientTitle": "Exportar datos del navegador (lado cliente)",
+    "exportServer": "Exportar del Servidor",
+    "exportServerTitle": "Exportar datos del servidor (lado servidor)",
+    "exportServerFailed": "Fallo al exportar del servidor",
+    "importBoards": "Importar Tableros",
+    "importSuccess": "Importación completada correctamente",
+    "importFailed": "Importación fallida: ",
+    "close": "Cerrar"
+  },
+  "ai": {
+    "title": "Configuración de Proveedor de IA",
+    "subtitle": "Configura el modelo para todos los usuarios (Solo admin)",
+    "primary": "Proveedor de IA Primario",
+    "ollama": "Ollama",
+    "ollamaDesc": "LLM local",
+    "openrouter": "OpenRouter",
+    "openrouterDesc": "API en la nube",
+    "saveOk": "¡Ajustes guardados!",
+    "ollamaUrl": "URL base de Ollama",
+    "models": "Modelos disponibles",
+    "refresh": "Actualizar",
+    "searchModels": "Buscar modelos...",
+    "selected": "Seleccionado:",
+    "apiKey": "Clave API de OpenRouter",
+    "getKey": "Obtén tu clave en",
+    "maxTokens": "Máx. tokens por respuesta",
+    "presets": "Preajustes:",
+    "short": "Corto (256)",
+    "medium": "Medio (512)",
+    "long": "Largo (1024)",
+    "maxTokensHelp": "Controla la longitud de las respuestas del tutor.",
+    "temperature": "Temperatura",
+    "temperatureHelp": "Valores bajos hacen respuestas más enfocadas y predecibles.",
+    "health": "Comprobar estado",
+    "ollamaStatus": "Ollama:",
+    "openrouterStatus": "OpenRouter:",
+    "voiceDeps": "Dependencias de Voz / STT",
+    "voiceDepsHelp": "Instala elementos faltantes y reinicia start.bat para habilitar el micrófono.",
+    "installed": "Instalado",
+    "notInstalled": "No instalado",
+    "howToInstall": "Cómo instalar",
+    "dependencies": {
+      "ffmpeg": {
+        "label": "ffmpeg (requerido)",
+        "help": "Instala ffmpeg y agrega ffmpeg.exe al PATH"
+      },
+      "whisper": {
+        "label": "openai-whisper (requerido)",
+        "help": "Instalado vía pip; reinicia start.bat tras instalar herramientas faltantes"
+      },
+      "sounddevice": {
+        "label": "sounddevice (requerido para micrófono)",
+        "help": "Requerido para grabar audio en vivo; instalar vía pip"
+      },
+      "soundfile": {
+        "label": "soundfile (requerido para micrófono)",
+        "help": "Requerido para guardar audio grabado; instalar vía pip"
+      },
+      "webrtcvad": {
+        "label": "webrtcvad (opcional)",
+        "help": "VAD opcional; requiere Microsoft C++ Build Tools si lo deseas"
+      }
+    }
+  }
+}

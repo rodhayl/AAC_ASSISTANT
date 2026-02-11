@@ -1,0 +1,65 @@
+{
+  "title": "Students",
+  "subtitle": "Manage student accounts",
+  "create": "+ Create Student",
+  "deleteConfirm": "Are you sure you want to delete this student? This action cannot be undone.",
+  "table": {
+    "name": "Name",
+    "username": "Username",
+    "assigned": "Assigned Boards",
+    "actions": "Actions"
+  },
+  "noneAssigned": "No boards assigned",
+  "assign": "Assign",
+  "edit": "Edit",
+  "delete": "Delete",
+  "noStudents": "No students found",
+  "assignTitle": "Assign Board to {{name}}",
+  "alreadyAssigned": "Already assigned",
+  "noBoardsAvail": "No boards available",
+  "close": "Close",
+  "createTitle": "Create New Student",
+  "resetPasswordTitle": "Reset Password for {{name}}",
+  "labels": {
+    "username": "Username *",
+    "displayName": "Display Name *",
+    "email": "Email (optional)",
+    "password": "Password *",
+    "passwordHint": "Minimum 6 characters",
+    "newPassword": "New Password"
+  },
+  "cancel": "Cancel",
+  "createBtn": "Create Student",
+  "roles": {
+    "student": "Student",
+    "teacher": "Teacher",
+    "admin": "Admin"
+  },
+  "placeholders": {
+    "username": "e.g., student123",
+    "displayName": "e.g., Alex Smith",
+    "email": "e.g., alex@example.com"
+  },
+  "errors": {
+    "loadFailed": "Failed to load students",
+    "assignFailed": "Failed to assign board",
+    "unassignFailed": "Failed to unassign board",
+    "updateFailed": "Failed to update",
+    "createFailed": "Failed to create student",
+    "deleteFailed": "Failed to delete",
+    "resetPasswordFailed": "Failed to reset password"
+  },
+  "actions": {
+    "unassignAria": "Unassign {{board}}",
+    "unassignTitle": "Unassign board",
+    "assignAria": "Assign board to {{student}}",
+    "assignTitle": "Assign board",
+    "editAria": "Edit {{student}}",
+    "editTitle": "Edit student",
+    "deleteAria": "Delete {{student}}",
+    "deleteTitle": "Delete student",
+    "resetPassword": "Reset Pwd",
+    "resetPasswordAria": "Reset password for {{student}}",
+    "resetPasswordTitle": "Reset Password"
+  }
+}

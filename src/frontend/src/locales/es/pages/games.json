@@ -1,0 +1,19 @@
+{
+  "symbolHunt": {
+    "title": "Caza de Símbolos",
+    "selectBoard": "Selecciona un tablero para comenzar",
+    "notEnoughSymbols": "Este tablero necesita al menos 2 símbolos para jugar.",
+    "notEnoughSymbolsTitle": "Necesita más símbolos",
+    "minSymbolsRequired": "Se requieren al menos 2 símbolos",
+    "playNow": "Jugar Ahora",
+    "find": "Encuentra {{label}}",
+    "correct": "¡Correcto!",
+    "tryAgain": "Inténtalo de nuevo",
+    "greatJob": "¡Buen trabajo!",
+    "scoreMessage": "¡Encontraste {{score}} símbolos!",
+    "playAgain": "Jugar de nuevo",
+    "chooseDifferent": "Elegir otro tablero",
+    "score": "Puntuación",
+    "round": "Ronda {{current}}/{{total}}"
+  }
+}

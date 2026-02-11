@@ -1,0 +1,142 @@
+{
+  "navbar": {
+    "welcome": "Welcome back, {{name}}!",
+    "apiDocs": "API Docs"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "markAll": "Mark all as read",
+    "empty": "No notifications",
+    "close": "Close",
+    "defaultTitle": "Notification",
+    "defaultMessage": "No message content"
+  },
+  "language": {
+    "switcher": {
+      "label": "Language",
+      "es": "Spanish",
+      "en": "English"
+    }
+  },
+  "errors": {
+    "unauthorized": "Not authorized",
+    "forbidden": "Access forbidden",
+    "notFound": "Resource not found",
+    "unknown": "Unknown error",
+    "validation": "Validation error",
+    "credentialsInvalid": "Could not validate credentials",
+    "inactiveAccount": "User account is inactive. Please contact an administrator.",
+    "insufficientPrivileges": "The user doesn't have enough privileges",
+    "passwordRequired": "Password is required",
+    "passwordLength": "Password must be at least 8 characters long",
+    "passwordUppercase": "Password must contain at least one uppercase letter",
+    "passwordLowercase": "Password must contain at least one lowercase letter",
+    "passwordNumber": "Password must contain at least one number",
+    "accountLocked": "Account is temporarily locked due to multiple failed login attempts. Try again after {{time}}.",
+    "incorrectCredentials": "Incorrect username or password",
+    "accountConfigurationError": "Account configuration error",
+    "invalidRefreshToken": "Invalid or expired refresh token",
+    "invalidTokenType": "Invalid token type. Expected refresh token.",
+    "invalidTokenClaims": "Invalid token claims",
+    "userNotFound": "User not found",
+    "provider": {
+       "invalid": "Provider must be 'ollama' or 'openrouter'",
+       "unavailable": "Ollama service is not available. Please ensure Ollama is running.",
+       "fetchModelsFailed": "Failed to fetch Ollama models: {{error}}",
+       "openRouterKeyMissing": "OpenRouter API key not configured. Please set it in settings first.",
+       "fetchOpenRouterModelsFailed": "Failed to fetch OpenRouter models: {{error}}"
+    },
+    "settings": {
+       "maxTokensPositive": "max_tokens must be a positive integer",
+       "temperatureRange": "temperature must be a number between 0.0 and 1.5",
+       "unsupportedLanguage": "Unsupported language"
+    },
+    "notifications": {
+       "invalidToken": "Invalid token",
+       "unauthorizedView": "Not authorized to view these notifications",
+       "notFound": "Notification not found",
+       "userNotFound": "User not found"
+    },
+    "arasaac": {
+       "downloadFailed": "Failed to download image from ARASAAC",
+       "importFailed": "Import failed: {{error}}"
+    },
+    "guardian": {
+       "onlyTeachersAdmins": "Only teachers and admins can access guardian profiles",
+       "studentNotFound": "Student not found",
+       "onlyForStudents": "Guardian profiles are only for students",
+       "templateNotFound": "Template '{{name}}' not found",
+       "noProfileCreateFirst": "No profile exists for this student. Create one first.",
+       "templateNotExist": "Template '{{name}}' does not exist. Use /templates to see available templates.",
+       "profileExists": "Profile already exists for this student. Use PUT to update.",
+       "noChanges": "No changes provided",
+       "onlyAdminsDelete": "Only admins can delete guardian profiles",
+       "noProfile": "No profile exists for this student"
+    },
+    "auth": {
+       "emailInvalid": "Invalid email format",
+       "usernameTaken": "Username already registered",
+       "emailTaken": "Email already registered",
+       "invalidCredentials": "Invalid credentials",
+       "accountInactive": "Account is inactive. Please contact an administrator.",
+       "configError": "Account configuration error. Please contact administrator.",
+       "passwordConfirmationRequired": "Password confirmation is required",
+       "passwordsDoNotMatch": "Passwords do not match",
+       "unauthorizedUserList": "Not authorized to view user list",
+       "unauthorizedUserView": "Not authorized to view this user",
+       "currentPasswordIncorrect": "Current password incorrect",
+       "cannotChangeOtherUserPassword": "Cannot change another user's password via this endpoint",
+       "emailInUse": "Email already in use",
+       "invalidUserType": "Invalid user type. Must be one of: {{types}}"
+    },
+    "export": {
+       "unauthorizedExport": "Not authorized to export data for this user",
+       "checksumMismatch": "Checksum mismatch",
+       "unauthorizedImport": "Not authorized to import data for another user"
+    },
+    "boards": {
+       "invalidFileType": "Invalid file type; only images are allowed",
+       "fileTooLarge": "File too large; max 5MB",
+       "symbolNotFound": "Symbol not found",
+       "symbolInUse": "Symbol is in use on boards; remove or use force=true",
+       "unauthorizedAssignments": "Not authorized to view these assignments",
+       "cannotCreateBoardForOther": "Cannot create board for another user",
+       "aiProviderRequired": "AI provider and model are required when AI is enabled",
+       "aiProviderInvalid": "AI provider must be either 'ollama' or 'openrouter'",
+       "boardNotFound": "Board not found",
+       "unauthorizedSuggestions": "Not authorized to generate suggestions for this board",
+       "aiNotEnabled": "AI is not enabled for this board",
+       "aiNotConfigured": "AI provider or model is not configured for this board",
+       "unauthorizedModifyBoard": "Not authorized to modify this board",
+       "suggestionLabelRequired": "Suggestion item with a label is required",
+       "unauthorizedViewBoard": "Not authorized to view this board",
+       "symbolNotFoundOnBoard": "Symbol not found on this board",
+       "invalidStudent": "Invalid student",
+       "assignmentNotFound": "Assignment not found",
+       "unauthorizedAssign": "Not authorized to assign this board",
+       "unauthorizedUnassign": "Not authorized to unassign this board",
+       "suggestionsFailed": "Failed to generate suggestions: {{error}}",
+       "reorderFailed": "Failed to reorder symbols: {{error}}"
+    },
+    "analytics": {
+       "logSymbolFailed": "Failed to log symbol usage",
+       "frequentSequencesFailed": "Failed to retrieve frequent sequences: {{error}}",
+       "suggestionsFailed": "Failed to generate suggestions: {{error}}",
+       "preferencesFailed": "Failed to retrieve category preferences: {{error}}",
+       "statsFailed": "Failed to retrieve usage statistics: {{error}}",
+       "logFailed": "Failed to log symbol usage: {{error}}"
+    },
+    "achievements": {
+       "unauthorizedView": "Not authorized to view these achievements",
+       "unauthorizedCheck": "Not authorized to check these achievements",
+       "unauthorizedViewPoints": "Not authorized to view points"
+    },
+    "admin": {
+       "databaseResetFailed": "Failed to reset database: {{error}}"
+    },
+    "collab": {
+       "policyViolation": "Connection policy violation",
+       "accessDenied": "Access denied to this board"
+    }
+  }
+}
