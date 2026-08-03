@@ -15,6 +15,7 @@ from ..models import (
     UserAchievement,
     UserProgress,
 )
+from .notification_events import publish_notification
 
 
 class AchievementSystem:
@@ -342,8 +343,7 @@ class AchievementSystem:
             )
             session.add(user_achievement)
 
-            # Persist a notification for the user. Live SSE delivery is wired
-            # by the notification consolidation feature.
+            # Persist and publish a notification for the user.
             try:
                 title = "Achievement Unlocked"
                 message = (
@@ -359,6 +359,8 @@ class AchievementSystem:
                     is_read=False,
                 )
                 session.add(db_notification)
+                session.flush()
+                publish_notification(db_notification)
             except Exception as e:
                 logger.warning(f"Failed to send notification: {e}")
 

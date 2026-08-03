@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,6 +7,11 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import Notification, User
+from src.aac_app.services.notification_events import (
+    publish_notification,
+    subscribe,
+    unsubscribe,
+)
 from src.api.deps import (
     get_current_active_user,
     get_current_admin_user,
@@ -28,12 +34,20 @@ async def notifications_stream(token: str = None, db: Session = Depends(get_db))
         )
 
     async def event_generator():
+        queue = subscribe(user.id)
         # Initial heartbeat to unblock clients. DB event delivery will be
-        # connected in the notification consolidation feature.
-        yield "data: {}\n\n"
-        while True:
-            await asyncio.sleep(15)
-            yield ": keep-alive\n\n"
+        # connected before yielding so notifications cannot be missed.
+        try:
+            yield "data: {}\n\n"
+            while True:
+                try:
+                    notification = await asyncio.wait_for(queue.get(), timeout=15)
+                except TimeoutError:
+                    yield ": keep-alive\n\n"
+                else:
+                    yield f"data: {json.dumps(notification)}\n\n"
+        finally:
+            unsubscribe(user.id, queue)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -117,6 +131,7 @@ def create_notification(
     db.add(new_notification)
     db.commit()
     db.refresh(new_notification)
+    publish_notification(new_notification)
 
     return {
         "id": new_notification.id,
