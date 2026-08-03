@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 from contextlib import asynccontextmanager
@@ -67,11 +68,16 @@ async def lifespan(app: FastAPI):
         logger.error(f"Provider warmup failed: {e}")
         logger.exception("Warmup traceback:")
 
-    # Index symbols for semantic search
-    try:
-        index_all_symbols()
-    except Exception as e:
-        logger.error(f"Symbol indexing failed: {e}")
+    # Index symbols in the background.  The embedding model may need a
+    # network download on first run, so it must not block health or keyword
+    # search when the machine is offline.
+    async def index_symbols_in_background() -> None:
+        try:
+            await asyncio.to_thread(index_all_symbols)
+        except Exception as e:
+            logger.error(f"Symbol indexing failed: {e}")
+
+    asyncio.create_task(index_symbols_in_background())
 
     startup_time_ms = (time.perf_counter() - startup_started) * 1000
     logger.info(f"Startup timing: initialization completed in {startup_time_ms:.0f}ms")

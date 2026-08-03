@@ -2,7 +2,7 @@
 Tests for Packaging Improvements
 ================================
 This module tests all the packaging-related improvements:
-1. Lazy loading of heavy AI models (faster-whisper, SentenceTransformer)
+1. Lazy loading of optional AI models (faster-whisper, fastembed)
 2. Frozen-aware path resolution for PyInstaller builds
 3. Provider initialization and warmup
 4. Database model completeness
@@ -35,38 +35,35 @@ class TestLazyLoadingVectorStore:
         assert store.model is None
 
     def test_vector_store_eager_init_loads_model(self):
-        """Verify that lazy_load=False loads the model immediately"""
-        from src.aac_app.services.local_vector_store import (
-            SENTENCE_TRANSFORMERS_AVAILABLE,
-            LocalVectorStore,
+        """Verify that lazy_load=False initializes the injected embedder immediately."""
+        from src.aac_app.services.local_vector_store import LocalVectorStore
+
+        class FakeEmbedder:
+            def embed(self, _texts):
+                return [[0.0] * 384]
+
+        store = LocalVectorStore(
+            lazy_load=False,
+            embedder_factory=lambda **_: FakeEmbedder(),
         )
-
-        if not SENTENCE_TRANSFORMERS_AVAILABLE:
-            pytest.skip("sentence-transformers not installed")
-
-        # Create with lazy_load=False
-        store = LocalVectorStore(lazy_load=False)
-
-        # Model should be loaded
         assert store._model_loaded is True
 
     def test_vector_store_lazy_loads_on_search(self):
-        """Verify model loads on first search call"""
-        from src.aac_app.services.local_vector_store import (
-            SENTENCE_TRANSFORMERS_AVAILABLE,
-            LocalVectorStore,
+        """Verify the injected embedder is initialized on first search."""
+        from src.aac_app.services.local_vector_store import LocalVectorStore
+
+        class FakeEmbedder:
+            def embed(self, _texts):
+                return [[0.0] * 384]
+
+        store = LocalVectorStore(
+            lazy_load=True,
+            embedder_factory=lambda **_: FakeEmbedder(),
         )
-
-        if not SENTENCE_TRANSFORMERS_AVAILABLE:
-            pytest.skip("sentence-transformers not installed")
-
-        store = LocalVectorStore(lazy_load=True)
         assert store._model_loaded is False
 
-        # Perform a search - this should trigger lazy loading
         store.search("test query", k=1)
 
-        # Model should now be loaded
         assert store._model_loaded is True
 
     def test_vector_store_is_available_does_not_load(self):
@@ -82,22 +79,21 @@ class TestLazyLoadingVectorStore:
         assert store._model_loaded is False
 
     def test_vector_store_force_load(self):
-        """Verify force_load() triggers immediate loading"""
-        from src.aac_app.services.local_vector_store import (
-            SENTENCE_TRANSFORMERS_AVAILABLE,
-            LocalVectorStore,
+        """Verify force_load() triggers immediate embedder loading."""
+        from src.aac_app.services.local_vector_store import LocalVectorStore
+
+        class FakeEmbedder:
+            def embed(self, _texts):
+                return [[0.0] * 384]
+
+        store = LocalVectorStore(
+            lazy_load=True,
+            embedder_factory=lambda **_: FakeEmbedder(),
         )
-
-        if not SENTENCE_TRANSFORMERS_AVAILABLE:
-            pytest.skip("sentence-transformers not installed")
-
-        store = LocalVectorStore(lazy_load=True)
         assert store._model_loaded is False
 
-        # Force load
         store.force_load()
 
-        # Model should now be loaded
         assert store._model_loaded is True
 
 

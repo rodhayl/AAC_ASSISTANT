@@ -26,13 +26,11 @@ import sys
 import src.api.main
 
 heavy = {
-    "torch",
+    "fastembed",
+    "onnxruntime",
     "faster_whisper",
     "ctranslate2",
     "av",
-    "whisper",
-    "sentence_transformers",
-    "faiss",
     "pyttsx3",
     "sounddevice",
     "soundfile",
@@ -134,48 +132,21 @@ def test_speech_transcription_imports_faster_whisper_on_first_use(monkeypatch) -
 
 
 def test_vector_store_imports_dependencies_on_first_search(monkeypatch, tmp_path) -> None:
-    import numpy as numpy_module
-
     from src.aac_app.services import local_vector_store
 
-    class FakeIndex:
-        ntotal = 0
-
-    class FakeFaiss(types.ModuleType):
-        def __init__(self):
-            super().__init__("faiss")
-
-        @staticmethod
-        def IndexFlatL2(_dimension):
-            return FakeIndex()
-
-    class FakeSentenceTransformers(types.ModuleType):
-        def __init__(self):
-            super().__init__("sentence_transformers")
-
-        @staticmethod
-        def SentenceTransformer(_name, device):
-            return object()
-
-    monkeypatch.setitem(sys.modules, "faiss", FakeFaiss())
-    monkeypatch.setitem(sys.modules, "sentence_transformers", FakeSentenceTransformers())
-    monkeypatch.setattr(local_vector_store, "FAISS_AVAILABLE", True)
-    monkeypatch.setattr(local_vector_store, "SENTENCE_TRANSFORMERS_AVAILABLE", True)
-    monkeypatch.setattr(local_vector_store, "NUMPY_AVAILABLE", True)
-    monkeypatch.setattr(local_vector_store, "faiss", None)
-    monkeypatch.setattr(local_vector_store, "SentenceTransformer", None)
-    monkeypatch.setattr(local_vector_store, "np", None)
+    class FakeEmbedder:
+        def embed(self, _texts):
+            return [[0.0] * 384]
 
     store = local_vector_store.LocalVectorStore(
         index_path=str(tmp_path / "store.index"),
         metadata_path=str(tmp_path / "store.json"),
+        embedder_factory=lambda **_: FakeEmbedder(),
         lazy_load=True,
     )
     assert store.model is None
     assert store.search("hello") == []
     assert store.model is not None
-    assert store.index is not None
-    assert local_vector_store.np is numpy_module
 
 
 def test_prediction_service_loads_bundled_static_ngram_model() -> None:

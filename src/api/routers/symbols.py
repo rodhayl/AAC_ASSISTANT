@@ -3,11 +3,13 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from loguru import logger
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol, SymbolUsageLog, User
 from src.aac_app.services.achievement_system import AchievementSystem
+from src.aac_app.services.vector_utils import delete_symbol as delete_symbol_embedding
+from src.aac_app.services.vector_utils import index_symbol
 from src.api import schemas
 from src.api.deps import get_current_active_user, get_db, get_text
 
@@ -32,6 +34,11 @@ def _apply_symbol_search(query, search: str, db: Session):
 
             if semantic_ids:
                 logger.info(f"Semantic search found {len(semantic_ids)} symbols for '{search}'")
+                semantic_order = case(
+                    {symbol_id: index for index, symbol_id in enumerate(semantic_ids)},
+                    value=Symbol.id,
+                    else_=len(semantic_ids),
+                )
                 return query.filter(
                     or_(
                         func.lower(Symbol.label).like(s),
@@ -39,7 +46,7 @@ def _apply_symbol_search(query, search: str, db: Session):
                         func.lower(Symbol.keywords).like(s),
                         Symbol.id.in_(semantic_ids),
                     )
-                )
+                ).order_by(semantic_order)
 
         return query.filter(
             or_(
@@ -152,6 +159,7 @@ def create_symbol(
     db.add(db_symbol)
     db.commit()
     db.refresh(db_symbol)
+    index_symbol(db_symbol)
     return db_symbol
 
 
@@ -243,6 +251,7 @@ async def upload_symbol(
     db.add(db_symbol)
     db.commit()
     db.refresh(db_symbol)
+    index_symbol(db_symbol)
     return db_symbol
 
 
@@ -263,6 +272,7 @@ def update_symbol(
         setattr(db_symbol, key, value)
     db.commit()
     db.refresh(db_symbol)
+    index_symbol(db_symbol)
     # Attach usage flag
     use_count = db.query(BoardSymbol).filter(BoardSymbol.symbol_id == symbol_id).count()
     db_symbol.is_in_use = use_count > 0
@@ -338,6 +348,7 @@ def delete_symbol(
         db.query(BoardSymbol).filter(BoardSymbol.symbol_id == symbol_id).delete()
     db.delete(symbol)
     db.commit()
+    delete_symbol_embedding(symbol_id)
     return {"ok": True, "deleted": symbol_id}
 
 

@@ -9,6 +9,7 @@ from src.aac_app.providers.ollama_provider import OllamaProvider
 from src.aac_app.providers.openrouter_provider import OpenRouterProvider
 from src.aac_app.services.board_generation_service import BoardGenerationService
 from src.aac_app.services.translation_service import get_translation_service
+from src.aac_app.services.vector_utils import index_symbol
 from src.api import schemas
 from src.api.deps import get_current_active_user, get_db, get_setting_value, get_text
 
@@ -162,6 +163,7 @@ async def create_board(
         logger.info("No manual symbols provided in payload")
 
     # Generate AI content if enabled
+    created_symbols: list[Symbol] = []
     if board.ai_enabled:
         try:
             logger.info(
@@ -221,6 +223,7 @@ async def create_board(
                         )
                         db.add(symbol)
                         db.flush()
+                        created_symbols.append(symbol)
 
                     # Add to board
                     cols = db_board.grid_cols or 4
@@ -262,6 +265,8 @@ async def create_board(
 
     db.commit()
     db.refresh(db_board)
+    for symbol in created_symbols:
+        index_symbol(symbol)
     return db_board
 
 
@@ -434,7 +439,9 @@ async def apply_ai_suggestion(
         )
         db.add(symbol)
         db.flush()
+        created_symbol = symbol
     else:
+        created_symbol = None
         # Avoid duplicate symbol entries per board
         existing_board_symbol = (
             db.query(BoardSymbol)
@@ -484,4 +491,6 @@ async def apply_ai_suggestion(
     db.add(board_symbol)
     db.commit()
     db.refresh(board_symbol)
+    if created_symbol is not None:
+        index_symbol(created_symbol)
     return board_symbol
