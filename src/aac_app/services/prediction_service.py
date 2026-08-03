@@ -319,6 +319,7 @@ class PredictionService:
             user_id=user_id,
             symbols=current_symbols,
             limit=max(base_limit, 5),
+            db=db,
         )
 
         for s in history_suggestions:
@@ -467,7 +468,8 @@ class PredictionService:
                 fallback_suggestions = self.analytics_service.suggest_next_symbol(
                     user_id=user_id,
                     symbols=[],
-                    limit=max(base_limit * 2, 10) # Request more to filter
+                    limit=max(base_limit * 2, 10),  # Request more to filter
+                    db=db,
                 )
 
                 # If analytics has no usage data yet, fall back to standard-library

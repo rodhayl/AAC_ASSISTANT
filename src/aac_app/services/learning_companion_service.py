@@ -3,9 +3,12 @@ import json
 import os
 import re
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 
 from loguru import logger
+from sqlalchemy.orm import Session
 
 from ..db import get_session
 from ..models import (
@@ -215,7 +218,16 @@ class LearningCompanionService:
             f"(max_tokens={self.default_max_tokens}, temperature={self.default_temperature})"
         )
 
-    def _get_system_prompt(self, user_id: int) -> str:
+    @contextmanager
+    def _session_scope(self, db: Session | None) -> Iterator[Session]:
+        """Use a request session when supplied, otherwise open a background session."""
+        if db is not None:
+            yield db
+            return
+        with get_session() as session:
+            yield session
+
+    def _get_system_prompt(self, user_id: int, db: Session | None = None) -> str:
         """
         Get the personalized system prompt for a user.
 
@@ -230,7 +242,7 @@ class LearningCompanionService:
         """
         try:
             # Try to get personalized prompt from guardian profile
-            prompt = self.guardian_profile_service.build_system_prompt(user_id)
+            prompt = self.guardian_profile_service.build_system_prompt(user_id, db=db)
             if prompt and len(prompt) > 50:  # Ensure we got a real prompt
                 logger.debug(f"Using personalized prompt for user {user_id}")
                 return prompt
@@ -243,11 +255,11 @@ class LearningCompanionService:
         logger.debug(f"Using default AAC prompt for user {user_id}")
         return AAC_SYSTEM_PROMPT
 
-    def _get_user_language(self, user_id: int) -> str:
+    def _get_user_language(self, user_id: int, db: Session | None = None) -> str:
         try:
-            with get_session() as db:
+            with self._session_scope(db) as session:
                 settings = (
-                    db.query(UserSettings)
+                    session.query(UserSettings)
                     .filter(UserSettings.user_id == user_id)
                     .first()
                 )
@@ -264,6 +276,7 @@ class LearningCompanionService:
         purpose: str = "",
         difficulty: str = "basic",
         board_id: int | None = None,
+        db: Session | None = None,
     ) -> dict:
         """Start AI tutoring session"""
 
@@ -272,7 +285,7 @@ class LearningCompanionService:
         )
 
         try:
-            with get_session() as db:
+            with self._session_scope(db) as db:
                 # Get user
                 user = db.get(User, user_id)
                 if not user:
@@ -324,7 +337,7 @@ class LearningCompanionService:
                     get_translation_service,
                 )
 
-                user_lang = self._get_user_language(user_id)
+                user_lang = self._get_user_language(user_id, db)
                 logger.debug(f"user_lang resolved to: {user_lang}")
                 ts = get_translation_service()
 
@@ -376,7 +389,7 @@ class LearningCompanionService:
 
                 # Achievement: session start
                 with contextlib.suppress(Exception):
-                    AchievementSystem().check_achievements(user_id)
+                    AchievementSystem().check_achievements(user_id, db=db)
                 logger.info(f"Learning session {session_id} started successfully")
 
                 return {
@@ -395,13 +408,15 @@ class LearningCompanionService:
             logger.error(f"Failed to start learning session: {e}")
             return {"success": False, "error": str(e)}
 
-    async def ask_question(self, session_id: int, difficulty: str = None) -> dict:
+    async def ask_question(
+        self, session_id: int, difficulty: str = None, db: Session | None = None
+    ) -> dict:
         """Generate adaptive question using local LLM"""
 
         logger.info(f"Generating question for session {session_id}")
 
         try:
-            with get_session() as db:
+            with self._session_scope(db) as db:
                 # Get session
                 session = db.get(LearningSession, session_id)
                 if not session:
@@ -438,8 +453,8 @@ Requirements:
 
                 try:
                     # Get personalized system prompt for this user
-                    system_prompt = self._get_system_prompt(session.user_id)
-                    user_lang = self._get_user_language(session.user_id)
+                    system_prompt = self._get_system_prompt(session.user_id, db)
+                    user_lang = self._get_user_language(session.user_id, db)
                     if user_lang.startswith("es"):
                         system_prompt = system_prompt + "\nResponde en español."
 
@@ -451,7 +466,7 @@ Requirements:
                     )
                 except Exception:
                     # Fallback to translated question
-                    user_lang = self._get_user_language(session.user_id)
+                    user_lang = self._get_user_language(session.user_id, db)
                     translation_service = TranslationService()
 
                     question_text = translation_service.get(
@@ -484,7 +499,7 @@ Requirements:
                 except json.JSONDecodeError:
                     logger.error(f"Failed to parse question JSON: {response}")
                     # Fallback to translated question
-                    user_lang = self._get_user_language(session.user_id)
+                    user_lang = self._get_user_language(session.user_id, db)
                     translation_service = TranslationService()
 
                     question_text = translation_service.get(
@@ -557,6 +572,7 @@ Requirements:
         is_voice: bool = False,
         audio_data: bytes = None,
         symbols: list = None,
+        db: Session | None = None,
     ) -> dict:
         """Analyze response and provide feedback"""
 
@@ -565,7 +581,7 @@ Requirements:
         is_symbol = bool(symbols)
 
         try:
-            with get_session() as db:
+            with self._session_scope(db) as db:
                 # Get session
                 session = db.get(LearningSession, session_id)
                 if not session:
@@ -640,7 +656,7 @@ Requirements:
                             break
 
                 # Get user language for localization
-                user_lang = self._get_user_language(session.user_id)
+                user_lang = self._get_user_language(session.user_id, db)
                 translation_service = TranslationService()
 
                 # If transcription failed, return a graceful message without erroring
@@ -708,7 +724,7 @@ Format as JSON. {lang_instruction}"""
 
                     try:
                         # Get personalized system prompt for this user
-                        system_prompt = self._get_system_prompt(session.user_id)
+                        system_prompt = self._get_system_prompt(session.user_id, db)
 
                         analysis = await self.llm.generate(
                             prompt=analysis_prompt,
@@ -870,8 +886,8 @@ Write a helpful response to the student (1-2 friendly sentences). Ask a question
                         }
 
                         # Use personalized system prompt from guardian profile
-                        system_prompt = self._get_system_prompt(session.user_id)
-                        user_lang = self._get_user_language(session.user_id)
+                        system_prompt = self._get_system_prompt(session.user_id, db)
+                        user_lang = self._get_user_language(session.user_id, db)
                         if user_lang.startswith("es"):
                             system_prompt = system_prompt + "\nResponde en español."
 
@@ -1002,20 +1018,16 @@ Write a helpful response to the student (1-2 friendly sentences). Ask a question
                     ach = AchievementSystem()
                     # Voice usage increment
                     if is_voice:
-                        with get_session() as s:
-                            # Read current voice usage then increment via update_progress
-                            # For simplicity, increment by 1 event
-                            ach.update_progress(
-                                session.user_id,
-                                "voice_usage",
-                                (
-                                    ach._get_progress_stats(session.user_id, s).get(
-                                        "voice_usage", 0
-                                    )
-                                    + 1
-                                ),
-                            )
-                    ach.check_achievements(session.user_id)
+                        current_voice_usage = ach._get_progress_stats(
+                            session.user_id, db
+                        ).get("voice_usage", 0)
+                        ach.update_progress(
+                            session.user_id,
+                            "voice_usage",
+                            current_voice_usage + 1,
+                            db=db,
+                        )
+                    ach.check_achievements(session.user_id, db=db)
                 except Exception:
                     pass
 
@@ -1073,13 +1085,15 @@ Write a helpful response to the student (1-2 friendly sentences). Ask a question
 
         return "; ".join(symbol_entries[-3:])  # Last 3 symbol patterns
 
-    async def end_learning_session(self, session_id: int) -> dict:
+    async def end_learning_session(
+        self, session_id: int, db: Session | None = None
+    ) -> dict:
         """End a learning session and provide summary"""
 
         logger.info(f"Ending learning session {session_id}")
 
         try:
-            with get_session() as db:
+            with self._session_scope(db) as db:
                 session = db.get(LearningSession, session_id)
                 if not session:
                     return {"success": False, "error": "Session not found"}
@@ -1099,22 +1113,29 @@ Session stats:
 Be very positive and encouraging. Keep it to 2-3 sentences."""
 
                 # Get personalized system prompt for this user
-                system_prompt = self._get_system_prompt(session.user_id)
+                system_prompt = self._get_system_prompt(session.user_id, db)
 
-                summary_raw = await self.llm.generate(
-                    prompt=summary_prompt,
-                    system=system_prompt,
-                    max_tokens=100,
-                    temperature=0.7,
-                )
-                summary = _strip_reasoning(summary_raw)
+                try:
+                    summary_raw = await self.llm.generate(
+                        prompt=summary_prompt,
+                        system=system_prompt,
+                        max_tokens=100,
+                        temperature=0.7,
+                    )
+                    summary = _strip_reasoning(summary_raw)
+                except Exception:
+                    summary = (
+                        f"Great work completing your {session.topic_name} session! "
+                        f"You answered {session.questions_answered} questions and got "
+                        f"{session.correct_answers} correct."
+                    )
 
                 db.add(session)
                 db.commit()
 
                 # Achievement: session completion
                 with contextlib.suppress(Exception):
-                    AchievementSystem().check_achievements(session.user_id)
+                    AchievementSystem().check_achievements(session.user_id, db=db)
                 logger.info(f"Learning session {session_id} ended successfully")
 
                 return {
@@ -1131,11 +1152,13 @@ Be very positive and encouraging. Keep it to 2-3 sentences."""
             logger.error(f"Failed to end learning session: {e}")
             return {"success": False, "error": str(e)}
 
-    def get_session_progress(self, session_id: int) -> dict:
+    def get_session_progress(
+        self, session_id: int, db: Session | None = None
+    ) -> dict:
         """Get current progress for a learning session"""
 
         try:
-            with get_session() as db:
+            with self._session_scope(db) as db:
                 session = db.get(LearningSession, session_id)
                 if not session:
                     return {"success": False, "error": "Session not found"}
@@ -1160,10 +1183,12 @@ Be very positive and encouraging. Keep it to 2-3 sentences."""
             logger.error(f"Failed to get session progress: {e}")
             return {"success": False, "error": str(e)}
 
-    def get_user_history(self, user_id: int, limit: int = 10) -> dict:
+    def get_user_history(
+        self, user_id: int, limit: int = 10, db: Session | None = None
+    ) -> dict:
         """Get recent learning sessions for a user"""
         try:
-            with get_session() as db:
+            with self._session_scope(db) as db:
                 sessions = (
                     db.query(LearningSession)
                     .filter(LearningSession.user_id == user_id)

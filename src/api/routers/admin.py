@@ -5,7 +5,7 @@ from src import config
 from src.aac_app.db import create_engine_instance
 from src.aac_app.models import Base
 from src.aac_app.seed import init_database
-from src.api.dependencies import get_current_admin_user, get_text
+from src.api.deps import get_current_admin_user, get_text
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 

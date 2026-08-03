@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from src.aac_app.models import LearningSession, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.aac_app.services.learning_companion_service import LearningCompanionService
-from src.api import dependencies as deps
+from src.api import deps
 from src.api.main import app
 from tests.test_utils_auth import create_test_headers
 
@@ -165,6 +165,7 @@ async def test_learning_service_passes_defaults_to_llm_generate_in_conversation(
         session_id=session.id,
         student_response="What can you tell me about AAC?",
         is_voice=False,
+        db=test_db_session,
     )
 
     # The last call to llm.generate should use our defaults

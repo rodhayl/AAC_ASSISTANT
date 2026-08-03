@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from src.aac_app.models import BoardSymbol, Symbol, User
 from src.aac_app.services.symbol_analytics import SymbolAnalytics
-from src.api.dependencies import get_current_active_user, get_db, get_text
+from src.api.deps import get_current_active_user, get_db, get_text
 from src.api.schemas import NextSymbolRequest, SymbolUsageRequest
 
 router = APIRouter()
@@ -21,6 +21,7 @@ analytics_service = SymbolAnalytics()
 async def log_symbol_usage(
     request: SymbolUsageRequest,
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """Log usage of symbols"""
     try:
@@ -39,6 +40,7 @@ async def log_symbol_usage(
             symbols=symbols_list,
             context_topic=request.context_topic,
             session_id=request.session_id,
+            db=db,
         )
 
         logger.info(f"Logged usage for {len(symbols_list)} symbols for user {current_user.id}")
@@ -55,6 +57,7 @@ async def get_frequent_sequences(
         2, ge=1, le=100, description="Minimum times sequence must appear"
     ),
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """
     Get user's most frequently used symbol sequences.
@@ -64,7 +67,10 @@ async def get_frequent_sequences(
     """
     try:
         sequences = analytics_service.get_frequent_sequences(
-            user_id=current_user.id, limit=limit, min_occurrences=min_occurrences
+            user_id=current_user.id,
+            limit=limit,
+            min_occurrences=min_occurrences,
+            db=db,
         )
 
         logger.info(
@@ -273,6 +279,7 @@ async def get_next_symbol_suggestions_post(
 @router.get("/category-preferences", response_model=dict)
 async def get_category_preferences(
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """
     Analyze which symbol categories user uses most.
@@ -282,7 +289,7 @@ async def get_category_preferences(
     """
     try:
         preferences = analytics_service.get_category_preferences(
-            user_id=current_user.id
+            user_id=current_user.id, db=db
         )
 
         logger.info(f"Retrieved category preferences for user {current_user.id}")
@@ -304,6 +311,7 @@ async def get_category_preferences(
 async def get_usage_statistics(
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """
     Get overall usage statistics for user.
@@ -316,7 +324,9 @@ async def get_usage_statistics(
     - Average utterance length
     """
     try:
-        stats = analytics_service.get_usage_stats(user_id=current_user.id, days=days)
+        stats = analytics_service.get_usage_stats(
+            user_id=current_user.id, days=days, db=db
+        )
 
         logger.info(f"Retrieved {days}-day usage stats for user {current_user.id}")
         return stats
@@ -333,7 +343,9 @@ async def get_usage_statistics(
 
 @router.post("/log", status_code=status.HTTP_201_CREATED)
 async def log_symbol_usage(
-    request: SymbolUsageRequest, current_user: User = Depends(get_current_active_user)
+    request: SymbolUsageRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """
     Log symbol usage for analytics.
@@ -348,6 +360,7 @@ async def log_symbol_usage(
             session_id=request.session_id,
             semantic_intent=request.semantic_intent,
             context_topic=request.context_topic,
+            db=db,
         )
 
         if not success:

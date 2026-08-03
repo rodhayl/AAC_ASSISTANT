@@ -16,7 +16,7 @@ from src import config
 from src.aac_app import schema
 from src.aac_app.seed import init_database
 from src.aac_app.services.vector_utils import index_all_symbols
-from src.api.dependencies import get_startup_state, warmup_providers
+from src.api.deps import get_startup_state, warmup_providers
 from src.api.limiter import limiter
 from src.api.logging_config import LOG_FILE
 from src.api.routers import (

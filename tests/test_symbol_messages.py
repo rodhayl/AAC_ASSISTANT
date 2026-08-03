@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from src.aac_app.models import LearningSession
 from src.aac_app.services.learning_companion_service import LearningCompanionService
-from src.api.dependencies import get_learning_service
+from src.api.deps import get_learning_service
 from src.api.main import app
 
 client = TestClient(app)

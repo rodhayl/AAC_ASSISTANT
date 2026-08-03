@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from src.aac_app.models import Symbol, User, UserSettings
 from src.aac_app.services.arasaac import ArasaacService
 from src.api import schemas
-from src.api.dependencies import get_current_active_user, get_db, get_text
+from src.api.deps import get_current_active_user, get_db, get_text
 
 router = APIRouter()
 

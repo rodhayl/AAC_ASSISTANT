@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from src.aac_app.models import BoardAssignment, BoardSymbol, CommunicationBoard, User
 from src.api import schemas
-from src.api.dependencies import get_current_active_user, get_db, get_text
+from src.api.deps import get_current_active_user, get_db, get_text
 from src.api.routers.board_helpers import get_playable_count
 
 router = APIRouter()

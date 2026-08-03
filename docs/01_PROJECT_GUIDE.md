@@ -108,7 +108,7 @@ RBAC model:
 
 Core enforcement paths:
 
-- `src/api/dependencies.py`
+- `src/api/deps/`
 - `src/api/routers/`
 
 ## 6. Utility Scripts

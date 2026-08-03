@@ -10,7 +10,7 @@ from src.aac_app.providers.openrouter_provider import OpenRouterProvider
 from src.aac_app.services.board_generation_service import BoardGenerationService
 from src.aac_app.services.translation_service import get_translation_service
 from src.api import schemas
-from src.api.dependencies import get_current_active_user, get_db, get_setting_value, get_text
+from src.api.deps import get_current_active_user, get_db, get_setting_value, get_text
 
 router = APIRouter()
 

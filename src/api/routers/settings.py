@@ -6,18 +6,20 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
-import src.api.dependencies as deps
 from src import config
 from src.aac_app.models import AppSettings, User, UserSettings
 from src.aac_app.providers.lmstudio_provider import LMStudioProvider
 from src.aac_app.providers.ollama_provider import OllamaProvider
 from src.aac_app.providers.openrouter_provider import OpenRouterProvider
-from src.api.dependencies import (
+from src.api.deps import (
+    clear_settings_cache,
     get_current_active_user,
     get_current_admin_user,
     get_db,
     get_text,
+    invalidate_setting,
 )
+from src.api.deps import providers as provider_deps
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -40,6 +42,7 @@ def set_setting(db: Session, key: str, value: str, user_id: int):
         db.add(setting)
     db.commit()
     db.refresh(setting)
+    invalidate_setting(key)
     return setting
 
 
@@ -173,8 +176,7 @@ async def update_ai_settings(
         log_settings["openrouter_api_key"] = "********"
 
     logger.info(f"Admin {current_user.username} updated AI settings: {log_settings}")
-    deps._ollama_provider = None
-    deps._openrouter_provider = None
+    provider_deps.reset_llm_providers()
 
     return {"message": "Settings updated successfully", "settings": settings}
 
@@ -347,5 +349,6 @@ async def update_ui_language(
         settings.ui_language = lang
     db.commit()
     db.refresh(settings)
+    clear_settings_cache()
     logger.info(f"User {current_user.username} updated UI language to {lang}")
     return {"message": "UI language updated", "ui_language": settings.ui_language}

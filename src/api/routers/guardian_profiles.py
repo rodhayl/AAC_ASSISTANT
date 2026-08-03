@@ -21,7 +21,7 @@ from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.guardian_profile_service import get_guardian_profile_service
 from src.aac_app.services.template_manager import get_template_manager
 from src.api import schemas
-from src.api.dependencies import get_current_active_user, get_db, get_text
+from src.api.deps import get_current_active_user, get_db, get_text
 
 router = APIRouter(prefix="/api/guardian-profiles", tags=["guardian-profiles"])
 

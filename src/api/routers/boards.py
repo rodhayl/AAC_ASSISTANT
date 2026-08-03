@@ -10,7 +10,7 @@ from src.aac_app.providers.ollama_provider import OllamaProvider  # noqa: F401
 from src.aac_app.services.board_generation_service import BoardGenerationService  # noqa: F401
 from src.aac_app.services.translation_service import get_translation_service
 from src.api import schemas
-from src.api.dependencies import get_current_active_user, get_db, get_text
+from src.api.deps import get_current_active_user, get_db, get_text
 from src.api.routers.board_helpers import get_playable_count, serialize_board
 
 router = APIRouter()

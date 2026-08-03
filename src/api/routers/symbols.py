@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol, SymbolUsageLog, User
 from src.aac_app.services.achievement_system import AchievementSystem
 from src.api import schemas
-from src.api.dependencies import get_current_active_user, get_db, get_text
+from src.api.deps import get_current_active_user, get_db, get_text
 
 router = APIRouter()
 
@@ -19,7 +19,7 @@ def _apply_symbol_search(query, search: str, db: Session):
     s = f"%{search.lower()}%"
 
     try:
-        from src.api.dependencies import get_vector_store
+        from src.api.deps import get_vector_store
 
         vs = get_vector_store()
         if vs and len(search) > 3:
@@ -396,8 +396,10 @@ def add_symbol_to_board(
             .join(boards, BoardSymbol.board_id == boards.c.id)
             .count()
         )
-        AchievementSystem().update_progress(user_id, "vocabulary_size", float(count))
-        AchievementSystem().check_achievements(user_id)
+        AchievementSystem().update_progress(
+            user_id, "vocabulary_size", float(count), db=db
+        )
+        AchievementSystem().check_achievements(user_id, db=db)
     except Exception:
         pass
     return db_board_symbol

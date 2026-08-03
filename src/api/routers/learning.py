@@ -6,7 +6,7 @@ from src.aac_app.models import LearningSession, User
 from src.aac_app.services.learning_companion_service import LearningCompanionService
 from src.aac_app.services.translation_service import get_translation_service
 from src.api import schemas
-from src.api.dependencies import get_current_active_user, get_db, get_learning_service
+from src.api.deps import get_current_active_user, get_db, get_learning_service
 
 router = APIRouter()
 
@@ -25,6 +25,7 @@ async def start_session(
     user_id: int,
     service: LearningCompanionService = Depends(get_learning_service),
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """Start a new learning session"""
     if user_id != current_user.id and current_user.user_type != "admin":
@@ -38,6 +39,7 @@ async def start_session(
         purpose=session_data.purpose,
         difficulty=session_data.difficulty,
         board_id=session_data.board_id,
+        db=db,
     )
 
     if not result["success"]:
@@ -68,7 +70,9 @@ async def ask_question(
             status_code=403, detail=get_text(current_user, "errors.unauthorized")
         )
 
-    result = await service.ask_question(session_id=session_id, difficulty=difficulty)
+    result = await service.ask_question(
+        session_id=session_id, difficulty=difficulty, db=db
+    )
 
     if not result["success"]:
         raise HTTPException(
@@ -99,7 +103,10 @@ async def submit_answer(
         )
 
     result = await service.process_response(
-        session_id=session_id, student_response=answer_data.answer, is_voice=False
+        session_id=session_id,
+        student_response=answer_data.answer,
+        is_voice=False,
+        db=db,
     )
 
     if not result["success"]:
@@ -137,6 +144,7 @@ async def submit_voice_answer(
         student_response="",  # Will be transcribed
         is_voice=True,
         audio_data=audio_data,
+        db=db,
     )
 
     if not result["success"]:
@@ -186,6 +194,7 @@ async def submit_symbol_answer(
         is_voice=False,
         audio_data=None,
         symbols=[s.model_dump() for s in payload.symbols],
+        db=db,
     )
 
     if not result["success"]:
@@ -217,7 +226,7 @@ async def end_session(
             status_code=403, detail=get_text(current_user, "errors.unauthorized")
         )
 
-    result = await service.end_learning_session(session_id)
+    result = await service.end_learning_session(session_id, db=db)
 
     if not result["success"]:
         raise HTTPException(
@@ -247,7 +256,7 @@ def get_progress(
             status_code=403, detail=get_text(current_user, "errors.unauthorized")
         )
 
-    result = service.get_session_progress(session_id)
+    result = service.get_session_progress(session_id, db=db)
 
     if not result["success"]:
         raise HTTPException(
@@ -264,6 +273,7 @@ def get_history(
     limit: int = 10,
     service: LearningCompanionService = Depends(get_learning_service),
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """Get user learning history"""
     if user_id != current_user.id and current_user.user_type != "admin":
@@ -271,7 +281,7 @@ def get_history(
             status_code=403, detail=get_text(current_user, "errors.unauthorized")
         )
 
-    result = service.get_user_history(user_id, limit)
+    result = service.get_user_history(user_id, limit, db=db)
 
     if not result["success"]:
         raise HTTPException(

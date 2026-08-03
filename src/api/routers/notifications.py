@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import Notification, User
-from src.api.dependencies import (
+from src.api.deps import (
     get_current_active_user,
     get_current_admin_user,
     get_db,

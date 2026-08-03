@@ -6,7 +6,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import BoardAssignment, CommunicationBoard
-from src.api.dependencies import get_db, get_text, validate_token
+from src.api.deps import get_db, get_text, validate_token
 
 router = APIRouter(prefix="/api/collab", tags=["collab"])
 

@@ -32,7 +32,7 @@ from src.aac_app.utils.jwt_utils import (
     create_refresh_token,
     decode_access_token,
 )
-from src.api.dependencies import get_db
+from src.api.deps import get_db
 from src.api.main import app
 from tests.test_utils_auth import create_test_headers
 

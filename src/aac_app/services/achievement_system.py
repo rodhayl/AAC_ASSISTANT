@@ -1,8 +1,10 @@
+from contextlib import nullcontext
 from datetime import datetime
 from typing import Any
 
 from loguru import logger
 from sqlalchemy import or_
+from sqlalchemy.orm import Session
 
 from ..db import get_session
 from ..models import (
@@ -123,46 +125,47 @@ class AchievementSystem:
             },
         }
 
-    def check_achievements(self, user_id: int) -> list[dict]:
+    def check_achievements(
+        self, user_id: int, db: Session | None = None
+    ) -> list[dict]:
         """Check and award achievements for a user"""
         logger.info(f"Checking achievements for user {user_id}")
 
-        newly_earned = []
+        if db is not None:
+            return self._check_achievements_in_session(user_id, db)
 
         try:
             with get_session() as session:
-                user = session.get(User, user_id)
-                if not user:
-                    logger.error(f"User {user_id} not found")
-                    return []
-
-                # Get user's current stats
-                stats = self._get_user_stats(user_id, session)
-
-                # Check each achievement
-                for achievement_key, achievement_data in self.achievements.items():
-                    if self._check_achievement_criteria(
-                        user_id, achievement_data, stats, session
-                    ):
-                        # Award achievement
-                        earned = self._award_achievement(
-                            user_id, achievement_key, session
-                        )
-                        if earned:
-                            newly_earned.append(achievement_data)
-
-                session.commit()
-
-                if newly_earned:
-                    logger.success(
-                        f"Awarded {len(newly_earned)} new achievements to user {user_id}"
-                    )
-
-                return newly_earned
-
-        except Exception as e:
-            logger.error(f"Failed to check achievements for user {user_id}: {e}")
+                return self._check_achievements_in_session(user_id, session)
+        except Exception as exc:
+            logger.error(f"Failed to check achievements for user {user_id}: {exc}")
             return []
+
+    def _check_achievements_in_session(
+        self, user_id: int, session: Session
+    ) -> list[dict]:
+        """Check achievements using the caller's transaction."""
+        newly_earned = []
+        user = session.get(User, user_id)
+        if not user:
+            logger.error(f"User {user_id} not found")
+            return []
+
+        stats = self._get_user_stats(user_id, session)
+        for achievement_key, achievement_data in self.achievements.items():
+            if self._check_achievement_criteria(
+                user_id, achievement_data, stats, session
+            ):
+                earned = self._award_achievement(user_id, achievement_key, session)
+                if earned:
+                    newly_earned.append(achievement_data)
+
+        session.flush()
+        if newly_earned:
+            logger.success(
+                f"Awarded {len(newly_earned)} new achievements to user {user_id}"
+            )
+        return newly_earned
 
     def _get_user_stats(self, user_id: int, session) -> dict[str, Any]:
         """Get comprehensive user statistics"""
@@ -370,10 +373,13 @@ class AchievementSystem:
             )
             return False
 
-    def get_user_achievements(self, user_id: int) -> list[dict]:
+    def get_user_achievements(
+        self, user_id: int, db: Session | None = None
+    ) -> list[dict]:
         """Get ALL achievements for a user with progress status"""
         try:
-            with get_session() as session:
+            session_context = nullcontext(db) if db is not None else get_session()
+            with session_context as session:
                 # Get user stats for progress calculation
                 stats = self._get_user_stats(user_id, session)
 
@@ -514,10 +520,11 @@ class AchievementSystem:
         categories.update(["beginner", "performance", "consistency", "exploration", "vocabulary", "interaction", "custom"])
         return sorted(list(categories))
 
-    def get_user_points(self, user_id: int) -> int:
+    def get_user_points(self, user_id: int, db: Session | None = None) -> int:
         """Get total points for a user"""
         try:
-            with get_session() as session:
+            session_context = nullcontext(db) if db is not None else get_session()
+            with session_context as session:
                 from sqlalchemy import func
 
                 total_points = (
@@ -534,41 +541,50 @@ class AchievementSystem:
             logger.error(f"Failed to get points for user {user_id}: {e}")
             return 0
 
-    def update_progress(self, user_id: int, metric_type: str, value: float):
+    def update_progress(
+        self, user_id: int, metric_type: str, value: float, db: Session | None = None
+    ):
         """Update user progress metric"""
         try:
+            if db is not None:
+                self._update_progress_in_session(user_id, metric_type, value, db)
+                return
             with get_session() as session:
-                # Create or update progress record
-                progress = (
-                    session.query(UserProgress)
-                    .filter(
-                        UserProgress.user_id == user_id,
-                        UserProgress.metric_type == metric_type,
-                    )
-                    .first()
-                )
+                self._update_progress_in_session(user_id, metric_type, value, session)
+        except Exception as exc:
+            logger.error(f"Failed to update progress for user {user_id}: {exc}")
 
-                if progress:
-                    progress.metric_value = value
-                    progress.recorded_at = datetime.now()
-                else:
-                    progress = UserProgress(
-                        user_id=user_id, metric_type=metric_type, metric_value=value
-                    )
-                    session.add(progress)
+    def _update_progress_in_session(
+        self, user_id: int, metric_type: str, value: float, session: Session
+    ) -> None:
+        progress = (
+            session.query(UserProgress)
+            .filter(
+                UserProgress.user_id == user_id,
+                UserProgress.metric_type == metric_type,
+            )
+            .first()
+        )
 
-                session.commit()
-                logger.debug(
-                    f"Updated progress for user {user_id}: {metric_type} = {value}"
-                )
+        if progress:
+            progress.metric_value = value
+            progress.recorded_at = datetime.now()
+        else:
+            progress = UserProgress(
+                user_id=user_id, metric_type=metric_type, metric_value=value
+            )
+            session.add(progress)
 
-        except Exception as e:
-            logger.error(f"Failed to update progress for user {user_id}: {e}")
+        session.flush()
+        logger.debug(f"Updated progress for user {user_id}: {metric_type} = {value}")
 
-    def get_leaderboard(self, limit: int = 10) -> list[dict]:
+    def get_leaderboard(
+        self, limit: int = 10, db: Session | None = None
+    ) -> list[dict]:
         """Get leaderboard of top users by points"""
         try:
-            with get_session() as session:
+            session_context = nullcontext(db) if db is not None else get_session()
+            with session_context as session:
                 # Get users with their total points
                 from sqlalchemy import func
 

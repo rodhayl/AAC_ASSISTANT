@@ -97,7 +97,7 @@ class TestGUICoverage:
                 assert mock_vs.add_texts.called
 
         # 3. Search via API
-        with patch("src.api.dependencies.get_vector_store") as mock_get_vs:
+        with patch("src.api.deps.get_vector_store") as mock_get_vs:
             mock_vs = MagicMock()
             mock_get_vs.return_value = mock_vs
 

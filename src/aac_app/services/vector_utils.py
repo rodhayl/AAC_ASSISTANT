@@ -2,7 +2,7 @@ from loguru import logger
 
 from src.aac_app.db import get_session
 from src.aac_app.models import Symbol
-from src.api.dependencies import get_vector_store
+from src.api.deps import get_vector_store
 
 
 def index_all_symbols(force: bool = False):

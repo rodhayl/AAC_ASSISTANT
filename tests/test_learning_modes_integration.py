@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import LearningMode
-from src.api.dependencies import get_llm_provider, get_speech_provider, get_tts_provider
+from src.api.deps import get_llm_provider, get_speech_provider, get_tts_provider
 from src.api.main import app
 
 client = TestClient(app)

@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.aac_app.models import SymbolUsageLog
-from src.api.dependencies import get_current_active_user
+from src.api.deps import get_current_active_user
 from src.api.main import app
 
 # Mark all tests to use test database

@@ -3,6 +3,8 @@ Symbol Analytics Service
 Tracks and analyzes symbol usage patterns for personalization and insights.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 
 from loguru import logger
@@ -18,6 +20,15 @@ class SymbolAnalytics:
     Service for tracking and analyzing AAC symbol usage patterns.
     Provides insights for personalization and usage statistics.
     """
+
+    @contextmanager
+    def _session_scope(self, db: Session | None) -> Iterator[Session]:
+        """Use a request session when supplied, otherwise open a background session."""
+        if db is not None:
+            yield db
+            return
+        with get_session() as session:
+            yield session
 
     def log_symbol_usage(
         self,
@@ -84,7 +95,11 @@ class SymbolAnalytics:
             return False
 
     def get_frequent_sequences(
-        self, user_id: int, limit: int = 10, min_occurrences: int = 2
+        self,
+        user_id: int,
+        limit: int = 10,
+        min_occurrences: int = 2,
+        db: Session | None = None,
     ) -> list[dict]:
         """
         Find user's most common symbol sequences.
@@ -97,7 +112,7 @@ class SymbolAnalytics:
         Returns:
             List of dicts with sequence info
         """
-        with get_session() as db:
+        with self._session_scope(db) as db:
             # Get all usage logs for user, ordered by session and position
             logs = (
                 db.query(SymbolUsageLog)
@@ -169,7 +184,9 @@ class SymbolAnalytics:
             frequent.sort(key=lambda x: x["count"], reverse=True)
             return frequent[:limit]
 
-    def get_category_preferences(self, user_id: int) -> dict:
+    def get_category_preferences(
+        self, user_id: int, db: Session | None = None
+    ) -> dict:
         """
         Analyze which symbol categories user uses most.
 
@@ -179,7 +196,7 @@ class SymbolAnalytics:
         Returns:
             Dict with category usage statistics
         """
-        with get_session() as db:
+        with self._session_scope(db) as db:
             # Count usage by category
             category_counts = (
                 db.query(
@@ -214,7 +231,9 @@ class SymbolAnalytics:
                 "unique_categories": len(categories),
             }
 
-    def get_usage_stats(self, user_id: int, days: int = 30) -> dict:
+    def get_usage_stats(
+        self, user_id: int, days: int = 30, db: Session | None = None
+    ) -> dict:
         """
         Get overall usage statistics for user.
 
@@ -225,7 +244,7 @@ class SymbolAnalytics:
         Returns:
             Dict with usage statistics
         """
-        with get_session() as db:
+        with self._session_scope(db) as db:
             cutoff_date = datetime.now() - timedelta(days=days)
 
             # Total symbols used
@@ -313,7 +332,11 @@ class SymbolAnalytics:
             }
 
     def suggest_next_symbol(
-        self, user_id: int, symbols: list[dict], limit: int = 5
+        self,
+        user_id: int,
+        symbols: list[dict],
+        limit: int = 5,
+        db: Session | None = None,
     ) -> list[dict]:
         """
         Predict next symbol based on usage history.
@@ -328,7 +351,7 @@ class SymbolAnalytics:
         """
         if not symbols:
             # Return most frequently used symbols
-            with get_session() as db:
+            with self._session_scope(db) as db:
                 most_used = (
                     db.query(
                         SymbolUsageLog.symbol_id,
@@ -367,7 +390,7 @@ class SymbolAnalytics:
         # Find patterns where current sequence appears
         current_labels = [s.get("label") for s in symbols]
 
-        with get_session() as db:
+        with self._session_scope(db) as db:
             # Look for usage logs that match the current sequence
             # This is a simplified implementation - could be enhanced with n-grams
             last_label = current_labels[-1]

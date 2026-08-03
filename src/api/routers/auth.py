@@ -19,7 +19,7 @@ from src.aac_app.utils.jwt_utils import (
     decode_access_token,
 )
 from src.api import schemas
-from src.api.dependencies import get_current_active_user, get_current_admin_user, get_db
+from src.api.deps import get_current_active_user, get_current_admin_user, get_db
 
 router = APIRouter()
 

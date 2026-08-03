@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.user_service import UserService
-from src.api.dependencies import get_current_active_user, get_db
+from src.api.deps import get_current_active_user, get_db
 from src.api.schemas import (
     ResetPasswordRequest,
     StudentAssignRequest,

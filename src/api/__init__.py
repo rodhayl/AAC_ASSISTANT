@@ -1,5 +1,5 @@
 from . import (
-    dependencies as dependencies,
+    deps as deps,
 )
 from . import (
     limiter as limiter,

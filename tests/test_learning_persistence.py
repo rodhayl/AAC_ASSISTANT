@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from src.aac_app.models import LearningSession, User
 from src.aac_app.services.auth_service import get_password_hash
-from src.api.dependencies import get_llm_provider, get_speech_provider, get_tts_provider
+from src.api.deps import get_llm_provider, get_speech_provider, get_tts_provider
 from src.api.main import app
 from tests.test_utils_auth import create_test_headers
 

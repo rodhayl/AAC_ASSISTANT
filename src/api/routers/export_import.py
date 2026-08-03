@@ -14,7 +14,7 @@ from src.aac_app.models import (
     User,
     UserAchievement,
 )
-from src.api.dependencies import get_current_active_user, get_db, get_text
+from src.api.deps import get_current_active_user, get_db, get_text
 
 router = APIRouter()
 

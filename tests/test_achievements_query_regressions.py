@@ -1,6 +1,3 @@
-from contextlib import contextmanager
-from unittest.mock import patch
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -12,15 +9,7 @@ from tests.test_utils_auth import create_test_headers
 
 @pytest.fixture
 def achievements_client(setup_test_db, test_db_session):
-    @contextmanager
-    def override_get_session():
-        yield test_db_session
-
-    with patch(
-        "src.api.routers.achievements.get_session",
-        side_effect=override_get_session,
-    ):
-        yield TestClient(app)
+    yield TestClient(app)
 
 
 def _create_student(test_db_session) -> User:

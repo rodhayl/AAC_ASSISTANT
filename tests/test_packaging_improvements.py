@@ -284,7 +284,7 @@ class TestProviderWarmup:
 
     def test_warmup_providers_returns_state(self):
         """Verify warmup_providers returns a state dictionary"""
-        from src.api.dependencies import reset_providers, warmup_providers
+        from src.api.deps import reset_providers, warmup_providers
 
         # Reset first
         reset_providers()
@@ -300,7 +300,7 @@ class TestProviderWarmup:
 
     def test_get_startup_state(self):
         """Verify get_startup_state returns current state"""
-        from src.api.dependencies import get_startup_state
+        from src.api.deps import get_startup_state
 
         state = get_startup_state()
 
@@ -309,7 +309,7 @@ class TestProviderWarmup:
 
     def test_reset_providers(self):
         """Verify reset_providers clears all provider instances"""
-        from src.api.dependencies import get_startup_state, reset_providers
+        from src.api.deps import get_startup_state, reset_providers
 
         reset_providers()
 
@@ -318,10 +318,8 @@ class TestProviderWarmup:
 
     def test_speech_provider_warmup_uses_lazy_load(self):
         """Verify speech provider warmup uses lazy loading"""
-        from src.api.dependencies import (
-            _init_speech_provider_sync,
-            reset_providers,
-        )
+        from src.api.deps import reset_providers
+        from src.api.deps.providers import _init_speech_provider_sync
 
         reset_providers()
 
@@ -333,7 +331,8 @@ class TestProviderWarmup:
 
     def test_vector_store_warmup_uses_lazy_load(self):
         """Verify vector store warmup uses lazy loading"""
-        from src.api.dependencies import _init_vector_store_sync, reset_providers
+        from src.api.deps import reset_providers
+        from src.api.deps.providers import _init_vector_store_sync
 
         reset_providers()
 
@@ -389,7 +388,7 @@ class TestPackagingIntegration:
 
     def test_full_initialization_flow(self):
         """Test complete initialization flow"""
-        from src.api.dependencies import is_ready, reset_providers, warmup_providers
+        from src.api.deps import is_ready, reset_providers, warmup_providers
 
         # Reset everything
         reset_providers()

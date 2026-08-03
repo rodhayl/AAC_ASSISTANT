@@ -15,7 +15,7 @@ from sqlalchemy.pool import StaticPool
 
 from src.aac_app.models import Base, User
 from src.aac_app.services.auth_service import get_password_hash
-from src.api.dependencies import get_db
+from src.api.deps import clear_settings_cache, get_db
 from src.api.main import app
 
 
@@ -93,11 +93,10 @@ def setup_test_db(test_db_session):
 
     # Patch all modules that use get_session
     patches = [
-        patch('src.aac_app.services.learning_companion_service.get_session', side_effect=override_get_session_cm),
         patch('src.aac_app.services.achievement_system.get_session', side_effect=override_get_session_cm),
         patch('src.aac_app.services.symbol_analytics.get_session', side_effect=override_get_session_cm),
         patch('src.aac_app.services.guardian_profile_service.get_session', side_effect=override_get_session_cm),
-        patch('src.api.dependencies.get_session', side_effect=override_get_session_cm)
+        patch('src.api.deps.settings.get_session', side_effect=override_get_session_cm),
     ]
 
     for p in patches:
@@ -125,6 +124,7 @@ def reset_production_db():
     # Force test environment (disables rate limiting)
     os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
     os.environ['TESTING'] = '1'
+    clear_settings_cache()
 
     yield
 
@@ -138,6 +138,7 @@ def reset_production_db():
         os.environ['TESTING'] = original_testing
     elif 'TESTING' in os.environ:
         del os.environ['TESTING']
+    clear_settings_cache()
 
 
 @pytest.fixture(scope="function")

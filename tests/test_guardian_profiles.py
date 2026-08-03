@@ -69,7 +69,7 @@ def create_user(username: str, user_type: str, password: str, admin_token: str =
 
     # Teachers and admins need to be created by an admin
     if admin_token is None:
-        from src.api.dependencies import get_session
+        from src.aac_app.services.guardian_profile_service import get_session
         from tests.test_utils_auth import create_test_token
 
         with get_session() as db:
