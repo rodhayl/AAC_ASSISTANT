@@ -23,7 +23,7 @@ async def get_learning_modes(
     Teachers see defaults + their own + maybe global defaults.
     """
     # Base query: System defaults
-    query = db.query(LearningMode).filter(LearningMode.created_by is None)
+    query = db.query(LearningMode).filter(LearningMode.created_by.is_(None))
 
     # If user is admin/teacher, they might have their own custom modes
     # If student, they should see defaults + their teacher's modes?
@@ -51,7 +51,7 @@ async def create_learning_mode(
     # Check for duplicate key for this user
     existing = db.query(LearningMode).filter(
         LearningMode.key == mode.key,
-        (LearningMode.created_by == current_user.id) | (LearningMode.created_by is None)
+        (LearningMode.created_by == current_user.id) | (LearningMode.created_by.is_(None))
     ).first()
 
     if existing:

@@ -102,5 +102,6 @@
   "fallbackConversation": {
     "goodMessage": "Good message! Let's keep going together!",
     "interesting": "That's interesting! Tell me more."
-  }
+  },
+  "fallbackSummary": "Great work completing your {{topic}} session! You answered {{questions}} questions and got {{correct}} correct."
 }

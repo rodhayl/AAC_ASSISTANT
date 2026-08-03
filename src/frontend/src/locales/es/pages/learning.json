@@ -102,5 +102,6 @@
   "fallbackConversation": {
     "goodMessage": "¡Buen mensaje! ¡Sigamos adelante juntos!",
     "interesting": "¡Eso es interesante! Cuéntame más."
-  }
+  },
+  "fallbackSummary": "¡Buen trabajo al completar tu sesión sobre {{topic}}! Respondiste {{questions}} preguntas y acertaste {{correct}}."
 }

@@ -288,6 +288,11 @@ class LearningSessionResponse(BaseModel):
     topic: str | None = None
     difficulty: str | None = None
     provider_used: str | None = None
+    summary: str | None = None
+    comprehension_score: float | None = None
+    questions_answered: int | None = None
+    correct_answers: int | None = None
+    statistics: dict[str, int | float] | None = None
     error: str | None = None
 
 
