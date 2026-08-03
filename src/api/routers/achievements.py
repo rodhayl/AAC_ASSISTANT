@@ -105,7 +105,9 @@ def create_achievement(
 
     with get_session() as session:
         # If criteria is provided, it's not manual. If no criteria, it's manual.
-        has_criteria = bool(data.criteria_type and data.criteria_value)
+        has_criteria = (
+            data.criteria_type is not None and data.criteria_value is not None
+        )
 
         achievement = Achievement(
             name=data.name,
@@ -196,7 +198,10 @@ def update_achievement(
             achievement.criteria_value = data.criteria_value
 
         # Recalculate is_manual based on presence of criteria
-        has_criteria = bool(achievement.criteria_type and achievement.criteria_value)
+        has_criteria = (
+            achievement.criteria_type is not None
+            and achievement.criteria_value is not None
+        )
         achievement.is_manual = not has_criteria
 
         session.commit()

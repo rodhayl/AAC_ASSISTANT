@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from loguru import logger
+from sqlalchemy import or_
 
 from ..models.database import (
     Achievement,
@@ -393,9 +394,11 @@ class AchievementSystem:
                         # 1. System achievements (created_by is None)
                         # 2. Custom achievements targeting this user
                         # 3. Custom achievements with no target (available to all)
-                        (Achievement.created_by is None) |
-                        (Achievement.target_user_id == user_id) |
-                        (Achievement.target_user_id is None)
+                        or_(
+                            Achievement.created_by.is_(None),
+                            Achievement.target_user_id == user_id,
+                            Achievement.target_user_id.is_(None),
+                        )
                     )
                     .all()
                 )
@@ -455,7 +458,7 @@ class AchievementSystem:
                 return achievements
 
         except Exception as e:
-            logger.error(f"Failed to get achievements for user {user_id}: {e}")
+            logger.exception(f"Failed to get achievements for user {user_id}: {e}")
             return []
 
     def _calculate_progress(self, achievement: Achievement, stats: dict) -> float:
@@ -576,8 +579,12 @@ class AchievementSystem:
                         func.sum(Achievement.points).label("total_points"),
                         func.count(UserAchievement.id).label("achievement_count"),
                     )
-                    .join(UserAchievement)
-                    .join(Achievement)
+                    .select_from(User)
+                    .join(UserAchievement, UserAchievement.user_id == User.id)
+                    .join(
+                        Achievement,
+                        Achievement.id == UserAchievement.achievement_id,
+                    )
                     .group_by(User.id, User.username, User.display_name)
                     .order_by(func.sum(Achievement.points).desc())
                     .limit(limit)
@@ -595,5 +602,5 @@ class AchievementSystem:
                 ]
 
         except Exception as e:
-            logger.error(f"Failed to get leaderboard: {e}")
+            logger.exception(f"Failed to get leaderboard: {e}")
             return []
