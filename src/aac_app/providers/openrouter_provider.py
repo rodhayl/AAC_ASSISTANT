@@ -1,5 +1,5 @@
 """
-OpenRouter Provider - Optional cloud fallback for LLM functionality
+OpenRouter Provider - Optional cloud LLM functionality
 This provider is only used when users explicitly provide an OpenRouter API key
 """
 

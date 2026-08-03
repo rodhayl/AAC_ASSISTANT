@@ -242,7 +242,6 @@ class AISuggestionsRequest(BaseModel):
     refine_prompt: str | None = None
     regenerate: bool = False
     item_count: int | None = None
-    ai_source: str | None = None  # 'primary' or 'fallback'
 
 
 class AISuggestionApplyRequest(BaseModel):

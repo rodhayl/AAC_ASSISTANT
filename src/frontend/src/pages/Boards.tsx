@@ -27,7 +27,7 @@ export function Boards() {
     page,
   } = useBoardStore();
   const { user } = useAuthStore();
-  const { aiSettings, fallbackAISettings, fetchAISettings, fetchFallbackAISettings } = useSettingsStore();
+  const { aiSettings, fetchAISettings } = useSettingsStore();
   const { t, i18n } = useTranslation('boards');
 
   const [isCreating, setIsCreating] = useState(false);
@@ -37,7 +37,6 @@ export function Boards() {
   const [newBoardDescription, setNewBoardDescription] = useState('');
   const [aiEnabled, setAiEnabled] = useState(false);
   const [isLanguageLearning, setIsLanguageLearning] = useState(false);
-  const [aiSource, setAiSource] = useState<'primary' | 'fallback'>('primary');
   const [aiConfigError, setAiConfigError] = useState<string | null>(null);
 
   const [assignOpenId, setAssignOpenId] = useState<number | null>(null);
@@ -88,18 +87,17 @@ export function Boards() {
   // Preload AI settings
   useEffect(() => {
     if (!aiSettings) fetchAISettings().catch(() => {});
-    if (!fallbackAISettings) fetchFallbackAISettings().catch(() => {});
-  }, [aiSettings, fallbackAISettings, fetchAISettings, fetchFallbackAISettings]);
+  }, [aiSettings, fetchAISettings]);
 
   const primaryProvider = aiSettings?.provider;
-  const primaryModel = primaryProvider === 'openrouter' ? aiSettings?.openrouter_model : aiSettings?.ollama_model;
-  const fallbackProvider = fallbackAISettings?.provider;
-  const fallbackModel = fallbackProvider === 'openrouter' ? fallbackAISettings?.openrouter_model : fallbackAISettings?.ollama_model;
+  const primaryModel = primaryProvider === 'openrouter'
+    ? aiSettings?.openrouter_model
+    : primaryProvider === 'lmstudio'
+      ? aiSettings?.lmstudio_model
+      : aiSettings?.ollama_model;
   const primaryReady = Boolean(primaryProvider && primaryModel);
-  const fallbackReady = Boolean(fallbackProvider && fallbackModel);
-  const selectedSettings = aiSource === 'fallback' ? fallbackAISettings : aiSettings;
-  const resolvedProvider = selectedSettings?.provider;
-  const resolvedModel = resolvedProvider === 'openrouter' ? selectedSettings?.openrouter_model : selectedSettings?.ollama_model;
+  const resolvedProvider = primaryProvider;
+  const resolvedModel = primaryModel;
 
   // AI config validation
   useEffect(() => {
@@ -111,12 +109,8 @@ export function Boards() {
       setAiConfigError('AI settings are missing a configured provider/model. Update them in Settings first.');
       return;
     }
-    if (aiSource === 'fallback' && !fallbackReady) {
-      setAiConfigError('Fallback AI is not configured. Switch back to primary or configure fallback in Settings.');
-      return;
-    }
     setAiConfigError(null);
-  }, [aiEnabled, aiSource, primaryReady, fallbackReady]);
+  }, [aiEnabled, primaryReady]);
 
   const openAssign = async (boardId: number) => {
     setAssignOpenId(boardId);
@@ -178,7 +172,6 @@ export function Boards() {
       setNewBoardDescription('');
       setAiEnabled(false);
       setIsLanguageLearning(false);
-      setAiSource('primary');
       setAiConfigError(null);
       setIsCreating(false);
     } finally {
@@ -388,38 +381,13 @@ export function Boards() {
                 </label>
               </div>
               {aiEnabled && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3">
                   <label
-                    className={`relative block p-3 rounded-lg border transition-colors cursor-pointer ${aiSource === 'primary' ? 'border-indigo-500 ring-2 ring-indigo-200 dark:ring-indigo-400/40' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-500/60'} ${primaryReady ? '' : 'opacity-60 cursor-not-allowed'}`}
+                    className={`relative block p-3 rounded-lg border transition-colors ${primaryReady ? '' : 'opacity-60'}`}
                   >
-                    <input
-                      type="radio"
-                      className="sr-only"
-                      checked={aiSource === 'primary'}
-                      onChange={() => setAiSource('primary')}
-                      disabled={!primaryReady}
-                    />
                     <div className="font-semibold text-gray-900 dark:text-gray-100">{t('primaryAI')}</div>
                     <div className="text-sm text-gray-600 dark:text-gray-400 capitalize">
                       {primaryReady ? `${primaryProvider} - ${primaryModel}` : t('notConfigured')}
-                    </div>
-                  </label>
-                  <label
-                    className={`relative block p-3 rounded-lg border transition-colors cursor-pointer ${aiSource === 'fallback' ? 'border-indigo-500 ring-2 ring-indigo-200 dark:ring-indigo-400/40' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-500/60'} ${fallbackReady ? '' : 'opacity-60 cursor-not-allowed'}`}
-                  >
-                    <input
-                      type="radio"
-                      className="sr-only"
-                      checked={aiSource === 'fallback'}
-                      onChange={() => setAiSource('fallback')}
-                      disabled={!fallbackReady}
-                    />
-                    <div className="font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                      {t('fallbackAI')}
-                      {!fallbackReady && <span className="text-xs text-amber-600">({t('notConfigured')})</span>}
-                    </div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400 capitalize">
-                      {fallbackReady ? `${fallbackProvider} - ${fallbackModel}` : t('setupFallback')}
                     </div>
                   </label>
                   {aiConfigError && (

@@ -82,44 +82,6 @@ async def get_ai_settings(
     }
 
 
-@router.get("/ai/fallback")
-async def get_fallback_ai_settings(
-    current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)
-):
-    """Get fallback AI provider settings (all users can view, sensitive data masked for non-admins)"""
-    provider = get_setting(db, "fallback_ai_provider") or "ollama"
-    ollama_model = get_setting(db, "fallback_ollama_model") or ""
-    openrouter_model = get_setting(db, "fallback_openrouter_model") or ""
-    openrouter_api_key = get_setting(db, "fallback_openrouter_api_key") or ""
-    ollama_base_url = (
-        get_setting(db, "fallback_ollama_base_url") or config.OLLAMA_BASE_URL
-    )
-    lmstudio_model = get_setting(db, "fallback_lmstudio_model") or ""
-    lmstudio_base_url = (
-        get_setting(db, "fallback_lmstudio_base_url") or "http://localhost:1234/v1"
-    )
-    max_tokens = get_setting(db, "fallback_ai_max_tokens") or "1024"
-    temperature = get_setting(db, "fallback_ai_temperature") or "0.5"
-
-    if current_user.user_type != "admin":
-        openrouter_api_key = (
-            "********" if openrouter_api_key else None
-        )
-
-    return {
-        "provider": provider,
-        "ollama_model": ollama_model,
-        "openrouter_model": openrouter_model,
-        "openrouter_api_key": openrouter_api_key,
-        "ollama_base_url": ollama_base_url,
-        "lmstudio_base_url": lmstudio_base_url,
-        "lmstudio_model": lmstudio_model,
-        "max_tokens": int(max_tokens) if max_tokens is not None else 1024,
-        "temperature": float(temperature) if temperature is not None else 0.5,
-        "can_edit": current_user.user_type == "admin",
-    }
-
-
 @router.put("/ai")
 async def update_ai_settings(
     settings: dict[str, Any],
@@ -217,126 +179,14 @@ async def update_ai_settings(
     return {"message": "Settings updated successfully", "settings": settings}
 
 
-@router.put("/ai/fallback")
-async def update_fallback_ai_settings(
-    settings: dict[str, Any],
-    current_user: User = Depends(get_current_admin_user),
-    db: Session = Depends(get_db),
-):
-    """Update fallback AI provider settings (admin only)"""
-    # Validate provider
-    provider = settings.get("provider")
-    if provider not in ["ollama", "openrouter", "lmstudio"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=get_text(
-                key="errors.provider.invalid",
-                accept_language=(
-                    current_user.settings.ui_language if current_user.settings else None
-                ),
-            ),
-        )
-
-    # Update fallback settings
-    if "provider" in settings:
-        set_setting(db, "fallback_ai_provider", settings["provider"], current_user.id)
-
-    if "ollama_model" in settings:
-        set_setting(
-            db, "fallback_ollama_model", settings["ollama_model"], current_user.id
-        )
-
-    if "openrouter_model" in settings:
-        set_setting(
-            db,
-            "fallback_openrouter_model",
-            settings["openrouter_model"],
-            current_user.id,
-        )
-
-    if "openrouter_api_key" in settings:
-        set_setting(
-            db,
-            "fallback_openrouter_api_key",
-            settings["openrouter_api_key"],
-            current_user.id,
-        )
-
-    if "ollama_base_url" in settings:
-        set_setting(
-            db, "fallback_ollama_base_url", settings["ollama_base_url"], current_user.id
-        )
-
-    if "lmstudio_model" in settings:
-        set_setting(
-            db, "fallback_lmstudio_model", settings["lmstudio_model"], current_user.id
-        )
-
-    if "lmstudio_base_url" in settings:
-        set_setting(
-            db, "fallback_lmstudio_base_url", settings["lmstudio_base_url"], current_user.id
-        )
-
-    if "max_tokens" in settings and settings["max_tokens"] is not None:
-        try:
-            value = int(settings["max_tokens"])
-            if value <= 0:
-                raise ValueError
-            set_setting(db, "fallback_ai_max_tokens", str(value), current_user.id)
-        except (TypeError, ValueError):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=get_text(
-                    key="errors.settings.maxTokensPositive",
-                    accept_language=(
-                        current_user.settings.ui_language
-                        if current_user.settings
-                        else None
-                    ),
-                ),
-            )
-
-    if "temperature" in settings and settings["temperature"] is not None:
-        try:
-            value = float(settings["temperature"])
-            if not (0.0 <= value <= 1.5):
-                raise ValueError
-            set_setting(db, "fallback_ai_temperature", str(value), current_user.id)
-        except (TypeError, ValueError):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=get_text(
-                    key="errors.settings.temperatureRange",
-                    accept_language=(
-                        current_user.settings.ui_language
-                        if current_user.settings
-                        else None
-                    ),
-                ),
-            )
-
-    # Mask API key in log
-    log_settings = settings.copy()
-    if "openrouter_api_key" in log_settings:
-        log_settings["openrouter_api_key"] = "********"
-
-    logger.info(
-        f"Admin {current_user.username} updated fallback AI settings: {log_settings}"
-    )
-
-    return {"message": "Fallback settings updated successfully", "settings": settings}
-
-
 @router.get("/ai/models/ollama")
 async def get_ollama_models(
-    use_fallback: bool = False,
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
     """Fetch available Ollama models (admin only)"""
     try:
-        setting_key = "fallback_ollama_base_url" if use_fallback else "ollama_base_url"
-        base_url = get_setting(db, setting_key) or config.OLLAMA_BASE_URL
+        base_url = get_setting(db, "ollama_base_url") or config.OLLAMA_BASE_URL
         provider = OllamaProvider(base_url=base_url)
 
         if not provider.is_available():
@@ -374,16 +224,12 @@ async def get_ollama_models(
 
 @router.get("/ai/models/openrouter")
 async def get_openrouter_models(
-    use_fallback: bool = False,
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
     """Fetch available OpenRouter models (admin only)"""
     try:
-        setting_key = (
-            "fallback_openrouter_api_key" if use_fallback else "openrouter_api_key"
-        )
-        api_key = get_setting(db, setting_key)
+        api_key = get_setting(db, "openrouter_api_key")
         if not api_key:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -422,14 +268,12 @@ async def get_openrouter_models(
 
 @router.get("/ai/models/lmstudio")
 async def get_lmstudio_models(
-    use_fallback: bool = False,
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
     """Fetch available LM Studio models (admin only)"""
     try:
-        setting_key = "fallback_lmstudio_base_url" if use_fallback else "lmstudio_base_url"
-        base_url = get_setting(db, setting_key) or "http://localhost:1234/v1"
+        base_url = get_setting(db, "lmstudio_base_url") or "http://localhost:1234/v1"
         provider = LMStudioProvider(base_url=base_url)
 
         if not provider.is_available():

@@ -33,7 +33,6 @@ interface OpenRouterModel {
 
 interface SettingsState {
   aiSettings: AISettings | null;
-  fallbackAISettings: AISettings | null;
   ollamaModels: OllamaModel[];
   openRouterModels: OpenRouterModel[];
   lmStudioModels: OpenRouterModel[];
@@ -43,16 +42,13 @@ interface SettingsState {
   // Actions
   fetchAISettings: () => Promise<void>;
   updateAISettings: (settings: Partial<AISettings>) => Promise<void>;
-  fetchFallbackAISettings: () => Promise<void>;
-  updateFallbackAISettings: (settings: Partial<AISettings>) => Promise<void>;
-  fetchOllamaModels: (useFallback?: boolean) => Promise<void>;
-  fetchOpenRouterModels: (useFallback?: boolean) => Promise<void>;
-  fetchLmStudioModels: (useFallback?: boolean) => Promise<void>;
+  fetchOllamaModels: () => Promise<void>;
+  fetchOpenRouterModels: () => Promise<void>;
+  fetchLmStudioModels: () => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   aiSettings: null,
-  fallbackAISettings: null,
   ollamaModels: [],
   openRouterModels: [],
   lmStudioModels: [],
@@ -71,18 +67,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
 
-  fetchFallbackAISettings: async () => {
-    set({ loading: true, error: null });
-    try {
-      const response = await api.get('/settings/ai/fallback');
-      set({ fallbackAISettings: response.data, loading: false });
-    } catch (error: unknown) {
-      const err = error as { response?: { data?: { detail?: string } }, message?: string };
-      const message = err.response?.data?.detail || err.message || 'Failed to fetch fallback AI settings';
-      set({ error: message, loading: false });
-    }
-  },
-
   updateAISettings: async (settings: Partial<AISettings>) => {
     set({ loading: true, error: null });
     try {
@@ -96,25 +80,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
 
-  updateFallbackAISettings: async (settings: Partial<AISettings>) => {
+  fetchOllamaModels: async () => {
     set({ loading: true, error: null });
     try {
-      await api.put('/settings/ai/fallback', settings);
-      await get().fetchFallbackAISettings();
-    } catch (error: unknown) {
-      const err = error as { response?: { data?: { detail?: string } }, message?: string };
-      const message = err.response?.data?.detail || err.message || 'Failed to update fallback settings';
-      set({ error: message, loading: false });
-      throw error;
-    }
-  },
-
-  fetchOllamaModels: async (useFallback = false) => {
-    set({ loading: true, error: null });
-    try {
-      const response = await api.get('/settings/ai/models/ollama', {
-        params: useFallback ? { use_fallback: true } : undefined,
-      });
+      const response = await api.get('/settings/ai/models/ollama');
       set({ ollamaModels: response.data.models, loading: false });
     } catch (error: unknown) {
       const err = error as { response?: { data?: { detail?: string } }, message?: string };
@@ -123,12 +92,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
 
-  fetchOpenRouterModels: async (useFallback = false) => {
+  fetchOpenRouterModels: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await api.get('/settings/ai/models/openrouter', {
-        params: useFallback ? { use_fallback: true } : undefined,
-      });
+      const response = await api.get('/settings/ai/models/openrouter');
       set({ openRouterModels: response.data.models, loading: false });
     } catch (error: unknown) {
       const err = error as { response?: { data?: { detail?: string } }, message?: string };
@@ -137,12 +104,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
 
-  fetchLmStudioModels: async (useFallback = false) => {
+  fetchLmStudioModels: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await api.get('/settings/ai/models/lmstudio', {
-        params: useFallback ? { use_fallback: true } : undefined,
-      });
+      const response = await api.get('/settings/ai/models/lmstudio');
       set({ lmStudioModels: response.data.models, loading: false });
     } catch (error: unknown) {
       const err = error as { response?: { data?: { detail?: string } }, message?: string };

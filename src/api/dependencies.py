@@ -325,94 +325,26 @@ def get_lmstudio_provider() -> LMStudioProvider:
     return _lmstudio_provider
 
 
-def get_fallback_ollama_provider() -> OllamaProvider:
-    """
-    Get fallback Ollama provider instance.
-    """
-    base_url = get_setting_value("fallback_ollama_base_url", config.OLLAMA_BASE_URL)
-    model = get_setting_value("fallback_ollama_model", "")
-    logger.info(
-        f"Creating fallback OllamaProvider with base_url={base_url}, model={model}"
-    )
-    return OllamaProvider(base_url=base_url, model=model)
-
-
-def get_fallback_openrouter_provider() -> OpenRouterProvider:
-    """
-    Get fallback OpenRouter provider instance.
-    """
-    api_key = get_setting_value("fallback_openrouter_api_key", "")
-    logger.info("Creating fallback OpenRouterProvider")
-    return OpenRouterProvider(api_key=api_key)
-
-
-def get_fallback_lmstudio_provider() -> LMStudioProvider:
-    """
-    Get fallback LM Studio provider instance.
-    """
-    base_url = get_setting_value("fallback_lmstudio_base_url", "http://localhost:1234/v1")
-    model = get_setting_value("fallback_lmstudio_model", "")
-    logger.info("Creating fallback LMStudioProvider")
-    return LMStudioProvider(base_url=base_url, model=model)
-
-
-def get_fallback_llm_provider() -> OllamaProvider | OpenRouterProvider | LMStudioProvider | None:
-    """
-    Get the configured fallback LLM provider based on settings.
-    Returns None if no fallback is configured.
-    """
-    provider_type = get_setting_value("fallback_ai_provider", "")
-
-    if not provider_type:
-        return None
-
-    if provider_type == "openrouter":
-        return get_fallback_openrouter_provider()
-    elif provider_type == "lmstudio":
-        return get_fallback_lmstudio_provider()
-    else:
-        return get_fallback_ollama_provider()
-
-
 def get_llm_provider() -> OllamaProvider | OpenRouterProvider | LMStudioProvider:
     """
     Dependency to get the configured LLM provider based on settings.
-    Falls back to fallback provider if primary provider fails.
     """
     provider_type = get_setting_value("ai_provider", "ollama")
 
+    if provider_type == "openrouter":
+        provider = get_openrouter_provider()
+    elif provider_type == "lmstudio":
+        provider = get_lmstudio_provider()
+    else:
+        provider = get_ollama_provider()
+
     try:
-        if provider_type == "openrouter":
-            provider = get_openrouter_provider()
-        elif provider_type == "lmstudio":
-            provider = get_lmstudio_provider()
-        else:
-            provider = get_ollama_provider()
-
-        # Check if provider is available
         if hasattr(provider, "is_available") and not provider.is_available():
-            logger.warning(
-                f"Primary provider {provider_type} not available, trying fallback"
-            )
-            fallback = get_fallback_llm_provider()
-            if fallback:
-                return fallback
+            logger.warning(f"Configured primary provider {provider_type} is not available")
+    except Exception as exc:
+        logger.warning(f"Unable to check configured primary provider {provider_type}: {exc}")
 
-        return provider
-    except Exception as e:
-        logger.error(
-            f"Error with primary provider {provider_type}: {e}, trying fallback"
-        )
-        fallback = get_fallback_llm_provider()
-        if fallback:
-            return fallback
-        # If fallback also fails, return primary provider (will fail gracefully in service)
-        if provider_type == "openrouter":
-            return get_openrouter_provider()
-        elif provider_type == "lmstudio":
-            return get_lmstudio_provider()
-        else:
-            return get_ollama_provider()
+    return provider
 
 
 def get_speech_provider() -> LocalSpeechProvider:
@@ -462,46 +394,16 @@ def get_vector_store() -> LocalVectorStore:
 def _get_llm_settings(
     llm: OllamaProvider | OpenRouterProvider | LMStudioProvider,
 ) -> tuple[int, float]:
-    """Determine LLM settings (max_tokens, temperature) based on provider type and fallback configuration."""
-    primary_provider_type = get_setting_value("ai_provider", "ollama")
-    fallback_provider_type = get_setting_value("fallback_ai_provider", "")
-
-    use_fallback = False
-    if fallback_provider_type and ((
-        isinstance(llm, OpenRouterProvider)
-        and fallback_provider_type == "openrouter"
-        and primary_provider_type != "openrouter"
-    ) or (
-        isinstance(llm, LMStudioProvider)
-        and fallback_provider_type == "lmstudio"
-        and primary_provider_type != "lmstudio"
-    ) or (
-        isinstance(llm, OllamaProvider)
-        and fallback_provider_type == "ollama"
-        and primary_provider_type != "ollama"
-    )):
-        use_fallback = True
-
-    prefix = "fallback_ai" if use_fallback else "ai"
-    default_tokens = 256 if use_fallback else 1024
-    default_temp = 0.3 if use_fallback else 0.5
+    """Read the configured primary LLM behavior settings."""
+    try:
+        max_tokens = int(get_setting_value("ai_max_tokens", "1024"))
+    except ValueError:
+        max_tokens = 1024
 
     try:
-        max_tokens = int(get_setting_value(f"{prefix}_max_tokens", str(default_tokens)))
+        temperature = float(get_setting_value("ai_temperature", "0.5"))
     except ValueError:
-        max_tokens = default_tokens
-
-    try:
-        temperature = float(
-            get_setting_value(f"{prefix}_temperature", str(default_temp))
-        )
-    except ValueError:
-        temperature = default_temp
-
-    if use_fallback:
-        logger.info(
-            f"Using fallback LLM settings: max_tokens={max_tokens}, temperature={temperature}"
-        )
+        temperature = 0.5
 
     return max_tokens, temperature
 
@@ -511,10 +413,7 @@ def get_learning_service(
     speech: LocalSpeechProvider = Depends(get_speech_provider),
     tts: LocalTTSProvider = Depends(get_tts_provider),
 ) -> LearningCompanionService:
-    """
-    Dependency to get the Learning Companion Service.
-    Uses fallback settings if the provider is a fallback provider.
-    """
+    """Dependency to get the Learning Companion Service."""
     max_tokens, temperature = _get_llm_settings(llm)
 
     return LearningCompanionService(

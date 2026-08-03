@@ -115,67 +115,6 @@ class TestNotificationAuthentication:
         assert response.status_code == 403
 
 
-class TestCollaborationServiceCORS:
-    """Plan 2: Test CORS security in Socket.IO collaboration service."""
-
-    def test_cors_origins_not_wildcard(self):
-        """Test that collaboration service doesn't use wildcard CORS."""
-        from src.aac_app.services.collaboration_service import _get_cors_origins
-
-        # Get the origins that would be used
-        origins = _get_cors_origins()
-
-        # Should be a list, and should not just be ["*"]
-        assert isinstance(origins, list)
-        # If the list is not empty, it shouldn't be just wildcard
-        if origins:
-            assert origins != ["*"], "Socket.IO should not allow wildcard CORS origins"
-
-    def test_cors_origins_from_config(self):
-        """Test that collaboration service uses configured origins."""
-        from src import config
-        from src.aac_app.services.collaboration_service import _get_cors_origins
-
-        origins = _get_cors_origins()
-
-        # Should return a list, not "*"
-        assert isinstance(origins, list)
-
-        # Should contain at least one origin from config
-        if config.ALLOWED_ORIGINS:
-            expected_origins = [o.strip() for o in config.ALLOWED_ORIGINS.split(",")]
-            for expected in expected_origins:
-                if expected and expected != "*":
-                    assert expected in origins
-
-    def test_cors_rejects_wildcard_in_production(self):
-        """Test that wildcard is rejected in production environment."""
-        from src.aac_app.services.collaboration_service import _get_cors_origins
-
-        with patch('src.aac_app.services.collaboration_service.config') as mock_config:
-            mock_config.ALLOWED_ORIGINS = "*"
-            mock_config.ENVIRONMENT = "production"
-            mock_config.FRONTEND_PORT = 5176
-
-            origins = _get_cors_origins()
-
-            # Should NOT contain wildcard in production
-            assert "*" not in origins
-
-    def test_cors_service_accepts_custom_origins(self):
-        """Test that custom origins can be injected for testing."""
-        from src.aac_app.services.collaboration_service import CollaborationService
-
-        test_origins = ["http://test.example.com", "http://localhost:9999"]
-
-        # This should not raise an error - the service accepts the origins
-        service = CollaborationService(cors_origins=test_origins)
-
-        # Verify the service was created successfully
-        assert service.sio is not None
-        assert service.app is not None
-
-
 class TestAdminResetDbSafeguards:
     """Further Considerations: Test database reset endpoint safeguards."""
 

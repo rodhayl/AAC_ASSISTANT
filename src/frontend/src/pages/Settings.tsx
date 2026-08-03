@@ -6,7 +6,7 @@ import { useThemeStore } from '../store/themeStore';
 import { useLocaleStore } from '../store/localeStore';
 import api from '../lib/api';
 import { config } from '../config';
-import { User, Bell, Volume2, Moon, Shield, Cpu, Cloud, Download, Upload, RefreshCw, ChevronDown, ChevronUp, Check, AlertCircle, Edit2, Save, Circle, Globe, Clock, MousePointer, Eye, Plus, Trash2 } from 'lucide-react';
+import { User, Bell, Volume2, Moon, Shield, Cpu, Cloud, Download, Upload, RefreshCw, Check, AlertCircle, Edit2, Save, Circle, Globe, Clock, MousePointer, Eye, Plus, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useToastStore } from '../store/toastStore';
 
@@ -57,7 +57,6 @@ export function Settings() {
   // AI Settings state
   const {
     aiSettings,
-    fallbackAISettings,
     ollamaModels,
     openRouterModels,
     lmStudioModels,
@@ -65,8 +64,6 @@ export function Settings() {
     error,
     fetchAISettings,
     updateAISettings,
-    fetchFallbackAISettings,
-    updateFallbackAISettings,
     fetchOllamaModels,
     fetchOpenRouterModels,
     fetchLmStudioModels,
@@ -86,22 +83,6 @@ export function Settings() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [modelSearchOpen, setModelSearchOpen] = useState(false);
   const [modelSearchQuery, setModelSearchQuery] = useState('');
-
-  // Fallback settings state
-  const [showFallback, setShowFallback] = useState(true);
-  const [fallbackOverride, setFallbackOverride] = useState<{
-    provider?: 'ollama' | 'openrouter' | 'lmstudio';
-    ollama_model?: string;
-    openrouter_model?: string;
-    lmstudio_model?: string;
-    openrouter_api_key?: string;
-    ollama_base_url?: string;
-    lmstudio_base_url?: string;
-    max_tokens?: number;
-    temperature?: number;
-  }>({});
-  const [fallbackModelSearchOpen, setFallbackModelSearchOpen] = useState(false);
-  const [fallbackModelSearchQuery, setFallbackModelSearchQuery] = useState('');
 
   const [health, setHealth] = useState<{ ollama?: boolean; openrouter?: boolean; lmstudio?: { available: boolean } } | null>(null);
 
@@ -251,8 +232,7 @@ export function Settings() {
   // Load AI settings (for all users to view, admin to edit)
   useEffect(() => {
     fetchAISettings();
-    fetchFallbackAISettings();
-  }, [fetchAISettings, fetchFallbackAISettings]);
+  }, [fetchAISettings]);
 
   // Voice dependency status
   useEffect(() => {
@@ -289,41 +269,20 @@ export function Settings() {
   const currentMaxTokens = aiOverride.max_tokens ?? aiSettings?.max_tokens ?? 1024;
   const currentTemperature = aiOverride.temperature ?? aiSettings?.temperature ?? 0.5;
 
-  const currentFallbackProvider = fallbackOverride.provider ?? fallbackAISettings?.provider ?? 'ollama';
-  const currentFallbackOllamaModel = fallbackOverride.ollama_model ?? fallbackAISettings?.ollama_model ?? '';
-  const currentFallbackOpenRouterModel = fallbackOverride.openrouter_model ?? fallbackAISettings?.openrouter_model ?? '';
-  const currentFallbackLmStudioModel = fallbackOverride.lmstudio_model ?? fallbackAISettings?.lmstudio_model ?? '';
-  const currentFallbackModel = currentFallbackProvider === 'ollama' ? currentFallbackOllamaModel : currentFallbackOpenRouterModel;
-  const currentFallbackOpenRouterApiKey = fallbackOverride.openrouter_api_key ?? fallbackAISettings?.openrouter_api_key ?? '';
-  const currentFallbackOllamaBaseUrl = fallbackOverride.ollama_base_url ?? fallbackAISettings?.ollama_base_url ?? config.OLLAMA_BASE_URL;
-  const currentFallbackLmStudioBaseUrl = fallbackOverride.lmstudio_base_url ?? fallbackAISettings?.lmstudio_base_url ?? 'http://localhost:1234/v1';
-  const currentFallbackMaxTokens = fallbackOverride.max_tokens ?? fallbackAISettings?.max_tokens ?? 1024;
-  const currentFallbackTemperature = fallbackOverride.temperature ?? fallbackAISettings?.temperature ?? 0.5;
-
   // Auto-fetch models when provider changes (admin only)
   useEffect(() => {
     if (!isAdmin) return;
     const provider = currentAiProvider;
     if (provider === 'ollama' && ollamaModels.length === 0) {
-      fetchOllamaModels(false);
+      fetchOllamaModels();
     } else if (provider === 'openrouter' && openRouterModels.length === 0) {
-      fetchOpenRouterModels(false);
+      fetchOpenRouterModels();
     } else if (provider === 'lmstudio' && lmStudioModels.length === 0) {
-      fetchLmStudioModels(false);
+      fetchLmStudioModels();
     }
   }, [isAdmin, currentAiProvider, ollamaModels.length, openRouterModels.length, lmStudioModels.length, fetchOllamaModels, fetchOpenRouterModels, fetchLmStudioModels]);
 
-  useEffect(() => {
-    if (!isAdmin) return;
-    const provider = currentFallbackProvider;
-    if (provider === 'ollama' && ollamaModels.length === 0) {
-      fetchOllamaModels(true);
-    } else if (provider === 'openrouter' && openRouterModels.length === 0) {
-      fetchOpenRouterModels(true);
-    } else if (provider === 'lmstudio' && lmStudioModels.length === 0) {
-      fetchLmStudioModels(true);
-    }
-  }, [isAdmin, currentFallbackProvider, ollamaModels.length, openRouterModels.length, lmStudioModels.length, fetchOllamaModels, fetchOpenRouterModels, fetchLmStudioModels]);
+
 
   const extractErrorMessage = (err: unknown, defaultMsg: string): string => {
     const errWithResponse = err as { response?: { data?: { detail?: unknown } } };
@@ -427,28 +386,14 @@ export function Settings() {
   const handleFetchModels = async () => {
     try {
       if (currentAiProvider === 'ollama') {
-        await fetchOllamaModels(false);
+        await fetchOllamaModels();
       } else if (currentAiProvider === 'openrouter') {
-        await fetchOpenRouterModels(false);
+        await fetchOpenRouterModels();
       } else {
-        await fetchLmStudioModels(false);
+        await fetchLmStudioModels();
       }
     } catch (error) {
       console.error('Failed to fetch models:', error);
-    }
-  };
-
-  const handleFetchFallbackModels = async () => {
-    try {
-      if (currentFallbackProvider === 'ollama') {
-        await fetchOllamaModels(true);
-      } else if (currentFallbackProvider === 'openrouter') {
-        await fetchOpenRouterModels(true);
-      } else {
-        await fetchLmStudioModels(true);
-      }
-    } catch (error) {
-      console.error('Failed to fetch fallback models:', error);
     }
   };
 
@@ -504,17 +449,6 @@ export function Settings() {
         lmstudio_base_url: currentLmStudioBaseUrl,
         max_tokens: currentMaxTokens,
         temperature: currentTemperature,
-      });
-      await updateFallbackAISettings({
-        provider: currentFallbackProvider,
-        ollama_model: currentFallbackOllamaModel,
-        openrouter_model: currentFallbackOpenRouterModel,
-        lmstudio_model: currentFallbackLmStudioModel,
-        openrouter_api_key: currentFallbackOpenRouterApiKey,
-        ollama_base_url: currentFallbackOllamaBaseUrl,
-        lmstudio_base_url: currentFallbackLmStudioBaseUrl,
-        max_tokens: currentFallbackMaxTokens,
-        temperature: currentFallbackTemperature,
       });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -1589,295 +1523,7 @@ export function Settings() {
               </div>
             )}
 
-            {/* Fallback Configuration */}
-            <div className="pt-6 border-t border-gray-200">
-              <button
-                onClick={() => setShowFallback(!showFallback)}
-                className="w-full flex items-center justify-between p-4 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors"
-              >
-                <div className="flex items-center space-x-2">
-                  <Shield className="w-5 h-5 text-amber-600" />
-                  <div className="text-left">
-                    <div className="font-medium text-gray-900">Fallback AI Configuration</div>
-                    <div className="text-sm text-gray-600">Backup provider if primary fails</div>
-                  </div>
-                </div>
-                {showFallback ? <ChevronUp className="w-5 h-5 text-gray-500" /> : <ChevronDown className="w-5 h-5 text-gray-500" />}
-              </button>
-
-              {showFallback && (
-                <div className="mt-4 space-y-6 p-6 bg-gray-50 rounded-lg border border-gray-200">
-                  <div>
-                    <p className="block text-sm font-medium text-gray-700 mb-3">Fallback Provider</p>
-                    <div className="grid grid-cols-2 gap-4">
-                      <button
-                        onClick={() => setFallbackOverride(prev => ({ ...prev, provider: 'ollama' }))}
-                        className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${currentFallbackProvider === 'ollama' ? 'border-amber-600 bg-amber-50' : 'border-gray-200 hover:border-gray-300'}`}
-                      >
-                        <Cpu className="w-6 h-6 text-amber-600" />
-                        <div className="text-left">
-                          <div className="font-medium text-gray-900">Ollama</div>
-                          <div className="text-xs text-gray-500">Local LLM</div>
-                        </div>
-                      </button>
-                      <button
-                        onClick={() => setFallbackOverride(prev => ({ ...prev, provider: 'openrouter' }))}
-                        className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${currentFallbackProvider === 'openrouter' ? 'border-amber-600 bg-amber-50' : 'border-gray-200 hover:border-gray-300'}`}
-                      >
-                        <Cloud className="w-6 h-6 text-amber-600" />
-                        <div className="text-left">
-                          <div className="font-medium text-gray-900">OpenRouter</div>
-                          <div className="text-xs text-gray-500">Cloud API</div>
-                        </div>
-                      </button>
-
-                      <button
-                        onClick={() => setFallbackOverride(prev => ({ ...prev, provider: 'lmstudio' }))}
-                        className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${currentFallbackProvider === 'lmstudio' ? 'border-amber-600 bg-amber-50' : 'border-gray-200 hover:border-gray-300'}`}
-                      >
-                        <Cpu className="w-6 h-6 text-amber-600" />
-                        <div className="text-left">
-                          <div className="font-medium text-gray-900">LM Studio</div>
-                          <div className="text-xs text-gray-500">Local OpenAI-API</div>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-
-                  {currentFallbackProvider === 'ollama' && (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Ollama Base URL</label>
-                        <input
-                          id="fallback-ollama-base-url"
-                          name="fallback_ollama_base_url"
-                          type="text"
-                          value={currentFallbackOllamaBaseUrl}
-                          onChange={(e) => setFallbackOverride(prev => ({ ...prev, ollama_base_url: e.target.value }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                          placeholder={config.OLLAMA_BASE_URL}
-                          aria-label="Fallback Ollama Base URL"
-                        />
-                      </div>
-                      <div className="relative">
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="block text-sm font-medium text-gray-700">Available Models</label>
-                          <button onClick={handleFetchFallbackModels} disabled={loading} className="flex items-center space-x-1 text-amber-600 hover:text-amber-700 text-sm font-medium disabled:opacity-50">
-                            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                            <span>Refresh</span>
-                          </button>
-                        </div>
-                        <div className="relative">
-                          <input
-                            id="fallback-ollama-model-search"
-                            name="fallback_ollama_model_search"
-                            type="text"
-                            value={fallbackModelSearchQuery || currentFallbackModel}
-                            onChange={(e) => { setFallbackModelSearchQuery(e.target.value); setFallbackModelSearchOpen(true); }}
-                            onFocus={() => setFallbackModelSearchOpen(true)}
-                            placeholder="Search models..."
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                            aria-label="Fallback Ollama model search"
-                          />
-                          {fallbackModelSearchOpen && ollamaModels.length > 0 && (
-                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                              {ollamaModels.filter(model => model.name.toLowerCase().includes(fallbackModelSearchQuery.toLowerCase())).map((model) => (
-                                <button
-                                  key={model.name}
-                                  onClick={() => { setFallbackOverride(prev => ({ ...prev, ollama_model: model.name })); setFallbackModelSearchQuery(''); setFallbackModelSearchOpen(false); }}
-                                  className="w-full text-left px-4 py-2 hover:bg-amber-50 transition-colors"
-                                >
-                                  {model.name}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        {currentFallbackModel && !fallbackModelSearchQuery && (
-                          <div className="mt-1 text-sm text-gray-600">Selected: {currentFallbackModel}</div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Fallback LLM Behavior Settings */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                    <div>
-                      <label htmlFor="fallback-max-tokens" className="block text-sm font-medium text-gray-700 mb-1">
-                        Fallback max tokens per reply
-                      </label>
-                      <input
-                        id="fallback-max-tokens"
-                        name="fallback_max_tokens"
-                        type="number"
-                        min={64}
-                        max={4096}
-                        step={64}
-                        value={currentFallbackMaxTokens}
-                        onChange={(e) =>
-                          setFallbackOverride(prev => ({
-                            ...prev,
-                            max_tokens: Number(e.target.value) || 0,
-                          }))
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm"
-                        aria-label="Fallback max tokens per reply"
-                      />
-                      <div className="mt-1 flex flex-wrap gap-2 text-xs">
-                        <span className="text-gray-500 mr-1">Presets:</span>
-                        <button
-                          type="button"
-                          onClick={() => setFallbackOverride(prev => ({ ...prev, max_tokens: 256 }))}
-                          className="px-2 py-1 rounded border border-gray-300 hover:border-amber-500 hover:text-amber-600"
-                        >
-                          Short (256)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setFallbackOverride(prev => ({ ...prev, max_tokens: 512 }))}
-                          className="px-2 py-1 rounded border border-gray-300 hover:border-amber-500 hover:text-amber-600"
-                        >
-                          Medium (512)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setFallbackOverride(prev => ({ ...prev, max_tokens: 1024 }))}
-                          className="px-2 py-1 rounded border border-gray-300 hover:border-amber-500 hover:text-amber-600"
-                        >
-                          Long (1024)
-                        </button>
-                      </div>
-                      <p className="mt-1 text-xs text-gray-500">
-                        Use a smaller value here if you want shorter answers when the system falls back to this provider.
-                      </p>
-                    </div>
-                    <div>
-                      <label htmlFor="fallback-temperature" className="block text-sm font-medium text-gray-700 mb-1">
-                        Fallback temperature
-                      </label>
-                      <input
-                        id="fallback-temperature"
-                        name="fallback_temperature"
-                        type="number"
-                        min={0}
-                        max={1.5}
-                        step={0.1}
-                        value={currentFallbackTemperature}
-                        onChange={(e) =>
-                          setFallbackOverride(prev => ({
-                            ...prev,
-                            temperature: Number(e.target.value),
-                          }))
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm"
-                        aria-label="Fallback temperature"
-                      />
-                      <p className="mt-1 text-xs text-gray-500">
-                        You can keep fallback answers a bit more conservative (e.g. 0.3–0.6) so behavior stays predictable even if the primary provider is down.
-                      </p>
-                    </div>
-                  </div>
-
-                  {currentFallbackProvider === 'openrouter' && (
-                    <div className="space-y-4">
-                      <div>
-                        <label htmlFor="fallback-openrouter-api-key" className="block text-sm font-medium text-gray-700 mb-2">OpenRouter API Key</label>
-                        <input
-                          id="fallback-openrouter-api-key"
-                          name="fallback_openrouter_api_key"
-                          type="password"
-                          value={currentFallbackOpenRouterApiKey}
-                          onChange={(e) => setFallbackOverride(prev => ({ ...prev, openrouter_api_key: e.target.value }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                          placeholder="sk-or-..."
-                          aria-label="Fallback OpenRouter API Key"
-                        />
-                      </div>
-                      <div className="relative">
-                        <div className="flex items-center justify-between mb-2">
-                          <label htmlFor="fallback-openrouter-model-search" className="block text-sm font-medium text-gray-700">Available Models</label>
-                          <button onClick={handleFetchFallbackModels} disabled={loading || !currentFallbackOpenRouterApiKey} className="flex items-center space-x-1 text-amber-600 hover:text-amber-700 text-sm font-medium disabled:opacity-50">
-                            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                            <span>Refresh</span>
-                          </button>
-                        </div>
-                        <div className="relative">
-                          <input
-                            id="fallback-openrouter-model-search"
-                            name="fallback_openrouter_model_search"
-                            type="text"
-                            value={fallbackModelSearchQuery || currentFallbackModel}
-                            onChange={(e) => { setFallbackModelSearchQuery(e.target.value); setFallbackModelSearchOpen(true); }}
-                            onFocus={() => setFallbackModelSearchOpen(true)}
-                            placeholder="Search models..."
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                            aria-label="Fallback OpenRouter model search"
-                          />
-                          {fallbackModelSearchOpen && openRouterModels.length > 0 && (
-                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                              {openRouterModels.filter(model => model.name.toLowerCase().includes(fallbackModelSearchQuery.toLowerCase()) || model.id.toLowerCase().includes(fallbackModelSearchQuery.toLowerCase())).map((model) => (
-                                <button
-                                  key={model.id}
-                                  onClick={() => { setFallbackOverride(prev => ({ ...prev, openrouter_model: model.id })); setFallbackModelSearchQuery(''); setFallbackModelSearchOpen(false); }}
-                                  className="w-full text-left px-4 py-2 hover:bg-amber-50 transition-colors"
-                                >
-                                  <div className="font-medium">{model.name}</div>
-                                  <div className="text-xs text-gray-500">{model.id}</div>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        {currentFallbackModel && !fallbackModelSearchQuery && (
-                          <div className="mt-1 text-sm text-gray-600">Selected: {currentFallbackModel}</div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  {currentFallbackProvider === 'lmstudio' && (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">LM Studio Base URL</label>
-                        <input
-                          id="fallback-lmstudio-base-url"
-                          name="fallback_lmstudio_base_url"
-                          type="text"
-                          value={fallbackOverride.lmstudio_base_url ?? fallbackAISettings?.lmstudio_base_url ?? 'http://localhost:1234/v1'}
-                          onChange={(e) => setFallbackOverride(prev => ({ ...prev, lmstudio_base_url: e.target.value }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                          placeholder="http://localhost:1234/v1"
-                          aria-label="Fallback LM Studio Base URL"
-                        />
-                      </div>
-                      <div className="relative">
-                        <label className="block text-sm font-medium text-gray-700">
-                          Select Model
-                        </label>
-                        <select
-                          id="fallback-lmstudio-model"
-                          name="fallback_lmstudio_model"
-                          value={fallbackOverride.lmstudio_model ?? fallbackAISettings?.lmstudio_model ?? ''}
-                          onChange={(e) => setFallbackOverride(prev => ({ ...prev, lmstudio_model: e.target.value }))}
-                          className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm rounded-md"
-                          aria-label="Fallback LM Studio model"
-                        >
-                          <option value="">Select a model...</option>
-                          {lmStudioModels.length > 0 ? (
-                            lmStudioModels.map((model) => (
-                              <option key={model.id} value={model.id}>
-                                {model.id}
-                              </option>
-                            ))
-                          ) : (
-                            <option value="local-model">local-model (Default)</option>
-                          )}
-                        </select>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-              {/* Single Save Button for All AI Settings */}
+            {/* Single Save Button for All AI Settings */}
               <div className="flex justify-end pt-6 border-t border-gray-200">
                 <button
                   onClick={handleSaveAllSettings}
@@ -1889,7 +1535,6 @@ export function Settings() {
               </div>
             </div>
           </div>
-        </div>
       )}
 
       {/* Read-only AI Settings for Non-Admins */}
@@ -1915,29 +1560,6 @@ export function Settings() {
                 </div>
               </div>
             </div>
-            {fallbackAISettings && (
-              <div className="pt-4 border-t border-gray-200">
-                <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
-                  <Shield className="w-4 h-4 mr-1 text-amber-600" />
-                  Fallback Configuration
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <p className="block text-sm font-medium text-gray-500 mb-1">Fallback Provider</p>
-                    <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg capitalize flex items-center text-sm">
-                      {fallbackAISettings.provider === 'ollama' ? <Cpu className="w-4 h-4 mr-2 text-amber-600" /> : <Cloud className="w-4 h-4 mr-2 text-amber-600" />}
-                      {fallbackAISettings.provider}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="block text-sm font-medium text-gray-700 mb-1">Fallback Model</p>
-                    <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
-                      {(fallbackAISettings.provider === 'ollama' ? fallbackAISettings.ollama_model : fallbackAISettings.openrouter_model) || 'Not configured'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}

@@ -48,13 +48,6 @@ class DummyOllama(deps.OllamaProvider):
         pass
 
 
-class DummyOpenRouter(deps.OpenRouterProvider):
-    """Lightweight OpenRouter subclass that skips HTTP setup for config tests."""
-
-    def __init__(self):  # pragma: no cover - trivial test helper
-        pass
-
-
 def test_primary_behavior_settings_exposed_and_persisted(admin_username):
     """Primary AI settings include behavior fields and round-trip correctly."""
     user_id, username, user_type = admin_username
@@ -93,40 +86,6 @@ def test_primary_behavior_settings_exposed_and_persisted(admin_username):
     assert pytest.approx(data["temperature"], rel=1e-6) == 0.6
 
 
-def test_fallback_behavior_settings_exposed_and_persisted(admin_username):
-    """Fallback AI settings include behavior fields and round-trip correctly."""
-    user_id, username, user_type = admin_username
-    headers = create_test_headers(user_id, username, user_type)
-
-    resp = client.get(
-        "/api/settings/ai/fallback",
-        headers=headers,
-    )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["max_tokens"] == 1024
-    assert pytest.approx(data["temperature"], rel=1e-6) == 0.5
-
-    update = client.put(
-        "/api/settings/ai/fallback",
-        headers=headers,
-        json={
-            "provider": "openrouter",
-            "openrouter_model": "openai/gpt-4",
-            "max_tokens": 512,
-            "temperature": 0.4,
-        },
-    )
-    assert update.status_code == 200
-
-    verify = client.get(
-        "/api/settings/ai/fallback",
-        headers=headers,
-    )
-    data = verify.json()
-    assert data["max_tokens"] == 512
-    assert pytest.approx(data["temperature"], rel=1e-6) == 0.4
-
 
 def test_get_learning_service_uses_primary_behavior_settings(monkeypatch):
     """get_learning_service wires ai_max_tokens/ai_temperature into the service defaults."""
@@ -136,7 +95,6 @@ def test_get_learning_service_uses_primary_behavior_settings(monkeypatch):
             "ai_provider": "ollama",
             "ai_max_tokens": "2048",
             "ai_temperature": "0.6",
-            # No fallback overrides
         }
         return mapping.get(key, default)
 
@@ -151,35 +109,6 @@ def test_get_learning_service_uses_primary_behavior_settings(monkeypatch):
     assert service.default_max_tokens == 2048
     assert pytest.approx(service.default_temperature, rel=1e-6) == 0.6
 
-
-def test_get_learning_service_uses_fallback_behavior_for_openrouter(monkeypatch):
-    """
-    When the active provider is OpenRouter and fallback settings are defined
-    for openrouter, get_learning_service should use the fallback behavior values.
-    """
-
-    def fake_get_setting(key: str, default: str = "") -> str:
-        mapping = {
-            "ai_provider": "ollama",
-            "ai_max_tokens": "1024",
-            "ai_temperature": "0.5",
-            "fallback_ai_provider": "openrouter",
-            "fallback_ai_max_tokens": "256",
-            "fallback_ai_temperature": "0.3",
-        }
-        return mapping.get(key, default)
-
-    monkeypatch.setattr(deps, "get_setting_value", fake_get_setting)
-
-    llm = DummyOpenRouter()
-    speech = Mock()
-    tts = Mock()
-
-    service = deps.get_learning_service(llm=llm, speech=speech, tts=tts)
-    assert isinstance(service, LearningCompanionService)
-    # Should pick fallback values, not primary
-    assert service.default_max_tokens == 256
-    assert pytest.approx(service.default_temperature, rel=1e-6) == 0.3
 
 
 @pytest.mark.anyio

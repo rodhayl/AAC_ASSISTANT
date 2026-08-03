@@ -12,11 +12,6 @@ from ..models.database import (
     UserProgress,
     get_session,
 )
-from .notification_service import (
-    NotificationPriority,
-    NotificationType,
-    get_notification_service,
-)
 
 
 class AchievementSystem:
@@ -343,26 +338,14 @@ class AchievementSystem:
             )
             session.add(user_achievement)
 
-            # Send real-time SSE notification and persist to database
+            # Persist a notification for the user. Live SSE delivery is wired
+            # by the notification consolidation feature.
             try:
                 title = "Achievement Unlocked"
                 message = (
                     f"{achievement_data['name']} (+{achievement_data['points']} pts)"
                 )
 
-                # Real-time SSE notification
-                svc = get_notification_service()
-                svc.show_notification(
-                    title=title,
-                    message=message,
-                    config={
-                        "notification_type": NotificationType.ACHIEVEMENT,
-                        "priority": NotificationPriority.HIGH,
-                        "show_desktop": False,
-                    },
-                )
-
-                # Persist notification to database
                 db_notification = Notification(
                     user_id=user_id,
                     title=title,

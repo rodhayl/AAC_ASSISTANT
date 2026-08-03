@@ -24,6 +24,7 @@ dependencies = [
     # Kept until the auth-hardening feature replaces the remaining imports.
     "passlib==1.7.4",
     "bcrypt==5.0.0",
+    "websockets==17.0.1",
 ]
 
 [project.optional-dependencies]

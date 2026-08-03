@@ -35,7 +35,7 @@ export function BoardEditor() {
   const navigate = useNavigate();
   const { currentBoard, fetchBoard, isLoading, error, addSymbolToBoard, batchUpdateSymbols, updateBoard, deleteBoardSymbol } = useBoardStore();
   const { user, token } = useAuthStore();
-  const { aiSettings, fallbackAISettings, fetchAISettings, fetchFallbackAISettings } = useSettingsStore();
+  const { aiSettings, fetchAISettings } = useSettingsStore();
   const { addToast } = useToastStore();
   const [activeSymbol, setActiveSymbol] = useState<BoardSymbol | null>(null);
   const [isSymbolPickerOpen, setIsSymbolPickerOpen] = useState(false);
@@ -52,7 +52,6 @@ export function BoardEditor() {
   const [boardDescription, setBoardDescription] = useState('');
   const [boardCategory, setBoardCategory] = useState('general');
   const [aiEnabled, setAiEnabled] = useState(false);
-  const [aiSource, setAiSource] = useState<'primary' | 'fallback'>('primary');
   const [aiConfigError, setAiConfigError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [aiSuggestions, setAiSuggestions] = useState<AISuggestion[]>([]);
@@ -71,14 +70,14 @@ export function BoardEditor() {
   );
 
   const primaryProvider = aiSettings?.provider;
-  const primaryModel = primaryProvider === 'openrouter' ? aiSettings?.openrouter_model : aiSettings?.ollama_model;
-  const fallbackProvider = fallbackAISettings?.provider;
-  const fallbackModel = fallbackProvider === 'openrouter' ? fallbackAISettings?.openrouter_model : fallbackAISettings?.ollama_model;
+  const primaryModel = primaryProvider === 'openrouter'
+    ? aiSettings?.openrouter_model
+    : primaryProvider === 'lmstudio'
+      ? aiSettings?.lmstudio_model
+      : aiSettings?.ollama_model;
   const primaryReady = Boolean(primaryProvider && primaryModel);
-  const fallbackReady = Boolean(fallbackProvider && fallbackModel);
-  const selectedSettings = aiSource === 'fallback' ? fallbackAISettings : aiSettings;
-  const resolvedProvider = selectedSettings?.provider;
-  const resolvedModel = resolvedProvider === 'openrouter' ? selectedSettings?.openrouter_model : selectedSettings?.ollama_model;
+  const resolvedProvider = primaryProvider;
+  const resolvedModel = primaryModel;
 
   useEffect(() => {
     if (id) {
@@ -90,10 +89,7 @@ export function BoardEditor() {
     if (!aiSettings) {
       fetchAISettings().catch(() => { });
     }
-    if (!fallbackAISettings) {
-      fetchFallbackAISettings().catch(() => { });
-    }
-  }, [aiSettings, fallbackAISettings, fetchAISettings, fetchFallbackAISettings]);
+  }, [aiSettings, fetchAISettings]);
 
   useEffect(() => {
     if (currentBoard) {
@@ -133,7 +129,7 @@ export function BoardEditor() {
       setBoardCategory(currentBoard.category || 'general');
       setAiEnabled(currentBoard.ai_enabled || false);
     }
-  }, [currentBoard, resolvedModel, resolvedProvider]);
+  }, [currentBoard]);
 
   const currentBoardId = currentBoard?.id
 
@@ -159,31 +155,6 @@ export function BoardEditor() {
   }, [currentBoardId, token])
 
   useEffect(() => {
-    if (!currentBoard) return;
-    const boardProvider = currentBoard.ai_provider;
-    const boardModel = currentBoard.ai_model;
-
-    // Explicit markers for global settings
-    if (boardModel === '@primary') {
-      setAiSource('primary');
-      return;
-    }
-    if (boardModel === '@fallback') {
-      setAiSource('fallback');
-      return;
-    }
-
-    // Default to primary; switch to fallback if it matches configured fallback settings
-    if (boardProvider && fallbackProvider && boardProvider === fallbackProvider) {
-      if (!boardModel || boardModel === fallbackModel) {
-        setAiSource('fallback');
-        return;
-      }
-    }
-    setAiSource('primary');
-  }, [currentBoard, fallbackModel, fallbackProvider]);
-
-  useEffect(() => {
     if (!aiEnabled) {
       setAiConfigError(null);
       return;
@@ -192,12 +163,8 @@ export function BoardEditor() {
       setAiConfigError(t('aiSettingsMissing'));
       return;
     }
-    if (aiSource === 'fallback' && !fallbackReady) {
-      setAiConfigError(t('fallbackAINotConfigured'));
-      return;
-    }
     setAiConfigError(null);
-  }, [aiEnabled, aiSource, primaryReady, fallbackReady, t]);
+  }, [aiEnabled, primaryReady, t]);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const symbol = event.active.data.current as BoardSymbol;
@@ -316,7 +283,7 @@ export function BoardEditor() {
         category: boardCategory,
         ai_enabled: aiEnabled,
         ai_provider: aiEnabled ? (resolvedProvider ?? undefined) : undefined,
-        ai_model: aiEnabled ? (aiSource === 'fallback' ? '@fallback' : '@primary') : undefined
+        ai_model: aiEnabled ? '@primary' : undefined
       });
 
       setSaveSuccess(true);
@@ -343,9 +310,7 @@ export function BoardEditor() {
     setAiError(null);
     try {
       const api = (await import('../lib/api')).default;
-      const body: Record<string, unknown> = {
-        ai_source: aiSource
-      };
+      const body: Record<string, unknown> = {};
       if (options?.refinePrompt) body.refine_prompt = options.refinePrompt;
       if (options?.regenerate) body.regenerate = true;
       const res = await api.post(`/boards/${currentBoard.id}/ai/suggestions`, body);
@@ -361,7 +326,7 @@ export function BoardEditor() {
     } finally {
       setAiLoading(false);
     }
-  }, [currentBoard, resolvedModel, resolvedProvider, t, aiSource]);
+  }, [currentBoard, resolvedModel, resolvedProvider, t]);
 
   const handleRefine = useCallback(() => {
     const prompt = refinePrompt.trim();
@@ -825,38 +790,13 @@ export function BoardEditor() {
                     <p className="text-sm text-gray-600 dark:text-gray-400">
                       {t('aiConfigDescription')}
                     </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3">
                       <label
-                        className={`relative block p-3 rounded-lg border transition-colors cursor-pointer ${aiSource === 'primary' ? 'border-indigo-500 ring-2 ring-indigo-200 dark:ring-indigo-400/40' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-500/60'} ${primaryReady ? '' : 'opacity-60 cursor-not-allowed'}`}
+                        className={`relative block p-3 rounded-lg border transition-colors ${primaryReady ? '' : 'opacity-60'}`}
                       >
-                        <input
-                          type="radio"
-                          className="sr-only"
-                          checked={aiSource === 'primary'}
-                          onChange={() => setAiSource('primary')}
-                          disabled={!primaryReady}
-                        />
                         <div className="font-semibold text-gray-900 dark:text-gray-100">{t('primaryAI')}</div>
                         <div className="text-sm text-gray-600 dark:text-gray-400 capitalize">
                           {primaryReady ? `${primaryProvider} - ${primaryModel}` : t('notConfigured')}
-                        </div>
-                      </label>
-                      <label
-                        className={`relative block p-3 rounded-lg border transition-colors cursor-pointer ${aiSource === 'fallback' ? 'border-indigo-500 ring-2 ring-indigo-200 dark:ring-indigo-400/40' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-500/60'} ${fallbackReady ? '' : 'opacity-60 cursor-not-allowed'}`}
-                      >
-                        <input
-                          type="radio"
-                          className="sr-only"
-                          checked={aiSource === 'fallback'}
-                          onChange={() => setAiSource('fallback')}
-                          disabled={!fallbackReady}
-                        />
-                        <div className="font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                          {t('fallbackAI')}
-                          {!fallbackReady && <span className="text-xs text-amber-600">{t('notConfiguredParens')}</span>}
-                        </div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400 capitalize">
-                          {fallbackReady ? `${fallbackProvider} - ${fallbackModel}` : t('setupFallback')}
                         </div>
                       </label>
                     </div>

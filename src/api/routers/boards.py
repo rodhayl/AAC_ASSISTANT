@@ -220,32 +220,6 @@ def serialize_board(b: CommunicationBoard, target_lang: str = None):
 # --- Symbols (must come BEFORE /{board_id} to avoid route conflicts) ---
 
 
-@router.post("/symbols", response_model=schemas.SymbolResponse)
-def create_symbol(
-    symbol: schemas.SymbolCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    """Create a new symbol in the library"""
-    try:
-        db_symbol = Symbol(**symbol.model_dump(), is_builtin=False)
-        db.add(db_symbol)
-        db.commit()
-        db.refresh(db_symbol)
-
-        # Index in vector store if possible
-        try:
-            from src.aac_app.services.vector_utils import index_symbol
-            index_symbol(db_symbol)
-        except Exception as e:
-            logger.warning(f"Failed to index new symbol: {e}")
-
-        return db_symbol
-    except Exception as e:
-        logger.error(f"Failed to create symbol: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create symbol")
-
-
 @router.get("/symbols", response_model=list[schemas.SymbolResponse])
 def get_symbols(
     skip: int = 0,
@@ -882,52 +856,16 @@ async def create_board(
 
 
 def _resolve_provider_for_board(
-    board: CommunicationBoard, db: Session, force_source: str | None = None
+    board: CommunicationBoard, db: Session
 ) -> OllamaProvider | OpenRouterProvider | None:
     """
-    Build an LLM provider instance based on board configuration falling back to global settings.
+    Build an LLM provider instance from the board or primary global settings.
     """
-    # Determine effective source
-    source = force_source
-
-    # If no forced source, check board for stored intent (special markers)
-    if not source:
-        if board.ai_model == "@primary":
-            source = "primary"
-        elif board.ai_model == "@fallback":
-            source = "fallback"
-
-    # If explicit source (from request or board marker), load fresh from global settings
-    if source == "primary":
-        provider_type = get_setting_value("ai_provider", "ollama")
-        if provider_type == "openrouter":
-            model_name = get_setting_value("openrouter_model", "")
-            api_key = get_setting_value("openrouter_api_key", "")
-            return OpenRouterProvider(api_key=api_key, model=model_name)
-        else:
-            model_name = get_setting_value("ollama_model", "")
-            base_url = get_setting_value("ollama_base_url", config.OLLAMA_BASE_URL)
-            return OllamaProvider(base_url=base_url, model=model_name)
-
-    if source == "fallback":
-        provider_type = get_setting_value("fallback_ai_provider", "ollama")
-        if provider_type == "openrouter":
-            model_name = get_setting_value("fallback_openrouter_model", "")
-            api_key = get_setting_value("fallback_openrouter_api_key", "")
-            return OpenRouterProvider(api_key=api_key, model=model_name)
-        else:
-            model_name = get_setting_value("fallback_ollama_model", "")
-            base_url = get_setting_value(
-                "fallback_ollama_base_url", config.OLLAMA_BASE_URL
-            )
-            return OllamaProvider(base_url=base_url, model=model_name)
-
-    # Legacy/Custom behavior: use board stored values
     provider_type = board.ai_provider or get_setting_value("ai_provider", "ollama")
     model_name = board.ai_model
 
-    # If board doesn't carry a model, fallback to global/default (Primary)
-    if not model_name:
+    # The primary marker and older source markers use the current global primary model.
+    if not model_name or model_name.startswith("@"):
         if provider_type == "openrouter":
             model_name = get_setting_value("openrouter_model", "")
         else:
@@ -979,9 +917,7 @@ async def generate_ai_suggestions(
             detail=get_text(user=current_user, key="errors.boards.aiNotEnabled"),
         )
 
-    provider = _resolve_provider_for_board(
-        board, db, force_source=payload.ai_source if payload else None
-    )
+    provider = _resolve_provider_for_board(board, db)
     if not provider:
         raise HTTPException(
             status_code=400,

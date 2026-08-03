@@ -1,6 +1,4 @@
 import asyncio
-import contextlib
-import json
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,7 +6,6 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from src.aac_app.models.database import Notification, User
-from src.aac_app.services.notification_service import get_notification_service
 from src.api.dependencies import (
     get_current_active_user,
     get_current_admin_user,
@@ -30,36 +27,13 @@ async def notifications_stream(token: str = None, db: Session = Depends(get_db))
             status_code=401, detail=get_text(key="errors.notifications.invalidToken")
         )
 
-    svc = get_notification_service()
-    queue = asyncio.Queue()
-
-    def on_show(n):
-        # Only show notifications for this user
-        if n.user_id == user.id:
-            try:
-                payload = {
-                    "title": n.title,
-                    "message": n.message,
-                    "type": n.notification_type.value,
-                    "priority": n.priority.value,
-                    "timestamp": n.timestamp.isoformat(),
-                }
-                queue.put_nowait(f"data: {json.dumps(payload)}\n\n")
-            except Exception:
-                pass
-
-    svc.add_callback("notification_shown", on_show)
-
     async def event_generator():
-        try:
-            # Initial heartbeat to unblock clients
-            yield "data: {}\n\n"
-            while True:
-                data = await queue.get()
-                yield data
-        finally:
-            with contextlib.suppress(Exception):
-                svc.remove_callback("notification_shown", on_show)
+        # Initial heartbeat to unblock clients. DB event delivery will be
+        # connected in the notification consolidation feature.
+        yield "data: {}\n\n"
+        while True:
+            await asyncio.sleep(15)
+            yield ": keep-alive\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

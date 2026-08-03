@@ -15,7 +15,6 @@ from src import config
 from src.aac_app.models.database import init_database
 from src.aac_app.models.migrate_add_order_index import migrate_add_order_index
 from src.aac_app.models.migrate_add_ui_language import migrate_add_ui_language
-from src.aac_app.services.collaboration_service import collaboration_service
 from src.aac_app.services.vector_utils import index_all_symbols
 from src.api.dependencies import get_startup_state, warmup_providers
 from src.api.limiter import limiter
@@ -179,9 +178,6 @@ app.include_router(export_import.router)
 app.include_router(notifications.router)
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 
-# Mount Socket.IO app
-app.mount("/socket.io", collaboration_service.app)
-
 # Static files
 # Use frozen-aware paths from config module
 from src.config import BUNDLE_DIR, IS_FROZEN, PROJECT_ROOT
@@ -219,7 +215,7 @@ if os.path.exists(FRONTEND_DIR):
     async def serve_spa(full_path: str):
         """Serve the SPA frontend for all non-API routes"""
         # Skip API routes
-        if full_path.startswith("api/") or full_path.startswith("socket.io"):
+        if full_path.startswith("api/"):
             return JSONResponse(content={"detail": "Not Found"}, status_code=404)
 
         # Try to serve static file first
