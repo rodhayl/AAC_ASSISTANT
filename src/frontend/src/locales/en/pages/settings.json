@@ -96,7 +96,7 @@
     "ollamaStatus": "Ollama:",
     "openrouterStatus": "OpenRouter:",
     "voiceDeps": "Voice / STT Dependencies",
-    "voiceDepsHelp": "Install missing items and restart start.bat to enable mic.",
+    "voiceDepsHelp": "Speech-to-text is optional; browser text-to-speech is always available.",
     "installed": "Installed",
     "notInstalled": "Not installed",
     "howToInstall": "How to install",
@@ -105,21 +105,13 @@
         "label": "ffmpeg (required)",
         "help": "Install ffmpeg and add ffmpeg.exe to PATH"
       },
-      "whisper": {
-        "label": "openai-whisper (required)",
-        "help": "Installed via pip; rerun start.bat after installing any missing system tools"
+      "fasterWhisper": {
+        "label": "faster-whisper (optional)",
+        "help": "Run uv sync --extra voice --group dev to enable voice answers"
       },
-      "sounddevice": {
-        "label": "sounddevice (required for mic input)",
-        "help": "Required for live microphone recording; install via pip"
-      },
-      "soundfile": {
-        "label": "soundfile (required for mic input)",
-        "help": "Required for saving recorded audio; install via pip"
-      },
-      "webrtcvad": {
-        "label": "webrtcvad (optional)",
-        "help": "Optional VAD; requires Microsoft C++ Build Tools if you want it"
+      "browserTts": {
+        "label": "Browser text-to-speech",
+        "help": "Speech output uses the browser SpeechSynthesis API"
       }
     }
   }

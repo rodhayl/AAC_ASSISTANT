@@ -27,6 +27,9 @@ import src.api.main
 
 heavy = {
     "torch",
+    "faster_whisper",
+    "ctranslate2",
+    "av",
     "whisper",
     "sentence_transformers",
     "faiss",
@@ -106,17 +109,22 @@ def test_tts_synthesize_imports_engine_on_first_use(monkeypatch) -> None:
     assert engine.spoken == ["hello"]
 
 
-def test_speech_transcription_imports_whisper_on_first_use(monkeypatch) -> None:
+def test_speech_transcription_imports_faster_whisper_on_first_use(monkeypatch) -> None:
     from src.aac_app.providers import local_speech_provider
+
+    class FakeSegment:
+        text = "hello"
 
     class FakeModel:
         def transcribe(self, _path, **_kwargs):
-            return {"text": "hello"}
+            return iter([FakeSegment()]), object()
 
-    fake_whisper = types.SimpleNamespace(load_model=lambda *_args, **_kwargs: FakeModel())
-    monkeypatch.setitem(sys.modules, "whisper", fake_whisper)
-    monkeypatch.setattr(local_speech_provider, "WHISPER_AVAILABLE", True)
-    monkeypatch.setattr(local_speech_provider, "whisper", None)
+    fake_faster_whisper = types.SimpleNamespace(
+        WhisperModel=lambda *_args, **_kwargs: FakeModel()
+    )
+    monkeypatch.setitem(sys.modules, "faster_whisper", fake_faster_whisper)
+    monkeypatch.setattr(local_speech_provider, "FASTER_WHISPER_AVAILABLE", True)
+    monkeypatch.setattr(local_speech_provider, "faster_whisper", None)
 
     provider = local_speech_provider.LocalSpeechProvider(lazy_load=True)
     assert provider.model is None

@@ -1,5 +1,4 @@
 import importlib
-import shutil
 
 from fastapi import APIRouter, Depends
 
@@ -37,37 +36,28 @@ def _module_available(name: str) -> bool:
 @router.get("/voice-status")
 def voice_status(current_user: User = Depends(get_current_active_user)):
     """
-    Report local voice/STT dependency status so the UI can guide setup.
+    Report local STT status and browser-side TTS capability.
 
-    This is used by the Settings page to show which pieces are installed:
-    - ffmpeg: required for Whisper to read most audio formats
-    - whisper: Python package providing the STT model
-    - sounddevice / soundfile: required for live microphone recording
-    - webrtcvad: optional VAD for smarter continuous listening
+    faster-whisper uses PyAV to decode WAV/WebM uploads, so ffmpeg and the
+    old server-side microphone packages are not runtime requirements.
     """
-    ffmpeg_path = shutil.which("ffmpeg")
+    stt_installed = _module_available("faster_whisper")
     return {
-        "ffmpeg": {
-            "installed": ffmpeg_path is not None,
-            "path": ffmpeg_path,
+        "stt": {
+            "provider": "faster-whisper",
+            "installed": stt_installed,
+            "model": "small",
         },
+        # Keep the old key as a response-shape compatibility alias for clients
+        # that have not yet switched their settings panel to `stt`.
         "whisper": {
-            "installed": _module_available("whisper"),
+            "provider": "faster-whisper",
+            "installed": stt_installed,
         },
-        "sounddevice": {
-            "installed": _module_available("sounddevice"),
-            # Required only for microphone input, not file uploads
-            "optional": False,
-        },
-        "soundfile": {
-            "installed": _module_available("soundfile"),
-            # Required only for microphone input, not file uploads
-            "optional": False,
-        },
-        # Optional helpers (informational)
-        "webrtcvad": {
-            "installed": _module_available("webrtcvad"),
-            "optional": True,
+        "tts": {
+            "provider": "browser",
+            "client_side": True,
+            "installed": True,
         },
     }
 

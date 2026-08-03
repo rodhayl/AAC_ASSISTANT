@@ -2,7 +2,7 @@
 Tests for Packaging Improvements
 ================================
 This module tests all the packaging-related improvements:
-1. Lazy loading of heavy AI models (Whisper, SentenceTransformer)
+1. Lazy loading of heavy AI models (faster-whisper, SentenceTransformer)
 2. Frozen-aware path resolution for PyInstaller builds
 3. Provider initialization and warmup
 4. Database model completeness
@@ -107,7 +107,7 @@ class TestLazyLoadingSpeechProvider:
     def test_speech_provider_lazy_init_does_not_load_model(self):
         """Verify that lazy_load=True does not immediately load Whisper"""
         from src.aac_app.providers.local_speech_provider import (
-            WHISPER_AVAILABLE,
+            FASTER_WHISPER_AVAILABLE,
             LocalSpeechProvider,
         )
 
@@ -115,13 +115,13 @@ class TestLazyLoadingSpeechProvider:
 
         # An unavailable optional dependency is marked as already attempted;
         # an installed dependency remains unloaded until first use.
-        assert provider._model_loaded is (not WHISPER_AVAILABLE)
+        assert provider._model_loaded is (not FASTER_WHISPER_AVAILABLE)
         assert provider.model is None
 
     def test_speech_provider_is_available_does_not_load(self):
         """Verify is_available() does not trigger model loading"""
         from src.aac_app.providers.local_speech_provider import (
-            WHISPER_AVAILABLE,
+            FASTER_WHISPER_AVAILABLE,
             LocalSpeechProvider,
         )
 
@@ -132,17 +132,17 @@ class TestLazyLoadingSpeechProvider:
 
         # Availability checks do not load an installed model. If the optional
         # dependency is absent, initialization has already completed the attempt.
-        assert provider._model_loaded is (not WHISPER_AVAILABLE)
+        assert provider._model_loaded is (not FASTER_WHISPER_AVAILABLE)
 
     def test_speech_provider_force_load(self):
         """Verify force_load() triggers immediate loading"""
         from src.aac_app.providers.local_speech_provider import (
-            WHISPER_AVAILABLE,
+            FASTER_WHISPER_AVAILABLE,
             LocalSpeechProvider,
         )
 
-        if not WHISPER_AVAILABLE:
-            pytest.skip("Whisper not installed")
+        if not FASTER_WHISPER_AVAILABLE:
+            pytest.skip("faster-whisper not installed")
 
         provider = LocalSpeechProvider(lazy_load=True)
         assert provider._model_loaded is False

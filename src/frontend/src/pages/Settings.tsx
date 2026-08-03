@@ -166,11 +166,9 @@ export function Settings() {
     }
   };
   const [voiceStatus, setVoiceStatus] = useState<{
-    ffmpeg?: { installed: boolean; path?: string | null };
-    whisper?: { installed: boolean };
-    sounddevice?: { installed: boolean; optional?: boolean };
-    soundfile?: { installed: boolean; optional?: boolean };
-    webrtcvad?: { installed: boolean; optional?: boolean };
+    stt?: { provider?: string; installed: boolean; model?: string };
+    whisper?: { provider?: string; installed: boolean };
+    tts?: { provider?: string; client_side?: boolean; installed?: boolean };
   } | null>(null);
 
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -399,40 +397,19 @@ export function Settings() {
 
   const voiceStatusItems = [
     {
-      key: 'ffmpeg',
-      label: t('ai.dependencies.ffmpeg.label'),
-      help: t('ai.dependencies.ffmpeg.help'),
-      link: 'https://ffmpeg.org/download.html',
-      status: voiceStatus?.ffmpeg?.installed,
-      extra: voiceStatus?.ffmpeg?.path,
+      key: 'stt',
+      label: t('ai.dependencies.fasterWhisper.label'),
+      help: t('ai.dependencies.fasterWhisper.help'),
+      link: 'https://github.com/SYSTRAN/faster-whisper',
+      status: voiceStatus?.stt?.installed ?? voiceStatus?.whisper?.installed,
+      extra: voiceStatus?.stt?.model,
     },
     {
-      key: 'whisper',
-      label: t('ai.dependencies.whisper.label'),
-      help: t('ai.dependencies.whisper.help'),
-      link: 'https://github.com/openai/whisper',
-      status: voiceStatus?.whisper?.installed,
-    },
-    {
-      key: 'sounddevice',
-      label: t('ai.dependencies.sounddevice.label'),
-      help: t('ai.dependencies.sounddevice.help'),
-      link: 'https://python-sounddevice.readthedocs.io/',
-      status: voiceStatus?.sounddevice?.installed,
-    },
-    {
-      key: 'soundfile',
-      label: t('ai.dependencies.soundfile.label'),
-      help: t('ai.dependencies.soundfile.help'),
-      link: 'https://pysoundfile.readthedocs.io/',
-      status: voiceStatus?.soundfile?.installed,
-    },
-    {
-      key: 'webrtcvad',
-      label: t('ai.dependencies.webrtcvad.label'),
-      help: t('ai.dependencies.webrtcvad.help'),
-      link: 'https://visualstudio.microsoft.com/visual-cpp-build-tools/',
-      status: voiceStatus?.webrtcvad?.installed,
+      key: 'tts',
+      label: t('ai.dependencies.browserTts.label'),
+      help: t('ai.dependencies.browserTts.help'),
+      link: 'https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesis',
+      status: voiceStatus?.tts?.client_side === true,
       optional: true,
     },
   ];

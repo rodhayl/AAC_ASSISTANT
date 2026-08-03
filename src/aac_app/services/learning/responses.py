@@ -10,7 +10,6 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from ...models import LearningSession
-from ...providers.local_speech_provider import WHISPER_AVAILABLE
 from ...services.achievement_system import AchievementSystem
 from ...services.translation_service import TranslationService
 from .common import _strip_reasoning
@@ -44,7 +43,7 @@ class ResponseProcessingMixin:
                     logger.info("Transcribing voice response")
                     temp_path = None
                     try:
-                        if not WHISPER_AVAILABLE or not getattr(self.speech, "model", None):
+                        if not self.speech.is_available():
                             transcription_failed = True
                             student_response = "[voice message]"
                         else:

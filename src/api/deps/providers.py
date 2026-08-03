@@ -130,12 +130,6 @@ def get_llm_provider() -> OllamaProvider | OpenRouterProvider | LMStudioProvider
     else:
         provider = get_ollama_provider()
 
-    try:
-        if hasattr(provider, "is_available") and not provider.is_available():
-            logger.warning(f"Configured primary provider {provider_type} is not available")
-    except Exception as exc:
-        logger.warning(f"Unable to check configured primary provider {provider_type}: {exc}")
-
     return provider
 
 

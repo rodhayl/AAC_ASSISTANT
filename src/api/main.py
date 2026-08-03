@@ -1,6 +1,5 @@
 import os
 import time
-import warnings
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -40,11 +39,6 @@ from src.api.routers import (
     users,
 )
 from src.api.routers import config as config_router
-
-# Suppress deprecated pkg_resources warning from webrtcvad
-warnings.filterwarnings("ignore", category=UserWarning, module="webrtcvad")
-# Also suppress the specific message just in case module name varies or is imported indirectly
-warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 
 
 @asynccontextmanager

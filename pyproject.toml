@@ -27,7 +27,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-voice = []
+voice = [
+    "faster-whisper==1.2.1",
+]
 
 [dependency-groups]
 dev = [

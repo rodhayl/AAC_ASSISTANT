@@ -96,30 +96,18 @@
     "ollamaStatus": "Ollama:",
     "openrouterStatus": "OpenRouter:",
     "voiceDeps": "Dependencias de Voz / STT",
-    "voiceDepsHelp": "Instala elementos faltantes y reinicia start.bat para habilitar el micrófono.",
+    "voiceDepsHelp": "La transcripción es opcional; la síntesis de voz del navegador siempre está disponible.",
     "installed": "Instalado",
     "notInstalled": "No instalado",
     "howToInstall": "Cómo instalar",
     "dependencies": {
-      "ffmpeg": {
-        "label": "ffmpeg (requerido)",
-        "help": "Instala ffmpeg y agrega ffmpeg.exe al PATH"
+      "fasterWhisper": {
+        "label": "faster-whisper (opcional)",
+        "help": "Ejecuta uv sync --extra voice --group dev para activar las respuestas de voz"
       },
-      "whisper": {
-        "label": "openai-whisper (requerido)",
-        "help": "Instalado vía pip; reinicia start.bat tras instalar herramientas faltantes"
-      },
-      "sounddevice": {
-        "label": "sounddevice (requerido para micrófono)",
-        "help": "Requerido para grabar audio en vivo; instalar vía pip"
-      },
-      "soundfile": {
-        "label": "soundfile (requerido para micrófono)",
-        "help": "Requerido para guardar audio grabado; instalar vía pip"
-      },
-      "webrtcvad": {
-        "label": "webrtcvad (opcional)",
-        "help": "VAD opcional; requiere Microsoft C++ Build Tools si lo deseas"
+      "browserTts": {
+        "label": "Texto a voz del navegador",
+        "help": "La salida de voz usa la API SpeechSynthesis del navegador"
       }
     }
   }
