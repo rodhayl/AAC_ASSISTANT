@@ -57,6 +57,7 @@ def get_criteria_types(
 
 # ============== CRUD Endpoints for Achievement Management ==============
 
+@router.get("", response_model=list[schemas.AchievementFullResponse])
 @router.get("/", response_model=list[schemas.AchievementFullResponse])
 def list_all_achievements(
     current_user: User = Depends(get_current_active_user),
@@ -95,6 +96,7 @@ def list_all_achievements(
         ]
 
 
+@router.post("", response_model=schemas.AchievementFullResponse, status_code=201)
 @router.post("/", response_model=schemas.AchievementFullResponse, status_code=201)
 def create_achievement(
     data: schemas.AchievementCreate,

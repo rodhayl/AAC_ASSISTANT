@@ -11,7 +11,11 @@ from src.aac_app.services.board_generation_service import BoardGenerationService
 from src.aac_app.services.translation_service import get_translation_service
 from src.api import schemas
 from src.api.deps import get_current_active_user, get_db, get_text
-from src.api.routers.board_helpers import get_playable_count, serialize_board
+from src.api.routers.board_helpers import (
+    get_playable_count,
+    serialize_board,
+    serialize_symbol,
+)
 
 router = APIRouter()
 
@@ -88,7 +92,7 @@ def get_boards(
                 "ai_model": b.ai_model,
                 "locale": getattr(b, "locale", "en"),
                 "is_language_learning": getattr(b, "is_language_learning", False),
-                "symbols": [],
+                "symbols": [serialize_symbol(bs) for bs in (b.symbols or [])],
                 "playable_symbols_count": get_playable_count(b),
             }
             for b in boards
