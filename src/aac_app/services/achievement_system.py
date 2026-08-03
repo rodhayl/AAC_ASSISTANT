@@ -15,7 +15,7 @@ from ..models import (
     UserAchievement,
     UserProgress,
 )
-from .notification_events import publish_notification
+from .notification_events import stage_notification
 
 
 class AchievementSystem:
@@ -360,7 +360,7 @@ class AchievementSystem:
                 )
                 session.add(db_notification)
                 session.flush()
-                publish_notification(db_notification)
+                stage_notification(session, db_notification)
             except Exception as e:
                 logger.warning(f"Failed to send notification: {e}")
 
