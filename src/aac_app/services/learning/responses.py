@@ -377,15 +377,16 @@ class ResponseProcessingMixin:
                         session.correct_answers / session.questions_answered
                     )
 
+                feedback_message = analysis_data.get("encouraging_feedback") or (
+                    translation_service.get(user_lang, "pages/learning", "feedback.goodTry")
+                )
+
                 # Store response
                 entry = {
                     "type": "response",
                     "student_answer": student_response,
                     "is_correct": analysis_data.get("is_correct", False),
-                    "feedback": analysis_data.get(
-                        "encouraging_feedback",
-                        translation_service.get(user_lang, "pages/learning", "feedback.goodTry"),
-                    ),
+                    "feedback": feedback_message,
                     "confidence": analysis_data.get("confidence", 0.5),
                     "timestamp": datetime.now().isoformat(),
                 }
@@ -468,7 +469,7 @@ class ResponseProcessingMixin:
                     "success": True,
                     "is_correct": analysis_data.get("is_correct", False),
                     "transcription": student_response if is_voice else None,
-                    "feedback_message": analysis_data.get("encouraging_feedback", "Good job!"),
+                    "feedback_message": feedback_message,
                     "confidence": analysis_data.get("confidence", 0.5),
                     "comprehension_score": session.comprehension_score,
                     "next_action": next_action,

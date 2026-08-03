@@ -125,6 +125,42 @@ def test_fallback_question_grading_is_deterministic(fallback_providers, regular_
     assert progress_after_wrong["comprehension_score"] == 0.5
 
 
+@pytest.mark.parametrize(
+    ("language", "expected_feedback"),
+    [
+        ("en", "Good try! Keep practicing and you will improve."),
+        ("es", "¡Buen intento! Sigue practicando y mejorarás."),
+    ],
+)
+def test_missing_encouraging_feedback_uses_localized_fallback(
+    fallback_providers,
+    mock_llm_provider,
+    regular_user,
+    user_token,
+    test_db_session,
+    language,
+    expected_feedback,
+):
+    """A response without LLM feedback still returns the user's localized message."""
+    test_db_session.add(UserSettings(user_id=regular_user.id, ui_language=language))
+    test_db_session.commit()
+    headers, session_id = _start_session(regular_user.id, user_token)
+
+    question = client.post(f"/api/learning/{session_id}/ask", headers=headers)
+    assert question.status_code == 200, question.text
+
+    mock_llm_provider.generate.side_effect = None
+    mock_llm_provider.generate.return_value = '{"is_correct": false, "confidence": 0.5}'
+    answer = client.post(
+        f"/api/learning/{session_id}/answer",
+        json={"answer": "not the expected choice", "is_voice": False},
+        headers=headers,
+    )
+
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["feedback_message"] == expected_feedback
+
+
 def test_end_without_llm_returns_summary_and_awards_first_steps(
     fallback_providers, regular_user, user_token
 ):
