@@ -49,22 +49,34 @@ function decodeJwtPayload(token: string): JwtPayload | null {
         .join('')
     );
     return JSON.parse(jsonPayload);
-  } catch (e) {
-    console.error('Failed to decode JWT:', e);
+  } catch {
+    // Persisted access tokens can be malformed; callers decide whether to refresh or clear.
     return null;
   }
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set, get) => ({
-      user: null,
-      token: null,
-      refreshToken: null,
-      isAuthenticated: false,
-      isLoading: false,
-      error: null,
-      sessionExpiresAt: null,
+    (set, get) => {
+      const clearSession = () => {
+        set({
+          user: null,
+          token: null,
+          refreshToken: null,
+          isAuthenticated: false,
+          sessionExpiresAt: null,
+          error: null,
+        });
+      };
+
+      return {
+        user: null,
+        token: null,
+        refreshToken: null,
+        isAuthenticated: false,
+        isLoading: false,
+        error: null,
+        sessionExpiresAt: null,
 
       login: async (username: string, password: string) => {
         set({ isLoading: true, error: null });
@@ -205,14 +217,7 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: () => {
-        set({
-          user: null,
-          token: null,
-          refreshToken: null,
-          isAuthenticated: false,
-          sessionExpiresAt: null,
-          error: null,
-        });
+        clearSession();
         // Clear any manual token overrides if they exist
         localStorage.removeItem('token');
       },
@@ -220,23 +225,18 @@ export const useAuthStore = create<AuthState>()(
       checkAuth: async () => {
         const { token, refreshAccessToken, user } = get();
         if (!token) {
-          set({ isAuthenticated: false });
+          clearSession();
           return;
         }
         
         // Decode to check expiration without call
         const payload = decodeJwtPayload(token);
-        if (!payload || !payload.exp) {
-          set({ isAuthenticated: false, token: null, user: null });
-          return;
-        }
-        
         const now = Date.now() / 1000;
-        if (payload.exp < now) {
-          // Token expired, try refresh
+        if (!payload?.exp || payload.exp < now) {
+          // The refresh token is the source of truth when access validation fails.
           const refreshed = await refreshAccessToken();
-          if (!refreshed) {
-            set({ isAuthenticated: false, token: null, user: null });
+          if (!refreshed && navigator.onLine !== false) {
+            clearSession();
           }
           return;
         }
@@ -264,7 +264,7 @@ export const useAuthStore = create<AuthState>()(
               return;
             }
             // If we can't get user details, token might be invalid on server side
-            set({ isAuthenticated: false, token: null, user: null });
+            clearSession();
           }
         } else {
           // Sync settings from existing user state
@@ -311,17 +311,12 @@ export const useAuthStore = create<AuthState>()(
             return false;
           }
           // Refresh failed
-          set({ 
-            user: null, 
-            token: null, 
-            refreshToken: null, 
-            isAuthenticated: false, 
-            sessionExpiresAt: null 
-          });
+          clearSession();
           return false;
         }
       }
-    }),
+      };
+    },
     {
       name: 'auth-storage',
       partialize: (state) => ({ 
