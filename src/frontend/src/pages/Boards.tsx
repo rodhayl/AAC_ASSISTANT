@@ -16,9 +16,11 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 export function Boards() {
   const {
     boards,
+    assignedBoards,
     isLoading,
     error,
     fetchBoards,
+    fetchAssignedBoards,
     createBoard,
     deleteBoard,
     duplicateBoard,
@@ -61,6 +63,7 @@ export function Boards() {
       didInitialFetchRef.current = true;
       if (user.user_type === 'student') {
         fetchBoards(user.id, searchQuery);
+        fetchAssignedBoards(user.id);
       } else if (user.user_type === 'admin') {
         fetchBoards(undefined, searchQuery);
       } else {
@@ -72,6 +75,7 @@ export function Boards() {
     const timer = setTimeout(() => {
       if (user.user_type === 'student') {
         fetchBoards(user.id, searchQuery);
+        fetchAssignedBoards(user.id);
       } else if (user.user_type === 'admin') {
         fetchBoards(undefined, searchQuery);
       } else {
@@ -80,7 +84,7 @@ export function Boards() {
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [fetchBoards, user, searchQuery]);
+  }, [fetchAssignedBoards, fetchBoards, user, searchQuery]);
 
   const effectiveUserId = user?.user_type === 'admin' ? undefined : user?.id;
 
@@ -190,7 +194,7 @@ export function Boards() {
     }
   };
 
-  const boardsToShow = useMemo(() => (boards.length > 0 ? boards : useBoardStore.getState().assignedBoards), [boards]);
+  const boardsToShow = useMemo(() => (boards.length > 0 ? boards : assignedBoards), [boards, assignedBoards]);
 
   const toggleSelectAll = (checked: boolean) => {
     if (checked) {
