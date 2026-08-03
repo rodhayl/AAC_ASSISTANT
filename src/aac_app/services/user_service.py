@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import StudentTeacher, User, UserSettings
+from src.aac_app.models import StudentTeacher, User, UserSettings
 from src.aac_app.services.auth_service import get_password_hash
 from src.api import schemas
 

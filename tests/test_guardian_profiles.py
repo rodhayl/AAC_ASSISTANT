@@ -13,7 +13,7 @@ Tests the complete guardian profile system including:
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models.database import User
+from src.aac_app.models import User
 from src.aac_app.services.auth_service import get_password_hash
 from src.api.main import app
 from tests.test_utils_auth import create_test_headers
@@ -28,7 +28,7 @@ _USER_CONTEXT: dict[int, tuple[str, str]] = {}
 
 def create_admin_for_tests(test_db_session, test_password) -> tuple[dict, str]:
     """Create an admin user directly in DB for test setup."""
-    from src.aac_app.models.database import User
+    from src.aac_app.models import User
     from src.aac_app.services.auth_service import get_password_hash
     from tests.test_utils_auth import create_test_token
 

@@ -5,7 +5,8 @@ from collections.abc import Sequence
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from ..models.database import BoardSymbol, Symbol, SymbolUsageLog, get_session
+from ..db import get_session
+from ..models import BoardSymbol, Symbol, SymbolUsageLog
 from ..services.symbol_analytics import SymbolAnalytics
 
 

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Comprehensive tests for Phase 2 security improvements.
 
 Tests:
@@ -23,7 +23,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import User
+from src.aac_app.models import User
 from src.aac_app.services.auth_service import get_password_hash
 from src.aac_app.utils.jwt_utils import (
     JWT_ALGORITHM,

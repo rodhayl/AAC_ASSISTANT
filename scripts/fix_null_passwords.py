@@ -16,7 +16,8 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.aac_app.models.database import User, get_session  # noqa: E402
+from src.aac_app.db import get_session
+from src.aac_app.models import User  # noqa: E402
 from src.api.routers.auth import hash_password  # noqa: E402
 
 

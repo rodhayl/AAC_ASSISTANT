@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 import src.api.dependencies as deps
 from src import config
-from src.aac_app.models.database import AppSettings, User, UserSettings
+from src.aac_app.models import AppSettings, User, UserSettings
 from src.aac_app.providers.lmstudio_provider import LMStudioProvider
 from src.aac_app.providers.ollama_provider import OllamaProvider
 from src.aac_app.providers.openrouter_provider import OpenRouterProvider

@@ -3,7 +3,7 @@ import shutil
 
 from fastapi import APIRouter, Depends
 
-from src.aac_app.models.database import User
+from src.aac_app.models import User
 from src.api.dependencies import (
     get_current_active_user,
     get_lmstudio_provider,

@@ -13,7 +13,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from src.aac_app.models.database import Base, User
+from src.aac_app.models import Base, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.api.dependencies import get_db
 from src.api.main import app

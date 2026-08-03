@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.aac_app.models.database import CommunicationBoard, User
+from src.aac_app.models import CommunicationBoard, User
 from src.config import DATABASE_PATH
 
 print(f"Using Database Path: {DATABASE_PATH}")

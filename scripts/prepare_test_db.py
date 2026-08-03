@@ -37,15 +37,13 @@ def prepare_db(target_dir):
         src.config.DATA_DIR = target_path
         src.config.DATABASE_PATH = db_path
         
-        # Import database module (after config is patched)
-        from src.aac_app.models import database
-        
-        # Monkey patch get_database_path just in case
-        original_get_db_path = database.get_database_path
-        database.get_database_path = lambda: str(db_path)
-        
-        # Run initialization (creates tables and seed data)
-        database.init_database()
+        # Import schema and seed modules after config is patched.
+        from src.aac_app import schema
+        from src.aac_app.seed import init_database
+
+        # Run initialization (creates tables and seed data).
+        schema.ensure()
+        init_database(ensure_schema=False)
         
         # Verify creation
         if db_path.exists():

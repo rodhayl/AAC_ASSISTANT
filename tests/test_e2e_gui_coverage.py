@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models.database import Symbol
+from src.aac_app.models import Symbol
 from src.aac_app.services.vector_utils import index_all_symbols
 from src.api.main import app
 
@@ -36,7 +36,7 @@ def auth_headers(test_db_session, test_password):
     token = resp.json()["access_token"]
 
     # Get ID
-    from src.aac_app.models.database import User
+    from src.aac_app.models import User
     user = test_db_session.query(User).filter(User.username == username).first()
     user_id = user.id
 
@@ -137,7 +137,7 @@ class TestGUICoverage:
             assert start_res.status_code == 200
 
         # 2. Create dummy DB session for the endpoint to find
-        from src.aac_app.models.database import LearningSession
+        from src.aac_app.models import LearningSession
         ls = LearningSession(user_id=user_id, topic_name="test", id=999)
         test_db_session.add(ls)
         test_db_session.commit()

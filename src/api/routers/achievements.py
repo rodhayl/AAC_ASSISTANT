@@ -3,7 +3,8 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 
-from src.aac_app.models.database import Achievement, User, UserAchievement, get_session
+from src.aac_app.db import get_session
+from src.aac_app.models import Achievement, User, UserAchievement
 from src.aac_app.services.achievement_system import AchievementSystem
 from src.api import schemas
 from src.api.dependencies import (

@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.aac_app.models.database import BoardSymbol, CommunicationBoard, Symbol
+from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol
 from src.config import DATABASE_PATH
 
 engine = create_engine(f"sqlite:///{DATABASE_PATH}")

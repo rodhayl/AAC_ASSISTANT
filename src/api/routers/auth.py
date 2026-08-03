@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import StudentTeacher, User, UserSettings
+from src.aac_app.models import StudentTeacher, User, UserSettings
 from src.aac_app.services.audit_service import audit_service
 from src.aac_app.services.auth_service import (
     get_password_hash,

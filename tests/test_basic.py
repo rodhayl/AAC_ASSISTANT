@@ -36,7 +36,8 @@ def test_services():
 def test_models():
     """Test that database models can be imported"""
     try:
-        from aac_app.models.database import LearningSession, User, init_database
+        from src.aac_app.models import LearningSession, User
+        from src.aac_app.seed import init_database
 
         assert User is not None
         assert LearningSession is not None
@@ -48,7 +49,7 @@ def test_models():
 def test_database_initialization():
     """Test database initialization"""
     try:
-        from aac_app.models.database import init_database
+        from src.aac_app.seed import init_database
 
         # This should not raise an exception
         init_database()

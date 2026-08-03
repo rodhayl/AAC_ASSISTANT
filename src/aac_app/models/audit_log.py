@@ -9,8 +9,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
 
-# Import Base from database module
-from src.aac_app.models.database import Base
+from .base import Base
 
 
 class AuditLog(Base):

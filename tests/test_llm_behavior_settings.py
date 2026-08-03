@@ -12,7 +12,7 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models.database import LearningSession, User
+from src.aac_app.models import LearningSession, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.aac_app.services.learning_companion_service import LearningCompanionService
 from src.api import dependencies as deps

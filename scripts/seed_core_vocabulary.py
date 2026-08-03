@@ -6,7 +6,8 @@ from pathlib import Path
 project_root = str(Path(__file__).parent.parent)
 sys.path.append(project_root)
 
-from src.aac_app.models.database import get_session, Symbol
+from src.aac_app.db import get_session
+from src.aac_app.models import Symbol
 from loguru import logger
 
 def seed_core_vocabulary():

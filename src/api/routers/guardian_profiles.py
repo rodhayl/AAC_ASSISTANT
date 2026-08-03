@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import StudentTeacher, User
+from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.guardian_profile_service import get_guardian_profile_service
 from src.aac_app.services.template_manager import get_template_manager
 from src.api import schemas

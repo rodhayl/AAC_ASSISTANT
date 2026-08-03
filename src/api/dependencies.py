@@ -11,14 +11,8 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from src import config
-from src.aac_app.models.database import (
-    AppSettings,
-    User,
-    create_engine_instance,
-    create_session_factory,
-    create_tables,
-    get_session,
-)
+from src.aac_app.db import create_session_factory, ensure_tables, get_session
+from src.aac_app.models import AppSettings, User
 from src.aac_app.providers.lmstudio_provider import LMStudioProvider
 from src.aac_app.providers.local_speech_provider import LocalSpeechProvider
 from src.aac_app.providers.local_tts_provider import LocalTTSProvider
@@ -56,10 +50,6 @@ _startup_state: dict[str, Any] = {
 }
 _startup_lock = threading.Lock()
 
-_tables_initialized_url: str | None = None
-_tables_initialized_engine_id: int | None = None
-_tables_init_lock = threading.Lock()
-
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 
@@ -68,25 +58,8 @@ def get_db() -> Generator[Session]:
     Dependency to get a database session.
     Auto-commits on success, rolls back on exception.
     """
-    global _tables_initialized_url, _tables_initialized_engine_id
-    engine = create_engine_instance()
-    engine_url = str(engine.url)
-    engine_id = id(engine)
-    if (
-        _tables_initialized_url != engine_url
-        or _tables_initialized_engine_id != engine_id
-    ):
-        with _tables_init_lock:
-            if (
-                _tables_initialized_url != engine_url
-                or _tables_initialized_engine_id != engine_id
-            ):
-                create_tables()
-                _tables_initialized_url = engine_url
-                _tables_initialized_engine_id = engine_id
-
-    session_local = create_session_factory()
-    db = session_local()
+    ensure_tables()
+    db = create_session_factory()()
     try:
         yield db
         db.commit()

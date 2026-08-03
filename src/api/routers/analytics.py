@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import BoardSymbol, Symbol, User
+from src.aac_app.models import BoardSymbol, Symbol, User
 from src.aac_app.services.symbol_analytics import SymbolAnalytics
 from src.api.dependencies import get_current_active_user, get_db, get_text
 from src.api.schemas import NextSymbolRequest, SymbolUsageRequest

@@ -39,7 +39,7 @@ def check_database_connection():
     """Check if we can connect to the database"""
     from sqlalchemy import text
 
-    from src.aac_app.models.database import get_session
+    from src.aac_app.db import get_session
 
     with get_session() as session:
         result = session.execute(text("SELECT 1")).scalar()
@@ -49,7 +49,8 @@ def check_database_connection():
 
 def check_critical_users():
     """Check if critical users exist (soft check)"""
-    from src.aac_app.models.database import User, get_session
+    from src.aac_app.db import get_session
+    from src.aac_app.models import User
 
     with get_session() as session:
         users = ["student1", "teacher1", "admin1"]

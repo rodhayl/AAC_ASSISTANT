@@ -14,7 +14,7 @@ from sqlalchemy.orm import configure_mappers
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.aac_app.models.database import Base, BoardSymbol  # noqa: E402
+from src.aac_app.models import Base, BoardSymbol  # noqa: E402
 
 
 def test_orm_mapping_validity():

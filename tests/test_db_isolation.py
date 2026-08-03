@@ -3,7 +3,7 @@ import os
 
 from sqlalchemy import text
 
-from src.aac_app.models.database import create_engine_instance, get_database_path
+from src.aac_app.db import create_engine_instance, create_session_factory, get_database_path
 
 
 def test_database_isolation(test_db_session):
@@ -44,4 +44,9 @@ def test_database_isolation(test_db_session):
         assert str(engine_file.url) == f"sqlite:///{expected_path}"
     finally:
         os.environ["DATABASE_URL"] = current_url
+
+
+def test_session_factory_is_cached():
+    """Request-level session creation reuses one process-wide factory."""
+    assert create_session_factory() is create_session_factory()
 

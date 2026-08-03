@@ -7,13 +7,13 @@ from datetime import datetime
 
 from loguru import logger
 
-from ..models.database import (
+from ..db import get_session
+from ..models import (
     LearningPlan,
     LearningSession,
     LearningTask,
     User,
     UserSettings,
-    get_session,
 )
 from ..providers.local_speech_provider import WHISPER_AVAILABLE, LocalSpeechProvider
 from ..providers.local_tts_provider import LocalTTSProvider

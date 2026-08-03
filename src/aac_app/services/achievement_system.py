@@ -4,14 +4,14 @@ from typing import Any
 from loguru import logger
 from sqlalchemy import or_
 
-from ..models.database import (
+from ..db import get_session
+from ..models import (
     Achievement,
     LearningSession,
     Notification,
     User,
     UserAchievement,
     UserProgress,
-    get_session,
 )
 
 

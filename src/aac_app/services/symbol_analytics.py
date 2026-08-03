@@ -9,7 +9,8 @@ from loguru import logger
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
-from ..models.database import Symbol, SymbolUsageLog, get_session
+from ..db import get_session
+from ..models import Symbol, SymbolUsageLog
 
 
 class SymbolAnalytics:

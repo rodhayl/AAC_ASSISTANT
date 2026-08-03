@@ -2,7 +2,7 @@ import bcrypt
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models.database import User
+from src.aac_app.models import User
 from src.aac_app.services.auth_service import get_password_hash, verify_password
 from src.api.main import app
 

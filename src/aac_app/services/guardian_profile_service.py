@@ -12,12 +12,12 @@ from typing import Any
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from ..models.database import (
+from ..db import get_session
+from ..models import (
     GuardianProfile,
     GuardianProfileHistory,
     StudentTeacher,
     User,
-    get_session,
 )
 from .template_manager import get_template_manager
 

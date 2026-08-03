@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models.database import StudentTeacher
+from src.aac_app.models import StudentTeacher
 from src.api.main import app
 
 client = TestClient(app)

@@ -5,7 +5,7 @@ import sys
 # Add project root to Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from src.aac_app.models.database import get_session  # noqa: E402
+from src.aac_app.db import get_session  # noqa: E402
 from src.aac_app.services.user_service import UserService  # noqa: E402
 
 

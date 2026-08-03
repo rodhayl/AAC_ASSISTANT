@@ -2,7 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 
 from src import config
-from src.aac_app.models.database import Base, create_engine_instance, init_database
+from src.aac_app.db import create_engine_instance
+from src.aac_app.models import Base
+from src.aac_app.seed import init_database
 from src.api.dependencies import get_current_admin_user, get_text
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -44,7 +46,7 @@ def reset_database(user=Depends(get_current_admin_user)):
         logger.info("Creating tables...")
         Base.metadata.create_all(engine)
         logger.info("Seeding database initial data...")
-        init_database()
+        init_database(ensure_schema=False)
         logger.info(f"Database reset completed successfully by {user.username}")
         return {"ok": True}
     except Exception as e:

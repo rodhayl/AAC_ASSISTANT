@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import BoardSymbol, CommunicationBoard
+from src.aac_app.models import BoardSymbol, CommunicationBoard
 from src.api.main import app
 
 # Setup TestClient

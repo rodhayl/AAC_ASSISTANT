@@ -1,6 +1,7 @@
 from loguru import logger
 
-from src.aac_app.models.database import Symbol, get_session
+from src.aac_app.db import get_session
+from src.aac_app.models import Symbol
 from src.api.dependencies import get_vector_store
 
 

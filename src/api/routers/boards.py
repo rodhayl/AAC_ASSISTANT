@@ -17,7 +17,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from src import config
-from src.aac_app.models.database import (
+from src.aac_app.models import (
     BoardAssignment,
     BoardSymbol,
     CommunicationBoard,

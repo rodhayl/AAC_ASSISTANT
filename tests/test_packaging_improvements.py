@@ -229,7 +229,7 @@ class TestDatabaseModelCompleteness:
 
     def test_communication_board_has_locale(self):
         """Verify CommunicationBoard has locale column"""
-        from src.aac_app.models.database import CommunicationBoard
+        from src.aac_app.models import CommunicationBoard
 
         # Check column exists
         assert hasattr(CommunicationBoard, 'locale')
@@ -239,35 +239,35 @@ class TestDatabaseModelCompleteness:
 
     def test_communication_board_has_is_language_learning(self):
         """Verify CommunicationBoard has is_language_learning column"""
-        from src.aac_app.models.database import CommunicationBoard
+        from src.aac_app.models import CommunicationBoard
 
         assert hasattr(CommunicationBoard, 'is_language_learning')
         assert 'is_language_learning' in CommunicationBoard.__table__.columns
 
     def test_board_symbol_has_linked_board_id(self):
         """Verify BoardSymbol has linked_board_id column"""
-        from src.aac_app.models.database import BoardSymbol
+        from src.aac_app.models import BoardSymbol
 
         assert hasattr(BoardSymbol, 'linked_board_id')
         assert 'linked_board_id' in BoardSymbol.__table__.columns
 
     def test_board_symbol_has_color(self):
         """Verify BoardSymbol has color column"""
-        from src.aac_app.models.database import BoardSymbol
+        from src.aac_app.models import BoardSymbol
 
         assert hasattr(BoardSymbol, 'color')
         assert 'color' in BoardSymbol.__table__.columns
 
     def test_board_symbol_has_order_index(self):
         """Verify BoardSymbol has order_index column"""
-        from src.aac_app.models.database import BoardSymbol
+        from src.aac_app.models import BoardSymbol
 
         assert hasattr(BoardSymbol, 'order_index')
         assert 'order_index' in BoardSymbol.__table__.columns
 
     def test_board_symbol_relationships(self):
         """Verify BoardSymbol has proper relationships"""
-        from src.aac_app.models.database import BoardSymbol
+        from src.aac_app.models import BoardSymbol
 
         # Check relationships exist
         assert hasattr(BoardSymbol, 'board')
@@ -352,7 +352,7 @@ class TestSchemaModelAlignment:
 
     def test_board_create_schema_matches_model(self):
         """Verify BoardCreate schema fields exist in CommunicationBoard model"""
-        from src.aac_app.models.database import CommunicationBoard
+        from src.aac_app.models import CommunicationBoard
         from src.api.schemas import BoardCreate
 
         # Get schema fields (excluding 'symbols' which is handled separately)
@@ -368,7 +368,7 @@ class TestSchemaModelAlignment:
 
     def test_board_response_schema_matches_model(self):
         """Verify BoardResponse schema fields exist in CommunicationBoard model"""
-        from src.aac_app.models.database import CommunicationBoard
+        from src.aac_app.models import CommunicationBoard
         from src.api.schemas import BoardResponse
 
         schema_fields = set(BoardResponse.model_fields.keys())

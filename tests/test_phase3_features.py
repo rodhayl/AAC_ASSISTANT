@@ -9,7 +9,7 @@ Comprehensive tests for Phase 3-4 features:
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models.database import (
+from src.aac_app.models import (
     BoardAssignment,
     BoardSymbol,
     CommunicationBoard,

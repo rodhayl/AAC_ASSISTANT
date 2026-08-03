@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import Notification, User
+from src.aac_app.models import Notification, User
 from src.api.dependencies import (
     get_current_active_user,
     get_current_admin_user,

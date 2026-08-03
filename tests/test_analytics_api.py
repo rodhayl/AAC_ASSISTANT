@@ -8,7 +8,7 @@ from datetime import datetime
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models.database import SymbolUsageLog
+from src.aac_app.models import SymbolUsageLog
 from src.api.dependencies import get_current_active_user
 from src.api.main import app
 
@@ -34,7 +34,7 @@ def setup_auth(regular_user):
 @pytest.fixture(scope="function")
 def sample_usage_logs(test_db_session, regular_user):
     """Create sample symbol usage logs for testing."""
-    from src.aac_app.models.database import LearningSession, Symbol
+    from src.aac_app.models import LearningSession, Symbol
 
     # Create required symbols
     symbols_data = [

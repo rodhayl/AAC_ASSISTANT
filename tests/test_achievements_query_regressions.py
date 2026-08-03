@@ -4,7 +4,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models.database import Achievement, User, UserAchievement
+from src.aac_app.models import Achievement, User, UserAchievement
 from src.aac_app.services.achievement_system import AchievementSystem
 from src.api.main import app
 from tests.test_utils_auth import create_test_headers

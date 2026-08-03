@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models.database import Notification
+from src.aac_app.models import Notification
 from src.api.main import app
 
 

@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import (
+from src.aac_app.models import (
     Achievement,
     BoardAssignment,
     BoardSymbol,

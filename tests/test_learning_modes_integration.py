@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import LearningMode
+from src.aac_app.models import LearningMode
 from src.api.dependencies import get_llm_provider, get_speech_provider, get_tts_provider
 from src.api.main import app
 
@@ -24,7 +24,7 @@ def override_providers(
     """Override provider dependencies with mocked versions"""
     from contextlib import contextmanager
 
-    from src.aac_app import models
+    from src.aac_app import db
     from src.aac_app.services import achievement_system, learning_companion_service
 
     # Override providers
@@ -37,7 +37,7 @@ def override_providers(
     def mock_get_session():
         yield test_db_session
 
-    monkeypatch.setattr(models.database, "get_session", mock_get_session)
+    monkeypatch.setattr(db, "get_session", mock_get_session)
     monkeypatch.setattr(learning_companion_service, "get_session", mock_get_session)
     monkeypatch.setattr(achievement_system, "get_session", mock_get_session)
 

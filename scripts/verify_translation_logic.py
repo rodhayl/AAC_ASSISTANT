@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.aac_app.models.database import BoardSymbol, CommunicationBoard, Symbol  # noqa: E402
+from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol  # noqa: E402
 from src.api.routers.boards import serialize_board  # noqa: E402
 
 

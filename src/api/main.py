@@ -13,9 +13,8 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from src import config
-from src.aac_app.models.database import init_database
-from src.aac_app.models.migrate_add_order_index import migrate_add_order_index
-from src.aac_app.models.migrate_add_ui_language import migrate_add_ui_language
+from src.aac_app import schema
+from src.aac_app.seed import init_database
 from src.aac_app.services.vector_utils import index_all_symbols
 from src.api.dependencies import get_startup_state, warmup_providers
 from src.api.limiter import limiter
@@ -54,21 +53,14 @@ async def lifespan(app: FastAPI):
     logger.info(f"Log file: {LOG_FILE}")
     logger.info("=" * 60)
 
-    # Initialize database
+    # Create/update schema once, then seed data.
     try:
-        init_database()
+        schema.ensure()
+        init_database(ensure_schema=False)
         logger.info("Database initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         logger.exception("Database initialization traceback:")
-
-    # Ensure migrations that add required columns are applied (idempotent)
-    try:
-        migrate_add_order_index()
-        migrate_add_ui_language()
-    except Exception as e:
-        logger.error(f"Failed to apply migrations: {e}")
-        logger.exception("Migration traceback:")
 
     # Eagerly initialize all providers at startup
     # This prevents slow first requests and potential deadlocks

@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.aac_app.models.database import CommunicationBoard
+from src.aac_app.models import CommunicationBoard
 
 # Database setup
 DATABASE_URL = "sqlite:///./aac_app.db"

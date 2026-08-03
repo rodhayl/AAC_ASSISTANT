@@ -4,7 +4,8 @@ import sys
 # Add the project root to the python path
 sys.path.append(os.getcwd())
 
-from src.aac_app.models.database import Symbol, get_session  # noqa: E402
+from src.aac_app.db import get_session
+from src.aac_app.models import Symbol  # noqa: E402
 
 
 def check_and_migrate_arasaac_symbols():

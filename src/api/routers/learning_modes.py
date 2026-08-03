@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import LearningMode, User
+from src.aac_app.models import LearningMode, User
 from src.api.dependencies import get_current_active_user, get_db
 from src.api.schemas import (
     LearningModeCreate,

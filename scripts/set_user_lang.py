@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.aac_app.models.database import User  # noqa: E402
+from src.aac_app.models import User  # noqa: E402
 
 
 def set_user_language(lang_code):
@@ -29,7 +29,7 @@ def set_user_language(lang_code):
         # Looking at User model: settings = relationship("UserPreferences", uselist=False, back_populates="user")
         # Wait, UserPreferences is a table.
 
-        from src.aac_app.models.database import UserSettings
+        from src.aac_app.models import UserSettings
 
         prefs = session.query(UserSettings).filter_by(user_id=user.id).first()
         if not prefs:
