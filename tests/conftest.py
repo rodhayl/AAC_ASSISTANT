@@ -6,17 +6,18 @@ This file ensures:
 2. Proper test isolation
 3. Consistent test environment
 """
+from unittest.mock import AsyncMock, Mock
+
 import pytest
-from unittest.mock import Mock, AsyncMock
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.aac_app.models.database import Base, User
-from src.aac_app.models.audit_log import AuditLog, FailedLoginAttempt  # Import audit models
-from src.api.main import app
-from src.api.dependencies import get_db
 from src.aac_app.services.auth_service import get_password_hash
+from src.api.dependencies import get_db
+from src.api.main import app
+
 
 @pytest.fixture(scope="function")
 def test_db_engine():
@@ -29,19 +30,19 @@ def test_db_engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    
+
     # Enable foreign key constraints for SQLite
     @event.listens_for(engine, "connect")
     def set_sqlite_pragma(dbapi_conn, connection_record):
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
-    
+
     # Create all tables
     Base.metadata.create_all(bind=engine)
-    
+
     yield engine
-    
+
     # Cleanup
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
@@ -58,11 +59,11 @@ def test_db_session(test_db_engine):
         autoflush=False,
         bind=test_db_engine
     )
-    
+
     session = TestingSessionLocal()
-    
+
     yield session
-    
+
     session.close()
 
 
@@ -77,19 +78,19 @@ def setup_test_db(test_db_session):
             yield test_db_session
         finally:
             pass
-    
+
     app.dependency_overrides[get_db] = override_get_db
-    
+
     # Patch get_session used by services to use the test session
-    from unittest.mock import patch
     from contextlib import contextmanager
-    
+    from unittest.mock import patch
+
     @contextmanager
     def override_get_session_cm():
         # Yield the same test session
         # We don't close it here because it's managed by the test_db_session fixture
         yield test_db_session
-        
+
     # Patch all modules that use get_session
     patches = [
         patch('src.aac_app.services.learning_companion_service.get_session', side_effect=override_get_session_cm),
@@ -98,15 +99,15 @@ def setup_test_db(test_db_session):
         patch('src.aac_app.services.guardian_profile_service.get_session', side_effect=override_get_session_cm),
         patch('src.api.dependencies.get_session', side_effect=override_get_session_cm)
     ]
-    
+
     for p in patches:
         p.start()
-        
+
     yield
-    
+
     for p in patches:
         p.stop()
-        
+
     app.dependency_overrides.clear()
 
 

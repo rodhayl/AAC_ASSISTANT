@@ -5,10 +5,11 @@ Handles desktop notifications, in-app notifications, and notification history
 
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -53,8 +54,8 @@ class Notification:
     priority: NotificationPriority
     timestamp: datetime
     read: bool = False
-    actions: List[Dict[str, Any]] = None
-    timeout: Optional[int] = None  # seconds
+    actions: list[dict[str, Any]] = None
+    timeout: int | None = None  # seconds
 
     def __post_init__(self):
         if self.actions is None:
@@ -65,8 +66,8 @@ class NotificationService:
     """System notification service"""
 
     def __init__(self):
-        self.notifications: List[Notification] = []
-        self.callbacks: Dict[str, List[Callable]] = {}
+        self.notifications: list[Notification] = []
+        self.callbacks: dict[str, list[Callable]] = {}
         self.enabled_types = set(NotificationType)
         self.desktop_notifications_enabled = PLYER_AVAILABLE
         self.in_app_notifications_enabled = True
@@ -101,7 +102,7 @@ class NotificationService:
             self.notifications = self.notifications[-self.max_history :]
 
     def show_notification(
-        self, title: str, message: str, config: Optional[Dict[str, Any]] = None
+        self, title: str, message: str, config: dict[str, Any] | None = None
     ) -> str:
         """
         Show a notification
@@ -134,7 +135,7 @@ class NotificationService:
         return notification.id
 
     def _create_notification(
-        self, title: str, message: str, config: Dict[str, Any]
+        self, title: str, message: str, config: dict[str, Any]
     ) -> Notification:
         """Create notification object from parameters"""
         return Notification(
@@ -220,9 +221,9 @@ class NotificationService:
     def get_notifications(
         self,
         unread_only: bool = False,
-        notification_type: Optional[NotificationType] = None,
-        limit: Optional[int] = None,
-    ) -> List[Notification]:
+        notification_type: NotificationType | None = None,
+        limit: int | None = None,
+    ) -> list[Notification]:
         """Get notifications from history"""
         filtered = self.notifications
 
@@ -251,7 +252,7 @@ class NotificationService:
             notification.read = True
         self._trigger_callbacks("all_notifications_read", None)
 
-    def clear_notifications(self, notification_type: Optional[NotificationType] = None):
+    def clear_notifications(self, notification_type: NotificationType | None = None):
         """Clear notifications"""
         if notification_type:
             self.notifications = [
@@ -300,7 +301,7 @@ class NotificationService:
         """Enable/disable in-app notifications"""
         self.in_app_notifications_enabled = enabled
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get notification statistics"""
         total = len(self.notifications)
         unread = len([n for n in self.notifications if not n.read])
@@ -326,7 +327,7 @@ class NotificationService:
 
 
 # Global notification service instance
-_notification_service: Optional[NotificationService] = None
+_notification_service: NotificationService | None = None
 
 
 def get_notification_service() -> NotificationService:

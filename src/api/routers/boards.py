@@ -1,7 +1,6 @@
 import os
 import uuid
 from functools import lru_cache
-from typing import List, Optional, Union
 
 from fastapi import (
     APIRouter,
@@ -56,7 +55,7 @@ def _build_symbol_translator(target_lang: str):
     return _GoogleTranslator(source="auto", target=target_lang)
 
 
-def _translate_symbol_text(text: Optional[str], target_lang: Optional[str]) -> Optional[str]:
+def _translate_symbol_text(text: str | None, target_lang: str | None) -> str | None:
     """Best-effort symbol translation that safely degrades when dependency is absent."""
     global _translation_dependency_warning_emitted
     if not text or not target_lang:
@@ -80,7 +79,7 @@ def _translate_symbol_text(text: Optional[str], target_lang: Optional[str]) -> O
 
 def _fallback_board_suggestions(
     db: Session, *, board: CommunicationBoard, item_count: int
-) -> List[dict]:
+) -> list[dict]:
     """
     Best-effort, offline-friendly suggestions that do not depend on an external LLM.
 
@@ -112,7 +111,7 @@ def _fallback_board_suggestions(
         candidates = query.order_by(func.random()).limit(max(item_count * 5, 25)).all()
 
     seen: set[str] = set()
-    items: List[dict] = []
+    items: list[dict] = []
     for sym in candidates:
         label = (sym.label or "").strip()
         if not label:
@@ -233,21 +232,21 @@ def create_symbol(
         db.add(db_symbol)
         db.commit()
         db.refresh(db_symbol)
-        
+
         # Index in vector store if possible
         try:
             from src.aac_app.services.vector_utils import index_symbol
             index_symbol(db_symbol)
         except Exception as e:
             logger.warning(f"Failed to index new symbol: {e}")
-            
+
         return db_symbol
     except Exception as e:
         logger.error(f"Failed to create symbol: {e}")
         raise HTTPException(status_code=500, detail="Failed to create symbol")
 
 
-@router.get("/symbols", response_model=List[schemas.SymbolResponse])
+@router.get("/symbols", response_model=list[schemas.SymbolResponse])
 def get_symbols(
     skip: int = 0,
     limit: int = 100,
@@ -255,7 +254,7 @@ def get_symbols(
     search: str = None,
     keywords: str = None,
     language: str = None,
-    usage: Optional[str] = Query(None, pattern="^(in_use|unused)$"),
+    usage: str | None = Query(None, pattern="^(in_use|unused)$"),
     sort: str = Query("default", pattern="^(default|newest|oldest|alpha)$"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -291,11 +290,11 @@ def get_symbols(
                 semantic_results = vs.search(search, k=20)
                 # Extract symbol IDs from semantic results
                 semantic_ids = [
-                    item["id"] 
-                    for item in semantic_results 
+                    item["id"]
+                    for item in semantic_results
                     if item.get("type") == "symbol" and "id" in item
                 ]
-                
+
                 if semantic_ids:
                     logger.info(f"Semantic search found {len(semantic_ids)} symbols for '{search}'")
                     # Combine SQL LIKE with Vector Search IDs
@@ -375,9 +374,9 @@ def get_symbols(
         query = query.order_by(Symbol.order_index, Symbol.id)
 
     results = query.offset(skip).limit(limit).all()
-    symbols: List[Symbol] = []
+    symbols: list[Symbol] = []
     for sym, use_count in results:
-        setattr(sym, "is_in_use", bool(use_count and use_count > 0))
+        sym.is_in_use = bool(use_count and use_count > 0)
         symbols.append(sym)
     return symbols
 
@@ -398,7 +397,7 @@ def create_symbol(
 
 @router.put("/symbols/reorder")
 def reorder_symbols(
-    updates: List[schemas.SymbolReorderUpdate],
+    updates: list[schemas.SymbolReorderUpdate],
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -506,7 +505,7 @@ def update_symbol(
     db.refresh(db_symbol)
     # Attach usage flag
     use_count = db.query(BoardSymbol).filter(BoardSymbol.symbol_id == symbol_id).count()
-    setattr(db_symbol, "is_in_use", use_count > 0)
+    db_symbol.is_in_use = use_count > 0
     return db_symbol
 
 
@@ -550,7 +549,7 @@ async def update_symbol_image(
     db.commit()
     db.refresh(db_symbol)
     use_count = db.query(BoardSymbol).filter(BoardSymbol.symbol_id == symbol_id).count()
-    setattr(db_symbol, "is_in_use", use_count > 0)
+    db_symbol.is_in_use = use_count > 0
     return db_symbol
 
 
@@ -589,8 +588,8 @@ def delete_symbol(
 def get_boards(
     skip: int = 0,
     limit: int = 100,
-    user_id: Optional[int] = None,
-    name: Optional[str] = None,
+    user_id: int | None = None,
+    name: str | None = None,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -670,7 +669,7 @@ def get_boards(
         return []
 
 
-@router.get("/assigned", response_model=List[schemas.BoardResponse])
+@router.get("/assigned", response_model=list[schemas.BoardResponse])
 def get_assigned_boards(
     student_id: int,
     current_user: User = Depends(get_current_active_user),
@@ -704,7 +703,7 @@ def get_assigned_boards(
 
     for b in boards:
         try:
-            setattr(b, "playable_symbols_count", get_playable_count(b))
+            b.playable_symbols_count = get_playable_count(b)
         except Exception:
             # If anything goes wrong, keep returning the board; client will fall back.
             pass
@@ -761,12 +760,12 @@ async def create_board(
     payload = board.model_dump()
     # Extract symbols to handle manually (SQLAlchemy doesn't handle list of dicts for relationship automatically)
     symbols_data = payload.pop("symbols", []) if "symbols" in payload else []
-    
+
     db_board = CommunicationBoard(**payload, user_id=user_id)
     db.add(db_board)
     # Flush to get an ID but don't commit yet
     db.flush()
-    
+
     # Add manual symbols if provided
     if symbols_data:
         logger.info(f"Adding {len(symbols_data)} manual symbols to board {db_board.id}")
@@ -799,16 +798,16 @@ async def create_board(
             if provider:
                 # Create a temporary service instance
                 ai_service = BoardGenerationService(provider)
-                
+
                 # Calculate item count based on grid size, default to 12 if not specified
                 item_count = 12
                 if board.grid_rows and board.grid_cols:
                     item_count = board.grid_rows * board.grid_cols
-                
+
                 # Pass fail_silently=False to catch errors and abort board creation
                 items = await ai_service.generate_board_items(
-                    board.name, 
-                    board.description, 
+                    board.name,
+                    board.description,
                     item_count=item_count,
                     fail_silently=False
                 )
@@ -871,8 +870,8 @@ async def create_board(
             raise HTTPException(
                 status_code=502,  # Bad Gateway / Upstream Error
                 detail=get_text(
-                    user=current_user, 
-                    key="errors.boards.aiGenerationFailed", 
+                    user=current_user,
+                    key="errors.boards.aiGenerationFailed",
                     error=str(e)
                 ),
             )
@@ -883,8 +882,8 @@ async def create_board(
 
 
 def _resolve_provider_for_board(
-    board: CommunicationBoard, db: Session, force_source: Optional[str] = None
-) -> Optional[Union[OllamaProvider, OpenRouterProvider]]:
+    board: CommunicationBoard, db: Session, force_source: str | None = None
+) -> OllamaProvider | OpenRouterProvider | None:
     """
     Build an LLM provider instance based on board configuration falling back to global settings.
     """
@@ -948,7 +947,7 @@ def _resolve_provider_for_board(
 @router.post("/{board_id}/ai/suggestions")
 async def generate_ai_suggestions(
     board_id: int,
-    payload: Optional[schemas.AISuggestionsRequest] = Body(None),
+    payload: schemas.AISuggestionsRequest | None = Body(None),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -1367,7 +1366,7 @@ def _update_single_symbol(db_board_symbol: BoardSymbol, update: dict) -> bool:
 @router.put("/{board_id}/symbols/batch")
 def batch_update_board_symbols(
     board_id: int,
-    updates: List[dict],
+    updates: list[dict],
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -1403,9 +1402,8 @@ def batch_update_board_symbols(
             .first()
         )
 
-        if db_board_symbol:
-            if _update_single_symbol(db_board_symbol, update):
-                updated_count += 1
+        if db_board_symbol and _update_single_symbol(db_board_symbol, update):
+            updated_count += 1
 
     db.commit()
     return {"ok": True, "updated": updated_count}

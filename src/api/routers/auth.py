@@ -1,42 +1,47 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
-from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
-from typing import List, Optional
-from loguru import logger
 import re
 
-from src.api import schemas
-from src.api.dependencies import get_db, get_current_active_user, get_current_admin_user
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import OAuth2PasswordRequestForm
+from loguru import logger
+from sqlalchemy.orm import Session
+
 from src.aac_app.models.database import StudentTeacher, User, UserSettings
-from src.aac_app.services.auth_service import get_password_hash, verify_password
-from src.aac_app.utils.jwt_utils import create_access_token, create_refresh_token, decode_access_token
 from src.aac_app.services.audit_service import audit_service
+from src.aac_app.services.auth_service import get_password_hash, verify_password
 from src.aac_app.services.lockout_service import lockout_service
+from src.aac_app.utils.jwt_utils import (
+    create_access_token,
+    create_refresh_token,
+    decode_access_token,
+)
+from src.api import schemas
+from src.api.dependencies import get_current_active_user, get_current_admin_user, get_db
 
 router = APIRouter()
 
 # Import limiter from main app
+import os
+from functools import wraps
+
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from functools import wraps
-import os
 
 _limiter_instance = Limiter(key_func=get_remote_address)
 
 def conditional_limiter(rate: str):
     """
     Apply rate limiting only in non-testing environments.
-    
+
     Args:
         rate: Rate limit string like "10/minute"
-    
+
     Returns:
         Decorator that applies rate limiting in production, passthrough in tests
     """
     def decorator(func):
         # Apply the actual limiter decorator
         limited_func = _limiter_instance.limit(rate)(func)
-        
+
         @wraps(func)
         def wrapper(*args, **kwargs):
             # At runtime, check if we're testing
@@ -46,38 +51,38 @@ def conditional_limiter(rate: str):
             else:
                 # Use rate-limited version
                 return limited_func(*args, **kwargs)
-        
+
         # Return wrapper with same metadata as original
         return wrapper
-    
+
     return decorator
 
 
 def validate_password_strength(password: str) -> None:
     """
     Validate password meets strength requirements.
-    
+
     Requirements:
     - At least 8 characters
     - At least one uppercase letter (A-Z)
     - At least one lowercase letter (a-z)
     - At least one digit (0-9)
-    
+
     Args:
         password: Password to validate
-    
+
     Raises:
         HTTPException: 400 with specific error message if validation fails
     """
     if not password or len(password.strip()) == 0:
         raise HTTPException(status_code=400, detail="Password is required")
-    
+
     if len(password) < 8:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="Password must be at least 8 characters long"
         )
-    
+
     # Check password complexity: at least one uppercase, one lowercase, one digit
     if not re.search(r"[A-Z]", password):
         raise HTTPException(
@@ -105,13 +110,13 @@ def login_for_access_token(
     """
     OAuth2-compliant token endpoint.
     Returns a signed JWT access token for valid credentials.
-    
+
     Rate limited to 10 attempts per minute per IP to prevent brute force attacks.
     Implements account lockout after 5 failed attempts.
     """
     # Get client IP
     client_ip = request.client.host if request.client else None
-    
+
     # Check if account is locked
     is_locked, locked_until = lockout_service.is_locked(db, form_data.username)
     if is_locked:
@@ -122,12 +127,12 @@ def login_for_access_token(
             ip_address=client_ip,
             reason=f"Account locked until {locked_until}"
         )
-        
+
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Account is temporarily locked due to multiple failed login attempts. Try again after {locked_until.strftime('%Y-%m-%d %H:%M:%S UTC')}.",
         )
-    
+
     user = db.query(User).filter(User.username == form_data.username).first()
     if not user:
         # Record failed attempt
@@ -138,13 +143,13 @@ def login_for_access_token(
             ip_address=client_ip,
             reason="User not found"
         )
-        
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     # Check if account is active
     if not user.is_active:
         audit_service.log_login_failed(
@@ -153,48 +158,48 @@ def login_for_access_token(
             ip_address=client_ip,
             reason="Account inactive"
         )
-        
+
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is inactive. Please contact an administrator.",
         )
-    
+
     if not user.password_hash:
         logger.error(f"Token request failed: User '{form_data.username}' has no password hash")
         raise HTTPException(status_code=500, detail="Account configuration error")
-        
+
     if not verify_password(form_data.password, user.password_hash):
         # Record failed attempt and check if should lock
         is_locked, locked_until, attempt_count = lockout_service.record_failed_attempt(
             db, form_data.username, client_ip
         )
-        
+
         reason = f"Invalid password (attempt {attempt_count}/{lockout_service.MAX_ATTEMPTS})"
         if is_locked:
             reason = f"Account locked after {attempt_count} failed attempts"
-        
+
         audit_service.log_login_failed(
             db=db,
             username=form_data.username,
             ip_address=client_ip,
             reason=reason
         )
-        
+
         if is_locked:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Account locked due to multiple failed login attempts. Locked until {locked_until.strftime('%Y-%m-%d %H:%M:%S UTC')}.",
             )
-        
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     # Login successful - reset failed attempts
     lockout_service.reset_attempts(db, form_data.username)
-    
+
     # Log successful login
     audit_service.log_login_success(
         db=db,
@@ -203,7 +208,7 @@ def login_for_access_token(
         user_type=user.user_type,
         ip_address=client_ip
     )
-    
+
     # Create JWT token with user information
     access_token = create_access_token(
         data={
@@ -212,14 +217,14 @@ def login_for_access_token(
             "user_type": user.user_type
         }
     )
-    
+
     refresh_token = create_refresh_token(
         data={
             "sub": user.username,
             "user_id": user.id
         }
     )
-    
+
     logger.info(f"Token issued for user '{user.username}' (id={user.id}, type={user.user_type})")
     return {
         "access_token": access_token,
@@ -237,10 +242,10 @@ def refresh_access_token(
 ):
     """
     Refresh endpoint to get a new access token using a refresh token.
-    
+
     This allows users to get a new access token without re-authenticating,
     preventing session interruption for long-running sessions.
-    
+
     Rate limited to 30 attempts per minute per IP.
     """
     # Decode and validate refresh token
@@ -252,7 +257,7 @@ def refresh_access_token(
             detail="Invalid or expired refresh token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     # Verify this is a refresh token
     if payload.get("type") != "refresh":
         logger.warning("Token type mismatch: Expected refresh token, got access token")
@@ -261,7 +266,7 @@ def refresh_access_token(
             detail="Invalid token type. Expected refresh token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     # Extract user info
     user_id = payload.get("user_id")
     if not user_id:
@@ -271,7 +276,7 @@ def refresh_access_token(
             detail="Invalid token claims",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     # Fetch user from database
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -281,7 +286,7 @@ def refresh_access_token(
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     # Check if account is still active
     if not user.is_active:
         logger.warning(f"Refresh attempt for inactive user '{user.username}'")
@@ -289,7 +294,7 @@ def refresh_access_token(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is inactive. Please contact an administrator.",
         )
-    
+
     # Issue new access token
     new_access_token = create_access_token(
         data={
@@ -298,7 +303,7 @@ def refresh_access_token(
             "user_type": user.user_type
         }
     )
-    
+
     logger.info(f"Access token refreshed for user '{user.username}' (id={user.id})")
     return {
         "access_token": new_access_token,
@@ -310,15 +315,15 @@ def refresh_access_token(
 def register(request: Request, user: schemas.UserCreate, db: Session = Depends(get_db)):
     """
     Register a new user account.
-    
+
     Public registration always creates 'student' accounts to prevent privilege escalation.
     Admin/teacher accounts must be created by an administrator via /auth/admin/create-user.
-    
+
     Rate limited to 5 registrations per hour per IP to prevent spam.
     """
     # Validate password strength using shared validation function
     validate_password_strength(user.password)
-    
+
     # Validate email format if provided
     if user.email:
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
@@ -327,18 +332,18 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
                 status_code=400,
                 detail="Invalid email format"
             )
-    
+
     # Check if username exists
     existing_user = db.query(User).filter(User.username == user.username).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Username already registered")
-    
+
     # Check if email exists (if provided)
     if user.email:
         existing_email = db.query(User).filter(User.email == user.email).first()
         if existing_email:
             raise HTTPException(status_code=400, detail="Email already registered")
-    
+
     # SECURITY: Force user_type to 'student' for public registration
     # Only admins can create teacher/admin accounts via /auth/admin/create-user
     if user.user_type and user.user_type != 'student':
@@ -346,7 +351,7 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
             f"Registration attempted with privileged user_type '{user.user_type}' for username '{user.username}'. "
             "Forcing to 'student'."
         )
-    
+
     # Create new user with enforced student role
     new_user = User(
         username=user.username,
@@ -356,11 +361,11 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
         password_hash=get_password_hash(user.password),
         is_active=True
     )
-    
+
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    
+
     # Log successful account creation
     client_ip = request.client.host if request.client else "unknown"
     audit_service.log_account_created(
@@ -371,7 +376,7 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
         created_by_username="self-registration",
         ip_address=client_ip
     )
-    
+
     logger.info(f"New student account registered: {new_user.username} (id={new_user.id})")
     return new_user
 
@@ -379,60 +384,60 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
 def login(credentials: schemas.LoginRequest, db: Session = Depends(get_db)):
     """
     Login endpoint that returns user info.
-    
-    NOTE: This endpoint returns user info but not a token. 
+
+    NOTE: This endpoint returns user info but not a token.
     For JWT authentication, use /auth/token instead.
     Consider deprecating this endpoint in favor of /auth/token.
     """
     logger.info(f"Login attempt for username: {credentials.username}")
-    
+
     # Find user
     user = db.query(User).filter(User.username == credentials.username).first()
     if not user:
         logger.warning(f"Login failed: User '{credentials.username}' not found")
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
+
     # Check if account is active
     if not user.is_active:
         logger.warning(f"Login failed: User '{credentials.username}' is inactive")
         raise HTTPException(
-            status_code=403, 
+            status_code=403,
             detail="Account is inactive. Please contact an administrator."
         )
-    
+
     logger.debug(f"User found: id={user.id}, username={user.username}, type={user.user_type}")
-    
+
     # Check if user has a password hash (safety check for data integrity)
     if not user.password_hash:
         logger.error(f"Login failed: User '{credentials.username}' has no password hash")
         raise HTTPException(status_code=500, detail="Account configuration error. Please contact administrator.")
-    
+
     # Verify password
     if not verify_password(credentials.password, user.password_hash):
         logger.warning(f"Login failed: Invalid password for user '{credentials.username}'")
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
+
     logger.info(f"Login successful for user '{credentials.username}' (id={user.id}, type={user.user_type})")
     return user
 
 @router.post("/admin/create-user", response_model=schemas.UserResponse)
 def admin_create_user(
     request: Request,
-    user: schemas.UserCreate, 
+    user: schemas.UserCreate,
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
     """
     Create a new user account with any role (admin only).
-    
+
     Only administrators can use this endpoint to create teacher or admin accounts.
     Enforces password strength requirements.
     """
     logger.info(f"Admin '{current_user.username}' creating user '{user.username}' with type '{user.user_type}'")
-    
+
     # Validate password strength using shared validation function
     validate_password_strength(user.password)
-    
+
     # Validate email format if provided
     if user.email:
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
@@ -441,20 +446,20 @@ def admin_create_user(
                 status_code=400,
                 detail="Invalid email format"
             )
-    
+
     # Validate password confirmation for admin-created users
     if not user.confirm_password:
         raise HTTPException(
             status_code=400,
             detail="Password confirmation is required"
         )
-    
+
     if user.password != user.confirm_password:
         raise HTTPException(
             status_code=400,
             detail="Passwords do not match"
         )
-    
+
     # Validate user_type
     valid_types = ['student', 'teacher', 'admin']
     if user.user_type not in valid_types:
@@ -462,18 +467,18 @@ def admin_create_user(
             status_code=400,
             detail=f"Invalid user_type. Must be one of: {', '.join(valid_types)}"
         )
-    
+
     # Check if username exists
     existing_user = db.query(User).filter(User.username == user.username).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Username already registered")
-    
+
     # Check if email exists (if provided)
     if user.email:
         existing_email = db.query(User).filter(User.email == user.email).first()
         if existing_email:
             raise HTTPException(status_code=400, detail="Email already registered")
-    
+
     # Create new user with admin-specified role
     new_user = User(
         username=user.username,
@@ -483,11 +488,11 @@ def admin_create_user(
         password_hash=get_password_hash(user.password),
         is_active=True
     )
-    
+
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    
+
     # Log admin action and account creation
     client_ip = request.client.host if request.client else "unknown"
     audit_service.log_admin_action(
@@ -508,7 +513,7 @@ def admin_create_user(
         created_by_username=current_user.username,
         ip_address=client_ip
     )
-    
+
     logger.info(
         f"Admin '{current_user.username}' created new {new_user.user_type} account: "
         f"{new_user.username} (id={new_user.id})"
@@ -521,17 +526,17 @@ def get_current_user_info(
 ):
     """
     Get current authenticated user's information.
-    
+
     This endpoint returns the user info for the currently authenticated user
     based on the JWT token provided in the Authorization header.
     """
     return current_user
 
-@router.get("/users", response_model=List[schemas.UserResponse])
+@router.get("/users", response_model=list[schemas.UserResponse])
 def get_users(
-    skip: int = 0, 
-    limit: int = 100, 
-    user_type: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    user_type: str | None = None,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -571,7 +576,7 @@ def get_users(
 
 @router.get("/users/{user_id}", response_model=schemas.UserResponse)
 def get_user(
-    user_id: int, 
+    user_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -579,7 +584,7 @@ def get_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     # Permission check
     if current_user.user_type != "admin" and current_user.id != user_id:
         if current_user.user_type == "teacher" and user.user_type == "student":
@@ -602,23 +607,23 @@ def get_user(
                     raise HTTPException(status_code=403, detail="Not authorized to view this user")
         else:
             raise HTTPException(status_code=403, detail="Not authorized to view this user")
-            
+
     return user
 
 @router.post("/change-password")
 @conditional_limiter("10/hour")  # Max 10 password changes per hour per IP
 def change_password(
     request: Request,
-    payload: schemas.ChangePasswordRequest, 
+    payload: schemas.ChangePasswordRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
     Change password endpoint for authenticated users.
-    
+
     Rate limited to 10 attempts per hour per IP.
     """
-    
+
     # If it's the user themselves
     if current_user.username == payload.username:
         if not verify_password(payload.current_password, current_user.password_hash):
@@ -631,15 +636,15 @@ def change_password(
 
     # Validate new password strength using shared validation function
     validate_password_strength(payload.new_password)
-    
+
     if payload.new_password != payload.confirm_password:
         raise HTTPException(status_code=400, detail="Passwords do not match")
-        
+
     user = db.query(User).filter(User.username == payload.username).first() # Should be current_user
     user.password_hash = get_password_hash(payload.new_password)
     db.add(user)
     db.commit()
-    
+
     # Log password change
     client_ip = request.client.host if request.client else "unknown"
     audit_service.log_password_changed(
@@ -649,20 +654,20 @@ def change_password(
         changed_by_admin=False,
         ip_address=client_ip
     )
-    
+
     logger.info(f"Password changed for user '{user.username}' (id={user.id})")
     return {"ok": True}
 
 @router.put("/users/{user_id}", response_model=schemas.UserResponse)
 def update_user(
-    user_id: int, 
-    payload: dict, 
+    user_id: int,
+    payload: dict,
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
     """Update user fields (admin only)"""
     # Note: using get_current_admin_user enforces admin check
-    
+
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -677,7 +682,7 @@ def update_user(
 
 @router.delete("/users/{user_id}")
 def delete_user(
-    user_id: int, 
+    user_id: int,
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
@@ -725,7 +730,7 @@ def update_preferences(
 ):
     """Update current user's preferences"""
     settings = db.query(UserSettings).filter(UserSettings.user_id == current_user.id).first()
-    
+
     if not settings:
         settings = UserSettings(user_id=current_user.id)
         db.add(settings)
@@ -737,7 +742,7 @@ def update_preferences(
 
     for key, value in updates.items():
         setattr(settings, key, value)
-    
+
     db.commit()
     db.refresh(settings)
     logger.info(f"Updated preferences for user {current_user.username}")
@@ -866,17 +871,17 @@ def admin_unlock_account(
 ):
     """
     Unlock a locked user account (admin only).
-    
+
     Removes account lockout after failed login attempts.
     """
     # Verify user exists
     target_user = db.query(User).filter(User.username == username).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     # Unlock the account
     lockout_service.unlock_account(db, username)
-    
+
     # Log admin action
     client_ip = request.client.host if request.client else "unknown"
     audit_service.log_admin_action(
@@ -888,7 +893,7 @@ def admin_unlock_account(
         ip_address=client_ip,
         endpoint="/api/auth/admin/unlock-account"
     )
-    
+
     logger.info(f"Admin '{current_user.username}' unlocked account for '{username}'")
     return {"ok": True, "message": f"Account '{username}' unlocked successfully"}
 
@@ -907,7 +912,7 @@ def update_profile(
         if existing:
             raise HTTPException(status_code=400, detail="Email already in use")
         current_user.email = profile.email
-    
+
     db.commit()
     db.refresh(current_user)
     logger.info(f"Updated profile for user {current_user.username}")

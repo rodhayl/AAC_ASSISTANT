@@ -13,7 +13,7 @@ Phase 2 implementation: November 30, 2025
 
 import importlib
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import jwt
@@ -252,9 +252,9 @@ class TestTokenRefreshMechanism:
             {
                 "sub": "someuser",
                 "user_id": 999,
-                "exp": datetime.now(timezone.utc)
+                "exp": datetime.now(UTC)
                 - timedelta(hours=1),  # Expired 1 hour ago
-                "iat": datetime.now(timezone.utc) - timedelta(days=8),
+                "iat": datetime.now(UTC) - timedelta(days=8),
                 "iss": "aac-assistant",
                 "type": "refresh",
             },
@@ -405,6 +405,7 @@ class TestEnvironmentEnforcement:
     def test_jwt_secret_key_loaded_from_config(self, monkeypatch):
         """JWT_SECRET_KEY should be loaded from config/env, not fallback default."""
         import importlib
+
         import src.aac_app.utils.jwt_utils as jwt_utils
 
         test_secret = "unit_test_secret_key_32_chars_min"
@@ -414,7 +415,7 @@ class TestEnvironmentEnforcement:
         # Should NOT be the default insecure value
         assert jwt_utils.JWT_SECRET_KEY != "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION"
         # Should use configured value
-        assert jwt_utils.JWT_SECRET_KEY == test_secret
+        assert test_secret == jwt_utils.JWT_SECRET_KEY
 
     def test_environment_variable_set_to_development(self):
         """ENVIRONMENT should be set to 'development' in env.properties."""
@@ -481,9 +482,9 @@ class TestTokenExpirationValidation:
                 "sub": user.username,
                 "user_id": user.id,
                 "user_type": user.user_type,
-                "exp": datetime.now(timezone.utc)
+                "exp": datetime.now(UTC)
                 - timedelta(hours=1),  # Expired 1 hour ago
-                "iat": datetime.now(timezone.utc) - timedelta(hours=3),
+                "iat": datetime.now(UTC) - timedelta(hours=3),
                 "iss": "aac-assistant",
             },
             JWT_SECRET_KEY,

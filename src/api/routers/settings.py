@@ -1,6 +1,6 @@
 """Settings API router for admin configuration"""
 
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
@@ -9,9 +9,9 @@ from sqlalchemy.orm import Session
 import src.api.dependencies as deps
 from src import config
 from src.aac_app.models.database import AppSettings, User, UserSettings
+from src.aac_app.providers.lmstudio_provider import LMStudioProvider
 from src.aac_app.providers.ollama_provider import OllamaProvider
 from src.aac_app.providers.openrouter_provider import OpenRouterProvider
-from src.aac_app.providers.lmstudio_provider import LMStudioProvider
 from src.api.dependencies import (
     get_current_active_user,
     get_current_admin_user,
@@ -66,7 +66,7 @@ async def get_ai_settings(
     if current_user.user_type != "admin":
         openrouter_api_key = (
             "********" if openrouter_api_key else None
-        )  # noqa: security
+        )
 
     return {
         "provider": provider,
@@ -104,7 +104,7 @@ async def get_fallback_ai_settings(
     if current_user.user_type != "admin":
         openrouter_api_key = (
             "********" if openrouter_api_key else None
-        )  # noqa: security
+        )
 
     return {
         "provider": provider,
@@ -122,7 +122,7 @@ async def get_fallback_ai_settings(
 
 @router.put("/ai")
 async def update_ai_settings(
-    settings: Dict[str, Any],
+    settings: dict[str, Any],
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
@@ -219,7 +219,7 @@ async def update_ai_settings(
 
 @router.put("/ai/fallback")
 async def update_fallback_ai_settings(
-    settings: Dict[str, Any],
+    settings: dict[str, Any],
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
@@ -478,7 +478,7 @@ async def get_ui_language(
 
 @router.put("/ui")
 async def update_ui_language(
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):

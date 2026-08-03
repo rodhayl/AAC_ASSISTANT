@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
@@ -18,7 +17,7 @@ router = APIRouter()
 
 # ============== Categories Endpoint ==============
 
-@router.get("/categories", response_model=List[str])
+@router.get("/categories", response_model=list[str])
 def get_categories(
     system: AchievementSystem = Depends(get_achievement_system),
     current_user: User = Depends(get_current_active_user),
@@ -32,7 +31,7 @@ def get_categories(
     return system.get_categories()
 
 
-@router.get("/criteria-types", response_model=List[str])
+@router.get("/criteria-types", response_model=list[str])
 def get_criteria_types(
     current_user: User = Depends(get_current_active_user),
 ):
@@ -55,7 +54,7 @@ def get_criteria_types(
 
 # ============== CRUD Endpoints for Achievement Management ==============
 
-@router.get("/", response_model=List[schemas.AchievementFullResponse])
+@router.get("/", response_model=list[schemas.AchievementFullResponse])
 def list_all_achievements(
     current_user: User = Depends(get_current_active_user),
 ):
@@ -69,7 +68,7 @@ def list_all_achievements(
     with get_session() as session:
         achievements = (
             session.query(Achievement)
-            .filter(Achievement.is_active == True)
+            .filter(Achievement.is_active)
             .all()
         )
         return [
@@ -107,7 +106,7 @@ def create_achievement(
     with get_session() as session:
         # If criteria is provided, it's not manual. If no criteria, it's manual.
         has_criteria = bool(data.criteria_type and data.criteria_value)
-        
+
         achievement = Achievement(
             name=data.name,
             description=data.description,
@@ -189,13 +188,13 @@ def update_achievement(
             achievement.icon = data.icon
         if data.is_active is not None:
             achievement.is_active = data.is_active
-        
+
         # Update criteria if provided
         if data.criteria_type is not None:
             achievement.criteria_type = data.criteria_type
         if data.criteria_value is not None:
             achievement.criteria_value = data.criteria_value
-            
+
         # Recalculate is_manual based on presence of criteria
         has_criteria = bool(achievement.criteria_type and achievement.criteria_value)
         achievement.is_manual = not has_criteria
@@ -326,7 +325,7 @@ def award_achievement(
 
 # ============== Existing User Achievement Endpoints ==============
 
-@router.get("/user/{user_id}", response_model=List[schemas.AchievementResponse])
+@router.get("/user/{user_id}", response_model=list[schemas.AchievementResponse])
 def get_user_achievements(
     user_id: int,
     system: AchievementSystem = Depends(get_achievement_system),
@@ -344,7 +343,7 @@ def get_user_achievements(
     return system.get_user_achievements(user_id)
 
 
-@router.post("/user/{user_id}/check", response_model=List[schemas.AchievementResponse])
+@router.post("/user/{user_id}/check", response_model=list[schemas.AchievementResponse])
 def check_achievements(
     user_id: int,
     system: AchievementSystem = Depends(get_achievement_system),
@@ -384,7 +383,7 @@ def get_user_points(
     return system.get_user_points(user_id)
 
 
-@router.get("/leaderboard", response_model=List[schemas.LeaderboardEntry])
+@router.get("/leaderboard", response_model=list[schemas.LeaderboardEntry])
 def get_leaderboard(
     limit: int = 10,
     system: AchievementSystem = Depends(get_achievement_system),

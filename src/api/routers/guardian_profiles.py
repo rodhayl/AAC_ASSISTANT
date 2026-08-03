@@ -12,7 +12,6 @@ The guardian profile system allows teachers/admins to:
 - View audit history of profile changes
 """
 
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
@@ -94,7 +93,7 @@ def verify_student_access(student_id: int, current_user: User, db: Session) -> U
 # --- Template Endpoints ---
 
 
-@router.get("/templates", response_model=List[schemas.TemplateInfo])
+@router.get("/templates", response_model=list[schemas.TemplateInfo])
 async def list_templates(current_user: User = Depends(get_current_teacher_or_admin)):
     """
     List all available personality templates.
@@ -138,7 +137,7 @@ async def get_template(
 )
 async def preview_template(
     template_name: str,
-    overrides: Optional[dict] = None,
+    overrides: dict | None = None,
     current_user: User = Depends(get_current_teacher_or_admin),
 ):
     """
@@ -159,7 +158,7 @@ async def preview_template(
 # --- Student List Endpoints ---
 
 
-@router.get("/students", response_model=List[schemas.StudentWithProfileInfo])
+@router.get("/students", response_model=list[schemas.StudentWithProfileInfo])
 async def list_students_with_profiles(
     current_user: User = Depends(get_current_teacher_or_admin),
     db: Session = Depends(get_db),
@@ -415,7 +414,7 @@ async def delete_student_profile(
 
 
 @router.get(
-    "/students/{student_id}/history", response_model=List[schemas.ProfileHistoryEntry]
+    "/students/{student_id}/history", response_model=list[schemas.ProfileHistoryEntry]
 )
 async def get_profile_history(
     student_id: int,

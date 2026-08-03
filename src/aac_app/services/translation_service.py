@@ -1,7 +1,7 @@
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class TranslationService:
@@ -9,7 +9,7 @@ class TranslationService:
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(TranslationService, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
 
@@ -23,11 +23,11 @@ class TranslationService:
         # Go up: services -> aac_app -> src
         # ../../frontend/src/locales
         self.locales_dir = current_dir.parent.parent / "frontend" / "src" / "locales"
-        self._cache: Dict[str, Any] = {}
+        self._cache: dict[str, Any] = {}
         self._initialized = True
 
     def resolve_language(
-        self, user: Any = None, accept_language: Optional[str] = None
+        self, user: Any = None, accept_language: str | None = None
     ) -> str:
         """
         Resolve the best language to use based on user settings or headers.
@@ -122,7 +122,7 @@ class TranslationService:
 
         return re.sub(r"\{\{(.*?)\}\}", replace, val)
 
-    def _load_locale(self, lang: str, namespace: str) -> Optional[Dict]:
+    def _load_locale(self, lang: str, namespace: str) -> dict | None:
         cache_key = f"{lang}:{namespace}"
         if cache_key in self._cache:
             return self._cache[cache_key]
@@ -135,7 +135,7 @@ class TranslationService:
             return None
 
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 data = json.load(f)
                 self._cache[cache_key] = data
                 # Locale loaded successfully - no need to log every load

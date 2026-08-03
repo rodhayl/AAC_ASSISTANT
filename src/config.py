@@ -6,7 +6,6 @@ Reads configuration from env.properties file.
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 # Determine if running as frozen executable (PyInstaller)
 IS_FROZEN = getattr(sys, 'frozen', False)
@@ -51,7 +50,7 @@ def _load_config() -> dict:
 
     config = {}
     if CONFIG_FILE.exists():
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+        with open(CONFIG_FILE, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
@@ -62,7 +61,7 @@ def _load_config() -> dict:
     return config
 
 
-def get(key: str, default: Optional[str] = None) -> str:
+def get(key: str, default: str | None = None) -> str:
     """Get a configuration value by key."""
     config = _load_config()
     # Environment variables take precedence

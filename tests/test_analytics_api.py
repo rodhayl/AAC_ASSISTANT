@@ -202,7 +202,7 @@ class TestAnalyticsAPI:
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
-        
+
         # Filter out always-included punctuation for limit check
         non_punctuation = [s for s in data if s.get("category") != "punctuation"]
         assert len(non_punctuation) <= 3
@@ -259,7 +259,7 @@ class TestAnalyticsAPI:
             "/api/analytics/category-preferences",
             "/api/analytics/usage-stats",
         ]
-        
+
         post_endpoints = [
             "/api/analytics/next-symbol",
         ]
@@ -296,7 +296,7 @@ class TestAnalyticsAPI:
         response = client.post("/api/analytics/next-symbol", json={"limit": 1})
         assert response.status_code == 200
         data = response.json()
-        
+
         # Filter out always-included punctuation for limit check
         non_punctuation = [s for s in data if s.get("category") != "punctuation"]
         assert len(non_punctuation) <= 1

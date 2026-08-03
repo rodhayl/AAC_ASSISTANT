@@ -49,16 +49,17 @@ echo ===================================
 echo AAC Assistant - Running Tests
 echo ===================================
 
-set "PYTHON_EXE=.venv\Scripts\python.exe"
-if not exist "%PYTHON_EXE%" (
-    echo Error: Python environment is still missing.
+echo Running backend tests...
+call uv run pytest -q tests
+if errorlevel 1 (
+    echo Backend tests failed.
     exit /b 1
 )
 
-echo Running backend tests...
-call "%PYTHON_EXE%" -m pytest -q tests
+echo Running Ruff...
+call uv run ruff check src tests
 if errorlevel 1 (
-    echo Backend tests failed.
+    echo Ruff checks failed.
     exit /b 1
 )
 

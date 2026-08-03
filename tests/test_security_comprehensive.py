@@ -15,7 +15,7 @@ Created: November 30, 2025
 Author: Senior Lead Developer
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 import pytest
@@ -110,8 +110,8 @@ class TestJWTExpiration:
                 "sub": student_user.username,
                 "user_id": student_user.id,
                 "user_type": student_user.user_type,
-                "exp": datetime.now(timezone.utc) - timedelta(hours=1),
-                "iat": datetime.now(timezone.utc) - timedelta(hours=3),
+                "exp": datetime.now(UTC) - timedelta(hours=1),
+                "iat": datetime.now(UTC) - timedelta(hours=3),
                 "iss": "aac-assistant",
             },
             JWT_SECRET_KEY,
@@ -158,8 +158,8 @@ class TestForgedTokens:
                 "sub": student_user.username,
                 "user_id": student_user.id,
                 "user_type": student_user.user_type,
-                "exp": datetime.now(timezone.utc) + timedelta(hours=2),
-                "iat": datetime.now(timezone.utc),
+                "exp": datetime.now(UTC) + timedelta(hours=2),
+                "iat": datetime.now(UTC),
                 "iss": "aac-assistant",
             },
             "WRONG_SECRET_KEY_12345",  # Wrong secret!

@@ -4,7 +4,7 @@ This provider is only used when users explicitly provide an OpenRouter API key
 """
 
 import os
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 from loguru import logger
@@ -15,7 +15,7 @@ from .base_provider import BaseLLMProvider
 class OpenRouterProvider(BaseLLMProvider):
     """OpenRouter API provider for optional cloud LLM functionality"""
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
+    def __init__(self, api_key: str | None = None, model: str | None = None):
         super().__init__()
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
         self.base_url = "https://openrouter.ai/api/v1"
@@ -37,7 +37,7 @@ class OpenRouterProvider(BaseLLMProvider):
         """Check if OpenRouter is properly configured"""
         return self.api_key is not None and len(self.api_key.strip()) > 0
 
-    def is_available(self) -> bool:  # noqa: duplicate
+    def is_available(self) -> bool:
         if not self.is_configured():
             return False
         try:
@@ -57,8 +57,8 @@ class OpenRouterProvider(BaseLLMProvider):
     async def generate(
         self,
         prompt: str,
-        model: Optional[str] = None,
-        system: Optional[str] = None,
+        model: str | None = None,
+        system: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 500,
         **kwargs,
@@ -118,7 +118,7 @@ class OpenRouterProvider(BaseLLMProvider):
             logger.error(f"OpenRouter generation failed: {e}")
             raise
 
-    async def get_available_models(self) -> Dict[str, Any]:
+    async def get_available_models(self) -> dict[str, Any]:
         """Get list of available models from OpenRouter"""
         if not self.is_configured():
             return {}

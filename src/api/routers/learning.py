@@ -1,4 +1,3 @@
-from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
@@ -53,7 +52,7 @@ async def start_session(
 @router.post("/{session_id}/ask", response_model=schemas.QuestionResponse)
 async def ask_question(
     session_id: int,
-    difficulty: Optional[str] = None,
+    difficulty: str | None = None,
     service: LearningCompanionService = Depends(get_learning_service),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),

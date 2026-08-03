@@ -1,5 +1,4 @@
 import os
-import sys
 import warnings
 from contextlib import asynccontextmanager
 
@@ -12,15 +11,15 @@ from loguru import logger
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
+from src import config
 from src.aac_app.models.database import init_database
 from src.aac_app.models.migrate_add_order_index import migrate_add_order_index
 from src.aac_app.models.migrate_add_ui_language import migrate_add_ui_language
 from src.aac_app.services.collaboration_service import collaboration_service
 from src.aac_app.services.vector_utils import index_all_symbols
-from src.api.limiter import limiter
 from src.api.dependencies import get_startup_state, warmup_providers
+from src.api.limiter import limiter
 from src.api.logging_config import LOG_FILE
-from src import config
 from src.api.routers import (
     achievements,
     admin,
@@ -29,9 +28,6 @@ from src.api.routers import (
     auth,
     boards,
     collab,
-)
-from src.api.routers import config as config_router
-from src.api.routers import (
     export_import,
     guardian_profiles,
     learning,
@@ -41,6 +37,7 @@ from src.api.routers import (
     settings,
     users,
 )
+from src.api.routers import config as config_router
 
 # Suppress deprecated pkg_resources warning from webrtcvad
 warnings.filterwarnings("ignore", category=UserWarning, module="webrtcvad")
@@ -187,7 +184,7 @@ app.mount("/socket.io", collaboration_service.app)
 
 # Static files
 # Use frozen-aware paths from config module
-from src.config import PROJECT_ROOT, BUNDLE_DIR, IS_FROZEN
+from src.config import BUNDLE_DIR, IS_FROZEN, PROJECT_ROOT
 
 BASE_DIR = str(PROJECT_ROOT)
 UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
@@ -210,12 +207,12 @@ else:
 
 if os.path.exists(FRONTEND_DIR):
     from fastapi.responses import FileResponse
-    
+
     # Mount static assets (JS, CSS, images)
     assets_dir = os.path.join(FRONTEND_DIR, "assets")
     if os.path.exists(assets_dir):
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
-    
+
     # Serve index.html for SPA routes
     # Serve index.html for SPA routes
     @app.get("/{full_path:path}")
@@ -224,17 +221,17 @@ if os.path.exists(FRONTEND_DIR):
         # Skip API routes
         if full_path.startswith("api/") or full_path.startswith("socket.io"):
             return JSONResponse(content={"detail": "Not Found"}, status_code=404)
-        
+
         # Try to serve static file first
         file_path = os.path.join(FRONTEND_DIR, full_path)
         if os.path.isfile(file_path):
             return FileResponse(file_path)
-        
+
         # Fall back to index.html for SPA routing
         index_path = os.path.join(FRONTEND_DIR, "index.html")
         if os.path.exists(index_path):
             return FileResponse(index_path)
-        
+
         return JSONResponse(content={"detail": "Not Found"}, status_code=404)
 
     # Explicitly handle root for SPA

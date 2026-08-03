@@ -1,24 +1,25 @@
 import os
 import secrets
+from collections.abc import Generator
+from contextlib import contextmanager
+
+from loguru import logger
 from sqlalchemy import (
-    create_engine,
+    JSON,
+    Boolean,
     Column,
+    DateTime,
+    Float,
+    ForeignKey,
     Integer,
     String,
-    DateTime,
     Text,
-    Float,
-    Boolean,
-    ForeignKey,
-    JSON,
+    create_engine,
     func,
     text,
 )
-from sqlalchemy.orm import sessionmaker, relationship, Session, declarative_base
+from sqlalchemy.orm import Session, declarative_base, relationship, sessionmaker
 from sqlalchemy.pool import StaticPool
-from contextlib import contextmanager
-from typing import Generator
-from loguru import logger
 
 # Create base class for all models
 Base = declarative_base()
@@ -31,7 +32,12 @@ _engine_url = None
 # Import audit models after Base is created to avoid circular imports
 # These models use the same Base and will be included in create_all()
 try:
-    from src.aac_app.models.audit_log import AuditLog, FailedLoginAttempt
+    from src.aac_app.models.audit_log import (
+        AuditLog as AuditLog,
+    )
+    from src.aac_app.models.audit_log import (
+        FailedLoginAttempt as FailedLoginAttempt,
+    )
 except ImportError:
     # Models not yet created, will be imported later
     pass
@@ -145,7 +151,7 @@ class Symbol(Base):
 class BoardSymbol(Base):
     """Many-to-many relationship between boards and symbols"""
     __tablename__ = 'board_symbols'
-    
+
     id = Column(Integer, primary_key=True)
     board_id = Column(Integer, ForeignKey('communication_boards.id'), nullable=False)
     symbol_id = Column(Integer, ForeignKey('symbols.id'), nullable=False)
@@ -157,7 +163,7 @@ class BoardSymbol(Base):
     linked_board_id = Column(Integer, ForeignKey('communication_boards.id'), nullable=True)  # Navigation to another board
     color = Column(String(20), nullable=True)  # Symbol background color
     order_index = Column(Integer, default=0)  # Order within board
-    
+
     # Relationships
     board = relationship("CommunicationBoard", foreign_keys=[board_id], back_populates="symbols")
     symbol = relationship("Symbol", back_populates="board_symbols")
@@ -174,7 +180,7 @@ class BoardAssignment(Base):
 class LearningSession(Base):
     """AI tutoring sessions"""
     __tablename__ = 'learning_sessions'
-    
+
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     topic_name = Column(String(100), nullable=False)
@@ -187,7 +193,7 @@ class LearningSession(Base):
     conversation_history = Column(JSON, default=list)
     started_at = Column(DateTime, default=func.now())
     ended_at = Column(DateTime, nullable=True)
-    
+
     # Relationships
     user = relationship("User", back_populates="learning_sessions")
 
@@ -211,7 +217,7 @@ class LearningMode(Base):
 class Achievement(Base):
     """Achievement definitions"""
     __tablename__ = 'achievements'
-    
+
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
     description = Column(Text)
@@ -222,13 +228,13 @@ class Achievement(Base):
     criteria_value = Column(Float)  # Threshold value
     is_active = Column(Boolean, default=True)
     is_manual = Column(Boolean, default=False)  # Custom achievement manually created
-    
+
     # Custom achievement targeting
     created_by = Column(Integer, ForeignKey('users.id'), nullable=True)  # Null = System
     target_user_id = Column(Integer, ForeignKey('users.id'), nullable=True)  # Null = All users
 
     created_at = Column(DateTime, default=func.now())
-    
+
     # Relationships
     user_achievements = relationship("UserAchievement", back_populates="achievement", foreign_keys="UserAchievement.achievement_id")
     creator = relationship("User", foreign_keys=[created_by])
@@ -237,13 +243,13 @@ class Achievement(Base):
 class UserAchievement(Base):
     """User-earned achievements"""
     __tablename__ = 'user_achievements'
-    
+
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     achievement_id = Column(Integer, ForeignKey('achievements.id'), nullable=False)
     earned_at = Column(DateTime, default=func.now())
     progress = Column(Float, default=1.0)  # Progress towards achievement (0.0-1.0)
-    
+
     # Relationships
     user = relationship("User", back_populates="achievements")
     achievement = relationship("Achievement", back_populates="user_achievements")
@@ -251,7 +257,7 @@ class UserAchievement(Base):
 class LearningPlan(Base):
     """Structured learning plans"""
     __tablename__ = 'learning_plans'
-    
+
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     name = Column(String(100), nullable=False)
@@ -261,7 +267,7 @@ class LearningPlan(Base):
     target_completion = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-    
+
     # Relationships
     user = relationship("User")
     tasks = relationship("LearningTask", back_populates="plan")
@@ -269,7 +275,7 @@ class LearningPlan(Base):
 class LearningTask(Base):
     """Individual tasks within learning plans"""
     __tablename__ = 'learning_tasks'
-    
+
     id = Column(Integer, primary_key=True)
     plan_id = Column(Integer, ForeignKey('learning_plans.id'), nullable=False)
     name = Column(String(100), nullable=False)
@@ -280,27 +286,27 @@ class LearningTask(Base):
     estimated_duration = Column(Integer, default=30)  # minutes
     completed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=func.now())
-    
+
     # Relationships
     plan = relationship("LearningPlan", back_populates="tasks")
 
 class UserProgress(Base):
     """Track user learning progress"""
     __tablename__ = 'user_progress'
-    
+
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     metric_type = Column(String(50), nullable=False)  # vocabulary_size, comprehension_score, etc.
     metric_value = Column(Float, nullable=False)
     recorded_at = Column(DateTime, default=func.now())
-    
+
     # Relationships
     user = relationship("User")
 
 class CollaborationSession(Base):
     """Collaboration sessions for real-time communication"""
     __tablename__ = 'collaboration_sessions'
-    
+
     id = Column(Integer, primary_key=True)
     session_name = Column(String(100), nullable=False)
     host_user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
@@ -352,10 +358,10 @@ class SymbolUsageLog(Base):
     utterance_length = Column(Integer, nullable=False)  # Total symbols in utterance
     semantic_intent = Column(String(20), nullable=True)  # REQUEST, QUESTION, etc.
     timestamp = Column(DateTime, default=func.now(), nullable=False)
-    
+
     # Optional context
     context_topic = Column(String(100), nullable=True)  # Learning session topic
-    
+
     # Relationships
     user = relationship("User")
     session = relationship("LearningSession")
@@ -426,16 +432,16 @@ class GuardianProfileHistory(Base):
 
     id = Column(Integer, primary_key=True)
     profile_id = Column(Integer, ForeignKey('guardian_profiles.id'), nullable=False)
-    
+
     # What changed
     field_name = Column(String(50), nullable=False)  # e.g., 'template_name', 'safety_constraints'
     old_value = Column(Text, nullable=True)  # JSON-serialized previous value
     new_value = Column(Text, nullable=True)  # JSON-serialized new value
-    
+
     # Who and when
     changed_by = Column(Integer, ForeignKey('users.id'), nullable=False)
     changed_at = Column(DateTime, default=func.now())
-    
+
     # Optional reason for change
     change_reason = Column(Text, nullable=True)
 
@@ -564,7 +570,7 @@ def create_tables():
     logger.info("Database tables created successfully")
 
 @contextmanager
-def get_session() -> Generator[Session, None, None]:
+def get_session() -> Generator[Session]:
     """Get database session (context manager)"""
     SessionLocal = create_session_factory()
     session = SessionLocal()

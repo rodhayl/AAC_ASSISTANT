@@ -6,10 +6,10 @@ except ImportError:
     PYTTSX3_AVAILABLE = False
     import warnings
 
-    warnings.warn("pyttsx3 not available, TTS functionality disabled")
+    warnings.warn("pyttsx3 not available, TTS functionality disabled", stacklevel=2)
 
 import threading
-from typing import Callable, Dict, List, Optional
+from collections.abc import Callable
 
 from loguru import logger
 
@@ -45,11 +45,14 @@ class LocalTTSProvider:
         if voices:
             # Prefer English voices if available
             for voice in voices:
-                if hasattr(voice, "languages") and voice.languages:
-                    if "en" in str(voice.languages[0]).lower():
-                        self.engine.setProperty("voice", voice.id)
-                        logger.info(f"Set default voice: {voice.name}")
-                        break
+                if (
+                    hasattr(voice, "languages")
+                    and voice.languages
+                    and "en" in str(voice.languages[0]).lower()
+                ):
+                    self.engine.setProperty("voice", voice.id)
+                    logger.info(f"Set default voice: {voice.name}")
+                    break
             else:
                 # Use first available voice
                 self.engine.setProperty("voice", voices[0].id)
@@ -76,7 +79,7 @@ class LocalTTSProvider:
         except Exception as e:
             logger.error(f"Speech failed: {e}")
 
-    def speak_async(self, text: str, callback: Optional[Callable[[], None]] = None):
+    def speak_async(self, text: str, callback: Callable[[], None] | None = None):
         """Non-blocking speech"""
 
         def _speak():
@@ -91,7 +94,7 @@ class LocalTTSProvider:
 
         threading.Thread(target=_speak, daemon=True).start()
 
-    def get_available_voices(self) -> List[Dict]:
+    def get_available_voices(self) -> list[dict]:
         """List all system voices"""
         voices = []
         try:
@@ -146,7 +149,7 @@ class LocalTTSProvider:
         logger.info(f"Testing voice with: {text}")
         self.speak(text)
 
-    def get_voice_info(self, voice_id: str) -> Optional[Dict]:
+    def get_voice_info(self, voice_id: str) -> dict | None:
         """Get detailed information about a specific voice"""
         voices = self.get_available_voices()
         for voice in voices:

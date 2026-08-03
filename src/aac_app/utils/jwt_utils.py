@@ -6,8 +6,8 @@ Uses HS256 algorithm for signing with a secret key from environment.
 """
 
 import os
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import jwt
 from loguru import logger
@@ -22,7 +22,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 120  # 2 hours
 REFRESH_TOKEN_EXPIRE_DAYS = 7  # 7 days
 
 # Enforce secure secret in production
-if config.get("ENVIRONMENT", "development") == "production":
+if config.get("ENVIRONMENT", "development") == "production":  # noqa: SIM102
     if JWT_SECRET_KEY == "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION":
         raise ValueError(
             "CRITICAL SECURITY ERROR: JWT_SECRET_KEY must be set to a secure value in production. "
@@ -31,7 +31,7 @@ if config.get("ENVIRONMENT", "development") == "production":
 
 
 def create_access_token(
-    data: Dict[str, Any], expires_delta: Optional[timedelta] = None
+    data: dict[str, Any], expires_delta: timedelta | None = None
 ) -> str:
     """
     Create a JWT access token.
@@ -51,23 +51,23 @@ def create_access_token(
             "JWT_SECRET_KEY is using default insecure value! Set JWT_SECRET_KEY environment variable."
         )
         # In production, this should raise an error. For development, we'll log a warning.
-        if os.getenv("ENVIRONMENT") == "production":
+    if os.getenv("ENVIRONMENT") == "production":
             raise ValueError("JWT_SECRET_KEY must be set in production environment")
 
     to_encode = data.copy()
 
     # Set expiration time
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(
+        expire = datetime.now(UTC) + timedelta(
             minutes=ACCESS_TOKEN_EXPIRE_MINUTES
         )
 
     to_encode.update(
         {
             "exp": expire,
-            "iat": datetime.now(timezone.utc),
+            "iat": datetime.now(UTC),
             "iss": "aac-assistant",  # Issuer claim
         }
     )
@@ -79,7 +79,7 @@ def create_access_token(
     return encoded_jwt
 
 
-def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
+def decode_access_token(token: str) -> dict[str, Any] | None:
     """
     Decode and validate a JWT access token.
 
@@ -122,7 +122,7 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def get_token_expiration(token: str) -> Optional[datetime]:
+def get_token_expiration(token: str) -> datetime | None:
     """
     Get the expiration time of a token without full validation.
 
@@ -137,7 +137,7 @@ def get_token_expiration(token: str) -> Optional[datetime]:
         payload = jwt.decode(token, options={"verify_signature": False})
         exp_timestamp = payload.get("exp")
         if exp_timestamp:
-            return datetime.fromtimestamp(exp_timestamp, tz=timezone.utc)
+            return datetime.fromtimestamp(exp_timestamp, tz=UTC)
         return None
     except Exception as e:
         logger.debug(f"Could not extract expiration from token: {e}")
@@ -173,7 +173,7 @@ def validate_token_signature(token: str) -> bool:
         return False
 
 
-def create_refresh_token(data: Dict[str, Any]) -> str:
+def create_refresh_token(data: dict[str, Any]) -> str:
     """
     Create a JWT refresh token with longer expiration.
 
@@ -189,12 +189,12 @@ def create_refresh_token(data: Dict[str, Any]) -> str:
             raise ValueError("JWT_SECRET_KEY must be set in production environment")
 
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
 
     to_encode.update(
         {
             "exp": expire,
-            "iat": datetime.now(timezone.utc),
+            "iat": datetime.now(UTC),
             "iss": "aac-assistant",
             "type": "refresh",  # Mark as refresh token
         }

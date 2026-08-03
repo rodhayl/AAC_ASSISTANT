@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 from loguru import logger
@@ -28,7 +28,7 @@ class LocalVectorStore:
     """
     Local vector store using FAISS and Sentence Transformers.
     Stores embeddings for semantic search and predictions.
-    
+
     Uses LAZY LOADING - model is only loaded on first actual use,
     not during initialization. This dramatically improves startup time.
     """
@@ -46,11 +46,11 @@ class LocalVectorStore:
         self.metadata_path = metadata_path
         self.model = None
         self.index = None
-        self.metadata: List[Dict[str, Any]] = []
+        self.metadata: list[dict[str, Any]] = []
         self._model_loaded = False
         self._index_loaded = False
         self._lazy_load = lazy_load
-        
+
         # Auto-detect device if not specified
         if device is None:
             try:
@@ -73,7 +73,7 @@ class LocalVectorStore:
         if self._model_loaded or not SENTENCE_TRANSFORMERS_AVAILABLE:
             return
         self._load_model()
-        
+
     def _ensure_index_loaded(self):
         """Ensure index is loaded (lazy loading)"""
         if self._index_loaded or not FAISS_AVAILABLE:
@@ -88,7 +88,7 @@ class LocalVectorStore:
             logger.info(f"Loading embedding model: {self.model_name} on {self.device}")
             self.model = SentenceTransformer(self.model_name, device=self.device)
             self._model_loaded = True
-            logger.info(f"Embedding model loaded successfully")
+            logger.info("Embedding model loaded successfully")
         except Exception as e:
             logger.error(f"Failed to load embedding model: {e}")
             self.model = None
@@ -103,7 +103,7 @@ class LocalVectorStore:
                 self.index = faiss.read_index(self.index_path)
 
                 if self.metadata_path.endswith(".json"):
-                    with open(self.metadata_path, "r", encoding="utf-8") as f:
+                    with open(self.metadata_path, encoding="utf-8") as f:
                         self.metadata = json.load(f)
                 else:
                     # Legacy format not supported for security reasons
@@ -152,12 +152,12 @@ class LocalVectorStore:
         except Exception as e:
             logger.error(f"Failed to save vector store: {e}")
 
-    def add_texts(self, texts: List[str], metadatas: List[Dict[str, Any]]):
+    def add_texts(self, texts: list[str], metadatas: list[dict[str, Any]]):
         """Add texts and metadata to the store"""
         # Lazy load model and index on first use
         self._ensure_model_loaded()
         self._ensure_index_loaded()
-        
+
         if not self.model or not self.index:
             logger.error("Vector store not initialized")
             return
@@ -168,7 +168,7 @@ class LocalVectorStore:
         try:
             # Ensure text is stored in metadata for reconstruction/debugging
             enriched_metadatas = []
-            for text, meta in zip(texts, metadatas):
+            for text, meta in zip(texts, metadatas, strict=False):
                 meta_copy = meta.copy()
                 if "text" not in meta_copy:
                     meta_copy["text"] = text
@@ -182,12 +182,12 @@ class LocalVectorStore:
         except Exception as e:
             logger.error(f"Failed to add texts to vector store: {e}")
 
-    def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
+    def search(self, query: str, k: int = 5) -> list[dict[str, Any]]:
         """Search for similar texts"""
         # Lazy load model and index on first use
         self._ensure_model_loaded()
         self._ensure_index_loaded()
-        
+
         if not self.model or not self.index or self.index.ntotal == 0:
             return []
 
@@ -213,7 +213,7 @@ class LocalVectorStore:
         # Lazy load on first use
         self._ensure_model_loaded()
         self._ensure_index_loaded()
-        
+
         if not self.index:
             return
 
@@ -224,8 +224,8 @@ class LocalVectorStore:
         for meta in self.metadata:
             if meta.get(key) != value:
                 new_metadata.append(meta)
-                # If we have the text, we can re-index it. 
-                # If not, we keep the metadata but we can't add it back to the vector index 
+                # If we have the text, we can re-index it.
+                # If not, we keep the metadata but we can't add it back to the vector index
                 # without the text! This implies we MUST have text in metadata.
                 if "text" in meta:
                     texts_to_reindex.append(meta["text"])
@@ -241,7 +241,7 @@ class LocalVectorStore:
 
         # Rebuild index
         self._create_new_index()
-        
+
         if texts_to_reindex:
             try:
                 embeddings = self.model.encode(texts_to_reindex)
@@ -260,11 +260,11 @@ class LocalVectorStore:
     def is_available(self) -> bool:
         """Check if vector store dependencies are available (without loading model)"""
         return FAISS_AVAILABLE and SENTENCE_TRANSFORMERS_AVAILABLE
-    
+
     def is_ready(self) -> bool:
         """Check if vector store is fully initialized and ready"""
         return self._model_loaded and self._index_loaded and self.model is not None
-    
+
     def force_load(self):
         """Force immediate loading of model and index (for warmup)"""
         self._ensure_model_loaded()

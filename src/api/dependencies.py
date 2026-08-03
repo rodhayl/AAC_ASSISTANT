@@ -1,8 +1,9 @@
 import threading
 import time
+from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from typing import Any, Dict, Generator, Optional, Union
+from typing import Any
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
@@ -14,15 +15,15 @@ from src.aac_app.models.database import (
     AppSettings,
     User,
     create_engine_instance,
-    create_tables,
     create_session_factory,
+    create_tables,
     get_session,
 )
+from src.aac_app.providers.lmstudio_provider import LMStudioProvider
 from src.aac_app.providers.local_speech_provider import LocalSpeechProvider
 from src.aac_app.providers.local_tts_provider import LocalTTSProvider
 from src.aac_app.providers.ollama_provider import OllamaProvider
 from src.aac_app.providers.openrouter_provider import OpenRouterProvider
-from src.aac_app.providers.lmstudio_provider import LMStudioProvider
 from src.aac_app.services.achievement_system import AchievementSystem
 from src.aac_app.services.board_generation_service import BoardGenerationService
 from src.aac_app.services.learning_companion_service import LearningCompanionService
@@ -31,16 +32,16 @@ from src.aac_app.services.translation_service import get_translation_service
 from src.aac_app.utils.jwt_utils import decode_access_token
 
 # Global instances for providers to avoid re-initialization
-_ollama_provider: Optional[OllamaProvider] = None
-_openrouter_provider: Optional[OpenRouterProvider] = None
-_lmstudio_provider: Optional[LMStudioProvider] = None
-_speech_provider: Optional[LocalSpeechProvider] = None
-_tts_provider: Optional[LocalTTSProvider] = None
-_achievement_system: Optional[AchievementSystem] = None
-_vector_store: Optional[LocalVectorStore] = None
+_ollama_provider: OllamaProvider | None = None
+_openrouter_provider: OpenRouterProvider | None = None
+_lmstudio_provider: LMStudioProvider | None = None
+_speech_provider: LocalSpeechProvider | None = None
+_tts_provider: LocalTTSProvider | None = None
+_achievement_system: AchievementSystem | None = None
+_vector_store: LocalVectorStore | None = None
 
 # Startup state tracking
-_startup_state: Dict[str, Any] = {
+_startup_state: dict[str, Any] = {
     "initialized": False,
     "initializing": False,
     "providers_ready": {
@@ -55,14 +56,14 @@ _startup_state: Dict[str, Any] = {
 }
 _startup_lock = threading.Lock()
 
-_tables_initialized_url: Optional[str] = None
-_tables_initialized_engine_id: Optional[int] = None
+_tables_initialized_url: str | None = None
+_tables_initialized_engine_id: int | None = None
 _tables_init_lock = threading.Lock()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 
-def get_db() -> Generator[Session, None, None]:
+def get_db() -> Generator[Session]:
     """
     Dependency to get a database session.
     Auto-commits on success, rolls back on exception.
@@ -96,7 +97,7 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
-def validate_token(token: str, db: Session) -> Optional[User]:
+def validate_token(token: str, db: Session) -> User | None:
     """
     Validate JWT token and return user.
 
@@ -139,9 +140,9 @@ def validate_token(token: str, db: Session) -> Optional[User]:
 
 
 def get_text(
-    user: Optional[User] = None,
+    user: User | None = None,
     key: str = "errors.unknown",
-    accept_language: Optional[str] = None,
+    accept_language: str | None = None,
     **kwargs,
 ) -> str:
     """
@@ -155,7 +156,7 @@ def get_text(
 
 def get_current_user(
     request: Request,
-    token: Optional[str] = Depends(oauth2_scheme),
+    token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     """
@@ -260,10 +261,10 @@ def get_ollama_provider() -> OllamaProvider:
     Dependency to get the Ollama provider instance.
     """
     global _ollama_provider
-    
+
     base_url = get_setting_value("ollama_base_url", config.OLLAMA_BASE_URL)
     model = get_setting_value("ollama_model", "")
-    
+
     if _ollama_provider is None:
         logger.info(
             f"Initializing global OllamaProvider with base_url={base_url}, model={model}"
@@ -274,7 +275,7 @@ def get_ollama_provider() -> OllamaProvider:
         if _ollama_provider.base_url != base_url or _ollama_provider.recommended_model != model:
             logger.info(f"Ollama settings changed. Re-initializing provider. (URL: {_ollama_provider.base_url}->{base_url}, Model: {_ollama_provider.recommended_model}->{model})")
             _ollama_provider = OllamaProvider(base_url=base_url, model=model)
-            
+
     return _ollama_provider
 
 
@@ -283,10 +284,10 @@ def get_openrouter_provider() -> OpenRouterProvider:
     Dependency to get the OpenRouter provider instance.
     """
     global _openrouter_provider
-    
+
     api_key = get_setting_value("openrouter_api_key", "")
     model = get_setting_value("openrouter_model", "")
-    
+
     if _openrouter_provider is None:
         logger.info("Initializing global OpenRouterProvider")
         _openrouter_provider = OpenRouterProvider(api_key=api_key, model=model)
@@ -295,7 +296,7 @@ def get_openrouter_provider() -> OpenRouterProvider:
         if _openrouter_provider.api_key != api_key or _openrouter_provider.default_model != model:
             logger.info("OpenRouter settings changed. Re-initializing provider.")
             _openrouter_provider = OpenRouterProvider(api_key=api_key, model=model)
-            
+
     return _openrouter_provider
 
 
@@ -304,10 +305,10 @@ def get_lmstudio_provider() -> LMStudioProvider:
     Dependency to get the LM Studio provider instance.
     """
     global _lmstudio_provider
-    
+
     base_url = get_setting_value("lmstudio_base_url", "http://localhost:1234/v1")
     model = get_setting_value("lmstudio_model", "")
-    
+
     if _lmstudio_provider is None:
         logger.info("Initializing global LMStudioProvider")
         _lmstudio_provider = LMStudioProvider(base_url=base_url, model=model)
@@ -316,11 +317,11 @@ def get_lmstudio_provider() -> LMStudioProvider:
         # Normalize URLs by stripping trailing slash for comparison
         current_url = _lmstudio_provider.base_url.rstrip("/")
         new_url = base_url.rstrip("/")
-        
+
         if current_url != new_url or _lmstudio_provider.default_model != model:
             logger.info(f"LM Studio settings changed. Re-initializing provider. (URL: {current_url}->{new_url})")
             _lmstudio_provider = LMStudioProvider(base_url=base_url, model=model)
-            
+
     return _lmstudio_provider
 
 
@@ -355,7 +356,7 @@ def get_fallback_lmstudio_provider() -> LMStudioProvider:
     return LMStudioProvider(base_url=base_url, model=model)
 
 
-def get_fallback_llm_provider() -> Union[OllamaProvider, OpenRouterProvider, LMStudioProvider, None]:
+def get_fallback_llm_provider() -> OllamaProvider | OpenRouterProvider | LMStudioProvider | None:
     """
     Get the configured fallback LLM provider based on settings.
     Returns None if no fallback is configured.
@@ -373,7 +374,7 @@ def get_fallback_llm_provider() -> Union[OllamaProvider, OpenRouterProvider, LMS
         return get_fallback_ollama_provider()
 
 
-def get_llm_provider() -> Union[OllamaProvider, OpenRouterProvider, LMStudioProvider]:
+def get_llm_provider() -> OllamaProvider | OpenRouterProvider | LMStudioProvider:
     """
     Dependency to get the configured LLM provider based on settings.
     Falls back to fallback provider if primary provider fails.
@@ -459,32 +460,27 @@ def get_vector_store() -> LocalVectorStore:
 
 
 def _get_llm_settings(
-    llm: Union[OllamaProvider, OpenRouterProvider, LMStudioProvider],
+    llm: OllamaProvider | OpenRouterProvider | LMStudioProvider,
 ) -> tuple[int, float]:
     """Determine LLM settings (max_tokens, temperature) based on provider type and fallback configuration."""
     primary_provider_type = get_setting_value("ai_provider", "ollama")
     fallback_provider_type = get_setting_value("fallback_ai_provider", "")
 
     use_fallback = False
-    if fallback_provider_type:
-        if (
-            isinstance(llm, OpenRouterProvider)
-            and fallback_provider_type == "openrouter"
-            and primary_provider_type != "openrouter"
-        ):
-            use_fallback = True
-        elif (
-            isinstance(llm, LMStudioProvider)
-            and fallback_provider_type == "lmstudio"
-            and primary_provider_type != "lmstudio"
-        ):
-            use_fallback = True
-        elif (
-            isinstance(llm, OllamaProvider)
-            and fallback_provider_type == "ollama"
-            and primary_provider_type != "ollama"
-        ):
-            use_fallback = True
+    if fallback_provider_type and ((
+        isinstance(llm, OpenRouterProvider)
+        and fallback_provider_type == "openrouter"
+        and primary_provider_type != "openrouter"
+    ) or (
+        isinstance(llm, LMStudioProvider)
+        and fallback_provider_type == "lmstudio"
+        and primary_provider_type != "lmstudio"
+    ) or (
+        isinstance(llm, OllamaProvider)
+        and fallback_provider_type == "ollama"
+        and primary_provider_type != "ollama"
+    )):
+        use_fallback = True
 
     prefix = "fallback_ai" if use_fallback else "ai"
     default_tokens = 256 if use_fallback else 1024
@@ -511,7 +507,7 @@ def _get_llm_settings(
 
 
 def get_learning_service(
-    llm: Union[OllamaProvider, OpenRouterProvider, LMStudioProvider] = Depends(get_llm_provider),
+    llm: OllamaProvider | OpenRouterProvider | LMStudioProvider = Depends(get_llm_provider),
     speech: LocalSpeechProvider = Depends(get_speech_provider),
     tts: LocalTTSProvider = Depends(get_tts_provider),
 ) -> LearningCompanionService:
@@ -531,7 +527,7 @@ def get_learning_service(
 
 
 def get_board_generation_service(
-    llm: Union[OllamaProvider, OpenRouterProvider, LMStudioProvider] = Depends(get_llm_provider),
+    llm: OllamaProvider | OpenRouterProvider | LMStudioProvider = Depends(get_llm_provider),
 ) -> BoardGenerationService:
     """
     Dependency to get the Board Generation Service.
@@ -557,7 +553,7 @@ def _init_speech_provider_sync() -> bool:
         if _speech_provider.is_available():
             logger.info(f"Warmup: Speech provider initialized in {elapsed:.0f}ms (model will load on first use)")
         else:
-            logger.warning(f"Warmup: Speech provider initialized but Whisper is not installed")
+            logger.warning("Warmup: Speech provider initialized but Whisper is not installed")
         return True
     except Exception as e:
         logger.error(f"Warmup: Failed to initialize speech provider: {e}")
@@ -634,14 +630,14 @@ def _init_vector_store_sync() -> bool:
         if _vector_store.is_available():
             logger.info(f"Warmup: Vector store initialized in {elapsed:.0f}ms (model will load on first use)")
         else:
-            logger.warning(f"Warmup: Vector store initialized but dependencies missing")
+            logger.warning("Warmup: Vector store initialized but dependencies missing")
         return True
     except Exception as e:
         logger.error(f"Warmup: Failed to initialize vector store: {e}")
         return False
 
 
-def warmup_providers(timeout_seconds: float = 30.0) -> Dict[str, Any]:
+def warmup_providers(timeout_seconds: float = 30.0) -> dict[str, Any]:
     """
     Eagerly initialize all providers at startup.
 
@@ -730,7 +726,7 @@ def warmup_providers(timeout_seconds: float = 30.0) -> Dict[str, Any]:
     return _startup_state
 
 
-def get_startup_state() -> Dict[str, Any]:
+def get_startup_state() -> dict[str, Any]:
     """Get the current startup/warmup state."""
     return _startup_state.copy()
 

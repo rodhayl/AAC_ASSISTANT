@@ -1,4 +1,3 @@
-from typing import Dict, List, Optional
 
 import httpx
 from loguru import logger
@@ -11,7 +10,7 @@ class ArasaacService:
     def __init__(self):
         self.client = httpx.AsyncClient(timeout=10.0)
 
-    async def search_symbols(self, query: str, locale: str = "es") -> List[Dict]:
+    async def search_symbols(self, query: str, locale: str = "es") -> list[dict]:
         """
         Search for symbols in ARASAAC.
         """
@@ -53,7 +52,7 @@ class ArasaacService:
             logger.error(f"ARASAAC search failed: {e}")
             return []
 
-    async def download_symbol_image(self, arasaac_id: int) -> Optional[bytes]:
+    async def download_symbol_image(self, arasaac_id: int) -> bytes | None:
         """
         Download a symbol image from ARASAAC.
         """

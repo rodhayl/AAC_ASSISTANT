@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
-from src.aac_app.models.database import User, StudentTeacher, UserSettings
+
+from src.aac_app.models.database import StudentTeacher, User, UserSettings
 from src.aac_app.services.auth_service import get_password_hash
 from src.api import schemas
 
@@ -57,12 +58,12 @@ class UserService:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             return None
-            
+
         if update_data.display_name:
             user.display_name = update_data.display_name
         if update_data.email:
             user.email = update_data.email
-            
+
         if update_data.settings:
             # Check if settings exist, if not create
             if not user.settings:
@@ -70,7 +71,7 @@ class UserService:
                 settings = UserSettings(user_id=user_id)
                 db.add(settings)
                 # Flush to associate?
-                db.flush() 
+                db.flush()
                 # SQLAlchemy should handle relationship update if user.settings is set?
                 # user.settings = settings
                 # Actually, if we add it, we might need to refresh user?
@@ -80,18 +81,18 @@ class UserService:
                 # user.settings = settings # This might fail if settings is not committed?
                 # Let's rely on relationship loading or explicit assignment.
                 pass
-            
+
             # If settings was None, we created it. But user.settings might still be None in this session context?
             # Let's reload settings or ensure it's attached.
             if not user.settings:
                  user.settings = UserSettings(user_id=user_id)
                  db.add(user.settings)
-            
+
             # Update settings fields
             settings_dict = update_data.settings.model_dump(exclude_unset=True)
             for key, value in settings_dict.items():
                 setattr(user.settings, key, value)
-                
+
         db.commit()
         db.refresh(user)
         return user

@@ -1,4 +1,3 @@
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
@@ -7,7 +6,13 @@ from sqlalchemy.orm import Session
 from src.aac_app.models.database import StudentTeacher, User
 from src.aac_app.services.user_service import UserService
 from src.api.dependencies import get_current_active_user, get_db
-from src.api.schemas import ResetPasswordRequest, StudentAssignRequest, UserCreate, UserResponse, UserUpdate
+from src.api.schemas import (
+    ResetPasswordRequest,
+    StudentAssignRequest,
+    UserCreate,
+    UserResponse,
+    UserUpdate,
+)
 
 router = APIRouter()
 user_service = UserService()
@@ -29,7 +34,7 @@ def update_current_user(
     return user_service.update_user(db, current_user.id, user_update)
 
 
-@router.get("/students", response_model=List[UserResponse])
+@router.get("/students", response_model=list[UserResponse])
 def get_students(
     current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):

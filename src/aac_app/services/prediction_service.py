@@ -1,16 +1,17 @@
 import json
-import os
-from typing import Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+
 from loguru import logger
 from sqlalchemy.orm import Session
-from ..services.symbol_analytics import SymbolAnalytics
+
 from ..models.database import BoardSymbol, Symbol, SymbolUsageLog, get_session
+from ..services.symbol_analytics import SymbolAnalytics
 
 # Import NLTK
 try:
     import nltk
-    from nltk.corpus import brown
     from nltk import ConditionalFreqDist
+    from nltk.corpus import brown
     HAS_NLTK = True
 except ImportError:
     HAS_NLTK = False
@@ -22,14 +23,14 @@ class PredictionService:
     Combines user usage history (statistical) with NLTK (or internal N-grams).
     Replaces heavy LLM calls for symbol suggestion.
     """
-    
+
     _instance = None
-    _models: Dict[str, Dict] = {}
+    _models: dict[str, dict] = {}
     _nltk_cfd = None
-    
+
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(PredictionService, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
             cls._instance.analytics_service = SymbolAnalytics()
             if HAS_NLTK:
                 try:
@@ -39,7 +40,7 @@ class PredictionService:
                     except LookupError:
                         logger.info("Downloading NLTK brown corpus...")
                         nltk.download('brown', quiet=True)
-                    
+
                     # Build simple Bigram model
                     logger.info("Building NLTK Bigram model...")
                     words = brown.words()
@@ -53,61 +54,61 @@ class PredictionService:
                      cls._instance._nltk_cfd = None
         return cls._instance
 
-    def _load_model(self, language_code: str) -> Dict:
+    def _load_model(self, language_code: str) -> dict:
         """Load static N-gram model for the given language."""
         # Normalize language code (e.g. 'es-ES' -> 'es')
         lang = language_code.split('-')[0].lower()
-        
+
         if lang in self._models:
             return self._models[lang]
-            
+
         try:
             # Use frozen-aware path from config
             from src import config
             ngrams_dir = config.get_ngrams_path()
             file_path = ngrams_dir / f"{lang}.json"
-            
+
             if file_path.exists():
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, encoding='utf-8') as f:
                     self._models[lang] = json.load(f)
                 logger.info(f"Loaded N-gram model for language: {lang} from {file_path}")
             else:
                 logger.warning(f"No N-gram model found for language: {lang} at {file_path}, using empty model")
                 self._models[lang] = {"bigrams": {}}
-                
+
         except Exception as e:
             logger.error(f"Failed to load N-gram model for {lang}: {e}")
             self._models[lang] = {"bigrams": {}}
-            
+
         return self._models[lang]
 
     def predict_next(
-        self, 
-        user_id: int, 
-        current_symbols: List[Dict], 
-        limit: int = 5, 
+        self,
+        user_id: int,
+        current_symbols: list[dict],
+        limit: int = 5,
         language: str = "en",
         offset: int = 0,
-        board_id: Optional[int] = None,
-        db: Optional[Session] = None,
-    ) -> List[Dict]:
+        board_id: int | None = None,
+        db: Session | None = None,
+    ) -> list[dict]:
         """
         Predict next symbols.
-        
+
         Args:
             user_id: User ID
             current_symbols: List of symbols in current utterance
             limit: Max suggestions to return
             language: Language code (e.g., 'en', 'es-ES')
             offset: Pagination offset
-            
+
         Returns:
             List of suggested symbol dicts
         """
-        suggestions: List[Dict] = []
+        suggestions: list[dict] = []
         seen_labels = set()
 
-        punctuation: List[str] = [".", ",", "?", "!"]
+        punctuation: list[str] = [".", ",", "?", "!"]
         reserved_punct = len(punctuation) if offset == 0 else 0
         base_limit = max(0, limit - reserved_punct)
 
@@ -116,7 +117,7 @@ class PredictionService:
         if lang != "en":
             preferred_langs.append("en")
 
-        allowed_symbol_ids: Optional[set[int]] = None
+        allowed_symbol_ids: set[int] | None = None
         if board_id is not None:
             try:
                 if db is not None:
@@ -153,8 +154,8 @@ class PredictionService:
             *,
             symbol_id: int,
             label: str,
-            category: Optional[str],
-            image_path: Optional[str],
+            category: str | None,
+            image_path: str | None,
             confidence: float,
             source: str,
         ) -> None:
@@ -181,8 +182,8 @@ class PredictionService:
             labels: Sequence[str],
             *,
             prefer_language: Sequence[str],
-        ) -> List[Tuple[Symbol, str]]:
-            wanted = [normalize_label(l) for l in labels if normalize_label(l)]
+        ) -> list[tuple[Symbol, str]]:
+            wanted = [normalize_label(label) for label in labels if normalize_label(label)]
             if not wanted:
                 return []
 
@@ -194,7 +195,7 @@ class PredictionService:
                 with get_session() as session:
                     rows = session.query(Symbol).filter(Symbol.label.isnot(None)).all()
 
-            buckets: Dict[str, List[Symbol]] = {}
+            buckets: dict[str, list[Symbol]] = {}
             for sym in rows:
                 key = normalize_label(sym.label)
                 if not key:
@@ -208,7 +209,7 @@ class PredictionService:
                 except ValueError:
                     return len(prefer_language) + 1
 
-            resolved: List[Tuple[Symbol, str]] = []
+            resolved: list[tuple[Symbol, str]] = []
             for w in wanted:
                 options = buckets.get(w, [])
                 if not options:
@@ -221,7 +222,7 @@ class PredictionService:
                 resolved.append((best, w))
             return resolved
 
-        def standard_library_labels(lang_code: str) -> List[str]:
+        def standard_library_labels(lang_code: str) -> list[str]:
             if lang_code == "es":
                 return [
                     # pronouns/core
@@ -291,7 +292,7 @@ class PredictionService:
                 "in",
                 "on",
             ]
-        
+
         # 1. Get personalized suggestions from user history (SymbolAnalytics)
         # This uses the user's past patterns
         history_suggestions = self.analytics_service.suggest_next_symbol(
@@ -309,20 +310,20 @@ class PredictionService:
                 confidence=float(s.get("confidence", 0.5)),
                 source="history",
             )
-            
+
         # 2. Get general suggestions from NLTK library (English only currently)
         # or static N-gram model
-        
+
         # Prepare text for prediction
         last_word = current_symbols[-1].get("label", "").lower() if current_symbols else ""
-        
+
         # Try library first if available and language is English
         # (Assuming library is optimized for English)
         lib_suggestions = []
         logger.info(
             f"Checking NLTK: has_model={self._nltk_cfd is not None}, lang={language}, last_word={last_word}"
         )
-        
+
         if self._nltk_cfd and language.startswith("en") and last_word:
              try:
                  # Get most frequent next words from CFD
@@ -330,7 +331,7 @@ class PredictionService:
                      # Get top 5 most common next words
                      top_next = self._nltk_cfd[last_word].most_common(5)
                      logger.info(f"NLTK suggestions for '{last_word}': {top_next}")
-                     for word, count in top_next:
+                     for word, _count in top_next:
                          # Normalize score roughly (count is raw frequency)
                          # We just set a fixed confidence for library suggestions
                          lib_suggestions.append((word, 0.5))
@@ -338,7 +339,7 @@ class PredictionService:
                      logger.info(f"Word '{last_word}' not in NLTK model")
              except Exception as e:
                  logger.warning(f"NLTK prediction failed: {e}")
-        
+
         # If library gave results, use them
         if lib_suggestions and len(suggestions) < base_limit:
             if db is not None:
@@ -386,7 +387,7 @@ class PredictionService:
         if len(suggestions) < base_limit and current_symbols:
             model = self._load_model(language)
             bigrams = model.get("bigrams", {})
-            
+
             # Increase limit for more diversity if we have space
             # We want to fill the bar
             target_count = base_limit
@@ -396,7 +397,7 @@ class PredictionService:
                 next_word_probs = bigrams[last_symbol_label]
                 sorted_words = sorted(next_word_probs.items(), key=lambda x: x[1], reverse=True)
                 if db is not None:
-                    for word, score in sorted_words:
+                    for word, _ in sorted_words:
                         if len(suggestions) >= target_count:
                             break
                         if normalize_label(word) in seen_labels:
@@ -416,7 +417,7 @@ class PredictionService:
                             )
                 else:
                     with get_session() as session:
-                        for word, score in sorted_words:
+                        for word, _ in sorted_words:
                             if len(suggestions) >= target_count:
                                 break
                             if normalize_label(word) in seen_labels:
@@ -434,7 +435,7 @@ class PredictionService:
                                     confidence=0.4,
                                     source="general_model",
                                 )
-        
+
         # 4. Fill remaining slots with most popular symbols if needed (fallback)
         # PRIORITIZE NOUNS/OBJECTS here if we are low on suggestions
         if len(suggestions) < base_limit:
@@ -442,8 +443,8 @@ class PredictionService:
             # We call suggest_next_symbol with empty list to get global top used
             try:
                 fallback_suggestions = self.analytics_service.suggest_next_symbol(
-                    user_id=user_id, 
-                    symbols=[], 
+                    user_id=user_id,
+                    symbols=[],
                     limit=max(base_limit * 2, 10) # Request more to filter
                 )
 
@@ -462,23 +463,23 @@ class PredictionService:
                         }
                         for sym, _ in resolved[: max(base_limit * 2, 10)]
                     ]
-                
+
                 # Split fallbacks into nouns and others to mix them
                 noun_candidates = []
                 other_candidates = []
-                
+
                 noun_keywords = ["food", "drink", "toy", "animal", "place", "object", "noun"]
-                
+
                 for s in fallback_suggestions:
                     cat = (s.get('category') or '').lower()
                     if any(k in cat for k in noun_keywords):
                         noun_candidates.append(s)
                     else:
                         other_candidates.append(s)
-                
+
                 # Interleave or prioritize nouns if we have few
                 # Simple strategy: add a noun, then an other, etc.
-                
+
                 while len(suggestions) < base_limit and (noun_candidates or other_candidates):
                     # Try to add a noun
                     if noun_candidates:
@@ -491,10 +492,10 @@ class PredictionService:
                             confidence=0.15,
                             source="fallback",
                         )
-                            
+
                     if len(suggestions) >= base_limit:
                         break
-                    
+
                     # Try to add another
                     if other_candidates:
                         s = other_candidates.pop(0)
@@ -506,7 +507,7 @@ class PredictionService:
                             confidence=0.1,
                             source="fallback",
                         )
-                         
+
             except Exception as e:
                 logger.error(f"Fallback prediction failed: {e}")
 
@@ -553,7 +554,7 @@ class PredictionService:
                         .all()
                     )
 
-                    for sid, label, cat, img, cnt in personal:
+                    for sid, label, cat, img, _cnt in personal:
                         add_symbol(
                             symbol_id=sid,
                             label=label,
@@ -583,7 +584,7 @@ class PredictionService:
                             .all()
                         )
 
-                        for sid, label, cat, img, cnt in popular:
+                        for sid, label, cat, img, _cnt in popular:
                             add_symbol(
                                 symbol_id=sid,
                                 label=label,

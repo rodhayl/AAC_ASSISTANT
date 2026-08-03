@@ -1,9 +1,7 @@
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
-from loguru import logger
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import LearningMode, User, get_session
+from src.aac_app.models.database import LearningMode, User
 from src.api.dependencies import get_current_active_user, get_db
 from src.api.schemas import (
     LearningModeCreate,
@@ -13,7 +11,7 @@ from src.api.schemas import (
 
 router = APIRouter(tags=["learning-modes"])
 
-@router.get("/", response_model=List[LearningModeResponse])
+@router.get("/", response_model=list[LearningModeResponse])
 async def get_learning_modes(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -21,22 +19,22 @@ async def get_learning_modes(
     """
     Get all available learning modes.
     Returns default system modes (created_by=None) + user's custom modes.
-    Admins can see everything? For now, let's say Admins see all, 
+    Admins can see everything? For now, let's say Admins see all,
     Teachers see defaults + their own + maybe global defaults.
     """
     # Base query: System defaults
-    query = db.query(LearningMode).filter(LearningMode.created_by == None)
-    
+    query = db.query(LearningMode).filter(LearningMode.created_by is None)
+
     # If user is admin/teacher, they might have their own custom modes
-    # If student, they should see defaults + their teacher's modes? 
+    # If student, they should see defaults + their teacher's modes?
     # For now, let's keep it simple: Everyone sees defaults.
     # Users see their own custom modes.
-    
+
     custom_modes = db.query(LearningMode).filter(LearningMode.created_by == current_user.id)
-    
+
     # Union?
     modes = query.all() + custom_modes.all()
-    
+
     # Deduplicate by ID just in case (shouldn't happen with this logic)
     return modes
 
@@ -53,9 +51,9 @@ async def create_learning_mode(
     # Check for duplicate key for this user
     existing = db.query(LearningMode).filter(
         LearningMode.key == mode.key,
-        (LearningMode.created_by == current_user.id) | (LearningMode.created_by == None)
+        (LearningMode.created_by == current_user.id) | (LearningMode.created_by is None)
     ).first()
-    
+
     if existing:
         raise HTTPException(status_code=400, detail=f"Mode with key '{mode.key}' already exists")
 

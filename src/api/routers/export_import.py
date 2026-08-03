@@ -1,6 +1,6 @@
 import json
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -19,7 +19,7 @@ from src.api.dependencies import get_current_active_user, get_db, get_text
 router = APIRouter()
 
 
-def compute_checksum(payload: Dict[str, Any]) -> str:
+def compute_checksum(payload: dict[str, Any]) -> str:
     """Compute SHA-256 checksum for export data integrity verification."""
     from hashlib import sha256
 
@@ -27,7 +27,7 @@ def compute_checksum(payload: Dict[str, Any]) -> str:
     return sha256(raw.encode("utf-8")).hexdigest()
 
 
-def serialize_board(board: CommunicationBoard) -> Dict[str, Any]:
+def serialize_board(board: CommunicationBoard) -> dict[str, Any]:
     """Serialize a board with its symbols for export."""
     symbols_data = []
     for bs in board.symbols:
@@ -70,7 +70,7 @@ def serialize_board(board: CommunicationBoard) -> Dict[str, Any]:
     }
 
 
-def _import_boards(db: Session, user: User, boards_data: List[Dict[str, Any]]):
+def _import_boards(db: Session, user: User, boards_data: list[dict[str, Any]]):
     """Helper to import boards."""
     for b in boards_data:
         board = CommunicationBoard(
@@ -99,7 +99,7 @@ def _import_boards(db: Session, user: User, boards_data: List[Dict[str, Any]]):
 
 
 def _import_achievements(
-    db: Session, user: User, achievements_data: List[Dict[str, Any]]
+    db: Session, user: User, achievements_data: list[dict[str, Any]]
 ):
     """Helper to import achievements."""
     for a in achievements_data:
@@ -133,7 +133,7 @@ def _import_achievements(
 
 
 def _import_learning_history(
-    db: Session, user: User, history_data: List[Dict[str, Any]]
+    db: Session, user: User, history_data: list[dict[str, Any]]
 ):
     """Helper to import learning history."""
     for h in history_data:
@@ -272,7 +272,7 @@ def export_data(
     # Build base payload for checksum
     base = {
         "meta": {
-            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "exported_at": datetime.now(UTC).isoformat(),
             "username": user.username,
         },
         "boards": boards_data,
@@ -300,7 +300,7 @@ def export_data(
 
 @router.post("/api/data/import")
 def import_data(
-    data: Dict[str, Any],
+    data: dict[str, Any],
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

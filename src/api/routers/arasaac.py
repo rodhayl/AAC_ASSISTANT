@@ -1,6 +1,5 @@
 import os
 import uuid
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
@@ -18,20 +17,20 @@ router = APIRouter()
 class ArasaacSymbol(BaseModel):
     id: int
     label: str
-    description: Optional[str] = None
-    keywords: Optional[str] = None
+    description: str | None = None
+    keywords: str | None = None
     image_url: str
 
 
 class ImportArasaacRequest(BaseModel):
     arasaac_id: int
     label: str
-    description: Optional[str] = None
+    description: str | None = None
     category: str = "general"
-    keywords: Optional[str] = None
+    keywords: str | None = None
 
 
-@router.get("/search", response_model=List[ArasaacSymbol])
+@router.get("/search", response_model=list[ArasaacSymbol])
 async def search_arasaac(
     q: str, locale: str = "es", current_user: User = Depends(get_current_active_user)
 ):

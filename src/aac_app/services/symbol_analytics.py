@@ -4,7 +4,6 @@ Tracks and analyzes symbol usage patterns for personalization and insights.
 """
 
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
 
 from loguru import logger
 from sqlalchemy import desc, func
@@ -22,11 +21,11 @@ class SymbolAnalytics:
     def log_symbol_usage(
         self,
         user_id: int,
-        symbols: List[Dict],
-        session_id: Optional[int] = None,
-        semantic_intent: Optional[str] = None,
-        context_topic: Optional[str] = None,
-        db: Optional[Session] = None,
+        symbols: list[dict],
+        session_id: int | None = None,
+        semantic_intent: str | None = None,
+        context_topic: str | None = None,
+        db: Session | None = None,
     ) -> bool:
         """
         Log symbol usage for analytics.
@@ -85,7 +84,7 @@ class SymbolAnalytics:
 
     def get_frequent_sequences(
         self, user_id: int, limit: int = 10, min_occurrences: int = 2
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Find user's most common symbol sequences.
 
@@ -169,7 +168,7 @@ class SymbolAnalytics:
             frequent.sort(key=lambda x: x["count"], reverse=True)
             return frequent[:limit]
 
-    def get_category_preferences(self, user_id: int) -> Dict:
+    def get_category_preferences(self, user_id: int) -> dict:
         """
         Analyze which symbol categories user uses most.
 
@@ -214,7 +213,7 @@ class SymbolAnalytics:
                 "unique_categories": len(categories),
             }
 
-    def get_usage_stats(self, user_id: int, days: int = 30) -> Dict:
+    def get_usage_stats(self, user_id: int, days: int = 30) -> dict:
         """
         Get overall usage statistics for user.
 
@@ -313,8 +312,8 @@ class SymbolAnalytics:
             }
 
     def suggest_next_symbol(
-        self, user_id: int, symbols: List[Dict], limit: int = 5
-    ) -> List[Dict]:
+        self, user_id: int, symbols: list[dict], limit: int = 5
+    ) -> list[dict]:
         """
         Predict next symbol based on usage history.
 

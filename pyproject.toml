@@ -38,3 +38,22 @@ dev = [
     "requests",
     "pip-audit",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["B008", "B904", "E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["E402", "B011"]
+"tests/**/*.py" = ["E402", "B011"]
+"src/aac_app/models/database.py" = ["SIM105"]
+"src/aac_app/providers/base_provider.py" = ["B027"]
+"src/aac_app/providers/local_speech_provider.py" = ["E402"]
+"src/api/main.py" = ["E402"]
+"src/api/routers/analytics.py" = ["E402", "F811"]
+"src/api/routers/auth.py" = ["E402"]
+"src/api/routers/boards.py" = ["F811", "SIM105"]

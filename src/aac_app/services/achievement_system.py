@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any
 
 from loguru import logger
 
@@ -26,7 +26,7 @@ class AchievementSystem:
         self.achievements = self._initialize_achievements()
         logger.info("Achievement system initialized")
 
-    def _initialize_achievements(self) -> Dict[str, Dict]:
+    def _initialize_achievements(self) -> dict[str, dict]:
         """Initialize predefined achievements"""
         return {
             **self._get_beginner_achievements(),
@@ -35,7 +35,7 @@ class AchievementSystem:
             **self._get_exploration_achievements(),
         }
 
-    def _get_beginner_achievements(self) -> Dict[str, Dict]:
+    def _get_beginner_achievements(self) -> dict[str, dict]:
         """Get beginner category achievements"""
         return {
             "first_steps": {
@@ -58,7 +58,7 @@ class AchievementSystem:
             },
         }
 
-    def _get_performance_achievements(self) -> Dict[str, Dict]:
+    def _get_performance_achievements(self) -> dict[str, dict]:
         """Get performance category achievements"""
         return {
             "quick_learner": {
@@ -81,7 +81,7 @@ class AchievementSystem:
             },
         }
 
-    def _get_consistency_achievements(self) -> Dict[str, Dict]:
+    def _get_consistency_achievements(self) -> dict[str, dict]:
         """Get consistency category achievements"""
         return {
             "streak_master": {
@@ -104,7 +104,7 @@ class AchievementSystem:
             },
         }
 
-    def _get_exploration_achievements(self) -> Dict[str, Dict]:
+    def _get_exploration_achievements(self) -> dict[str, dict]:
         """Get exploration and interaction achievements"""
         return {
             "topic_expert": {
@@ -127,7 +127,7 @@ class AchievementSystem:
             },
         }
 
-    def check_achievements(self, user_id: int) -> List[Dict]:
+    def check_achievements(self, user_id: int) -> list[dict]:
         """Check and award achievements for a user"""
         logger.info(f"Checking achievements for user {user_id}")
 
@@ -168,7 +168,7 @@ class AchievementSystem:
             logger.error(f"Failed to check achievements for user {user_id}: {e}")
             return []
 
-    def _get_user_stats(self, user_id: int, session) -> Dict[str, Any]:
+    def _get_user_stats(self, user_id: int, session) -> dict[str, Any]:
         """Get comprehensive user statistics"""
         stats = {}
 
@@ -191,7 +191,7 @@ class AchievementSystem:
         logger.debug(f"User {user_id} stats: {stats}")
         return stats
 
-    def _get_session_stats(self, sessions) -> Dict[str, Any]:
+    def _get_session_stats(self, sessions) -> dict[str, Any]:
         """Calculate statistics from learning sessions"""
         stats = {}
         stats["sessions_completed"] = len(sessions)
@@ -213,12 +213,12 @@ class AchievementSystem:
 
         return stats
 
-    def _get_topic_stats(self, sessions) -> Dict[str, Any]:
+    def _get_topic_stats(self, sessions) -> dict[str, Any]:
         """Calculate topic-related statistics"""
         topics = set(s.topic_name for s in sessions)
         return {"topics_completed": len(topics)}
 
-    def _get_streak_stats(self, sessions) -> Dict[str, Any]:
+    def _get_streak_stats(self, sessions) -> dict[str, Any]:
         """Calculate consecutive days streak"""
         if not sessions:
             return {"consecutive_days": 0}
@@ -237,7 +237,7 @@ class AchievementSystem:
 
         return {"consecutive_days": max_consecutive}
 
-    def _get_progress_stats(self, user_id: int, session) -> Dict[str, Any]:
+    def _get_progress_stats(self, user_id: int, session) -> dict[str, Any]:
         """Get voice usage and vocabulary stats from user progress"""
         stats = {}
 
@@ -268,7 +268,7 @@ class AchievementSystem:
         return stats
 
     def _check_achievement_criteria(
-        self, user_id: int, achievement: Dict, stats: Dict, session
+        self, user_id: int, achievement: dict, stats: dict, session
     ) -> bool:
         """Check if user meets achievement criteria"""
         criteria_type = achievement["criteria_type"]
@@ -386,7 +386,7 @@ class AchievementSystem:
             )
             return False
 
-    def get_user_achievements(self, user_id: int) -> List[Dict]:
+    def get_user_achievements(self, user_id: int) -> list[dict]:
         """Get ALL achievements for a user with progress status"""
         try:
             with get_session() as session:
@@ -404,15 +404,15 @@ class AchievementSystem:
                 # Get ALL achievements from database
                 all_db_achievements = (
                     session.query(Achievement)
-                    .filter(Achievement.is_active == True)
+                    .filter(Achievement.is_active)
                     .filter(
                         # Show achievements that are either:
                         # 1. System achievements (created_by is None)
                         # 2. Custom achievements targeting this user
                         # 3. Custom achievements with no target (available to all)
-                        (Achievement.created_by == None) |
+                        (Achievement.created_by is None) |
                         (Achievement.target_user_id == user_id) |
-                        (Achievement.target_user_id == None)
+                        (Achievement.target_user_id is None)
                     )
                     .all()
                 )
@@ -444,7 +444,7 @@ class AchievementSystem:
                     })
 
                 # Also add hardcoded achievements that may not be in DB yet
-                for key, ach_data in self.achievements.items():
+                for _key, ach_data in self.achievements.items():
                     if ach_data["name"] in seen_names:
                         continue
                     seen_names.add(ach_data["name"])
@@ -475,7 +475,7 @@ class AchievementSystem:
             logger.error(f"Failed to get achievements for user {user_id}: {e}")
             return []
 
-    def _calculate_progress(self, achievement: Achievement, stats: Dict) -> float:
+    def _calculate_progress(self, achievement: Achievement, stats: dict) -> float:
         """Calculate progress percentage for an achievement"""
         if not achievement.criteria_type or not achievement.criteria_value:
             return 0.0  # Manual achievements have no auto-progress
@@ -486,7 +486,7 @@ class AchievementSystem:
             stats
         )
 
-    def _calculate_progress_from_dict(self, achievement: Dict, stats: Dict) -> float:
+    def _calculate_progress_from_dict(self, achievement: dict, stats: dict) -> float:
         """Calculate progress percentage from achievement dict"""
         return self._calculate_progress_generic(
             achievement.get("criteria_type"),
@@ -494,7 +494,7 @@ class AchievementSystem:
             stats
         )
 
-    def _calculate_progress_generic(self, criteria_type: str, criteria_value: float, stats: Dict) -> float:
+    def _calculate_progress_generic(self, criteria_type: str, criteria_value: float, stats: dict) -> float:
         """Generic progress calculation based on criteria type"""
         if not criteria_type or not criteria_value:
             return 0.0
@@ -519,7 +519,7 @@ class AchievementSystem:
         progress = (current_value / criteria_value) * 100 if criteria_value > 0 else 0
         return min(progress, 100.0)  # Cap at 100%
 
-    def get_categories(self) -> List[str]:
+    def get_categories(self) -> list[str]:
         """Get all predefined achievement categories"""
         categories = set()
         for ach_data in self.achievements.values():
@@ -579,7 +579,7 @@ class AchievementSystem:
         except Exception as e:
             logger.error(f"Failed to update progress for user {user_id}: {e}")
 
-    def get_leaderboard(self, limit: int = 10) -> List[Dict]:
+    def get_leaderboard(self, limit: int = 10) -> list[dict]:
         """Get leaderboard of top users by points"""
         try:
             with get_session() as session:

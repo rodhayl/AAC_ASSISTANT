@@ -6,12 +6,13 @@ Tests cover:
 - Plan 2: CORS security in collaboration service
 - Further considerations: Admin reset-db safeguards
 """
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
-from src.api.main import app
 from src.aac_app.models.database import Notification
+from src.api.main import app
 
 
 class TestNotificationAuthentication:
@@ -24,7 +25,7 @@ class TestNotificationAuthentication:
         self.admin = admin_user
         self.user = regular_user
         self.client = TestClient(app)
-        
+
         # Create test notifications for the regular user
         self.notification = Notification(
             user_id=self.user.id,
@@ -120,10 +121,10 @@ class TestCollaborationServiceCORS:
     def test_cors_origins_not_wildcard(self):
         """Test that collaboration service doesn't use wildcard CORS."""
         from src.aac_app.services.collaboration_service import _get_cors_origins
-        
+
         # Get the origins that would be used
         origins = _get_cors_origins()
-        
+
         # Should be a list, and should not just be ["*"]
         assert isinstance(origins, list)
         # If the list is not empty, it shouldn't be just wildcard
@@ -132,14 +133,14 @@ class TestCollaborationServiceCORS:
 
     def test_cors_origins_from_config(self):
         """Test that collaboration service uses configured origins."""
-        from src.aac_app.services.collaboration_service import _get_cors_origins
         from src import config
-        
+        from src.aac_app.services.collaboration_service import _get_cors_origins
+
         origins = _get_cors_origins()
-        
+
         # Should return a list, not "*"
         assert isinstance(origins, list)
-        
+
         # Should contain at least one origin from config
         if config.ALLOWED_ORIGINS:
             expected_origins = [o.strip() for o in config.ALLOWED_ORIGINS.split(",")]
@@ -150,26 +151,26 @@ class TestCollaborationServiceCORS:
     def test_cors_rejects_wildcard_in_production(self):
         """Test that wildcard is rejected in production environment."""
         from src.aac_app.services.collaboration_service import _get_cors_origins
-        
+
         with patch('src.aac_app.services.collaboration_service.config') as mock_config:
             mock_config.ALLOWED_ORIGINS = "*"
             mock_config.ENVIRONMENT = "production"
             mock_config.FRONTEND_PORT = 5176
-            
+
             origins = _get_cors_origins()
-            
+
             # Should NOT contain wildcard in production
             assert "*" not in origins
 
     def test_cors_service_accepts_custom_origins(self):
         """Test that custom origins can be injected for testing."""
         from src.aac_app.services.collaboration_service import CollaborationService
-        
+
         test_origins = ["http://test.example.com", "http://localhost:9999"]
-        
+
         # This should not raise an error - the service accepts the origins
         service = CollaborationService(cors_origins=test_origins)
-        
+
         # Verify the service was created successfully
         assert service.sio is not None
         assert service.app is not None
@@ -198,7 +199,7 @@ class TestAdminResetDbSafeguards:
         with patch('src.api.routers.admin.config') as mock_config:
             mock_config.ALLOW_DB_RESET = False
             mock_config.ENVIRONMENT = "development"
-            
+
             response = self.client.post(
                 "/api/admin/reset-db",
                 headers={"Authorization": f"Bearer {admin_token}"}
@@ -211,7 +212,7 @@ class TestAdminResetDbSafeguards:
         with patch('src.api.routers.admin.config') as mock_config:
             mock_config.ALLOW_DB_RESET = True
             mock_config.ENVIRONMENT = "production"
-            
+
             response = self.client.post(
                 "/api/admin/reset-db",
                 headers={"Authorization": f"Bearer {admin_token}"}
@@ -230,12 +231,11 @@ class TestEnvPropertiesCleanup:
 
     def test_env_properties_no_echo_commands(self):
         """Test that env.properties doesn't contain shell script fragments."""
-        from pathlib import Path
         from src.config import CONFIG_FILE
-        
+
         if CONFIG_FILE.exists():
             content = CONFIG_FILE.read_text(encoding="utf-8")
-            
+
             # Should not contain shell echo commands
             assert "echo." not in content.lower(), "env.properties should not contain shell commands"
             assert "echo #" not in content.lower(), "env.properties should not contain shell commands"
@@ -243,10 +243,10 @@ class TestEnvPropertiesCleanup:
     def test_config_loads_without_errors(self):
         """Test that configuration loads correctly after cleanup."""
         from src import config
-        
+
         # Reload to ensure fresh state
         config.reload()
-        
+
         # Should be able to read key configuration values
         assert config.BACKEND_PORT > 0
         assert config.FRONTEND_PORT > 0
@@ -255,7 +255,7 @@ class TestEnvPropertiesCleanup:
     def test_allow_db_reset_defaults_false(self):
         """Test that ALLOW_DB_RESET defaults to False for safety."""
         from src import config
-        
+
         # The default should be False for security
         # Note: This tests the actual current environment setting
         # In a production environment or fresh install, this should be False
@@ -268,18 +268,18 @@ class TestSecurityConfigDefaults:
     def test_jwt_production_check_exists(self):
         """Test that JWT secret production validation exists."""
         from src.aac_app.utils import jwt_utils
-        
+
         # The JWT module should exist and have secret key handling
         assert hasattr(jwt_utils, 'JWT_SECRET_KEY') or hasattr(jwt_utils, 'SECRET_KEY')
 
     def test_cors_wildcard_not_default(self):
         """Test that CORS doesn't default to wildcard."""
         from src import config
-        
+
         # ALLOWED_ORIGINS should not be just "*"
         origins = config.ALLOWED_ORIGINS
         assert origins != "*", "CORS should not default to wildcard"
-        
+
         # If it contains origins, none should be just "*"
         if origins:
             origin_list = [o.strip() for o in origins.split(",")]

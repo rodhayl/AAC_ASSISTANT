@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import Callable, Dict, List, Optional
+from collections.abc import Callable
 
 import httpx
 from loguru import logger
@@ -23,7 +23,7 @@ class OllamaProvider(BaseLLMProvider):
         self,
         base_url="http://localhost:11434",
         hardware_profile="mid_range",
-        model: Optional[str] = None,
+        model: str | None = None,
     ):
         super().__init__()
         self.base_url = base_url
@@ -252,7 +252,7 @@ class OllamaProvider(BaseLLMProvider):
             logger.error(f"Ollama sync request failed: {e}")
             raise ConnectionError(f"Failed to connect to Ollama at {self.base_url}")
 
-    def list_models(self) -> List[str]:
+    def list_models(self) -> list[str]:
         """List installed Ollama models"""
         try:
             logger.debug("Listing Ollama models")
@@ -268,7 +268,7 @@ class OllamaProvider(BaseLLMProvider):
             logger.error(f"Failed to list models: {e}")
             return []
 
-    def is_available(self) -> bool:  # noqa: duplicate
+    def is_available(self) -> bool:
         """Check if Ollama is running"""
         try:
             logger.debug("Checking Ollama availability")
@@ -281,7 +281,7 @@ class OllamaProvider(BaseLLMProvider):
             logger.debug(f"Ollama not available: {e}")
             return False
 
-    def get_model_info(self, model: str) -> Optional[Dict]:
+    def get_model_info(self, model: str) -> dict | None:
         """Get information about a specific model"""
         try:
             response = self.sync_client.get(

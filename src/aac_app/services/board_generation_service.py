@@ -1,7 +1,6 @@
 import ast
 import json
 import re
-from typing import Dict, List, Union
 
 from loguru import logger
 
@@ -13,9 +12,9 @@ def _normalize_label(value: str) -> str:
     return " ".join((value or "").strip().lower().split())
 
 
-def _dedupe_items_by_label(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
+def _dedupe_items_by_label(items: list[dict[str, str]]) -> list[dict[str, str]]:
     seen: set[str] = set()
-    deduped: List[Dict[str, str]] = []
+    deduped: list[dict[str, str]] = []
     for item in items:
         label = _normalize_label(str(item.get("label", "")))
         if not label or label in seen:
@@ -63,7 +62,7 @@ def _extract_first_json_array(text: str) -> str | None:
 class BoardGenerationService:
     """Service for generating communication board content using AI"""
 
-    def __init__(self, llm_provider: Union[OllamaProvider, OpenRouterProvider]):
+    def __init__(self, llm_provider: OllamaProvider | OpenRouterProvider):
         self.llm = llm_provider
         self.provider_type = (
             "openrouter" if isinstance(llm_provider, OpenRouterProvider) else "ollama"
@@ -82,7 +81,7 @@ class BoardGenerationService:
         regenerate: bool = False,
         language: str = "en",
         recursion_depth: int = 0,
-    ) -> List[Dict[str, str]]:
+    ) -> list[dict[str, str]]:
         """
         Generate items for a communication board based on topic and description.
         Returns a list of dictionaries with 'label', 'symbol_key', and 'color'.
@@ -172,7 +171,7 @@ class BoardGenerationService:
                 # Accept partial responses: avoid extra LLM calls during board creation.
                 # The caller can request regeneration if they need more items.
                 pass
-            
+
             if not valid_items:
                 logger.warning(f"AI response contained no valid items (fail_silently={fail_silently})")
                 if fail_silently:
@@ -194,7 +193,7 @@ class BoardGenerationService:
                     if isinstance(parsed, dict):
                         parsed = [parsed]
                     if isinstance(parsed, list):
-                        parsed_valid: List[Dict[str, str]] = []
+                        parsed_valid: list[dict[str, str]] = []
                         for item in parsed:
                             if isinstance(item, dict) and "label" in item:
                                 if "symbol_key" not in item:
@@ -210,7 +209,7 @@ class BoardGenerationService:
                     pass
 
             # Fallback 1: try more permissive parsing (single quotes / Python-style)
-            fallback_items: List[Dict[str, str]] = []
+            fallback_items: list[dict[str, str]] = []
             try:
                 fallback_items = ast.literal_eval(clean_response)
                 if isinstance(fallback_items, dict):

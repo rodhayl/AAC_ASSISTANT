@@ -1,6 +1,5 @@
-import sys
 import os
-from unittest.mock import MagicMock
+import sys
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -24,9 +23,10 @@ class MockBoard:
 # We might need to mock the broader module if it has side effects on import
 from src.api.routers.boards import get_playable_count
 
+
 def test_get_playable_count():
     print("Running test_get_playable_count...")
-    
+
     # Test case 1: Empty board
     board1 = MockBoard(symbols=[])
     assert get_playable_count(board1) == 0

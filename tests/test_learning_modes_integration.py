@@ -51,11 +51,11 @@ def test_learning_chat_with_custom_mode_regression(
 ):
     """
     Regression test for variable shadowing bug in learning_companion_service.
-    
+
     The bug caused a session conflict when a LearningMode lookup (inner session)
     occurred within the process_response (outer session) block.
     """
-    
+
     # 1. Create a custom Learning Mode
     # We can do this directly in DB or via API. Let's use DB to be fast.
     custom_mode = LearningMode(
@@ -68,7 +68,7 @@ def test_learning_chat_with_custom_mode_regression(
     )
     test_db_session.add(custom_mode)
     test_db_session.commit()
-    
+
     # 2. Start a session using this mode
     headers = {"Authorization": f"Bearer {admin_token}"}
     start_response = client.post(
@@ -77,10 +77,10 @@ def test_learning_chat_with_custom_mode_regression(
         params={"user_id": admin_user.id},
         headers=headers,
     )
-    
+
     assert start_response.status_code == 200
     session_id = start_response.json()["session_id"]
-    
+
     # 3. Send a message
     # This triggers process_response -> _get_system_prompt -> DB lookup for mode
     # If variable shadowing exists, this will fail with 500 or "Object attached to another session"
@@ -89,10 +89,10 @@ def test_learning_chat_with_custom_mode_regression(
         json={"answer": "Hello test", "is_voice": False},
         headers=headers,
     )
-    
+
     # 4. Verify success
     assert answer_response.status_code == 200
     data = answer_response.json()
     assert data["success"] is True
-    # The mocked LLM should return something, we don't care exactly what, 
+    # The mocked LLM should return something, we don't care exactly what,
     # as long as the request succeeded without crashing.

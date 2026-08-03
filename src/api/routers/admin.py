@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 def reset_database(user=Depends(get_current_admin_user)):
     """
     Reset the database (drop all tables and recreate).
-    
+
     SECURITY: This endpoint is disabled by default. To enable, set ALLOW_DB_RESET=true
     in env.properties. This should NEVER be enabled in production environments.
     """
@@ -25,7 +25,7 @@ def reset_database(user=Depends(get_current_admin_user)):
             status_code=403,
             detail="Database reset is disabled. Set ALLOW_DB_RESET=true in env.properties to enable.",
         )
-    
+
     # Additional production environment check
     if config.ENVIRONMENT == "production":
         logger.error(
@@ -35,7 +35,7 @@ def reset_database(user=Depends(get_current_admin_user)):
             status_code=403,
             detail="Database reset is blocked in production environments.",
         )
-    
+
     try:
         logger.warning(f"Database reset initiated by admin user: {user.username}")
         engine = create_engine_instance()

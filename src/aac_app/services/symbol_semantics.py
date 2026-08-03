@@ -3,7 +3,6 @@ Symbol Semantics Service
 Analyzes AAC symbol sequences for semantic patterns and intent.
 """
 
-from typing import Dict, List, Tuple
 
 
 class SymbolSemantics:
@@ -23,7 +22,7 @@ class SymbolSemantics:
     def __init__(self):
         self.intent_patterns = self._load_intent_patterns()
 
-    def _load_intent_patterns(self) -> Dict:
+    def _load_intent_patterns(self) -> dict:
         """Common AAC intent patterns."""
         return {
             "request": {
@@ -63,7 +62,7 @@ class SymbolSemantics:
             },
         }
 
-    def analyze_sequence(self, symbols: List[Dict]) -> Dict:
+    def analyze_sequence(self, symbols: list[dict]) -> dict:
         """
         Analyze symbol sequence for semantic intent.
 
@@ -115,7 +114,7 @@ class SymbolSemantics:
             "unique_categories": list(set(categories)),
         }
 
-    def _detect_intent(self, labels: List[str], roles: List[str]) -> Tuple[str, float]:
+    def _detect_intent(self, labels: list[str], roles: list[str]) -> tuple[str, float]:
         """Detect intent from labels and semantic roles."""
         # Check for keyword matches (high confidence)
         for intent_name, intent_data in self.intent_patterns.items():
@@ -132,27 +131,27 @@ class SymbolSemantics:
         # Fallback
         return "statement", 0.4
 
-    def _matches_pattern(self, roles: List[str], pattern: List[str]) -> bool:
+    def _matches_pattern(self, roles: list[str], pattern: list[str]) -> bool:
         """Check if semantic roles match intent pattern."""
         if len(roles) < len(pattern):
             return False
 
         # Allow partial matches (AAC often drops words)
-        matches = sum(1 for r, p in zip(roles, pattern) if r == p)
+        matches = sum(1 for r, p in zip(roles, pattern, strict=False) if r == p)
         tolerance = max(1, len(pattern) - 1)  # Allow one mismatch
         return matches >= tolerance
 
     def _build_semantic_summary(
-        self, symbols: List[Dict], roles: List[str], intent: str
+        self, symbols: list[dict], roles: list[str], intent: str
     ) -> str:
         """Generate human-readable semantic summary."""
         parts = []
-        for sym, role in zip(symbols, roles):
+        for sym, role in zip(symbols, roles, strict=False):
             parts.append(f"{sym.get('label')} ({role})")
 
         return f"{intent.upper()}: {' → '.join(parts)}"
 
-    def generate_expansion_context(self, analysis: Dict, symbols: List[Dict]) -> str:
+    def generate_expansion_context(self, analysis: dict, symbols: list[dict]) -> str:
         """
         Generate context string for LLM to expand AAC utterance.
 

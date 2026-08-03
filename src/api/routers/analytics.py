@@ -3,16 +3,15 @@ Analytics API Router
 Provides REST endpoints for symbol usage analytics and insights.
 """
 
-from typing import Dict, List, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import BoardSymbol, User, Symbol
+from src.aac_app.models.database import BoardSymbol, Symbol, User
 from src.aac_app.services.symbol_analytics import SymbolAnalytics
 from src.api.dependencies import get_current_active_user, get_db, get_text
-from src.api.schemas import SymbolUsageRequest, NextSymbolRequest
+from src.api.schemas import NextSymbolRequest, SymbolUsageRequest
 
 router = APIRouter()
 analytics_service = SymbolAnalytics()
@@ -34,14 +33,14 @@ async def log_symbol_usage(
             }
             for s in request.symbols
         ]
-        
+
         analytics_service.log_symbol_usage(
             user_id=current_user.id,
             symbols=symbols_list,
             context_topic=request.context_topic,
             session_id=request.session_id,
         )
-        
+
         logger.info(f"Logged usage for {len(symbols_list)} symbols for user {current_user.id}")
         return {"success": True, "count": len(symbols_list)}
     except Exception as e:
@@ -49,7 +48,7 @@ async def log_symbol_usage(
         raise HTTPException(status_code=500, detail="Failed to log usage")
 
 
-@router.get("/frequent-sequences", response_model=List[Dict])
+@router.get("/frequent-sequences", response_model=list[dict])
 async def get_frequent_sequences(
     limit: int = Query(10, ge=1, le=50, description="Maximum sequences to return"),
     min_occurrences: int = Query(
@@ -87,7 +86,8 @@ async def get_frequent_sequences(
 
 from src.aac_app.services.prediction_service import prediction_service
 
-@router.post("/next-symbol", response_model=List[Dict])
+
+@router.post("/next-symbol", response_model=list[dict])
 async def get_next_symbol_suggestions_post(
     request: NextSymbolRequest,
     current_user: User = Depends(get_current_active_user),
@@ -102,7 +102,7 @@ async def get_next_symbol_suggestions_post(
         limit = request.limit
         intent = request.intent  # general, pronouns, verbs, articles, nouns, places
         offset = request.offset
-        
+
         logger.info(f"Suggestions request: user={current_user.id}, intent={intent}, limit={limit}, offset={offset}")
 
         # Parse current symbols
@@ -240,7 +240,7 @@ async def get_next_symbol_suggestions_post(
                 logger.error(f"Database error in intent query: {db_err}")
                 # Fall back to general suggestion if specific intent fails
                 pass
-            
+
         # Get unified suggestions from PredictionService
         final_suggestions = prediction_service.predict_next(
             user_id=current_user.id,
@@ -270,7 +270,7 @@ async def get_next_symbol_suggestions_post(
 
 
 
-@router.get("/category-preferences", response_model=Dict)
+@router.get("/category-preferences", response_model=dict)
 async def get_category_preferences(
     current_user: User = Depends(get_current_active_user),
 ):
@@ -300,7 +300,7 @@ async def get_category_preferences(
         )
 
 
-@router.get("/usage-stats", response_model=Dict)
+@router.get("/usage-stats", response_model=dict)
 async def get_usage_statistics(
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
     current_user: User = Depends(get_current_active_user),

@@ -16,7 +16,7 @@ except ImportError as e:  # pragma: no cover - environment specific
     import os
 
     if os.getenv("AAC_WARN_ON_OPTIONAL_MISSING") == "1":
-        warnings.warn(f"Whisper not available: {e}")
+        warnings.warn(f"Whisper not available: {e}", stacklevel=2)
 
 # Optional dependencies used only for microphone / VAD features
 try:  # pragma: no cover - simple import gate
@@ -52,8 +52,8 @@ except ImportError:
     WEBRTC_VAD_AVAILABLE = False
 
 import threading
+from collections.abc import Callable
 from queue import Queue
-from typing import Callable, Optional
 
 from loguru import logger
 
@@ -61,7 +61,7 @@ from loguru import logger
 class LocalSpeechProvider:
     """
     100% local speech recognition using OpenAI Whisper.
-    
+
     Uses LAZY LOADING - Whisper model is only loaded on first transcription request,
     not during initialization. This dramatically improves startup time.
     """
@@ -72,7 +72,7 @@ class LocalSpeechProvider:
 
         Models: tiny(39MB), base(74MB), small(244MB), medium(769MB), large(1.5GB)
         Recommended: small (good accuracy/speed balance)
-        
+
         Args:
             model_size: Whisper model size to use
             device: 'cpu' or 'cuda'
@@ -87,12 +87,12 @@ class LocalSpeechProvider:
         self.audio_queue: Queue = Queue()
         self.is_recording = False
         self.vad = None
-        
+
         if not WHISPER_AVAILABLE:
             logger.warning("Whisper not available. Speech recognition disabled.")
             self._model_loaded = True  # Mark as attempted
             return
-            
+
         # Initialize VAD for voice activity detection if available (lightweight)
         if WEBRTC_VAD_AVAILABLE:
             try:
@@ -104,23 +104,23 @@ class LocalSpeechProvider:
         if not lazy_load:
             # Immediate loading (backwards compatible for warmup)
             self._load_model()
-    
+
     def _ensure_model_loaded(self):
         """Ensure Whisper model is loaded (lazy loading)"""
         if self._model_loaded:
             return
         self._load_model()
-    
+
     def _load_model(self):
         """Load the Whisper model"""
         if self._model_loaded or not WHISPER_AVAILABLE:
             return
-            
+
         try:
             logger.info(f"Loading Whisper model: {self.model_size} on {self.device}")
             self.model = whisper.load_model(self.model_size, device=self.device)
             self._model_loaded = True
-            logger.info(f"Whisper model loaded successfully")
+            logger.info("Whisper model loaded successfully")
         except Exception as e:
             logger.error(f"Failed to load Whisper model: {e}")
             self.model = None
@@ -131,10 +131,10 @@ class LocalSpeechProvider:
         if not WHISPER_AVAILABLE:
             logger.error("Speech recognition not available - Whisper not installed")
             return ""
-        
+
         # Lazy load model on first use
         self._ensure_model_loaded()
-        
+
         if self.model is None:
             logger.error("Speech recognition not available - Whisper model failed to load")
             return ""
@@ -156,10 +156,10 @@ class LocalSpeechProvider:
         if not WHISPER_AVAILABLE:
             logger.error("Speech recognition not available - Whisper not installed")
             return ""
-        
+
         # Lazy load model on first use
         self._ensure_model_loaded()
-        
+
         if self.model is None:
             logger.error("Speech recognition not available - Whisper model failed to load")
             return ""
@@ -241,10 +241,10 @@ class LocalSpeechProvider:
         if not WHISPER_AVAILABLE:
             logger.error("Cannot start continuous recognition - Whisper not installed")
             return None
-        
+
         # Lazy load model on first use
         self._ensure_model_loaded()
-        
+
         if self.model is None:
             logger.error("Cannot start continuous recognition - Whisper model failed to load")
             return None
@@ -304,15 +304,15 @@ class LocalSpeechProvider:
             "medium": {"size": "769MB", "description": "Better accuracy, slower"},
             "large": {"size": "1.5GB", "description": "Best accuracy, slowest"},
         }
-    
+
     def is_available(self) -> bool:
         """Check if Whisper is available (without loading model)"""
         return WHISPER_AVAILABLE
-    
+
     def is_ready(self) -> bool:
         """Check if the model is fully loaded and ready"""
         return self._model_loaded and self.model is not None
-    
+
     def force_load(self):
         """Force immediate loading of the model (for warmup)"""
         self._ensure_model_loaded()

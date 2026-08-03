@@ -1,13 +1,13 @@
 from datetime import datetime
-from typing import Any, List, Optional, Dict
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class UserPreferencesResponse(BaseModel):
     tts_voice: str = "default"
-    tts_language: Optional[str] = None
-    ui_language: Optional[str] = None
+    tts_language: str | None = None
+    ui_language: str | None = None
     notifications_enabled: bool = True
     voice_mode_enabled: bool = True
     dark_mode: bool = False
@@ -19,40 +19,40 @@ class UserPreferencesResponse(BaseModel):
 
 
 class UserPreferencesUpdate(BaseModel):
-    tts_voice: Optional[str] = None
-    tts_language: Optional[str] = None
-    ui_language: Optional[str] = None
-    notifications_enabled: Optional[bool] = None
-    voice_mode_enabled: Optional[bool] = None
-    dark_mode: Optional[bool] = None
-    dwell_time: Optional[int] = None
-    ignore_repeats: Optional[int] = None
-    high_contrast: Optional[bool] = None
+    tts_voice: str | None = None
+    tts_language: str | None = None
+    ui_language: str | None = None
+    notifications_enabled: bool | None = None
+    voice_mode_enabled: bool | None = None
+    dark_mode: bool | None = None
+    dwell_time: int | None = None
+    ignore_repeats: int | None = None
+    high_contrast: bool | None = None
 
 
 # --- User Schemas ---
 class UserBase(BaseModel):
     username: str
-    email: Optional[EmailStr] = None
+    email: EmailStr | None = None
     display_name: str
     user_type: str = "student"
 
 
 class UserCreate(UserBase):
     password: str
-    confirm_password: Optional[str] = None  # Required for admin-created users
-    created_by_teacher_id: Optional[int] = None  # Auto-assign student to this teacher
+    confirm_password: str | None = None  # Required for admin-created users
+    created_by_teacher_id: int | None = None  # Auto-assign student to this teacher
 
 
 class UserUpdate(BaseModel):
-    display_name: Optional[str] = None
-    email: Optional[EmailStr] = None
-    settings: Optional[UserPreferencesUpdate] = None
+    display_name: str | None = None
+    email: EmailStr | None = None
+    settings: UserPreferencesUpdate | None = None
 
 
 class UserProfileUpdate(BaseModel):
-    display_name: Optional[str] = None
-    email: Optional[EmailStr] = None
+    display_name: str | None = None
+    email: EmailStr | None = None
 
 
 class LoginRequest(BaseModel):
@@ -68,8 +68,8 @@ class ChangePasswordRequest(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
-    student_id: Optional[int] = None
-    user_id: Optional[int] = None
+    student_id: int | None = None
+    user_id: int | None = None
     new_password: str
 
 
@@ -77,7 +77,7 @@ class UserResponse(UserBase):
     id: int
     is_active: bool
     created_at: datetime
-    settings: Optional[UserPreferencesResponse] = None
+    settings: UserPreferencesResponse | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -91,21 +91,21 @@ class Token(BaseModel):
 class LearningModeBase(BaseModel):
     name: str
     key: str
-    description: Optional[str] = None
+    description: str | None = None
     prompt_instruction: str
 
 class LearningModeCreate(LearningModeBase):
     pass
 
 class LearningModeUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    prompt_instruction: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
+    prompt_instruction: str | None = None
 
 class LearningModeResponse(LearningModeBase):
     id: int
     is_custom: bool
-    created_by: Optional[int] = None
+    created_by: int | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -114,11 +114,11 @@ class LearningModeResponse(LearningModeBase):
 # --- Board Schemas ---
 class SymbolBase(BaseModel):
     label: str
-    description: Optional[str] = None
+    description: str | None = None
     category: str = "general"
-    image_path: Optional[str] = None
-    audio_path: Optional[str] = None
-    keywords: Optional[str] = None
+    image_path: str | None = None
+    audio_path: str | None = None
+    keywords: str | None = None
     language: str = "en"
 
 
@@ -129,20 +129,20 @@ class SymbolCreate(SymbolBase):
 class SymbolResponse(SymbolBase):
     id: int
     is_builtin: bool
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
     is_in_use: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class SymbolUpdate(BaseModel):
-    label: Optional[str] = None
-    description: Optional[str] = None
-    category: Optional[str] = None
-    image_path: Optional[str] = None
-    audio_path: Optional[str] = None
-    keywords: Optional[str] = None
-    language: Optional[str] = None
+    label: str | None = None
+    description: str | None = None
+    category: str | None = None
+    image_path: str | None = None
+    audio_path: str | None = None
+    keywords: str | None = None
+    language: str | None = None
 
 
 class SymbolReorderUpdate(BaseModel):
@@ -158,9 +158,9 @@ class BoardSymbolBase(BaseModel):
     position_y: int = 0
     size: int = 1
     is_visible: bool = True
-    custom_text: Optional[str] = None
-    color: Optional[str] = None
-    linked_board_id: Optional[int] = None
+    custom_text: str | None = None
+    color: str | None = None
+    linked_board_id: int | None = None
 
 
 class BoardSymbolCreate(BoardSymbolBase):
@@ -168,14 +168,14 @@ class BoardSymbolCreate(BoardSymbolBase):
 
 
 class BoardSymbolUpdate(BaseModel):
-    symbol_id: Optional[int] = None
-    position_x: Optional[int] = None
-    position_y: Optional[int] = None
-    size: Optional[int] = None
-    is_visible: Optional[bool] = None
-    custom_text: Optional[str] = None
-    color: Optional[str] = None
-    linked_board_id: Optional[int] = None
+    symbol_id: int | None = None
+    position_x: int | None = None
+    position_y: int | None = None
+    size: int | None = None
+    is_visible: bool | None = None
+    custom_text: str | None = None
+    color: str | None = None
+    linked_board_id: int | None = None
 
 
 class BoardSymbolResponse(BoardSymbolBase):
@@ -187,36 +187,36 @@ class BoardSymbolResponse(BoardSymbolBase):
 
 class BoardBase(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     category: str = "general"
     is_public: bool = False
     is_template: bool = False
-    grid_rows: Optional[int] = 4
-    grid_cols: Optional[int] = 5
+    grid_rows: int | None = 4
+    grid_cols: int | None = 5
     ai_enabled: bool = False
-    ai_provider: Optional[str] = None
-    ai_model: Optional[str] = None
+    ai_provider: str | None = None
+    ai_model: str | None = None
     locale: str = "en"
     is_language_learning: bool = False
 
 
 class BoardCreate(BoardBase):
-    symbols: Optional[List[BoardSymbolCreate]] = None
+    symbols: list[BoardSymbolCreate] | None = None
 
 
 class BoardUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    category: Optional[str] = None
-    is_public: Optional[bool] = None
-    is_template: Optional[bool] = None
-    grid_rows: Optional[int] = None
-    grid_cols: Optional[int] = None
-    ai_enabled: Optional[bool] = None
-    ai_provider: Optional[str] = None
-    ai_model: Optional[str] = None
-    locale: Optional[str] = None
-    is_language_learning: Optional[bool] = None
+    name: str | None = None
+    description: str | None = None
+    category: str | None = None
+    is_public: bool | None = None
+    is_template: bool | None = None
+    grid_rows: int | None = None
+    grid_cols: int | None = None
+    ai_enabled: bool | None = None
+    ai_provider: str | None = None
+    ai_model: str | None = None
+    locale: str | None = None
+    is_language_learning: bool | None = None
 
 
 class BoardResponse(BoardBase):
@@ -224,31 +224,31 @@ class BoardResponse(BoardBase):
     user_id: int
     created_at: datetime
     updated_at: datetime
-    symbols: List[BoardSymbolResponse] = []
-    playable_symbols_count: Optional[int] = 0
+    symbols: list[BoardSymbolResponse] = []
+    playable_symbols_count: int | None = 0
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class AISuggestion(BaseModel):
     label: str
-    symbol_key: Optional[str] = None
-    color: Optional[str] = None
-    linked_board_id: Optional[int] = None
-    description: Optional[str] = None
+    symbol_key: str | None = None
+    color: str | None = None
+    linked_board_id: int | None = None
+    description: str | None = None
 
 
 class AISuggestionsRequest(BaseModel):
-    refine_prompt: Optional[str] = None
+    refine_prompt: str | None = None
     regenerate: bool = False
-    item_count: Optional[int] = None
-    ai_source: Optional[str] = None  # 'primary' or 'fallback'
+    item_count: int | None = None
+    ai_source: str | None = None  # 'primary' or 'fallback'
 
 
 class AISuggestionApplyRequest(BaseModel):
     item: AISuggestion
-    position_x: Optional[int] = None
-    position_y: Optional[int] = None
+    position_x: int | None = None
+    position_y: int | None = None
 
 
 # --- Notification Schemas ---
@@ -262,45 +262,45 @@ class NotificationCreate(BaseModel):
 
 class BoardAssignRequest(BaseModel):
     student_id: int
-    assigned_by: Optional[int] = None
+    assigned_by: int | None = None
 
 
 class StudentAssignRequest(BaseModel):
     student_id: int
     teacher_id: int
-    assigned_by: Optional[int] = None
+    assigned_by: int | None = None
 
 
 # --- Learning Schemas ---
 class LearningSessionStart(BaseModel):
     topic: str
-    purpose: Optional[str] = None
+    purpose: str | None = None
     difficulty: str = "basic"
-    board_id: Optional[int] = None
+    board_id: int | None = None
 
 
 class LearningSessionResponse(BaseModel):
     success: bool
     session_id: int
-    plan_id: Optional[int] = None
-    task_id: Optional[int] = None
-    board_id: Optional[int] = None
-    welcome_message: Optional[str] = None
-    topic: Optional[str] = None
-    difficulty: Optional[str] = None
-    provider_used: Optional[str] = None
-    error: Optional[str] = None
+    plan_id: int | None = None
+    task_id: int | None = None
+    board_id: int | None = None
+    welcome_message: str | None = None
+    topic: str | None = None
+    difficulty: str | None = None
+    provider_used: str | None = None
+    error: str | None = None
 
 
 class QuestionResponse(BaseModel):
     success: bool
-    question_id: Optional[int] = None
-    question_text: Optional[str] = None
-    choices: Optional[List[str]] = None
-    difficulty: Optional[str] = None
-    correct_answer_index: Optional[int] = None
-    provider_used: Optional[str] = None
-    error: Optional[str] = None
+    question_id: int | None = None
+    question_text: str | None = None
+    choices: list[str] | None = None
+    difficulty: str | None = None
+    correct_answer_index: int | None = None
+    provider_used: str | None = None
+    error: str | None = None
 
 
 class AnswerSubmit(BaseModel):
@@ -309,34 +309,34 @@ class AnswerSubmit(BaseModel):
 
 
 class SymbolItem(BaseModel):
-    id: Optional[int] = None
+    id: int | None = None
     label: str
-    category: Optional[str] = None
-    image_path: Optional[str] = None
-    position: Optional[int] = None  # Order in utterance (0-indexed)
-    weight: Optional[float] = 1.0  # Confidence/emphasis (for future use)
+    category: str | None = None
+    image_path: str | None = None
+    position: int | None = None  # Order in utterance (0-indexed)
+    weight: float | None = 1.0  # Confidence/emphasis (for future use)
 
 
 class SymbolAnswerSubmit(BaseModel):
-    symbols: List[SymbolItem]
-    text: Optional[str] = None  # Deprecated: use enriched_gloss
-    raw_gloss: Optional[str] = None  # Simple concatenation of labels
-    enriched_gloss: Optional[str] = None  # Template-enhanced gloss
-    context_hint: Optional[str] = None  # Optional user-provided context
+    symbols: list[SymbolItem]
+    text: str | None = None  # Deprecated: use enriched_gloss
+    raw_gloss: str | None = None  # Simple concatenation of labels
+    enriched_gloss: str | None = None  # Template-enhanced gloss
+    context_hint: str | None = None  # Optional user-provided context
 
 
 class AnswerResponse(BaseModel):
     success: bool
-    is_correct: Optional[bool] = None
-    transcription: Optional[str] = None
-    feedback_message: Optional[str] = None
-    confidence: Optional[float] = None
-    comprehension_score: Optional[float] = None
-    next_action: Optional[str] = None
-    questions_answered: Optional[int] = None
-    correct_answers: Optional[int] = None
-    provider_used: Optional[str] = None
-    error: Optional[str] = None
+    is_correct: bool | None = None
+    transcription: str | None = None
+    feedback_message: str | None = None
+    confidence: float | None = None
+    comprehension_score: float | None = None
+    next_action: str | None = None
+    questions_answered: int | None = None
+    correct_answers: int | None = None
+    provider_used: str | None = None
+    error: str | None = None
 
 
 # --- Achievement Schemas ---
@@ -349,7 +349,7 @@ class AchievementBase(BaseModel):
 
 
 class AchievementResponse(AchievementBase):
-    earned_at: Optional[str] = None
+    earned_at: str | None = None
     progress: float = 1.0
 
     model_config = ConfigDict(from_attributes=True)
@@ -362,21 +362,21 @@ class AchievementCreate(BaseModel):
     category: str = "custom"
     points: int = 10
     icon: str = "🏆"
-    target_user_id: Optional[int] = None  # If set, only this user sees it
-    criteria_type: Optional[str] = None
-    criteria_value: Optional[float] = None
+    target_user_id: int | None = None  # If set, only this user sees it
+    criteria_type: str | None = None
+    criteria_value: float | None = None
 
 
 class AchievementUpdate(BaseModel):
     """Update an achievement"""
-    name: Optional[str] = None
-    description: Optional[str] = None
-    category: Optional[str] = None
-    points: Optional[int] = None
-    icon: Optional[str] = None
-    is_active: Optional[bool] = None
-    criteria_type: Optional[str] = None
-    criteria_value: Optional[float] = None
+    name: str | None = None
+    description: str | None = None
+    category: str | None = None
+    points: int | None = None
+    icon: str | None = None
+    is_active: bool | None = None
+    criteria_type: str | None = None
+    criteria_value: float | None = None
 
 
 class AchievementFullResponse(BaseModel):
@@ -388,12 +388,12 @@ class AchievementFullResponse(BaseModel):
     points: int
     icon: str
     is_manual: bool = False
-    created_by: Optional[int] = None
-    target_user_id: Optional[int] = None
+    created_by: int | None = None
+    target_user_id: int | None = None
     is_active: bool = True
-    created_at: Optional[datetime] = None
-    criteria_type: Optional[str] = None
-    criteria_value: Optional[float] = None
+    created_at: datetime | None = None
+    criteria_type: str | None = None
+    criteria_value: float | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -414,23 +414,23 @@ class LeaderboardEntry(BaseModel):
 class SymbolUsageItem(BaseModel):
     id: int
     label: str
-    category: Optional[str] = None
+    category: str | None = None
 
 
 class SymbolUsageRequest(BaseModel):
-    symbols: List[SymbolUsageItem]
-    session_id: Optional[int] = None
-    semantic_intent: Optional[str] = None
-    context_topic: Optional[str] = None
+    symbols: list[SymbolUsageItem]
+    session_id: int | None = None
+    semantic_intent: str | None = None
+    context_topic: str | None = None
 
 
 class NextSymbolRequest(BaseModel):
     current_symbols: str = ""
-    chat_history: List[Dict[str, str]] = []
+    chat_history: list[dict[str, str]] = []
     limit: int = 5
     intent: str = "general"
     offset: int = 0
-    board_id: Optional[int] = None
+    board_id: int | None = None
 
 
 # --- Guardian Profile Schemas (Learning Companion Personality) ---
@@ -439,72 +439,72 @@ class NextSymbolRequest(BaseModel):
 class MedicalContextSchema(BaseModel):
     """Medical/accessibility context for a student (confidential)"""
 
-    diagnoses: Optional[List[str]] = None
-    sensitivities: Optional[List[str]] = None
-    accessibility_needs: Optional[List[str]] = None
-    notes: Optional[str] = None
+    diagnoses: list[str] | None = None
+    sensitivities: list[str] | None = None
+    accessibility_needs: list[str] | None = None
+    notes: str | None = None
 
 
 class CommunicationStyleSchema(BaseModel):
     """Communication style preferences for the companion"""
 
-    tone: Optional[str] = None  # encouraging, calm, playful, professional
-    complexity: Optional[str] = None  # simple, moderate, advanced
-    sentence_length: Optional[str] = None  # short, medium, long
-    vocabulary_level: Optional[str] = None
-    use_emojis: Optional[bool] = None
-    avoid_idioms: Optional[bool] = None
-    avoid_sarcasm: Optional[bool] = None
-    avoid_metaphors: Optional[bool] = None
-    explicit_transitions: Optional[bool] = None
+    tone: str | None = None  # encouraging, calm, playful, professional
+    complexity: str | None = None  # simple, moderate, advanced
+    sentence_length: str | None = None  # short, medium, long
+    vocabulary_level: str | None = None
+    use_emojis: bool | None = None
+    avoid_idioms: bool | None = None
+    avoid_sarcasm: bool | None = None
+    avoid_metaphors: bool | None = None
+    explicit_transitions: bool | None = None
 
 
 class SafetyConstraintsSchema(BaseModel):
     """Safety configuration for content filtering"""
 
-    content_filter_level: Optional[str] = None  # strict, standard, relaxed
-    forbidden_topics: Optional[List[str]] = None
-    trigger_words: Optional[List[str]] = None
-    max_response_length: Optional[int] = None
+    content_filter_level: str | None = None  # strict, standard, relaxed
+    forbidden_topics: list[str] | None = None
+    trigger_words: list[str] | None = None
+    max_response_length: int | None = None
 
 
 class CompanionPersonaSchema(BaseModel):
     """Companion persona customization"""
 
-    name: Optional[str] = None
-    role: Optional[str] = None
-    personality: Optional[List[str]] = None
-    greeting_style: Optional[str] = None  # consistent, varied
-    sign_off_style: Optional[str] = None
+    name: str | None = None
+    role: str | None = None
+    personality: list[str] | None = None
+    greeting_style: str | None = None  # consistent, varied
+    sign_off_style: str | None = None
 
 
 class GuardianProfileCreate(BaseModel):
     """Create a new guardian profile for a student"""
 
     template_name: str = "default"
-    age: Optional[int] = Field(None, ge=1, le=100, description="Student age (1-100)")
-    gender: Optional[str] = None
-    medical_context: Optional[MedicalContextSchema] = None
-    communication_style: Optional[CommunicationStyleSchema] = None
-    safety_constraints: Optional[SafetyConstraintsSchema] = None
-    companion_persona: Optional[CompanionPersonaSchema] = None
-    custom_instructions: Optional[str] = None
-    private_notes: Optional[str] = None
+    age: int | None = Field(None, ge=1, le=100, description="Student age (1-100)")
+    gender: str | None = None
+    medical_context: MedicalContextSchema | None = None
+    communication_style: CommunicationStyleSchema | None = None
+    safety_constraints: SafetyConstraintsSchema | None = None
+    companion_persona: CompanionPersonaSchema | None = None
+    custom_instructions: str | None = None
+    private_notes: str | None = None
 
 
 class GuardianProfileUpdate(BaseModel):
     """Update an existing guardian profile"""
 
-    template_name: Optional[str] = None
-    age: Optional[int] = Field(None, ge=1, le=100, description="Student age (1-100)")
-    gender: Optional[str] = None
-    medical_context: Optional[MedicalContextSchema] = None
-    communication_style: Optional[CommunicationStyleSchema] = None
-    safety_constraints: Optional[SafetyConstraintsSchema] = None
-    companion_persona: Optional[CompanionPersonaSchema] = None
-    custom_instructions: Optional[str] = None
-    private_notes: Optional[str] = None
-    change_reason: Optional[str] = None  # For audit trail
+    template_name: str | None = None
+    age: int | None = Field(None, ge=1, le=100, description="Student age (1-100)")
+    gender: str | None = None
+    medical_context: MedicalContextSchema | None = None
+    communication_style: CommunicationStyleSchema | None = None
+    safety_constraints: SafetyConstraintsSchema | None = None
+    companion_persona: CompanionPersonaSchema | None = None
+    custom_instructions: str | None = None
+    private_notes: str | None = None
+    change_reason: str | None = None  # For audit trail
 
 
 class GuardianProfileResponse(BaseModel):
@@ -513,19 +513,19 @@ class GuardianProfileResponse(BaseModel):
     id: int
     user_id: int
     template_name: str
-    age: Optional[int] = None
-    gender: Optional[str] = None
-    medical_context: Optional[dict] = None
-    communication_style: Optional[dict] = None
-    safety_constraints: Optional[dict] = None
-    companion_persona: Optional[dict] = None
-    custom_instructions: Optional[str] = None
-    private_notes: Optional[str] = None
+    age: int | None = None
+    gender: str | None = None
+    medical_context: dict | None = None
+    communication_style: dict | None = None
+    safety_constraints: dict | None = None
+    companion_persona: dict | None = None
+    custom_instructions: str | None = None
+    private_notes: str | None = None
     is_active: bool = True
     created_by: int
-    updated_by: Optional[int] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    updated_by: int | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -535,11 +535,11 @@ class ProfileHistoryEntry(BaseModel):
 
     id: int
     field_name: str
-    old_value: Optional[Any] = None
-    new_value: Optional[Any] = None
+    old_value: Any | None = None
+    new_value: Any | None = None
     changed_by: dict
-    changed_at: Optional[str] = None
-    change_reason: Optional[str] = None
+    changed_at: str | None = None
+    change_reason: str | None = None
 
 
 class TemplateInfo(BaseModel):
@@ -558,8 +558,8 @@ class StudentWithProfileInfo(BaseModel):
     username: str
     display_name: str
     has_profile: bool
-    template_name: Optional[str] = None
-    profile_created_at: Optional[str] = None
+    template_name: str | None = None
+    profile_created_at: str | None = None
 
 
 class SystemPromptPreview(BaseModel):

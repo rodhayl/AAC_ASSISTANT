@@ -1,9 +1,9 @@
+import contextlib
 import json
 import os
 import re
 import tempfile
 from datetime import datetime
-from typing import Dict, Union, Optional
 
 from loguru import logger
 
@@ -100,8 +100,8 @@ class AACPromptProfile:
     def build_prompt(
         self,
         student_message: str,
-        semantic_analysis: Dict,
-        expansion_result: Dict,
+        semantic_analysis: dict,
+        expansion_result: dict,
         topic: str,
         recent_context: str = "",
     ) -> str:
@@ -165,7 +165,7 @@ class AACPromptProfile:
 
         return "\n".join(prompt_parts)
 
-    def get_params(self) -> Dict:
+    def get_params(self) -> dict:
         """Get optimized LLM parameters for AAC."""
         return {"max_tokens": self.max_tokens, "temperature": self.temperature}
 
@@ -175,7 +175,7 @@ class LearningCompanionService:
 
     def __init__(
         self,
-        llm_provider: Union[OllamaProvider, OpenRouterProvider],
+        llm_provider: OllamaProvider | OpenRouterProvider,
         speech_provider: LocalSpeechProvider,
         tts_provider: LocalTTSProvider,
         default_max_tokens: int = 1024,
@@ -263,8 +263,8 @@ class LearningCompanionService:
         topic: str,
         purpose: str = "",
         difficulty: str = "basic",
-        board_id: Optional[int] = None,
-    ) -> Dict:
+        board_id: int | None = None,
+    ) -> dict:
         """Start AI tutoring session"""
 
         logger.info(
@@ -375,10 +375,8 @@ class LearningCompanionService:
                 db.commit()
 
                 # Achievement: session start
-                try:
+                with contextlib.suppress(Exception):
                     AchievementSystem().check_achievements(user_id)
-                except Exception:
-                    pass
                 logger.info(f"Learning session {session_id} started successfully")
 
                 return {
@@ -397,7 +395,7 @@ class LearningCompanionService:
             logger.error(f"Failed to start learning session: {e}")
             return {"success": False, "error": str(e)}
 
-    async def ask_question(self, session_id: int, difficulty: str = None) -> Dict:
+    async def ask_question(self, session_id: int, difficulty: str = None) -> dict:
         """Generate adaptive question using local LLM"""
 
         logger.info(f"Generating question for session {session_id}")
@@ -427,7 +425,7 @@ class LearningCompanionService:
 
                 # Generate question using local Ollama
                 prompt = f"""Generate a {difficulty} level question about {session.topic_name}.
-                
+
 Previous conversation: {json.dumps(recent_history)}
 
 Requirements:
@@ -559,7 +557,7 @@ Requirements:
         is_voice: bool = False,
         audio_data: bytes = None,
         symbols: list = None,
-    ) -> Dict:
+    ) -> dict:
         """Analyze response and provide feedback"""
 
         logger.info(f"Processing response for session {session_id}")
@@ -605,10 +603,8 @@ Requirements:
                         student_response = "[voice message]"
                     finally:
                         if temp_path and os.path.exists(temp_path):
-                            try:
+                            with contextlib.suppress(Exception):
                                 os.remove(temp_path)
-                            except Exception:
-                                pass
                 elif is_voice and not audio_data:
                     return {"success": False, "error": "No audio data received."}
 
@@ -1077,7 +1073,7 @@ Write a helpful response to the student (1-2 friendly sentences). Ask a question
 
         return "; ".join(symbol_entries[-3:])  # Last 3 symbol patterns
 
-    async def end_learning_session(self, session_id: int) -> Dict:
+    async def end_learning_session(self, session_id: int) -> dict:
         """End a learning session and provide summary"""
 
         logger.info(f"Ending learning session {session_id}")
@@ -1117,10 +1113,8 @@ Be very positive and encouraging. Keep it to 2-3 sentences."""
                 db.commit()
 
                 # Achievement: session completion
-                try:
+                with contextlib.suppress(Exception):
                     AchievementSystem().check_achievements(session.user_id)
-                except Exception:
-                    pass
                 logger.info(f"Learning session {session_id} ended successfully")
 
                 return {
@@ -1137,7 +1131,7 @@ Be very positive and encouraging. Keep it to 2-3 sentences."""
             logger.error(f"Failed to end learning session: {e}")
             return {"success": False, "error": str(e)}
 
-    def get_session_progress(self, session_id: int) -> Dict:
+    def get_session_progress(self, session_id: int) -> dict:
         """Get current progress for a learning session"""
 
         try:
@@ -1166,7 +1160,7 @@ Be very positive and encouraging. Keep it to 2-3 sentences."""
             logger.error(f"Failed to get session progress: {e}")
             return {"success": False, "error": str(e)}
 
-    def get_user_history(self, user_id: int, limit: int = 10) -> Dict:
+    def get_user_history(self, user_id: int, limit: int = 10) -> dict:
         """Get recent learning sessions for a user"""
         try:
             with get_session() as db:

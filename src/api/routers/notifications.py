@@ -1,6 +1,7 @@
 import asyncio
+import contextlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -57,10 +58,8 @@ async def notifications_stream(token: str = None, db: Session = Depends(get_db))
                 data = await queue.get()
                 yield data
         finally:
-            try:
+            with contextlib.suppress(Exception):
                 svc.remove_callback("notification_shown", on_show)
-            except Exception:
-                pass
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -183,7 +182,7 @@ def mark_notification_read(
         )
 
     notification.is_read = True
-    notification.read_at = datetime.now(timezone.utc)
+    notification.read_at = datetime.now(UTC)
     db.commit()
 
     return {"ok": True}
@@ -207,7 +206,7 @@ def mark_all_notifications_read(
     count = (
         db.query(Notification)
         .filter(Notification.user_id == current_user.id, Notification.is_read.is_(False))
-        .update({"is_read": True, "read_at": datetime.now(timezone.utc)})
+        .update({"is_read": True, "read_at": datetime.now(UTC)})
     )
     db.commit()
 

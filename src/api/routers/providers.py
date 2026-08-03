@@ -6,11 +6,10 @@ from fastapi import APIRouter, Depends
 from src.aac_app.models.database import User
 from src.api.dependencies import (
     get_current_active_user,
+    get_lmstudio_provider,
     get_ollama_provider,
     get_openrouter_provider,
-    get_lmstudio_provider,
 )
-from src.aac_app.providers.lmstudio_provider import LMStudioProvider
 
 router = APIRouter(prefix="/api/providers", tags=["providers"])
 

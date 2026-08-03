@@ -53,9 +53,9 @@ def _get_cors_origins() -> list[str]:
             "http://localhost:3000",
             "http://localhost:5173",
         ]
-    
+
     origins = [origin.strip() for origin in origins_str.split(",") if origin.strip()]
-    
+
     # Security: In production, reject wildcard
     if config.ENVIRONMENT == "production":
         origins = [o for o in origins if o != "*"]
@@ -63,7 +63,7 @@ def _get_cors_origins() -> list[str]:
             logger.warning("No valid CORS origins configured for production Socket.IO")
             # Fall back to same-origin only
             return []
-    
+
     return origins
 
 
