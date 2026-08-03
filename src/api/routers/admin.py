@@ -14,7 +14,7 @@ def reset_database(user=Depends(get_current_admin_user)):
     Reset the database (drop all tables and recreate).
 
     SECURITY: This endpoint is disabled by default. To enable, set ALLOW_DB_RESET=true
-    in env.properties. This should NEVER be enabled in production environments.
+    in .env. This should NEVER be enabled in production environments.
     """
     # Security check: prevent accidental production database wipe
     if not config.ALLOW_DB_RESET:
@@ -23,7 +23,7 @@ def reset_database(user=Depends(get_current_admin_user)):
         )
         raise HTTPException(
             status_code=403,
-            detail="Database reset is disabled. Set ALLOW_DB_RESET=true in env.properties to enable.",
+            detail="Database reset is disabled. Set ALLOW_DB_RESET=true in .env to enable.",
         )
 
     # Additional production environment check

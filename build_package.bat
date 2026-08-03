@@ -102,9 +102,9 @@ if not exist "dist\AAC_Assistant\AAC_Assistant.exe" (
 )
 
 echo [6/7] Copying additional data...
-REM Copy env.properties if it doesn't exist in output
-if not exist "dist\AAC_Assistant\env.properties" (
-    copy /Y "env.properties.example" "dist\AAC_Assistant\env.properties" >nul 2>&1
+REM Copy .env.example if it doesn't exist in output
+if not exist "dist\AAC_Assistant\.env.example" (
+    copy /Y ".env.example" "dist\AAC_Assistant\.env.example" >nul 2>&1
 )
 
 REM Ensure data directory exists with symbols
@@ -176,7 +176,7 @@ xcopy /E /I /Y "scripts" "%OUTPUT_DIR%\scripts" >nul
 REM Configuration and requirements
 copy /Y "requirements.txt" "%OUTPUT_DIR%\" >nul
 copy /Y "pytest.ini" "%OUTPUT_DIR%\" >nul
-if exist "env.properties.example" copy /Y "env.properties.example" "%OUTPUT_DIR%\" >nul
+if exist ".env.example" copy /Y ".env.example" "%OUTPUT_DIR%\" >nul
 
 REM Create data directory placeholder
 mkdir "%OUTPUT_DIR%\data" 2>nul
@@ -278,39 +278,35 @@ echo [5/7] Creating install script...
 >> "%OUTPUT_DIR%\install.bat" echo ^)
 >> "%OUTPUT_DIR%\install.bat" echo.
 >> "%OUTPUT_DIR%\install.bat" echo REM Generate Secure JWT Key if missing
->> "%OUTPUT_DIR%\install.bat" echo ^if not exist "env.properties" ^(
+>> "%OUTPUT_DIR%\install.bat" echo ^if not exist ".env" ^(
 >> "%OUTPUT_DIR%\install.bat" echo     echo Creating basic configuration...
->> "%OUTPUT_DIR%\install.bat" echo     copy env.properties.example env.properties ^>nul 2^>^&1
+>> "%OUTPUT_DIR%\install.bat" echo     ^if exist "env.properties" ^(
+>> "%OUTPUT_DIR%\install.bat" echo         copy /Y env.properties .env ^>nul 2^>^&1
+>> "%OUTPUT_DIR%\install.bat" echo     ^) else ^if exist ".env.example" ^(
+>> "%OUTPUT_DIR%\install.bat" echo         copy /Y .env.example .env ^>nul 2^>^&1
+>> "%OUTPUT_DIR%\install.bat" echo     ^) else ^if exist "env.properties.example" ^(
+>> "%OUTPUT_DIR%\install.bat" echo         copy /Y env.properties.example .env ^>nul 2^>^&1
+>> "%OUTPUT_DIR%\install.bat" echo     ^) else ^(
+>> "%OUTPUT_DIR%\install.bat" echo         type nul ^> .env
+>> "%OUTPUT_DIR%\install.bat" echo     ^)
 >> "%OUTPUT_DIR%\install.bat" echo ^)
 >> "%OUTPUT_DIR%\install.bat" echo.
 >> "%OUTPUT_DIR%\install.bat" echo REM Ensure bootstrap admin settings exist
->> "%OUTPUT_DIR%\install.bat" echo findstr /C:"AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN" env.properties ^>nul
+>> "%OUTPUT_DIR%\install.bat" echo findstr /C:"AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN" .env ^>nul
 >> "%OUTPUT_DIR%\install.bat" echo ^if errorlevel 1 ^(
 >> "%OUTPUT_DIR%\install.bat" echo     echo.
->> "%OUTPUT_DIR%\install.bat" echo     echo # Bootstrap admin for first run^>^> env.properties
->> "%OUTPUT_DIR%\install.bat" echo     echo AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=true^>^> env.properties
->> "%OUTPUT_DIR%\install.bat" echo     echo AAC_BOOTSTRAP_ADMIN_USERNAME=admin1^>^> env.properties
->> "%OUTPUT_DIR%\install.bat" echo     echo AAC_BOOTSTRAP_ADMIN_PASSWORD=Admin123^>^> env.properties
+>> "%OUTPUT_DIR%\install.bat" echo     echo # Bootstrap admin for first run^>^> .env
+>> "%OUTPUT_DIR%\install.bat" echo     echo AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=true^>^> .env
+>> "%OUTPUT_DIR%\install.bat" echo     echo AAC_BOOTSTRAP_ADMIN_USERNAME=admin1^>^> .env
+>> "%OUTPUT_DIR%\install.bat" echo     echo AAC_BOOTSTRAP_ADMIN_PASSWORD=Admin123^>^> .env
 >> "%OUTPUT_DIR%\install.bat" echo ^)
 >> "%OUTPUT_DIR%\install.bat" echo.
 >> "%OUTPUT_DIR%\install.bat" echo echo Checking security configuration...
->> "%OUTPUT_DIR%\install.bat" echo set "NEED_JWT=0"
->> "%OUTPUT_DIR%\install.bat" echo findstr /C:"JWT_SECRET_KEY" env.properties ^>nul
->> "%OUTPUT_DIR%\install.bat" echo ^if errorlevel 1 set "NEED_JWT=1"
->> "%OUTPUT_DIR%\install.bat" echo findstr /C:"JWT_SECRET_KEY=CHANGE_ME_TO_A_SECURE_RANDOM_STRING" env.properties ^>nul
->> "%OUTPUT_DIR%\install.bat" echo ^if not errorlevel 1 set "NEED_JWT=1"
->> "%OUTPUT_DIR%\install.bat" echo ^if "^!NEED_JWT^!"=="1" ^(
->> "%OUTPUT_DIR%\install.bat" echo     echo Generating secure JWT secret key...
->> "%OUTPUT_DIR%\install.bat" echo     for /f "tokens=*" %%%%a in ^('.venv\Scripts\python scripts\generate_jwt_secret.py'^) do set "SECRET_KEY=%%%%a"
->> "%OUTPUT_DIR%\install.bat" echo     ^if "^!SECRET_KEY^!"=="" ^(
->> "%OUTPUT_DIR%\install.bat" echo         echo ERROR: Failed to generate JWT secret key.
->> "%OUTPUT_DIR%\install.bat" echo         pause
->> "%OUTPUT_DIR%\install.bat" echo         exit /b 1
->> "%OUTPUT_DIR%\install.bat" echo     ^)
->> "%OUTPUT_DIR%\install.bat" echo     echo.^>^> env.properties
->> "%OUTPUT_DIR%\install.bat" echo     echo # Security^>^> env.properties
->> "%OUTPUT_DIR%\install.bat" echo     echo JWT_SECRET_KEY=^^!SECRET_KEY^^!^>^> env.properties
->> "%OUTPUT_DIR%\install.bat" echo     echo Key generated successfully.
+>> "%OUTPUT_DIR%\install.bat" echo .venv\Scripts\python scripts\generate_jwt_secret.py --env-file .env ^>nul
+>> "%OUTPUT_DIR%\install.bat" echo ^if errorlevel 1 ^(
+>> "%OUTPUT_DIR%\install.bat" echo     echo ERROR: Failed to generate secure JWT secret key.
+>> "%OUTPUT_DIR%\install.bat" echo     pause
+>> "%OUTPUT_DIR%\install.bat" echo     exit /b 1
 >> "%OUTPUT_DIR%\install.bat" echo ^)
 >> "%OUTPUT_DIR%\install.bat" echo.
 >> "%OUTPUT_DIR%\install.bat" echo echo.

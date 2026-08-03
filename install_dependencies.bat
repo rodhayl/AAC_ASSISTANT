@@ -61,42 +61,35 @@ if not exist "src\frontend\node_modules" (
 )
 
 REM Ensure local configuration exists
-if not exist "env.properties" (
-    echo Creating local env.properties from template...
-    if exist "env.properties.example" (
-        copy /Y "env.properties.example" "env.properties" >nul
+if not exist ".env" (
+    echo Creating local .env from template...
+    if exist "env.properties" (
+        copy /Y "env.properties" ".env" >nul
+    ) else if exist ".env.example" (
+        copy /Y ".env.example" ".env" >nul
+    ) else if exist "env.properties.example" (
+        copy /Y "env.properties.example" ".env" >nul
     ) else (
-        type nul > "env.properties"
+        type nul > ".env"
     )
 )
 
 REM Ensure bootstrap admin settings exist
-findstr /B /C:"AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=" "env.properties" >nul
+findstr /B /C:"AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=" ".env" >nul
 if errorlevel 1 (
     echo.
-    >> "env.properties" echo # Bootstrap admin for first run
-    >> "env.properties" echo AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=true
-    >> "env.properties" echo AAC_BOOTSTRAP_ADMIN_USERNAME=admin1
-    >> "env.properties" echo AAC_BOOTSTRAP_ADMIN_PASSWORD=Admin123
+    >> ".env" echo # Bootstrap admin for first run
+    >> ".env" echo AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=true
+    >> ".env" echo AAC_BOOTSTRAP_ADMIN_USERNAME=admin1
+    >> ".env" echo AAC_BOOTSTRAP_ADMIN_PASSWORD=Admin123
 )
 
-REM Ensure JWT secret is present and not placeholder
-set "NEED_JWT=0"
-findstr /B /C:"JWT_SECRET_KEY=" "env.properties" >nul
-if errorlevel 1 set "NEED_JWT=1"
-findstr /C:"JWT_SECRET_KEY=CHANGE_ME_TO_A_SECURE_RANDOM_STRING" "env.properties" >nul
-if not errorlevel 1 set "NEED_JWT=1"
-
-if "!NEED_JWT!"=="1" (
-    echo Generating secure JWT secret key...
-    for /f "tokens=*" %%a in ('"%PYTHON_EXE%" scripts\generate_jwt_secret.py') do set "JWT_SECRET=%%a"
-    if "!JWT_SECRET!"=="" (
-        echo Error: Failed to generate JWT secret key.
-        exit /b 1
-    )
-    echo.>> "env.properties"
-    >> "env.properties" echo # Security (generated locally)
-    >> "env.properties" echo JWT_SECRET_KEY=!JWT_SECRET!
+REM Ensure JWT_SECRET_KEY is present exactly once, replacing any placeholder.
+echo Ensuring secure JWT secret key...
+call "%PYTHON_EXE%" scripts\generate_jwt_secret.py --env-file ".env" >nul
+if errorlevel 1 (
+    echo Error: Failed to generate secure JWT secret key.
+    exit /b 1
 )
 
 echo Dependencies are ready.

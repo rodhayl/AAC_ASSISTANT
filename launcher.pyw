@@ -27,21 +27,10 @@ except ImportError:
 
 
 def load_config(base_dir):
-    """Load configuration from env.properties file."""
-    config = {
-        'BACKEND_HOST': '0.0.0.0',
-        'BACKEND_PORT': '8086',
-        'FRONTEND_PORT': '5176',
-    }
-    config_file = os.path.join(base_dir, 'env.properties')
-    if os.path.exists(config_file):
-        with open(config_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    key, value = line.split('=', 1)
-                    config[key.strip()] = value.strip()
-    return config
+    """Load launcher settings through the shared pydantic configuration."""
+    from src import config as app_config
+
+    return app_config.load_settings(base_dir).model_dump()
 
 
 def get_python_exe():
@@ -76,7 +65,7 @@ class AACLauncher:
             self.base_dir = os.path.dirname(os.path.abspath(__file__))
         self.frontend_dir = os.path.join(self.base_dir, "src", "frontend")
         
-        # Load configuration from env.properties
+        # Load configuration from the shared .env / legacy migration path.
         config = load_config(self.base_dir)
         self.backend_host = config.get('BACKEND_HOST', '0.0.0.0')
         self.backend_port = int(config.get('BACKEND_PORT', '8086'))

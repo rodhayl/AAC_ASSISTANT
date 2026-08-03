@@ -3,9 +3,9 @@
  * Values are loaded from the backend /api/config endpoint or use defaults.
  */
 
-// Default configuration (should match env.properties)
+// Default configuration (should match .env)
 const defaults = {
-  BACKEND_PORT: Number(import.meta.env.VITE_BACKEND_PORT) || 8090,
+  BACKEND_PORT: Number(import.meta.env.VITE_BACKEND_PORT) || 8086,
   FRONTEND_PORT: Number(import.meta.env.VITE_FRONTEND_PORT) || 5176,
   API_BASE_URL: import.meta.env.VITE_API_BASE_URL || '',
   OLLAMA_BASE_URL: import.meta.env.VITE_OLLAMA_BASE_URL || 'http://localhost:11434',
@@ -52,6 +52,15 @@ export const config = {
   },
   
   get BACKEND_URL() {
+    if (typeof window === 'undefined') {
+      return `http://127.0.0.1:${defaults.BACKEND_PORT}`;
+    }
+
+    // Vite does not proxy /docs, so point the navbar link at the backend in
+    // development. Production serves the SPA and docs from the same origin.
+    if (window.location.port === String(defaults.FRONTEND_PORT)) {
+      return `${window.location.protocol}//${window.location.hostname}:${defaults.BACKEND_PORT}`;
+    }
     return '';
   },
 };

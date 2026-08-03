@@ -10,8 +10,9 @@ This guide consolidates configuration, API usage, security/privacy requirements,
 
 ## 2. Configuration
 
-1. Copy `env.properties.example` to `env.properties`.
-2. Set a strong `JWT_SECRET_KEY`.
+1. Copy `.env.example` to `.env`. Legacy `env.properties` files are migrated
+   automatically and kept in place for rollback.
+2. Set a strong `JWT_SECRET_KEY` (the first run replaces the placeholder).
 3. Keep `ALLOW_DB_RESET=false` for public/production deployments.
 4. Keep `AAC_SEED_SAMPLE_DATA=false` for public/production deployments.
 
@@ -23,8 +24,6 @@ BACKEND_PORT=8086
 FRONTEND_PORT=5176
 JWT_SECRET_KEY=REPLACE_WITH_STRONG_RANDOM
 ENVIRONMENT=production
-FORCE_HTTPS=true
-SECURE_COOKIES=true
 ALLOW_DB_RESET=false
 AAC_SEED_SAMPLE_DATA=false
 AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=true

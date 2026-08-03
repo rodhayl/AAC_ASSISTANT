@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from src import config
 from src.aac_app.models.database import BoardSymbol
+from src.aac_app.providers.ollama_provider import OllamaProvider
 from src.api.main import app
 
 client = TestClient(app)
@@ -104,7 +105,7 @@ async def test_ai_real_integration(
 
     # Get config
     ollama_url = config.OLLAMA_BASE_URL
-    ollama_model = config.OLLAMA_DEFAULT_MODEL
+    ollama_model = OllamaProvider.HARDWARE_PROFILES["mid_range"]
 
     print(f"\nChecking Ollama connection at {ollama_url}...")
 

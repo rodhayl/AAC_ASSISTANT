@@ -247,7 +247,7 @@ if os.path.exists(FRONTEND_DIR):
 origins = [origin.strip() for origin in config.ALLOWED_ORIGINS.split(",") if origin.strip()]
 
 if not origins:
-    # Safety net: if env.properties or env vars misconfigure ALLOWED_ORIGINS,
+    # Safety net: if .env, legacy env.properties, or env vars misconfigure ALLOWED_ORIGINS,
     # fall back to common dev origins so the frontend can still connect.
     logger.warning(
         "ALLOWED_ORIGINS is empty; falling back to development defaults"

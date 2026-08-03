@@ -15,7 +15,7 @@ from loguru import logger
 from src import config
 
 # JWT Configuration
-# Load from env.properties via config module (environment variables take precedence)
+# Load from .env via the shared configuration module (environment variables take precedence)
 JWT_SECRET_KEY = config.get("JWT_SECRET_KEY", "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 120  # 2 hours
@@ -226,6 +226,6 @@ if JWT_SECRET_KEY == "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION":
         "=" * 80 + "\n"
         "WARNING: Using default JWT_SECRET_KEY! This is INSECURE.\n"
         "Generate a secure key with: python -c 'import secrets; print(secrets.token_hex(32))'\n"
-        "Then set JWT_SECRET_KEY environment variable or add to env.properties\n"
+        "Then set JWT_SECRET_KEY environment variable or add to .env\n"
         "=" * 80
     )
