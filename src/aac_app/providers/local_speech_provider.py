@@ -1,4 +1,9 @@
+import importlib.util
+import os
+import threading
 import warnings
+from collections.abc import Callable
+from queue import Queue
 
 warnings.filterwarnings(
     "ignore",
@@ -6,56 +11,30 @@ warnings.filterwarnings(
     message=".*pkg_resources is deprecated as an API.*",
 )
 
-# Core dependency: Whisper itself
-try:  # pragma: no cover - simple import gate
-    import whisper
-
-    WHISPER_AVAILABLE = True
-except ImportError as e:  # pragma: no cover - environment specific
-    WHISPER_AVAILABLE = False
-    import os
-
-    if os.getenv("AAC_WARN_ON_OPTIONAL_MISSING") == "1":
-        warnings.warn(f"Whisper not available: {e}", stacklevel=2)
-
-# Optional dependencies used only for microphone / VAD features
-try:  # pragma: no cover - simple import gate
-    import sounddevice as sd
-
-    SOUNDDEVICE_AVAILABLE = True
-except ImportError:
-    sd = None
-    SOUNDDEVICE_AVAILABLE = False
-
-try:  # pragma: no cover - simple import gate
-    import soundfile as sf
-
-    SOUNDFILE_AVAILABLE = True
-except ImportError:
-    sf = None
-    SOUNDFILE_AVAILABLE = False
-
-try:  # pragma: no cover - simple import gate
-    import numpy as np
-
-    NUMPY_AVAILABLE = True
-except ImportError:
-    np = None
-    NUMPY_AVAILABLE = False
-
-try:  # pragma: no cover - simple import gate
-    import webrtcvad
-
-    WEBRTC_VAD_AVAILABLE = True
-except ImportError:
-    webrtcvad = None
-    WEBRTC_VAD_AVAILABLE = False
-
-import threading
-from collections.abc import Callable
-from queue import Queue
-
 from loguru import logger
+
+
+def _module_available(module_name: str) -> bool:
+    """Check whether an optional module exists without importing it."""
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
+
+
+# Keep availability checks cheap during startup. The actual imports happen in
+# the first method that needs each dependency.
+WHISPER_AVAILABLE = _module_available("whisper")
+SOUNDDEVICE_AVAILABLE = _module_available("sounddevice")
+SOUNDFILE_AVAILABLE = _module_available("soundfile")
+NUMPY_AVAILABLE = _module_available("numpy")
+WEBRTC_VAD_AVAILABLE = _module_available("webrtcvad")
+
+whisper = None
+sd = None
+sf = None
+np = None
+webrtcvad = None
 
 
 class LocalSpeechProvider:
@@ -93,17 +72,75 @@ class LocalSpeechProvider:
             self._model_loaded = True  # Mark as attempted
             return
 
-        # Initialize VAD for voice activity detection if available (lightweight)
-        if WEBRTC_VAD_AVAILABLE:
-            try:
-                self.vad = webrtcvad.Vad(2)  # Aggressiveness level 0-3
-            except Exception as e:
-                logger.warning(f"Failed to initialize VAD: {e}")
-                self.vad = None
-
         if not lazy_load:
             # Immediate loading (backwards compatible for warmup)
             self._load_model()
+
+    def _load_whisper(self) -> bool:
+        """Import Whisper only when a transcription is requested."""
+        global WHISPER_AVAILABLE, whisper
+        if whisper is not None:
+            return True
+        if not WHISPER_AVAILABLE:
+            return False
+        try:
+            import whisper as whisper_module
+
+            whisper = whisper_module
+            return True
+        except ImportError as e:
+            WHISPER_AVAILABLE = False
+            if os.getenv("AAC_WARN_ON_OPTIONAL_MISSING") == "1":
+                warnings.warn(f"Whisper not available: {e}", stacklevel=2)
+            return False
+
+    def _load_audio_dependencies(self, *, include_vad: bool = False) -> bool:
+        """Import microphone/VAD dependencies only for microphone features."""
+        global NUMPY_AVAILABLE, SOUNDFILE_AVAILABLE, SOUNDDEVICE_AVAILABLE, WEBRTC_VAD_AVAILABLE
+        global np, sd, sf, webrtcvad
+
+        if SOUNDDEVICE_AVAILABLE and sd is None:
+            try:
+                import sounddevice as sounddevice_module
+
+                sd = sounddevice_module
+            except ImportError:
+                SOUNDDEVICE_AVAILABLE = False
+        if SOUNDFILE_AVAILABLE and sf is None:
+            try:
+                import soundfile as soundfile_module
+
+                sf = soundfile_module
+            except ImportError:
+                SOUNDFILE_AVAILABLE = False
+        if NUMPY_AVAILABLE and np is None:
+            try:
+                import numpy as numpy_module
+
+                np = numpy_module
+            except ImportError:
+                NUMPY_AVAILABLE = False
+        if include_vad and WEBRTC_VAD_AVAILABLE and webrtcvad is None:
+            try:
+                import webrtcvad as webrtcvad_module
+
+                webrtcvad = webrtcvad_module
+            except ImportError:
+                WEBRTC_VAD_AVAILABLE = False
+
+        return SOUNDDEVICE_AVAILABLE and SOUNDFILE_AVAILABLE
+
+    def _ensure_vad(self) -> None:
+        """Create the VAD object only when continuous recognition uses it."""
+        if self.vad is not None or not WEBRTC_VAD_AVAILABLE:
+            return
+        self._load_audio_dependencies(include_vad=True)
+        if webrtcvad is None:
+            return
+        try:
+            self.vad = webrtcvad.Vad(2)  # Aggressiveness level 0-3
+        except Exception as e:
+            logger.warning(f"Failed to initialize VAD: {e}")
 
     def _ensure_model_loaded(self):
         """Ensure Whisper model is loaded (lazy loading)"""
@@ -114,6 +151,10 @@ class LocalSpeechProvider:
     def _load_model(self):
         """Load the Whisper model"""
         if self._model_loaded or not WHISPER_AVAILABLE:
+            return
+
+        if not self._load_whisper():
+            self._model_loaded = True
             return
 
         try:
@@ -170,6 +211,13 @@ class LocalSpeechProvider:
             )
             return ""
 
+        self._load_audio_dependencies()
+        if sd is None or sf is None:
+            logger.error(
+                "Microphone recording not available - sounddevice/soundfile missing"
+            )
+            return ""
+
         logger.info(f"Recording from microphone for {duration_seconds} seconds")
 
         try:
@@ -196,6 +244,10 @@ class LocalSpeechProvider:
         """Detect if audio contains speech using WebRTC VAD"""
         if not WHISPER_AVAILABLE or self.vad is None or not NUMPY_AVAILABLE:
             return True  # Assume speech if VAD not available
+
+        self._load_audio_dependencies()
+        if np is None:
+            return True
 
         try:
             # Convert to 16-bit PCM for VAD
@@ -249,7 +301,8 @@ class LocalSpeechProvider:
             logger.error("Cannot start continuous recognition - Whisper model failed to load")
             return None
 
-        if not (SOUNDDEVICE_AVAILABLE and SOUNDFILE_AVAILABLE):
+        self._load_audio_dependencies(include_vad=vad_enabled)
+        if not (SOUNDDEVICE_AVAILABLE and SOUNDFILE_AVAILABLE) or sd is None or sf is None:
             logger.error(
                 "Cannot start continuous recognition - sounddevice/soundfile missing"
             )
@@ -263,6 +316,7 @@ class LocalSpeechProvider:
 
             if vad_enabled:
                 # Use WebRTC VAD to detect speech
+                self._ensure_vad()
                 is_speech = self._detect_speech(indata[:, 0])
                 if is_speech:
                     self.audio_queue.put(indata.copy())

@@ -1,39 +1,55 @@
-try:
-    import pyttsx3
-
-    PYTTSX3_AVAILABLE = True
-except ImportError:
-    PYTTSX3_AVAILABLE = False
-    import warnings
-
-    warnings.warn("pyttsx3 not available, TTS functionality disabled", stacklevel=2)
-
+import importlib.util
 import threading
 from collections.abc import Callable
 
 from loguru import logger
 
 
+def _module_available(module_name: str) -> bool:
+    """Check for an optional module without importing it."""
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
+
+
+PYTTSX3_AVAILABLE = _module_available("pyttsx3")
+pyttsx3 = None
+
+
 class LocalTTSProvider:
     """100% local TTS using system voices"""
 
     def __init__(self):
-        logger.info("Initializing local TTS provider")
+        logger.info("Initializing local TTS provider (lazy mode)")
+        self.engine = None
+        self.voices = []
+        self._engine_init_attempted = False
 
+    def _ensure_engine(self) -> bool:
+        """Import and initialize pyttsx3 on the first speech operation."""
+        global PYTTSX3_AVAILABLE, pyttsx3
+        if self.engine is not None:
+            return True
+        if self._engine_init_attempted:
+            return False
+        self._engine_init_attempted = True
         if not PYTTSX3_AVAILABLE:
             logger.error("pyttsx3 not available. TTS functionality disabled.")
-            self.engine = None
-            self.voices = []
-            return
-
+            return False
         try:
+            import pyttsx3 as pyttsx3_module
+
+            pyttsx3 = pyttsx3_module
             self.engine = pyttsx3.init()
             self._configure_defaults()
             logger.info("TTS provider initialized successfully")
+            return True
         except Exception as e:
             logger.error(f"Failed to initialize TTS: {e}")
             self.engine = None
             self.voices = []
+            return False
 
     def _configure_defaults(self):
         """Set reasonable defaults"""
@@ -64,7 +80,7 @@ class LocalTTSProvider:
             logger.warning("Empty text provided to speak")
             return
 
-        if not PYTTSX3_AVAILABLE or self.engine is None:
+        if not self._ensure_engine():
             logger.error("TTS not available - dependencies missing")
             return
 
@@ -78,6 +94,10 @@ class LocalTTSProvider:
                 threading.Thread(target=self.engine.runAndWait, daemon=True).start()
         except Exception as e:
             logger.error(f"Speech failed: {e}")
+
+    def synthesize(self, text: str, blocking: bool = False):
+        """Compatibility alias for callers that use the synthesis name."""
+        self.speak(text, blocking=blocking)
 
     def speak_async(self, text: str, callback: Callable[[], None] | None = None):
         """Non-blocking speech"""
@@ -97,6 +117,8 @@ class LocalTTSProvider:
     def get_available_voices(self) -> list[dict]:
         """List all system voices"""
         voices = []
+        if not self._ensure_engine():
+            return voices
         try:
             for voice in self.engine.getProperty("voices"):
                 voice_info = {
@@ -114,6 +136,8 @@ class LocalTTSProvider:
 
     def set_voice(self, voice_id: str):
         """Change active voice"""
+        if not self._ensure_engine():
+            return
         try:
             self.engine.setProperty("voice", voice_id)
             logger.info(f"Voice changed to: {voice_id}")
@@ -122,6 +146,8 @@ class LocalTTSProvider:
 
     def set_rate(self, rate: int):
         """Set speech rate (100-200 typical)"""
+        if not self._ensure_engine():
+            return
         try:
             self.engine.setProperty("rate", rate)
             logger.info(f"Speech rate set to: {rate}")
@@ -130,6 +156,8 @@ class LocalTTSProvider:
 
     def set_volume(self, volume: float):
         """Set volume (0.0 to 1.0)"""
+        if not self._ensure_engine():
+            return
         try:
             self.engine.setProperty("volume", volume)
             logger.info(f"Volume set to: {volume}")
@@ -138,6 +166,8 @@ class LocalTTSProvider:
 
     def stop(self):
         """Stop current speech"""
+        if not self._ensure_engine():
+            return
         try:
             self.engine.stop()
             logger.info("Speech stopped")

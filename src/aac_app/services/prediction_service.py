@@ -1,3 +1,4 @@
+import importlib.util
 import json
 from collections.abc import Sequence
 
@@ -7,15 +8,19 @@ from sqlalchemy.orm import Session
 from ..models.database import BoardSymbol, Symbol, SymbolUsageLog, get_session
 from ..services.symbol_analytics import SymbolAnalytics
 
-# Import NLTK
-try:
-    import nltk
-    from nltk import ConditionalFreqDist
-    from nltk.corpus import brown
-    HAS_NLTK = True
-except ImportError:
-    HAS_NLTK = False
-    logger.warning("NLTK library not found, falling back to internal N-grams")
+
+def _module_available(module_name: str) -> bool:
+    """Check for NLTK without importing it during application startup."""
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
+
+
+HAS_NLTK = _module_available("nltk")
+nltk = None
+ConditionalFreqDist = None
+brown = None
 
 class PredictionService:
     """
@@ -32,27 +37,41 @@ class PredictionService:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance.analytics_service = SymbolAnalytics()
-            if HAS_NLTK:
-                try:
-                    # Download brown corpus if needed (quietly)
-                    try:
-                        nltk.data.find('corpora/brown')
-                    except LookupError:
-                        logger.info("Downloading NLTK brown corpus...")
-                        nltk.download('brown', quiet=True)
-
-                    # Build simple Bigram model
-                    logger.info("Building NLTK Bigram model...")
-                    words = brown.words()
-                    # Filter for alpha only to reduce noise
-                    words = [w.lower() for w in words if w.isalpha()]
-                    bigrams = nltk.bigrams(words)
-                    cls._instance._nltk_cfd = ConditionalFreqDist(bigrams)
-                    logger.info("NLTK model ready")
-                except Exception as e:
-                     logger.error(f"Failed to init NLTK model: {e}")
-                     cls._instance._nltk_cfd = None
         return cls._instance
+
+    def _ensure_nltk_model(self) -> None:
+        """Load NLTK and its corpus only when prediction needs it."""
+        global HAS_NLTK, nltk, ConditionalFreqDist, brown
+        if self._nltk_cfd is not None or not HAS_NLTK:
+            return
+
+        try:
+            import nltk as nltk_module
+            from nltk import ConditionalFreqDist as conditional_freq_dist
+            from nltk.corpus import brown as brown_corpus
+
+            nltk = nltk_module
+            ConditionalFreqDist = conditional_freq_dist
+            brown = brown_corpus
+
+            # Download brown corpus if needed (quietly).
+            try:
+                nltk.data.find("corpora/brown")
+            except LookupError:
+                logger.info("Downloading NLTK brown corpus...")
+                nltk.download("brown", quiet=True)
+
+            # Build simple Bigram model.
+            logger.info("Building NLTK Bigram model...")
+            words = [word.lower() for word in brown.words() if word.isalpha()]
+            self._nltk_cfd = ConditionalFreqDist(nltk.bigrams(words))
+            logger.info("NLTK model ready")
+        except ImportError:
+            HAS_NLTK = False
+            logger.warning("NLTK library not found, falling back to internal N-grams")
+        except Exception as e:
+            logger.error(f"Failed to init NLTK model: {e}")
+            self._nltk_cfd = None
 
     def _load_model(self, language_code: str) -> dict:
         """Load static N-gram model for the given language."""
@@ -320,25 +339,27 @@ class PredictionService:
         # Try library first if available and language is English
         # (Assuming library is optimized for English)
         lib_suggestions = []
+        if language.startswith("en") and last_word:
+            self._ensure_nltk_model()
         logger.info(
             f"Checking NLTK: has_model={self._nltk_cfd is not None}, lang={language}, last_word={last_word}"
         )
 
         if self._nltk_cfd and language.startswith("en") and last_word:
-             try:
-                 # Get most frequent next words from CFD
-                 if last_word in self._nltk_cfd:
-                     # Get top 5 most common next words
-                     top_next = self._nltk_cfd[last_word].most_common(5)
-                     logger.info(f"NLTK suggestions for '{last_word}': {top_next}")
-                     for word, _count in top_next:
-                         # Normalize score roughly (count is raw frequency)
-                         # We just set a fixed confidence for library suggestions
-                         lib_suggestions.append((word, 0.5))
-                 else:
-                     logger.info(f"Word '{last_word}' not in NLTK model")
-             except Exception as e:
-                 logger.warning(f"NLTK prediction failed: {e}")
+            try:
+                # Get most frequent next words from CFD.
+                if last_word in self._nltk_cfd:
+                    # Get top 5 most common next words.
+                    top_next = self._nltk_cfd[last_word].most_common(5)
+                    logger.info(f"NLTK suggestions for '{last_word}': {top_next}")
+                    for word, _count in top_next:
+                        # Normalize score roughly (count is raw frequency).
+                        # We just set a fixed confidence for library suggestions.
+                        lib_suggestions.append((word, 0.5))
+                else:
+                    logger.info(f"Word '{last_word}' not in NLTK model")
+            except Exception as e:
+                logger.warning(f"NLTK prediction failed: {e}")
 
         # If library gave results, use them
         if lib_suggestions and len(suggestions) < base_limit:

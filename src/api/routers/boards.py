@@ -40,19 +40,32 @@ from src.api.dependencies import (
 
 router = APIRouter()
 
-try:
-    from deep_translator import GoogleTranslator as _GoogleTranslator
-except Exception:  # pragma: no cover - optional dependency
-    _GoogleTranslator = None
-
+_GoogleTranslator = None
+_translation_import_attempted = False
 _translation_dependency_warning_emitted = False
+
+
+def _load_translation_dependency():
+    """Import the optional translator only when a translated board is requested."""
+    global _GoogleTranslator, _translation_import_attempted
+    if _translation_import_attempted:
+        return _GoogleTranslator
+    _translation_import_attempted = True
+    try:
+        from deep_translator import GoogleTranslator
+
+        _GoogleTranslator = GoogleTranslator
+    except Exception:  # pragma: no cover - optional dependency
+        _GoogleTranslator = None
+    return _GoogleTranslator
 
 
 @lru_cache(maxsize=16)
 def _build_symbol_translator(target_lang: str):
-    if _GoogleTranslator is None:
+    translator_class = _load_translation_dependency()
+    if translator_class is None:
         return None
-    return _GoogleTranslator(source="auto", target=target_lang)
+    return translator_class(source="auto", target=target_lang)
 
 
 def _translate_symbol_text(text: str | None, target_lang: str | None) -> str | None:

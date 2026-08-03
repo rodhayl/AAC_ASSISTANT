@@ -1,27 +1,26 @@
+import importlib.util
 import json
 import os
 from typing import Any
 
-import numpy as np
 from loguru import logger
 
-try:
-    import faiss
 
-    FAISS_AVAILABLE = True
-except ImportError:
-    logger.warning("faiss not installed. Vector store will be disabled.")
-    FAISS_AVAILABLE = False
+def _module_available(module_name: str) -> bool:
+    """Check for an optional dependency without importing it."""
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
 
-try:
-    from sentence_transformers import SentenceTransformer
 
-    SENTENCE_TRANSFORMERS_AVAILABLE = True
-except ImportError:
-    logger.warning(
-        "sentence-transformers not installed. Vector store will be disabled."
-    )
-    SENTENCE_TRANSFORMERS_AVAILABLE = False
+FAISS_AVAILABLE = _module_available("faiss")
+SENTENCE_TRANSFORMERS_AVAILABLE = _module_available("sentence_transformers")
+NUMPY_AVAILABLE = _module_available("numpy")
+
+faiss = None
+SentenceTransformer = None
+np = None
 
 
 class LocalVectorStore:
@@ -50,16 +49,7 @@ class LocalVectorStore:
         self._model_loaded = False
         self._index_loaded = False
         self._lazy_load = lazy_load
-
-        # Auto-detect device if not specified
-        if device is None:
-            try:
-                import torch
-                self.device = "cuda" if torch.cuda.is_available() else "cpu"
-            except ImportError:
-                self.device = "cpu"
-        else:
-            self.device = device
+        self.device = device
 
         if not FAISS_AVAILABLE or not SENTENCE_TRANSFORMERS_AVAILABLE:
             logger.warning("Vector store disabled due to missing dependencies")
@@ -84,7 +74,12 @@ class LocalVectorStore:
         """Load Sentence Transformer model"""
         if not SENTENCE_TRANSFORMERS_AVAILABLE or self._model_loaded:
             return
+        if not self._load_embedding_dependencies():
+            self._model_loaded = True
+            return
         try:
+            if self.device is None:
+                self.device = self._resolve_device()
             logger.info(f"Loading embedding model: {self.model_name} on {self.device}")
             self.model = SentenceTransformer(self.model_name, device=self.device)
             self._model_loaded = True
@@ -97,6 +92,9 @@ class LocalVectorStore:
     def _load_index(self):
         """Load FAISS index and metadata"""
         if not FAISS_AVAILABLE or self._index_loaded:
+            return
+        if not self._load_faiss():
+            self._index_loaded = True
             return
         if os.path.exists(self.index_path) and os.path.exists(self.metadata_path):
             try:
@@ -121,9 +119,59 @@ class LocalVectorStore:
             self._create_new_index()
         self._index_loaded = True
 
+    def _load_embedding_dependencies(self) -> bool:
+        """Import embedding dependencies only when an embedding is requested."""
+        global NUMPY_AVAILABLE, SENTENCE_TRANSFORMERS_AVAILABLE, SentenceTransformer
+        if not NUMPY_AVAILABLE or not SENTENCE_TRANSFORMERS_AVAILABLE:
+            return False
+        try:
+            import numpy as numpy_module
+            from sentence_transformers import SentenceTransformer as sentence_transformer
+
+            globals()["np"] = numpy_module
+            SentenceTransformer = sentence_transformer
+            return True
+        except ImportError:
+            NUMPY_AVAILABLE = False
+            SENTENCE_TRANSFORMERS_AVAILABLE = False
+            return False
+
+    def _load_faiss(self) -> bool:
+        """Import FAISS only when the vector index is accessed."""
+        global FAISS_AVAILABLE, faiss
+        if faiss is not None:
+            return True
+        if not FAISS_AVAILABLE:
+            return False
+        try:
+            import faiss as faiss_module
+
+            faiss = faiss_module
+            return True
+        except ImportError:
+            FAISS_AVAILABLE = False
+            return False
+
+    def _resolve_device(self) -> str:
+        """Probe Torch only when loading an embedding model."""
+        try:
+            import torch
+
+            return "cuda" if torch.cuda.is_available() else "cpu"
+        except ImportError:
+            return "cpu"
+
+    def has_persisted_metadata(self) -> bool:
+        """Return whether a metadata file exists without loading any model."""
+        return os.path.isfile(self.metadata_path)
+
+    def load_index_if_available(self) -> None:
+        """Load an existing index and metadata without loading the embedding model."""
+        self._ensure_index_loaded()
+
     def _create_new_index(self):
         """Create a new FAISS index"""
-        if not FAISS_AVAILABLE:
+        if not FAISS_AVAILABLE or not self._load_faiss():
             return
         # Dimension for all-MiniLM-L6-v2 is 384
         dimension = 384
@@ -136,7 +184,7 @@ class LocalVectorStore:
 
     def save(self):
         """Save index and metadata to disk"""
-        if not self.index or not FAISS_AVAILABLE:
+        if not self.index or not FAISS_AVAILABLE or not self._load_faiss():
             return
         try:
             os.makedirs(os.path.dirname(self.index_path), exist_ok=True)
@@ -160,6 +208,10 @@ class LocalVectorStore:
 
         if not self.model or not self.index:
             logger.error("Vector store not initialized")
+            return
+
+        if not NUMPY_AVAILABLE or np is None:
+            logger.error("Vector store disabled because NumPy is not installed")
             return
 
         if len(texts) != len(metadatas):
@@ -191,6 +243,9 @@ class LocalVectorStore:
         if not self.model or not self.index or self.index.ntotal == 0:
             return []
 
+        if not NUMPY_AVAILABLE or np is None:
+            return []
+
         try:
             query_vector = self.model.encode([query])
             distances, indices = self.index.search(
@@ -215,6 +270,9 @@ class LocalVectorStore:
         self._ensure_index_loaded()
 
         if not self.index:
+            return
+
+        if not NUMPY_AVAILABLE or np is None:
             return
 
         new_metadata = []

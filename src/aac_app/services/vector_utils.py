@@ -8,16 +8,24 @@ def index_all_symbols(force: bool = False):
     """Index all symbols into the vector store."""
     try:
         vs = get_vector_store()
-        if not vs or not vs.model:
+        if not vs:
+            return
+
+        # Metadata is enough to know that indexing already happened. Do this
+        # before loading FAISS or the embedding model so startup stays light.
+        has_persisted_metadata = getattr(vs, "has_persisted_metadata", lambda: False)
+        if not force and (
+            has_persisted_metadata() or len(getattr(vs, "metadata", [])) > 0
+        ):
+            logger.info("Vector store metadata already exists, skipping indexing")
+            return
+
+        if not vs.is_available():
             logger.warning("Vector store not available, skipping symbol indexing")
             return
 
-        # Check if already indexed (hacky check: if metadata is not empty)
-        # In a real system we'd check specifically for type='symbol'
-        if not force and len(vs.metadata) > 0:
-            logger.info("Vector store already populated, skipping indexing")
-            return
-
+        # First run is the only path that may load the embedding model.
+        vs.load_index_if_available()
         logger.info("Indexing all symbols into vector store...")
         with get_session() as db:
             symbols = db.query(Symbol).all()
@@ -57,7 +65,7 @@ def index_symbol(symbol: Symbol):
     """Index a single symbol into the vector store."""
     try:
         vs = get_vector_store()
-        if not vs or not vs.model:
+        if not vs or not vs.is_available():
             logger.warning("Vector store not available, skipping symbol indexing")
             return
 

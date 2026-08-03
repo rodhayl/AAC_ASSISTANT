@@ -1,4 +1,5 @@
 import os
+import time
 import warnings
 from contextlib import asynccontextmanager
 
@@ -47,6 +48,7 @@ warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize services on startup"""
+    startup_started = time.perf_counter()
     logger.info("=" * 60)
     logger.info("Starting AAC Assistant API...")
     logger.info(f"Log file: {LOG_FILE}")
@@ -82,6 +84,8 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Symbol indexing failed: {e}")
 
+    startup_time_ms = (time.perf_counter() - startup_started) * 1000
+    logger.info(f"Startup timing: initialization completed in {startup_time_ms:.0f}ms")
     logger.info("Server ready to accept requests")
 
     yield
