@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { createBrowserRouter, RouterProvider, Route, createRoutesFromElements, Navigate, useParams, Outlet } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -122,6 +122,26 @@ const router = createBrowserRouter(
 );
 
 function App() {
+  const authCheckStarted = useRef(false);
+  const [authReady, setAuthReady] = useState(
+    () => typeof navigator === 'undefined' || !navigator.onLine,
+  );
+
+  useEffect(() => {
+    if (authCheckStarted.current) return;
+    authCheckStarted.current = true;
+
+    // Keep the persisted session available while the app is offline. The
+    // auth store deliberately preserves it on offline refresh failures.
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+
+    void useAuthStore.getState().checkAuth().then(
+      () => setAuthReady(true),
+      () => setAuthReady(true),
+    );
+  }, []);
+
+  if (!authReady) return <LoadingSpinner />;
   return <RouterProvider router={router} />;
 }
 

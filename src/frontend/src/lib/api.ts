@@ -9,6 +9,24 @@ const api = axios.create({
   timeout: 30000, // 30 seconds timeout
 });
 
+const AUTH_FLOW_ENDPOINTS = new Set([
+  '/auth/token',
+  '/auth/refresh',
+  '/auth/change-password',
+]);
+
+export function isAuthFlowEndpoint(url?: string): boolean {
+  if (!url) return false;
+
+  try {
+    const pathname = new URL(url, 'http://localhost').pathname
+      .replace(/^\/api(?=\/)/, '');
+    return AUTH_FLOW_ENDPOINTS.has(pathname);
+  } catch {
+    return false;
+  }
+}
+
 let offline = typeof navigator !== 'undefined' ? !navigator.onLine : false
 const queue: Array<AxiosRequestConfig> = []
 
@@ -59,7 +77,7 @@ api.interceptors.response.use(
     }
 
     const status = error?.response?.status;
-    if (status === 401) {
+    if (status === 401 && !isAuthFlowEndpoint(error.config?.url)) {
       try {
         const { logout } = useAuthStore.getState();
         logout();
