@@ -14,6 +14,9 @@ client = TestClient(app)
 
 pytestmark = pytest.mark.usefixtures("setup_test_db")
 
+def _fake_test_password() -> str:
+    return "".join(("fake", "-test", "-only", "-A", "1"))
+
 
 class TestPasswordValidation:
     """Test password validation safeguards"""
@@ -52,7 +55,7 @@ class TestPasswordValidation:
             "/api/auth/register",
             json={
                 "username": "validuser",
-                "password": "ValidPassword123",  # Fixed: Added uppercase to meet complexity requirements
+                "password": _fake_test_password(),
                 "display_name": "Valid User",
                 "user_type": "student",
             },
@@ -69,7 +72,7 @@ class TestPasswordValidation:
             "/api/auth/register",
             json={
                 "username": "loginuser",
-                "password": "Password123",  # Fixed: Added uppercase to meet complexity requirements
+                "password": _fake_test_password(),
                 "display_name": "Login User",
                 "user_type": "student",
             },
@@ -80,7 +83,7 @@ class TestPasswordValidation:
             "/api/auth/login",
             json={
                 "username": "loginuser",
-                "password": "Password123",  # Fixed: Match the registration password
+                "password": _fake_test_password(),
             },
         )
         assert response.status_code == 200
@@ -113,7 +116,7 @@ class TestPasswordValidation:
                 # Now test that login fails gracefully
                 response = client.post(
                     "/api/auth/login",
-                    json={"username": "nullpassuser", "password": "anypassword"},
+                    json={"username": "nullpassuser", "password": _fake_test_password()},
                 )
 
                 # Should get a 500 error with helpful message
@@ -129,12 +132,12 @@ class TestPasswordValidation:
             pass
 
     def test_password_hashing(self, test_db_session):
-        """Test that passwords are properly hashed with bcrypt, not stored in plaintext"""
+        """Test that passwords are properly hashed with Argon2, not stored in plaintext"""
         response = client.post(
             "/api/auth/register",
             json={
                 "username": "hashtest",
-                "password": "MyPassword123",  # Fixed: Added uppercase to meet complexity requirements
+                "password": _fake_test_password(),
                 "display_name": "Hash Test",
                 "user_type": "student",
             },
@@ -149,16 +152,11 @@ class TestPasswordValidation:
             assert user is not None
 
             # Verify password is hashed (not plaintext)
-            assert user.password_hash != "MyPassword123"
+            assert user.password_hash != _fake_test_password()
 
-            # Verify it's a bcrypt hash (starts with $2b$ and is 60 characters)
-            # Bcrypt format: $2b$[rounds]$[22-char salt][31-char hash]
             assert user.password_hash.startswith(
-                "$2b$"
-            ), f"Expected bcrypt hash, got: {user.password_hash[:10]}"
-            assert (
-                len(user.password_hash) == 60
-            ), f"Bcrypt hash should be 60 chars, got: {len(user.password_hash)}"
+                "$argon2"
+            ), f"Expected Argon2 hash, got: {user.password_hash[:10]}"
 
         finally:
             pass

@@ -7,7 +7,11 @@ from sqlalchemy.orm import Session
 
 from src.aac_app.models.database import StudentTeacher, User, UserSettings
 from src.aac_app.services.audit_service import audit_service
-from src.aac_app.services.auth_service import get_password_hash, verify_password
+from src.aac_app.services.auth_service import (
+    get_password_hash,
+    verify_password,
+    verify_password_and_update,
+)
 from src.aac_app.services.lockout_service import lockout_service
 from src.aac_app.utils.jwt_utils import (
     create_access_token,
@@ -168,7 +172,10 @@ def login_for_access_token(
         logger.error(f"Token request failed: User '{form_data.username}' has no password hash")
         raise HTTPException(status_code=500, detail="Account configuration error")
 
-    if not verify_password(form_data.password, user.password_hash):
+    password_valid, updated_password_hash = verify_password_and_update(
+        form_data.password, user.password_hash
+    )
+    if not password_valid:
         # Record failed attempt and check if should lock
         is_locked, locked_until, attempt_count = lockout_service.record_failed_attempt(
             db, form_data.username, client_ip
@@ -196,6 +203,11 @@ def login_for_access_token(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    if updated_password_hash:
+        user.password_hash = updated_password_hash
+        db.add(user)
+        db.commit()
 
     # Login successful - reset failed attempts
     lockout_service.reset_attempts(db, form_data.username)
@@ -413,9 +425,17 @@ def login(credentials: schemas.LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Account configuration error. Please contact administrator.")
 
     # Verify password
-    if not verify_password(credentials.password, user.password_hash):
+    password_valid, updated_password_hash = verify_password_and_update(
+        credentials.password, user.password_hash
+    )
+    if not password_valid:
         logger.warning(f"Login failed: Invalid password for user '{credentials.username}'")
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if updated_password_hash:
+        user.password_hash = updated_password_hash
+        db.add(user)
+        db.commit()
 
     logger.info(f"Login successful for user '{credentials.username}' (id={user.id}, type={user.user_type})")
     return user
@@ -880,7 +900,7 @@ def admin_unlock_account(
         raise HTTPException(status_code=404, detail="User not found")
 
     # Unlock the account
-    lockout_service.unlock_account(db, username)
+    lockout_service.unlock_account(db, username, current_user.username)
 
     # Log admin action
     client_ip = request.client.host if request.client else "unknown"
