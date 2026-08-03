@@ -1,0 +1,40 @@
+[project]
+name = "aac-assistant"
+version = "0.1.0"
+description = "Local-first AAC Assistant"
+requires-python = ">=3.13,<3.15"
+dependencies = [
+    "fastapi==0.141.1",
+    "uvicorn==0.52.1",
+    "sqlalchemy==2.0.51",
+    "pydantic==2.13.4",
+    "pydantic-settings==2.14.2",
+    "pyjwt==2.13.0",
+    "pwdlib[argon2]",
+    "httpx==0.28.1",
+    "python-multipart",
+    "slowapi",
+    "loguru",
+    "pillow",
+    "pyyaml",
+    "email-validator",
+    "numpy",
+    "fastembed==0.8.0",
+    "sqlite-vec==0.1.9",
+    # Kept until the auth-hardening feature replaces the remaining imports.
+    "passlib==1.7.4",
+    "bcrypt==5.0.0",
+]
+
+[project.optional-dependencies]
+voice = []
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "pytest-cov",
+    "ruff==0.16.1",
+    "pyinstaller==6.21.0",
+    "requests",
+    "pip-audit",
+]

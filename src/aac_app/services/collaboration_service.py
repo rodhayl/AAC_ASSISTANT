@@ -1,12 +1,46 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-import socketio
 from loguru import logger
 
 from src import config
 
+try:
+    import socketio
+except ImportError:
+    socketio = None
 
-def _get_cors_origins() -> List[str]:
+
+class _UnavailableSocketIO:
+    """Small compatibility shim while the optional legacy transport is absent."""
+
+    def event(self, handler):
+        return handler
+
+    async def emit(self, *args, **kwargs):
+        return None
+
+    def enter_room(self, *args, **kwargs):
+        return None
+
+
+class _UnavailableSocketIOApp:
+    async def __call__(self, scope, receive, send):
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 404,
+                "headers": [(b"content-type", b"application/json")],
+            }
+        )
+        await send(
+            {
+                "type": "http.response.body",
+                "body": b'{"detail":"Socket.IO transport is not installed"}',
+            }
+        )
+
+
+def _get_cors_origins() -> list[str]:
     """
     Get CORS allowed origins from config.
     In production, never allows '*' wildcard.
@@ -39,15 +73,20 @@ class CollaborationService:
     Handles multi-teacher sessions, plan sharing, and live feedback.
     """
 
-    def __init__(self, cors_origins: Optional[List[str]] = None):
+    def __init__(self, cors_origins: list[str] | None = None):
         # Use provided origins for testing, or get from config
         allowed_origins = cors_origins if cors_origins is not None else _get_cors_origins()
-        self.sio = socketio.AsyncServer(
-            async_mode="asgi",
-            cors_allowed_origins=allowed_origins if allowed_origins else []
-        )
-        self.app = socketio.ASGIApp(self.sio)
-        self.active_sessions: Dict[str, Dict[str, Any]] = {}
+        if socketio is None:
+            logger.warning("Socket.IO transport is not installed; using compatibility shim")
+            self.sio = _UnavailableSocketIO()
+            self.app = _UnavailableSocketIOApp()
+        else:
+            self.sio = socketio.AsyncServer(
+                async_mode="asgi",
+                cors_allowed_origins=allowed_origins if allowed_origins else [],
+            )
+            self.app = socketio.ASGIApp(self.sio)
+        self.active_sessions: dict[str, dict[str, Any]] = {}
         self._setup_events()
 
     def _setup_events(self):
