@@ -7,12 +7,21 @@ interface EnqueueOptions {
   lang?: string
 }
 
+const NO_START_WATCHDOG_MS = 1_500
+const SPEAKING_WATCHDOG_MS = 15_000
+
 class TTSQueue {
   private queue: Array<{ text: string; opts: EnqueueOptions }>
   private status: Status
   private listeners: Array<(s: Status) => void>
   private lastSpokenAt: Map<string | number, number>
   private debounceMs: number
+  private activeUtteranceId: number | null
+  private nextUtteranceId: number
+  private speakingRequestedAt: number | null
+  private speakingStartedAt: number | null
+  private noStartWatchdog: ReturnType<typeof setTimeout> | null
+  private speakingWatchdog: ReturnType<typeof setTimeout> | null
 
   constructor() {
     this.queue = []
@@ -20,6 +29,12 @@ class TTSQueue {
     this.listeners = []
     this.lastSpokenAt = new Map()
     this.debounceMs = 250
+    this.activeUtteranceId = null
+    this.nextUtteranceId = 0
+    this.speakingRequestedAt = null
+    this.speakingStartedAt = null
+    this.noStartWatchdog = null
+    this.speakingWatchdog = null
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel()
     }
@@ -43,6 +58,10 @@ class TTSQueue {
 
   cancelAll() {
     this.queue = []
+    this.clearWatchdogs()
+    this.activeUtteranceId = null
+    this.speakingRequestedAt = null
+    this.speakingStartedAt = null
     if ('speechSynthesis' in window) {
       try {
         window.speechSynthesis.cancel()
@@ -59,12 +78,15 @@ class TTSQueue {
     this.lastSpokenAt.set(k, now)
 
     this.queue.push({ text, opts })
-    if (this.status === 'idle') {
-      this.processNext()
-    }
+    this.processNext()
   }
 
   private processNext() {
+    if (this.activeUtteranceId !== null) {
+      if (this.status !== 'speaking' || !this.isWatchdogExpired()) return
+      this.finishCurrentUtterance(true)
+    }
+
     if (this.queue.length === 0) {
       this.setStatus('idle')
       return
@@ -74,6 +96,12 @@ class TTSQueue {
       this.setStatus('idle')
       return
     }
+
+    const utteranceId = ++this.nextUtteranceId
+    this.activeUtteranceId = utteranceId
+    this.speakingRequestedAt = Date.now()
+    this.speakingStartedAt = null
+
     try {
       window.speechSynthesis.cancel()
       const u = new SpeechSynthesisUtterance(item.text)
@@ -126,21 +154,102 @@ class TTSQueue {
 
       } catch { /* voice selection not critical */ }
 
-      u.onstart = () => this.setStatus('speaking')
       u.onend = () => {
-        this.setStatus('idle')
+        if (!this.isActiveUtterance(utteranceId)) return
+        this.finishCurrentUtterance(false)
         // Continue with next queued item
         // Use microtask to avoid re-entrancy issues
         Promise.resolve().then(() => this.processNext())
       }
       u.onerror = () => {
-        this.setStatus('idle')
+        if (!this.isActiveUtterance(utteranceId)) return
+        this.finishCurrentUtterance(false)
         Promise.resolve().then(() => this.processNext())
       }
+
+      u.onstart = () => {
+        if (!this.isActiveUtterance(utteranceId)) return
+        this.speakingStartedAt = Date.now()
+        this.clearNoStartWatchdog()
+        this.scheduleSpeakingWatchdog(utteranceId)
+        this.setStatus('speaking')
+      }
       window.speechSynthesis.speak(u)
+      if (this.isActiveUtterance(utteranceId) && this.speakingStartedAt === null) {
+        this.scheduleNoStartWatchdog(utteranceId)
+      }
     } catch {
-      this.setStatus('idle')
+      if (this.isActiveUtterance(utteranceId)) {
+        this.finishCurrentUtterance(false)
+        Promise.resolve().then(() => this.processNext())
+      }
     }
+  }
+
+  private isActiveUtterance(utteranceId: number) {
+    return this.activeUtteranceId === utteranceId
+  }
+
+  private isWatchdogExpired() {
+    if (this.status !== 'speaking' || this.activeUtteranceId === null) return false
+
+    const startedAt = this.speakingStartedAt ?? this.speakingRequestedAt
+    if (startedAt === null) return false
+
+    const limit = this.speakingStartedAt === null
+      ? NO_START_WATCHDOG_MS
+      : SPEAKING_WATCHDOG_MS
+    return Date.now() - startedAt >= limit
+  }
+
+  private scheduleNoStartWatchdog(utteranceId: number) {
+    this.clearNoStartWatchdog()
+    this.noStartWatchdog = setTimeout(() => {
+      if (!this.isActiveUtterance(utteranceId) || this.speakingStartedAt !== null) return
+      this.finishCurrentUtterance(true)
+      this.processNext()
+    }, NO_START_WATCHDOG_MS)
+  }
+
+  private scheduleSpeakingWatchdog(utteranceId: number) {
+    this.clearSpeakingWatchdog()
+    this.speakingWatchdog = setTimeout(() => {
+      if (!this.isActiveUtterance(utteranceId)) return
+      this.finishCurrentUtterance(true)
+      this.processNext()
+    }, SPEAKING_WATCHDOG_MS)
+  }
+
+  private clearNoStartWatchdog() {
+    if (this.noStartWatchdog !== null) {
+      clearTimeout(this.noStartWatchdog)
+      this.noStartWatchdog = null
+    }
+  }
+
+  private clearSpeakingWatchdog() {
+    if (this.speakingWatchdog !== null) {
+      clearTimeout(this.speakingWatchdog)
+      this.speakingWatchdog = null
+    }
+  }
+
+  private clearWatchdogs() {
+    this.clearNoStartWatchdog()
+    this.clearSpeakingWatchdog()
+  }
+
+  private finishCurrentUtterance(cancelSpeech: boolean) {
+    this.clearWatchdogs()
+    this.activeUtteranceId = null
+    this.speakingRequestedAt = null
+    this.speakingStartedAt = null
+    if (cancelSpeech && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel()
+      } catch { /* browser may not support cancel */ }
+    }
+    this.setStatus('idle')
   }
 }
 
