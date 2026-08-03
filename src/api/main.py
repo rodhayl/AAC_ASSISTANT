@@ -25,6 +25,8 @@ from src.api.routers import (
     analytics,
     arasaac,
     auth,
+    board_ai,
+    board_assignments,
     boards,
     collab,
     export_import,
@@ -34,6 +36,7 @@ from src.api.routers import (
     notifications,
     providers,
     settings,
+    symbols,
     users,
 )
 from src.api.routers import config as config_router
@@ -157,6 +160,9 @@ async def readiness_check():
 
 app.include_router(config_router.router)
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(symbols.router, prefix="/api/boards", tags=["boards"])
+app.include_router(board_ai.router, prefix="/api/boards", tags=["boards"])
+app.include_router(board_assignments.router, prefix="/api/boards", tags=["boards"])
 app.include_router(boards.router, prefix="/api/boards", tags=["boards"])
 app.include_router(arasaac.router, prefix="/api/arasaac", tags=["arasaac"])
 app.include_router(learning.router, prefix="/api/learning", tags=["learning"])

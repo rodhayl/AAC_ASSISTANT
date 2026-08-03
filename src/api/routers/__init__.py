@@ -14,6 +14,12 @@ from . import (
     auth as auth,
 )
 from . import (
+    board_ai as board_ai,
+)
+from . import (
+    board_assignments as board_assignments,
+)
+from . import (
     boards as boards,
 )
 from . import (
@@ -42,6 +48,9 @@ from . import (
 )
 from . import (
     settings as settings,
+)
+from . import (
+    symbols as symbols,
 )
 from . import (
     users as users,
