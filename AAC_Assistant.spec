@@ -8,7 +8,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ("data", "data"),
-        ("ngrams", "ngrams"),
+        ("src/aac_app/data/ngrams", "src/aac_app/data/ngrams"),
         ("src/frontend", "frontend"),
     ],
     hiddenimports=[],

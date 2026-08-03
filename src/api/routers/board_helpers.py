@@ -10,7 +10,7 @@ _translation_dependency_warning_emitted = False
 
 
 def _load_translation_dependency():
-    """Import the optional translator only when a translated board is requested."""
+    """Import the translator lazily only when a translated board is requested."""
     global _GoogleTranslator, _translation_import_attempted
     if _translation_import_attempted:
         return _GoogleTranslator
@@ -19,7 +19,7 @@ def _load_translation_dependency():
         from deep_translator import GoogleTranslator
 
         _GoogleTranslator = GoogleTranslator
-    except Exception:  # pragma: no cover - optional dependency
+    except Exception:  # pragma: no cover - keep board loads resilient
         _GoogleTranslator = None
     return _GoogleTranslator
 

@@ -35,7 +35,6 @@ heavy = {
     "soundfile",
     "webrtcvad",
     "numpy",
-    "nltk",
     "deep_translator",
 }
 leaked = sorted(name for name in heavy if name in sys.modules)
@@ -171,23 +170,12 @@ def test_vector_store_imports_dependencies_on_first_search(monkeypatch, tmp_path
     assert local_vector_store.np is numpy_module
 
 
-def test_prediction_service_does_not_import_nltk_until_prediction() -> None:
+def test_prediction_service_loads_bundled_static_ngram_model() -> None:
     script = """
-import builtins
-
-real_import = builtins.__import__
-seen = []
-
-def tracking_import(name, *args, **kwargs):
-    if name.split(".", 1)[0] == "nltk":
-        seen.append(name)
-    return real_import(name, *args, **kwargs)
-
-builtins.__import__ = tracking_import
 from src.aac_app.services.prediction_service import PredictionService
 
-PredictionService()
-assert not seen, seen
+model = PredictionService()._load_model("en")
+assert model["bigrams"]["want"]["cookie"] > model["bigrams"]["want"]["to"]
 """
 
     result = _run_clean_import(script)

@@ -23,6 +23,7 @@ dependencies = [
     "sqlite-vec==0.1.9",
     "bcrypt==5.0.0",
     "websockets==17.0.1",
+    "deep-translator==1.11.4",
 ]
 
 [project.optional-dependencies]

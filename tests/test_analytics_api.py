@@ -207,6 +207,31 @@ class TestAnalyticsAPI:
         non_punctuation = [s for s in data if s.get("category") != "punctuation"]
         assert len(non_punctuation) <= 3
 
+    def test_next_symbol_uses_static_ngram_model(self, sample_usage_logs):
+        """Static transitions provide suggestions when history has no matching sequence."""
+        response = client.post(
+            "/api/analytics/next-symbol",
+            json={"current_symbols": "the", "limit": 10},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        static_suggestions = [
+            suggestion
+            for suggestion in data
+            if suggestion.get("source") == "general_model"
+        ]
+        assert static_suggestions
+        assert static_suggestions[0]["label"] == "cookie"
+        assert {
+            "symbol_id",
+            "label",
+            "category",
+            "image_path",
+            "confidence",
+            "source",
+        } <= static_suggestions[0].keys()
+
     def test_get_category_preferences(self, sample_usage_logs):
         """Test retrieving category preferences."""
         response = client.get("/api/analytics/category-preferences")

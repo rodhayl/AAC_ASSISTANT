@@ -1,4 +1,3 @@
-import importlib.util
 import json
 from collections.abc import Sequence
 
@@ -10,69 +9,21 @@ from ..models import BoardSymbol, Symbol, SymbolUsageLog
 from ..services.symbol_analytics import SymbolAnalytics
 
 
-def _module_available(module_name: str) -> bool:
-    """Check for NLTK without importing it during application startup."""
-    try:
-        return importlib.util.find_spec(module_name) is not None
-    except (ImportError, ModuleNotFoundError, ValueError):
-        return False
-
-
-HAS_NLTK = _module_available("nltk")
-nltk = None
-ConditionalFreqDist = None
-brown = None
-
 class PredictionService:
     """
     Lightweight, multilanguage next-word prediction engine.
-    Combines user usage history (statistical) with NLTK (or internal N-grams).
+    Combines user usage history with bundled static N-grams.
     Replaces heavy LLM calls for symbol suggestion.
     """
 
     _instance = None
     _models: dict[str, dict] = {}
-    _nltk_cfd = None
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance.analytics_service = SymbolAnalytics()
         return cls._instance
-
-    def _ensure_nltk_model(self) -> None:
-        """Load NLTK and its corpus only when prediction needs it."""
-        global HAS_NLTK, nltk, ConditionalFreqDist, brown
-        if self._nltk_cfd is not None or not HAS_NLTK:
-            return
-
-        try:
-            import nltk as nltk_module
-            from nltk import ConditionalFreqDist as conditional_freq_dist
-            from nltk.corpus import brown as brown_corpus
-
-            nltk = nltk_module
-            ConditionalFreqDist = conditional_freq_dist
-            brown = brown_corpus
-
-            # Download brown corpus if needed (quietly).
-            try:
-                nltk.data.find("corpora/brown")
-            except LookupError:
-                logger.info("Downloading NLTK brown corpus...")
-                nltk.download("brown", quiet=True)
-
-            # Build simple Bigram model.
-            logger.info("Building NLTK Bigram model...")
-            words = [word.lower() for word in brown.words() if word.isalpha()]
-            self._nltk_cfd = ConditionalFreqDist(nltk.bigrams(words))
-            logger.info("NLTK model ready")
-        except ImportError:
-            HAS_NLTK = False
-            logger.warning("NLTK library not found, falling back to internal N-grams")
-        except Exception as e:
-            logger.error(f"Failed to init NLTK model: {e}")
-            self._nltk_cfd = None
 
     def _load_model(self, language_code: str) -> dict:
         """Load static N-gram model for the given language."""
@@ -332,87 +283,10 @@ class PredictionService:
                 source="history",
             )
 
-        # 2. Get general suggestions from NLTK library (English only currently)
-        # or static N-gram model
-
-        # Prepare text for prediction
-        last_word = current_symbols[-1].get("label", "").lower() if current_symbols else ""
-
-        # Try library first if available and language is English
-        # (Assuming library is optimized for English)
-        lib_suggestions = []
-        if language.startswith("en") and last_word:
-            self._ensure_nltk_model()
-        logger.info(
-            f"Checking NLTK: has_model={self._nltk_cfd is not None}, lang={language}, last_word={last_word}"
-        )
-
-        if self._nltk_cfd and language.startswith("en") and last_word:
-            try:
-                # Get most frequent next words from CFD.
-                if last_word in self._nltk_cfd:
-                    # Get top 5 most common next words.
-                    top_next = self._nltk_cfd[last_word].most_common(5)
-                    logger.info(f"NLTK suggestions for '{last_word}': {top_next}")
-                    for word, _count in top_next:
-                        # Normalize score roughly (count is raw frequency).
-                        # We just set a fixed confidence for library suggestions.
-                        lib_suggestions.append((word, 0.5))
-                else:
-                    logger.info(f"Word '{last_word}' not in NLTK model")
-            except Exception as e:
-                logger.warning(f"NLTK prediction failed: {e}")
-
-        # If library gave results, use them
-        if lib_suggestions and len(suggestions) < base_limit:
-            if db is not None:
-                for word, score in lib_suggestions:
-                    if len(suggestions) >= base_limit:
-                        break
-                    if normalize_label(word) in seen_labels:
-                        continue
-                    query = db.query(Symbol).filter(Symbol.label.ilike(word))
-                    if allowed_symbol_ids is not None:
-                        query = query.filter(Symbol.id.in_(allowed_symbol_ids))
-                    symbol_obj = query.first()
-                    if symbol_obj:
-                        add_symbol(
-                            symbol_id=symbol_obj.id,
-                            label=symbol_obj.label,
-                            category=symbol_obj.category,
-                            image_path=symbol_obj.image_path,
-                            confidence=float(score),
-                            source="nwp_lib",
-                        )
-            else:
-                with get_session() as session:
-                    for word, score in lib_suggestions:
-                        if len(suggestions) >= base_limit:
-                            break
-                        if normalize_label(word) in seen_labels:
-                            continue
-                        query = session.query(Symbol).filter(Symbol.label.ilike(word))
-                        if allowed_symbol_ids is not None:
-                            query = query.filter(Symbol.id.in_(allowed_symbol_ids))
-                        symbol_obj = query.first()
-                        if symbol_obj:
-                            add_symbol(
-                                symbol_id=symbol_obj.id,
-                                label=symbol_obj.label,
-                                category=symbol_obj.category,
-                                image_path=symbol_obj.image_path,
-                                confidence=float(score),
-                                source="nwp_lib",
-                            )
-
-        # 3. Fallback to static N-gram model (JSON) if still needed
-        # (Especially for non-English or if library failed/returned nothing)
+        # 2. Use the bundled static N-gram model when history has not filled the bar.
         if len(suggestions) < base_limit and current_symbols:
             model = self._load_model(language)
             bigrams = model.get("bigrams", {})
-
-            # Increase limit for more diversity if we have space
-            # We want to fill the bar
             target_count = base_limit
 
             last_symbol_label = current_symbols[-1].get("label", "").lower() if current_symbols else ""
@@ -459,7 +333,7 @@ class PredictionService:
                                     source="general_model",
                                 )
 
-        # 4. Fill remaining slots with most popular symbols if needed (fallback)
+        # 3. Fill remaining slots with most popular symbols if needed (fallback)
         # PRIORITIZE NOUNS/OBJECTS here if we are low on suggestions
         if len(suggestions) < base_limit:
             # If we still don't have enough, fill with most frequent global symbols
