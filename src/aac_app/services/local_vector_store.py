@@ -7,10 +7,13 @@ core-only/offline startup healthy even when the model cannot be downloaded.
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import os
 import sqlite3
-from collections.abc import Callable, Mapping
+import sys
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +22,43 @@ from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 
 from src import config
+
+
+@contextlib.contextmanager
+def _safe_streams() -> Iterator[tuple[io.StringIO | Any, io.StringIO | Any]]:
+    """Ensure ``sys.stdout``/``sys.stderr`` are writable for downstream code.
+
+    Frozen PyInstaller builds configured with ``console=False`` expose no
+    console streams, so ``sys.stdout`` and ``sys.stderr`` are ``None``.
+    Libraries such as fastembed, huggingface_hub, and onnxruntime call
+    ``print``/``sys.stdout.write`` while they construct their model or
+    download progress, which raises ``AttributeError: 'NoneType' object
+    has no attribute 'write'`` and aborts the background indexing task.
+
+    Redirect to throwaway ``StringIO`` buffers when the real streams are
+    missing so the underlying call can complete; restore the originals
+    (including ``None``) on exit so callers never observe a different
+    global stream than they passed in.
+    """
+    saved_out, saved_err = sys.stdout, sys.stderr
+    redirect_out = saved_out if saved_out is not None else io.StringIO()
+    redirect_err = saved_err if saved_err is not None else io.StringIO()
+    try:
+        with contextlib.redirect_stdout(redirect_out), contextlib.redirect_stderr(
+            redirect_err
+        ):
+            yield redirect_out, redirect_err
+    finally:
+        sys.stdout, sys.stderr = saved_out, saved_err
+
+
+def _load_text_embedding_class() -> Any:
+    """Import and cache the fastembed ``TextEmbedding`` symbol lazily."""
+    global TextEmbedding
+    from fastembed import TextEmbedding as text_embedding
+
+    TextEmbedding = text_embedding
+    return TextEmbedding
 
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIMENSION = 384
@@ -207,21 +247,27 @@ class LocalVectorStore:
         self._load_attempted = True
         try:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-            if self._embedder_factory is not None:
-                self.embedder = self._embedder_factory(
-                    model_name=self.model_name,
-                    cache_dir=str(self.cache_dir),
-                )
-            else:
-                if TextEmbedding is None:
-                    from fastembed import TextEmbedding as text_embedding
-
-                    TextEmbedding = text_embedding
-                self.embedder = TextEmbedding(
-                    model_name=self.model_name,
-                    cache_dir=str(self.cache_dir),
-                    lazy_load=True,
-                )
+            # Frozen / windowed PyInstaller builds (console=False) leave
+            # ``sys.stdout`` and ``sys.stderr`` set to ``None``. fastembed,
+            # huggingface_hub, and onnxruntime call ``print`` /
+            # ``sys.stdout.write`` during model construction; without a
+            # fallback stream the ``.write`` call raises ``AttributeError``.
+            # ``_safe_streams`` redirects to ``StringIO`` buffers when the
+            # real streams are missing and restores them on exit.
+            with _safe_streams():
+                if self._embedder_factory is not None:
+                    self.embedder = self._embedder_factory(
+                        model_name=self.model_name,
+                        cache_dir=str(self.cache_dir),
+                    )
+                else:
+                    if TextEmbedding is None:
+                        _load_text_embedding_class()
+                    self.embedder = TextEmbedding(
+                        model_name=self.model_name,
+                        cache_dir=str(self.cache_dir),
+                        lazy_load=True,
+                    )
             self.model = self.embedder
             self._model_loaded = True
             logger.info("Fastembed model ready: {} (cache={})", self.model_name, self.cache_dir)
