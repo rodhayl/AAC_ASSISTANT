@@ -27,8 +27,7 @@ const Learning = lazy(() => import('./pages/Learning').then(m => ({ default: m.L
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
 const Achievements = lazy(() => import('./pages/Achievements').then(m => ({ default: m.Achievements })));
 const Students = lazy(() => import('./pages/Students').then(m => ({ default: m.Students })));
-const Teachers = lazy(() => import('./pages/Teachers').then(m => ({ default: m.Teachers })));
-const Admins = lazy(() => import('./pages/Admins').then(m => ({ default: m.Admins })));
+const UserManagementPage = lazy(() => import('./pages/UserManagement').then(m => ({ default: m.UserManagementPage })));
 const Register = lazy(() => import('./pages/Register').then(m => ({ default: m.Register })));
 const Symbols = lazy(() => import('./pages/Symbols').then(m => ({ default: m.Symbols })));
 const SymbolHunt = lazy(() => import('./pages/SymbolHunt').then(m => ({ default: m.SymbolHunt })));
@@ -113,8 +112,8 @@ const router = createBrowserRouter(
         <Route path="settings" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Settings /></Suspense></ErrorBoundary>} />
         <Route path="achievements" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Achievements /></Suspense></ErrorBoundary>} />
         <Route path="students" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Students /></Suspense></ErrorBoundary>} />
-        <Route path="teachers" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Teachers /></Suspense></ErrorBoundary>} />
-        <Route path="admins" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Admins /></Suspense></ErrorBoundary>} />
+        <Route path="teachers" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><UserManagementPage role="teacher" /></Suspense></ErrorBoundary>} />
+        <Route path="admins" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><UserManagementPage role="admin" /></Suspense></ErrorBoundary>} />
       </Route>
       <Route path="*" element={<Suspense fallback={<LoadingSpinner />}><NotFound /></Suspense>} />
     </Route>
