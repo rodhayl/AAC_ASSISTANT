@@ -148,11 +148,16 @@ export const useLearningStore = create<LearningState>((set, get) => ({
           set({ providerInUse: provider, providerHistory: prev && prev !== provider ? [...get().providerHistory, { provider, at: Date.now() }] : get().providerHistory })
         }
       } else {
-        console.error('[startSession] Session failed:', session.error);
-        set({ error: session.error || 'Failed to start session', isLoading: false });
+        const detail = session.error || 'Failed to start session';
+        console.error('[startSession] Session failed:', detail);
+        set({ error: detail, isLoading: false });
+        throw new Error(detail);
       }
     } catch (error: unknown) {
       const detail = (() => {
+        if (error instanceof Error) {
+          return error.message;
+        }
         if (typeof error === 'object' && error && 'response' in error) {
           const r = error as { response?: { data?: { detail?: string } } };
           return r.response?.data?.detail || 'Failed to start session';
@@ -161,6 +166,7 @@ export const useLearningStore = create<LearningState>((set, get) => ({
       })();
       console.error('[startSession] Error:', error);
       set({ error: detail, isLoading: false });
+      throw error instanceof Error ? error : new Error(detail);
     }
   },
 

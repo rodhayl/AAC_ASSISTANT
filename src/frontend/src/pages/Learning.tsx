@@ -132,6 +132,7 @@ export function Learning() {
     setSessionStartError(null);
     try {
       await startSession({ topic, purpose, difficulty: 'basic', board_id: boardId }, user.id);
+      await fetchSessionHistory(user.id);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : t('errors.unknownError');
       setSessionStartError(t('errors.sessionStartError', { error: message }));
@@ -139,7 +140,15 @@ export function Learning() {
     } finally {
       setIsStartingSession(false);
     }
-  }, [startSession, t, user]);
+  }, [fetchSessionHistory, startSession, t, user]);
+
+  const handleToggleHistory = useCallback(() => {
+    const nextVisible = !showHistory;
+    setShowHistory(nextVisible);
+    if (nextVisible && user?.id) {
+      void fetchSessionHistory(user.id);
+    }
+  }, [fetchSessionHistory, showHistory, user?.id]);
 
   const handleNewConversation = useCallback(async () => {
     await startActivity('general conversation', 'practice');
@@ -310,7 +319,7 @@ export function Learning() {
     <div className="h-[calc(100vh-6rem)] flex flex-col">
       <LearningHeader
         showHistory={showHistory}
-        onToggleHistory={() => setShowHistory((visible) => !visible)}
+        onToggleHistory={handleToggleHistory}
         symbolView={symbolView}
         onToggleSymbolView={() => setSymbolView((visible) => !visible)}
         selectedModeKey={selectedModeKey}
