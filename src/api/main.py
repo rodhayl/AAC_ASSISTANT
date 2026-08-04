@@ -60,13 +60,19 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize database: {e}")
         logger.exception("Database initialization traceback:")
 
-    # Eagerly initialize all providers at startup
-    # This prevents slow first requests and potential deadlocks
-    try:
-        warmup_providers(timeout_seconds=30.0)
-    except Exception as e:
-        logger.error(f"Provider warmup failed: {e}")
-        logger.exception("Warmup traceback:")
+    # Warm up providers in the background so the port binds immediately.
+    # /ready returns 503 warming_up until warmup completes (its designed
+    # purpose); /api/health and the SPA are available right away.  All
+    # provider consumers use lazy Depends singletons, so requests that
+    # need a provider will construct it on demand if warmup hasn't yet.
+    async def warmup_in_background() -> None:
+        try:
+            await asyncio.to_thread(warmup_providers, 30.0)
+        except Exception as e:
+            logger.error(f"Provider warmup failed: {e}")
+            logger.exception("Warmup traceback:")
+
+    asyncio.create_task(warmup_in_background())
 
     # Index symbols in the background.  The embedding model may need a
     # network download on first run, so it must not block health or keyword

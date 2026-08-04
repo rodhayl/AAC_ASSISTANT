@@ -28,48 +28,56 @@ def index_all_symbols(force: bool = False):
             logger.warning("Vector store not available, skipping symbol indexing")
             return
 
+        # Query symbols before loading the embedding model — an empty
+        # library needs no model download.
+        with get_session() as db:
+            symbols = db.query(Symbol).all()
+
+        if not symbols:
+            vs.mark_indexed()
+            logger.info("No symbols found to index; skipping model load")
+            return
+
         # First run is the only path that may load the embedding model.
         vs.load_index_if_available()
         logger.info("Indexing all symbols into vector store...")
-        with get_session() as db:
-            symbols = db.query(Symbol).all()
-            symbol_embeddings = [_symbol_embedding(sym) for sym in symbols]
+        symbol_embeddings = [_symbol_embedding(sym) for sym in symbols]
 
-            if not force and supports_repair:
-                expected_texts = {
-                    sym.id: text
-                    for sym, (text, _metadata) in zip(
-                        symbols, symbol_embeddings, strict=True
-                    )
-                }
-                remove_orphaned = getattr(vs, "remove_orphaned_symbols", None)
-                if remove_orphaned is not None:
-                    remove_orphaned(set(expected_texts))
-                stale_ids = vs.get_stale_symbol_ids(expected_texts)
-                if not stale_ids:
-                    vs.mark_indexed()
-                    logger.info("Vector store embeddings are already current")
-                    return
-                selected = [
-                    (sym, embedding)
-                    for sym, embedding in zip(symbols, symbol_embeddings, strict=True)
-                    if sym.id in stale_ids
-                ]
-            else:
-                selected = list(zip(symbols, symbol_embeddings, strict=True))
-
-            texts = [embedding[0] for _symbol, embedding in selected]
-            metadatas = [embedding[1] for _symbol, embedding in selected]
-
-            if texts:
-                if vs.add_texts(texts, metadatas):
-                    vs.mark_indexed()
-                    logger.info(f"Successfully indexed {len(texts)} symbols")
-                else:
-                    logger.warning("Symbol indexing did not complete; will retry later")
-            else:
+        if not force and supports_repair:
+            expected_texts = {
+                sym.id: text
+                for sym, (text, _metadata) in zip(
+                    symbols, symbol_embeddings, strict=True
+                )
+            }
+            remove_orphaned = getattr(vs, "remove_orphaned_symbols", None)
+            if remove_orphaned is not None:
+                remove_orphaned(set(expected_texts))
+            stale_ids = vs.get_stale_symbol_ids(expected_texts)
+            if not stale_ids:
                 vs.mark_indexed()
-                logger.info("No symbols found to index")
+                logger.info("Vector store embeddings are already current")
+                return
+            selected = [
+                (sym, embedding)
+                for sym, embedding in zip(symbols, symbol_embeddings, strict=True)
+                if sym.id in stale_ids
+            ]
+        else:
+            selected = list(zip(symbols, symbol_embeddings, strict=True))
+
+        texts = [embedding[0] for _symbol, embedding in selected]
+        metadatas = [embedding[1] for _symbol, embedding in selected]
+
+        if texts:
+            if vs.add_texts(texts, metadatas):
+                vs.mark_indexed()
+                logger.info(f"Successfully indexed {len(texts)} symbols")
+            else:
+                logger.warning("Symbol indexing did not complete; will retry later")
+        else:
+            vs.mark_indexed()
+            logger.info("No symbols found to index")
 
     except Exception as e:
         logger.error(f"Failed to index symbols: {e}")

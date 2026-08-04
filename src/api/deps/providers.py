@@ -41,6 +41,11 @@ _startup_state: dict[str, Any] = {
 }
 _startup_lock = threading.Lock()
 
+# Guards the check-and-create pattern in the get_*_provider singleton
+# getters so the warmup thread and request threads cannot race-construct
+# the same provider.
+_provider_lock = threading.Lock()
+
 
 def _get_setting_value(key: str, default: str = "") -> str:
     """Resolve through the package facade so tests and callers can override it."""
@@ -54,21 +59,22 @@ def get_ollama_provider() -> OllamaProvider:
     base_url = _get_setting_value("ollama_base_url", config.OLLAMA_BASE_URL)
     model = _get_setting_value("ollama_model", "")
 
-    if _ollama_provider is None:
-        logger.info(
-            f"Initializing global OllamaProvider with base_url={base_url}, model={model}"
-        )
-        _ollama_provider = OllamaProvider(base_url=base_url, model=model)
-    elif (
-        _ollama_provider.base_url != base_url
-        or _ollama_provider.recommended_model != model
-    ):
-        logger.info(
-            "Ollama settings changed. Re-initializing provider. "
-            f"(URL: {_ollama_provider.base_url}->{base_url}, "
-            f"Model: {_ollama_provider.recommended_model}->{model})"
-        )
-        _ollama_provider = OllamaProvider(base_url=base_url, model=model)
+    with _provider_lock:
+        if _ollama_provider is None:
+            logger.info(
+                f"Initializing global OllamaProvider with base_url={base_url}, model={model}"
+            )
+            _ollama_provider = OllamaProvider(base_url=base_url, model=model)
+        elif (
+            _ollama_provider.base_url != base_url
+            or _ollama_provider.recommended_model != model
+        ):
+            logger.info(
+                "Ollama settings changed. Re-initializing provider. "
+                f"(URL: {_ollama_provider.base_url}->{base_url}, "
+                f"Model: {_ollama_provider.recommended_model}->{model})"
+            )
+            _ollama_provider = OllamaProvider(base_url=base_url, model=model)
 
     return _ollama_provider
 
@@ -80,15 +86,16 @@ def get_openrouter_provider() -> OpenRouterProvider:
     api_key = _get_setting_value("openrouter_api_key", "")
     model = _get_setting_value("openrouter_model", "")
 
-    if _openrouter_provider is None:
-        logger.info("Initializing global OpenRouterProvider")
-        _openrouter_provider = OpenRouterProvider(api_key=api_key, model=model)
-    elif (
-        _openrouter_provider.api_key != api_key
-        or _openrouter_provider.default_model != model
-    ):
-        logger.info("OpenRouter settings changed. Re-initializing provider.")
-        _openrouter_provider = OpenRouterProvider(api_key=api_key, model=model)
+    with _provider_lock:
+        if _openrouter_provider is None:
+            logger.info("Initializing global OpenRouterProvider")
+            _openrouter_provider = OpenRouterProvider(api_key=api_key, model=model)
+        elif (
+            _openrouter_provider.api_key != api_key
+            or _openrouter_provider.default_model != model
+        ):
+            logger.info("OpenRouter settings changed. Re-initializing provider.")
+            _openrouter_provider = OpenRouterProvider(api_key=api_key, model=model)
 
     return _openrouter_provider
 
@@ -100,18 +107,19 @@ def get_lmstudio_provider() -> LMStudioProvider:
     base_url = _get_setting_value("lmstudio_base_url", "http://localhost:1234/v1")
     model = _get_setting_value("lmstudio_model", "")
 
-    if _lmstudio_provider is None:
-        logger.info("Initializing global LMStudioProvider")
-        _lmstudio_provider = LMStudioProvider(base_url=base_url, model=model)
-    else:
-        current_url = _lmstudio_provider.base_url.rstrip("/")
-        new_url = base_url.rstrip("/")
-        if current_url != new_url or _lmstudio_provider.default_model != model:
-            logger.info(
-                f"LM Studio settings changed. Re-initializing provider. "
-                f"(URL: {current_url}->{new_url})"
-            )
+    with _provider_lock:
+        if _lmstudio_provider is None:
+            logger.info("Initializing global LMStudioProvider")
             _lmstudio_provider = LMStudioProvider(base_url=base_url, model=model)
+        else:
+            current_url = _lmstudio_provider.base_url.rstrip("/")
+            new_url = base_url.rstrip("/")
+            if current_url != new_url or _lmstudio_provider.default_model != model:
+                logger.info(
+                    f"LM Studio settings changed. Re-initializing provider. "
+                    f"(URL: {current_url}->{new_url})"
+                )
+                _lmstudio_provider = LMStudioProvider(base_url=base_url, model=model)
 
     return _lmstudio_provider
 
@@ -133,27 +141,30 @@ def get_llm_provider() -> OllamaProvider | OpenRouterProvider | LMStudioProvider
 def get_speech_provider() -> LocalSpeechProvider:
     """Return the local speech provider singleton."""
     global _speech_provider
-    if _speech_provider is None:
-        logger.info("Initializing global LocalSpeechProvider")
-        _speech_provider = LocalSpeechProvider()
+    with _provider_lock:
+        if _speech_provider is None:
+            logger.info("Initializing global LocalSpeechProvider")
+            _speech_provider = LocalSpeechProvider()
     return _speech_provider
 
 
 def get_achievement_system() -> AchievementSystem:
     """Return the achievement system singleton."""
     global _achievement_system
-    if _achievement_system is None:
-        logger.info("Initializing global AchievementSystem")
-        _achievement_system = AchievementSystem()
+    with _provider_lock:
+        if _achievement_system is None:
+            logger.info("Initializing global AchievementSystem")
+            _achievement_system = AchievementSystem()
     return _achievement_system
 
 
 def get_vector_store() -> LocalVectorStore:
     """Return the local vector store singleton."""
     global _vector_store
-    if _vector_store is None:
-        logger.info("Initializing global LocalVectorStore")
-        _vector_store = LocalVectorStore()
+    with _provider_lock:
+        if _vector_store is None:
+            logger.info("Initializing global LocalVectorStore")
+            _vector_store = LocalVectorStore()
     return _vector_store
 
 
@@ -308,7 +319,8 @@ def warmup_providers(timeout_seconds: float = 30.0) -> dict[str, Any]:
     logger.info("=" * 60)
     errors = []
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    executor = ThreadPoolExecutor(max_workers=4)
+    try:
         futures = {
             "speech": executor.submit(_init_speech_provider_sync),
             "llm": executor.submit(_init_llm_provider_sync),
@@ -319,8 +331,16 @@ def warmup_providers(timeout_seconds: float = 30.0) -> dict[str, Any]:
             try:
                 remaining_time = timeout_seconds - (time.time() - start_time)
                 if remaining_time <= 0:
-                    raise FutureTimeoutError("Overall timeout exceeded")
-                success = future.result(timeout=remaining_time)
+                    # The overall timeout is exhausted, but the future may
+                    # have already completed.  A finished future must never
+                    # be falsely reported as timed out (that corrupts /ready
+                    # state).
+                    if future.done():
+                        success = future.result()
+                    else:
+                        raise FutureTimeoutError("Overall timeout exceeded")
+                else:
+                    success = future.result(timeout=remaining_time)
                 _startup_state["providers_ready"][name] = success
                 if not success:
                     errors.append(f"{name} initialization failed")
@@ -332,6 +352,12 @@ def warmup_providers(timeout_seconds: float = 30.0) -> dict[str, Any]:
                 logger.error(f"Warmup: Exception initializing {name}: {exc}")
                 errors.append(f"{name}: {exc}")
                 _startup_state["providers_ready"][name] = False
+    finally:
+        # Do NOT wait for stuck workers — shutdown(wait=False) returns
+        # immediately and cancel_futures=True cancels pending submissions.
+        # Without this a single stuck worker can hold warmup far past the
+        # timeout (proven: a dev run logged 92438ms with timeout_seconds=30).
+        executor.shutdown(wait=False, cancel_futures=True)
 
     total_time = (time.time() - start_time) * 1000
     with _startup_lock:
