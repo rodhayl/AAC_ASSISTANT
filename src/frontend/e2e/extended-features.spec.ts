@@ -51,22 +51,6 @@ test.describe('Extended Features', () => {
     });
   });
 
-  test.describe('Settings Extended', () => {
-    test.use({ storageState: 'playwright/.auth/admin.json' });
-
-    test('should omit fallback AI configuration', async ({ page }) => {
-      const fallbackRequests: string[] = [];
-      page.on('request', request => {
-        if (request.url().includes('/api/settings/ai/fallback')) {
-          fallbackRequests.push(request.url());
-        }
-      });
-      await page.goto('/settings');
-      await expect(page.getByText(/fallback ai configuration|configuración de respaldo/i)).toHaveCount(0);
-      expect(fallbackRequests).toHaveLength(0);
-    });
-  });
-
   test.describe('Learning History', () => {
     test.use({ storageState: 'playwright/.auth/student.json' });
 

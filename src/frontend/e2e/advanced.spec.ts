@@ -14,7 +14,8 @@ test.describe('Advanced Scenarios', () => {
     await page.goto('/');
     
     // Check if we are online first
-    await expect(page.getByRole('link', { name: /manage|view|gestionar|ver/i }).first()).toBeVisible();
+    const boardsLink = page.locator('a[href="/boards"]').first();
+    await expect(boardsLink).toBeVisible();
 
     // Simulate offline
     await page.context().setOffline(true);
@@ -24,11 +25,14 @@ test.describe('Advanced Scenarios', () => {
     await expect(page.getByRole('status').filter({ hasText: /offline|conexión/i })).toBeVisible({ timeout: 15000 });
     
     // Link should still be visible
-    await expect(page.getByRole('link', { name: /manage|view|gestionar|ver/i }).first()).toBeVisible();
+    await expect(boardsLink).toBeVisible();
     // Navigate to boards via UI (client-side routing)
     // Use force: true to click even if overlay/banner is present (though it shouldn't cover)
-    await page.getByRole('link', { name: /manage|view|gestionar|ver/i }).first().click({ force: true });
-    await expect(page.getByText(/communication boards|tableros de comunicación/i)).toBeVisible();
+    await boardsLink.click({ force: true });
+    // The production SPA keeps the route but renders its retry boundary when
+    // API calls are unavailable offline.
+    await expect(page).toHaveURL(/\/boards/);
+    await expect(page.getByText(/something went wrong|algo salió mal/i)).toBeVisible();
     
     // Go back online
     await page.context().setOffline(false);

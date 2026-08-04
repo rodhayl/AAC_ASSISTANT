@@ -22,7 +22,7 @@ test.describe('Prediction Tiers', () => {
         if (!token) console.log("Warning: Token not found in admin.json auth-storage");
 
         const request = await playwrightRequest.newContext({
-            baseURL: 'http://localhost:5178',
+            baseURL: 'http://127.0.0.1:8086',
             extraHTTPHeaders: { 'Authorization': `Bearer ${token}` }
         });
 
@@ -211,12 +211,8 @@ test.describe('Prediction Tiers', () => {
             }
 
             // Check prediction for "I want "
-            const inputField = page.getByPlaceholder(/type|escribe/i);
-            if (!(await inputField.isVisible().catch(() => false))) {
-                console.log('[Test] Input field not visible - learning session may not have started');
-                test.skip();
-                return;
-            }
+            const inputField = page.locator('#learning-text-input');
+            await expect(inputField).toBeVisible({ timeout: 15000 });
 
             await inputField.fill('I want ');
 
@@ -256,8 +252,8 @@ test.describe('Prediction Tiers', () => {
             }
 
             // --- Tier 2: NLTK Library (English) ---
-            await page.getByPlaceholder(/type|escribe/i).clear();
-            await page.getByPlaceholder(/type|escribe/i).fill('the ');
+            await inputField.clear();
+            await inputField.fill('the ');
 
             let t2Data: any[] = [];
             try {
@@ -309,7 +305,7 @@ test.describe('Prediction Tiers', () => {
                     await startBtnT3.click();
                 }
 
-                await page.getByPlaceholder(/type|escribe/i).fill('yo ');
+                await inputField.fill('yo ');
 
                 let t3Data: any[] = [];
                 try {
@@ -340,7 +336,7 @@ test.describe('Prediction Tiers', () => {
             }
 
             // --- Tier 4: Fallback ---
-            await page.getByPlaceholder(/type|escribe/i).fill('xylophone ');
+            await inputField.fill('xylophone ');
 
             let t4Data: any[] = [];
             try {

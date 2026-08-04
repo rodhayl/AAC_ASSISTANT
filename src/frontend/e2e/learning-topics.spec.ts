@@ -79,8 +79,8 @@ test.describe('Learning Page - Boards and Topics', () => {
         // --- Test 1: Select Existing Board + Common Topic ---
         
         // Locate selects by ID
-        const boardSelect = page.locator('#board-select');
-        const topicSelect = page.locator('#topic-select');
+        const boardSelect = page.locator('#comp-board-select');
+        const topicSelect = page.locator('#comp-topic-select');
 
         await expect(boardSelect).toBeVisible();
         await boardSelect.selectOption({ label: 'Test Board 1' });

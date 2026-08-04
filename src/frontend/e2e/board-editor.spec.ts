@@ -17,7 +17,7 @@ test.describe('Board Editor', () => {
     });
 
     // Mock ARASAAC search (via backend proxy or direct)
-    // Actual request seen: http://localhost:5178/api/boards/symbols?search=cat
+    // Production-served request: http://127.0.0.1:8086/api/boards/symbols?search=cat
     await context.route('**/api/boards/symbols*', async route => {
         console.log(`[Mock] Intercepted Symbol search: ${route.request().url()}`);
         await route.fulfill({

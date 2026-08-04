@@ -66,7 +66,7 @@ test.describe('Boards - Student', () => {
     // Find the edit button for this board (usually a pencil icon)
     // The board card structure: div with relative class -> contains links/buttons
     // We filter by text to find the right card
-    const boardCard = page.locator('.relative').filter({ hasText: boardName });
+    const boardCard = page.locator('.grid > div.relative').filter({ hasText: boardName });
     await expect(boardCard).toBeVisible();
     
     // There is no direct "Edit Board" metadata button in the card in the provided code snippet (Boards.tsx),
@@ -347,7 +347,7 @@ async function deleteBoard(page: any, name: string) {
     await page.getByPlaceholder(/search|buscar/i).fill(name);
     await page.waitForTimeout(1000);
 
-    const card = page.locator('.relative').filter({ hasText: name }).first();
+    const card = page.locator('.grid > div.relative').filter({ hasText: name }).first();
     if (await card.isVisible()) {
         await card.getByRole('button', { name: /delete|eliminar/i }).click({ force: true });
         await page.locator('div[role="dialog"]').getByRole('button', { name: /delete|eliminar/i }).click({ force: true });

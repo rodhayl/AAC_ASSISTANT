@@ -137,9 +137,10 @@ test.describe.serial('Admin Management', () => {
         }
     }
 
-    // Wait for modal
-    await expect(page.locator('div[role="dialog"]')).toBeVisible();
-    const modal = page.locator('div[role="dialog"]');
+    // GuardianProfileModal is a fixed overlay without a dialog role after the
+    // frontend page split. Scope assertions to that overlay instead.
+    const modal = page.locator('div.fixed.inset-0').filter({ hasText: /guardian profile|perfil/i });
+    await expect(modal).toBeVisible();
     await expect(modal.getByText(/guardian profile|perfil/i)).toBeVisible();
     
     // Edit profile
