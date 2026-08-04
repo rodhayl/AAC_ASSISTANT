@@ -1,5 +1,4 @@
 import asyncio
-import os
 import time
 from contextlib import asynccontextmanager
 
@@ -40,6 +39,7 @@ from src.api.routers import (
     users,
 )
 from src.api.routers import config as config_router
+from src.api.spa import SPAStaticFiles, resolve_frontend_directory
 
 
 @asynccontextmanager
@@ -81,6 +81,12 @@ async def lifespan(app: FastAPI):
 
     startup_time_ms = (time.perf_counter() - startup_started) * 1000
     logger.info(f"Startup timing: initialization completed in {startup_time_ms:.0f}ms")
+    display_host = (
+        "127.0.0.1" if config.BACKEND_HOST in {"0.0.0.0", "::"} else config.BACKEND_HOST
+    )
+    logger.info(
+        f"Serving URL: http://{display_host}:{config.BACKEND_PORT}"
+    )
     logger.info("Server ready to accept requests")
 
     yield
@@ -180,65 +186,31 @@ app.include_router(export_import.router)
 app.include_router(notifications.router)
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 
-# Static files
-# Use frozen-aware paths from config module
+# Static files are mounted after all API routers so /api/* keeps API semantics.
+# In frozen builds PyInstaller exposes bundled resources through sys._MEIPASS,
+# which is represented by config.BUNDLE_DIR.
 from src.config import BUNDLE_DIR, IS_FROZEN, PROJECT_ROOT
 
-BASE_DIR = str(PROJECT_ROOT)
-UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
-
-# Create uploads directory if it doesn't exist
-os.makedirs(UPLOADS_DIR, exist_ok=True)
-
+UPLOADS_DIR = config.UPLOADS_DIR
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
-# Serve built frontend static files (for production package)
-# In frozen mode, check BUNDLE_DIR for frontend; otherwise check PROJECT_ROOT
-if IS_FROZEN:
-    # Frozen mode: frontend is bundled at BUNDLE_DIR/frontend
-    FRONTEND_DIR = os.path.join(str(BUNDLE_DIR), "frontend")
+FRONTEND_PATH = resolve_frontend_directory(
+    project_root=PROJECT_ROOT,
+    bundle_dir=BUNDLE_DIR,
+    is_frozen=IS_FROZEN,
+)
+if FRONTEND_PATH is not None:
+    app.mount(
+        "/",
+        SPAStaticFiles(directory=FRONTEND_PATH, html=True),
+        name="frontend",
+    )
 else:
-    # Development mode: check for built frontend
-    FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
-    if not os.path.exists(FRONTEND_DIR):
-        FRONTEND_DIR = os.path.join(BASE_DIR, "src", "frontend", "dist")
-
-if os.path.exists(FRONTEND_DIR):
-    from fastapi.responses import FileResponse
-
-    # Mount static assets (JS, CSS, images)
-    assets_dir = os.path.join(FRONTEND_DIR, "assets")
-    if os.path.exists(assets_dir):
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
-
-    # Serve index.html for SPA routes
-    # Serve index.html for SPA routes
-    @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
-        """Serve the SPA frontend for all non-API routes"""
-        # Skip API routes
-        if full_path.startswith("api/"):
-            return JSONResponse(content={"detail": "Not Found"}, status_code=404)
-
-        # Try to serve static file first
-        file_path = os.path.join(FRONTEND_DIR, full_path)
-        if os.path.isfile(file_path):
-            return FileResponse(file_path)
-
-        # Fall back to index.html for SPA routing
-        index_path = os.path.join(FRONTEND_DIR, "index.html")
-        if os.path.exists(index_path):
-            return FileResponse(index_path)
-
-        return JSONResponse(content={"detail": "Not Found"}, status_code=404)
-
-    # Explicitly handle root for SPA
-    @app.get("/")
-    async def serve_spa_root():
-        index_path = os.path.join(FRONTEND_DIR, "index.html")
-        if os.path.exists(index_path):
-            return FileResponse(index_path)
-        return JSONResponse(content={"detail": "Frontend not found"}, status_code=404)
+    logger.warning(
+        "Built frontend not found; production SPA serving is unavailable. "
+        "Expected src/frontend/dist or a bundled frontend directory."
+    )
 
 # Configure CORS
 # Split comma-separated string into list
@@ -266,4 +238,8 @@ app.add_middleware(
 )
 
 if __name__ == "__main__":
-    uvicorn.run("src.api.main:app", host="0.0.0.0", port=8086, reload=True)
+    uvicorn.run(
+        "src.api.main:app",
+        host=config.BACKEND_HOST,
+        port=config.BACKEND_PORT,
+    )
