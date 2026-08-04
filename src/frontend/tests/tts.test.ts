@@ -70,11 +70,40 @@ describe('tts queue watchdog', () => {
 
     expect(speechSynthesis.speak).toHaveBeenCalledTimes(1)
     expect(utterances[0].text).toBe('A')
+    expect(tts.getStatus()).toBe('speaking')
 
     await vi.advanceTimersByTimeAsync(1_500)
 
     expect(speechSynthesis.speak).toHaveBeenCalledTimes(2)
     expect(utterances[1].text).toBe('B')
+  })
+
+  it('marks speech as active optimistically and recovers when events never fire', async () => {
+    const { tts } = await import('../src/lib/tts')
+
+    tts.enqueue('A', { key: 'eventless-a' })
+
+    expect(tts.getStatus()).toBe('speaking')
+
+    await vi.advanceTimersByTimeAsync(1_500)
+
+    expect(tts.getStatus()).toBe('idle')
+  })
+
+  it('returns to idle when an event-firing utterance ends', async () => {
+    speechSynthesis.speak.mockImplementation((utterance: FakeUtterance) => {
+      utterances.push(utterance)
+      utterance.onstart?.()
+    })
+    const { tts } = await import('../src/lib/tts')
+
+    tts.enqueue('A', { key: 'eventful-a' })
+
+    expect(tts.getStatus()).toBe('speaking')
+    utterances[0].onend?.()
+    await Promise.resolve()
+
+    expect(tts.getStatus()).toBe('idle')
   })
 
   it('does not cancel healthy speech before its end event', async () => {

@@ -175,8 +175,14 @@ class TTSQueue {
         this.setStatus('speaking')
       }
       window.speechSynthesis.speak(u)
-      if (this.isActiveUtterance(utteranceId) && this.speakingStartedAt === null) {
-        this.scheduleNoStartWatchdog(utteranceId)
+      if (this.isActiveUtterance(utteranceId)) {
+        // Some speech synthesis implementations never emit onstart. Reflect the
+        // requested speaking state immediately and let the no-start watchdog
+        // recover if the browser silently ignores the utterance.
+        this.setStatus('speaking')
+        if (this.speakingStartedAt === null) {
+          this.scheduleNoStartWatchdog(utteranceId)
+        }
       }
     } catch {
       if (this.isActiveUtterance(utteranceId)) {
