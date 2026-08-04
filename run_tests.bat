@@ -49,6 +49,13 @@ echo ===================================
 echo AAC Assistant - Running Tests
 echo ===================================
 
+echo Syncing development tools with uv...
+call uv sync --group dev
+if errorlevel 1 (
+    echo Development dependency sync failed.
+    exit /b 1
+)
+
 echo Running backend tests...
 call uv run pytest -q tests
 if errorlevel 1 (

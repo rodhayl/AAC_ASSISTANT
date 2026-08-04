@@ -1,7 +1,9 @@
 import os
 import sqlite3
 import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.aac_app.services.auth_service import get_password_hash
 
 
