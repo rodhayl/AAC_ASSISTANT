@@ -43,15 +43,21 @@ if errorlevel 1 (
 )
 
 echo [2/4] Building the PyInstaller onedir package...
-if exist "%APP_DIR%\uploads\*" (
-    echo ERROR: Existing uploads found under %APP_DIR%.
-    echo Stop using this portable copy and move user uploads before rebuilding.
-    exit /b 1
+if exist "%APP_DIR%\uploads\" (
+    dir /b /s /a-d "%APP_DIR%\uploads\*" >nul 2>&1
+    if not errorlevel 1 (
+        echo ERROR: Existing uploads found under %APP_DIR%.
+        echo Stop using this portable copy and move user uploads before rebuilding.
+        exit /b 1
+    )
 )
-if exist "%APP_DIR%\data\*.db" (
-    echo ERROR: Existing database found under %APP_DIR%.
-    echo Stop using this portable copy and move user data before rebuilding.
-    exit /b 1
+if exist "%APP_DIR%\data\" (
+    dir /b /s /a-d "%APP_DIR%\data\*.db" >nul 2>&1
+    if not errorlevel 1 (
+        echo ERROR: Existing database found under %APP_DIR%.
+        echo Stop using this portable copy and move user data before rebuilding.
+        exit /b 1
+    )
 )
 if exist "%APP_DIR%" rmdir /s /q "%APP_DIR%"
 if exist "build\AAC_Assistant" rmdir /s /q "build\AAC_Assistant"

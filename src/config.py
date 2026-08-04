@@ -136,12 +136,10 @@ class Settings(BaseSettings):
 
 
 def _find_example_file(project_root: Path) -> Path | None:
-    """Find the current or legacy example config in a project or bundle."""
+    """Find the current example config in a project or frozen bundle."""
     candidates = (
         project_root / ".env.example",
-        project_root / "env.properties.example",
         BUNDLE_DIR / ".env.example",
-        BUNDLE_DIR / "env.properties.example",
     )
     return next((path for path in candidates if path.exists()), None)
 

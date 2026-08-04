@@ -1,29 +1,56 @@
-# Project Guide
+# AAC Assistant project guide
 
-This guide consolidates configuration, API usage, security/privacy requirements, operations, and utility tooling for AAC Assistant.
+This guide describes the current local-first architecture, configuration,
+operations, API surface, and privacy requirements. For the shortest setup
+path, see the root [`README.md`](../README.md).
 
-## 1. Prerequisites
+## 1. Prerequisites and commands
 
-- Python 3.10+
-- Node.js 20+
-- npm 10+
+Use Python 3.13+, [uv](https://docs.astral.sh/uv/), Node.js 20+, and npm 10+.
+The root scripts are the supported Windows entry points:
+
+```bat
+install_dependencies.bat
+start.bat
+start.bat --dev
+run_tests.bat
+build_package.bat
+```
+
+The equivalent development commands are:
+
+```powershell
+uv sync --group dev
+npm --prefix src/frontend ci
+uv run pytest -q tests
+uv run ruff check src tests
+npm --prefix src/frontend run lint
+npm --prefix src/frontend test -- --run
+npm --prefix src/frontend run build
+```
+
+Production uses one uvicorn process on port `8086` to serve the API and the
+built React application. `start.bat --dev` starts uvicorn on `8086` and Vite on
+`5176`.
 
 ## 2. Configuration
 
-1. Copy `.env.example` to `.env`. Legacy `env.properties` files are migrated
-   automatically and kept in place for rollback.
-2. Set a strong `JWT_SECRET_KEY` (the first run replaces the placeholder).
-3. Keep `ALLOW_DB_RESET=false` for public/production deployments.
-4. Keep `AAC_SEED_SAMPLE_DATA=false` for public/production deployments.
+`.env` is the canonical runtime configuration. Start from `.env.example`.
+`src/config.py` loads typed settings with pydantic-settings, creates the file
+when needed, and replaces a JWT placeholder with a stable random secret.
 
-Hardened baseline:
+For one release, an existing legacy `env.properties` is copied to `.env` when
+`.env` is absent and is preserved for rollback. New deployments must use
+`.env.example` and `.env`.
 
-```properties
+Important production settings:
+
+```dotenv
 BACKEND_HOST=0.0.0.0
 BACKEND_PORT=8086
 FRONTEND_PORT=5176
-JWT_SECRET_KEY=REPLACE_WITH_STRONG_RANDOM
 ENVIRONMENT=production
+JWT_SECRET_KEY=REPLACE_WITH_A_LONG_RANDOM_SECRET
 ALLOW_DB_RESET=false
 AAC_SEED_SAMPLE_DATA=false
 AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=true
@@ -31,100 +58,153 @@ AAC_BOOTSTRAP_ADMIN_USERNAME=admin1
 AAC_BOOTSTRAP_ADMIN_PASSWORD=Admin123
 ```
 
-Frontend optional env template: `src/frontend/.env.example`.
+The README contains the complete key-by-key configuration reference.
+`TESTING=1` is an operational environment variable for automated validation;
+it disables request rate limiting. `DATABASE_URL` may be supplied for isolated
+tests, but normal deployments use SQLite at `DATA_DIR/DATABASE_NAME`.
 
-## 3. Run and Validate
+## 3. Architecture
 
-Install:
+### Application entry point and API
 
-```bash
-python -m pip install -r requirements.txt
-npm --prefix src/frontend ci
-```
+- `src/api/main.py` creates the FastAPI application, configures lifespan
+  startup, mounts static assets, and registers routers.
+- `src/api/routers/` contains focused domain routers for authentication,
+  boards, symbols, learning, settings, administration, analytics,
+  notifications, exports, and providers.
+- `src/api/deps/` is the request dependency package:
+  - `auth.py` provides current-user and role checks.
+  - `db.py` provides request-scoped database sessions.
+  - `providers.py` creates optional AI provider integrations lazily.
+  - `settings.py` reads cached database-backed application settings.
+- `src/api/schemas.py` defines request and response models.
 
-Run (development):
+### Database and models
 
-```bash
-python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8086
-npm --prefix src/frontend run dev
-```
+- `src/aac_app/db.py` owns the process-wide SQLAlchemy engine and session
+  factory. Services and routers receive sessions rather than opening hidden
+  sessions for request work.
+- `src/aac_app/models/` is a package with one module per domain entity.
+  `models/__init__.py` imports the modules once so all tables are registered
+  in the shared `Base.metadata`.
+- `src/aac_app/schema.py` is the SQLite schema strategy. Startup first creates
+  missing ORM tables, then applies idempotent additive column upgrades for
+  databases from older releases. There is no separate migration service to
+  run for the local desktop application.
+- `src/aac_app/seed.py` performs core achievement/bootstrap setup and only
+  creates demo users and boards when `AAC_SEED_SAMPLE_DATA=true`.
 
-Validation:
+### Services and providers
 
-```bash
-python -m pytest -q tests
-python -m flake8 src tests
-npm --prefix src/frontend run lint
-npm --prefix src/frontend test -- --run
-npm --prefix src/frontend run build
-python -m pip check
-python -m pip_audit -r requirements.txt
-npm --prefix src/frontend audit
-```
+- `src/aac_app/services/` contains domain operations for boards, symbols,
+  authentication, achievements, analytics, notifications, and translations.
+- `src/aac_app/services/learning/` is the focused learning package. It splits
+  session lifecycle, question generation, response handling, summaries, and
+  shared prompt helpers into small modules, with
+  `LearningCompanionService` as the public service facade.
+- `src/aac_app/providers/` contains optional HTTP AI providers and the lazy
+  faster-whisper speech provider. The browser handles speech synthesis and
+  microphone capture; server-side audio devices are not required.
+- Semantic search uses fastembed embeddings and sqlite-vec in the SQLite
+  database. Runtime model caches belong under `data/models/` and are never
+  committed.
 
-## 4. API Overview
+### Frontend
 
-Local API base URL: `http://localhost:8086/api`
+`src/frontend/` is a React 19, Vite 7, TypeScript, Tailwind CSS, and Zustand
+application. Route-level lazy loading keeps the production bundle small.
+Vite is a development server only; the production backend serves
+`src/frontend/dist/` as the SPA.
 
-Interactive docs:
+## 4. API overview
 
-- Swagger: `http://localhost:8086/docs`
-- ReDoc: `http://localhost:8086/redoc`
+Local API base URL: `http://127.0.0.1:8086/api`
+
+Interactive documentation:
+
+- Swagger: `http://127.0.0.1:8086/docs`
+- ReDoc: `http://127.0.0.1:8086/redoc`
+- Health: `http://127.0.0.1:8086/api/health`
 
 Main endpoint groups:
 
 - `/api/auth/*`
 - `/api/boards/*`
 - `/api/learning/*`
+- `/api/learning-modes/*`
 - `/api/achievements/*`
 - `/api/settings/*`
 - `/api/notifications/*`
 - `/api/analytics/*`
 - `/api/guardian-profiles/*`
 - `/api/collab/*`
+- `/api/providers/*`
+- `/api/data/*`
 
-Authenticated requests use `Authorization: Bearer <token>`.
+Authenticated requests use `Authorization: Bearer <token>`. The role model is:
 
-## 5. Security and Privacy
+- `admin`: full system and user management
+- `teacher`: managed educational scope and assigned students
+- `student`: own account, assigned boards, and self-scope operations
+
+## 5. Security, privacy, and repository hygiene
 
 Never commit:
 
-- `env.properties`
-- `.env` files with secrets
-- Playwright auth state
-- private keys/certs
-- DB dumps and local artifacts
+- `.env` or other local secret files
+- `env.properties` from an installation
+- database files, logs, uploads, or model caches
+- Playwright authentication state
+- private keys, certificates, or exported user data
 
-Keep only safe templates:
+`.env.example` is the only runtime configuration template intended for new
+installations. `.gitignore` also excludes `data/`, `logs/`, `dist/`, `build/`,
+uploads, local caches, and dependency directories.
 
-- `env.properties.example`
-- `src/frontend/.env.example`
+Core enforcement paths are `src/api/deps/` and `src/api/routers/`. Keep
+`ALLOW_DB_RESET=false`, `AAC_SEED_SAMPLE_DATA=false`, and a unique
+`JWT_SECRET_KEY` for any shared or deployed instance. Change the bootstrap
+administrator password immediately after first login.
 
-RBAC model:
+## 6. Utilities and manual QA
 
-- `admin`: full system management
-- `teacher`: managed educational scope
-- `student`: self-scope operations
+Project utilities under `scripts/` cover setup, bootstrap administration,
+database inspection, migration helpers, diagnostics, and server preparation.
+Run a utility's help command with:
 
-Core enforcement paths:
+```powershell
+uv run python scripts/<script>.py --help
+```
 
-- `src/api/deps/`
-- `src/api/routers/`
+`TEST_SCENARIOS/` is intentionally retained as a manual QA reference for
+role-oriented walkthroughs. It is not part of the automated test collection;
+the pytest, Vitest, and Playwright suites are the repeatable validation
+sources.
 
-## 6. Utility Scripts
+## 7. Packaging and release checks
 
-Project utility scripts are grouped under `scripts/` and cover:
+The release flow is:
 
-- DB seeding and user management
-- dependency checks and setup helpers
-- schema validation and migrations
-- diagnostics and local verification helpers
+1. `uv sync --group dev`
+2. `npm --prefix src/frontend ci`
+3. `build_package.bat`
 
-Run scripts directly with `python scripts/<script>.py --help`.
+PyInstaller creates an onedir application and Inno Setup creates the Windows
+installer. The optional speech model is downloaded after installation rather
+than bundled. Installed copies use `%APPDATA%\AACAssistant` for writable data
+when the application is under Program Files; portable copies can keep runtime
+data beside the executable.
 
-## 7. No-History Export and Publish
+Before a release, verify:
 
-1. Build `./_export/` from the working tree.
-2. Exclude local/generated files: `.git`, secrets, caches, logs, DB files, runtime uploads, `node_modules`, build output.
-3. Verify `_export` contains no secrets or runtime artifacts.
-4. Initialize and push from `_export` as a new repository.
+```powershell
+uv run pytest -q tests
+uv run ruff check src tests
+npm --prefix src/frontend run lint
+npm --prefix src/frontend test -- --run
+npm --prefix src/frontend run build
+git ls-files
+```
+
+No tracked file should exceed 50 MB, and no tracked path should contain a
+downloaded speech or embedding model.
