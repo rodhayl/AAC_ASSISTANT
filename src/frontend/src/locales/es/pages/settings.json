@@ -1,6 +1,15 @@
 {
   "title": "Ajustes",
   "subtitle": "Gestiona tu cuenta y preferencias de la aplicación",
+  "tabs": {
+    "profile": "Perfil",
+    "appearance": "Apariencia",
+    "security": "Seguridad",
+    "voice": "Voz",
+    "ai": "Proveedor de IA",
+    "learningModes": "Modos de aprendizaje",
+    "data": "Datos"
+  },
   "profile": {
     "edit": "Editar",
     "cancel": "Cancelar",

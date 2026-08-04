@@ -1,0 +1,47 @@
+export interface Preferences {
+  tts_voice: string;
+  ui_language: string;
+  notifications_enabled: boolean;
+  voice_mode_enabled: boolean;
+  dark_mode: boolean;
+  dwell_time: number;
+  ignore_repeats: number;
+  high_contrast: boolean;
+}
+
+export interface LearningMode {
+  id: number;
+  name: string;
+  key: string;
+  description: string;
+  prompt_instruction: string;
+  is_custom: boolean;
+  created_by: number | null;
+}
+
+export type AiProvider = 'ollama' | 'openrouter' | 'lmstudio';
+
+export interface AiOverride {
+  provider?: AiProvider;
+  ollama_model?: string;
+  openrouter_model?: string;
+  lmstudio_model?: string;
+  openrouter_api_key?: string;
+  ollama_base_url?: string;
+  lmstudio_base_url?: string;
+  max_tokens?: number;
+  temperature?: number;
+}
+
+export interface VoiceStatus {
+  stt?: { provider?: string; installed: boolean; model?: string };
+  whisper?: { provider?: string; installed: boolean };
+  ffmpeg?: { installed?: boolean; available?: boolean; required?: boolean };
+  tts?: { provider?: string; client_side?: boolean; installed?: boolean };
+}
+
+export interface ProviderHealth {
+  ollama?: boolean;
+  openrouter?: boolean;
+  lmstudio?: { available: boolean };
+}

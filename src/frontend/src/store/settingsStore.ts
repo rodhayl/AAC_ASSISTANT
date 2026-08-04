@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import api from '../lib/api';
 
-interface AISettings {
+export interface AISettings {
   provider: 'ollama' | 'openrouter' | 'lmstudio';
   ollama_model: string;
   openrouter_model: string;
@@ -15,13 +15,13 @@ interface AISettings {
   can_edit: boolean;
 }
 
-interface OllamaModel {
+export interface OllamaModel {
   name: string;
   size?: number;
   modified_at?: string;
 }
 
-interface OpenRouterModel {
+export interface OpenRouterModel {
   id: string;
   name: string;
   pricing?: {

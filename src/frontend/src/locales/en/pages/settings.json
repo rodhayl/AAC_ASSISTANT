@@ -1,6 +1,15 @@
 {
   "title": "Settings",
   "subtitle": "Manage your account and application preferences",
+  "tabs": {
+    "profile": "Profile",
+    "appearance": "Appearance",
+    "security": "Security",
+    "voice": "Voice",
+    "ai": "AI Provider",
+    "learningModes": "Learning Modes",
+    "data": "Data"
+  },
   "profile": {
     "edit": "Edit",
     "cancel": "Cancel",
