@@ -8,6 +8,7 @@ import secrets
 from loguru import logger
 from sqlalchemy.orm import Session
 
+from src import config
 from src.aac_app import schema
 from src.aac_app.db import get_session
 from src.aac_app.models import (
@@ -50,6 +51,7 @@ def init_database(*, ensure_schema: bool = True) -> None:
     with get_session() as session:
         _create_sample_symbols(session)
         _create_sample_achievements(session)
+        _ensure_bootstrap_admin(session)
 
         if _env_flag("AAC_SEED_SAMPLE_DATA", default=False):
             _create_sample_users(session)
@@ -65,6 +67,38 @@ def init_database(*, ensure_schema: bool = True) -> None:
             )
 
     logger.info("Database initialized successfully")
+
+
+def _ensure_bootstrap_admin(session: Session) -> None:
+    """Create or repair the configured first-run administrator."""
+    if not config.get_bool("AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN", True):
+        return
+
+    username = config.get("AAC_BOOTSTRAP_ADMIN_USERNAME", "admin1").strip() or "admin1"
+    password = config.get("AAC_BOOTSTRAP_ADMIN_PASSWORD", "Admin123").strip() or "Admin123"
+    if session.query(User).filter(User.user_type == "admin").first():
+        return
+
+    from src.aac_app.services.auth_service import get_password_hash
+
+    user = session.query(User).filter(User.username == username).first()
+    if user:
+        user.user_type = "admin"
+        user.is_active = True
+        user.password_hash = get_password_hash(password)
+        if not user.display_name:
+            user.display_name = "Administrator"
+    else:
+        session.add(
+            User(
+                username=username,
+                display_name="Administrator",
+                user_type="admin",
+                password_hash=get_password_hash(password),
+                is_active=True,
+            )
+        )
+    session.flush()
 
 
 def _create_sample_boards(session: Session) -> None:

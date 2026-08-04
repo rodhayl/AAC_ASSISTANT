@@ -38,15 +38,18 @@ def setup_logging():
     # Remove default handler
     logger.remove()
 
-    # Console handler - colored output
-    logger.add(
-        sys.stderr,
-        format=LOG_FORMAT,
-        level="DEBUG",
-        colorize=True,
-        backtrace=True,
-        diagnose=True,
-    )
+    # Console handler - colored output. Windowed PyInstaller processes expose
+    # no stderr stream, so the file handlers below are the only sinks there.
+    console_stream = sys.stderr or sys.__stderr__
+    if console_stream is not None:
+        logger.add(
+            console_stream,
+            format=LOG_FORMAT,
+            level="DEBUG",
+            colorize=True,
+            backtrace=True,
+            diagnose=True,
+        )
 
     # File handler - all logs
     logger.add(

@@ -1,4 +1,3 @@
-import os
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,6 +5,7 @@ from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from src import config
 from src.aac_app.models import Symbol, User, UserSettings
 from src.aac_app.services.arasaac import ArasaacService
 from src.aac_app.services.vector_utils import index_symbol
@@ -79,16 +79,13 @@ async def import_arasaac_symbol(
             )
 
         # Save image locally
-        base_dir = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", "..", "..")
-        )
-        uploads_dir = os.path.join(base_dir, "uploads", "symbols")
-        os.makedirs(uploads_dir, exist_ok=True)
+        uploads_dir = config.UPLOADS_DIR / "symbols"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
 
         filename = f"arasaac_{payload.arasaac_id}_{uuid.uuid4().hex[:8]}.png"
-        file_path = os.path.join(uploads_dir, filename)
+        file_path = uploads_dir / filename
 
-        with open(file_path, "wb") as f:
+        with file_path.open("wb") as f:
             f.write(image_content)
 
         public_path = f"/uploads/symbols/{filename}"

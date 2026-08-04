@@ -21,17 +21,61 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 IS_FROZEN = getattr(sys, "frozen", False)
 
 if IS_FROZEN:
-    # User data lives beside the executable; bundled resources live in _MEIPASS.
+    # The executable directory is the portable/project root. Bundled resources
+    # live in _MEIPASS and are read-only.
     PROJECT_ROOT = Path(sys.executable).parent.absolute()
     BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", PROJECT_ROOT)).absolute()
 else:
     PROJECT_ROOT = Path(__file__).parent.parent.absolute()
     BUNDLE_DIR = PROJECT_ROOT
 
+def _is_program_files_path(path: Path) -> bool:
+    """Return whether a path is under a standard Windows Program Files folder."""
+    program_files_parts = {"program files", "program files (x86)"}
+    return any(part.casefold() in program_files_parts for part in path.parts)
+
+
+def resolve_runtime_root(
+    project_root: Path,
+    *,
+    is_frozen: bool,
+    appdata_root: Path | None = None,
+) -> Path:
+    """
+    Resolve the writable runtime root for config, database, logs, and uploads.
+
+    An onedir copy outside Program Files is portable and keeps data beside its
+    executable. An installed copy under Program Files uses the per-user
+    application data directory so standard users never need write access to the
+    installation directory. ``AAC_ASSISTANT_PORTABLE=1`` explicitly forces
+    portable behavior for a frozen copy.
+    """
+    project_root = Path(project_root).absolute()
+    if not is_frozen or os.environ.get("AAC_ASSISTANT_PORTABLE", "").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return project_root
+
+    if not _is_program_files_path(project_root):
+        return project_root
+
+    appdata = Path(
+        appdata_root
+        or os.environ.get("APPDATA")
+        or (Path.home() / "AppData" / "Roaming")
+    ).absolute()
+    return appdata / "AACAssistant"
+
+
+RUNTIME_ROOT = resolve_runtime_root(PROJECT_ROOT, is_frozen=IS_FROZEN)
+
 ENV_FILE_NAME = ".env"
 LEGACY_ENV_FILE_NAME = "env.properties"
-ENV_FILE = PROJECT_ROOT / ENV_FILE_NAME
-LEGACY_ENV_FILE = PROJECT_ROOT / LEGACY_ENV_FILE_NAME
+ENV_FILE = RUNTIME_ROOT / ENV_FILE_NAME
+LEGACY_ENV_FILE = RUNTIME_ROOT / LEGACY_ENV_FILE_NAME
 # Backwards-compatible alias used by existing diagnostics and scripts.
 CONFIG_FILE = ENV_FILE
 
@@ -104,7 +148,7 @@ def _find_example_file(project_root: Path) -> Path | None:
 
 def ensure_env_file(project_root: Path | None = None) -> Path:
     """Create the canonical ``.env`` and migrate a legacy file when needed."""
-    root = Path(project_root or PROJECT_ROOT).absolute()
+    root = Path(project_root or RUNTIME_ROOT).absolute()
     env_path = root / ENV_FILE_NAME
     legacy_path = root / LEGACY_ENV_FILE_NAME
 
@@ -194,7 +238,7 @@ def ensure_jwt_secret(env_path: Path | None = None) -> str:
 
 def load_settings(project_root: Path | None = None) -> Settings:
     """Prepare config files and load typed settings for a project root."""
-    root = Path(project_root or PROJECT_ROOT).absolute()
+    root = Path(project_root or RUNTIME_ROOT).absolute()
     env_path = ensure_env_file(root)
     ensure_jwt_secret(env_path)
     legacy_path = root / LEGACY_ENV_FILE_NAME
@@ -215,7 +259,7 @@ settings = load_settings()
 def _path_setting(value: str) -> Path:
     """Resolve a path setting relative to the project root."""
     path = Path(value)
-    return path if path.is_absolute() else PROJECT_ROOT / path
+    return path if path.is_absolute() else RUNTIME_ROOT / path
 
 
 def _sync_module_settings() -> None:
@@ -234,7 +278,7 @@ _sync_module_settings()
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
-UPLOADS_DIR = PROJECT_ROOT / "uploads"
+UPLOADS_DIR = RUNTIME_ROOT / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -288,11 +332,15 @@ def get_bundled_path(relative_path: str) -> Path:
     In frozen mode, looks in BUNDLE_DIR first, then PROJECT_ROOT.
     In development, looks in PROJECT_ROOT.
     """
-    if IS_FROZEN:
-        bundle_path = BUNDLE_DIR / relative_path
-        if bundle_path.exists():
-            return bundle_path
-    return PROJECT_ROOT / relative_path
+    candidates = (
+        (BUNDLE_DIR / relative_path, PROJECT_ROOT / relative_path)
+        if IS_FROZEN
+        else (PROJECT_ROOT / relative_path,)
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
 
 
 def get_data_path(relative_path: str = "") -> Path:
@@ -308,10 +356,4 @@ def get_data_path(relative_path: str = "") -> Path:
 
 def get_ngrams_path() -> Path:
     """Get the path to N-gram models directory."""
-    if IS_FROZEN:
-        # In frozen mode, ngrams are bundled in src/aac_app/data/ngrams
-        bundled_ngrams = BUNDLE_DIR / "src" / "aac_app" / "data" / "ngrams"
-        if bundled_ngrams.exists():
-            return bundled_ngrams
-    # Development mode
-    return PROJECT_ROOT / "src" / "aac_app" / "data" / "ngrams"
+    return get_bundled_path("src/aac_app/data/ngrams")

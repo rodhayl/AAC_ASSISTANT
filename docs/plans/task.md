@@ -10,4 +10,7 @@
 | completed | Design and implement Communication grid memoization |
 | completed | Add render-count regression coverage |
 | completed | Run frontend gates and browser verification |
-| in_progress | Commit verified Communication memoization feature |
+| completed | Commit verified Communication memoization feature |
+| completed | Rebuild the slim PyInstaller and Inno packaging pipeline |
+| completed | Verify frozen login, Boards navigation, and installer lifecycle |
+| completed | Commit verified packaging changes and hand off feature |

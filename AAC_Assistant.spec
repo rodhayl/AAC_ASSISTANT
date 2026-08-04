@@ -1,21 +1,50 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
+
+from PyInstaller.utils.hooks import collect_dynamic_libs, collect_submodules
+
 block_cipher = None
+
+project_root = Path(SPECPATH)
+frontend_dist = project_root / "src" / "frontend" / "dist"
+if not (frontend_dist / "index.html").is_file():
+    raise SystemExit(
+        "Built frontend not found. Run `npm --prefix src/frontend run build` first."
+    )
 
 a = Analysis(
     ["launcher.pyw"],
-    pathex=[],
-    binaries=[],
+    pathex=[str(project_root)],
+    binaries=collect_dynamic_libs("sqlite_vec"),
     datas=[
-        ("data", "data"),
+        (str(frontend_dist), "frontend"),
         ("src/aac_app/data/ngrams", "src/aac_app/data/ngrams"),
-        ("src/frontend", "frontend"),
+        (
+            "src/aac_app/config/companion_templates",
+            "src/aac_app/config/companion_templates",
+        ),
+        (".env.example", "."),
     ],
-    hiddenimports=[],
+    hiddenimports=collect_submodules("src.aac_app") + collect_submodules("src.api"),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        # Optional voice support is installed and downloaded after packaging.
+        "faster_whisper",
+        "ctranslate2",
+        "av",
+        "torch",
+        "torchaudio",
+        "torchvision",
+        # Development/test tooling never ships in the release.
+        "pytest",
+        "pytest_cov",
+        "ruff",
+        "pip_audit",
+        "coverage",
+    ],
     noarchive=False,
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
@@ -28,7 +57,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=False,
 )
 coll = COLLECT(
@@ -37,7 +66,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name="AAC_Assistant",
 )

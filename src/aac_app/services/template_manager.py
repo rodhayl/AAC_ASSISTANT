@@ -6,11 +6,12 @@ Templates define default configurations that can be customized per-student.
 """
 
 import copy
-from pathlib import Path
 from typing import Any
 
 import yaml
 from loguru import logger
+
+from src import config
 
 
 class TemplateManager:
@@ -26,21 +27,21 @@ class TemplateManager:
     - high_energy: Enthusiastic, motivating
     """
 
-    # Path to templates directory
-    TEMPLATE_DIR = Path(__file__).parent.parent / "config" / "companion_templates"
-
     def __init__(self):
         self._cache: dict[str, dict] = {}
+        self.template_dir = config.get_bundled_path(
+            "src/aac_app/config/companion_templates"
+        )
         self._load_templates()
 
     def _load_templates(self) -> None:
         """Load all YAML templates from the templates directory."""
-        if not self.TEMPLATE_DIR.exists():
-            logger.warning(f"Template directory not found: {self.TEMPLATE_DIR}")
+        if not self.template_dir.exists():
+            logger.warning(f"Template directory not found: {self.template_dir}")
             self._cache = {"default": self._get_hardcoded_default()}
             return
 
-        for yaml_file in self.TEMPLATE_DIR.glob("*.yaml"):
+        for yaml_file in self.template_dir.glob("*.yaml"):
             try:
                 with open(yaml_file, encoding="utf-8") as f:
                     template = yaml.safe_load(f)

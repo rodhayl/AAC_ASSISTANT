@@ -1,5 +1,6 @@
-; AAC Assistant - Inno Setup Installer Script
-; This creates a professional Windows installer for the packaged application
+; AAC Assistant - slim PyInstaller onedir installer.
+; The application stores installed user data in %APPDATA%\AACAssistant.
+; Portable copies keep data/, logs/, and uploads/ beside AAC_Assistant.exe.
 
 #define MyAppName "AAC Assistant"
 #define MyAppVersion "2.0.0"
@@ -8,7 +9,6 @@
 #define MyAppExeName "AAC_Assistant.exe"
 
 [Setup]
-; NOTE: The value of AppId uniquely identifies this application.
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
@@ -19,21 +19,15 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
-; Output settings
 OutputDir=dist
 OutputBaseFilename=AAC_Assistant_Setup_{#MyAppVersion}
-; SetupIconFile requires .ico format - uncomment and add icon.ico if available
-; SetupIconFile=icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-; Require admin for Program Files installation
 PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=dialog
-; Architecture
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
-; Uninstall settings
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName}
 
@@ -43,18 +37,15 @@ Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; OnlyBelowVersion: 6.1; Check: not IsAdminInstallMode
 
 [Files]
-; Main application (one-folder PyInstaller output)
-Source: "dist\AAC_Assistant\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Additional files
-Source: "env.properties.example"; DestDir: "{app}"; DestName: "env.properties"; Flags: onlyifdoesntexist
-; Ensure data directory exists
-Source: "data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.db"
+; Complete PyInstaller onedir output, including frontend and bundled resources.
+Source: "dist\AAC_Assistant\*"; DestDir: "{app}"; Excludes: "data\*;logs\*;uploads\*;*.env"; Flags: ignoreversion recursesubdirs createallsubdirs
+; The launcher copies this template to the writable runtime root on first run.
+Source: ".env.example"; DestDir: "{app}"; Flags: onlyifdoesntexist
 
 [Dirs]
-; Create writable directories for user data
+; These directories support portable copies and are intentionally not removed.
 Name: "{app}\data"; Permissions: users-modify
 Name: "{app}\logs"; Permissions: users-modify
 Name: "{app}\uploads"; Permissions: users-modify
@@ -65,42 +56,11 @@ Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-; Option to launch app after install
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
-[Code]
-// Custom code for first-run setup
-
-function InitializeSetup(): Boolean;
-begin
-  Result := True;
-end;
-
-procedure CurStepChanged(CurStep: TSetupStep);
-var
-  DataDir: String;
-begin
-  if CurStep = ssPostInstall then
-  begin
-    // Create necessary directories
-    DataDir := ExpandConstant('{app}\data');
-    if not DirExists(DataDir) then
-      CreateDir(DataDir);
-      
-    DataDir := ExpandConstant('{app}\logs');
-    if not DirExists(DataDir) then
-      CreateDir(DataDir);
-      
-    DataDir := ExpandConstant('{app}\uploads');
-    if not DirExists(DataDir) then
-      CreateDir(DataDir);
-  end;
-end;
+[UninstallDelete]
+; Application logs are disposable. User database, uploads, and portable data remain.
+Type: filesandordirs; Name: "{app}\logs"
 
 [Messages]
-; Custom messages
-WelcomeLabel2=This will install [name/ver] on your computer.%n%nAAC Assistant is a communication tool for people who need augmentative and alternative communication support.%n%nIt is recommended that you close all other applications before continuing.
-
-[UninstallDelete]
-; Clean up logs on uninstall (preserve user data)
-Type: filesandordirs; Name: "{app}\logs"
+WelcomeLabel2=This will install [name/ver] on your computer.%n%nAAC Assistant is a communication tool for people who need augmentative and alternative communication support.%n%nInstalled runs may require UAC approval. User data is preserved when the app is uninstalled.

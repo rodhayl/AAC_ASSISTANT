@@ -6,6 +6,7 @@ from loguru import logger
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
+from src import config
 from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol, SymbolUsageLog, User
 from src.aac_app.services.achievement_system import AchievementSystem
 from src.aac_app.services.vector_utils import delete_symbol as delete_symbol_embedding
@@ -229,14 +230,11 @@ async def upload_symbol(
     current_user: User = Depends(get_current_active_user),
 ):
     """Upload a new symbol image"""
-    base_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "..")
-    )
-    uploads_dir = os.path.join(base_dir, "uploads", "symbols")
-    os.makedirs(uploads_dir, exist_ok=True)
+    uploads_dir = config.UPLOADS_DIR / "symbols"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
     ext = os.path.splitext(file.filename or "")[1].lower() or ".png"
     name = f"{uuid.uuid4().hex}{ext}"
-    path = os.path.join(uploads_dir, name)
+    path = uploads_dir / name
     # Read file content for validation
     content = file.file.read()
     # Basic validation: type and size
@@ -251,7 +249,7 @@ async def upload_symbol(
             status_code=400,
             detail=get_text(user=current_user, key="errors.boards.fileTooLarge"),
         )
-    with open(path, "wb") as f:
+    with path.open("wb") as f:
         f.write(content)
     public_path = f"/uploads/symbols/{name}"
     db_symbol = Symbol(
@@ -308,14 +306,11 @@ async def update_symbol_image(
             status_code=404,
             detail=get_text(user=current_user, key="errors.boards.symbolNotFound"),
         )
-    base_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "..")
-    )
-    uploads_dir = os.path.join(base_dir, "uploads", "symbols")
-    os.makedirs(uploads_dir, exist_ok=True)
+    uploads_dir = config.UPLOADS_DIR / "symbols"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
     ext = os.path.splitext(file.filename or "")[1].lower() or ".png"
     name = f"{uuid.uuid4().hex}{ext}"
-    path = os.path.join(uploads_dir, name)
+    path = uploads_dir / name
     content = file.file.read()
     if not (file.content_type or "").startswith("image/"):
         raise HTTPException(
@@ -328,7 +323,7 @@ async def update_symbol_image(
             status_code=400,
             detail=get_text(user=current_user, key="errors.boards.fileTooLarge"),
         )
-    with open(path, "wb") as f:
+    with path.open("wb") as f:
         f.write(content)
     public_path = f"/uploads/symbols/{name}"
     db_symbol.image_path = public_path
