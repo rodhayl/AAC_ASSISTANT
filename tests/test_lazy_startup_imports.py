@@ -31,10 +31,6 @@ heavy = {
     "faster_whisper",
     "ctranslate2",
     "av",
-    "pyttsx3",
-    "sounddevice",
-    "soundfile",
-    "webrtcvad",
     "numpy",
     "deep_translator",
 }
@@ -45,66 +41,6 @@ assert not leaked, leaked
     result = _run_clean_import(script)
 
     assert result.returncode == 0, result.stderr or result.stdout
-
-
-def test_tts_provider_import_and_constructor_are_lazy() -> None:
-    script = """
-import builtins
-
-optional_imports = {"pyttsx3"}
-real_import = builtins.__import__
-seen = []
-
-def tracking_import(name, *args, **kwargs):
-    if name.split(".", 1)[0] in optional_imports:
-        seen.append(name)
-    return real_import(name, *args, **kwargs)
-
-builtins.__import__ = tracking_import
-from src.aac_app.providers.local_tts_provider import LocalTTSProvider
-
-provider = LocalTTSProvider()
-assert provider.engine is None
-assert not seen, seen
-"""
-
-    result = _run_clean_import(script)
-
-    assert result.returncode == 0, result.stderr or result.stdout
-
-
-def test_tts_synthesize_imports_engine_on_first_use(monkeypatch) -> None:
-    from src.aac_app.providers import local_tts_provider
-
-    class FakeEngine:
-        def __init__(self):
-            self.spoken = []
-
-        def setProperty(self, _name, _value):
-            return None
-
-        def getProperty(self, name):
-            return [] if name == "voices" else None
-
-        def say(self, text):
-            self.spoken.append(text)
-
-        def runAndWait(self):
-            return None
-
-    engine = FakeEngine()
-    fake_pyttsx3 = types.SimpleNamespace(init=lambda: engine)
-    monkeypatch.setitem(sys.modules, "pyttsx3", fake_pyttsx3)
-    monkeypatch.setattr(local_tts_provider, "PYTTSX3_AVAILABLE", True)
-    monkeypatch.setattr(local_tts_provider, "pyttsx3", None)
-
-    provider = local_tts_provider.LocalTTSProvider()
-    assert provider.engine is None
-
-    provider.synthesize("hello", blocking=True)
-
-    assert provider.engine is engine
-    assert engine.spoken == ["hello"]
 
 
 def test_speech_transcription_imports_faster_whisper_on_first_use(monkeypatch) -> None:

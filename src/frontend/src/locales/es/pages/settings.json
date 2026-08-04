@@ -101,6 +101,10 @@
     "notInstalled": "No instalado",
     "howToInstall": "Cómo instalar",
     "dependencies": {
+      "ffmpeg": {
+        "label": "ffmpeg (opcional)",
+        "help": "No es necesario: faster-whisper decodifica las cargas de audio del navegador"
+      },
       "fasterWhisper": {
         "label": "faster-whisper (opcional)",
         "help": "Ejecuta uv sync --extra voice --group dev para activar las respuestas de voz"

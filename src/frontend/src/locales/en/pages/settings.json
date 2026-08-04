@@ -102,8 +102,8 @@
     "howToInstall": "How to install",
     "dependencies": {
       "ffmpeg": {
-        "label": "ffmpeg (required)",
-        "help": "Install ffmpeg and add ffmpeg.exe to PATH"
+        "label": "ffmpeg (optional)",
+        "help": "Not required: faster-whisper decodes browser audio uploads"
       },
       "fasterWhisper": {
         "label": "faster-whisper (optional)",

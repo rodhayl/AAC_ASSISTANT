@@ -259,7 +259,7 @@ echo [5/7] Creating install script...
 >> "%OUTPUT_DIR%\install.bat" echo     echo ===============================================================================
 >> "%OUTPUT_DIR%\install.bat" echo     echo.
 >> "%OUTPUT_DIR%\install.bat" echo     echo Common causes:
->> "%OUTPUT_DIR%\install.bat" echo     echo 1. Missing "Microsoft C++ Build Tools" ^^(required for webrtcvad^^)
+>> "%OUTPUT_DIR%\install.bat" echo     echo 1. Missing "Microsoft C++ Build Tools" ^^(required by some optional packages^^)
 >> "%OUTPUT_DIR%\install.bat" echo     echo 2. Network connectivity issues
 >> "%OUTPUT_DIR%\install.bat" echo     echo.
 >> "%OUTPUT_DIR%\install.bat" echo     echo If you see an error about "Microsoft Visual C++ 14.0 or greater",

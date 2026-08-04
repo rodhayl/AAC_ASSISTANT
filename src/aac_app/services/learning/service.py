@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 from ...db import get_session
 from ...models import UserSettings
 from ...providers.local_speech_provider import LocalSpeechProvider
-from ...providers.local_tts_provider import LocalTTSProvider
 from ...providers.ollama_provider import OllamaProvider
 from ...providers.openrouter_provider import OpenRouterProvider
 from ...services.aac_expander_service import AACExpanderService
@@ -32,13 +31,11 @@ class LearningCompanionService(
         self,
         llm_provider: OllamaProvider | OpenRouterProvider,
         speech_provider: LocalSpeechProvider,
-        tts_provider: LocalTTSProvider,
         default_max_tokens: int = 1024,
         default_temperature: float = 0.5,
     ):
         self.llm = llm_provider
         self.speech = speech_provider
-        self.tts = tts_provider
 
         # LLM behavior defaults (can be overridden via AppSettings)
         self.default_max_tokens = max(64, int(default_max_tokens or 1024))

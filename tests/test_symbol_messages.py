@@ -26,12 +26,10 @@ def override_learning_service():
     llm = Mock()
     llm.generate = AsyncMock(return_value="Mock tutor reply.")
     speech = Mock()
-    tts = Mock()
 
     service = LearningCompanionService(
         llm_provider=llm,
         speech_provider=speech,
-        tts_provider=tts,
         default_max_tokens=256,
         default_temperature=0.4,
     )

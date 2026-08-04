@@ -168,6 +168,7 @@ export function Settings() {
   const [voiceStatus, setVoiceStatus] = useState<{
     stt?: { provider?: string; installed: boolean; model?: string };
     whisper?: { provider?: string; installed: boolean };
+    ffmpeg?: { installed?: boolean; available?: boolean; required?: boolean };
     tts?: { provider?: string; client_side?: boolean; installed?: boolean };
   } | null>(null);
 
@@ -396,6 +397,14 @@ export function Settings() {
   };
 
   const voiceStatusItems = [
+    {
+      key: 'ffmpeg',
+      label: t('ai.dependencies.ffmpeg.label'),
+      help: t('ai.dependencies.ffmpeg.help'),
+      link: 'https://ffmpeg.org/',
+      status: voiceStatus?.ffmpeg?.installed ?? voiceStatus?.ffmpeg?.available,
+      optional: true,
+    },
     {
       key: 'stt',
       label: t('ai.dependencies.fasterWhisper.label'),

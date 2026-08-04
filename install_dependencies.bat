@@ -41,12 +41,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Ensure local Whisper (voice) dependencies are present (silent if already installed)
-call "%PYTHON_EXE%" scripts\ensure_whisper_deps.py
-if exist "logs\whisper_dep_install.log" (
-    echo See logs\whisper_dep_install.log for voice dependency status.
-)
-
 REM Install frontend dependencies if missing
 if not exist "src\frontend\node_modules" (
     echo Installing frontend dependencies...

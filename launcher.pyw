@@ -157,29 +157,17 @@ class AACLauncher:
         self.ffmpeg_status = ttk.Label(ff_row, text="Checking...", foreground="gray")
         self.ffmpeg_status.pack(side=tk.RIGHT)
 
-        whisper_row = ttk.Frame(voice_frame)
-        whisper_row.pack(fill=tk.X, pady=2)
-        ttk.Label(whisper_row, text="Whisper (openai-whisper):").pack(side=tk.LEFT)
-        self.whisper_status = ttk.Label(whisper_row, text="Checking...", foreground="gray")
-        self.whisper_status.pack(side=tk.RIGHT)
+        stt_row = ttk.Frame(voice_frame)
+        stt_row.pack(fill=tk.X, pady=2)
+        ttk.Label(stt_row, text="faster-whisper (STT):").pack(side=tk.LEFT)
+        self.stt_status = ttk.Label(stt_row, text="Checking...", foreground="gray")
+        self.stt_status.pack(side=tk.RIGHT)
 
-        sd_row = ttk.Frame(voice_frame)
-        sd_row.pack(fill=tk.X, pady=2)
-        ttk.Label(sd_row, text="sounddevice (mic):").pack(side=tk.LEFT)
-        self.sounddevice_status = ttk.Label(sd_row, text="Checking...", foreground="gray")
-        self.sounddevice_status.pack(side=tk.RIGHT)
-
-        sf_row = ttk.Frame(voice_frame)
-        sf_row.pack(fill=tk.X, pady=2)
-        ttk.Label(sf_row, text="soundfile (mic):").pack(side=tk.LEFT)
-        self.soundfile_status = ttk.Label(sf_row, text="Checking...", foreground="gray")
-        self.soundfile_status.pack(side=tk.RIGHT)
-
-        vad_row = ttk.Frame(voice_frame)
-        vad_row.pack(fill=tk.X, pady=2)
-        ttk.Label(vad_row, text="webrtcvad (optional):").pack(side=tk.LEFT)
-        self.vad_status = ttk.Label(vad_row, text="Checking...", foreground="gray")
-        self.vad_status.pack(side=tk.RIGHT)
+        tts_row = ttk.Frame(voice_frame)
+        tts_row.pack(fill=tk.X, pady=2)
+        ttk.Label(tts_row, text="Browser TTS:").pack(side=tk.LEFT)
+        self.tts_status = ttk.Label(tts_row, text="Available", foreground="green")
+        self.tts_status.pack(side=tk.RIGHT)
 
         # Inline guidance shown when something is missing
         self.voice_help = ttk.Label(
@@ -195,7 +183,7 @@ class AACLauncher:
         self.link_voice_help.pack(anchor="w", pady=(6, 0))
         self.link_voice_help.bind(
             "<Button-1>",
-            lambda e: self.open_url("https://github.com/openai/whisper#installation"),
+            lambda e: self.open_url("https://github.com/SYSTRAN/faster-whisper"),
         )
         
         # Quick links
@@ -224,141 +212,52 @@ class AACLauncher:
         self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
     
     def update_voice_status(self):
-        """Check ffmpeg, Whisper, and audio helper libraries for UI status."""
+        """Check optional STT support; capture and TTS belong to the browser."""
         missing_notes = []
 
-        # ffmpeg
+        # ffmpeg is no longer required because PyAV decodes browser uploads.
         ffmpeg_path = shutil.which("ffmpeg")
-        ffmpeg_ok = ffmpeg_path is not None
-        if ffmpeg_ok:
-            self.ffmpeg_status.config(text="Installed", foreground="green")
+        if ffmpeg_path:
+            self.ffmpeg_status.config(text="Available (optional)", foreground="green")
         else:
-            self.ffmpeg_status.config(text="Missing", foreground="red")
-            missing_notes.append(
-                "- FFMPEG MISSING: Please install FFmpeg for Windows.\n"
-                "  1. Download from https://www.ffmpeg.org/download.html\n"
-                "  2. Extract to C:\\ffmpeg\n"
-                "  3. Add C:\\ffmpeg\\bin to your System PATH environment variable.\n"
-                "  4. Restart this application."
-            )
+            self.ffmpeg_status.config(text="Not required", foreground="gray")
 
-        # openai-whisper (whisper module)
+        # faster-whisper is an optional STT extra. The browser owns mic capture.
         try:
-            import whisper  # type: ignore
-            whisper_ok = True
+            import importlib.util
+
+            stt_ok = importlib.util.find_spec("faster_whisper") is not None
         except Exception:
-            whisper_ok = False
+            stt_ok = False
 
-        if whisper_ok:
-            self.whisper_status.config(text="Installed", foreground="green")
+        if stt_ok:
+            self.stt_status.config(text="Installed", foreground="green")
         else:
-            self.whisper_status.config(text="Missing", foreground="red")
+            self.stt_status.config(text="Not installed", foreground="orange")
             missing_notes.append(
-                "- Install openai-whisper with: pip install -U openai-whisper, then rerun start.bat."
-            )
-
-        # sounddevice (microphone input)
-        try:
-            import sounddevice  # type: ignore  # noqa: F401
-            sd_ok = True
-        except Exception:
-            sd_ok = False
-
-        if sd_ok:
-            self.sounddevice_status.config(text="Installed", foreground="green")
-        else:
-            self.sounddevice_status.config(text="Missing", foreground="red")
-            missing_notes.append(
-                "- sounddevice is not installed. Microphone input will not work. "
-                "Install with: pip install sounddevice"
-            )
-
-        # soundfile (saving recorded audio)
-        try:
-            import soundfile  # type: ignore  # noqa: F401
-            sf_ok = True
-        except Exception:
-            sf_ok = False
-
-        if sf_ok:
-            self.soundfile_status.config(text="Installed", foreground="green")
-        else:
-            self.soundfile_status.config(text="Missing", foreground="red")
-            missing_notes.append(
-                "- soundfile is not installed. Microphone input will not work. "
-                "Install with: pip install soundfile"
-            )
-
-        # webrtcvad (optional VAD)
-        try:
-            # Suppress the known pkg_resources deprecation UserWarning that
-            # can be emitted when importing webrtcvad (coming from its
-            # use of pkg_resources). We only suppress that specific warning
-            # so other important warnings are preserved.
-            import warnings as _warnings
-            with _warnings.catch_warnings():
-                _warnings.filterwarnings(
-                    "ignore",
-                    message="pkg_resources is deprecated as an API",
-                    category=UserWarning,
-                )
-                import webrtcvad  # type: ignore  # noqa: F401
-            vad_ok = True
-        except Exception:
-            vad_ok = False
-
-        if vad_ok:
-            self.vad_status.config(text="Installed", foreground="green")
-        else:
-            self.vad_status.config(text="Missing", foreground="orange")
-            missing_notes.append(
-                "- webrtcvad is not installed (optional). Continuous listening will use simpler detection. "
-                "Install with: pip install webrtcvad (may require MS C++ Build Tools)."
+                "- Optional voice answers: run `uv sync --extra voice` and restart the application."
             )
 
         # Summary help text
-        if not ffmpeg_ok or not whisper_ok:
-            help_text = "Voice input is not fully set up:\n" + "\n".join(missing_notes)
+        if not stt_ok:
+            help_text = "Browser TTS and microphone capture are available. Optional server transcription is off:\n" + "\n".join(missing_notes)
             self.voice_help.config(text=help_text, foreground="red")
-            
-            if not ffmpeg_ok:
-                self.link_voice_help.config(text="Download FFmpeg (Required)", foreground="blue")
-                self.link_voice_help.bind(
-                    "<Button-1>",
-                    lambda e: self.open_url("https://www.ffmpeg.org/download.html"),
-                )
-            else:
-                self.link_voice_help.config(text="How to install voice support", foreground="blue")
-                self.link_voice_help.bind(
-                    "<Button-1>",
-                    lambda e: self.open_url("https://github.com/openai/whisper#installation"),
-                )
-        else:
-            self.link_voice_help.config(text="How to install voice support", foreground="blue")
+            self.link_voice_help.config(text="How to install faster-whisper", foreground="blue")
             self.link_voice_help.bind(
                 "<Button-1>",
-                lambda e: self.open_url("https://github.com/openai/whisper#installation"),
+                lambda e: self.open_url("https://github.com/SYSTRAN/faster-whisper"),
             )
-
-            if sd_ok and sf_ok:
-                # All required for mic input; VAD may be missing but is optional
-                if vad_ok:
-                    summary = (
-                        "Voice input is ready (ffmpeg, Whisper, microphone, and VAD dependencies are installed)."
-                    )
-                else:
-                    summary = (
-                        "Voice input is ready for microphone and file uploads "
-                        "(ffmpeg, Whisper, sounddevice, soundfile). VAD (webrtcvad) is optional."
-                    )
-                self.voice_help.config(text=summary, foreground="green")
-            else:
-                summary = (
-                    "Transcription from audio files is ready (ffmpeg + Whisper). "
-                    "Install sounddevice and soundfile to enable microphone input.\n"
-                    + "\n".join(missing_notes)
-                )
-                self.voice_help.config(text=summary, foreground="orange")
+        else:
+            self.link_voice_help.config(text="Voice setup documentation", foreground="blue")
+            self.link_voice_help.bind(
+                "<Button-1>",
+                lambda e: self.open_url("https://github.com/SYSTRAN/faster-whisper"),
+            )
+            self.voice_help.config(
+                text="Browser TTS and microphone capture are ready. "
+                "Audio uploads are transcribed by faster-whisper.",
+                foreground="green",
+            )
     
     def find_free_port(self, start_port):
         """Find the first free port starting from start_port."""

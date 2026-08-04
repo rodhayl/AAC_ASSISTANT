@@ -1,4 +1,5 @@
-import importlib
+import importlib.util
+import shutil
 
 from fastapi import APIRouter, Depends
 
@@ -27,10 +28,13 @@ def providers_health(current_user: User = Depends(get_current_active_user)):
 
 def _module_available(name: str) -> bool:
     try:
-        importlib.import_module(name)
-        return True
-    except Exception:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
         return False
+
+
+def _executable_available(name: str) -> bool:
+    return shutil.which(name) is not None
 
 
 @router.get("/voice-status")
@@ -42,10 +46,12 @@ def voice_status(current_user: User = Depends(get_current_active_user)):
     old server-side microphone packages are not runtime requirements.
     """
     stt_installed = _module_available("faster_whisper")
+    ffmpeg_installed = _executable_available("ffmpeg")
     return {
         "stt": {
             "provider": "faster-whisper",
             "installed": stt_installed,
+            "available": stt_installed,
             "model": "small",
         },
         # Keep the old key as a response-shape compatibility alias for clients
@@ -53,11 +59,18 @@ def voice_status(current_user: User = Depends(get_current_active_user)):
         "whisper": {
             "provider": "faster-whisper",
             "installed": stt_installed,
+            "available": stt_installed,
+        },
+        "ffmpeg": {
+            "installed": ffmpeg_installed,
+            "available": ffmpeg_installed,
+            "required": False,
         },
         "tts": {
             "provider": "browser",
             "client_side": True,
             "installed": True,
+            "available": True,
         },
     }
 

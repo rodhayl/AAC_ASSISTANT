@@ -13,11 +13,9 @@ def test_imports():
     # Test providers - only import to verify they exist
     try:
         from aac_app.providers.local_speech_provider import LocalSpeechProvider
-        from aac_app.providers.local_tts_provider import LocalTTSProvider
         from aac_app.providers.ollama_provider import OllamaProvider
 
         assert LocalSpeechProvider is not None
-        assert LocalTTSProvider is not None
         assert OllamaProvider is not None
     except ImportError as e:
         pytest.skip(f"Provider import failed: {e}")

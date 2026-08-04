@@ -12,7 +12,6 @@ from loguru import logger
 from src import config
 from src.aac_app.providers.lmstudio_provider import LMStudioProvider
 from src.aac_app.providers.local_speech_provider import LocalSpeechProvider
-from src.aac_app.providers.local_tts_provider import LocalTTSProvider
 from src.aac_app.providers.ollama_provider import OllamaProvider
 from src.aac_app.providers.openrouter_provider import OpenRouterProvider
 from src.aac_app.services.achievement_system import AchievementSystem
@@ -25,7 +24,6 @@ _ollama_provider: OllamaProvider | None = None
 _openrouter_provider: OpenRouterProvider | None = None
 _lmstudio_provider: LMStudioProvider | None = None
 _speech_provider: LocalSpeechProvider | None = None
-_tts_provider: LocalTTSProvider | None = None
 _achievement_system: AchievementSystem | None = None
 _vector_store: LocalVectorStore | None = None
 
@@ -34,7 +32,6 @@ _startup_state: dict[str, Any] = {
     "initializing": False,
     "providers_ready": {
         "speech": False,
-        "tts": False,
         "llm": False,
         "achievement": False,
         "vector_store": False,
@@ -142,15 +139,6 @@ def get_speech_provider() -> LocalSpeechProvider:
     return _speech_provider
 
 
-def get_tts_provider() -> LocalTTSProvider:
-    """Return the local TTS provider singleton."""
-    global _tts_provider
-    if _tts_provider is None:
-        logger.info("Initializing global LocalTTSProvider")
-        _tts_provider = LocalTTSProvider()
-    return _tts_provider
-
-
 def get_achievement_system() -> AchievementSystem:
     """Return the achievement system singleton."""
     global _achievement_system
@@ -189,14 +177,12 @@ def get_learning_service(
         get_llm_provider
     ),
     speech: LocalSpeechProvider = Depends(get_speech_provider),
-    tts: LocalTTSProvider = Depends(get_tts_provider),
 ) -> LearningCompanionService:
     """Build a learning service with the configured provider defaults."""
     max_tokens, temperature = _get_llm_settings()
     return LearningCompanionService(
         llm,
         speech,
-        tts,
         default_max_tokens=max_tokens,
         default_temperature=temperature,
     )
@@ -231,21 +217,6 @@ def _init_speech_provider_sync() -> bool:
         return True
     except Exception as exc:
         logger.error(f"Warmup: Failed to initialize speech provider: {exc}")
-        return False
-
-
-def _init_tts_provider_sync() -> bool:
-    """Initialize TTS without speaking or importing its engine."""
-    global _tts_provider
-    try:
-        start = time.time()
-        logger.info("Warmup: Initializing TTS engine...")
-        _tts_provider = LocalTTSProvider()
-        elapsed = (time.time() - start) * 1000
-        logger.info(f"Warmup: TTS provider ready in {elapsed:.0f}ms")
-        return True
-    except Exception as exc:
-        logger.error(f"Warmup: Failed to initialize TTS provider: {exc}")
         return False
 
 
@@ -337,10 +308,9 @@ def warmup_providers(timeout_seconds: float = 30.0) -> dict[str, Any]:
     logger.info("=" * 60)
     errors = []
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {
             "speech": executor.submit(_init_speech_provider_sync),
-            "tts": executor.submit(_init_tts_provider_sync),
             "llm": executor.submit(_init_llm_provider_sync),
             "achievement": executor.submit(_init_achievement_system_sync),
             "vector_store": executor.submit(_init_vector_store_sync),
@@ -394,7 +364,7 @@ def is_ready() -> bool:
 def reset_providers() -> None:
     """Reset all provider singletons and warmup state."""
     global _ollama_provider, _openrouter_provider, _lmstudio_provider
-    global _speech_provider, _tts_provider, _achievement_system, _vector_store
+    global _speech_provider, _achievement_system, _vector_store
     global _startup_state
 
     with _startup_lock:
@@ -402,7 +372,6 @@ def reset_providers() -> None:
         _openrouter_provider = None
         _lmstudio_provider = None
         _speech_provider = None
-        _tts_provider = None
         _achievement_system = None
         _vector_store = None
         _startup_state = {
@@ -410,7 +379,6 @@ def reset_providers() -> None:
             "initializing": False,
             "providers_ready": {
                 "speech": False,
-                "tts": False,
                 "llm": False,
                 "achievement": False,
                 "vector_store": False,

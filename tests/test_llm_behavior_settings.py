@@ -102,9 +102,8 @@ def test_get_learning_service_uses_primary_behavior_settings(monkeypatch):
 
     llm = DummyOllama()
     speech = Mock()
-    tts = Mock()
 
-    service = deps.get_learning_service(llm=llm, speech=speech, tts=tts)
+    service = deps.get_learning_service(llm=llm, speech=speech)
     assert isinstance(service, LearningCompanionService)
     assert service.default_max_tokens == 2048
     assert pytest.approx(service.default_temperature, rel=1e-6) == 0.6
@@ -149,13 +148,11 @@ async def test_learning_service_passes_defaults_to_llm_generate_in_conversation(
     llm.generate = AsyncMock(return_value="Tutor reply.")
 
     speech = Mock()
-    tts = Mock()
 
     # Configure explicit defaults so the test is deterministic
     service = LearningCompanionService(
         llm_provider=llm,
         speech_provider=speech,
-        tts_provider=tts,
         default_max_tokens=512,
         default_temperature=0.4,
     )

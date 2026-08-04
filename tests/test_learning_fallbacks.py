@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.aac_app.models import UserSettings
-from src.api.deps import get_llm_provider, get_speech_provider, get_tts_provider
+from src.api.deps import get_llm_provider, get_speech_provider
 from src.api.main import app
 
 client = TestClient(app)
@@ -22,13 +22,11 @@ def fallback_providers(
     setup_test_db,
     mock_llm_provider,
     mock_speech_provider,
-    mock_tts_provider,
 ):
     """Make every learning request use the graceful-degradation path."""
     mock_llm_provider.generate.side_effect = RuntimeError("LLM unavailable")
     app.dependency_overrides[get_llm_provider] = lambda: mock_llm_provider
     app.dependency_overrides[get_speech_provider] = lambda: mock_speech_provider
-    app.dependency_overrides[get_tts_provider] = lambda: mock_tts_provider
     yield
     app.dependency_overrides.clear()
 

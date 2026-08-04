@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import LearningMode
-from src.api.deps import get_llm_provider, get_speech_provider, get_tts_provider
+from src.api.deps import get_llm_provider, get_speech_provider
 from src.api.main import app
 
 client = TestClient(app)
@@ -17,7 +17,6 @@ client = TestClient(app)
 def override_providers(
     mock_llm_provider,
     mock_speech_provider,
-    mock_tts_provider,
     test_db_session,
     monkeypatch,
 ):
@@ -30,7 +29,6 @@ def override_providers(
     # Override providers
     app.dependency_overrides[get_llm_provider] = lambda: mock_llm_provider
     app.dependency_overrides[get_speech_provider] = lambda: mock_speech_provider
-    app.dependency_overrides[get_tts_provider] = lambda: mock_tts_provider
 
     # Patch get_session to use test database in all modules that use it
     @contextmanager

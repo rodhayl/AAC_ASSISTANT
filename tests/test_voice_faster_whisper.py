@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.aac_app.providers import local_speech_provider
-from src.api.deps import get_llm_provider, get_speech_provider, get_tts_provider
+from src.api.deps import get_llm_provider, get_speech_provider
 from src.api.main import app
 
 client = TestClient(app)
@@ -94,11 +94,8 @@ def test_voice_answer_gate_uses_availability_before_lazy_model_load(
     speech.is_available.return_value = True
     speech.model = None
     speech.recognize_from_file.return_value = "hello animals"
-    tts = Mock()
-
     app.dependency_overrides[get_llm_provider] = lambda: llm
     app.dependency_overrides[get_speech_provider] = lambda: speech
-    app.dependency_overrides[get_tts_provider] = lambda: tts
     try:
         headers = {"Authorization": f"Bearer {user_token}"}
         started = client.post(
@@ -132,11 +129,8 @@ def test_voice_answer_is_graceful_when_provider_is_unavailable(
     llm.generate = AsyncMock(side_effect=RuntimeError("LLM unavailable"))
     speech = Mock()
     speech.is_available.return_value = False
-    tts = Mock()
-
     app.dependency_overrides[get_llm_provider] = lambda: llm
     app.dependency_overrides[get_speech_provider] = lambda: speech
-    app.dependency_overrides[get_tts_provider] = lambda: tts
     try:
         headers = {"Authorization": f"Bearer {user_token}"}
         started = client.post(
@@ -179,10 +173,14 @@ def test_voice_status_reports_faster_whisper_and_browser_tts(monkeypatch, admin_
     assert data["stt"] == {
         "provider": "faster-whisper",
         "installed": True,
+        "available": True,
         "model": "small",
     }
+    assert "ffmpeg" in data
+    assert data["ffmpeg"]["required"] is False
     assert data["tts"]["provider"] == "browser"
     assert data["tts"]["client_side"] is True
+    assert data["tts"]["available"] is True
 
 
 @pytest.mark.voice

@@ -161,14 +161,6 @@ def mock_speech_provider():
     return mock_speech
 
 
-@pytest.fixture(scope="function")
-def mock_tts_provider():
-    """Create a mock TTS provider that doesn't require audio output"""
-    mock_tts = Mock()
-    mock_tts.speak = Mock()
-    return mock_tts
-
-
 @pytest.fixture(scope="session")
 def test_password():
     """Return a consistent password for all test users that meets security requirements."""
