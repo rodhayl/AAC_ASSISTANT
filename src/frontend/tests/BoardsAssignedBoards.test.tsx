@@ -2,13 +2,13 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 
-import { Boards } from '../pages/Boards';
-import { useBoardStore } from '../store/boardStore';
-import { useAuthStore } from '../store/authStore';
-import { useSettingsStore } from '../store/settingsStore';
-import api from '../lib/api';
+import { Boards } from '../src/pages/Boards';
+import { useBoardStore } from '../src/store/boardStore';
+import { useAuthStore } from '../src/store/authStore';
+import { useSettingsStore } from '../src/store/settingsStore';
+import api from '../src/lib/api';
 
-vi.mock('../lib/api', () => ({
+vi.mock('../src/lib/api', () => ({
   default: {
     get: vi.fn(),
     post: vi.fn(),
@@ -18,11 +18,11 @@ vi.mock('../lib/api', () => ({
   },
 }));
 
-vi.mock('../store/authStore', () => ({
+vi.mock('../src/store/authStore', () => ({
   useAuthStore: vi.fn(),
 }));
 
-vi.mock('../store/settingsStore', () => ({
+vi.mock('../src/store/settingsStore', () => ({
   useSettingsStore: vi.fn(),
 }));
 

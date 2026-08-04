@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, Check, Edit2, Save, User } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
-import api from '../../lib/api';
-import { extractErrorMessage } from './error';
+import api, { extractError } from '../../lib/api';
 
 export function ProfileTab() {
   const { user } = useAuthStore();
@@ -42,7 +41,7 @@ export function ProfileTab() {
       setEditingProfile(false);
       setTimeout(() => setProfileSuccess(false), 3000);
     } catch (err: unknown) {
-      setProfileError(extractErrorMessage(err, 'Failed to save profile'));
+      setProfileError(extractError(err, 'Failed to save profile'));
     } finally {
       setProfileSaving(false);
     }

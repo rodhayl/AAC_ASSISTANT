@@ -1,24 +1,26 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { UserManagementPage } from '../pages/UserManagement';
-import api from '../lib/api';
+import { UserManagementPage } from '../src/pages/UserManagement';
+import api from '../src/lib/api';
 
 const authState = {
   user: { id: 1, username: 'admin1', display_name: 'Admin', user_type: 'admin' as const },
 };
 
-vi.mock('../store/authStore', () => ({
+vi.mock('../src/store/authStore', () => ({
   useAuthStore: () => authState,
 }));
 
-vi.mock('../lib/api', () => ({
+vi.mock('../src/lib/api', () => ({
   default: {
     get: vi.fn(),
     post: vi.fn(),
     put: vi.fn(),
     delete: vi.fn(),
   },
+  extractError: (error: { response?: { data?: { detail?: string } } }, fallback: string) =>
+    error.response?.data?.detail || fallback,
 }));
 
 const navigate = vi.fn();

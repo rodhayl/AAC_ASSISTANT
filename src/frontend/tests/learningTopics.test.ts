@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { addTopic, loadTopicsForUser, removeTopic } from './learningTopics';
-import type { SavedTopic } from './learningTopics';
+import { addTopic, loadTopicsForUser, removeTopic } from '../src/lib/learningTopics';
+import type { SavedTopic } from '../src/lib/learningTopics';
 
 const userId = 123;
 

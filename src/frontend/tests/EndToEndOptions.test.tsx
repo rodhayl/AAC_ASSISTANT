@@ -1,16 +1,16 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Mock } from 'vitest';
-import { BoardPlayer } from '../pages/BoardPlayer';
-import { Settings } from '../pages/Settings';
-import { SymbolHunt } from '../pages/SymbolHunt';
+import { BoardPlayer } from '../src/pages/BoardPlayer';
+import { Settings } from '../src/pages/Settings';
+import { SymbolHunt } from '../src/pages/SymbolHunt';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import api from '../lib/api';
-import { useAuthStore } from '../store/authStore';
-import { useBoardStore } from '../store/boardStore';
+import api from '../src/lib/api';
+import { useAuthStore } from '../src/store/authStore';
+import { useBoardStore } from '../src/store/boardStore';
 
 // Mock API
-vi.mock('../lib/api', () => ({
+vi.mock('../src/lib/api', () => ({
   default: {
     get: vi.fn(),
     post: vi.fn(),
@@ -21,7 +21,7 @@ vi.mock('../lib/api', () => ({
 }));
 
 // Mock Board Store
-vi.mock('../store/boardStore', () => ({
+vi.mock('../src/store/boardStore', () => ({
   useBoardStore: vi.fn(),
 }));
 
@@ -64,7 +64,7 @@ const mockTTSState = {
   volume: 1,
   setSelectedVoice: vi.fn(),
 };
-vi.mock('../store/ttsStore', () => ({
+vi.mock('../src/store/ttsStore', () => ({
   useTTSStore: Object.assign(() => mockTTSState, { getState: () => mockTTSState }),
 }));
 
@@ -73,7 +73,7 @@ const mockThemeState = {
   darkMode: false,
   setDarkMode: vi.fn(),
 };
-vi.mock('../store/themeStore', () => ({
+vi.mock('../src/store/themeStore', () => ({
   useThemeStore: Object.assign(() => mockThemeState, { getState: () => mockThemeState }),
 }));
 
@@ -82,14 +82,14 @@ const mockLocaleState = {
   locale: 'es-ES',
   setLocale: vi.fn(),
 };
-vi.mock('../store/localeStore', () => ({
+vi.mock('../src/store/localeStore', () => ({
   useLocaleStore: Object.assign(() => mockLocaleState, { getState: () => mockLocaleState }),
 }));
 
 
 // Mock Auth
-vi.mock('../store/authStore', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('../store/authStore')>();
+vi.mock('../src/store/authStore', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../src/store/authStore')>();
     const mockUseAuthStore = Object.assign(vi.fn(), {
       setState: vi.fn(),
       getState: vi.fn(),

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Board, BoardSymbol } from '../types';
-import api, { apiOffline } from '../lib/api';
+import api, { apiOffline, extractError } from '../lib/api';
 import { useNotificationsStore } from './notificationsStore';
 
 interface BoardState {
@@ -38,19 +38,6 @@ interface BoardState {
 
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 const PAGE_SIZE = 100;
-
-function extractError(error: unknown, fallback: string): string {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const r = error as { response?: { data?: { detail?: any } } };
-  const d = r.response?.data?.detail;
-  if (Array.isArray(d)) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return d.map((e: any) => e.msg).join(', ');
-  }
-  if (typeof d === 'string') return d;
-  if (d) return JSON.stringify(d);
-  return fallback;
-}
 
 export const useBoardStore = create<BoardState>((set, get) => ({
   boards: [],
@@ -293,14 +280,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       }
       return response.data;
     } catch (error: unknown) {
-      const detail = (() => {
-        if (typeof error === 'object' && error && 'response' in error) {
-          const r = error as { response?: { data?: { detail?: string } } };
-          return r.response?.data?.detail || 'Failed to add symbol';
-        }
-        return 'Failed to add symbol';
-      })();
-      set({ error: detail, isLoading: false });
+      set({ error: extractError(error, 'Failed to add symbol'), isLoading: false });
       throw error;
     }
   },
@@ -324,14 +304,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         set({ isLoading: false });
       }
     } catch (error: unknown) {
-      const detail = (() => {
-        if (typeof error === 'object' && error && 'response' in error) {
-          const r = error as { response?: { data?: { detail?: string } } };
-          return r.response?.data?.detail || 'Failed to update symbol';
-        }
-        return 'Failed to update symbol';
-      })();
-      set({ error: detail, isLoading: false });
+      set({ error: extractError(error, 'Failed to update symbol'), isLoading: false });
       throw error;
     }
   },
@@ -355,14 +328,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         set({ isLoading: false });
       }
     } catch (error: unknown) {
-      const detail = (() => {
-        if (typeof error === 'object' && error && 'response' in error) {
-          const r = error as { response?: { data?: { detail?: string } } };
-          return r.response?.data?.detail || 'Failed to delete symbol';
-        }
-        return 'Failed to delete symbol';
-      })();
-      set({ error: detail, isLoading: false });
+      set({ error: extractError(error, 'Failed to delete symbol'), isLoading: false });
       throw error;
     }
   },
@@ -376,14 +342,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       await get().fetchBoard(boardId, true);
       set({ isLoading: false });
     } catch (error: unknown) {
-      const detail = (() => {
-        if (typeof error === 'object' && error && 'response' in error) {
-          const r = error as { response?: { data?: { detail?: string } } };
-          return r.response?.data?.detail || 'Failed to batch update symbols';
-        }
-        return 'Failed to batch update symbols';
-      })();
-      set({ error: detail, isLoading: false });
+      set({ error: extractError(error, 'Failed to batch update symbols'), isLoading: false });
       throw error;
     }
   },
@@ -400,14 +359,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       } catch { /* notification optional */ }
       set({ isLoading: false });
     } catch (e: unknown) {
-      const detail = (() => {
-        if (typeof e === 'object' && e && 'response' in e) {
-          const r = e as { response?: { data?: { detail?: string } } };
-          return r.response?.data?.detail || 'Failed to assign board';
-        }
-        return 'Failed to assign board';
-      })();
-      set({ error: detail, isLoading: false });
+      set({ error: extractError(e, 'Failed to assign board'), isLoading: false });
       throw e;
     }
   }
@@ -421,14 +373,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       } catch { /* notification optional */ }
       set({ isLoading: false });
     } catch (e: unknown) {
-      const detail = (() => {
-        if (typeof e === 'object' && e && 'response' in e) {
-          const r = e as { response?: { data?: { detail?: string } } };
-          return r.response?.data?.detail || 'Failed to unassign board';
-        }
-        return 'Failed to unassign board';
-      })();
-      set({ error: detail, isLoading: false });
+      set({ error: extractError(e, 'Failed to unassign board'), isLoading: false });
       throw e;
     }
   }

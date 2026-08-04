@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import '../i18n/index'
+import '../src/i18n/index'
 import { render } from '@testing-library/react'
-import { LanguageSwitcher } from '../components/LanguageSwitcher'
+import { LanguageSwitcher } from '../src/components/LanguageSwitcher'
 import { I18nextProvider } from 'react-i18next'
-import i18n from './index'
-import { useLocaleStore } from '../store/localeStore'
+import i18n from '../src/i18n/index'
+import { useLocaleStore } from '../src/store/localeStore'
 
 describe('i18n initialization', () => {
   it('loads Spanish strings from common namespace', () => {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import api, { isAuthFlowEndpoint } from './api';
-import { useAuthStore } from '../store/authStore';
+import api, { isAuthFlowEndpoint } from '../src/lib/api';
+import { useAuthStore } from '../src/store/authStore';
 
 describe('auth response handling', () => {
   afterEach(() => {

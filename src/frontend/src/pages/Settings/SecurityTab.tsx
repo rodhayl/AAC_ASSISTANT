@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { Shield } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
-import api from '../../lib/api';
-import { extractErrorMessage } from './error';
+import api, { extractError } from '../../lib/api';
 
 export function SecurityTab() {
   const { user } = useAuthStore();
@@ -31,7 +30,7 @@ export function SecurityTab() {
       setNewPassword('');
       setConfirmPassword('');
     } catch (err: unknown) {
-      setChangeError(extractErrorMessage(err, 'Failed to change password'));
+      setChangeError(extractError(err, 'Failed to change password'));
     } finally {
       setChangeLoading(false);
     }

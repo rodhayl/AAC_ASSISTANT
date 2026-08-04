@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, Check, Edit2, Plus, Trash2 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
-import api from '../../lib/api';
-import { extractErrorMessage } from './error';
+import api, { extractError } from '../../lib/api';
 import type { LearningMode } from './types';
 
 export function LearningModesTab() {
@@ -65,7 +64,7 @@ export function LearningModesTab() {
       handleCancelModeEdit();
       setTimeout(() => setModeSuccess(null), 3000);
     } catch (err: unknown) {
-      setModeError(extractErrorMessage(err, 'Failed to save mode'));
+      setModeError(extractError(err, 'Failed to save mode'));
     }
   };
 
@@ -77,7 +76,7 @@ export function LearningModesTab() {
       setModeSuccess('Mode deleted');
       setTimeout(() => setModeSuccess(null), 3000);
     } catch (err: unknown) {
-      setModeError(extractErrorMessage(err, 'Failed to delete mode'));
+      setModeError(extractError(err, 'Failed to delete mode'));
     }
   };
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { formatDate, formatDateTime, formatTime, formatNumber } from './format'
-import '../i18n/index'
-import i18n from '../i18n/index'
+import { formatDate, formatDateTime, formatTime, formatNumber } from '../src/lib/format'
+import '../src/i18n/index'
+import i18n from '../src/i18n/index'
 
 describe('format utilities', () => {
   it('formats date/time in es-ES', () => {

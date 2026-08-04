@@ -16,6 +16,22 @@ from src.api.deps import get_current_active_user, get_db, get_text
 router = APIRouter()
 
 
+@router.get("/symbols/categories", response_model=list[str])
+def get_symbol_categories(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return the distinct symbol categories without loading symbol records."""
+    categories = (
+        db.query(Symbol.category)
+        .filter(Symbol.category.is_not(None))
+        .distinct()
+        .order_by(Symbol.category)
+        .all()
+    )
+    return [category for (category,) in categories]
+
+
 def _apply_symbol_search(query, search: str, db: Session):
     """Apply the existing keyword-plus-semantic symbol search to a query."""
     s = f"%{search.lower()}%"

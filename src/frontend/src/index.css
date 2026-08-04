@@ -1,5 +1,18 @@
 @import "tailwindcss";
-@config "../tailwind.config.js";
+
+@theme inline {
+  --font-sans: Inter, system-ui, sans-serif;
+  --color-background: rgb(var(--bg-background));
+  --color-surface: rgb(var(--bg-surface));
+  --color-surface-hover: rgb(var(--bg-surface-hover));
+  --color-border: rgb(var(--border-color));
+  --color-primary: rgb(var(--text-primary));
+  --color-secondary: rgb(var(--text-secondary));
+  --color-muted: rgb(var(--text-muted));
+  --color-brand: rgb(var(--brand-rgb));
+  --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  --shadow-neon: 0 0 10px rgb(var(--brand-rgb) / 0.5), 0 0 20px rgb(var(--brand-rgb) / 0.3);
+}
 
 /* Enable dark mode via class */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -22,7 +35,7 @@
   /* gray-700 */
   --text-muted: 107 114 128;
   /* gray-500 */
-  --color-brand: 79 70 229;
+  --brand-rgb: 79 70 229;
   /* indigo-600 */
   --color-brand-light: 129 140 248;
   /* indigo-400 */
@@ -49,7 +62,7 @@
   /* #52525B - Zinc-600 */
 
   /* Brand/Accent */
-  --color-brand: 99 102 241;
+  --brand-rgb: 99 102 241;
   /* indigo-500 - Brighter for dark mode */
   --color-brand-light: 165 180 252;
   /* indigo-300 */
@@ -163,7 +176,7 @@ html.high-contrast {
   --text-primary: 0 0 0;
   --text-secondary: 0 0 0;
   --text-muted: 0 0 0;
-  --color-brand: 0 0 0;
+  --brand-rgb: 0 0 0;
   --color-brand-light: 0 0 0;
   color-scheme: light;
 }
@@ -176,7 +189,7 @@ html.high-contrast.dark {
   --text-primary: 255 255 255;
   --text-secondary: 255 255 255;
   --text-muted: 255 255 255;
-  --color-brand: 255 255 255;
+  --brand-rgb: 255 255 255;
   --color-brand-light: 255 255 255;
   color-scheme: dark;
 }

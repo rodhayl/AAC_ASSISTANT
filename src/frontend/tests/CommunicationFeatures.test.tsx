@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { CommunicationToolbar } from '../components/board/CommunicationToolbar';
-import { SentenceStrip } from '../components/board/SentenceStrip';
-import { KeyboardOverlay } from '../components/board/KeyboardOverlay';
-import type { BoardSymbol } from '../types';
+import { CommunicationToolbar } from '../src/components/board/CommunicationToolbar';
+import { SentenceStrip } from '../src/components/board/SentenceStrip';
+import { KeyboardOverlay } from '../src/components/board/KeyboardOverlay';
+import type { BoardSymbol } from '../src/types';
 
 // Mock icons
 vi.mock('lucide-react', () => ({

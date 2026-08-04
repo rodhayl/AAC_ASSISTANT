@@ -63,7 +63,7 @@ describe('tts queue watchdog', () => {
   })
 
   it('advances a queue when speech events never fire', async () => {
-    const { tts } = await import('./tts')
+    const { tts } = await import('../src/lib/tts')
 
     tts.enqueue('A', { key: 'a' })
     tts.enqueue('B', { key: 'b' })
@@ -82,7 +82,7 @@ describe('tts queue watchdog', () => {
       utterances.push(utterance)
       utterance.onstart?.()
     })
-    const { tts } = await import('./tts')
+    const { tts } = await import('../src/lib/tts')
     const cancelCountBeforeEnqueue = speechSynthesis.cancel.mock.calls.length
 
     tts.enqueue('A', { key: 'normal-a' })
@@ -105,7 +105,7 @@ describe('tts queue watchdog', () => {
       utterances.push(utterance)
       utterance.onstart?.()
     })
-    const { tts } = await import('./tts')
+    const { tts } = await import('../src/lib/tts')
 
     tts.enqueue('A', { key: 'started-a' })
     tts.enqueue('B', { key: 'started-b' })

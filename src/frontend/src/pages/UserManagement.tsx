@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
-import api from '../lib/api'
+import api, { extractError } from '../lib/api'
 import type { User } from '../types'
 import { useAuthStore } from '../store/authStore'
 
@@ -11,32 +11,6 @@ export type ManagedUserRole = 'teacher' | 'admin'
 
 interface UserManagementPageProps {
   role: ManagedUserRole
-}
-
-type ApiError = {
-  message?: string
-  response?: {
-    data?: {
-      detail?: unknown
-    }
-  }
-}
-
-function getApiErrorMessage(error: unknown, fallback: string) {
-  const apiError = error as ApiError
-  const detail = apiError.response?.data?.detail
-
-  if (Array.isArray(detail)) {
-    return detail
-      .map(item => typeof item === 'object' && item !== null && 'msg' in item
-        ? String(item.msg)
-        : String(item))
-      .join(', ')
-  }
-  if (typeof detail === 'string') return detail
-  if (detail) return JSON.stringify(detail)
-  if (apiError.message) return `${fallback}: ${apiError.message}`
-  return fallback
 }
 
 export function UserManagementPage({ role }: UserManagementPageProps) {
@@ -94,7 +68,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       } catch (loadError: unknown) {
         if (!cancelled) {
           console.error(`Failed to load ${role}s:`, loadError)
-          setError(getApiErrorMessage(loadError, t('errors.loadFailed')))
+          setError(extractError(loadError, t('errors.loadFailed')))
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -122,7 +96,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       await api.delete(`/auth/users/${selectedUser.id}`)
       setManagedUsers(previous => previous.filter(item => item.id !== selectedUser.id))
     } catch (deleteError: unknown) {
-      setError(getApiErrorMessage(deleteError, t('errors.deleteFailed')))
+      setError(extractError(deleteError, t('errors.deleteFailed')))
     } finally {
       setDeleteState({ isOpen: false, user: null })
     }
@@ -150,7 +124,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       clearCreateForm()
       setCreateModalOpen(false)
     } catch (createError: unknown) {
-      setError(getApiErrorMessage(createError, t('errors.createFailed')))
+      setError(extractError(createError, t('errors.createFailed')))
     } finally {
       setCreateLoading(false)
     }
@@ -166,7 +140,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       setManagedUsers(previous => previous.map(item => item.id === editId ? response.data : item))
       setEditId(null)
     } catch (updateError: unknown) {
-      setError(getApiErrorMessage(updateError, t('errors.updateFailed')))
+      setError(extractError(updateError, t('errors.updateFailed')))
     }
   }
 
@@ -185,7 +159,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       setResetPasswordValue('')
       setResetPasswordUser(null)
     } catch (resetError: unknown) {
-      setError(getApiErrorMessage(resetError, t('errors.resetPasswordFailed')))
+      setError(extractError(resetError, t('errors.resetPasswordFailed')))
     } finally {
       setResetPasswordLoading(false)
     }

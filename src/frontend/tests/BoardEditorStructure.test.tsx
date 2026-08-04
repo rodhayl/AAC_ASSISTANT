@@ -1,10 +1,10 @@
 import { act, render, renderHook, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AISuggestionPanel } from '../components/board/AISuggestionPanel';
-import { useBoardCollab } from '../hooks/useBoardCollab';
-import { getBoardPlayabilityStatus, mergeBoardSymbols } from '../pages/boardEditorUtils';
-import type { Board, BoardSymbol } from '../types';
+import { AISuggestionPanel } from '../src/components/board/AISuggestionPanel';
+import { useBoardCollab } from '../src/hooks/useBoardCollab';
+import { getBoardPlayabilityStatus, mergeBoardSymbols } from '../src/pages/boardEditorUtils';
+import type { Board, BoardSymbol } from '../src/types';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({

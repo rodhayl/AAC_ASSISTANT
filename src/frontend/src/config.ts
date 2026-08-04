@@ -65,23 +65,4 @@ export const config = {
   },
 };
 
-// Load configuration from backend (call this on app init if needed)
-export async function loadConfig(): Promise<void> {
-  try {
-    const configUrl = `${(defaults.API_BASE_URL || '/api').replace(/\/$/, '')}/config`;
-    const response = await fetch(configUrl);
-    if (response.ok) {
-      const data = await response.json();
-      if (data.backend_port) config.BACKEND_PORT = data.backend_port;
-      if (data.frontend_port) config.FRONTEND_PORT = data.frontend_port;
-      if (data.ollama_base_url) config.OLLAMA_BASE_URL = data.ollama_base_url;
-      if (data.app_name) config.APP_NAME = data.app_name;
-      if (data.app_version) config.APP_VERSION = data.app_version;
-      if (data.default_locale) config.DEFAULT_LOCALE = data.default_locale;
-    }
-  } catch {
-    // Use defaults if config endpoint unavailable
-  }
-}
-
 export default config;

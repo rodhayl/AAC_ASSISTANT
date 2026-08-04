@@ -2,11 +2,11 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import type { BoardSymbol } from '../types';
+import type { BoardSymbol } from '../src/types';
 
 const symbolRenderSpy = vi.hoisted(() => vi.fn());
 
-vi.mock('../components/board/SymbolCard', async () => {
+vi.mock('../src/components/board/SymbolCard', async () => {
   const React = await vi.importActual<typeof import('react')>('react');
 
   return {
@@ -22,7 +22,7 @@ vi.mock('../components/board/SymbolCard', async () => {
   };
 });
 
-import { CommunicationGrid } from '../components/board/CommunicationGrid';
+import { CommunicationGrid } from '../src/components/board/CommunicationGrid';
 
 const symbols: BoardSymbol[] = [
   {
