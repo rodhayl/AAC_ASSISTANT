@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useBoardStore } from '../store/boardStore';
 import { useLearningStore } from '../store/learningStore';
-import { SymbolCard } from '../components/board/SymbolCard';
+import { CommunicationGrid } from '../components/board/CommunicationGrid';
 import { SentenceStrip } from '../components/board/SentenceStrip';
 import { Smartbar } from '../components/board/Smartbar';
 import { CommunicationToolbar } from '../components/board/CommunicationToolbar';
@@ -27,6 +27,8 @@ import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/authStore';
 import { useToastStore } from '../store/toastStore';
 import { BoardsAndTopicsSidebar } from '../components/learning/BoardsAndTopicsSidebar';
+
+const EMPTY_BOARD_SYMBOLS: BoardSymbol[] = [];
 
 export function Communication() {
   const { t } = useTranslation('boards');
@@ -359,6 +361,26 @@ export function Communication() {
     });
   }, []);
 
+  const handleRemoveSentenceItem = useCallback((index: number) => {
+    setSentence(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const handleClearSentence = useCallback(() => {
+    setSentence([]);
+  }, []);
+
+  const handleBackspaceSentence = useCallback(() => {
+    setSentence(prev => prev.slice(0, -1));
+  }, []);
+
+  const handleSelectSymbol = useCallback((symbol: BoardSymbol) => {
+    setSentence(prev => [...prev, symbol]);
+    if (voiceEnabled) {
+      const text = symbol.custom_text || symbol.symbol.label;
+      tts.enqueue(text, { key: symbol.id });
+    }
+  }, [voiceEnabled]);
+
   const availableBoards = useMemo(() => {
     return boards.length > 0 ? boards : assignedBoards;
   }, [boards, assignedBoards]);
@@ -564,9 +586,9 @@ export function Communication() {
         <div className="shrink-0 z-20">
           <SentenceStrip
             symbols={sentence}
-            onRemove={(idx) => setSentence(prev => prev.filter((_, i) => i !== idx))}
-            onClear={() => setSentence([])}
-            onBackspace={() => setSentence(prev => prev.slice(0, -1))}
+            onRemove={handleRemoveSentenceItem}
+            onClear={handleClearSentence}
+            onBackspace={handleBackspaceSentence}
             onSpeak={handleSpeakSentence}
             onSpeakItem={handleSpeakText}
             onReorder={handleReorder}
@@ -578,44 +600,18 @@ export function Communication() {
         {/* Smartbar (Suggestions) */}
         <Smartbar
           currentSentence={sentence}
-          onSelectSymbol={(symbol) => {
-            setSentence(prev => [...prev, symbol]);
-            if (voiceEnabled) {
-              const text = symbol.custom_text || symbol.symbol.label;
-              tts.enqueue(text, { key: symbol.id });
-            }
-          }}
+          onSelectSymbol={handleSelectSymbol}
           boardId={currentBoard?.id}
         />
 
         {/* Grid Area */}
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-2 custom-scrollbar relative min-h-0 w-full">
-          <div
-            className="grid gap-2 mx-auto max-w-7xl pb-2"
-            style={{
-              gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-              gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
-              minHeight: '100%'
-            }}
-          >
-            {Array.from({ length: rows }).map((_, row) => (
-              Array.from({ length: cols }).map((_, col) => {
-                const symbol = currentBoard.symbols?.find(s => s.position_x === col && s.position_y === row);
-                return (
-                  <div key={`${col}-${row}`} className="w-full h-full min-h-[60px] sm:min-h-[70px] aspect-[1/0.8]">
-                    {symbol ? (
-                      <SymbolCard
-                        boardSymbol={symbol}
-                        onClick={handleSymbolClick}
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-gray-200/10 dark:bg-gray-800/10 rounded-xl border border-dashed border-gray-300/20 dark:border-gray-700/20" />
-                    )}
-                  </div>
-                );
-              })
-            ))}
-          </div>
+          <CommunicationGrid
+            rows={rows}
+            cols={cols}
+            symbols={currentBoard.symbols ?? EMPTY_BOARD_SYMBOLS}
+            onSymbolClick={handleSymbolClick}
+          />
         </main>
 
         {/* Communication Toolbar (Bottom) */}
@@ -675,13 +671,7 @@ export function Communication() {
       <SymbolSearchModal
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
-        onSelectSymbol={(symbol) => {
-          setSentence(prev => [...prev, symbol]);
-          if (voiceEnabled) {
-            const text = symbol.custom_text || symbol.symbol.label;
-            tts.enqueue(text, { key: symbol.id });
-          }
-        }}
+        onSelectSymbol={handleSelectSymbol}
       />
     </div>
   );
