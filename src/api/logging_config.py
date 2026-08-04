@@ -3,7 +3,9 @@ Comprehensive logging configuration for AAC Assistant.
 Logs all requests, responses, errors, and warnings to both console and file.
 """
 
+import os
 import sys
+import time
 from datetime import datetime
 
 from loguru import logger
@@ -14,8 +16,15 @@ from src import config
 LOGS_DIR = config.LOGS_DIR
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Log file path with date
-LOG_FILE = LOGS_DIR / f"aac_assistant_{datetime.now().strftime('%Y-%m-%d')}.log"
+# Each process owns its active files. Windows cannot rename an open file, so a
+# shared date-only path makes Loguru's size rotation race with other app
+# instances (or a test runner) and emit a non-fatal PermissionError.
+LOG_DATE = datetime.now().strftime("%Y-%m-%d")
+PROCESS_ID = str(os.getpid())
+LOG_FILE = LOGS_DIR / f"aac_assistant_{LOG_DATE}_{PROCESS_ID}.log"
+ERROR_LOG_FILE = LOGS_DIR / f"errors_{LOG_DATE}_{PROCESS_ID}.log"
+LOG_RETENTION_SECONDS = 7 * 24 * 60 * 60
+ERROR_LOG_RETENTION_SECONDS = 14 * 24 * 60 * 60
 
 # Custom format for detailed logging
 LOG_FORMAT = (
@@ -33,10 +42,35 @@ LOG_FORMAT_FILE = (
 )
 
 
+def _cleanup_old_logs(_logs: list[str] | None = None) -> None:
+    """Remove aged logs from all process-specific files.
+
+    Loguru's built-in retention only sees files matching the active sink path,
+    which would limit cleanup to the current PID. Scan the unchanged log
+    directory instead and ignore files that another process still holds.
+    """
+    now = time.time()
+    retention_patterns = (
+        ("aac_assistant_*.log*", LOG_RETENTION_SECONDS),
+        ("errors_*.log*", ERROR_LOG_RETENTION_SECONDS),
+    )
+    for pattern, retention_seconds in retention_patterns:
+        cutoff = now - retention_seconds
+        for path in LOGS_DIR.glob(pattern):
+            try:
+                if path.is_file() and path.stat().st_mtime <= cutoff:
+                    path.unlink()
+            except OSError:
+                # A different process may still have an aged file open on
+                # Windows. It will be retried by a later process startup.
+                continue
+
+
 def setup_logging():
     """Configure loguru for comprehensive logging."""
     # Remove default handler
     logger.remove()
+    _cleanup_old_logs()
 
     # Console handler - colored output. Windowed PyInstaller processes expose
     # no stderr stream, so the file handlers below are the only sinks there.
@@ -51,28 +85,24 @@ def setup_logging():
             diagnose=True,
         )
 
-    # File handler - all logs
+    # File handler - all logs. Retention is explicit rather than in-place
+    # rotation, because every process writes to its own active file.
     logger.add(
         LOG_FILE,
         format=LOG_FORMAT_FILE,
         level="DEBUG",
-        rotation="10 MB",
-        retention="7 days",
-        compression="zip",
+        retention=_cleanup_old_logs,
         backtrace=True,
         diagnose=True,
         enqueue=True,  # Thread-safe
     )
 
     # Separate error log file
-    error_log = LOGS_DIR / f"errors_{datetime.now().strftime('%Y-%m-%d')}.log"
     logger.add(
-        error_log,
+        ERROR_LOG_FILE,
         format=LOG_FORMAT_FILE,
         level="WARNING",
-        rotation="10 MB",
-        retention="14 days",
-        compression="zip",
+        retention=_cleanup_old_logs,
         backtrace=True,
         diagnose=True,
         enqueue=True,
