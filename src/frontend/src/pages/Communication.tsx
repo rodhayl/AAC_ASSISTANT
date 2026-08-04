@@ -143,19 +143,19 @@ export function Communication() {
       if (user.user_type === 'student') {
         await fetchAssignedBoards(user.id, true);
       } else if (user.user_type === 'admin') {
-        await fetchBoards(undefined, searchQuery, false, 1);
+        await fetchBoards(undefined, undefined, false, 1);
       } else {
-        await fetchBoards(user.id, searchQuery, false, 1);
+        await fetchBoards(user.id, undefined, false, 1);
       }
     };
 
     loadBoards();
-  }, [user, fetchBoards, fetchAssignedBoards, searchQuery]);
+  }, [user, fetchBoards, fetchAssignedBoards]);
 
   const loadMore = () => {
     if (!isLoading && hasMore && user && user.user_type !== 'student') {
       // Pagination currently only for fetchBoards, not fetchAssignedBoards
-      fetchBoards(user.user_type === 'admin' ? undefined : user.id, searchQuery, false, page + 1);
+      fetchBoards(user.user_type === 'admin' ? undefined : user.id, undefined, false, page + 1);
     }
   };
 
@@ -394,6 +394,7 @@ export function Communication() {
       return name.includes(q) || desc.includes(q);
     });
   }, [availableBoards, searchQuery]);
+  const hasActiveSearch = searchQuery.trim().length > 0;
 
   // RENDER: Board Selection View
   if (!activeBoardId) {
@@ -424,11 +425,18 @@ export function Communication() {
             </div>
           </div>
 
-          {isLoading && availableBoards.length === 0 ? (
+          {isLoading && availableBoards.length === 0 && !hasActiveSearch ? (
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
             </div>
-          ) : availableBoards.length === 0 ? (
+          ) : hasActiveSearch && filteredBoards.length === 0 ? (
+            <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+              <LayoutGrid className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
+                {t('noBoardsMatchSearch', 'No boards match your search')}
+              </h3>
+            </div>
+          ) : !hasActiveSearch && availableBoards.length === 0 ? (
             <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
               <LayoutGrid className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
@@ -439,13 +447,6 @@ export function Communication() {
                   ? t('askTeacherForBoards', 'Ask your teacher to assign you a board.')
                   : t('createBoardFirst', 'Create a board in the Boards section first.')}
               </p>
-            </div>
-          ) : filteredBoards.length === 0 ? (
-            <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-              <LayoutGrid className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
-                {t('noBoardsMatchSearch', 'No boards match your search')}
-              </h3>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
