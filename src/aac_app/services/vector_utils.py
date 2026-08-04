@@ -12,11 +12,14 @@ def index_all_symbols(force: bool = False):
         if not vs:
             return
 
-        # Metadata is enough to know that indexing already happened. Do this
-        # before loading the embedding model so startup stays light.
+        # A complete marker plus exact symbol/vector ids is enough to know
+        # indexing already happened. Do this before loading the model so
+        # healthy startup stays light.
         has_persisted_metadata = getattr(vs, "has_persisted_metadata", lambda: False)
-        if not force and (
-            has_persisted_metadata() or len(getattr(vs, "metadata", [])) > 0
+        persisted = has_persisted_metadata()
+        supports_repair = callable(getattr(type(vs), "get_stale_symbol_ids", None))
+        if not force and not supports_repair and (
+            persisted or len(getattr(vs, "metadata", [])) > 0
         ):
             logger.info("Vector store metadata already exists, skipping indexing")
             return
@@ -30,13 +33,33 @@ def index_all_symbols(force: bool = False):
         logger.info("Indexing all symbols into vector store...")
         with get_session() as db:
             symbols = db.query(Symbol).all()
-            texts = []
-            metadatas = []
+            symbol_embeddings = [_symbol_embedding(sym) for sym in symbols]
 
-            for sym in symbols:
-                text, metadata = _symbol_embedding(sym)
-                texts.append(text)
-                metadatas.append(metadata)
+            if not force and supports_repair:
+                expected_texts = {
+                    sym.id: text
+                    for sym, (text, _metadata) in zip(
+                        symbols, symbol_embeddings, strict=True
+                    )
+                }
+                remove_orphaned = getattr(vs, "remove_orphaned_symbols", None)
+                if remove_orphaned is not None:
+                    remove_orphaned(set(expected_texts))
+                stale_ids = vs.get_stale_symbol_ids(expected_texts)
+                if not stale_ids:
+                    vs.mark_indexed()
+                    logger.info("Vector store embeddings are already current")
+                    return
+                selected = [
+                    (sym, embedding)
+                    for sym, embedding in zip(symbols, symbol_embeddings, strict=True)
+                    if sym.id in stale_ids
+                ]
+            else:
+                selected = list(zip(symbols, symbol_embeddings, strict=True))
+
+            texts = [embedding[0] for _symbol, embedding in selected]
+            metadatas = [embedding[1] for _symbol, embedding in selected]
 
             if texts:
                 if vs.add_texts(texts, metadatas):

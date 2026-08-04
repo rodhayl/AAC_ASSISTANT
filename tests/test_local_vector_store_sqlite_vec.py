@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
@@ -5,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.aac_app.models import Base, Symbol
+from src.aac_app.services import vector_utils
 from src.aac_app.services.local_vector_store import LocalVectorStore
 from src.api import deps
 from src.api.routers.symbols import _apply_symbol_search
@@ -16,6 +18,15 @@ class FakeEmbedder:
 
     def embed(self, documents):
         return [self.vectors[document] for document in documents]
+
+
+class RecordingEmbedder:
+    def __init__(self):
+        self.calls: list[list[str]] = []
+
+    def embed(self, documents):
+        self.calls.append(list(documents))
+        return [[1.0, 0.0, 0.0] for _ in documents]
 
 
 def make_store(tmp_path: Path, vectors: dict[str, list[float]]) -> LocalVectorStore:
@@ -94,6 +105,146 @@ def test_migration_removes_legacy_files_and_persists_completion(tmp_path):
         "symbol_embeddings",
         "symbol_embedding_metadata",
     }
+
+
+def test_startup_repairs_missing_vector_even_when_table_counts_match(tmp_path, monkeypatch):
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    session.add_all(
+        [
+            Symbol(id=1, label="cow", description="farm animal"),
+            Symbol(id=2, label="horse", description="farm animal"),
+        ]
+    )
+    session.commit()
+
+    initial = LocalVectorStore(
+        engine=engine,
+        embedder=FakeEmbedder(
+            {
+                "cow. farm animal. general": [1.0, 0.0, 0.0],
+                "horse. farm animal. general": [0.0, 1.0, 0.0],
+            }
+        ),
+        embedding_dim=3,
+    )
+    initial.add_texts(
+        ["cow. farm animal. general", "horse. farm animal. general"],
+        [
+            {
+                "id": 1,
+                "type": "symbol",
+                "label": "cow",
+                "text": "cow. farm animal. general",
+            },
+            {
+                "id": 2,
+                "type": "symbol",
+                "label": "horse",
+                "text": "horse. farm animal. general",
+            },
+        ],
+    )
+    initial.mark_indexed()
+
+    # Keep the vector count equal to metadata/symbol counts, but replace the
+    # affected row with an unrelated id. This mirrors a partial CRUD upsert.
+    with engine.begin() as connection:
+        connection.execute(
+            text("DELETE FROM symbol_embeddings WHERE rowid = :symbol_id"),
+            {"symbol_id": 1},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO symbol_embeddings(rowid, embedding) "
+                "VALUES (:symbol_id, :embedding)"
+            ),
+            {
+                "symbol_id": 999,
+                "embedding": initial._serialize_vector([0.0, 0.0, 1.0]),
+            },
+        )
+
+    recorder = RecordingEmbedder()
+    restarted = LocalVectorStore(engine=engine, embedder=recorder, embedding_dim=3)
+
+    @contextmanager
+    def session_context():
+        yield session
+
+    monkeypatch.setattr(vector_utils, "get_vector_store", lambda: restarted)
+    monkeypatch.setattr(vector_utils, "get_session", session_context)
+
+    vector_utils.index_all_symbols()
+
+    assert recorder.calls == [["cow. farm animal. general"]]
+    with engine.connect() as connection:
+        vector_ids = {
+            row[0]
+            for row in connection.execute(
+                text("SELECT rowid FROM symbol_embeddings")
+            ).fetchall()
+        }
+    assert vector_ids == {1, 2}
+    assert restarted.has_persisted_metadata()
+    session.close()
+
+
+def test_healthy_store_skips_model_load_and_reindex(tmp_path, monkeypatch):
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    session.add(Symbol(id=1, label="cow", description="farm animal"))
+    session.commit()
+
+    initial = LocalVectorStore(
+        engine=engine,
+        embedder=FakeEmbedder({"cow. farm animal. general": [1.0, 0.0, 0.0]}),
+        embedding_dim=3,
+    )
+    initial.add_texts(
+        ["cow. farm animal. general"],
+        [
+            {
+                "id": 1,
+                "type": "symbol",
+                "label": "cow",
+                "text": "cow. farm animal. general",
+            }
+        ],
+    )
+    initial.mark_indexed()
+
+    def fail_if_loaded(**_):
+        raise AssertionError("healthy vector stores must not load the model")
+
+    restarted = LocalVectorStore(
+        engine=engine,
+        embedder_factory=fail_if_loaded,
+        embedding_dim=3,
+    )
+
+    @contextmanager
+    def session_context():
+        yield session
+
+    monkeypatch.setattr(vector_utils, "get_vector_store", lambda: restarted)
+    monkeypatch.setattr(vector_utils, "get_session", session_context)
+
+    vector_utils.index_all_symbols()
+
+    assert not restarted._model_loaded
+    assert not restarted._load_attempted
+    session.close()
 
 
 def test_offline_embedding_failure_returns_empty_results(tmp_path):

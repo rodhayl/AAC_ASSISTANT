@@ -10,7 +10,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -286,14 +286,99 @@ class LocalVectorStore:
                     )
                 ).first()
                 if symbols_table:
-                    symbol_count = connection.execute(
-                        text("SELECT COUNT(*) FROM symbols")
-                    ).scalar_one()
-                    return metadata_count >= symbol_count
+                    symbol_ids = {
+                        int(row[0])
+                        for row in connection.execute(text("SELECT id FROM symbols"))
+                    }
+                    vector_ids = {
+                        int(row[0])
+                        for row in connection.execute(
+                            text(f"SELECT rowid FROM {VECTOR_TABLE}")
+                        )
+                    }
+                    metadata_ids = {
+                        int(row[0])
+                        for row in connection.execute(
+                            text(f"SELECT symbol_id FROM {METADATA_TABLE}")
+                        )
+                    }
+                    return symbol_ids == vector_ids == metadata_ids
                 return True
         except Exception as exc:
             logger.warning("Could not read vector-store metadata: {}", exc)
             return False
+
+    def get_stale_symbol_ids(self, expected_texts: Mapping[int, str]) -> set[int]:
+        """Return symbols whose vector or embedding text is missing or stale.
+
+        ``metadata.text`` is the persisted content marker for the embedding.
+        Comparing it with the current symbol text avoids loading fastembed
+        while still catching updates that leave row counts unchanged.
+        """
+        if not expected_texts:
+            return set()
+        if not self._ensure_schema():
+            return set(expected_texts)
+        try:
+            with self._get_engine().connect() as connection:
+                vector_ids = {
+                    int(row[0])
+                    for row in connection.execute(
+                        text(f"SELECT rowid FROM {VECTOR_TABLE}")
+                    )
+                }
+                metadata = {
+                    int(row[0]): row[1]
+                    for row in connection.execute(
+                        text(
+                            f"SELECT symbol_id, text FROM {METADATA_TABLE} "
+                            "WHERE type = 'symbol'"
+                        )
+                    )
+                }
+            return {
+                symbol_id
+                for symbol_id, expected_text in expected_texts.items()
+                if symbol_id not in vector_ids
+                or metadata.get(symbol_id) != expected_text
+            }
+        except Exception as exc:
+            logger.warning("Could not inspect stale symbol embeddings: {}", exc)
+            return set(expected_texts)
+
+    def remove_orphaned_symbols(self, symbol_ids: set[int]) -> None:
+        """Remove vector rows that no longer have a symbol record."""
+        if not self._ensure_schema():
+            return
+        try:
+            with self._get_engine().begin() as connection:
+                if symbol_ids:
+                    placeholders = ", ".join(
+                        f":symbol_{index}" for index in range(len(symbol_ids))
+                    )
+                    parameters = {
+                        f"symbol_{index}": symbol_id
+                        for index, symbol_id in enumerate(sorted(symbol_ids))
+                    }
+                    connection.execute(
+                        text(
+                            f"DELETE FROM {VECTOR_TABLE} "
+                            f"WHERE rowid NOT IN ({placeholders})"
+                        ),
+                        parameters,
+                    )
+                    connection.execute(
+                        text(
+                            f"DELETE FROM {METADATA_TABLE} "
+                            f"WHERE symbol_id NOT IN ({placeholders})"
+                        ),
+                        parameters,
+                    )
+                else:
+                    connection.execute(text(f"DELETE FROM {VECTOR_TABLE}"))
+                    connection.execute(text(f"DELETE FROM {METADATA_TABLE}"))
+        except Exception as exc:
+            logger.warning("Could not remove orphaned symbol embeddings: {}", exc)
 
     def mark_indexed(self) -> None:
         """Mark the current corpus as indexed after a successful batch."""
