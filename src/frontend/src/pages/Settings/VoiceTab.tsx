@@ -1,8 +1,8 @@
 import type { Dispatch, SetStateAction } from 'react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Circle, Volume2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import api from '../../lib/api';
+import api, { extractError } from '../../lib/api';
 import type { Preferences, VoiceStatus } from './types';
 
 interface VoiceTabProps {
@@ -15,19 +15,47 @@ interface VoiceTabProps {
 export function VoiceTab({ preferences, setPreferences, filteredVoices, showStatus }: VoiceTabProps) {
   const { t } = useTranslation('settings');
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
+  const [installingVoiceDeps, setInstallingVoiceDeps] = useState(false);
+  const [installMessage, setInstallMessage] = useState<string | null>(null);
+  const [installError, setInstallError] = useState<string | null>(null);
+
+  const fetchVoiceStatus = useCallback(async () => {
+    const res = await api.get('/providers/voice-status');
+    setVoiceStatus(res.data);
+  }, []);
 
   useEffect(() => {
     if (!showStatus) return;
-    const fetchVoiceStatus = async () => {
+    const loadVoiceStatus = async () => {
       try {
-        const res = await api.get('/providers/voice-status');
-        setVoiceStatus(res.data);
+        await fetchVoiceStatus();
       } catch (err) {
         console.error('Failed to fetch voice dependency status', err);
       }
     };
-    fetchVoiceStatus();
-  }, [showStatus]);
+    loadVoiceStatus();
+  }, [fetchVoiceStatus, showStatus]);
+
+  const installVoiceDependencies = async () => {
+    setInstallingVoiceDeps(true);
+    setInstallMessage(null);
+    setInstallError(null);
+    try {
+      const res = await api.post(
+        '/providers/voice/install',
+        {},
+        { timeout: 10 * 60 * 1000 }
+      );
+      setInstallMessage(res.data?.message || t('ai.installComplete', 'Voice dependencies installed.'));
+      await fetchVoiceStatus();
+    } catch (err) {
+      setInstallError(
+        extractError(err, t('ai.installFailed', 'Automatic voice installation failed.'))
+      );
+    } finally {
+      setInstallingVoiceDeps(false);
+    }
+  };
 
   const voiceStatusItems = [
     {
@@ -125,21 +153,46 @@ export function VoiceTab({ preferences, setPreferences, filteredVoices, showStat
                         {ok ? t('ai.installed') : t('ai.notInstalled')} {item.extra ? `(${item.extra})` : ''}
                       </div>
                       {!ok && <div className="text-xs text-amber-600 dark:text-amber-400">{item.help}</div>}
+                      {!ok && item.key === 'stt' && voiceStatus?.actions?.install_voice?.reason && (
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {voiceStatus.actions.install_voice.reason}
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <a
-                    href={item.link}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
-                    title={item.help}
-                  >
-                    {t('ai.howToInstall')}
-                  </a>
+                  {!ok && item.key === 'stt' && voiceStatus?.actions?.install_voice?.supported ? (
+                    <button
+                      type="button"
+                      onClick={installVoiceDependencies}
+                      disabled={installingVoiceDeps || voiceStatus.actions.install_voice.in_progress}
+                      className="rounded-md bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      title={item.help}
+                    >
+                      {installingVoiceDeps || voiceStatus.actions.install_voice.in_progress
+                        ? t('ai.installing', 'Installing...')
+                        : t('ai.installAutomatically', 'Install automatically')}
+                    </button>
+                  ) : (
+                    <a
+                      href={item.link}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                      title={item.help}
+                    >
+                      {t('ai.howToInstall')}
+                    </a>
+                  )}
                 </div>
               );
             })}
           </div>
+          {installMessage && (
+            <p className="mt-3 text-sm text-green-700 dark:text-green-400">{installMessage}</p>
+          )}
+          {installError && (
+            <p className="mt-3 text-sm text-red-700 dark:text-red-400">{installError}</p>
+          )}
         </div>}
       </div>
     </section>

@@ -162,6 +162,7 @@ def test_voice_status_reports_faster_whisper_and_browser_tts(monkeypatch, admin_
     from src.api.routers import providers
 
     monkeypatch.setattr(providers, "_module_available", lambda name: name == "faster_whisper")
+    monkeypatch.setattr(providers, "_voice_auto_install_support", lambda: (True, None))
 
     response = client.get(
         "/api/providers/voice-status",
@@ -181,6 +182,51 @@ def test_voice_status_reports_faster_whisper_and_browser_tts(monkeypatch, admin_
     assert data["tts"]["provider"] == "browser"
     assert data["tts"]["client_side"] is True
     assert data["tts"]["available"] is True
+    assert data["actions"]["install_voice"]["supported"] is True
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_voice_install_endpoint_short_circuits_when_already_installed(monkeypatch, admin_token):
+    from src.api.routers import providers
+
+    monkeypatch.setattr(providers, "_voice_auto_install_support", lambda: (True, None))
+    monkeypatch.setattr(providers, "_module_available", lambda name: name == "faster_whisper")
+
+    called = {"run": False}
+
+    def _unexpected_run(*args, **kwargs):
+        called["run"] = True
+        raise AssertionError("uv sync should not run when faster-whisper is already installed")
+
+    monkeypatch.setattr(providers.subprocess, "run", _unexpected_run)
+
+    response = client.post(
+        "/api/providers/voice/install",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["installed"] is True
+    assert called["run"] is False
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_voice_install_endpoint_reports_unsupported_environment(monkeypatch, admin_token):
+    from src.api.routers import providers
+
+    monkeypatch.setattr(
+        providers,
+        "_voice_auto_install_support",
+        lambda: (False, "Automatic voice installation is unavailable here."),
+    )
+
+    response = client.post(
+        "/api/providers/voice/install",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Automatic voice installation is unavailable here."
 
 
 @pytest.mark.voice

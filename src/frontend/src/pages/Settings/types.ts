@@ -38,10 +38,18 @@ export interface VoiceStatus {
   whisper?: { provider?: string; installed: boolean };
   ffmpeg?: { installed?: boolean; available?: boolean; required?: boolean };
   tts?: { provider?: string; client_side?: boolean; installed?: boolean };
+  actions?: {
+    install_voice?: {
+      supported: boolean;
+      in_progress?: boolean;
+      reason?: string | null;
+      platform?: string;
+    };
+  };
 }
 
 export interface ProviderHealth {
-  ollama?: boolean;
-  openrouter?: boolean;
-  lmstudio?: { available: boolean };
+  ollama?: { available: boolean; configured?: boolean; reason?: string | null };
+  openrouter?: { available: boolean; configured?: boolean; reason?: string | null };
+  lmstudio?: { available: boolean; configured?: boolean; reason?: string | null };
 }

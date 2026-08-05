@@ -104,6 +104,7 @@ class Settings(BaseSettings):
 
     BACKEND_HOST: str = "0.0.0.0"
     BACKEND_PORT: int = 8086
+    BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: int = 10
     FRONTEND_PORT: int = 5176
 
     DATABASE_NAME: str = "aac_assistant.db"

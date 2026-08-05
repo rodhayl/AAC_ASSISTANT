@@ -1,6 +1,8 @@
 import asyncio
 import json
 from datetime import UTC, datetime
+from pathlib import Path
+from urllib import request
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -24,6 +26,40 @@ from src.api.schemas import NotificationCreate
 router = APIRouter()
 
 
+# #region debug-point B:sse-helper
+def _debug_report(hypothesis_id: str, location: str, msg: str, data: dict | None = None) -> None:
+    _env_path = Path(".dbg/server-shutdown-hang.env")
+    _url = "http://127.0.0.1:7777/event"
+    _session_id = "server-shutdown-hang"
+    try:
+        if _env_path.is_file():
+            for line in _env_path.read_text(encoding="utf-8").splitlines():
+                if line.startswith("DEBUG_SERVER_URL="):
+                    _url = line.split("=", 1)[1].strip() or _url
+                elif line.startswith("DEBUG_SESSION_ID="):
+                    _session_id = line.split("=", 1)[1].strip() or _session_id
+        payload = json.dumps(
+            {
+                "sessionId": _session_id,
+                "runId": "pre-fix",
+                "hypothesisId": hypothesis_id,
+                "location": location,
+                "msg": f"[DEBUG] {msg}",
+                "data": data or {},
+                "ts": int(datetime.now(UTC).timestamp() * 1000),
+            }
+        ).encode()
+        request.urlopen(
+            request.Request(_url, data=payload, headers={"Content-Type": "application/json"}),
+            timeout=1,
+        ).read()
+    except Exception:
+        pass
+
+
+# #endregion
+
+
 @router.get("/api/notifications/stream")
 async def notifications_stream(token: str = None, db: Session = Depends(get_db)):
     # Authenticate
@@ -35,6 +71,9 @@ async def notifications_stream(token: str = None, db: Session = Depends(get_db))
 
     async def event_generator():
         queue = subscribe(user.id)
+        # #region debug-point B:sse-subscribed
+        _debug_report("B", "src/api/routers/notifications.py:event_generator:subscribe", "SSE subscriber connected", {"user_id": user.id})
+        # #endregion
         # Initial heartbeat to unblock clients. DB event delivery will be
         # connected before yielding so notifications cannot be missed.
         try:
@@ -47,6 +86,9 @@ async def notifications_stream(token: str = None, db: Session = Depends(get_db))
                 else:
                     yield f"data: {json.dumps(notification)}\n\n"
         finally:
+            # #region debug-point B:sse-finally
+            _debug_report("B", "src/api/routers/notifications.py:event_generator:finally", "SSE subscriber cleanup", {"user_id": user.id})
+            # #endregion
             unsubscribe(user.id, queue)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

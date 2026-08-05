@@ -102,13 +102,22 @@
     "temperature": "Temperature",
     "temperatureHelp": "Lower values are recommended for tutoring.",
     "health": "Check Provider Health",
-    "ollamaStatus": "Ollama:",
-    "openrouterStatus": "OpenRouter:",
+    "statusUp": "ok",
+    "statusDown": "down",
+    "providerReady": "{{provider}} is available and responding.",
+    "ollamaUnavailable": "Ollama is not reachable at the configured base URL.",
+    "lmstudioUnavailable": "LM Studio is not reachable at the configured base URL.",
+    "openrouterApiKeyMissing": "OpenRouter API key is missing.",
+    "openrouterUnavailable": "OpenRouter is configured but did not respond. Check the API key, account, or network.",
     "voiceDeps": "Voice / STT Dependencies",
     "voiceDepsHelp": "Speech-to-text is optional; browser text-to-speech is always available.",
     "installed": "Installed",
     "notInstalled": "Not installed",
     "howToInstall": "How to install",
+    "installAutomatically": "Install automatically",
+    "installing": "Installing...",
+    "installComplete": "Voice dependencies installed.",
+    "installFailed": "Automatic voice installation failed.",
     "dependencies": {
       "ffmpeg": {
         "label": "ffmpeg (optional)",
@@ -116,7 +125,7 @@
       },
       "fasterWhisper": {
         "label": "faster-whisper (optional)",
-        "help": "Run uv sync --extra voice --group dev to enable voice answers"
+        "help": "Use the button below on Windows source checkouts, or run uv sync --extra voice manually"
       },
       "browserTts": {
         "label": "Browser text-to-speech",

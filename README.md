@@ -35,8 +35,10 @@ From the repository root, the recommended Windows setup is:
 install_dependencies.bat
 ```
 
-This runs `uv sync`, creates or migrates `.env`, repairs the JWT secret, and
-installs/builds the frontend. To include optional speech-to-text support:
+On Windows source checkouts this now attempts to bootstrap `uv` automatically
+when it is missing, then runs `uv sync`, creates or migrates `.env`, repairs
+the JWT secret, and installs/builds the frontend. To include optional
+speech-to-text support:
 
 ```bat
 install_dependencies.bat voice
@@ -69,8 +71,10 @@ start.bat
 
 The default launcher runs one uvicorn process on `http://127.0.0.1:8086` and
 serves the API, built React application, uploads, and API docs from that port.
-If the frontend build is missing and Node.js is available, the launcher builds
-it automatically. On first run, the default bootstrap administrator is:
+If `uv` is missing on Windows, `start.bat` tries to install it automatically
+before launching. If the frontend build is missing and Node.js is available,
+the launcher builds it automatically. On first run, the default bootstrap
+administrator is:
 
 - Username: `admin1`
 - Password: `Admin123`
@@ -150,6 +154,10 @@ Install the extra in a source checkout:
 ```powershell
 uv sync --extra voice
 ```
+
+Windows administrators can also install the missing `faster-whisper` extra from
+the in-app Settings -> Voice panel with one click when running from a source
+checkout.
 
 For development and tests, use both groups:
 

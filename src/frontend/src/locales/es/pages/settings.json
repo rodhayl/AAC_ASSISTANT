@@ -102,13 +102,22 @@
     "temperature": "Temperatura",
     "temperatureHelp": "Valores bajos hacen respuestas más enfocadas y predecibles.",
     "health": "Comprobar estado",
-    "ollamaStatus": "Ollama:",
-    "openrouterStatus": "OpenRouter:",
+    "statusUp": "ok",
+    "statusDown": "sin conexión",
+    "providerReady": "{{provider}} está disponible y responde correctamente.",
+    "ollamaUnavailable": "Ollama no está accesible en la URL base configurada.",
+    "lmstudioUnavailable": "LM Studio no está accesible en la URL base configurada.",
+    "openrouterApiKeyMissing": "Falta la clave API de OpenRouter.",
+    "openrouterUnavailable": "OpenRouter está configurado pero no respondió. Revisa la clave API, la cuenta o la red.",
     "voiceDeps": "Dependencias de Voz / STT",
     "voiceDepsHelp": "La transcripción es opcional; la síntesis de voz del navegador siempre está disponible.",
     "installed": "Instalado",
     "notInstalled": "No instalado",
     "howToInstall": "Cómo instalar",
+    "installAutomatically": "Instalar automáticamente",
+    "installing": "Instalando...",
+    "installComplete": "Las dependencias de voz se instalaron correctamente.",
+    "installFailed": "La instalación automática de voz falló.",
     "dependencies": {
       "ffmpeg": {
         "label": "ffmpeg (opcional)",
@@ -116,7 +125,7 @@
       },
       "fasterWhisper": {
         "label": "faster-whisper (opcional)",
-        "help": "Ejecuta uv sync --extra voice --group dev para activar las respuestas de voz"
+        "help": "Usa el botón inferior en un checkout fuente de Windows, o ejecuta uv sync --extra voice manualmente"
       },
       "browserTts": {
         "label": "Texto a voz del navegador",

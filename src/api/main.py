@@ -1,6 +1,9 @@
 import asyncio
+import json
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
+from urllib import request
 
 import uvicorn
 from fastapi import FastAPI
@@ -42,6 +45,40 @@ from src.api.routers import config as config_router
 from src.api.spa import SPAStaticFiles, resolve_frontend_directory
 
 
+# #region debug-point A:lifespan-helper
+def _debug_report(hypothesis_id: str, location: str, msg: str, data: dict | None = None) -> None:
+    _env_path = Path(".dbg/server-shutdown-hang.env")
+    _url = "http://127.0.0.1:7777/event"
+    _session_id = "server-shutdown-hang"
+    try:
+        if _env_path.is_file():
+            for line in _env_path.read_text(encoding="utf-8").splitlines():
+                if line.startswith("DEBUG_SERVER_URL="):
+                    _url = line.split("=", 1)[1].strip() or _url
+                elif line.startswith("DEBUG_SESSION_ID="):
+                    _session_id = line.split("=", 1)[1].strip() or _session_id
+        payload = json.dumps(
+            {
+                "sessionId": _session_id,
+                "runId": "pre-fix",
+                "hypothesisId": hypothesis_id,
+                "location": location,
+                "msg": f"[DEBUG] {msg}",
+                "data": data or {},
+                "ts": int(time.time() * 1000),
+            }
+        ).encode()
+        request.urlopen(
+            request.Request(_url, data=payload, headers={"Content-Type": "application/json"}),
+            timeout=1,
+        ).read()
+    except Exception:
+        pass
+
+
+# #endregion
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize services on startup"""
@@ -67,23 +104,74 @@ async def lifespan(app: FastAPI):
     # need a provider will construct it on demand if warmup hasn't yet.
     async def warmup_in_background() -> None:
         try:
+            # #region debug-point A:warmup-start
+            _debug_report("A", "src/api/main.py:warmup_in_background:start", "Warmup background task started")
+            # #endregion
             await asyncio.to_thread(warmup_providers, 30.0)
+            # #region debug-point A:warmup-finish
+            _debug_report("A", "src/api/main.py:warmup_in_background:finish", "Warmup background task finished")
+            # #endregion
+        except asyncio.CancelledError:
+            # #region debug-point A:warmup-cancelled
+            _debug_report("A", "src/api/main.py:warmup_in_background:cancelled", "Warmup background task cancelled")
+            # #endregion
+            raise
         except Exception as e:
             logger.error(f"Provider warmup failed: {e}")
             logger.exception("Warmup traceback:")
+            # #region debug-point A:warmup-error
+            _debug_report("A", "src/api/main.py:warmup_in_background:error", "Warmup background task failed", {"error": str(e)})
+            # #endregion
 
-    asyncio.create_task(warmup_in_background())
+    warmup_task = asyncio.create_task(warmup_in_background(), name="provider-warmup")
 
     # Index symbols in the background.  The embedding model may need a
     # network download on first run, so it must not block health or keyword
     # search when the machine is offline.
     async def index_symbols_in_background() -> None:
         try:
+            # #region debug-point A:index-start
+            _debug_report("A", "src/api/main.py:index_symbols_in_background:start", "Index background task started")
+            # #endregion
             await asyncio.to_thread(index_all_symbols)
+            # #region debug-point A:index-finish
+            _debug_report("A", "src/api/main.py:index_symbols_in_background:finish", "Index background task finished")
+            # #endregion
+        except asyncio.CancelledError:
+            # #region debug-point A:index-cancelled
+            _debug_report("A", "src/api/main.py:index_symbols_in_background:cancelled", "Index background task cancelled")
+            # #endregion
+            raise
         except Exception as e:
             logger.error(f"Symbol indexing failed: {e}")
+            # #region debug-point A:index-error
+            _debug_report("A", "src/api/main.py:index_symbols_in_background:error", "Index background task failed", {"error": str(e)})
+            # #endregion
 
-    asyncio.create_task(index_symbols_in_background())
+    index_task = asyncio.create_task(index_symbols_in_background(), name="symbol-indexing")
+
+    # #region debug-point A:task-created
+    _debug_report(
+        "A",
+        "src/api/main.py:lifespan:tasks-created",
+        "Background startup tasks created",
+        {"tasks": [warmup_task.get_name(), index_task.get_name()]},
+    )
+    # #endregion
+
+    for task in (warmup_task, index_task):
+        task.add_done_callback(
+            lambda finished_task: _debug_report(
+                "A",
+                "src/api/main.py:lifespan:task-done",
+                "Background task completed",
+                {
+                    "task": finished_task.get_name(),
+                    "cancelled": finished_task.cancelled(),
+                    "exception": str(finished_task.exception()) if not finished_task.cancelled() and finished_task.exception() else None,
+                },
+            )
+        )
 
     startup_time_ms = (time.perf_counter() - startup_started) * 1000
     logger.info(f"Startup timing: initialization completed in {startup_time_ms:.0f}ms")
@@ -94,10 +182,16 @@ async def lifespan(app: FastAPI):
         f"Serving URL: http://{display_host}:{config.BACKEND_PORT}"
     )
     logger.info("Server ready to accept requests")
+    # #region debug-point A:lifespan-ready
+    _debug_report("A", "src/api/main.py:lifespan:ready", "Lifespan startup reached yield")
+    # #endregion
 
     yield
 
     logger.info("Shutting down AAC Assistant API...")
+    # #region debug-point C:lifespan-shutdown
+    _debug_report("C", "src/api/main.py:lifespan:shutdown", "Lifespan shutdown entered")
+    # #endregion
 
 
 # Initialize FastAPI app
@@ -248,4 +342,5 @@ if __name__ == "__main__":
         "src.api.main:app",
         host=config.BACKEND_HOST,
         port=config.BACKEND_PORT,
+        timeout_graceful_shutdown=config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
     )

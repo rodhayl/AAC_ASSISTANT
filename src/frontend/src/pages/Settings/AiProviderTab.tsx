@@ -60,6 +60,38 @@ export function AiProviderTab() {
   const currentMaxTokens = aiOverride.max_tokens ?? aiSettings?.max_tokens ?? 1024;
   const currentTemperature = aiOverride.temperature ?? aiSettings?.temperature ?? 0.5;
   const visibleAiSettings = aiSettings ?? readOnlyAiSettings;
+  const selectedHealth =
+    currentAiProvider === 'ollama'
+      ? health?.ollama
+      : currentAiProvider === 'openrouter'
+        ? health?.openrouter
+        : health?.lmstudio;
+  const selectedProviderLabel =
+    currentAiProvider === 'ollama'
+      ? t('ai.ollama')
+      : currentAiProvider === 'openrouter'
+        ? t('ai.openrouter')
+        : 'LM Studio';
+
+  const selectedProviderStatusMessage = (() => {
+    if (!selectedHealth) return null;
+    if (selectedHealth.available) {
+      return t('ai.providerReady', `${selectedProviderLabel} is available and responding.`);
+    }
+    if (currentAiProvider === 'openrouter') {
+      if (selectedHealth.reason === 'api_key_missing' || !currentOpenRouterApiKey.trim()) {
+        return t('ai.openrouterApiKeyMissing', 'OpenRouter API key is missing.');
+      }
+      return t(
+        'ai.openrouterUnavailable',
+        'OpenRouter is configured but did not respond. Check the API key, account, or network.'
+      );
+    }
+    if (currentAiProvider === 'lmstudio') {
+      return t('ai.lmstudioUnavailable', 'LM Studio is not reachable at the configured base URL.');
+    }
+    return t('ai.ollamaUnavailable', 'Ollama is not reachable at the configured base URL.');
+  })();
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -266,23 +298,28 @@ export function AiProviderTab() {
           <button onClick={checkHealth} className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg">
             {t('ai.health')}
           </button>
-          {health && (
-            <span className="text-xs text-gray-600">
-              {t('ai.ollamaStatus')}{' '}
-              <span className={health.ollama ? 'text-green-600' : 'text-red-600'}>
-                {health.ollama ? 'ok' : 'down'}
-              </span>{' '}
-              | {t('ai.openrouterStatus')}{' '}
-              <span className={health.openrouter ? 'text-green-600' : 'text-red-600'}>
-                {health.openrouter ? 'ok' : 'down'}
-              </span>{' '}
-              | LM Studio:{' '}
-              <span className={health.lmstudio?.available ? 'text-green-600' : 'text-red-600'}>
-                {health.lmstudio?.available ? 'ok' : 'down'}
-              </span>
-            </span>
-          )}
         </div>
+        {selectedHealth && (
+          <div
+            className={`rounded-lg border px-4 py-3 text-sm ${
+              selectedHealth.available
+                ? 'border-green-200 bg-green-50 text-green-800'
+                : 'border-red-200 bg-red-50 text-red-800'
+            }`}
+          >
+            <div className="font-medium">
+              {selectedProviderLabel}:{' '}
+              <span className={selectedHealth.available ? 'text-green-700' : 'text-red-700'}>
+                {selectedHealth.available ? t('ai.statusUp', 'ok') : t('ai.statusDown', 'down')}
+              </span>
+            </div>
+            {selectedProviderStatusMessage && (
+              <div className="mt-1 text-xs">
+                {selectedProviderStatusMessage}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex justify-end pt-6 border-t border-gray-200">
           <button

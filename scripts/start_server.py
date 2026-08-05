@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 # Make direct execution work from the repository root:
@@ -75,7 +79,69 @@ def _server_command() -> list[str]:
         str(config.BACKEND_HOST),
         "--port",
         str(config.BACKEND_PORT),
+        "--timeout-graceful-shutdown",
+        str(config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS),
     ]
+
+
+def _process_creationflags() -> int:
+    """Use a separate process group on Windows so Ctrl+C handling is predictable."""
+    if os.name == "nt":
+        return subprocess.CREATE_NEW_PROCESS_GROUP
+    return 0
+
+
+def _stop_process_gracefully(process: subprocess.Popen[bytes] | subprocess.Popen[str], *, timeout: int) -> None:
+    """Ask a child process to stop, then escalate if it does not exit."""
+    if process.poll() is not None:
+        return
+
+    if os.name == "nt":
+        process.send_signal(signal.CTRL_BREAK_EVENT)
+    else:
+        process.terminate()
+
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+
+
+def _wait_for_process_with_signal_handling(
+    process: subprocess.Popen[bytes] | subprocess.Popen[str],
+    *,
+    timeout: int,
+) -> int:
+    """Wait for a child while handling Ctrl+C / Ctrl+Break ourselves."""
+    shutdown_requested = threading.Event()
+    previous_sigint = signal.getsignal(signal.SIGINT)
+    previous_sigbreak = signal.getsignal(signal.SIGBREAK) if hasattr(signal, "SIGBREAK") else None
+
+    def _request_shutdown(signum, frame):  # type: ignore[unused-argument]
+        shutdown_requested.set()
+
+    signal.signal(signal.SIGINT, _request_shutdown)
+    if hasattr(signal, "SIGBREAK"):
+        signal.signal(signal.SIGBREAK, _request_shutdown)
+
+    try:
+        while True:
+            returncode = process.poll()
+            if returncode is not None:
+                return returncode
+            if shutdown_requested.is_set():
+                _stop_process_gracefully(process, timeout=timeout)
+                return 0
+            time.sleep(0.1)
+    finally:
+        signal.signal(signal.SIGINT, previous_sigint)
+        if hasattr(signal, "SIGBREAK") and previous_sigbreak is not None:
+            signal.signal(signal.SIGBREAK, previous_sigbreak)
 
 
 def run_production() -> int:
@@ -95,8 +161,20 @@ def run_production() -> int:
         f"Starting AAC Assistant on http://127.0.0.1:{config.BACKEND_PORT} "
         f"(bind {config.BACKEND_HOST}:{config.BACKEND_PORT})"
     )
-    completed = subprocess.run(_server_command(), cwd=config.PROJECT_ROOT)
-    return completed.returncode
+    backend = subprocess.Popen(
+        _server_command(),
+        cwd=config.PROJECT_ROOT,
+        creationflags=_process_creationflags(),
+    )
+    try:
+        return _wait_for_process_with_signal_handling(
+            backend,
+            timeout=max(config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS + 2, 5),
+        )
+    finally:
+        if backend.poll() is None:
+            backend.kill()
+            backend.wait(timeout=5)
 
 
 def run_development() -> int:
@@ -115,7 +193,11 @@ def run_development() -> int:
         return 1
 
     ensure_bootstrap_admin()
-    backend = subprocess.Popen(_server_command(), cwd=config.PROJECT_ROOT)
+    backend = subprocess.Popen(
+        _server_command(),
+        cwd=config.PROJECT_ROOT,
+        creationflags=_process_creationflags(),
+    )
     frontend_dir = config.PROJECT_ROOT / "src" / "frontend"
     frontend = subprocess.Popen(
         [
@@ -132,13 +214,20 @@ def run_development() -> int:
     )
 
     try:
-        return backend.wait()
-    except KeyboardInterrupt:
-        return 0
+        return _wait_for_process_with_signal_handling(
+            backend,
+            timeout=max(config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS + 2, 5),
+        )
     finally:
         for process in (frontend, backend):
             if process.poll() is None:
-                process.terminate()
+                if process is backend:
+                    _stop_process_gracefully(
+                        process,
+                        timeout=max(config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS + 2, 5),
+                    )
+                else:
+                    process.terminate()
         for process in (frontend, backend):
             try:
                 process.wait(timeout=5)
