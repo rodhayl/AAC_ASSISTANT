@@ -1,57 +1,5 @@
-from functools import lru_cache
-
-from loguru import logger
-
 from src.aac_app.models import BoardSymbol, CommunicationBoard
-
-_GoogleTranslator = None
-_translation_import_attempted = False
-_translation_dependency_warning_emitted = False
-
-
-def _load_translation_dependency():
-    """Import the translator lazily only when a translated board is requested."""
-    global _GoogleTranslator, _translation_import_attempted
-    if _translation_import_attempted:
-        return _GoogleTranslator
-    _translation_import_attempted = True
-    try:
-        from deep_translator import GoogleTranslator
-
-        _GoogleTranslator = GoogleTranslator
-    except Exception:  # pragma: no cover - keep board loads resilient
-        _GoogleTranslator = None
-    return _GoogleTranslator
-
-
-@lru_cache(maxsize=16)
-def _build_symbol_translator(target_lang: str):
-    translator_class = _load_translation_dependency()
-    if translator_class is None:
-        return None
-    return translator_class(source="auto", target=target_lang)
-
-
-def _translate_symbol_text(text: str | None, target_lang: str | None) -> str | None:
-    """Best-effort symbol translation that safely degrades when dependency is absent."""
-    global _translation_dependency_warning_emitted
-    if not text or not target_lang:
-        return text
-
-    translator = _build_symbol_translator(target_lang)
-    if translator is None:
-        if not _translation_dependency_warning_emitted:
-            logger.warning(
-                "deep-translator not installed; returning original symbol text without runtime translation."
-            )
-            _translation_dependency_warning_emitted = True
-        return text
-
-    try:
-        return translator.translate(text)
-    except Exception as e:
-        logger.warning(f"Translation failed: {e}")
-        return text
+from src.aac_app.services.runtime_translation import translate_text as _translate_symbol_text
 
 
 def serialize_symbol(
@@ -132,4 +80,54 @@ def serialize_board(b: CommunicationBoard, target_lang: str = None):
         "symbols": [
             serialize_symbol(bs, target_lang, is_learning) for bs in (b.symbols or [])
         ],
+    }
+
+
+def serialize_export_board(board: CommunicationBoard) -> dict:
+    """Return the stable, minimal board shape used by data exports.
+
+    The API and export serializers intentionally have different contracts, but
+    they share the canonical placement/symbol serializer above. Keeping the
+    export projection here prevents fields from drifting between endpoints.
+    """
+    serialized = serialize_board(board)
+    return {
+        "id": serialized["id"],
+        "name": serialized["name"],
+        "description": serialized["description"],
+        "category": serialized["category"],
+        "is_public": serialized["is_public"],
+        "is_template": serialized["is_template"],
+        "grid_rows": serialized["grid_rows"],
+        "grid_cols": serialized["grid_cols"],
+        "symbols": [
+            {
+                "id": symbol["id"],
+                "symbol_id": symbol["symbol_id"],
+                "position_x": symbol["position_x"],
+                "position_y": symbol["position_y"],
+                "size": symbol["size"],
+                "is_visible": symbol["is_visible"],
+                "custom_text": symbol["custom_text"],
+                "symbol": (
+                    {
+                        key: symbol["symbol"][key]
+                        for key in (
+                            "id",
+                            "label",
+                            "description",
+                            "category",
+                            "image_path",
+                            "keywords",
+                            "language",
+                        )
+                    }
+                    if symbol["symbol"] is not None
+                    else None
+                ),
+            }
+            for symbol in serialized["symbols"]
+        ],
+        "created_at": board.created_at.isoformat() if board.created_at else None,
+        "updated_at": board.updated_at.isoformat() if board.updated_at else None,
     }

@@ -4,10 +4,13 @@ import os
 import re
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(__file__))
+import contextlib
+
 from cdp_harness import CDP, get_first_page_target  # noqa: E402
 
 
@@ -148,10 +151,8 @@ async def offline_mode_create_and_sync_board(cdp: CDP):
     await cdp.goto("http://localhost:8086/boards")
     await cdp.wait_for_js("document.body && document.body.innerText.length > 0", timeout_s=10)
     # Create board (best-effort: click create button)
-    try:
+    with contextlib.suppress(Exception):
         await cdp.click_text(r"(Crear|Nuevo).*tablero", tag="button")
-    except Exception:
-        pass
     await asyncio.sleep(1)
     await cdp.emulate_offline(False)
     await asyncio.sleep(2)

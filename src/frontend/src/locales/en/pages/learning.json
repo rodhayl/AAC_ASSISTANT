@@ -5,6 +5,9 @@
   "hideHistory": "Hide History",
   "textChat": "Text chat",
   "symbolFirst": "Symbol-first",
+  "modeLabel": "Mode",
+  "difficultyLabel": "Difficulty",
+  "difficultyHelp": "Choose a fixed level or let the AI adapt",
   "voiceOn": "Voice On",
   "boardsTopics": "Boards & Topics",
   "startStudy": "Start study",
@@ -103,5 +106,23 @@
     "goodMessage": "Good message! Let's keep going together!",
     "interesting": "That's interesting! Tell me more."
   },
-  "fallbackSummary": "Great work completing your {{topic}} session! You answered {{questions}} questions and got {{correct}} correct."
+  "fallbackSummary": "Great work completing your {{topic}} session! You answered {{questions}} questions and got {{correct}} correct.",
+  "endSession": "End Session",
+  "endSessionConfirmTitle": "End this session?",
+  "endSessionConfirm": "Your progress will be saved and a summary will appear.",
+  "cancel": "Cancel",
+  "summaryTitle": "Session Summary",
+  "summarySubtitle": "Great job — here is how you did.",
+  "questionsAnswered": "Answered",
+  "correctAnswers": "Correct",
+  "level": "Level",
+  "correctAnswer": "Correct!",
+  "notQuite": "Not quite — the correct answer is \"{{answer}}\"",
+  "answerReceived": "Answer received",
+  "close": "Close",
+  "difficulty": {
+    "basic": "Basic",
+    "intermediate": "Intermediate",
+    "advanced": "Advanced"
+  }
 }

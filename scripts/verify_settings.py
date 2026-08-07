@@ -1,48 +1,24 @@
-import os
-import sys
-
 import requests
 
-# Configuration
-BASE_URL = os.environ.get("AAC_BASE_URL", "http://localhost:8086/api").rstrip("/")
-USERNAME = os.environ.get("AAC_VERIFY_USERNAME", "").strip()
-PASSWORD = os.environ.get("AAC_VERIFY_PASSWORD", "").strip()
-
-if not USERNAME or not PASSWORD:
-    raise SystemExit(
-        "Set AAC_VERIFY_USERNAME and AAC_VERIFY_PASSWORD before running this script."
-    )
-
-
-def login():
-    response = requests.post(
-        f"{BASE_URL}/auth/token", data={"username": USERNAME, "password": PASSWORD}
-    )
-    if response.status_code != 200:
-        print(f"Login failed: {response.text}")
-        sys.exit(1)
-    return response.json()["access_token"]
+try:
+    from .verify_common import BASE_URL, auth_headers, ensure_ok, login
+except ImportError:  # Direct ``python scripts/verify_settings.py`` execution.
+    from verify_common import BASE_URL, auth_headers, ensure_ok, login
 
 
 def get_settings(token):
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = auth_headers(token)
     response = requests.get(f"{BASE_URL}/auth/preferences", headers=headers)
-    if response.status_code != 200:
-        print(f"Get settings failed: {response.text}")
-        sys.exit(1)
-    return response.json()
+    return ensure_ok(response, "Get settings")
 
 
 def update_settings(token, dwell_time):
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = auth_headers(token)
     payload = {"dwell_time": dwell_time}
     response = requests.put(
         f"{BASE_URL}/auth/preferences", headers=headers, json=payload
     )
-    if response.status_code != 200:
-        print(f"Update settings failed: {response.text}")
-        sys.exit(1)
-    return response.json()
+    return ensure_ok(response, "Update settings")
 
 
 def main():

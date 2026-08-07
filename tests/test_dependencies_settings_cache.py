@@ -69,3 +69,34 @@ def test_ai_settings_put_invalidates_cached_setting(
 
     assert response.status_code == 200
     assert settings_deps.get_setting_value("ollama_model") == "after"
+
+
+def test_transient_failure_does_not_cache_default(test_db_session, monkeypatch):
+    """A failed read must return the fallback without poisoning the cache.
+
+    Regression: a transient query error (e.g. the provider-warmup race) used to
+    cache the *default* value for the whole process lifetime, permanently
+    hiding a configured value stored in the database.
+    """
+    test_db_session.add(AppSettings(setting_key="stt_model", setting_value="small"))
+    test_db_session.commit()
+
+    calls = {"count": 0}
+
+    def flaky_session():
+        @contextmanager
+        def use_test_session():
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise RuntimeError("deque mutated during iteration")
+            yield test_db_session
+
+        return use_test_session()
+
+    monkeypatch.setattr(settings_deps, "get_session", flaky_session)
+    settings_deps.clear_settings_cache()
+
+    # First call fails -> default is returned but must NOT be cached.
+    assert settings_deps.get_setting_value("stt_model", "tiny") == "tiny"
+    # Second call retries the query and reaches the configured value.
+    assert settings_deps.get_setting_value("stt_model", "tiny") == "small"

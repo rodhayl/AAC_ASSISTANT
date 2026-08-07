@@ -35,6 +35,7 @@ def db_session():
 
     yield session
     session.close()
+    engine.dispose()
 
 
 def test_default_users_exist_and_can_login(monkeypatch):
@@ -73,6 +74,7 @@ def test_default_users_exist_and_can_login(monkeypatch):
         ), f"Password for {username} is incorrect"
 
     session.close()
+    engine.dispose()
 
 
 def test_database_initialization_idempotency():
@@ -118,3 +120,4 @@ def test_database_initialization_idempotency():
     assert session.query(Symbol).count() == 5
     assert session.query(Achievement).count() == 3
     session.close()
+    engine.dispose()

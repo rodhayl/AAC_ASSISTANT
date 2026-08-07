@@ -12,15 +12,18 @@ vi.mock('../src/store/authStore', () => {
       settings: { voice_mode_enabled: false },
     },
   };
-  const useAuthStore = Object.assign(() => state, {
-    getState: () => state,
-  });
+  const useAuthStore = Object.assign(
+    (selector?: (value: typeof state) => unknown) => selector ? selector(state) : state,
+    { getState: () => state },
+  );
   return { useAuthStore };
 });
 
 vi.mock('../src/store/boardStore', () => {
   const fetchBoards = vi.fn();
-  const useBoardStore = () => ({ fetchBoards, boards: [] });
+  const state = { fetchBoards, boards: [] };
+  const useBoardStore = (selector?: (value: typeof state) => unknown) =>
+    selector ? selector(state) : state;
   return { useBoardStore };
 });
 

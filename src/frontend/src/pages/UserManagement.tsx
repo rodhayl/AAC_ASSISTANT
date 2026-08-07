@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
 
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
+import { ResetPasswordModal } from '../components/common/ResetPasswordModal'
 import api, { extractError } from '../lib/api'
 import type { User } from '../types'
 import { useAuthStore } from '../store/authStore'
@@ -14,7 +15,7 @@ interface UserManagementPageProps {
 }
 
 export function UserManagementPage({ role }: UserManagementPageProps) {
-  const { user } = useAuthStore()
+  const user = useAuthStore((state) => state.user)
   const navigate = useNavigate()
   const namespace = role === 'teacher' ? 'teachers' : 'admins'
   const { t } = useTranslation([namespace, 'settings'])
@@ -311,22 +312,16 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       )}
 
       {resetPasswordModalOpen && resetPasswordUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" role="dialog" aria-modal="true">
-          <div className="glass-card w-full max-w-md p-6">
-            <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">{t('resetPasswordTitle', { name: resetPasswordUser.display_name })}</h3>
-            {error && <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/30 dark:text-red-400">{error}</div>}
-            <form onSubmit={handleResetPassword} className="space-y-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {t('labels.newPassword')}
-                <input type="password" value={resetPasswordValue} onChange={event => setResetPasswordValue(event.target.value)} required minLength={8} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100" placeholder={t('labels.passwordHint')} />
-              </label>
-              <div className="mt-6 flex justify-end gap-3">
-                <button type="button" onClick={() => { setResetPasswordModalOpen(false); setResetPasswordValue(''); setResetPasswordUser(null); setError(null) }} disabled={resetPasswordLoading} className="rounded-lg px-4 py-2 text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700">{t('cancel')}</button>
-                <button type="submit" disabled={resetPasswordLoading} className="rounded-lg bg-amber-600 px-4 py-2 text-white hover:bg-amber-700 disabled:opacity-50">{resetPasswordLoading ? t('security.saving', { ns: 'settings' }) : t('actions.resetPassword')}</button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <ResetPasswordModal
+          user={resetPasswordUser}
+          value={resetPasswordValue}
+          loading={resetPasswordLoading}
+          error={error}
+          t={t}
+          onChange={setResetPasswordValue}
+          onClose={() => { setResetPasswordModalOpen(false); setResetPasswordValue(''); setResetPasswordUser(null); setError(null) }}
+          onSubmit={handleResetPassword}
+        />
       )}
 
       <ConfirmDialog

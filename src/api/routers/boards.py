@@ -8,14 +8,17 @@ from src.aac_app.models import BoardAssignment, BoardSymbol, CommunicationBoard,
 # Compatibility exports for callers that patch the pre-split module paths.
 from src.aac_app.providers.ollama_provider import OllamaProvider  # noqa: F401
 from src.aac_app.services.board_generation_service import BoardGenerationService  # noqa: F401
+from src.aac_app.services.runtime_translation import normalize_language_code
 from src.aac_app.services.translation_service import get_translation_service
 from src.api import schemas
-from src.api.deps import get_current_active_user, get_db, get_text
-from src.api.routers.board_helpers import (
-    get_playable_count,
-    serialize_board,
-    serialize_symbol,
+from src.api.deps import (
+    get_board_or_404,
+    get_current_active_user,
+    get_db,
+    get_text,
+    require_board_owner_or_admin,
 )
+from src.api.routers.board_helpers import get_playable_count, serialize_board  # noqa: F401
 
 router = APIRouter()
 
@@ -74,29 +77,7 @@ def get_boards(
 
         boards = query.offset(skip).limit(limit).all()
 
-        result = [
-            {
-                "id": b.id,
-                "user_id": b.user_id,
-                "name": b.name,
-                "description": b.description,
-                "category": b.category,
-                "is_public": b.is_public,
-                "is_template": b.is_template,
-                "created_at": b.created_at,
-                "updated_at": b.updated_at,
-                "grid_rows": b.grid_rows,
-                "grid_cols": b.grid_cols,
-                "ai_enabled": b.ai_enabled,
-                "ai_provider": b.ai_provider,
-                "ai_model": b.ai_model,
-                "locale": getattr(b, "locale", "en"),
-                "is_language_learning": getattr(b, "is_language_learning", False),
-                "symbols": [serialize_symbol(bs) for bs in (b.symbols or [])],
-                "playable_symbols_count": get_playable_count(b),
-            }
-            for b in boards
-        ]
+        result = [serialize_board(board) for board in boards]
 
         return result
     except Exception as e:
@@ -157,10 +138,10 @@ def get_board(
     if not skip_translation:
         # Resolve target language
         ts = get_translation_service()
-        target_lang = ts.resolve_language(current_user)
+        target_lang = normalize_language_code(ts.resolve_language(current_user))
 
         # If target lang is same as board locale (or 'en'), skip translation optimization
-        board_locale = getattr(board, "locale", "en")
+        board_locale = normalize_language_code(getattr(board, "locale", "en"))
         if target_lang == board_locale or target_lang == "en" and board_locale is None:
             target_lang = None
 
@@ -175,23 +156,8 @@ def update_board(
     db: Session = Depends(get_db),
 ):
     """Update a board"""
-    db_board = (
-        db.query(CommunicationBoard).filter(CommunicationBoard.id == board_id).first()
-    )
-    if not db_board:
-        raise HTTPException(
-            status_code=404,
-            detail=get_text(user=current_user, key="errors.boards.boardNotFound"),
-        )
-
-    # Permission check
-    if current_user.user_type != "admin" and db_board.user_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail=get_text(
-                user=current_user, key="errors.boards.unauthorizedModifyBoard"
-            ),
-        )
+    db_board = get_board_or_404(db, board_id, current_user)
+    require_board_owner_or_admin(db_board, current_user)
 
     # Update fields
     update_data = board_update.model_dump(exclude_unset=True)
@@ -210,23 +176,8 @@ def delete_board(
     db: Session = Depends(get_db),
 ):
     """Delete a board"""
-    db_board = (
-        db.query(CommunicationBoard).filter(CommunicationBoard.id == board_id).first()
-    )
-    if not db_board:
-        raise HTTPException(
-            status_code=404,
-            detail=get_text(user=current_user, key="errors.boards.boardNotFound"),
-        )
-
-    # Permission check
-    if current_user.user_type != "admin" and db_board.user_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail=get_text(
-                user=current_user, key="errors.boards.unauthorizedModifyBoard"
-            ),
-        )
+    db_board = get_board_or_404(db, board_id, current_user)
+    require_board_owner_or_admin(db_board, current_user)
 
     # Delete associated symbols (cascade should handle this but let's be safe if needed,
     # but currently BoardSymbol is the link. Cascade delete on DB level usually handles it if configured)

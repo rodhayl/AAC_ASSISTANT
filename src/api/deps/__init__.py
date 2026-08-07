@@ -1,5 +1,11 @@
 """FastAPI dependency providers grouped by responsibility."""
 
+from .access import (
+    get_board_or_404,
+    get_learning_session_or_404,
+    require_board_owner_or_admin,
+    require_board_staff_or_owner,
+)
 from .auth import (
     get_current_active_user,
     get_current_admin_or_teacher_user,
@@ -8,6 +14,7 @@ from .auth import (
     get_text,
     oauth2_scheme,
     validate_token,
+    verify_student_access,
 )
 from .db import get_db
 from .providers import (
@@ -28,12 +35,16 @@ from .providers import (
     is_ready,
     reset_llm_providers,
     reset_providers,
+    reset_providers_async,
+    reset_speech_provider,
     warmup_providers,
 )
 from .settings import clear_settings_cache, get_setting_value, invalidate_setting
 
 __all__ = [
     "clear_settings_cache",
+    "get_board_or_404",
+    "get_learning_session_or_404",
     "LMStudioProvider",
     "LocalSpeechProvider",
     "OllamaProvider",
@@ -44,6 +55,8 @@ __all__ = [
     "get_current_admin_or_teacher_user",
     "get_current_admin_user",
     "get_current_user",
+    "require_board_owner_or_admin",
+    "require_board_staff_or_owner",
     "get_db",
     "get_learning_service",
     "get_llm_provider",
@@ -59,7 +72,10 @@ __all__ = [
     "is_ready",
     "oauth2_scheme",
     "reset_providers",
+    "reset_providers_async",
     "reset_llm_providers",
+    "reset_speech_provider",
     "validate_token",
+    "verify_student_access",
     "warmup_providers",
 ]

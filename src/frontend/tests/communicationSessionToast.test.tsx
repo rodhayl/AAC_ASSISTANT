@@ -24,9 +24,10 @@ vi.mock('../src/store/authStore', () => {
       settings: { voice_mode_enabled: false },
     },
   };
-  const useAuthStore = Object.assign(() => state, {
-    getState: () => state,
-  });
+  const useAuthStore = Object.assign(
+    (selector?: (value: typeof state) => unknown) => selector ? selector(state) : state,
+    { getState: () => state },
+  );
   return { useAuthStore };
 });
 
@@ -36,19 +37,25 @@ vi.mock('../src/store/boardStore', () => {
     assignedBoards: [],
     currentBoard: board,
     isLoading: false,
+    isListLoading: false,
+    isBoardLoading: false,
     hasMore: false,
     page: 1,
     fetchBoard: vi.fn(),
     fetchBoards: vi.fn(),
     fetchAssignedBoards: vi.fn(),
   };
-  const useBoardStore = () => state;
+  const useBoardStore = (selector?: (value: typeof state) => unknown) =>
+    selector ? selector(state) : state;
   return { useBoardStore };
 });
 
-vi.mock('../src/store/toastStore', () => ({
-  useToastStore: () => ({ addToast }),
-}));
+vi.mock('../src/store/toastStore', () => {
+  const state = { addToast };
+  const useToastStore = (selector?: (value: typeof state) => unknown) =>
+    selector ? selector(state) : state;
+  return { useToastStore };
+});
 
 vi.mock('../src/lib/api', () => ({
   default: {
@@ -57,7 +64,7 @@ vi.mock('../src/lib/api', () => ({
   },
 }));
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useSearchParams: () => [new URLSearchParams(), vi.fn()],
 }));
 

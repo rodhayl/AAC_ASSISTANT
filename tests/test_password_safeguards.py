@@ -6,22 +6,28 @@ These tests ensure that the safeguards preventing null password hashes work corr
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.aac_app.models import User
 from src.api.main import app
 
-client = TestClient(app)
-
 pytestmark = pytest.mark.usefixtures("setup_test_db")
+
 
 def _fake_test_password() -> str:
     return "".join(("fake", "-test", "-only", "-A", "1"))
 
 
+@pytest.fixture
+def client(setup_test_db):
+    with TestClient(app) as test_client:
+        yield test_client
+
+
 class TestPasswordValidation:
     """Test password validation safeguards"""
 
-    def test_register_with_empty_password(self):
+    def test_register_with_empty_password(self, client):
         """Test that registration with empty password is rejected"""
         response = client.post(
             "/api/auth/register",
@@ -35,7 +41,7 @@ class TestPasswordValidation:
         assert response.status_code == 400
         assert response.json()["detail"] == "Password is required"
 
-    def test_register_with_whitespace_password(self):
+    def test_register_with_whitespace_password(self, client):
         """Test that registration with whitespace-only password is rejected"""
         response = client.post(
             "/api/auth/register",
@@ -49,7 +55,7 @@ class TestPasswordValidation:
         assert response.status_code == 400
         assert response.json()["detail"] == "Password is required"
 
-    def test_register_with_valid_password(self):
+    def test_register_with_valid_password(self, client):
         """Test that registration with valid password succeeds"""
         response = client.post(
             "/api/auth/register",
@@ -65,9 +71,8 @@ class TestPasswordValidation:
         assert data["username"] == "validuser"
         assert "id" in data
 
-    def test_login_with_valid_credentials(self):
+    def test_login_with_valid_credentials(self, client):
         """Test that login works with valid credentials"""
-        # First register (using strong password with uppercase, lowercase, digit)
         client.post(
             "/api/auth/register",
             json={
@@ -78,7 +83,6 @@ class TestPasswordValidation:
             },
         )
 
-        # Then login
         response = client.post(
             "/api/auth/login",
             json={
@@ -90,49 +94,35 @@ class TestPasswordValidation:
         data = response.json()
         assert data["username"] == "loginuser"
 
-    def test_login_with_null_password_hash_safety(self, test_db_session):
-        """
-        Test that login fails gracefully if a user somehow has null password_hash.
-        This should never happen with the safeguards, but we test the error handling.
-        """
-        # Use the test database session
+    def test_login_with_null_password_hash_safety(self, client, test_db_session):
+        """A null password hash is rejected safely by the schema or endpoint."""
         db = test_db_session
+        user = User(
+            username="nullpassuser",
+            display_name="Null Pass User",
+            user_type="student",
+            password_hash=None,
+        )
+
         try:
-            # Note: With nullable=False, this will fail in new databases
-            # But we test the login endpoint's safety check anyway
-            user = User(
-                username="nullpassuser",
-                display_name="Null Pass User",
-                user_type="student",
-                password_hash=None,  # This should be prevented by schema
-            )
+            db.add(user)
+            db.commit()
+        except SQLAlchemyError:
+            db.rollback()
+            # A NOT NULL constraint is the preferred protection. SQLAlchemy
+            # may expose the rejected SQLite write as different SQLAlchemyError
+            # subclasses depending on its RETURNING/result handling.
+            return
 
-            # Try to add it - may fail with IntegrityError if NOT NULL constraint is active
-            try:
-                db.add(user)
-                db.commit()
+        response = client.post(
+            "/api/auth/login",
+            json={"username": "nullpassuser", "password": _fake_test_password()},
+        )
+        assert response.status_code == 500
+        assert "Account configuration error" in response.json()["detail"]
 
-                # If we got here, the database allowed it (old schema)
-                # Now test that login fails gracefully
-                response = client.post(
-                    "/api/auth/login",
-                    json={"username": "nullpassuser", "password": _fake_test_password()},
-                )
-
-                # Should get a 500 error with helpful message
-                assert response.status_code == 500
-                assert "Account configuration error" in response.json()["detail"]
-
-            except Exception as e:
-                # This is expected with NOT NULL constraint - the database prevents it
-                # This is good! It means the schema safeguard is working
-                print(f"Good: Database prevented null password_hash: {e}")
-
-        finally:
-            pass
-
-    def test_password_hashing(self, test_db_session):
-        """Test that passwords are properly hashed with Argon2, not stored in plaintext"""
+    def test_password_hashing(self, client, test_db_session):
+        """Passwords are hashed with Argon2 rather than stored in plaintext."""
         response = client.post(
             "/api/auth/register",
             json={
@@ -144,22 +134,10 @@ class TestPasswordValidation:
         )
 
         assert response.status_code == 200
-
-        # Get the user from database
-        db = test_db_session
-        try:
-            user = db.query(User).filter(User.username == "hashtest").first()
-            assert user is not None
-
-            # Verify password is hashed (not plaintext)
-            assert user.password_hash != _fake_test_password()
-
-            assert user.password_hash.startswith(
-                "$argon2"
-            ), f"Expected Argon2 hash, got: {user.password_hash[:10]}"
-
-        finally:
-            pass
+        user = test_db_session.query(User).filter(User.username == "hashtest").first()
+        assert user is not None
+        assert user.password_hash != _fake_test_password()
+        assert user.password_hash.startswith("$argon2")
 
 
 if __name__ == "__main__":

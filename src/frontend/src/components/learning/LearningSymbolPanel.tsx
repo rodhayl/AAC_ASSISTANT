@@ -3,14 +3,10 @@ import { Search, Volume2, X } from 'lucide-react';
 import { assetUrl } from '../../lib/utils';
 import { glossSymbolUtterance } from '../../lib/gloss';
 import { getCategoryStyle } from '../../lib/symbolCategoryStyle';
+import { LEARNING_SYMBOL_CATEGORY_IDS } from '../../lib/symbolCategories';
+import type { LearningSymbolItem } from '../../types';
 
-export interface LearningSymbolItem {
-  id: number;
-  label: string;
-  category: string;
-  image_path?: string;
-  keywords?: string;
-}
+export type { LearningSymbolItem } from '../../types';
 
 interface LearningSymbolPanelProps {
   filteredSymbols: LearningSymbolItem[];
@@ -50,15 +46,10 @@ export function LearningSymbolPanel({
   const { t } = useTranslation('learning');
   const categories = [
     { id: 'all', label: t('categories.all') },
-    { id: 'core', label: t('categories.core') },
-    { id: 'people', label: t('categories.people') },
-    { id: 'action', label: t('categories.action') },
-    { id: 'feeling', label: t('categories.feeling') },
-    { id: 'food', label: t('categories.food') },
-    { id: 'object', label: t('categories.object') },
-    { id: 'place', label: t('categories.place') },
-    { id: 'social', label: t('categories.social') },
-    { id: 'ARASAAC', label: t('categories.ARASAAC') },
+    ...LEARNING_SYMBOL_CATEGORY_IDS.map((id) => ({
+      id,
+      label: t(`categories.${id}`),
+    })),
   ];
 
   const categoryClasses = (category: string) => {

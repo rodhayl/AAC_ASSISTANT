@@ -1,0 +1,209 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      ENVIRONMENT: test
+      ALLOWED_ORIGINS: http://localhost:5176
+      JWT_SECRET_KEY: ci-test-secret-key-with-at-least-32-characters
+      TESTING: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: latest
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: uv sync --locked --group dev
+      - run: uv run ruff check src tests scripts
+      - run: uv run python scripts/audit_codebase.py
+      - run: uv run pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: src/frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint -- --max-warnings=0
+      - run: npm run test -- --run
+      - run: npm run i18n:audit
+      - run: npm run build
+      # Production-build guard: fails if dist/ is stale, exceeds the documented
+      # bundle budget, or produced no servable SPA. The full server check runs
+      # locally via the Playwright globalSetup (e2e/global-setup.ts) before
+      # every e2e run.
+      - run: npm run check:bundle-size
+      - run: npm run verify:prod-build -- --freshness-only
+      - run: npm run build:e2e
+
+  e2e-production:
+    runs-on: ubuntu-latest
+    env:
+      ENVIRONMENT: test
+      ALLOWED_ORIGINS: http://127.0.0.1:8086
+      JWT_SECRET_KEY: ci-e2e-secret-key-with-at-least-32-characters
+      TESTING: "1"
+      BACKEND_HOST: 127.0.0.1
+      BACKEND_PORT: 8086
+      DATA_DIR: .ci-e2e-data
+      APP_VERSION: 2.0.0
+      AAC_SEED_SAMPLE_DATA: "true"
+      AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN: "true"
+      AAC_BOOTSTRAP_ADMIN_USERNAME: admin1
+      AAC_BOOTSTRAP_ADMIN_PASSWORD: Admin123
+      AAC_SEED_ADMIN1_PASSWORD: Admin123
+      AAC_SEED_STUDENT1_PASSWORD: Student123
+      AAC_SEED_TEACHER1_PASSWORD: Teacher123
+      AAC_ENABLE_SYMBOL_IMAGE_BACKFILL: "false"
+    defaults:
+      run:
+        working-directory: src/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: latest
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: src/frontend/package-lock.json
+      - run: uv sync --locked --group dev
+        working-directory: .
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Start production backend
+        working-directory: .
+        run: |
+          rm -rf .ci-e2e-data
+          mkdir -p .ci-e2e-data
+          uv run uvicorn src.api.main:app --host 127.0.0.1 --port 8086 > /tmp/aac-e2e-server.log 2>&1 &
+          echo $! > /tmp/aac-e2e-server.pid
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8086/api/health > /tmp/aac-e2e-health.json; then
+              cat /tmp/aac-e2e-health.json
+              test "$(python -c 'import json; print(json.load(open("/tmp/aac-e2e-health.json"))["version"])')" = "2.0.0"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/aac-e2e-server.log
+          exit 1
+      - name: Verify production server and run Playwright
+        run: npm run verify:prod-build && npx playwright test
+      - name: Dump backend log on failure
+        if: failure()
+        run: cat /tmp/aac-e2e-server.log || true
+        working-directory: .
+      - name: Stop production backend
+        if: always()
+        run: |
+          if [ -f /tmp/aac-e2e-server.pid ]; then
+            kill "$(cat /tmp/aac-e2e-server.pid)" || true
+          fi
+        working-directory: .
+
+  packaging-windows:
+    runs-on: windows-latest
+    env:
+      APP_VERSION: 2.0.0
+      ENVIRONMENT: test
+      JWT_SECRET_KEY: ci-package-secret-key-with-at-least-32-characters
+      AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN: "true"
+      AAC_BOOTSTRAP_ADMIN_USERNAME: admin1
+      AAC_BOOTSTRAP_ADMIN_PASSWORD: Admin123
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: latest
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: src/frontend/package-lock.json
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --yes --no-progress
+      - run: uv sync --locked --group dev
+      - run: npm ci
+        working-directory: src/frontend
+      - name: Build PyInstaller and Inno release
+        shell: cmd
+        run: build_package.bat
+      - name: Verify release artifacts and portable smoke
+        shell: powershell
+        run: |
+          $app = Join-Path $env:GITHUB_WORKSPACE 'dist\AAC_Assistant\AAC_Assistant.exe'
+          $installer = Join-Path $env:GITHUB_WORKSPACE 'dist\AAC_Assistant_Setup_2.0.0.exe'
+          if (-not (Test-Path $app)) { throw "Missing packaged executable: $app" }
+          if (-not (Test-Path $installer)) { throw "Missing installer: $installer" }
+          $process = Start-Process -FilePath $app -WorkingDirectory (Split-Path $app) -PassThru
+          try {
+            $health = $null
+            for ($i = 0; $i -lt 60; $i++) {
+              try {
+                $health = Invoke-RestMethod 'http://127.0.0.1:8086/api/health' -TimeoutSec 2
+                break
+              } catch { Start-Sleep -Seconds 1 }
+            }
+            if ($null -eq $health) { throw 'Packaged API did not become ready' }
+            if ($health.version -ne '2.0.0') { throw "Unexpected packaged version: $($health.version)" }
+            $index = Invoke-WebRequest 'http://127.0.0.1:8086/' -UseBasicParsing
+            if ($index.StatusCode -ne 200 -or $index.Content -notmatch 'AAC Assistant') { throw 'Packaged SPA smoke failed' }
+            $asset = [regex]::Match($index.Content, '/assets/[A-Za-z0-9_.-]+\.js').Value
+            if ([string]::IsNullOrEmpty($asset)) { throw 'Packaged SPA did not reference a JavaScript asset' }
+            $assetResponse = Invoke-WebRequest ("http://127.0.0.1:8086" + $asset) -UseBasicParsing
+            if ($assetResponse.StatusCode -ne 200) { throw "Packaged JavaScript asset failed: $asset" }
+          } finally {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
+      - name: Install and uninstall disposable release
+        shell: powershell
+        run: |
+          $installer = Join-Path $env:GITHUB_WORKSPACE 'dist\AAC_Assistant_Setup_2.0.0.exe'
+          $smokeRoot = Join-Path $env:RUNNER_TEMP 'AACAssistant-install-smoke'
+          $installDir = Join-Path $smokeRoot 'app'
+          Remove-Item $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $smokeRoot | Out-Null
+          $install = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$installDir") -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Installer failed with exit code $($install.ExitCode)" }
+          $installedApp = Join-Path $installDir 'AAC_Assistant.exe'
+          $uninstaller = Join-Path $installDir 'unins000.exe'
+          if (-not (Test-Path $installedApp) -or -not (Test-Path $uninstaller)) { throw 'Installed files are incomplete' }
+          New-Item -ItemType Directory -Path (Join-Path $installDir 'data') -Force | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $installDir 'uploads') -Force | Out-Null
+          Set-Content -Path (Join-Path $installDir 'data\release-smoke.marker') -Value 'preserve-me'
+          Set-Content -Path (Join-Path $installDir 'uploads\release-smoke.marker') -Value 'preserve-me'
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) { throw "Uninstaller failed with exit code $($uninstall.ExitCode)" }
+          if (-not (Test-Path (Join-Path $installDir 'data\release-smoke.marker'))) { throw 'Uninstall removed preserved data' }
+          if (-not (Test-Path (Join-Path $installDir 'uploads\release-smoke.marker'))) { throw 'Uninstall removed preserved uploads' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AAC_Assistant-windows-release
+          path: |
+            dist/AAC_Assistant_Setup_2.0.0.exe
+            dist/AAC_Assistant/AAC_Assistant.exe

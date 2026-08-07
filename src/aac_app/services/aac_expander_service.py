@@ -4,7 +4,9 @@ Transforms telegraphic AAC symbol sequences into grammatically rich text.
 Uses rule-based patterns for deterministic, fast expansion.
 """
 
+import json
 import re
+from collections import OrderedDict
 
 from loguru import logger
 
@@ -15,9 +17,11 @@ class AACExpanderService:
     Combines rule-based templates with pattern caching for performance.
     """
 
+    MAX_CACHE_ENTRIES = 1000
+
     def __init__(self):
         self.grammar_rules = self._load_grammar_rules()
-        self.expansion_cache: dict[str, dict] = {}  # Cache common patterns
+        self.expansion_cache: OrderedDict[str, dict] = OrderedDict()
         logger.info("AACExpanderService initialized with grammar rules")
 
     def _load_grammar_rules(self) -> dict:
@@ -125,9 +129,10 @@ class AACExpanderService:
             }
         """
         # Check cache first
-        cache_key = self._make_cache_key(symbols)
+        cache_key = self._make_cache_key(symbols, raw_gloss, semantic_analysis)
         if cache_key in self.expansion_cache:
             logger.debug(f"Cache hit for: {cache_key}")
+            self.expansion_cache.move_to_end(cache_key)
             return self.expansion_cache[cache_key]
 
         # Start with raw gloss
@@ -153,7 +158,7 @@ class AACExpanderService:
                     "transformations": ["common_expansion"],
                     "method": "rules",
                 }
-                self.expansion_cache[cache_key] = result
+                self._cache_result(cache_key, result)
                 return result
 
         # Apply grammar rules in sequence
@@ -173,7 +178,7 @@ class AACExpanderService:
         }
 
         # Cache result
-        self.expansion_cache[cache_key] = result
+        self._cache_result(cache_key, result)
         logger.debug(f"Expanded '{raw_gloss}' -> '{text}' (rules: {transformations})")
 
         return result
@@ -486,10 +491,30 @@ class AACExpanderService:
         bonus = min(len(transformations) * 0.05, 0.2)
         return min(base_confidence + bonus, 0.95)
 
-    def _make_cache_key(self, symbols: list[dict]) -> str:
-        """Create cache key from symbol sequence."""
-        labels = [s.get("label", "").lower() for s in symbols]
-        return "|".join(labels)
+    def _make_cache_key(
+        self,
+        symbols: list[dict],
+        raw_gloss: str = "",
+        semantic_analysis: dict | None = None,
+    ) -> str:
+        """Create a deterministic key from every input affecting expansion."""
+        return json.dumps(
+            {
+                "symbols": symbols,
+                "raw_gloss": raw_gloss,
+                "semantic_analysis": semantic_analysis,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+
+    def _cache_result(self, cache_key: str, result: dict) -> None:
+        """Store a result while evicting the least recently used entry."""
+        self.expansion_cache[cache_key] = result
+        self.expansion_cache.move_to_end(cache_key)
+        while len(self.expansion_cache) > self.MAX_CACHE_ENTRIES:
+            self.expansion_cache.popitem(last=False)
 
     def clear_cache(self):
         """Clear the expansion cache (useful for testing)."""

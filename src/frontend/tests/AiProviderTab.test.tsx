@@ -4,6 +4,30 @@ import { AiProviderTab } from '../src/pages/Settings/AiProviderTab';
 
 const get = vi.hoisted(() => vi.fn());
 const useSettingsStoreMock = vi.hoisted(() => vi.fn());
+const settingsState = vi.hoisted(() => ({
+  aiSettings: {
+    provider: 'ollama' as const,
+    ollama_model: 'qwen:7b-q4_0',
+    openrouter_model: '',
+    lmstudio_model: '',
+    openrouter_api_key: '',
+    ollama_base_url: 'http://localhost:11434',
+    lmstudio_base_url: 'http://localhost:1234/v1',
+    max_tokens: 1024,
+    temperature: 0.5,
+    can_edit: true,
+  },
+  ollamaModels: [],
+  openRouterModels: [],
+  lmStudioModels: [],
+  loading: false,
+  error: null as string | null,
+  fetchAISettings: vi.fn(),
+  updateAISettings: vi.fn(),
+  fetchOllamaModels: vi.fn(),
+  fetchOpenRouterModels: vi.fn(),
+  fetchLmStudioModels: vi.fn(),
+}));
 
 vi.mock('../src/lib/api', () => ({
   default: {
@@ -11,10 +35,13 @@ vi.mock('../src/lib/api', () => ({
   },
 }));
 
+const authState = vi.hoisted(() => ({
+  user: { id: 1, username: 'admin1', user_type: 'admin' },
+}));
+
 vi.mock('../src/store/authStore', () => ({
-  useAuthStore: () => ({
-    user: { id: 1, username: 'admin1', user_type: 'admin' },
-  }),
+  useAuthStore: (selector?: (state: typeof authState) => unknown) =>
+    selector ? selector(authState) : authState,
 }));
 
 vi.mock('../src/store/settingsStore', () => ({
@@ -59,30 +86,9 @@ vi.mock('react-i18next', () => ({
 describe('AiProviderTab', () => {
   beforeEach(() => {
     get.mockReset();
-    useSettingsStoreMock.mockReturnValue({
-      aiSettings: {
-        provider: 'ollama',
-        ollama_model: 'qwen:7b-q4_0',
-        openrouter_model: '',
-        lmstudio_model: '',
-        openrouter_api_key: '',
-        ollama_base_url: 'http://localhost:11434',
-        lmstudio_base_url: 'http://localhost:1234/v1',
-        max_tokens: 1024,
-        temperature: 0.5,
-        can_edit: true,
-      },
-      ollamaModels: [],
-      openRouterModels: [],
-      lmStudioModels: [],
-      loading: false,
-      error: null,
-      fetchAISettings: vi.fn(),
-      updateAISettings: vi.fn(),
-      fetchOllamaModels: vi.fn(),
-      fetchOpenRouterModels: vi.fn(),
-      fetchLmStudioModels: vi.fn(),
-    });
+    useSettingsStoreMock.mockImplementation((selector?: (state: typeof settingsState) => unknown) =>
+      selector ? selector(settingsState) : settingsState
+    );
   });
 
   it('shows LM Studio-specific health text when LM Studio is selected', async () => {

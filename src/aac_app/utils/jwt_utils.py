@@ -5,7 +5,6 @@ Provides JWT token creation, validation, and secret key management.
 Uses HS256 algorithm for signing with a secret key from environment.
 """
 
-import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -51,8 +50,8 @@ def create_access_token(
             "JWT_SECRET_KEY is using default insecure value! Set JWT_SECRET_KEY environment variable."
         )
         # In production, this should raise an error. For development, we'll log a warning.
-    if os.getenv("ENVIRONMENT") == "production":
-            raise ValueError("JWT_SECRET_KEY must be set in production environment")
+    if config.get("ENVIRONMENT", "development") == "production":
+        raise ValueError("JWT_SECRET_KEY must be set in production environment")
 
     to_encode = data.copy()
 

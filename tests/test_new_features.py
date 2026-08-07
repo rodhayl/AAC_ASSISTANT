@@ -1,3 +1,4 @@
+import base64
 import json
 
 import pytest
@@ -194,7 +195,9 @@ def test_upload_validation(client):
     )
     assert r.status_code == 400
     # Prepare small PNG data
-    png_header = b"\x89PNG\r\n\x1a\n" + b"0" * 100
+    png_header = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
     files2 = {"file": ("a.png", png_header, "image/png")}
     r2 = client.post(
         "/api/boards/symbols/upload", files=files2, data=data, headers=headers

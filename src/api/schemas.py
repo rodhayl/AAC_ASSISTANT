@@ -82,6 +82,43 @@ class UserResponse(UserBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class BoardSummaryResponse(BaseModel):
+    """Lightweight board data used in student-management summaries."""
+
+    id: int
+    user_id: int
+    name: str
+    description: str | None = None
+    category: str = "general"
+    is_public: bool = False
+    is_template: bool = False
+    created_at: datetime
+    updated_at: datetime
+    grid_rows: int | None = 4
+    grid_cols: int | None = 5
+    ai_enabled: bool = False
+    ai_provider: str | None = None
+    ai_model: str | None = None
+    locale: str = "en"
+    is_language_learning: bool = False
+    symbols: list[dict[str, Any]] = Field(default_factory=list)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StudentBoardSummaryResponse(BaseModel):
+    """A student and assigned boards returned in one API request."""
+
+    id: int
+    username: str
+    email: EmailStr | None = None
+    display_name: str
+    user_type: str = "student"
+    is_active: bool
+    created_at: datetime
+    assigned_boards: list[BoardSummaryResponse] = Field(default_factory=list)
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -93,6 +130,8 @@ class LearningModeBase(BaseModel):
     key: str
     description: str | None = None
     prompt_instruction: str
+    # Auto-ask adaptive questions in sessions using this mode (default on).
+    auto_ask_enabled: bool = True
 
 class LearningModeCreate(LearningModeBase):
     pass
@@ -101,6 +140,7 @@ class LearningModeUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     prompt_instruction: str | None = None
+    auto_ask_enabled: bool | None = None
 
 class LearningModeResponse(LearningModeBase):
     id: int
@@ -109,6 +149,38 @@ class LearningModeResponse(LearningModeBase):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+class LearningModePreviewRequest(BaseModel):
+    """Preview the exact LLM system prompt a learning mode would produce."""
+
+    mode_key: str | None = None
+    # Raw instruction for modes that have not been saved yet; takes
+    # precedence over a mode_key lookup when provided.
+    prompt_instruction: str | None = None
+    # Optional student to preview against (uses their guardian profile).
+    student_id: int | None = None
+    # When provided, the response also includes the exact user message the
+    # LLM would receive for this student's question ("Preview with sample
+    # question").
+    sample_question: str | None = None
+    # Optional session topic used when rendering the sample-question message.
+    topic: str | None = None
+
+class LearningModePreviewResponse(BaseModel):
+    """Rendered system prompt with preview metadata."""
+
+    prompt: str
+    template_name: str = "default"
+    has_guardian_profile: bool = False
+    mode_instruction: str | None = None
+    # The exact user message for the sample question (None when no sample
+    # question was requested).
+    user_message: str | None = None
+    # The full chat request as sent to the LLM: [system, user].
+    messages: list[dict] | None = None
+    # Model parameters used for conversational calls.
+    temperature: float | None = None
+    max_tokens: int | None = None
 
 
 # --- Board Schemas ---
@@ -276,6 +348,7 @@ class LearningSessionStart(BaseModel):
     purpose: str | None = None
     difficulty: str = "basic"
     board_id: int | None = None
+    mode_key: str | None = None
 
 
 class LearningSessionResponse(BaseModel):

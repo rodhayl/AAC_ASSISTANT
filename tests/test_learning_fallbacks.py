@@ -159,6 +159,94 @@ def test_missing_encouraging_feedback_uses_localized_fallback(
     assert answer.json()["feedback_message"] == expected_feedback
 
 
+def test_fenced_json_question_uses_llm_output_not_fallback(
+    fallback_providers, mock_llm_provider, regular_user, user_token
+):
+    """A fenced-JSON LLM response is parsed and used instead of the fallback."""
+    headers, session_id = _start_session(regular_user.id, user_token)
+
+    mock_llm_provider.generate.side_effect = None
+    mock_llm_provider.generate.return_value = (
+        '```json\n{"question": "What does a cow say?",'
+        ' "choices": ["Moo", "Meow", "Woof"], "correct": 0}\n```'
+    )
+    question = client.post(f"/api/learning/{session_id}/ask", headers=headers)
+
+    assert question.status_code == 200, question.text
+    data = question.json()
+    assert data["success"] is True
+    assert data["question_text"] == "What does a cow say?"
+    assert data["choices"] == ["Moo", "Meow", "Woof"]
+    assert data["correct_answer_index"] == 0
+
+
+def test_question_retries_with_strict_json_when_first_response_invalid(
+    fallback_providers, mock_llm_provider, regular_user, user_token
+):
+    """A non-JSON first reply triggers a corrective strict-JSON retry."""
+    headers, session_id = _start_session(regular_user.id, user_token)
+
+    mock_llm_provider.generate.side_effect = [
+        "¡Hola! Es un gusto saludarte. ¡Vamos a practicar juntos!",
+        '{"question": "What color is the sky?",'
+        ' "choices": ["Blue", "Red", "Green"], "correct": 0}',
+    ]
+    question = client.post(f"/api/learning/{session_id}/ask", headers=headers)
+
+    assert question.status_code == 200, question.text
+    data = question.json()
+    assert data["success"] is True
+    assert data["question_text"] == "What color is the sky?"
+    assert data["choices"] == ["Blue", "Red", "Green"]
+    assert mock_llm_provider.generate.call_count == 2
+
+    # The corrective retry must demand strict JSON and echo the failed reply
+    retry_prompt = mock_llm_provider.generate.call_args_list[1].kwargs["prompt"]
+    assert "You must reply only with valid JSON" in retry_prompt
+    assert "¡Hola! Es un gusto saludarte" in retry_prompt
+    assert mock_llm_provider.generate.call_args_list[1].kwargs["temperature"] == 0.2
+
+
+def test_question_falls_back_when_retry_also_invalid(
+    fallback_providers, mock_llm_provider, regular_user, user_token
+):
+    """If both attempts return non-JSON, the translated fallback question is used."""
+    headers, session_id = _start_session(regular_user.id, user_token)
+
+    mock_llm_provider.generate.side_effect = [
+        "¡Hola! ¿Cómo estás hoy?",
+        "Claro, aquí tienes la respuesta: el elefante es muy grande",
+    ]
+    question = client.post(f"/api/learning/{session_id}/ask", headers=headers)
+
+    assert question.status_code == 200, question.text
+    data = question.json()
+    assert data["success"] is True
+    assert " " in data["question_text"]
+    assert len(data["choices"]) >= 3
+    assert mock_llm_provider.generate.call_count == 2
+
+
+def test_question_falls_back_when_retry_json_missing_fields(
+    fallback_providers, mock_llm_provider, regular_user, user_token
+):
+    """A retry that parses to JSON but lacks required fields uses the fallback."""
+    headers, session_id = _start_session(regular_user.id, user_token)
+
+    mock_llm_provider.generate.side_effect = [
+        "¡Hola! ¿Cómo estás hoy?",
+        '{"response": "just a chatty answer, not a question"}',
+    ]
+    question = client.post(f"/api/learning/{session_id}/ask", headers=headers)
+
+    assert question.status_code == 200, question.text
+    data = question.json()
+    assert data["success"] is True
+    assert " " in data["question_text"]
+    assert len(data["choices"]) >= 3
+    assert mock_llm_provider.generate.call_count == 2
+
+
 def test_end_without_llm_returns_summary_and_awards_first_steps(
     fallback_providers, regular_user, user_token
 ):

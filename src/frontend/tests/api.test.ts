@@ -1,11 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import api, { isAuthFlowEndpoint } from '../src/lib/api';
+import api, { extractError, isAuthFlowEndpoint } from '../src/lib/api';
 import { useAuthStore } from '../src/store/authStore';
 
 describe('auth response handling', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('preserves supported backend error payload shapes', () => {
+    expect(extractError({ response: { data: { detail: 'detail' } } }, 'fallback')).toBe('detail');
+    expect(extractError({ response: { data: { error: 'error' } } }, 'fallback')).toBe('error');
+    expect(extractError({ response: { data: { message: 'message' } } }, 'fallback')).toBe('message');
+    expect(extractError({ message: 'client error' }, 'fallback')).toBe('client error');
   });
 
   it('recognizes auth endpoints whose 401 responses belong to the active flow', () => {

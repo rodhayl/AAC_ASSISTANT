@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 import threading
 import time
 import traceback
@@ -12,16 +14,48 @@ import webbrowser
 from pathlib import Path
 
 
-def _write_startup_error(message: str) -> None:
-    """Persist a startup failure where the user can report it."""
+def _startup_log_directories() -> list[Path]:
+    """Return writable startup-log candidates in safest-first order."""
+    candidates: list[Path] = []
+
+    def add_candidate(candidate: object) -> None:
+        """Add a path without allowing path discovery to mask startup errors."""
+        try:
+            resolved = Path(candidate).absolute()
+        except (OSError, RuntimeError, TypeError):
+            return
+        if resolved not in candidates:
+            candidates.append(resolved)
+
     try:
         from src import config
 
-        log_dir = config.RUNTIME_ROOT / "logs"
+        add_candidate(config.RUNTIME_ROOT / "logs")
     except Exception:
-        log_dir = Path(sys.executable).parent / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    (log_dir / "startup_error.log").write_text(message, encoding="utf-8")
+        # The config import may be the original startup failure. Do not use the
+        # read-only Program Files directory as the first fallback.
+        pass
+
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        add_candidate(Path(appdata) / "AACAssistant" / "logs")
+    try:
+        add_candidate(Path(tempfile.gettempdir()) / "AACAssistant" / "logs")
+    except (OSError, RuntimeError):
+        pass
+    add_candidate(Path(sys.executable).parent / "logs")
+    return candidates
+
+
+def _write_startup_error(message: str) -> None:
+    """Persist a startup failure without masking it with a write error."""
+    for log_dir in _startup_log_directories():
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            (log_dir / "startup_error.log").write_text(message, encoding="utf-8")
+            return
+        except OSError:
+            continue
 
 
 def _wait_for_server(url: str, timeout_seconds: float = 30.0) -> bool:

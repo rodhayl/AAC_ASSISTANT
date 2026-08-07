@@ -5,7 +5,7 @@ import { useAuthStore } from '../../store/authStore';
 import api, { extractError } from '../../lib/api';
 
 export function ProfileTab() {
-  const { user } = useAuthStore();
+  const user = useAuthStore(state => state.user);
   const { t } = useTranslation('settings');
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({ display_name: '', email: '' });

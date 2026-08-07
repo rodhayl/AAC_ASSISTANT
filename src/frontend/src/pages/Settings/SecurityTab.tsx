@@ -5,7 +5,7 @@ import { useAuthStore } from '../../store/authStore';
 import api, { extractError } from '../../lib/api';
 
 export function SecurityTab() {
-  const { user } = useAuthStore();
+  const user = useAuthStore(state => state.user);
   const { t } = useTranslation('settings');
   const [changeOpen, setChangeOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');

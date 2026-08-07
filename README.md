@@ -11,6 +11,10 @@ and the built single-page application.
 - React/Vite interface for communication, boards, symbols, learning, and
   administration
 - Optional local speech-to-text through the `voice` uv extra
+- Learning sessions with adaptive LLM questions: auto-ask questions (can be
+  toggled per learning mode for conversational modes), a manual "New question"
+  button, correct-answer highlighting, live progress chips, and an end-of-session
+  summary modal
 - Automated Python and frontend test suites
 - Windows scripts for installation, running, testing, and packaging
 
@@ -126,7 +130,7 @@ variables take precedence over the file.
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Base URL for the optional Ollama provider. |
 | `OPENROUTER_API_KEY` | Empty | Optional API key for OpenRouter. Leave empty when unused. |
 | `APP_NAME` | `AAC Assistant` | Display/application name used by the backend. |
-| `APP_VERSION` | `1.0.0` | Application version reported by the backend. |
+| `APP_VERSION` | `2.0.0` | Application version reported by the backend and aligned with the Windows installer release. |
 | `ENVIRONMENT` | `development` | Runtime mode. Use `production` for a deployed instance. |
 | `DEFAULT_LOCALE` | `es` | Default locale for seeded and newly created application content. |
 | `ALLOW_DB_RESET` | `false` | Enables the administrative database reset endpoint. Keep false outside disposable local development. |
@@ -165,8 +169,7 @@ For development and tests, use both groups:
 uv sync --group dev --extra voice
 ```
 
-The first transcription downloads the `small` faster-whisper model (about
-250 MB) to `data/models/`. Download it ahead of time with:
+The first transcription downloads the `tiny` faster-whisper model (about 39M parameters / 75 MB; the compatible CTranslate2 conversion of OpenAI's Whisper-tiny) by default. Administrators can choose `tiny`, `base`, `small`, `medium`, or `large-v3` in Settings → Voice. The selected model is cached in `data/models/`. Download it ahead of time with:
 
 ```powershell
 uv run python -m src.aac_app.providers.model_download
@@ -208,11 +211,20 @@ tests:
 run_tests.bat
 ```
 
-The Playwright regression suite requires a running production server:
+The Playwright regression suite requires a running production server and the
+seeded E2E users. Override their credentials when validating a differently
+configured database:
 
 ```powershell
+$env:E2E_ADMIN_USERNAME = "admin1"
+$env:E2E_ADMIN_PASSWORD = "Admin123"
+$env:E2E_STUDENT_USERNAME = "student1"
+$env:E2E_STUDENT_PASSWORD = "Student123"
 npm --prefix src/frontend exec playwright test
 ```
+
+Setup fails clearly if those fixtures cannot authenticate; it does not create
+random fallback users.
 
 ## Build a Windows package
 
@@ -224,11 +236,16 @@ npm --prefix src/frontend ci
 build_package.bat
 ```
 
+The build script reads the installer version directly from `installer.iss`,
+then discovers Inno Setup from the standard per-user/system locations or
+`PATH`. For a custom installation, set `INNO_SETUP_PATH` to the full path of
+`ISCC.exe` before running the script (quoted environment values are accepted).
+
 `build_package.bat` builds the frontend, creates the PyInstaller onedir output,
 and compiles the Inno Setup installer. Outputs are:
 
 - `dist\AAC_Assistant\AAC_Assistant.exe`
-- `dist\AAC_Assistant_Setup_2.0.0.exe`
+- `dist\AAC_Assistant_Setup_<version>.exe` (currently `2.0.0`)
 
 The installer uses `%APPDATA%\AACAssistant` for writable data when installed
 under Program Files. A portable onedir copy can keep `data/`, `logs/`, and
@@ -319,6 +336,10 @@ again; never remove a production database to recover an account.
 - Keep `ALLOW_DB_RESET=false` and `AAC_SEED_SAMPLE_DATA=false` for deployed
   instances.
 - Change the bootstrap administrator password immediately after first login.
+- The frontend uses the published React Router `8.3.0` package and its v8
+  import split (`react-router` plus `react-router/dom`). The current production
+  dependency audit reports zero vulnerabilities. Re-run `npm audit
+  --omit=dev` after dependency changes.
 
 ## License
 

@@ -2,38 +2,44 @@ import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 
+// The default locale (and fallback) is bundled eagerly: it is needed on every
+// startup. The secondary locale (English) is loaded on demand via
+// `ensureLocale()` below, so its translations never ship in the entry chunk.
 import esCommon from '../locales/es/common.json'
-import enCommon from '../locales/en/common.json'
 import esDashboard from '../locales/es/pages/dashboard.json'
-import enDashboard from '../locales/en/pages/dashboard.json'
 import esLearning from '../locales/es/pages/learning.json'
-import enLearning from '../locales/en/pages/learning.json'
 import esAchievements from '../locales/es/pages/achievements.json'
-import enAchievements from '../locales/en/pages/achievements.json'
 import esBoards from '../locales/es/pages/boards.json'
-import enBoards from '../locales/en/pages/boards.json'
 import esLogin from '../locales/es/pages/login.json'
-import enLogin from '../locales/en/pages/login.json'
 import esRegister from '../locales/es/pages/register.json'
-import enRegister from '../locales/en/pages/register.json'
 import esSettings from '../locales/es/pages/settings.json'
-import enSettings from '../locales/en/pages/settings.json'
 import esStudents from '../locales/es/pages/students.json'
-import enStudents from '../locales/en/pages/students.json'
 import esSymbols from '../locales/es/pages/symbols.json'
-import enSymbols from '../locales/en/pages/symbols.json'
 import esSidebar from '../locales/es/pages/sidebar.json'
-import enSidebar from '../locales/en/pages/sidebar.json'
 import esLayout from '../locales/es/pages/layout.json'
-import enLayout from '../locales/en/pages/layout.json'
 import esError from '../locales/es/pages/error.json'
-import enError from '../locales/en/pages/error.json'
 import esGames from '../locales/es/pages/games.json'
-import enGames from '../locales/en/pages/games.json'
 import esTeachers from '../locales/es/pages/teachers.json'
-import enTeachers from '../locales/en/pages/teachers.json'
 import esAdmins from '../locales/es/pages/admins.json'
-import enAdmins from '../locales/en/pages/admins.json'
+
+const ES_NAMESPACES = [
+  'common',
+  'dashboard',
+  'learning',
+  'achievements',
+  'boards',
+  'login',
+  'register',
+  'settings',
+  'students',
+  'symbols',
+  'sidebar',
+  'layout',
+  'error',
+  'games',
+  'teachers',
+  'admins',
+]
 
 const resources = {
   es: {
@@ -54,24 +60,6 @@ const resources = {
     teachers: esTeachers,
     admins: esAdmins,
   },
-  en: {
-    common: enCommon,
-    dashboard: enDashboard,
-    learning: enLearning,
-    achievements: enAchievements,
-    boards: enBoards,
-    login: enLogin,
-    register: enRegister,
-    settings: enSettings,
-    students: enStudents,
-    symbols: enSymbols,
-    sidebar: enSidebar,
-    layout: enLayout,
-    error: enError,
-    games: enGames,
-    teachers: enTeachers,
-    admins: enAdmins,
-  },
 }
 
 export const DEFAULT_LOCALE = 'es'
@@ -84,7 +72,7 @@ i18n
     fallbackLng: 'es',
     supportedLngs: ['es', 'es-ES', 'en', 'en-US'],
     load: 'languageOnly',
-    ns: ['common', 'dashboard', 'learning', 'achievements', 'boards', 'login', 'register', 'settings', 'students', 'symbols', 'sidebar', 'layout', 'error', 'games', 'teachers', 'admins'],
+    ns: ES_NAMESPACES,
     defaultNS: 'common',
     detection: {
       order: ['localStorage'],
@@ -97,10 +85,81 @@ i18n
     returnEmptyString: false,
   })
 
+// ---------------------------------------------------------------------------
+// Lazy secondary locale (English).
+//
+// The English namespaces are code-split into chunks fetched once, on first
+// use (startup when English is detected, or when the user switches to
+// English). `ensureLocale()` is idempotent: subsequent calls reuse the same
+// in-flight promise, and a failed load resets so the next call retries.
+//
+// The `languageChanged` listener below is the single choke point: any path
+// that activates English -- the LanguageDetector during init, `setLocale`,
+// `main.tsx`, or a direct `i18n.changeLanguage('en')` -- triggers the same
+// loader, so a missing `await` can never silently strand the UI in Spanish.
+// ---------------------------------------------------------------------------
+
+// Pair each namespace with its static dynamic import so the namespace-to-file
+// mapping stays adjacent (a reorder can't silently miswire a bundle).
+const EN_BUNDLES: ReadonlyArray<
+  readonly [string, () => Promise<{ default: Record<string, unknown> }>]
+> = [
+  ['common', () => import('../locales/en/common.json')],
+  ['dashboard', () => import('../locales/en/pages/dashboard.json')],
+  ['learning', () => import('../locales/en/pages/learning.json')],
+  ['achievements', () => import('../locales/en/pages/achievements.json')],
+  ['boards', () => import('../locales/en/pages/boards.json')],
+  ['login', () => import('../locales/en/pages/login.json')],
+  ['register', () => import('../locales/en/pages/register.json')],
+  ['settings', () => import('../locales/en/pages/settings.json')],
+  ['students', () => import('../locales/en/pages/students.json')],
+  ['symbols', () => import('../locales/en/pages/symbols.json')],
+  ['sidebar', () => import('../locales/en/pages/sidebar.json')],
+  ['layout', () => import('../locales/en/pages/layout.json')],
+  ['error', () => import('../locales/en/pages/error.json')],
+  ['games', () => import('../locales/en/pages/games.json')],
+  ['teachers', () => import('../locales/en/pages/teachers.json')],
+  ['admins', () => import('../locales/en/pages/admins.json')],
+]
+
+let enLoaded: Promise<void> | null = null
+
+export function ensureLocale(lng: string): Promise<void> {
+  const code = (lng || '').toLowerCase().split('-')[0]
+  if (code !== 'en') return Promise.resolve()
+
+  if (!enLoaded) {
+    enLoaded = (async () => {
+      const loaded = await Promise.all(EN_BUNDLES.map(([, load]) => load()))
+      EN_BUNDLES.forEach(([ns], i) => {
+        i18n.addResourceBundle('en', ns, loaded[i].default, true, true)
+      })
+      // addResourceBundle emits no event react-i18next subscribes to, so if
+      // English is already the active language (e.g. the detector picked it
+      // during init), force a re-render with the now-available translations.
+      if ((i18n.language || '').toLowerCase().startsWith('en')) {
+        await i18n.changeLanguage(i18n.language)
+      }
+    })().catch((err: unknown) => {
+      enLoaded = null // allow a retry after a transient failure
+      throw err
+    })
+  }
+
+  return enLoaded
+}
+
 const rtlLangs = ['ar', 'he', 'fa', 'ur']
 i18n.on('languageChanged', (lng) => {
+  const code = (lng || '').toLowerCase().split('-')[0]
+  if (code === 'en') {
+    // Safety net for any un-awaited English activation (detector at init,
+    // direct changeLanguage calls, tests, future call sites).
+    ensureLocale('en').catch((err: unknown) => {
+      console.warn('[i18n] failed to load English translations:', err)
+    })
+  }
   try {
-    const code = (lng || '').split('-')[0]
     const dir = rtlLangs.includes(code) ? 'rtl' : 'ltr'
     if (typeof document !== 'undefined') {
       document.documentElement.setAttribute('dir', dir)

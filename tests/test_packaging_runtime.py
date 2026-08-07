@@ -78,6 +78,14 @@ def test_packaging_scripts_describe_slim_unattended_build():
     for package in ("faster_whisper", "ctranslate2", "av", "torch"):
         assert package in spec
     assert "taskkill /f /im python.exe" not in build
+    assert "c:\\users\\rulfe" not in build
+    assert "inno_setup_path" in build
+    assert "findstr /r /b /c:\"#define myappversion \" installer.iss" in build
+    assert "set \"version=%%~v\"" in build
+    assert "existing runtime config found" in build
+    assert "existing runtime data found" in build
+    assert "iscc_exe=%inno_setup_path:\"=%" in build
+    assert "where iscc.exe" in build
     assert 'echo @echo off' not in build
     assert 'echo rem' not in build
     assert "uvicorn.Server" in launcher

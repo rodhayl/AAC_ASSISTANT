@@ -23,7 +23,7 @@ const sectionAnchors: Array<{ id: SectionId; labelKey: string; staffOnly?: boole
 ];
 
 export function Settings() {
-  const { user } = useAuthStore();
+  const user = useAuthStore(state => state.user);
   const { t } = useTranslation('settings');
   const [activeSection, setActiveSection] = useState<SectionId>('profile');
   const preferences = usePreferences();

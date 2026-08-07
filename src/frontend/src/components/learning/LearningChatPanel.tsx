@@ -1,9 +1,11 @@
-import type { FormEvent } from 'react';
-import { Bot } from 'lucide-react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Bot, LogOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { LearningInputRow } from './LearningInputRow';
 import { LearningMessageList, type LearningMessage } from './LearningMessageList';
-import type { LearningSessionResponse } from '../../types';
+import { LearningQuestionCard } from './LearningQuestionCard';
+import type { LearningSessionResponse, QuestionResponse } from '../../types';
+import type { LearningProgress, RevealedAnswer } from '../../store/learningStore';
 
 interface LearningChatPanelProps {
   messages: LearningMessage[];
@@ -12,6 +14,11 @@ interface LearningChatPanelProps {
   isStartingSession: boolean;
   sessionStartError: string | null;
   currentSession: LearningSessionResponse | null;
+  currentQuestion: QuestionResponse | null;
+  revealed: RevealedAnswer | null;
+  progress: LearningProgress | null;
+  onAnswerQuestion: (choice: string) => void;
+  onEndSession: () => void;
   isAdmin: boolean;
   showAdminReasoning: boolean;
   onShowAdminReasoningChange: (value: boolean) => void;
@@ -44,6 +51,11 @@ export function LearningChatPanel({
   isStartingSession,
   sessionStartError,
   currentSession,
+  currentQuestion,
+  revealed,
+  progress,
+  onAnswerQuestion,
+  onEndSession,
   isAdmin,
   showAdminReasoning,
   onShowAdminReasoningChange,
@@ -64,6 +76,53 @@ export function LearningChatPanel({
   discardRecording,
 }: LearningChatPanelProps) {
   const { t } = useTranslation('learning');
+  const [showEndConfirmation, setShowEndConfirmation] = useState(false);
+  const endSessionRef = useRef<HTMLDivElement | null>(null);
+  const endSessionButtonRef = useRef<HTMLButtonElement | null>(null);
+  const cancelEndRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!showEndConfirmation) return;
+
+    const triggerButton = endSessionButtonRef.current;
+    cancelEndRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setShowEndConfirmation(false);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      // Cancel/Escape removes the focused Cancel button. Return focus to the
+      // trigger when it still exists; after confirmation the session may close
+      // and remove the trigger immediately afterward.
+      if (triggerButton && document.contains(triggerButton)) {
+        triggerButton.focus();
+      }
+    };
+  }, [showEndConfirmation]);
+
+  const handleEndSessionClick = () => {
+    if (isLoading) return;
+    setShowEndConfirmation(true);
+  };
+
+  const confirmEndSession = () => {
+    setShowEndConfirmation(false);
+    onEndSession();
+  };
+
+  const difficultyLabels: Record<string, string> = {
+    basic: t('difficulty.basic', 'Basic'),
+    intermediate: t('difficulty.intermediate', 'Intermediate'),
+    advanced: t('difficulty.advanced', 'Advanced'),
+  };
+  const progressPercent =
+    progress?.comprehensionScore !== undefined
+      ? Math.round(progress.comprehensionScore * 100)
+      : undefined;
 
   return (
     <div className="flex-1 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
@@ -81,19 +140,98 @@ export function LearningChatPanel({
             </div>
           </div>
         </div>
-        {isAdmin && (
-          <label className="flex items-center gap-1 cursor-pointer select-none text-xs text-gray-500 dark:text-gray-400">
-            <input
-              id="show-admin-reasoning"
-              name="show_admin_reasoning"
-              type="checkbox"
-              className="mr-1"
-              checked={showAdminReasoning}
-              onChange={(event) => onShowAdminReasoningChange(event.target.checked)}
-            />
-            <span>Show thinking</span>
-          </label>
-        )}
+        <div className="flex items-center gap-2">
+          {currentSession && progress && (progressPercent !== undefined || progress.difficulty) && (
+            <div className="flex items-center gap-2" data-testid="progress-chips">
+              {progressPercent !== undefined && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                  {t('score')} {progressPercent}%
+                </span>
+              )}
+              {progress.questionsAnswered !== undefined && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                  {t('correctAnswers')} {progress.correctAnswers ?? 0}/{progress.questionsAnswered}
+                </span>
+              )}
+              {progress.difficulty && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                  {t('level')}: {difficultyLabels[progress.difficulty] ?? progress.difficulty}
+                </span>
+              )}
+            </div>
+          )}
+          {isAdmin && (
+            <label className="flex items-center gap-1 cursor-pointer select-none text-xs text-gray-500 dark:text-gray-400">
+              <input
+                id="show-admin-reasoning"
+                name="show_admin_reasoning"
+                type="checkbox"
+                className="mr-1"
+                checked={showAdminReasoning}
+                onChange={(event) => onShowAdminReasoningChange(event.target.checked)}
+              />
+              <span>Show thinking</span>
+            </label>
+          )}
+          {currentSession && (
+            <div ref={endSessionRef} className="relative">
+              <button
+                ref={endSessionButtonRef}
+                type="button"
+                onClick={handleEndSessionClick}
+                disabled={isLoading}
+                aria-expanded={showEndConfirmation}
+                aria-haspopup="dialog"
+                aria-controls="end-session-confirmation"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title="End this session and see a summary"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                {t('endSession', 'End Session')}
+              </button>
+              {showEndConfirmation && (
+                <div
+                  id="end-session-confirmation"
+                  role="dialog"
+                  aria-modal="false"
+                  aria-labelledby="end-session-confirmation-title"
+                  aria-describedby="end-session-confirmation-description"
+                  className="absolute right-0 top-full z-20 mt-2 w-72 rounded-xl border border-red-200 dark:border-red-800 bg-white dark:bg-gray-800 p-4 shadow-xl"
+                >
+                  <p
+                    id="end-session-confirmation-title"
+                    className="text-sm font-semibold text-gray-900 dark:text-gray-100"
+                  >
+                    {t('endSessionConfirmTitle', 'End this session?')}
+                  </p>
+                  <p
+                    id="end-session-confirmation-description"
+                    className="mt-1 text-xs leading-relaxed text-gray-600 dark:text-gray-300"
+                  >
+                    {t('endSessionConfirm', 'Your progress will be saved and a summary will appear.')}
+                  </p>
+                  <div className="mt-3 flex justify-end gap-2">
+                    <button
+                      ref={cancelEndRef}
+                      type="button"
+                      onClick={() => setShowEndConfirmation(false)}
+                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      {t('cancel', 'Cancel')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmEndSession}
+                      className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+                    >
+                      {t('endSession', 'End Session')}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -158,6 +296,13 @@ export function LearningChatPanel({
           </div>
         )}
       </div>
+
+      <LearningQuestionCard
+        question={currentQuestion}
+        disabled={isLoading}
+        onAnswer={onAnswerQuestion}
+        revealed={revealed}
+      />
 
       <LearningInputRow
         input={input}

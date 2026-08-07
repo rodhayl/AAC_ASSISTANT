@@ -5,8 +5,9 @@ import api from '../lib/api'
 
 export function LanguageSwitcher() {
   const { t } = useTranslation('common')
-  const { locale, setLocale } = useLocaleStore()
-  const { user } = useAuthStore()
+  const locale = useLocaleStore((state) => state.locale)
+  const setLocale = useLocaleStore((state) => state.setLocale)
+  const user = useAuthStore((state) => state.user)
   const selectId = 'language-switcher'
 
   return (
@@ -18,7 +19,7 @@ export function LanguageSwitcher() {
         value={locale}
         onChange={async (e) => {
           const lng = e.target.value
-          setLocale(lng)
+          await setLocale(lng)
           try {
             if (user?.id) {
               await api.put('/settings/ui', { ui_language: lng })

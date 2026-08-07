@@ -1,0 +1,61 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { OfflineConflictsPanel } from '../src/components/OfflineConflictsPanel';
+
+const request = vi.hoisted(() => vi.fn());
+const storeState = vi.hoisted(() => ({
+  conflicts: [
+    {
+      id: 'conflict-1',
+      config: { method: 'post', url: '/boards/1' },
+      error: 'Network unavailable',
+      timestamp: 1,
+      retryCount: 0,
+    },
+  ],
+  removeConflict: vi.fn(),
+  clearConflicts: vi.fn(),
+  incrementRetry: vi.fn(),
+}));
+
+vi.mock('../src/store/offlineStore', () => ({
+  useOfflineStore: (selector?: (state: typeof storeState) => unknown) =>
+    selector ? selector(storeState) : storeState,
+}));
+
+vi.mock('../src/lib/api', () => ({
+  default: { request },
+}));
+
+vi.mock('../src/lib/format', () => ({
+  formatTime: () => 'just now',
+}));
+
+describe('OfflineConflictsPanel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    request.mockResolvedValue({ data: {} });
+  });
+
+  it('retries a conflict and removes it after success', async () => {
+    render(<OfflineConflictsPanel />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry request' }));
+
+    expect(storeState.incrementRetry).toHaveBeenCalledWith('conflict-1');
+    await waitFor(() => {
+      expect(request).toHaveBeenCalledWith(storeState.conflicts[0].config);
+      expect(storeState.removeConflict).toHaveBeenCalledWith('conflict-1');
+    });
+  });
+
+  it('supports dismissing one conflict and clearing all conflicts', () => {
+    render(<OfflineConflictsPanel />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss conflict' }));
+    expect(storeState.removeConflict).toHaveBeenCalledWith('conflict-1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all conflicts' }));
+    expect(storeState.clearConflicts).toHaveBeenCalledWith();
+  });
+});

@@ -1,6 +1,5 @@
-import sqlite3
 import os
-
+import sqlite3
 import sys
 
 # Default path relative to script
@@ -27,7 +26,7 @@ def migrate(db_path=None):
             cursor.execute("ALTER TABLE achievements ADD COLUMN created_by INTEGER REFERENCES users(id)")
         else:
             print("created_by already exists")
-        
+
         if "target_user_id" not in columns:
             print("Adding target_user_id...")
             cursor.execute("ALTER TABLE achievements ADD COLUMN target_user_id INTEGER REFERENCES users(id)")
@@ -42,7 +41,7 @@ def migrate(db_path=None):
 
         conn.commit()
         print("Migration complete!")
-        
+
     except Exception as e:
         print(f"Migration failed: {e}")
     finally:

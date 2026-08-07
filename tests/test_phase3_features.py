@@ -127,6 +127,31 @@ def test_export_endpoint(teacher_user, test_board):
     assert "checksum_sha256" in data["meta"]
 
 
+def test_export_deduplicates_duplicate_assignments(
+    test_db_session, test_board, test_student, teacher_user
+):
+    """Repeated assignment rows must not duplicate a board in an export."""
+    test_db_session.add_all(
+        [
+            BoardAssignment(board_id=test_board.id, student_id=test_student.id),
+            BoardAssignment(board_id=test_board.id, student_id=test_student.id),
+        ]
+    )
+    test_db_session.commit()
+
+    headers = create_test_headers(
+        test_student.id, test_student.username, test_student.user_type
+    )
+    response = client.get(
+        "/api/data/export",
+        params={"username": test_student.username},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert [board["id"] for board in response.json()["assignedBoards"]] == [test_board.id]
+
+
 def test_symbol_reorder_endpoint(test_db_session, test_symbols, teacher_user):
     """Test symbol reorder endpoint updates order_index"""
     # Create updates for first 3 symbols
@@ -292,6 +317,29 @@ def test_get_assigned_boards(test_db_session, test_board, test_student):
     boards = response.json()
     assert len(boards) == 1
     assert boards[0]["id"] == test_board.id
+
+
+def test_assigned_boards_deduplicate_duplicate_assignment_rows(
+    test_db_session, test_board, test_student
+):
+    """A legacy duplicate assignment cannot duplicate the board response."""
+    test_db_session.add_all(
+        [
+            BoardAssignment(board_id=test_board.id, student_id=test_student.id),
+            BoardAssignment(board_id=test_board.id, student_id=test_student.id),
+        ]
+    )
+    test_db_session.commit()
+
+    headers = create_test_headers(
+        test_student.id, test_student.username, test_student.user_type
+    )
+    response = client.get(
+        "/api/boards/assigned", params={"student_id": test_student.id}, headers=headers
+    )
+
+    assert response.status_code == 200
+    assert [board["id"] for board in response.json()] == [test_board.id]
 
 
 if __name__ == "__main__":

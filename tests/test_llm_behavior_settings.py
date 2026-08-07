@@ -87,6 +87,41 @@ def test_primary_behavior_settings_exposed_and_persisted(admin_username):
 
 
 
+def test_provider_type_labeling_distinguishes_lmstudio():
+    """
+    LM Studio sessions must be labeled 'lmstudio', not 'openrouter'.
+
+    Regression: LMStudioProvider subclasses OpenRouterProvider (OpenAI-
+    compatible API), so the old isinstance-only check mislabeled every LM
+    Studio session as OpenRouter in the UI badge and provider_used field.
+    """
+    from src.aac_app.providers.lmstudio_provider import LMStudioProvider
+    from src.aac_app.providers.openrouter_provider import OpenRouterProvider
+
+    speech = Mock()
+
+    lmstudio = LMStudioProvider(
+        base_url="http://localhost:1234/v1", model="gemma-4-12b-it-qat"
+    )
+    service = LearningCompanionService(
+        llm_provider=lmstudio, speech_provider=speech
+    )
+    assert service.provider_type == "lmstudio"
+
+    openrouter = OpenRouterProvider(api_key="test-key", model="openrouter/free")
+    service_or = LearningCompanionService(
+        llm_provider=openrouter, speech_provider=speech
+    )
+    assert service_or.provider_type == "openrouter"
+
+    # The else branch still resolves to 'ollama' for plain Ollama providers.
+    ollama = DummyOllama()
+    service_ollama = LearningCompanionService(
+        llm_provider=ollama, speech_provider=speech
+    )
+    assert service_ollama.provider_type == "ollama"
+
+
 def test_get_learning_service_uses_primary_behavior_settings(monkeypatch):
     """get_learning_service wires ai_max_tokens/ai_temperature into the service defaults."""
 

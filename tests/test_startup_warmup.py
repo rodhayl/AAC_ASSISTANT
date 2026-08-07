@@ -10,13 +10,26 @@ Tests:
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
+
+FRONTEND_INDEX = Path("src/frontend/dist/index.html")
+
+
+def _frontend_is_built() -> bool:
+    """True when a production SPA is available to serve.
+
+    The CI backend job runs pytest on a fresh checkout with no built
+    frontend, so SPA-serving assertions must be conditional there.
+    """
+    return FRONTEND_INDEX.is_file()
 
 # ---------------------------------------------------------------------------
 # Fix A — warmup off the critical path
@@ -64,7 +77,8 @@ class TestStartupServesDuringWarmup:
             assert health.status_code == 200
 
             spa = client.get("/")
-            assert spa.status_code == 200
+            if _frontend_is_built():
+                assert spa.status_code == 200
 
             ready = client.get("/ready")
             assert ready.status_code == 503
@@ -95,6 +109,41 @@ class TestStartupServesDuringWarmup:
 # ---------------------------------------------------------------------------
 # Fix B — warmup_providers timeout and shutdown correctness
 # ---------------------------------------------------------------------------
+
+class TestLifespanShutdown:
+    """Startup task wrappers are drained when the ASGI lifespan exits."""
+
+    def test_background_startup_tasks_are_cancelled_on_shutdown(self, monkeypatch):
+        from src.api.main import app, lifespan
+
+        started_names: set[str] = set()
+        cancelled: list[str] = []
+
+        async def blocking_to_thread(func, *_args, **_kwargs):
+            started_names.add(getattr(func, "__name__", "unknown"))
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.append(getattr(func, "__name__", "unknown"))
+                raise
+
+        monkeypatch.setattr("src.api.main.schema.ensure", lambda: None)
+        monkeypatch.setattr("src.api.main.init_database", lambda ensure_schema=False: None)
+        monkeypatch.setattr("src.api.main.asyncio.to_thread", blocking_to_thread)
+        monkeypatch.setattr("src.api.main.report_debug", lambda *_args, **_kwargs: None)
+
+        async def exercise_lifespan():
+            async with lifespan(app):
+                deadline = asyncio.get_running_loop().time() + 1
+                while started_names != {"warmup_providers", "index_all_symbols"}:
+                    if asyncio.get_running_loop().time() >= deadline:
+                        raise AssertionError(f"Started tasks: {started_names}")
+                    await asyncio.sleep(0.01)
+
+        asyncio.run(exercise_lifespan())
+
+        assert set(cancelled) == {"warmup_providers", "index_all_symbols"}
+
 
 class TestWarmupTimeoutCorrectness:
     """warmup_providers timeout and shutdown correctness."""

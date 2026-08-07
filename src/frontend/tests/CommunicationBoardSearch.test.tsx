@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Board } from '../src/types';
 
@@ -21,32 +21,50 @@ const authState = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../src/store/boardStore', () => ({
-  useBoardStore: () => ({
-    ...boardStoreState,
-    currentBoard: null,
-    fetchBoard: vi.fn(),
-    isLoading: false,
-    hasMore: false,
-    page: 1,
-  }),
-}));
-
-vi.mock('../src/store/authStore', () => ({
-  useAuthStore: () => authState,
-}));
-
-vi.mock('../src/store/learningStore', () => ({
-  useLearningStore: Object.assign(
-    () => ({
-      submitSymbolAnswer: vi.fn(),
-      startSession: vi.fn(),
-      currentSession: null,
+vi.mock('../src/store/boardStore', () => {
+  const useBoardStore = (selector?: (value: typeof boardStoreState & {
+    currentBoard: null;
+    fetchBoard: ReturnType<typeof vi.fn>;
+    isLoading: boolean;
+    isListLoading: boolean;
+    isBoardLoading: boolean;
+    hasMore: boolean;
+    page: number;
+  }) => unknown) => {
+    const state = {
+      ...boardStoreState,
+      currentBoard: null,
+      fetchBoard: vi.fn(),
       isLoading: false,
-    }),
+      isListLoading: false,
+      isBoardLoading: false,
+      hasMore: false,
+      page: 1,
+    };
+    return selector ? selector(state) : state;
+  };
+  return { useBoardStore };
+});
+
+vi.mock('../src/store/authStore', () => {
+  const useAuthStore = (selector?: (value: typeof authState) => unknown) =>
+    selector ? selector(authState) : authState;
+  return { useAuthStore };
+});
+
+vi.mock('../src/store/learningStore', () => {
+  const state = {
+    submitSymbolAnswer: vi.fn(),
+    startSession: vi.fn(),
+    currentSession: null,
+    isLoading: false,
+  };
+  const useLearningStore = Object.assign(
+    (selector?: (value: typeof state) => unknown) => selector ? selector(state) : state,
     { getState: vi.fn() },
-  ),
-}));
+  );
+  return { useLearningStore };
+});
 
 vi.mock('../src/store/toastStore', () => ({
   useToastStore: () => ({ addToast: vi.fn() }),

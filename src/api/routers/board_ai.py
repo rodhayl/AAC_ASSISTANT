@@ -11,7 +11,14 @@ from src.aac_app.services.board_generation_service import BoardGenerationService
 from src.aac_app.services.translation_service import get_translation_service
 from src.aac_app.services.vector_utils import index_symbol
 from src.api import schemas
-from src.api.deps import get_current_active_user, get_db, get_setting_value, get_text
+from src.api.deps import (
+    get_board_or_404,
+    get_current_active_user,
+    get_db,
+    get_setting_value,
+    get_text,
+    require_board_staff_or_owner,
+)
 
 router = APIRouter()
 
@@ -305,26 +312,12 @@ async def generate_ai_suggestions(
     db: Session = Depends(get_db),
 ):
     """Generate AI symbol suggestions for an existing board without mutating it."""
-    board = (
-        db.query(CommunicationBoard).filter(CommunicationBoard.id == board_id).first()
+    board = get_board_or_404(db, board_id, current_user)
+    require_board_staff_or_owner(
+        board,
+        current_user,
+        error_key="errors.boards.unauthorizedSuggestions",
     )
-    if not board:
-        raise HTTPException(
-            status_code=404,
-            detail=get_text(user=current_user, key="errors.boards.boardNotFound"),
-        )
-
-    # Allow admin, teacher, or board owner
-    if (
-        current_user.user_type not in ["admin", "teacher"]
-        and board.user_id != current_user.id
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail=get_text(
-                user=current_user, key="errors.boards.unauthorizedSuggestions"
-            ),
-        )
 
     if not board.ai_enabled:
         raise HTTPException(
@@ -390,25 +383,8 @@ async def apply_ai_suggestion(
     """
     Apply a single AI suggestion by creating a symbol (if needed) and placing it on the board.
     """
-    board = (
-        db.query(CommunicationBoard).filter(CommunicationBoard.id == board_id).first()
-    )
-    if not board:
-        raise HTTPException(
-            status_code=404,
-            detail=get_text(user=current_user, key="errors.boards.boardNotFound"),
-        )
-
-    if (
-        current_user.user_type not in ["admin", "teacher"]
-        and board.user_id != current_user.id
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail=get_text(
-                user=current_user, key="errors.boards.unauthorizedModifyBoard"
-            ),
-        )
+    board = get_board_or_404(db, board_id, current_user)
+    require_board_staff_or_owner(board, current_user)
 
     if not board.ai_enabled:
         raise HTTPException(

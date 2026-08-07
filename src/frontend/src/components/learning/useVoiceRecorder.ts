@@ -6,6 +6,7 @@ interface UseVoiceRecorderOptions {
   currentSession: LearningSessionResponse | null;
   userId?: number;
   isLoading: boolean;
+  sessionDifficulty: string;
   startSession: (data: {
     topic: string;
     purpose: string;
@@ -36,6 +37,7 @@ export function useVoiceRecorder({
   currentSession,
   userId,
   isLoading,
+  sessionDifficulty,
   startSession,
   submitVoiceAnswer,
   addToast,
@@ -46,6 +48,7 @@ export function useVoiceRecorder({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
+  const recordingGenerationRef = useRef(0);
 
   const releaseStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -58,12 +61,13 @@ export function useVoiceRecorder({
         await startSession({
           topic: 'audio conversation',
           purpose: 'voice',
-          difficulty: 'basic',
+          difficulty: sessionDifficulty,
         }, userId);
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
+      const generation = ++recordingGenerationRef.current;
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
@@ -75,8 +79,13 @@ export function useVoiceRecorder({
       };
 
       mediaRecorder.onstop = () => {
-        setHasRecording(true);
+        // Discard/unmount can stop a recorder asynchronously. Do not let that
+        // late callback resurrect a recording the user already discarded.
+        if (generation === recordingGenerationRef.current) {
+          setHasRecording(true);
+        }
         releaseStream();
+        mediaRecorderRef.current = null;
       };
 
       mediaRecorder.start();
@@ -94,6 +103,7 @@ export function useVoiceRecorder({
     currentSession,
     microphoneAccessMessage,
     releaseStream,
+    sessionDifficulty,
     startSession,
     userId,
   ]);
@@ -106,9 +116,16 @@ export function useVoiceRecorder({
   }, [isRecording]);
 
   const discardRecording = useCallback(() => {
+    recordingGenerationRef.current += 1;
+    if (mediaRecorderRef.current?.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+    mediaRecorderRef.current = null;
     chunksRef.current = [];
     setHasRecording(false);
-  }, []);
+    releaseStream();
+  }, [releaseStream]);
 
   const sendRecording = useCallback(async () => {
     if (!currentSession || chunksRef.current.length === 0 || isLoading) {
@@ -123,9 +140,11 @@ export function useVoiceRecorder({
 
   useEffect(() => {
     return () => {
+      recordingGenerationRef.current += 1;
       if (mediaRecorderRef.current?.state === 'recording') {
         mediaRecorderRef.current.stop();
       }
+      mediaRecorderRef.current = null;
       releaseStream();
       chunksRef.current = [];
     };

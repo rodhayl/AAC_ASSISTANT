@@ -1,12 +1,16 @@
-from contextlib import suppress
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
 from src.aac_app.models import BoardAssignment, BoardSymbol, CommunicationBoard, User
 from src.api import schemas
-from src.api.deps import get_current_active_user, get_db, get_text
-from src.api.routers.board_helpers import get_playable_count
+from src.api.deps import (
+    get_board_or_404,
+    get_current_active_user,
+    get_db,
+    get_text,
+    require_board_staff_or_owner,
+)
+from src.api.routers.board_helpers import serialize_board
 
 router = APIRouter()
 
@@ -30,24 +34,16 @@ def get_assigned_boards(
             ),
         )
 
-    assignments = (
-        db.query(BoardAssignment).filter(BoardAssignment.student_id == student_id).all()
-    )
-    board_ids = [a.board_id for a in assignments]
     boards = (
         db.query(CommunicationBoard)
-        .filter(CommunicationBoard.id.in_(board_ids))
+        .join(BoardAssignment, BoardAssignment.board_id == CommunicationBoard.id)
+        .filter(BoardAssignment.student_id == student_id)
+        .distinct()
         .options(joinedload(CommunicationBoard.symbols).joinedload(BoardSymbol.symbol))
         .all()
-        if board_ids
-        else []
     )
 
-    for b in boards:
-        with suppress(Exception):
-            b.playable_symbols_count = get_playable_count(b)
-
-    return boards
+    return [serialize_board(board) for board in boards]
 
 
 @router.post("/{board_id}/assign")
@@ -58,24 +54,12 @@ def assign_board_to_student(
     current_user: User = Depends(get_current_active_user),
 ):
     # Only Admin, Teacher, or Board Owner can assign
-    board = (
-        db.query(CommunicationBoard).filter(CommunicationBoard.id == board_id).first()
+    board = get_board_or_404(db, board_id, current_user)
+    require_board_staff_or_owner(
+        board,
+        current_user,
+        error_key="errors.boards.unauthorizedAssign",
     )
-    if not board:
-        raise HTTPException(
-            status_code=404,
-            detail=get_text(user=current_user, key="errors.boards.boardNotFound"),
-        )
-
-    if (
-        current_user.user_type != "admin"
-        and current_user.user_type != "teacher"
-        and board.user_id != current_user.id
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail=get_text(user=current_user, key="errors.boards.unauthorizedAssign"),
-        )
 
     student = db.query(User).filter(User.id == payload.student_id).first()
     if not student or student.user_type != "student":
@@ -111,26 +95,12 @@ def unassign_board_from_student(
     current_user: User = Depends(get_current_active_user),
 ):
     # Only Admin, Teacher, or Board Owner can unassign
-    board = (
-        db.query(CommunicationBoard).filter(CommunicationBoard.id == board_id).first()
+    board = get_board_or_404(db, board_id, current_user)
+    require_board_staff_or_owner(
+        board,
+        current_user,
+        error_key="errors.boards.unauthorizedUnassign",
     )
-    if not board:
-        raise HTTPException(
-            status_code=404,
-            detail=get_text(user=current_user, key="errors.boards.boardNotFound"),
-        )
-
-    if (
-        current_user.user_type != "admin"
-        and current_user.user_type != "teacher"
-        and board.user_id != current_user.id
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail=get_text(
-                user=current_user, key="errors.boards.unauthorizedUnassign"
-            ),
-        )
 
     assignment = (
         db.query(BoardAssignment)

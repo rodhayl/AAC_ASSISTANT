@@ -7,7 +7,7 @@ interface UseAccessibleInteractionProps {
 }
 
 export function useAccessibleInteraction({ onClick, disabled }: UseAccessibleInteractionProps) {
-  const { user } = useAuthStore();
+  const user = useAuthStore(state => state.user);
   const dwellTime = user?.settings?.dwell_time || 0;
   const ignoreRepeats = user?.settings?.ignore_repeats || 0;
 

@@ -2,7 +2,7 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import requests
 import websockets
@@ -75,7 +75,7 @@ class CDP:
                 raise TimeoutError(f"Timed out waiting for event: {method}")
             try:
                 ev = await asyncio.wait_for(self._events.get(), timeout=remaining)
-            except asyncio.TimeoutError as e:
+            except TimeoutError as e:
                 raise TimeoutError(f"Timed out waiting for event: {method}") from e
             if ev.get("method") == method:
                 return ev
@@ -88,7 +88,7 @@ class CDP:
                 raise TimeoutError(f"Timed out waiting for request containing: {url_substring}")
             try:
                 ev = await asyncio.wait_for(self._events.get(), timeout=remaining)
-            except asyncio.TimeoutError as e:
+            except TimeoutError as e:
                 raise TimeoutError(f"Timed out waiting for request containing: {url_substring}") from e
             if ev.get("method") != "Network.requestWillBeSent":
                 continue
@@ -97,7 +97,7 @@ class CDP:
             if url_substring in url:
                 return ev
 
-    async def call(self, method: str, params: Optional[dict[str, Any]] = None, timeout: float = 30) -> dict[str, Any]:
+    async def call(self, method: str, params: dict[str, Any] | None = None, timeout: float = 30) -> dict[str, Any]:
         self._id += 1
         mid = self._id
         fut: asyncio.Future = asyncio.get_running_loop().create_future()

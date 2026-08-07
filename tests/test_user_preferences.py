@@ -93,6 +93,25 @@ class TestUserPreferences:
         assert data["notifications_enabled"] is True
         assert data["dark_mode"] is True
 
+    def test_user_specific_preferences_use_the_same_response_shape(self, prefs_user):
+        """The user-scoped routes return the same defaults and mapped values."""
+        user_id, username, user_type = prefs_user
+        headers = create_test_headers(user_id, username, user_type)
+        url = f"/api/auth/users/{user_id}/preferences"
+
+        get_response = client.get(url, headers=headers)
+        assert get_response.status_code == 200
+        assert get_response.json()["tts_voice"] == "default"
+
+        update_response = client.put(
+            url,
+            headers=headers,
+            json={"tts_voice": "female", "high_contrast": True},
+        )
+        assert update_response.status_code == 200
+        assert update_response.json()["tts_voice"] == "female"
+        assert update_response.json()["high_contrast"] is True
+
     def test_preferences_no_auth(self):
         """Test that preferences require authentication"""
         response = client.get("/api/auth/preferences")

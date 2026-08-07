@@ -20,6 +20,21 @@ def _module_available(module_name: str) -> bool:
 FASTER_WHISPER_AVAILABLE = _module_available("faster_whisper")
 faster_whisper = None
 
+DEFAULT_STT_MODEL = "tiny"
+SUPPORTED_STT_MODELS: dict[str, dict[str, str]] = {
+    "tiny": {"size": "~39M parameters / ~75MB", "description": "Fastest, lowest memory use"},
+    "base": {"size": "~74M parameters / ~145MB", "description": "Fast with improved accuracy"},
+    "small": {"size": "~244M parameters / ~465MB", "description": "Balanced accuracy and speed"},
+    "medium": {"size": "~769M parameters / ~1.5GB", "description": "Higher accuracy, slower"},
+    "large-v3": {"size": "~1.55B parameters / ~3GB", "description": "Highest accuracy, slowest"},
+}
+
+
+def normalize_stt_model(model_size: str | None) -> str:
+    """Return a supported faster-whisper model, defaulting safely to tiny."""
+    candidate = (model_size or DEFAULT_STT_MODEL).strip().lower()
+    return candidate if candidate in SUPPORTED_STT_MODELS else DEFAULT_STT_MODEL
+
 
 class LocalSpeechProvider:
     """Local speech-to-text backed by faster-whisper.
@@ -31,13 +46,13 @@ class LocalSpeechProvider:
 
     def __init__(
         self,
-        model_size: str = "small",
+        model_size: str = DEFAULT_STT_MODEL,
         device: str = "cpu",
         compute_type: str = "int8",
         lazy_load: bool = True,
         model_cache_dir: str | Path | None = None,
     ):
-        self.model_size = model_size
+        self.model_size = normalize_stt_model(model_size)
         self.device = device
         self.compute_type = compute_type
         self.model_cache_dir = Path(
@@ -142,13 +157,7 @@ class LocalSpeechProvider:
 
     def get_available_models(self) -> dict[str, dict[str, str]]:
         """Return the supported faster-whisper model sizes."""
-        return {
-            "tiny": {"size": "75MB", "description": "Fastest, lowest accuracy"},
-            "base": {"size": "145MB", "description": "Good balance for speed/accuracy"},
-            "small": {"size": "465MB", "description": "Recommended for most use cases"},
-            "medium": {"size": "1.5GB", "description": "Better accuracy, slower"},
-            "large-v3": {"size": "3GB", "description": "Best accuracy, slowest"},
-        }
+        return SUPPORTED_STT_MODELS.copy()
 
     def is_available(self) -> bool:
         """Return whether the optional faster-whisper package is installed."""
@@ -161,3 +170,19 @@ class LocalSpeechProvider:
     def force_load(self) -> None:
         """Explicitly load the model, useful for warmup or offline preparation."""
         self._ensure_model_loaded()
+
+    def release(self) -> None:
+        """Release the loaded model and its native memory, if supported."""
+        model = self.model
+        self.model = None
+        self._model_loaded = False
+        self._load_attempted = False
+        if model is not None:
+            for method_name in ("unload_model", "close"):
+                method = getattr(model, method_name, None)
+                if callable(method):
+                    try:
+                        method()
+                    except Exception as exc:
+                        logger.debug("Speech model release hook failed: {}", exc)
+                    break

@@ -3,9 +3,13 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import './styles/mobile-enhancements.css'
 import App from './App.tsx'
-import './i18n/index'
 import { I18nextProvider } from 'react-i18next'
-import i18n from './i18n/index'
+import i18n, { ensureLocale } from './i18n/index'
+
+// The default locale (es) is bundled; the detected secondary locale (en) is
+// code-split. Wait for it before the first render so English users never see
+// a Spanish flash of unstyled content.
+await ensureLocale(i18n.language || 'es')
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

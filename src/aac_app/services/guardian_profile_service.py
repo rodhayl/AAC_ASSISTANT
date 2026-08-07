@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from loguru import logger
+from sqlalchemy import and_, exists
 from sqlalchemy.orm import Session
 
 from ..db import get_session
@@ -257,17 +258,20 @@ class GuardianProfileService:
             if not profile:
                 return []
 
+            # Resolve changers in the same bounded query as the history rows;
+            # the previous session.get() inside this loop caused one query per
+            # audit entry (up to the public limit).
             entries = (
-                session.query(GuardianProfileHistory)
-                .filter_by(profile_id=profile.id)
+                session.query(GuardianProfileHistory, User)
+                .outerjoin(User, User.id == GuardianProfileHistory.changed_by)
+                .filter(GuardianProfileHistory.profile_id == profile.id)
                 .order_by(GuardianProfileHistory.changed_at.desc())
                 .limit(limit)
                 .all()
             )
 
             result = []
-            for entry in entries:
-                changer = session.get(User, entry.changed_by)
+            for entry, changer in entries:
                 result.append(
                     {
                         "id": entry.id,
@@ -385,31 +389,43 @@ class GuardianProfileService:
         """
 
         def _list(session: Session) -> list[dict]:
-            # Get students
-            query = session.query(User).filter_by(user_type="student", is_active=True)
+            # Load the active profile status in the same query as each student.
+            # GuardianProfile.user_id is unique, so this outer join preserves
+            # one result per student while avoiding an N+1 profile lookup loop.
+            query = (
+                session.query(User, GuardianProfile)
+                .outerjoin(
+                    GuardianProfile,
+                    and_(
+                        GuardianProfile.user_id == User.id,
+                        GuardianProfile.is_active.is_(True),
+                    ),
+                )
+                .filter(User.user_type == "student", User.is_active.is_(True))
+            )
 
             if teacher_id:
-                assignment_count = (
-                    session.query(StudentTeacher)
+                has_assignments = (
+                    session.query(StudentTeacher.id)
                     .filter(StudentTeacher.teacher_id == teacher_id)
-                    .count()
-                )
-                if assignment_count > 0:
-                    # Filter students assigned to this teacher
-                    query = query.join(
-                        StudentTeacher, User.id == StudentTeacher.student_id
-                    ).filter(StudentTeacher.teacher_id == teacher_id)
-
-            students = query.all()
-
-            result = []
-            for student in students:
-                profile = (
-                    session.query(GuardianProfile)
-                    .filter_by(user_id=student.id, is_active=True)
                     .first()
+                    is not None
                 )
+                if has_assignments:
+                    # Use EXISTS instead of a join so duplicate legacy
+                    # assignment rows cannot duplicate students in the roster.
+                    query = query.filter(
+                        exists().where(
+                            and_(
+                                StudentTeacher.teacher_id == teacher_id,
+                                StudentTeacher.student_id == User.id,
+                            )
+                        )
+                    )
 
+            query = query.order_by(User.id)
+            result = []
+            for student, profile in query.all():
                 result.append(
                     {
                         "id": student.id,

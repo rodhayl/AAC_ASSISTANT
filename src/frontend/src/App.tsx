@@ -1,5 +1,6 @@
-import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { createBrowserRouter, RouterProvider, Route, createRoutesFromElements, Navigate, useParams, Outlet } from 'react-router-dom';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
+import { RouterProvider } from 'react-router/dom';
+import { createBrowserRouter, Route, createRoutesFromElements, Navigate, useParams, Outlet } from 'react-router';
 import { Layout } from './components/Layout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Login } from './pages/Login';
@@ -8,9 +9,12 @@ import { useBoardStore } from './store/boardStore';
 import { useLearningStore } from './store/learningStore';
 import { ToastContainer } from './components/ui/ToastContainer';
 import { SettingsManager } from './components/SettingsManager';
+import { lazyWithRetry } from './lib/lazyWithRetry';
+import { LoadingState } from './components/ui/LoadingState';
 
-// Expose stores for E2E testing
-if (import.meta.env.DEV) {
+// Expose stores for local E2E testing only. Production builds require the
+// explicit VITE_ENABLE_E2E_HOOKS flag; normal production builds expose nothing.
+if (import.meta.env.DEV || import.meta.env.VITE_ENABLE_E2E_HOOKS === 'true') {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).useAuthStore = useAuthStore;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -19,30 +23,28 @@ if (import.meta.env.DEV) {
   (window as any).useLearningStore = useLearningStore;
 }
 
-const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
-const Communication = lazy(() => import('./pages/Communication').then(m => ({ default: m.Communication })));
-const Boards = lazy(() => import('./pages/Boards').then(m => ({ default: m.Boards })));
-const BoardEditor = lazy(() => import('./pages/BoardEditor').then(m => ({ default: m.BoardEditor })));
-const Learning = lazy(() => import('./pages/Learning').then(m => ({ default: m.Learning })));
-const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
-const Achievements = lazy(() => import('./pages/Achievements').then(m => ({ default: m.Achievements })));
-const Students = lazy(() => import('./pages/Students').then(m => ({ default: m.Students })));
-const UserManagementPage = lazy(() => import('./pages/UserManagement').then(m => ({ default: m.UserManagementPage })));
-const Register = lazy(() => import('./pages/Register').then(m => ({ default: m.Register })));
-const Symbols = lazy(() => import('./pages/Symbols').then(m => ({ default: m.Symbols })));
-const SymbolHunt = lazy(() => import('./pages/SymbolHunt').then(m => ({ default: m.SymbolHunt })));
-const NotFound = lazy(() => import('./pages/NotFound').then(m => ({ default: m.NotFound })));
+const Dashboard = lazyWithRetry(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })), 'dashboard');
+const Communication = lazyWithRetry(() => import('./pages/Communication').then(m => ({ default: m.Communication })), 'communication');
+const Boards = lazyWithRetry(() => import('./pages/Boards').then(m => ({ default: m.Boards })), 'boards');
+const BoardEditor = lazyWithRetry(() => import('./pages/BoardEditor').then(m => ({ default: m.BoardEditor })), 'board-editor');
+const Learning = lazyWithRetry(() => import('./pages/Learning').then(m => ({ default: m.Learning })), 'learning');
+const Settings = lazyWithRetry(() => import('./pages/Settings').then(m => ({ default: m.Settings })), 'settings');
+const Achievements = lazyWithRetry(() => import('./pages/Achievements').then(m => ({ default: m.Achievements })), 'achievements');
+const Students = lazyWithRetry(() => import('./pages/Students').then(m => ({ default: m.Students })), 'students');
+const UserManagementPage = lazyWithRetry(() => import('./pages/UserManagement').then(m => ({ default: m.UserManagementPage })), 'user-management');
+const Register = lazyWithRetry(() => import('./pages/Register').then(m => ({ default: m.Register })), 'register');
+const Symbols = lazyWithRetry(() => import('./pages/Symbols').then(m => ({ default: m.Symbols })), 'symbols');
+const SymbolHunt = lazyWithRetry(() => import('./pages/SymbolHunt').then(m => ({ default: m.SymbolHunt })), 'symbol-hunt');
+const NotFound = lazyWithRetry(() => import('./pages/NotFound').then(m => ({ default: m.NotFound })), 'not-found');
 
 function LoadingSpinner() {
-  return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-    </div>
-  );
+  return <LoadingState size="lg" fullHeight />;
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, sessionExpiresAt, logout } = useAuthStore();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const sessionExpiresAt = useAuthStore((state) => state.sessionExpiresAt);
+  const logout = useAuthStore((state) => state.logout);
   const [isExpired, setIsExpired] = useState(false);
 
   useEffect(() => {
@@ -121,6 +123,7 @@ const router = createBrowserRouter(
 );
 
 function App() {
+  const checkAuth = useAuthStore((state) => state.checkAuth);
   const authCheckStarted = useRef(false);
   const [authReady, setAuthReady] = useState(
     () => typeof navigator === 'undefined' || !navigator.onLine,
@@ -134,11 +137,11 @@ function App() {
     // auth store deliberately preserves it on offline refresh failures.
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
-    void useAuthStore.getState().checkAuth().then(
+    void checkAuth().then(
       () => setAuthReady(true),
       () => setAuthReady(true),
     );
-  }, []);
+  }, [checkAuth]);
 
   if (!authReady) return <LoadingSpinner />;
   return <RouterProvider router={router} />;

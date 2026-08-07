@@ -10,21 +10,19 @@ import type { AiOverride, ProviderHealth } from './types';
 import { AiProviderFields } from './AiProviderFields';
 
 export function AiProviderTab() {
-  const { user } = useAuthStore();
+  const user = useAuthStore(state => state.user);
   const { t } = useTranslation('settings');
-  const {
-    aiSettings,
-    ollamaModels,
-    openRouterModels,
-    lmStudioModels,
-    loading,
-    error,
-    fetchAISettings,
-    updateAISettings,
-    fetchOllamaModels,
-    fetchOpenRouterModels,
-    fetchLmStudioModels,
-  } = useSettingsStore();
+  const aiSettings = useSettingsStore((state) => state.aiSettings)
+  const ollamaModels = useSettingsStore((state) => state.ollamaModels)
+  const openRouterModels = useSettingsStore((state) => state.openRouterModels)
+  const lmStudioModels = useSettingsStore((state) => state.lmStudioModels)
+  const loading = useSettingsStore((state) => state.loading)
+  const error = useSettingsStore((state) => state.error)
+  const fetchAISettings = useSettingsStore((state) => state.fetchAISettings)
+  const updateAISettings = useSettingsStore((state) => state.updateAISettings)
+  const fetchOllamaModels = useSettingsStore((state) => state.fetchOllamaModels)
+  const fetchOpenRouterModels = useSettingsStore((state) => state.fetchOpenRouterModels)
+  const fetchLmStudioModels = useSettingsStore((state) => state.fetchLmStudioModels)
   const isAdmin = user?.user_type === 'admin';
   const [aiOverride, setAiOverride] = useState<AiOverride>({});
   const [saveSuccess, setSaveSuccess] = useState(false);

@@ -209,6 +209,22 @@ class TestAACExpander:
         # Should end with punctuation
         assert result["expanded_text"][-1] in ".!?"
 
+    def test_cache_is_bounded(self):
+        """The expansion cache evicts old patterns instead of growing forever."""
+        for index in range(self.expander.MAX_CACHE_ENTRIES + 25):
+            symbols = [{"label": f"word-{index}", "category": "object"}]
+            self.expander.expand(symbols, f"word-{index}")
+
+        assert len(self.expander.expansion_cache) == self.expander.MAX_CACHE_ENTRIES
+
+    def test_cache_key_changes_for_different_inputs(self):
+        symbols = [{"label": "want", "category": "action"}]
+        first = self.expander.expand(symbols, "want", {"intent": "request"})
+        second = self.expander.expand(symbols, "want now", {"intent": "statement"})
+
+        assert first["expanded_text"] != second["expanded_text"]
+        assert len(self.expander.expansion_cache) == 2
+
     def test_cache_hit_same_symbols(self):
         """Test that cache works for repeated symbol sequences."""
         symbols = [

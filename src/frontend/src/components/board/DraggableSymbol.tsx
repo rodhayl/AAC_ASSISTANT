@@ -16,7 +16,7 @@ interface DraggableSymbolProps {
 }
 
 function DraggableSymbolInner({ boardSymbol, isOverlay, onRemove, onEdit }: DraggableSymbolProps) {
-  const { user } = useAuthStore();
+  const user = useAuthStore(state => state.user);
   const categoryStyle = getCategoryStyle(boardSymbol.symbol?.category);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `symbol-${boardSymbol.id}`,

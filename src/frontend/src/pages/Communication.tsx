@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 import { useBoardStore } from '../store/boardStore';
 import { useLearningStore } from '../store/learningStore';
 import { CommunicationGrid } from '../components/board/CommunicationGrid';
@@ -33,31 +33,26 @@ const EMPTY_BOARD_SYMBOLS: BoardSymbol[] = [];
 export function Communication() {
   const { t } = useTranslation('boards');
   const [searchParams, setSearchParams] = useSearchParams();
-  const {
-    boards,
-    currentBoard,
-    fetchBoard,
-    fetchBoards,
-    fetchAssignedBoards,
-    isLoading,
-    assignedBoards,
-    hasMore,
-    page
-  } = useBoardStore();
-  const { user } = useAuthStore();
-  const {
-    submitSymbolAnswer,
-    startSession,
-    currentSession,
-    isLoading: isChatLoading
-  } = useLearningStore();
+  const boards = useBoardStore((state) => state.boards);
+  const currentBoard = useBoardStore((state) => state.currentBoard);
+  const fetchBoard = useBoardStore((state) => state.fetchBoard);
+  const fetchBoards = useBoardStore((state) => state.fetchBoards);
+  const fetchAssignedBoards = useBoardStore((state) => state.fetchAssignedBoards);
+  const isListLoading = useBoardStore((state) => state.isListLoading);
+  const isBoardLoading = useBoardStore((state) => state.isBoardLoading);
+  const assignedBoards = useBoardStore((state) => state.assignedBoards);
+  const hasMore = useBoardStore((state) => state.hasMore);
+  const page = useBoardStore((state) => state.page);
+  const user = useAuthStore((state) => state.user);
+  const submitSymbolAnswer = useLearningStore((state) => state.submitSymbolAnswer);
+  const startSession = useLearningStore((state) => state.startSession);
+  const currentSession = useLearningStore((state) => state.currentSession);
+  const isChatLoading = useLearningStore((state) => state.isLoading);
 
   const [activeBoardId, setActiveBoardId] = useState<number | null>(() => {
     const id = searchParams.get('boardId');
     return id ? parseInt(id) : null;
   });
-  // const [currentFolderId, setCurrentFolderId] = useState<number | null>(null); // Unused state
-  // const [viewMode, setViewMode] = useState<'grid' | 'folder'>('grid'); // Unused state
   const [sentence, setSentence] = useState<BoardSymbol[]>([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -69,7 +64,7 @@ export function Communication() {
   const [voiceEnabled, setVoiceEnabled] = useState(user?.settings?.voice_mode_enabled ?? true);
   const [isBoardsOpen, setIsBoardsOpen] = useState(false);
   const [history, setHistory] = useState<number[]>([]);
-  const { addToast } = useToastStore();
+  const addToast = useToastStore((state) => state.addToast);
   const [isStartingSession, setIsStartingSession] = useState(false);
   const lastClickRef = useRef<{ id: number; time: number } | null>(null);
 
@@ -153,7 +148,7 @@ export function Communication() {
   }, [user, fetchBoards, fetchAssignedBoards]);
 
   const loadMore = () => {
-    if (!isLoading && hasMore && user && user.user_type !== 'student') {
+    if (!isListLoading && hasMore && user && user.user_type !== 'student') {
       // Pagination currently only for fetchBoards, not fetchAssignedBoards
       fetchBoards(user.user_type === 'admin' ? undefined : user.id, undefined, false, page + 1);
     }
@@ -425,7 +420,7 @@ export function Communication() {
             </div>
           </div>
 
-          {isLoading && availableBoards.length === 0 && !hasActiveSearch ? (
+          {isListLoading && availableBoards.length === 0 && !hasActiveSearch ? (
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
             </div>
@@ -528,7 +523,7 @@ export function Communication() {
               })}
 
               {/* Load More Button */}
-              {hasMore && !isLoading && user?.user_type !== 'student' && (
+              {hasMore && !isListLoading && user?.user_type !== 'student' && (
                 <div className="col-span-full flex justify-center py-6">
                   <button
                     onClick={loadMore}
@@ -538,7 +533,7 @@ export function Communication() {
                   </button>
                 </div>
               )}
-              {isLoading && (
+              {isListLoading && (
                 <div className="col-span-full flex justify-center py-6">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
                 </div>
@@ -551,7 +546,7 @@ export function Communication() {
   }
 
   // RENDER: Active Board View (Communication Mode)
-  if (isLoading || !currentBoard) {
+  if (isBoardLoading || !currentBoard) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>

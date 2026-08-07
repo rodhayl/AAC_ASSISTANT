@@ -38,6 +38,8 @@ class TestNotificationAuthentication:
         self.db.add(self.notification)
         self.db.commit()
         self.db.refresh(self.notification)
+        yield
+        self.client.close()
 
     def test_mark_all_read_requires_authentication(self):
         """Test that mark-all-read endpoint requires authentication."""
@@ -124,6 +126,8 @@ class TestAdminResetDbSafeguards:
         self.client = TestClient(app)
         self.admin = admin_user
         self.user = regular_user
+        yield
+        self.client.close()
 
     def test_reset_db_requires_admin(self, user_token):
         """Test that only admin users can attempt database reset."""

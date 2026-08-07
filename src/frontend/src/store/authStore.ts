@@ -70,6 +70,12 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => {
       const clearSession = () => {
+        // Notify feature stores without importing them here. This avoids a
+        // circular auth -> API -> learning-store dependency while ensuring
+        // explicit logout and API-triggered 401 logout share cleanup.
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('aac:auth-logout'));
+        }
         set({
           user: null,
           token: null,
@@ -120,6 +126,11 @@ export const useAuthStore = create<AuthState>()(
             headers: { 'Authorization': `Bearer ${token}` }
           });
           const user = userResponse.data;
+          const previousUser = get().user;
+          if (previousUser && previousUser.id !== user.id && typeof window !== 'undefined') {
+            // Invalidate session-scoped feature work before switching identities.
+            window.dispatchEvent(new Event('aac:auth-context-changed'));
+          }
           
           syncUserPreferences(user);
           

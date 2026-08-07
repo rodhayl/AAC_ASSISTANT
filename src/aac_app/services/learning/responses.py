@@ -8,11 +8,14 @@ from datetime import datetime
 
 from loguru import logger
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from ...models import LearningSession
 from ...services.achievement_system import AchievementSystem
 from ...services.translation_service import TranslationService
 from .common import _strip_reasoning
+from .history import append_history_entry
+from .questions import extract_json_object
 
 
 class ResponseProcessingMixin:
@@ -21,7 +24,8 @@ class ResponseProcessingMixin:
         session_id: int,
         student_response: str,
         is_voice: bool = False,
-        audio_data: bytes = None,
+        audio_data: bytes | None = None,
+        audio_path: str | None = None,
         symbols: list = None,
         db: Session | None = None,
     ) -> dict:
@@ -39,31 +43,10 @@ class ResponseProcessingMixin:
                     return {"success": False, "error": "Session not found"}
 
                 # If voice response, transcribe with local Whisper
-                if is_voice and audio_data:
-                    logger.info("Transcribing voice response")
-                    temp_path = None
-                    try:
-                        if not self.speech.is_available():
-                            transcription_failed = True
-                            student_response = "[voice message]"
-                        else:
-                            # Save audio to a temp file for Whisper
-                            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                                tmp.write(audio_data)
-                                temp_path = tmp.name
-                            student_response = self.speech.recognize_from_file(temp_path)
-                            logger.info(f"Voice transcription: {student_response}")
-                            if not student_response or not student_response.strip():
-                                transcription_failed = True
-                                student_response = "[voice message]"
-                    except Exception as transcribe_error:
-                        logger.warning(f"Voice transcription failed: {transcribe_error}")
-                        transcription_failed = True
-                        student_response = "[voice message]"
-                    finally:
-                        if temp_path and os.path.exists(temp_path):
-                            with contextlib.suppress(Exception):
-                                os.remove(temp_path)
+                if is_voice and (audio_data or audio_path):
+                    student_response, transcription_failed = self._transcribe_voice_response(
+                        audio_data, audio_path
+                    )
                 elif is_voice and not audio_data:
                     return {"success": False, "error": "No audio data received."}
 
@@ -94,7 +77,11 @@ class ResponseProcessingMixin:
                 if session.conversation_history:
                     # Look for the most recent question
                     for entry in reversed(session.conversation_history):
-                        if entry.get("type") == "question" and "data" in entry:
+                        if (
+                            entry.get("type") == "question"
+                            and isinstance(entry.get("data"), dict)
+                            and {"question", "choices", "correct"} <= set(entry["data"])
+                        ):
                             last_question = entry["data"]
                             break
 
@@ -107,7 +94,8 @@ class ResponseProcessingMixin:
                     feedback_text = translation_service.get(
                         user_lang, "pages/learning", "errors.transcriptionFailed"
                     )
-                    session.conversation_history.append(
+                    session.conversation_history = append_history_entry(
+                        session.conversation_history,
                         {
                             "type": "response",
                             "student_answer": student_response,
@@ -115,13 +103,9 @@ class ResponseProcessingMixin:
                             "feedback": feedback_text,
                             "confidence": 0.0,
                             "timestamp": datetime.now().isoformat(),
-                        }
+                        },
                     )
-                    from sqlalchemy.orm.attributes import flag_modified
-
-                    flag_modified(session, "conversation_history")
-                    db.add(session)
-                    db.commit()
+                    self._persist_history(session, db)
                     return {
                         "success": True,
                         "is_correct": None,
@@ -140,11 +124,7 @@ class ResponseProcessingMixin:
                 # If there's a specific question, evaluate the answer
                 if last_question:
                     # Add language instruction
-                    lang_instruction = (
-                        "Respond in Spanish."
-                        if user_lang.startswith("es")
-                        else "Respond in English."
-                    )
+                    lang_instruction = self._lang_instruction(user_lang)
 
                     # Analyze response using local LLM
                     analysis_prompt = f"""Question: {last_question["question"]}
@@ -165,7 +145,9 @@ class ResponseProcessingMixin:
 
                     try:
                         # Get personalized system prompt for this user
-                        system_prompt = self._get_system_prompt(session.user_id, db)
+                        system_prompt = self._get_system_prompt(
+                            session.user_id, db, mode_key=session.mode_key
+                        )
 
                         analysis = await self.llm.generate(
                             prompt=analysis_prompt,
@@ -175,37 +157,27 @@ class ResponseProcessingMixin:
                             max_tokens=150,
                         )
                     except Exception:
-                        is_correct = (
-                            student_response.lower().strip()
-                            == last_question["choices"][last_question["correct"]].lower().strip()
-                        )
                         analysis = json.dumps(
-                            {
-                                "is_correct": is_correct,
-                                "confidence": 1.0 if is_correct else 0.5,
-                                "encouraging_feedback": translation_service.get(
-                                    user_lang, "pages/learning", "feedback.goodTry"
-                                ),
-                            }
+                            self._exact_match_analysis(
+                                student_response,
+                                last_question,
+                                translation_service,
+                                user_lang,
+                            )
                         )
 
-                    # Parse analysis
-                    try:
-                        analysis_data = json.loads(analysis.strip())
-                    except json.JSONDecodeError:
+                    # Parse analysis (tolerating markdown fences / prose)
+                    analysis_data = extract_json_object(analysis)
+                    if analysis_data is None:
                         logger.error(f"Failed to parse analysis JSON: {analysis}")
                         # Fallback analysis
-                        is_correct = (
-                            student_response.lower().strip()
-                            == last_question["choices"][last_question["correct"]].lower().strip()
+                        analysis_data = self._exact_match_analysis(
+                            student_response,
+                            last_question,
+                            translation_service,
+                            user_lang,
+                            miss_confidence=0.0,
                         )
-                        analysis_data = {
-                            "is_correct": is_correct,
-                            "confidence": 1.0 if is_correct else 0.0,
-                            "encouraging_feedback": translation_service.get(
-                                user_lang, "pages/learning", "feedback.goodTry"
-                            ),
-                        }
 
                     # Update session stats
                     session.questions_answered += 1
@@ -214,11 +186,7 @@ class ResponseProcessingMixin:
                 else:
                     # Conversational mode - generate a response
                     logger.info("Processing conversational response")
-                    lang_instruction = (
-                        "Respond in Spanish."
-                        if user_lang.startswith("es")
-                        else "Respond in English."
-                    )
+                    lang_instruction = self._lang_instruction(user_lang)
 
                     # Build conversation context
                     context = ""
@@ -293,14 +261,12 @@ class ResponseProcessingMixin:
     The student uses AAC symbols. Write a supportive response (1-2 friendly sentences). Ask a question or share a fact about {session.topic_name}. {lang_instruction}"""
                     else:
                         # Non-symbol conversational mode
-                        conversation_prompt = f"""Previous conversation:
-    {context}
-
-    Student's latest message: {student_prompt_line}
-
-    Topic: {session.topic_name}
-
-    Write a helpful response to the student (1-2 friendly sentences). Ask a question or share a fact about {session.topic_name}. {lang_instruction}"""
+                        conversation_prompt = self.build_conversation_user_prompt(
+                            student_message=student_prompt_line,
+                            topic=session.topic_name,
+                            context=context,
+                            lang=user_lang,
+                        )
 
                     try:
                         # Use structured JSON output for clean, parseable responses
@@ -316,8 +282,9 @@ class ResponseProcessingMixin:
                         }
 
                         # Use personalized system prompt from guardian profile
-                        system_prompt = self._get_system_prompt(session.user_id, db)
-                        user_lang = self._get_user_language(session.user_id, db)
+                        system_prompt = self._get_system_prompt(
+                            session.user_id, db, mode_key=session.mode_key
+                        )
                         if user_lang.startswith("es"):
                             system_prompt = system_prompt + "\nResponde en español."
 
@@ -339,11 +306,11 @@ class ResponseProcessingMixin:
                                 json_schema=json_schema,
                             )
 
-                        # Parse JSON response
-                        try:
-                            response_data = json.loads(response_raw)
+                        # Parse JSON response (tolerating markdown fences / prose)
+                        response_data = extract_json_object(response_raw)
+                        if response_data is not None:
                             response = response_data.get("response", "").strip()
-                        except json.JSONDecodeError:
+                        else:
                             # Fallback if JSON parsing fails - use the raw response
                             logger.warning("Failed to parse JSON response, using raw text")
                             response = _strip_reasoning(response_raw.strip())
@@ -411,21 +378,18 @@ class ResponseProcessingMixin:
                             "confidence": expansion_result["confidence"],
                             "transformations": expansion_result["transformations"],
                         }
-                session.conversation_history.append(entry)
+                session.conversation_history = append_history_entry(
+                    session.conversation_history, entry
+                )
 
                 # Mark JSON column as modified (SQLAlchemy doesn't auto-detect list changes)
-                from sqlalchemy.orm.attributes import flag_modified
-
-                flag_modified(session, "conversation_history")
-
-                db.add(session)
-                db.commit()
+                self._persist_history(session, db)
 
                 # Log symbol usage for analytics (asynchronous, don't fail on error)
                 if is_symbol and symbols:
                     try:
                         intent = symbol_analysis.get("intent") if symbol_analysis else None
-                        self.symbol_analytics.log_symbol_usage(
+                        analytics_logged = self.symbol_analytics.log_symbol_usage(
                             user_id=session.user_id,
                             symbols=symbols,
                             session_id=session.id,
@@ -433,6 +397,16 @@ class ResponseProcessingMixin:
                             context_topic=session.topic_name,
                             db=db,
                         )
+                        if analytics_logged:
+                            # The primary response was committed above, so
+                            # analytics remains caller-owned and needs its own
+                            # explicit commit. Keep this best-effort: a failed
+                            # analytics commit must not invalidate the response.
+                            try:
+                                db.commit()
+                            except Exception:
+                                db.rollback()
+                                raise
                     except Exception as e:
                         logger.warning(f"Failed to log symbol usage analytics: {e}")
 
@@ -480,6 +454,77 @@ class ResponseProcessingMixin:
         except Exception as e:
             logger.error(f"Failed to process response: {e}")
             return {"success": False, "error": str(e)}
+
+    @staticmethod
+    def _lang_instruction(user_lang: str) -> str:
+        """Return the LLM language instruction for the user's locale."""
+        return (
+            "Respond in Spanish."
+            if user_lang.startswith("es")
+            else "Respond in English."
+        )
+
+    def _exact_match_analysis(
+        self,
+        student_response: str,
+        last_question: dict,
+        translation_service: TranslationService,
+        user_lang: str,
+        miss_confidence: float = 0.5,
+    ) -> dict:
+        """Grade by exact match when the LLM is unavailable or its output is unparseable."""
+        is_correct = (
+            student_response.lower().strip()
+            == last_question["choices"][last_question["correct"]].lower().strip()
+        )
+        return {
+            "is_correct": is_correct,
+            "confidence": 1.0 if is_correct else miss_confidence,
+            "encouraging_feedback": translation_service.get(
+                user_lang, "pages/learning", "feedback.goodTry"
+            ),
+        }
+
+    def _transcribe_voice_response(
+        self, audio_data: bytes | None, audio_path: str | None
+    ) -> tuple[str, bool]:
+        """Transcribe an audio response with local Whisper.
+
+        Returns (transcription, transcription_failed). Failures degrade to
+        "[voice message]" so callers can still return graceful feedback.
+        """
+        logger.info("Transcribing voice response")
+        temp_path: str | None = None
+        try:
+            if not self.speech.is_available():
+                return "[voice message]", True
+            # Reuse a streamed request temp file when provided; otherwise
+            # retain the internal byte-based compatibility path.
+            if audio_path:
+                temp_path = audio_path
+            else:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                    tmp.write(audio_data or b"")
+                    temp_path = tmp.name
+            transcription = self.speech.recognize_from_file(temp_path)
+            logger.info(f"Voice transcription: {transcription}")
+            if not transcription or not transcription.strip():
+                return "[voice message]", True
+            return transcription, False
+        except Exception as transcribe_error:
+            logger.warning(f"Voice transcription failed: {transcribe_error}")
+            return "[voice message]", True
+        finally:
+            if temp_path and audio_path is None and os.path.exists(temp_path):
+                with contextlib.suppress(Exception):
+                    os.remove(temp_path)
+
+    @staticmethod
+    def _persist_history(session: LearningSession, db: Session) -> None:
+        """Persist a modified conversation_history JSON column."""
+        flag_modified(session, "conversation_history")
+        db.add(session)
+        db.commit()
 
     def _build_recent_symbol_context(self, conversation_history: list) -> str:
         """Extract recent symbol usage patterns from conversation history."""

@@ -1,6 +1,6 @@
 """SQLite-backed semantic search for the local symbol library.
 
-The embedding model is intentionally lazy.  The SQLite extension and virtual
+The embedding model is intentionally lazy. The SQLite extension and virtual
 table are initialized only when the store is first used, which keeps a
 core-only/offline startup healthy even when the model cannot be downloaded.
 """
@@ -13,6 +13,7 @@ import io
 import os
 import sqlite3
 import sys
+import threading
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
@@ -26,27 +27,12 @@ from src import config
 
 @contextlib.contextmanager
 def _safe_streams() -> Iterator[tuple[io.StringIO | Any, io.StringIO | Any]]:
-    """Ensure ``sys.stdout``/``sys.stderr`` are writable for downstream code.
-
-    Frozen PyInstaller builds configured with ``console=False`` expose no
-    console streams, so ``sys.stdout`` and ``sys.stderr`` are ``None``.
-    Libraries such as fastembed, huggingface_hub, and onnxruntime call
-    ``print``/``sys.stdout.write`` while they construct their model or
-    download progress, which raises ``AttributeError: 'NoneType' object
-    has no attribute 'write'`` and aborts the background indexing task.
-
-    Redirect to throwaway ``StringIO`` buffers when the real streams are
-    missing so the underlying call can complete; restore the originals
-    (including ``None``) on exit so callers never observe a different
-    global stream than they passed in.
-    """
+    """Ensure optional model libraries always see writable output streams."""
     saved_out, saved_err = sys.stdout, sys.stderr
     redirect_out = saved_out if saved_out is not None else io.StringIO()
     redirect_err = saved_err if saved_err is not None else io.StringIO()
     try:
-        with contextlib.redirect_stdout(redirect_out), contextlib.redirect_stderr(
-            redirect_err
-        ):
+        with contextlib.redirect_stdout(redirect_out), contextlib.redirect_stderr(redirect_err):
             yield redirect_out, redirect_err
     finally:
         sys.stdout, sys.stderr = saved_out, saved_err
@@ -59,6 +45,7 @@ def _load_text_embedding_class() -> Any:
 
     TextEmbedding = text_embedding
     return TextEmbedding
+
 
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIMENSION = 384
@@ -80,6 +67,35 @@ FASTEMBED_AVAILABLE = _module_available("fastembed")
 SQLITE_VEC_AVAILABLE = _module_available("sqlite_vec")
 TextEmbedding: Any | None = None
 sqlite_vec: Any | None = None
+_engine_listener_lock = threading.Lock()
+
+
+def _load_sqlite_vec_extension(
+    dbapi_connection: sqlite3.Connection,
+    connection_record: Any | None,
+) -> bool:
+    """Load sqlite-vec once for a SQLAlchemy connection when possible."""
+    global sqlite_vec
+    if connection_record is not None and connection_record.info.get("aac_sqlite_vec_loaded"):
+        return True
+    if not SQLITE_VEC_AVAILABLE:
+        return False
+    try:
+        if sqlite_vec is None:
+            import sqlite_vec as sqlite_vec_module
+
+            sqlite_vec = sqlite_vec_module
+        dbapi_connection.enable_load_extension(True)
+        try:
+            sqlite_vec.load(dbapi_connection)
+        finally:
+            dbapi_connection.enable_load_extension(False)
+        if connection_record is not None:
+            connection_record.info["aac_sqlite_vec_loaded"] = True
+        return True
+    except (AttributeError, ImportError, OSError, sqlite3.Error) as exc:
+        logger.error("Failed to load sqlite-vec extension: {}", exc)
+        return False
 
 
 class LocalVectorStore:
@@ -110,18 +126,16 @@ class LocalVectorStore:
         self.embedder = embedder
         self._embedder_factory = embedder_factory
         self.metadata: list[dict[str, Any]] = []
-        self.index = None  # Compatibility attribute; vectors now live in SQLite.
+        self.index = None
         self._model_loaded = embedder is not None
         self._index_loaded = False
         self._schema_ready = False
         self._load_attempted = embedder is not None
-        self._loaded_connections: set[int] = set()
-        self._sqlite_vec_failed = False
+        self._listener_engine: Engine | None = None
+        self._closed = False
         self._distance_threshold = DEFAULT_DISTANCE_THRESHOLD
         self._legacy_index_path = Path(
-            legacy_index_path
-            or index_path
-            or config.get_data_path("vector_store.index")
+            legacy_index_path or index_path or config.get_data_path("vector_store.index")
         )
         self._legacy_metadata_path = Path(
             legacy_metadata_path
@@ -144,6 +158,8 @@ class LocalVectorStore:
                 logger.warning("Could not remove legacy vector file {}: {}", path, exc)
 
     def _get_engine(self) -> Engine:
+        if self._closed:
+            raise RuntimeError("LocalVectorStore is closed")
         if self.engine is None:
             from src.aac_app.db import ensure_tables
 
@@ -152,50 +168,22 @@ class LocalVectorStore:
         return self.engine
 
     def _install_connection_listener(self, engine: Engine) -> None:
-        """Load sqlite-vec for every future SQLAlchemy DBAPI connection."""
-        if engine.dialect.name != "sqlite" or getattr(
-            engine, "_aac_sqlite_vec_listener_installed", False
-        ):
+        """Install one engine-owned callback for future SQLite connections."""
+        if engine.dialect.name != "sqlite":
             return
+        with _engine_listener_lock:
+            if getattr(engine, "_aac_sqlite_vec_listener", None) is None:
+                def load_extension(
+                    dbapi_connection: sqlite3.Connection,
+                    connection_record: Any,
+                    _connection_proxy: Any,
+                ) -> None:
+                    _load_sqlite_vec_extension(dbapi_connection, connection_record)
 
-        def load_extension(dbapi_connection: sqlite3.Connection, _connection_record) -> None:
-            self._load_sqlite_vec(dbapi_connection)
+                event.listen(engine, "checkout", load_extension)
+                engine._aac_sqlite_vec_listener = load_extension
 
-        event.listen(engine, "connect", load_extension)
-        engine._aac_sqlite_vec_listener_installed = True
-
-    def _load_sqlite_vec(self, dbapi_connection: sqlite3.Connection) -> bool:
-        """Load sqlite-vec once per DBAPI connection with extension loading closed."""
-        global SQLITE_VEC_AVAILABLE, sqlite_vec
-        connection_id = id(dbapi_connection)
-        if connection_id in self._loaded_connections:
-            return True
-        if self._sqlite_vec_failed or not SQLITE_VEC_AVAILABLE:
-            return False
-        try:
-            if sqlite_vec is None:
-                import sqlite_vec as sqlite_vec_module
-
-                sqlite_vec = sqlite_vec_module
-            dbapi_connection.enable_load_extension(True)
-            try:
-                sqlite_vec.load(dbapi_connection)
-            finally:
-                dbapi_connection.enable_load_extension(False)
-            self._loaded_connections.add(connection_id)
-            return True
-        except (AttributeError, ImportError, OSError, sqlite3.Error) as exc:
-            self._sqlite_vec_failed = True
-            logger.error("Failed to load sqlite-vec extension: {}", exc)
-            return False
-
-    def _connection_driver(self, connection: Any) -> sqlite3.Connection:
-        """Get the sqlite3 DBAPI connection from a SQLAlchemy connection."""
-        raw_connection = connection.connection
-        driver_connection = getattr(raw_connection, "driver_connection", raw_connection)
-        if not isinstance(driver_connection, sqlite3.Connection):
-            raise TypeError("sqlite-vec requires a sqlite3 SQLAlchemy connection")
-        return driver_connection
+        self._listener_engine = engine
 
     def _ensure_schema(self) -> bool:
         """Create the vec0 table, metadata, and completion marker idempotently."""
@@ -204,9 +192,6 @@ class LocalVectorStore:
         try:
             engine = self._get_engine()
             with engine.begin() as connection:
-                dbapi_connection = self._connection_driver(connection)
-                if not self._load_sqlite_vec(dbapi_connection):
-                    return False
                 if not self._schema_ready:
                     connection.exec_driver_sql(
                         f"CREATE VIRTUAL TABLE IF NOT EXISTS {VECTOR_TABLE} "
@@ -247,13 +232,6 @@ class LocalVectorStore:
         self._load_attempted = True
         try:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-            # Frozen / windowed PyInstaller builds (console=False) leave
-            # ``sys.stdout`` and ``sys.stderr`` set to ``None``. fastembed,
-            # huggingface_hub, and onnxruntime call ``print`` /
-            # ``sys.stdout.write`` during model construction; without a
-            # fallback stream the ``.write`` call raises ``AttributeError``.
-            # ``_safe_streams`` redirects to ``StringIO`` buffers when the
-            # real streams are missing and restores them on exit.
             with _safe_streams():
                 if self._embedder_factory is not None:
                     self.embedder = self._embedder_factory(
@@ -286,7 +264,6 @@ class LocalVectorStore:
             try:
                 vectors = list(self.embedder.embed(texts, batch_size=256))
             except TypeError:
-                # Keep the store easy to unit-test with a tiny embedder.
                 vectors = list(self.embedder.embed(texts))
             normalized = [[float(value) for value in vector] for vector in vectors]
             if any(len(vector) != self.embedding_dim for vector in normalized):
@@ -310,10 +287,7 @@ class LocalVectorStore:
         try:
             with self._get_engine().connect() as connection:
                 row = connection.execute(
-                    text(
-                        f"SELECT value FROM {STATE_TABLE} "
-                        "WHERE key = 'complete' LIMIT 1"
-                    )
+                    text(f"SELECT value FROM {STATE_TABLE} WHERE key = 'complete' LIMIT 1")
                 ).fetchone()
                 if not row or row[0] != "1":
                     return False
@@ -333,14 +307,11 @@ class LocalVectorStore:
                 ).first()
                 if symbols_table:
                     symbol_ids = {
-                        int(row[0])
-                        for row in connection.execute(text("SELECT id FROM symbols"))
+                        int(row[0]) for row in connection.execute(text("SELECT id FROM symbols"))
                     }
                     vector_ids = {
                         int(row[0])
-                        for row in connection.execute(
-                            text(f"SELECT rowid FROM {VECTOR_TABLE}")
-                        )
+                        for row in connection.execute(text(f"SELECT rowid FROM {VECTOR_TABLE}"))
                     }
                     metadata_ids = {
                         int(row[0])
@@ -355,12 +326,7 @@ class LocalVectorStore:
             return False
 
     def get_stale_symbol_ids(self, expected_texts: Mapping[int, str]) -> set[int]:
-        """Return symbols whose vector or embedding text is missing or stale.
-
-        ``metadata.text`` is the persisted content marker for the embedding.
-        Comparing it with the current symbol text avoids loading fastembed
-        while still catching updates that leave row counts unchanged.
-        """
+        """Return symbols whose vector or embedding text is missing or stale."""
         if not expected_texts:
             return set()
         if not self._ensure_schema():
@@ -369,9 +335,7 @@ class LocalVectorStore:
             with self._get_engine().connect() as connection:
                 vector_ids = {
                     int(row[0])
-                    for row in connection.execute(
-                        text(f"SELECT rowid FROM {VECTOR_TABLE}")
-                    )
+                    for row in connection.execute(text(f"SELECT rowid FROM {VECTOR_TABLE}"))
                 }
                 metadata = {
                     int(row[0]): row[1]
@@ -385,8 +349,7 @@ class LocalVectorStore:
             return {
                 symbol_id
                 for symbol_id, expected_text in expected_texts.items()
-                if symbol_id not in vector_ids
-                or metadata.get(symbol_id) != expected_text
+                if symbol_id not in vector_ids or metadata.get(symbol_id) != expected_text
             }
         except Exception as exc:
             logger.warning("Could not inspect stale symbol embeddings: {}", exc)
@@ -462,8 +425,6 @@ class LocalVectorStore:
                     symbol_id = metadata.get("id")
                     if symbol_id is None:
                         raise ValueError("Vector metadata must contain an id")
-                    label = metadata.get("label")
-                    item_type = metadata.get("type", "symbol")
                     connection.execute(
                         text(f"DELETE FROM {VECTOR_TABLE} WHERE rowid = :symbol_id"),
                         {"symbol_id": int(symbol_id)},
@@ -491,8 +452,8 @@ class LocalVectorStore:
                         ),
                         {
                             "symbol_id": int(symbol_id),
-                            "type": item_type,
-                            "label": label,
+                            "type": metadata.get("type", "symbol"),
+                            "label": metadata.get("label"),
                             "text": metadata.get("text", document),
                         },
                     )
@@ -611,15 +572,30 @@ class LocalVectorStore:
             logger.error("Failed to delete vector metadata {}={}: {}", key, value, exc)
             return False
 
+    def close(self) -> None:
+        """Release store-owned state without disposing the shared database engine."""
+        if self._closed:
+            return
+        self._closed = True
+        self._listener_engine = None
+        self.metadata.clear()
+        self.model = None
+        self.embedder = None
+
     def is_available(self) -> bool:
         """Return dependency availability without loading the embedding model."""
-        return SQLITE_VEC_AVAILABLE and (
+        return not self._closed and SQLITE_VEC_AVAILABLE and (
             self.embedder is not None or FASTEMBED_AVAILABLE
         )
 
     def is_ready(self) -> bool:
         """Return whether a model and SQLite vector schema are ready."""
-        return self._model_loaded and self.embedder is not None and self._schema_ready
+        return (
+            not self._closed
+            and self._model_loaded
+            and self.embedder is not None
+            and self._schema_ready
+        )
 
     def force_load(self) -> None:
         """Force model/schema initialization for explicit warmup callers."""

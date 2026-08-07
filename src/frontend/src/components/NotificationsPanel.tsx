@@ -2,7 +2,9 @@ import { useNotificationsStore } from '../store/notificationsStore'
 import { useTranslation } from 'react-i18next'
 
 export function NotificationsPanel({ onClose }: { onClose: () => void }) {
-  const { items, markAsRead, markAllAsRead } = useNotificationsStore()
+  const items = useNotificationsStore((state) => state.items)
+  const markAsRead = useNotificationsStore((state) => state.markAsRead)
+  const markAllAsRead = useNotificationsStore((state) => state.markAllAsRead)
   const { t } = useTranslation('common')
   return (
     <div className="absolute right-6 top-16 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-50" aria-live="polite">

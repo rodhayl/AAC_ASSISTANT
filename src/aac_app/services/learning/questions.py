@@ -1,13 +1,81 @@
 """Question generation and deterministic fallback questions."""
 
 import json
+import re
 from datetime import datetime
 
 from loguru import logger
 from sqlalchemy.orm import Session
 
 from ...models import LearningSession
+from ...services.learning.history import append_history_entry
 from ...services.translation_service import TranslationService
+
+
+def extract_json_object(text: str | None) -> dict | None:
+    """Parse a JSON object from an LLM response.
+
+    Tolerates markdown code fences (e.g. ```json ... ```) and surrounding
+    prose, which smaller local models sometimes add even when told not to.
+    Returns ``None`` when no parseable JSON object can be found.
+    """
+    if not text:
+        return None
+
+    candidates = [text.strip()]
+    fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+    if fenced:
+        candidates.append(fenced.group(1).strip())
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            continue
+
+    # Last resort: scan for the first balanced {...} block that parses,
+    # skipping over any earlier brace groups (e.g. incidental prose braces).
+    search_from = 0
+    while True:
+        start = text.find("{", search_from)
+        if start == -1:
+            return None
+        depth = 0
+        in_string = False
+        escape = False
+        block_end = -1
+        for i in range(start, len(text)):
+            ch = text[i]
+            if in_string:
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    block_end = i
+                    break
+        if block_end == -1:
+            return None
+        try:
+            parsed = json.loads(text[start : block_end + 1])
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+        search_from = block_end + 1
 
 
 class QuestionGenerationMixin:
@@ -39,106 +107,28 @@ class QuestionGenerationMixin:
                     session.conversation_history[-3:] if session.conversation_history else []
                 )
 
-                # Generate question using local Ollama
-                prompt = f"""Generate a {difficulty} level question about {session.topic_name}.
+                required_fields = ("question", "choices", "correct")
 
-    Previous conversation: {json.dumps(recent_history)}
-
-    Requirements:
-    - Appropriate for AAC users with communication difficulties
-    - Clear and simple language
-    - Include 3-4 answer choices
-    - Make it engaging and encouraging
-    - Format as JSON: {{"question": "...", "choices": ["A", "B", "C"], "correct": 0}}
-    """
-
-                try:
-                    # Get personalized system prompt for this user
-                    system_prompt = self._get_system_prompt(session.user_id, db)
-                    user_lang = self._get_user_language(session.user_id, db)
-                    if user_lang.startswith("es"):
-                        system_prompt = system_prompt + "\nResponde en español."
-
-                    response = await self.llm.generate(
-                        prompt=prompt,
-                        system=system_prompt,
-                        temperature=0.8,
-                        max_tokens=200,
-                    )
-                except Exception:
-                    # Fallback to translated question
-                    user_lang = self._get_user_language(session.user_id, db)
-                    translation_service = TranslationService()
-
-                    question_text = translation_service.get(
-                        user_lang,
-                        "pages/learning",
-                        "fallbackQuestion.question",
-                        topic=session.topic_name,
-                    )
-                    choice1 = translation_service.get(
-                        user_lang, "pages/learning", "fallbackQuestion.choice1"
-                    )
-                    choice2 = translation_service.get(
-                        user_lang, "pages/learning", "fallbackQuestion.choice2"
-                    )
-                    choice3 = translation_service.get(
-                        user_lang, "pages/learning", "fallbackQuestion.choice3"
-                    )
-
-                    response = json.dumps(
-                        {
-                            "question": question_text,
-                            "choices": [choice1, choice2, choice3],
-                            "correct": 0,
-                        }
-                    )
-
-                # Parse JSON response
-                try:
-                    question_data = json.loads(response.strip())
-                except json.JSONDecodeError:
-                    logger.error(f"Failed to parse question JSON: {response}")
-                    # Fallback to translated question
-                    user_lang = self._get_user_language(session.user_id, db)
-                    translation_service = TranslationService()
-
-                    question_text = translation_service.get(
-                        user_lang,
-                        "pages/learning",
-                        "fallbackQuestion.question",
-                        topic=session.topic_name,
-                    )
-                    choice1 = translation_service.get(
-                        user_lang, "pages/learning", "fallbackQuestion.choice1"
-                    )
-                    choice2 = translation_service.get(
-                        user_lang, "pages/learning", "fallbackQuestion.choice2"
-                    )
-                    choice3 = translation_service.get(
-                        user_lang, "pages/learning", "fallbackQuestion.choice3"
-                    )
-
-                    question_data = {
-                        "question": question_text,
-                        "choices": [choice1, choice2, choice3],
-                        "correct": 0,
-                    }
+                # Generate the question (LLM with a strict-JSON retry, then a
+                # translated fallback) and validate its shape.
+                question_data, response = await self._generate_question_data(
+                    session, difficulty, recent_history, db
+                )
 
                 # Validate question data
-                required_fields = ["question", "choices", "correct"]
                 if not all(field in question_data for field in required_fields):
                     logger.error(f"Invalid question data structure: {question_data}")
                     return {"success": False, "error": "Invalid question format"}
 
                 # Store question in session
-                session.conversation_history.append(
+                session.conversation_history = append_history_entry(
+                    session.conversation_history,
                     {
                         "type": "question",
                         "data": question_data,
                         "difficulty": difficulty,
                         "timestamp": datetime.now().isoformat(),
-                    }
+                    },
                 )
                 session.questions_asked += 1
 
@@ -165,3 +155,127 @@ class QuestionGenerationMixin:
         except Exception as e:
             logger.error(f"Failed to generate question: {e}")
             return {"success": False, "error": str(e)}
+
+    async def _generate_question_data(
+        self,
+        session: LearningSession,
+        difficulty: str,
+        recent_history: list,
+        db: Session | None,
+    ) -> tuple[dict | None, str]:
+        """Produce adaptive question data: LLM, strict-JSON retry, fallback.
+
+        Returns ``(question_data, response)`` where ``response`` is the last
+        raw LLM reply (empty when generation never reached the model) so the
+        caller can log diagnostics. ``question_data`` is ``None`` only when
+        generation itself raised before assigning a value.
+        """
+        required_fields = ("question", "choices", "correct")
+        response = ""
+        try:
+            prompt = f"""Generate a {difficulty} level question about {session.topic_name}.
+
+    Previous conversation: {json.dumps(recent_history)}
+
+    Requirements:
+    - Appropriate for AAC users with communication difficulties
+    - Clear and simple language
+    - Include exactly 3 answer choices
+    - Make it engaging and encouraging
+    - The "correct" field is the 0-based index of the right answer in "choices"
+    - Do NOT repeat a question or choice set you already used earlier in this conversation
+
+    RESPOND ONLY WITH VALID JSON. No greetings, no explanations, no markdown.
+    Use exactly this format (shown for a different topic):
+    {{"question": "Which animal says 'miau'?", "choices": ["Cat", "Dog", "Cow"], "correct": 0}}
+
+    Now output the JSON question about {session.topic_name}:"""
+
+            # Get personalized system prompt for this user
+            system_prompt = self._get_system_prompt(
+                session.user_id, db, mode_key=session.mode_key
+            )
+            user_lang = self._get_user_language(session.user_id, db)
+            if user_lang.startswith("es"):
+                system_prompt = system_prompt + "\nResponde en español."
+
+            response = await self.llm.generate(
+                prompt=prompt,
+                system=system_prompt,
+                temperature=0.8,
+                max_tokens=200,
+            )
+
+            # Parse JSON response (tolerating markdown fences / prose)
+            question_data = extract_json_object(response)
+            if question_data is None:
+                # Corrective retry: the model ignored the JSON contract.
+                logger.warning(
+                    f"Question JSON parse failed (session {session.id}); "
+                    "retrying with strict-JSON prompt"
+                )
+                retry_prompt = f"""Your previous reply was not valid JSON:
+
+    {response}
+
+    You must reply only with valid JSON. Do not add any text, greetings,
+    explanations, or markdown before or after the JSON object.
+    Format: {{"question": "...", "choices": ["A", "B", "C"], "correct": 0}}
+    Do NOT repeat a question or choice set you already used earlier in this conversation.
+
+    Generate the {difficulty} level question about {session.topic_name} again.
+    Reply with only the JSON object:"""
+
+                retry_response = await self.llm.generate(
+                    prompt=retry_prompt,
+                    system=system_prompt,
+                    temperature=0.2,
+                    max_tokens=200,
+                )
+                retry_data = extract_json_object(retry_response)
+                if retry_data is not None and all(
+                    field in retry_data for field in required_fields
+                ):
+                    question_data = retry_data
+                    response = retry_response
+                    logger.info(
+                        f"Question JSON recovered after strict-JSON retry "
+                        f"(session {session.id})"
+                    )
+        except Exception:
+            question_data = None
+
+        if question_data is None:
+            if response:
+                logger.error(f"Failed to parse question JSON: {response}")
+            else:
+                logger.error(
+                    "LLM question generation failed; using fallback question"
+                )
+            # Fallback to translated question
+            user_lang = self._get_user_language(session.user_id, db)
+            translation_service = TranslationService()
+
+            question_text = translation_service.get(
+                user_lang,
+                "pages/learning",
+                "fallbackQuestion.question",
+                topic=session.topic_name,
+            )
+            choice1 = translation_service.get(
+                user_lang, "pages/learning", "fallbackQuestion.choice1"
+            )
+            choice2 = translation_service.get(
+                user_lang, "pages/learning", "fallbackQuestion.choice2"
+            )
+            choice3 = translation_service.get(
+                user_lang, "pages/learning", "fallbackQuestion.choice3"
+            )
+
+            question_data = {
+                "question": question_text,
+                "choices": [choice1, choice2, choice3],
+                "correct": 0,
+            }
+
+        return question_data, response

@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from src.aac_app.models import (
     Achievement,
@@ -15,6 +15,10 @@ from src.aac_app.models import (
     UserAchievement,
 )
 from src.api.deps import get_current_active_user, get_db, get_text
+from src.api.routers.board_helpers import serialize_export_board
+
+# Compatibility name retained for scripts that imported the old module helper.
+serialize_board = serialize_export_board
 
 router = APIRouter()
 
@@ -25,49 +29,6 @@ def compute_checksum(payload: dict[str, Any]) -> str:
 
     raw = json.dumps(payload, separators=(",", ":"))
     return sha256(raw.encode("utf-8")).hexdigest()
-
-
-def serialize_board(board: CommunicationBoard) -> dict[str, Any]:
-    """Serialize a board with its symbols for export."""
-    symbols_data = []
-    for bs in board.symbols:
-        symbol_data = {
-            "id": bs.id,
-            "symbol_id": bs.symbol_id,
-            "position_x": bs.position_x,
-            "position_y": bs.position_y,
-            "size": bs.size,
-            "is_visible": bs.is_visible,
-            "custom_text": bs.custom_text,
-            "symbol": (
-                {
-                    "id": bs.symbol.id,
-                    "label": bs.symbol.label,
-                    "description": bs.symbol.description,
-                    "category": bs.symbol.category,
-                    "image_path": bs.symbol.image_path,
-                    "keywords": bs.symbol.keywords,
-                    "language": bs.symbol.language,
-                }
-                if bs.symbol
-                else None
-            ),
-        }
-        symbols_data.append(symbol_data)
-
-    return {
-        "id": board.id,
-        "name": board.name,
-        "description": board.description,
-        "category": board.category,
-        "is_public": board.is_public,
-        "is_template": board.is_template,
-        "grid_rows": board.grid_rows,
-        "grid_cols": board.grid_cols,
-        "symbols": symbols_data,
-        "created_at": board.created_at.isoformat() if board.created_at else None,
-        "updated_at": board.updated_at.isoformat() if board.updated_at else None,
-    }
 
 
 def _import_boards(db: Session, user: User, boards_data: list[dict[str, Any]]):
@@ -196,27 +157,29 @@ def export_data(
         )
 
     # Fetch user's boards
+    board_options = selectinload(CommunicationBoard.symbols).selectinload(BoardSymbol.symbol)
     boards = (
-        db.query(CommunicationBoard).filter(CommunicationBoard.user_id == user.id).all()
+        db.query(CommunicationBoard)
+        .options(board_options)
+        .filter(CommunicationBoard.user_id == user.id)
+        .all()
     )
-    boards_data = [serialize_board(b) for b in boards]
+    boards_data = [serialize_export_board(board) for board in boards]
 
-    # Fetch assigned boards (if student)
+    # Fetch assigned boards in one query instead of one board query per
+    # assignment. This matters for students with large assigned-board lists.
     assigned_boards_data = []
     if user.user_type == "student":
-        assignments = (
-            db.query(BoardAssignment)
+        assigned_boards = (
+            db.query(CommunicationBoard)
+            .join(BoardAssignment, BoardAssignment.board_id == CommunicationBoard.id)
+            .options(board_options)
             .filter(BoardAssignment.student_id == user.id)
+            .distinct()
+            .order_by(CommunicationBoard.id)
             .all()
         )
-        for assignment in assignments:
-            board = (
-                db.query(CommunicationBoard)
-                .filter(CommunicationBoard.id == assignment.board_id)
-                .first()
-            )
-            if board:
-                assigned_boards_data.append(serialize_board(board))
+        assigned_boards_data = [serialize_export_board(board) for board in assigned_boards]
 
     # Fetch achievements
     user_achievements = (

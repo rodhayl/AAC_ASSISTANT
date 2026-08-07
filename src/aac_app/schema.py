@@ -57,6 +57,96 @@ def _ensure_sqlite_columns(engine: Engine) -> None:
                 )
             )
 
+        if table_exists("learning_sessions") and not has_column("learning_sessions", "mode_key"):
+            logger.info("DB upgrade: adding learning_sessions.mode_key")
+            connection.execute(text("ALTER TABLE learning_sessions ADD COLUMN mode_key VARCHAR(50)"))
+
+        if table_exists("learning_modes") and not has_column(
+            "learning_modes", "auto_ask_enabled"
+        ):
+            logger.info("DB upgrade: adding learning_modes.auto_ask_enabled")
+            connection.execute(
+                text("ALTER TABLE learning_modes ADD COLUMN auto_ask_enabled BOOLEAN DEFAULT 1")
+            )
+
+
+def _ensure_sqlite_indexes(engine: Engine) -> None:
+    """Create indexes for confirmed ownership, join, and history queries.
+
+    Index creation is additive and idempotent so it is safe for existing
+    SQLite databases and for repeated application startup.
+    """
+    if engine.dialect.name != "sqlite":
+        return
+
+    indexes = (
+        ("ix_communication_boards_user_public", "communication_boards", "user_id, is_public"),
+        (
+            "ix_board_symbols_board_position",
+            "board_symbols",
+            "board_id, position_y, position_x",
+        ),
+        ("ix_board_symbols_symbol_id", "board_symbols", "symbol_id"),
+        (
+            "ix_board_assignments_student_board",
+            "board_assignments",
+            "student_id, board_id",
+        ),
+        (
+            "ix_symbol_usage_logs_user_timestamp",
+            "symbol_usage_logs",
+            "user_id, timestamp",
+        ),
+        (
+            "ix_symbol_usage_logs_user_session_position",
+            "symbol_usage_logs",
+            "user_id, session_id, position_in_utterance",
+        ),
+        (
+            "ix_symbol_usage_logs_user_symbol_label",
+            "symbol_usage_logs",
+            "user_id, symbol_label",
+        ),
+        ("ix_learning_sessions_user_started", "learning_sessions", "user_id, started_at"),
+        (
+            "ix_notifications_user_read_created",
+            "notifications",
+            "user_id, is_read, created_at",
+        ),
+        ("ix_notifications_user_created", "notifications", "user_id, created_at"),
+        ("ix_learning_modes_key", "learning_modes", "key"),
+    )
+
+    with engine.begin() as connection:
+        existing_tables = {
+            row[0]
+            for row in connection.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            )
+        }
+        for index_name, table_name, columns in indexes:
+            if table_name not in existing_tables:
+                continue
+            available_columns = {
+                row[1]
+                for row in connection.execute(text(f"PRAGMA table_info({table_name})"))
+            }
+            requested_columns = {column.strip() for column in columns.split(",")}
+            if not requested_columns <= available_columns:
+                logger.warning(
+                    "Skipping index {} because {} is missing columns {}",
+                    index_name,
+                    table_name,
+                    sorted(requested_columns - available_columns),
+                )
+                continue
+            connection.execute(
+                text(
+                    f"CREATE INDEX IF NOT EXISTS {index_name} "
+                    f"ON {table_name} ({columns})"
+                )
+            )
+
 
 def ensure(engine: Engine | None = None) -> Engine:
     """Create the current schema and apply all known legacy upgrades.
@@ -68,6 +158,7 @@ def ensure(engine: Engine | None = None) -> Engine:
     engine = engine or create_engine_instance()
     create_tables(engine)
     _ensure_sqlite_columns(engine)
+    _ensure_sqlite_indexes(engine)
     mark_tables_initialized(engine)
     return engine
 

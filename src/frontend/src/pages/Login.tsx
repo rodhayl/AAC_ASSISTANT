@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { useAuthStore } from '../store/authStore';
 import { User, Lock, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -7,7 +7,9 @@ import { useTranslation } from 'react-i18next';
 export function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const { login, isLoading, error } = useAuthStore();
+  const login = useAuthStore(state => state.login);
+  const isLoading = useAuthStore(state => state.isLoading);
+  const error = useAuthStore(state => state.error);
   const navigate = useNavigate();
   const { t } = useTranslation('login');
 

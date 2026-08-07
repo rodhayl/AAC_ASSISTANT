@@ -10,10 +10,13 @@ Tests the complete guardian profile system including:
 - Profile resolution with templates + overrides
 """
 
+from datetime import datetime
+
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 
-from src.aac_app.models import User
+from src.aac_app.models import GuardianProfile, StudentTeacher, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.api.main import app
 from tests.test_utils_auth import create_test_headers
@@ -656,6 +659,138 @@ class TestAuditTrail:
         reasons = [h.get("change_reason") for h in history if h.get("change_reason")]
         assert "Birthday update" in reasons or "Therapy recommendation" in reasons
 
+    def test_history_uses_bounded_join_for_changers(self, test_db_session):
+        """History resolves changers without a query per audit entry."""
+        from src.aac_app.models import GuardianProfileHistory
+        from src.aac_app.services.guardian_profile_service import GuardianProfileService
+
+        teacher = User(
+            username="history_query_teacher",
+            password_hash="test",
+            display_name="History Teacher",
+            user_type="teacher",
+            is_active=True,
+        )
+        student = User(
+            username="history_query_student",
+            password_hash="test",
+            display_name="History Student",
+            user_type="student",
+            is_active=True,
+        )
+        test_db_session.add_all([teacher, student])
+        test_db_session.flush()
+        profile = GuardianProfile(
+            user_id=student.id,
+            created_by=teacher.id,
+            template_name="default",
+        )
+        test_db_session.add(profile)
+        test_db_session.flush()
+        test_db_session.add_all(
+            [
+                GuardianProfileHistory(
+                    profile_id=profile.id,
+                    field_name="age",
+                    old_value="7",
+                    new_value="8",
+                    changed_by=teacher.id,
+                    changed_at=datetime(2024, 1, 1),
+                ),
+                GuardianProfileHistory(
+                    profile_id=profile.id,
+                    field_name="template_name",
+                    old_value='"default"',
+                    new_value='"calm_gentle"',
+                    changed_by=teacher.id,
+                    changed_at=datetime(2024, 1, 2),
+                ),
+            ]
+        )
+        test_db_session.commit()
+
+        student_id = student.id
+        statement_count = 0
+
+        def count_statements(*_args):
+            nonlocal statement_count
+            statement_count += 1
+
+        event.listen(test_db_session.bind, "before_cursor_execute", count_statements)
+        try:
+            history = GuardianProfileService().get_profile_history(
+                student_id, db=test_db_session
+            )
+        finally:
+            event.remove(test_db_session.bind, "before_cursor_execute", count_statements)
+
+        assert statement_count == 2  # profile lookup + joined history/changer query
+        assert len(history) == 2
+        assert {entry["changed_by"]["display_name"] for entry in history} == {
+            "History Teacher"
+        }
+
+        limited = GuardianProfileService().get_profile_history(
+            student_id, limit=1, db=test_db_session
+        )
+        assert len(limited) == 1
+        assert limited[0]["field_name"] == "template_name"
+
+        # A valid FK whose user is removed is not possible while SQLite FK
+        # enforcement is enabled, so exercise the left-join fallback with a
+        # small query double instead of manufacturing invalid persisted data.
+        from unittest.mock import patch
+
+        missing_entry = GuardianProfileHistory(
+            id=999,
+            profile_id=profile.id,
+            field_name="missing_changer",
+            old_value=None,
+            new_value='"value"',
+            changed_by=999999,
+        )
+
+        class QueryDouble:
+            def __init__(self, rows):
+                self.rows = rows
+
+            def filter_by(self, **_kwargs):
+                return self
+
+            def outerjoin(self, *_args):
+                return self
+
+            def filter(self, *_args):
+                return self
+
+            def order_by(self, *_args):
+                return self
+
+            def limit(self, *_args):
+                return self
+
+            def first(self):
+                return profile
+
+            def all(self):
+                return self.rows
+
+        with patch.object(
+            test_db_session,
+            "query",
+            side_effect=[
+                QueryDouble([profile]),
+                QueryDouble([(missing_entry, None)]),
+            ],
+        ):
+            missing_result = GuardianProfileService().get_profile_history(
+                student_id, db=test_db_session
+            )
+        assert missing_result[0]["changed_by"] == {
+            "id": None,
+            "display_name": "Unknown",
+        }
+
     def test_history_records_who_made_change(self, test_password):
         """Should record which user made each change."""
         teacher1 = create_user("teacher_a3a", "teacher", test_password)
@@ -756,6 +891,122 @@ class TestSafetyConfiguration:
 
 class TestStudentListing:
     """Test listing students with profile status."""
+
+    def test_service_list_uses_active_profile_status_without_n_plus_one(
+        self, test_db_session, test_password
+    ):
+        """Roster output distinguishes active, inactive, and missing profiles."""
+        teacher = User(
+            username="roster_teacher",
+            password_hash="test",
+            display_name="Roster Teacher",
+            user_type="teacher",
+            is_active=True,
+        )
+        active_student = User(
+            username="roster_active",
+            password_hash="test",
+            display_name="Active Student",
+            user_type="student",
+            is_active=True,
+        )
+        inactive_student = User(
+            username="roster_inactive",
+            password_hash="test",
+            display_name="Inactive Profile Student",
+            user_type="student",
+            is_active=True,
+        )
+        missing_student = User(
+            username="roster_missing",
+            password_hash="test",
+            display_name="Missing Profile Student",
+            user_type="student",
+            is_active=True,
+        )
+        test_db_session.add_all([teacher, active_student, inactive_student, missing_student])
+        test_db_session.flush()
+        test_db_session.add_all(
+            [
+                GuardianProfile(
+                    user_id=active_student.id,
+                    created_by=teacher.id,
+                    template_name="calm_gentle",
+                    is_active=True,
+                ),
+                GuardianProfile(
+                    user_id=inactive_student.id,
+                    created_by=teacher.id,
+                    template_name="default",
+                    is_active=False,
+                ),
+            ]
+        )
+        test_db_session.commit()
+
+        from src.aac_app.services.guardian_profile_service import GuardianProfileService
+
+        statement_count = 0
+
+        def count_statements(*_args):
+            nonlocal statement_count
+            statement_count += 1
+
+        event.listen(test_db_session.bind, "before_cursor_execute", count_statements)
+        try:
+            roster = GuardianProfileService().list_students_with_profiles(db=test_db_session)
+        finally:
+            event.remove(test_db_session.bind, "before_cursor_execute", count_statements)
+
+        assert statement_count == 1
+        by_id = {item["id"]: item for item in roster}
+
+        assert by_id[active_student.id]["has_profile"] is True
+        assert by_id[active_student.id]["template_name"] == "calm_gentle"
+        assert by_id[inactive_student.id]["has_profile"] is False
+        assert by_id[inactive_student.id]["template_name"] is None
+        assert by_id[missing_student.id]["has_profile"] is False
+
+    def test_service_list_filters_assigned_teacher_students(self, test_db_session):
+        """Teacher rosters include only assigned students when assignments exist."""
+        teacher = User(
+            username="assigned_teacher",
+            password_hash="test",
+            display_name="Assigned Teacher",
+            user_type="teacher",
+            is_active=True,
+        )
+        assigned = User(
+            username="assigned_student",
+            password_hash="test",
+            display_name="Assigned Student",
+            user_type="student",
+            is_active=True,
+        )
+        unassigned = User(
+            username="unassigned_student",
+            password_hash="test",
+            display_name="Unassigned Student",
+            user_type="student",
+            is_active=True,
+        )
+        test_db_session.add_all([teacher, assigned, unassigned])
+        test_db_session.flush()
+        test_db_session.add_all(
+            [
+                StudentTeacher(student_id=assigned.id, teacher_id=teacher.id),
+                # Duplicate legacy assignment must not duplicate the roster row.
+                StudentTeacher(student_id=assigned.id, teacher_id=teacher.id),
+            ]
+        )
+        test_db_session.commit()
+
+        from src.aac_app.services.guardian_profile_service import GuardianProfileService
+
+        roster = GuardianProfileService().list_students_with_profiles(
+            teacher_id=teacher.id, db=test_db_session
+        )
+        assert [item["id"] for item in roster] == [assigned.id]
 
     def test_list_students_shows_profile_status(self, test_password):
         """Should show which students have profiles configured."""

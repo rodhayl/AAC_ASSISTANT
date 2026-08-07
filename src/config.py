@@ -117,7 +117,7 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
 
     APP_NAME: str = "AAC Assistant"
-    APP_VERSION: str = "1.0.0"
+    APP_VERSION: str = "2.0.0"
     ENVIRONMENT: str = "development"
     DEFAULT_LOCALE: str = "es"
 
@@ -128,6 +128,8 @@ class Settings(BaseSettings):
     AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN: bool = True
     AAC_BOOTSTRAP_ADMIN_USERNAME: str = "admin1"
     AAC_BOOTSTRAP_ADMIN_PASSWORD: str = "Admin123"
+    AAC_ENABLE_SYMBOL_IMAGE_BACKFILL: bool = True
+    AAC_SYMBOL_IMAGE_BACKFILL_LIMIT: int = 100
 
     # Optional deterministic passwords are intentionally unset by default.
     AAC_SEED_DEFAULT_PASSWORD: str | None = None

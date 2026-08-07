@@ -143,6 +143,22 @@ test.describe('Prediction Tiers', () => {
         }
 
         let lastPredictionResponse: any = null;
+        const ensureLearningInput = async () => {
+            await page.goto('/learning');
+            await expect(page).toHaveURL(/\/learning(?:[/?#]|$)/);
+            const input = page.locator('#learning-text-input');
+            if (!(await input.isVisible().catch(() => false))) {
+                const startButton = page.getByRole('button', {
+                    name: /start session|start|comenzar sesión|comenzar/i,
+                }).first();
+                if (await startButton.isVisible().catch(() => false)) {
+                    await startButton.click();
+                }
+            }
+            await expect(input).toBeVisible({ timeout: 30000 });
+            return input;
+        };
+
         await page.route('**/api/analytics/next-symbol', async route => {
             try {
                 const response = await route.fetch();
@@ -299,13 +315,8 @@ test.describe('Prediction Tiers', () => {
                     console.log('[Test] Settings save response not captured');
                 }
 
-                await page.goto('/learning');
-                const startBtnT3 = page.getByRole('button', { name: /start|comenzar|practice/i });
-                if (await startBtnT3.isVisible().catch(() => false)) {
-                    await startBtnT3.click();
-                }
-
-                await inputField.fill('yo ');
+                const tier3Input = await ensureLearningInput();
+                await tier3Input.fill('yo ');
 
                 let t3Data: any[] = [];
                 try {
@@ -336,7 +347,11 @@ test.describe('Prediction Tiers', () => {
             }
 
             // --- Tier 4: Fallback ---
-            await inputField.fill('xylophone ');
+            // Settings navigation can remount Learning and clear its local
+            // session state. Re-establish the route/session before interacting
+            // instead of relying on a stale locator and timing.
+            const tier4Input = await ensureLearningInput();
+            await tier4Input.fill('xylophone ');
 
             let t4Data: any[] = [];
             try {

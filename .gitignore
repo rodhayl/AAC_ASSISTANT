@@ -59,6 +59,7 @@ results-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
 .env.*
 !.env.example
 !src/frontend/.env.example
+!src/frontend/.env.e2e
 env.properties
 
 # PyInstaller / build artifacts
@@ -78,6 +79,9 @@ _node.zip
 tools_local/
 test_localsystem.txt
 _input_*.txt
+
+# Throwaway browser diagnostics
+src/frontend/pw-diag*.mjs
 
 # IDE
 .vscode/

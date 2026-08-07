@@ -1,4 +1,3 @@
-import os
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -12,7 +11,14 @@ from src.aac_app.services.achievement_system import AchievementSystem
 from src.aac_app.services.vector_utils import delete_symbol as delete_symbol_embedding
 from src.aac_app.services.vector_utils import index_symbol
 from src.api import schemas
-from src.api.deps import get_current_active_user, get_db, get_text
+from src.api.deps import (
+    get_board_or_404,
+    get_current_active_user,
+    get_db,
+    get_text,
+    require_board_owner_or_admin,
+)
+from src.api.file_uploads import read_image_upload, remove_owned_upload
 
 router = APIRouter()
 
@@ -198,15 +204,16 @@ def reorder_symbols(
         Success status with count of successfully updated symbols
     """
     try:
-        updated_count = 0
-        for update in updates:
-            symbol = db.query(Symbol).filter(Symbol.id == update.id).first()
-            if symbol:
-                symbol.order_index = update.order_index
-                updated_count += 1
+        if not updates:
+            return {"ok": True, "updated": 0}
+
+        update_by_id = {update.id: update.order_index for update in updates}
+        symbols = db.query(Symbol).filter(Symbol.id.in_(update_by_id)).all()
+        for symbol in symbols:
+            symbol.order_index = update_by_id[symbol.id]
 
         db.commit()
-        return {"ok": True, "updated": updated_count}
+        return {"ok": True, "updated": len(symbols)}
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to reorder symbols: {e}")
@@ -232,25 +239,20 @@ async def upload_symbol(
     """Upload a new symbol image"""
     uploads_dir = config.UPLOADS_DIR / "symbols"
     uploads_dir.mkdir(parents=True, exist_ok=True)
-    ext = os.path.splitext(file.filename or "")[1].lower() or ".png"
+    content, ext = await read_image_upload(
+        file,
+        invalid_type_detail=get_text(user=current_user, key="errors.boards.invalidFileType"),
+        too_large_detail=get_text(user=current_user, key="errors.boards.fileTooLarge"),
+        empty_detail=get_text(user=current_user, key="errors.boards.invalidFileType"),
+    )
     name = f"{uuid.uuid4().hex}{ext}"
     path = uploads_dir / name
-    # Read file content for validation
-    content = file.file.read()
-    # Basic validation: type and size
-    if not (file.content_type or "").startswith("image/"):
-        raise HTTPException(
-            status_code=400,
-            detail=get_text(user=current_user, key="errors.boards.invalidFileType"),
-        )
-    max_bytes = 5 * 1024 * 1024
-    if len(content) > max_bytes:
-        raise HTTPException(
-            status_code=400,
-            detail=get_text(user=current_user, key="errors.boards.fileTooLarge"),
-        )
-    with path.open("wb") as f:
-        f.write(content)
+    try:
+        with path.open("wb") as f:
+            f.write(content)
+    except OSError:
+        remove_owned_upload(f"/uploads/symbols/{name}", uploads_dir)
+        raise
     public_path = f"/uploads/symbols/{name}"
     db_symbol = Symbol(
         label=label,
@@ -263,9 +265,20 @@ async def upload_symbol(
         is_builtin=False,
     )
     db.add(db_symbol)
-    db.commit()
-    db.refresh(db_symbol)
-    index_symbol(db_symbol)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        remove_owned_upload(public_path, uploads_dir)
+        raise
+    try:
+        db.refresh(db_symbol)
+    except Exception as exc:
+        logger.warning("Symbol image persisted but refresh failed: {}", exc)
+    try:
+        index_symbol(db_symbol)
+    except Exception as exc:
+        logger.warning("Symbol image saved but indexing failed: {}", exc)
     return db_symbol
 
 
@@ -308,27 +321,34 @@ async def update_symbol_image(
         )
     uploads_dir = config.UPLOADS_DIR / "symbols"
     uploads_dir.mkdir(parents=True, exist_ok=True)
-    ext = os.path.splitext(file.filename or "")[1].lower() or ".png"
+    content, ext = await read_image_upload(
+        file,
+        invalid_type_detail=get_text(user=current_user, key="errors.boards.invalidFileType"),
+        too_large_detail=get_text(user=current_user, key="errors.boards.fileTooLarge"),
+        empty_detail=get_text(user=current_user, key="errors.boards.invalidFileType"),
+    )
     name = f"{uuid.uuid4().hex}{ext}"
     path = uploads_dir / name
-    content = file.file.read()
-    if not (file.content_type or "").startswith("image/"):
-        raise HTTPException(
-            status_code=400,
-            detail=get_text(user=current_user, key="errors.boards.invalidFileType"),
-        )
-    max_bytes = 5 * 1024 * 1024
-    if len(content) > max_bytes:
-        raise HTTPException(
-            status_code=400,
-            detail=get_text(user=current_user, key="errors.boards.fileTooLarge"),
-        )
-    with path.open("wb") as f:
-        f.write(content)
+    try:
+        with path.open("wb") as f:
+            f.write(content)
+    except OSError:
+        remove_owned_upload(f"/uploads/symbols/{name}", uploads_dir)
+        raise
     public_path = f"/uploads/symbols/{name}"
+    old_image_path = db_symbol.image_path
     db_symbol.image_path = public_path
-    db.commit()
-    db.refresh(db_symbol)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        remove_owned_upload(public_path, uploads_dir)
+        raise
+    try:
+        db.refresh(db_symbol)
+    except Exception as exc:
+        logger.warning("Symbol image persisted but refresh failed: {}", exc)
+    remove_owned_upload(old_image_path, uploads_dir)
     use_count = db.query(BoardSymbol).filter(BoardSymbol.symbol_id == symbol_id).count()
     db_symbol.is_in_use = use_count > 0
     return db_symbol
@@ -357,8 +377,10 @@ def delete_symbol(
         )
     if in_use:
         db.query(BoardSymbol).filter(BoardSymbol.symbol_id == symbol_id).delete()
+    image_path = symbol.image_path
     db.delete(symbol)
     db.commit()
+    remove_owned_upload(image_path, config.UPLOADS_DIR / "symbols")
     delete_symbol_embedding(symbol_id)
     return {"ok": True, "deleted": symbol_id}
 
@@ -371,24 +393,8 @@ def add_symbol_to_board(
     current_user: User = Depends(get_current_active_user),
 ):
     """Add a symbol to a board"""
-    # Check board
-    board = (
-        db.query(CommunicationBoard).filter(CommunicationBoard.id == board_id).first()
-    )
-    if not board:
-        raise HTTPException(
-            status_code=404,
-            detail=get_text(user=current_user, key="errors.boards.boardNotFound"),
-        )
-
-    # Permission check
-    if current_user.user_type != "admin" and board.user_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail=get_text(
-                user=current_user, key="errors.boards.unauthorizedModifyBoard"
-            ),
-        )
+    board = get_board_or_404(db, board_id, current_user)
+    require_board_owner_or_admin(board, current_user)
 
     # Check symbol
     symbol = db.query(Symbol).filter(Symbol.id == symbol_data.symbol_id).first()
@@ -459,24 +465,8 @@ def batch_update_board_symbols(
     current_user: User = Depends(get_current_active_user),
 ):
     """Batch update multiple symbol positions"""
-    # Verify board exists
-    board = (
-        db.query(CommunicationBoard).filter(CommunicationBoard.id == board_id).first()
-    )
-    if not board:
-        raise HTTPException(
-            status_code=404,
-            detail=get_text(user=current_user, key="errors.boards.boardNotFound"),
-        )
-
-    # Permission check
-    if current_user.user_type != "admin" and board.user_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail=get_text(
-                user=current_user, key="errors.boards.unauthorizedModifyBoard"
-            ),
-        )
+    board = get_board_or_404(db, board_id, current_user)
+    require_board_owner_or_admin(board, current_user)
 
     updated_count = 0
     for update in updates:
@@ -508,23 +498,9 @@ def update_board_symbol(
     current_user: User = Depends(get_current_active_user),
 ):
     """Update a symbol's position or properties on a board"""
-    # Verify board permission first (optimization: check board ownership before symbol query)
-    board = (
-        db.query(CommunicationBoard).filter(CommunicationBoard.id == board_id).first()
-    )
-    if not board:
-        raise HTTPException(
-            status_code=404,
-            detail=get_text(user=current_user, key="errors.boards.boardNotFound"),
-        )
-
-    if current_user.user_type != "admin" and board.user_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail=get_text(
-                user=current_user, key="errors.boards.unauthorizedModifyBoard"
-            ),
-        )
+    # Check board ownership before querying the board-symbol association.
+    board = get_board_or_404(db, board_id, current_user)
+    require_board_owner_or_admin(board, current_user)
 
     db_board_symbol = (
         db.query(BoardSymbol)
@@ -556,23 +532,8 @@ def remove_symbol_from_board(
     current_user: User = Depends(get_current_active_user),
 ):
     """Remove a symbol from a board"""
-    # Verify board permission
-    board = (
-        db.query(CommunicationBoard).filter(CommunicationBoard.id == board_id).first()
-    )
-    if not board:
-        raise HTTPException(
-            status_code=404,
-            detail=get_text(user=current_user, key="errors.boards.boardNotFound"),
-        )
-
-    if current_user.user_type != "admin" and board.user_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail=get_text(
-                user=current_user, key="errors.boards.unauthorizedModifyBoard"
-            ),
-        )
+    board = get_board_or_404(db, board_id, current_user)
+    require_board_owner_or_admin(board, current_user)
 
     db_board_symbol = (
         db.query(BoardSymbol)

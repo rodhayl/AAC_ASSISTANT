@@ -1,17 +1,24 @@
 """Lazy provider singletons and startup warmup orchestration."""
 
+import asyncio
+import inspect
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, TypedDict
 
 from fastapi import Depends
 from loguru import logger
 
 from src import config
 from src.aac_app.providers.lmstudio_provider import LMStudioProvider
-from src.aac_app.providers.local_speech_provider import LocalSpeechProvider
+from src.aac_app.providers.local_speech_provider import (
+    DEFAULT_STT_MODEL,
+    LocalSpeechProvider,
+    normalize_stt_model,
+)
 from src.aac_app.providers.ollama_provider import OllamaProvider
 from src.aac_app.providers.openrouter_provider import OpenRouterProvider
 from src.aac_app.services.achievement_system import AchievementSystem
@@ -38,18 +45,128 @@ _startup_state: dict[str, Any] = {
     },
     "errors": [],
     "startup_time_ms": 0,
+    "provider_metrics": {},
 }
 _startup_lock = threading.Lock()
+_startup_generation = 0
+_warmup_generation_local = threading.local()
 
 # Guards the check-and-create pattern in the get_*_provider singleton
 # getters so the warmup thread and request threads cannot race-construct
 # the same provider.
 _provider_lock = threading.Lock()
 
+# ``asyncio.to_thread`` cannot cancel native model cleanup once it starts. Use
+# dedicated daemon workers instead of the loop's shared executor, and retain
+# references until each release finishes so a timed-out cleanup is observable
+# and cannot be mistaken for a completed release.
+_speech_release_lock = threading.Lock()
+
+
+@dataclass
+class _SpeechReleaseState:
+    """Tracked native speech cleanup for one provider instance."""
+
+    completed: threading.Event
+    failure: list[BaseException]
+    thread: threading.Thread | None = None
+
+
+_speech_release_workers: dict[int, _SpeechReleaseState] = {}
+
+
+def _close_vector_store(store: LocalVectorStore | None) -> None:
+    """Release a discarded vector store without disposing the shared DB engine."""
+    close = getattr(store, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception as exc:
+            logger.warning("Vector store cleanup failed: {}", exc)
+
+
+class ProviderMetric(TypedDict):
+    """Readiness telemetry for one provider initialization attempt.
+
+    ``duration_ms`` is nullable when the caller's timeout expires before the
+    worker reports its completion. Consumers should use ``timed_out`` to
+    distinguish that case from a completed attempt.
+    """
+
+    success: bool
+    duration_ms: float | None
+    timed_out: bool
+
+
+@dataclass(frozen=True)
+class _InitializationResult:
+    success: bool
+    duration_ms: float
+    error: Exception | None = None
+
 
 def _get_setting_value(key: str, default: str = "") -> str:
     """Resolve through the package facade so tests and callers can override it."""
     return deps_package.get_setting_value(key, default)
+
+
+def _close_llm_provider(provider: Any | None) -> None:
+    """Release HTTP transports from a synchronous cleanup path."""
+    close_sync = getattr(provider, "close_sync", None)
+    if callable(close_sync):
+        try:
+            close_sync()
+        except Exception as exc:
+            logger.warning("LLM provider cleanup failed: {}", exc)
+        return
+
+    close = getattr(provider, "close", None)
+    if not callable(close):
+        return
+    try:
+        result = close()
+        if not inspect.isawaitable(result):
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(result)
+        else:
+            # This fallback is only for third-party/test providers without a
+            # close_sync method; concrete providers use the awaited path below.
+            asyncio.create_task(result)
+    except Exception as exc:
+        logger.warning("LLM provider cleanup failed: {}", exc)
+
+
+async def _close_llm_provider_async(provider: Any | None) -> None:
+    """Release a provider while an application event loop is running."""
+    close_async = getattr(provider, "close_async", None)
+    if callable(close_async):
+        try:
+            result = close_async()
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:
+            logger.warning("LLM provider cleanup failed: {}", exc)
+        return
+
+    close = getattr(provider, "close", None)
+    if callable(close):
+        try:
+            result = close()
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:
+            logger.warning("LLM provider cleanup failed: {}", exc)
+        return
+
+    close_sync = getattr(provider, "close_sync", None)
+    if callable(close_sync):
+        try:
+            close_sync()
+        except Exception as exc:
+            logger.warning("LLM provider cleanup failed: {}", exc)
 
 
 def get_ollama_provider() -> OllamaProvider:
@@ -58,6 +175,7 @@ def get_ollama_provider() -> OllamaProvider:
 
     base_url = _get_setting_value("ollama_base_url", config.OLLAMA_BASE_URL)
     model = _get_setting_value("ollama_model", "")
+    discarded: Any | None = None
 
     with _provider_lock:
         if _ollama_provider is None:
@@ -67,16 +185,19 @@ def get_ollama_provider() -> OllamaProvider:
             _ollama_provider = OllamaProvider(base_url=base_url, model=model)
         elif (
             _ollama_provider.base_url != base_url
-            or _ollama_provider.recommended_model != model
+            or _ollama_provider._configured_model != model
         ):
             logger.info(
                 "Ollama settings changed. Re-initializing provider. "
                 f"(URL: {_ollama_provider.base_url}->{base_url}, "
                 f"Model: {_ollama_provider.recommended_model}->{model})"
             )
+            discarded = _ollama_provider
             _ollama_provider = OllamaProvider(base_url=base_url, model=model)
+        provider = _ollama_provider
 
-    return _ollama_provider
+    _close_llm_provider(discarded)
+    return provider
 
 
 def get_openrouter_provider() -> OpenRouterProvider:
@@ -85,6 +206,7 @@ def get_openrouter_provider() -> OpenRouterProvider:
 
     api_key = _get_setting_value("openrouter_api_key", "")
     model = _get_setting_value("openrouter_model", "")
+    discarded: Any | None = None
 
     with _provider_lock:
         if _openrouter_provider is None:
@@ -92,12 +214,15 @@ def get_openrouter_provider() -> OpenRouterProvider:
             _openrouter_provider = OpenRouterProvider(api_key=api_key, model=model)
         elif (
             _openrouter_provider.api_key != api_key
-            or _openrouter_provider.default_model != model
+            or _openrouter_provider._configured_model != model
         ):
             logger.info("OpenRouter settings changed. Re-initializing provider.")
+            discarded = _openrouter_provider
             _openrouter_provider = OpenRouterProvider(api_key=api_key, model=model)
+        provider = _openrouter_provider
 
-    return _openrouter_provider
+    _close_llm_provider(discarded)
+    return provider
 
 
 def get_lmstudio_provider() -> LMStudioProvider:
@@ -106,6 +231,7 @@ def get_lmstudio_provider() -> LMStudioProvider:
 
     base_url = _get_setting_value("lmstudio_base_url", "http://localhost:1234/v1")
     model = _get_setting_value("lmstudio_model", "")
+    discarded: Any | None = None
 
     with _provider_lock:
         if _lmstudio_provider is None:
@@ -114,14 +240,17 @@ def get_lmstudio_provider() -> LMStudioProvider:
         else:
             current_url = _lmstudio_provider.base_url.rstrip("/")
             new_url = base_url.rstrip("/")
-            if current_url != new_url or _lmstudio_provider.default_model != model:
+            if current_url != new_url or _lmstudio_provider._configured_model != model:
                 logger.info(
                     f"LM Studio settings changed. Re-initializing provider. "
                     f"(URL: {current_url}->{new_url})"
                 )
+                discarded = _lmstudio_provider
                 _lmstudio_provider = LMStudioProvider(base_url=base_url, model=model)
+        provider = _lmstudio_provider
 
-    return _lmstudio_provider
+    _close_llm_provider(discarded)
+    return provider
 
 
 def get_llm_provider() -> OllamaProvider | OpenRouterProvider | LMStudioProvider:
@@ -138,14 +267,139 @@ def get_llm_provider() -> OllamaProvider | OpenRouterProvider | LMStudioProvider
     return provider
 
 
+def _release_speech_provider(provider: Any | None) -> None:
+    """Release an STT provider when its cached instance is discarded."""
+    release = getattr(provider, "release", None)
+    if not callable(release):
+        return
+
+    # Avoid a synchronous settings/reset path releasing an instance already
+    # owned by an asynchronous shutdown worker. The async worker remains the
+    # single owner of that native release operation.
+    provider_key = id(provider)
+    with _speech_release_lock:
+        existing = _speech_release_workers.get(provider_key)
+    if existing is not None and not existing.completed.is_set():
+        logger.debug("Speech provider release already in progress")
+        return
+
+    try:
+        release()
+    except Exception as exc:
+        # Cleanup must never prevent a new provider from being installed
+        # or make a settings/reset endpoint fail.
+        logger.warning("Speech provider cleanup failed: {}", exc)
+
+
+async def _drain_speech_release_workers(timeout: float) -> None:
+    """Wait briefly for previously timed-out native release workers."""
+    deadline = asyncio.get_running_loop().time() + max(timeout, 0.0)
+    while True:
+        with _speech_release_lock:
+            workers = [
+                state.thread
+                for state in _speech_release_workers.values()
+                if state.thread is not None and state.thread.is_alive()
+            ]
+        if not workers:
+            return
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            logger.warning(
+                "Speech cleanup worker(s) still running after shutdown budget: {}",
+                len(workers),
+            )
+            return
+        await asyncio.sleep(min(remaining, 0.05))
+
+
+async def _release_speech_provider_async(provider: Any | None, timeout: float) -> None:
+    """Release speech resources without allowing shutdown to hang.
+
+    Native model release hooks cannot be force-cancelled safely. A dedicated
+    daemon thread keeps a blocked optional provider from occupying asyncio's
+    shared worker pool; the worker remains tracked until it finishes, while the
+    event loop waits only for the configured shutdown budget.
+    """
+    release = getattr(provider, "release", None)
+    if not callable(release):
+        return
+
+    provider_key = id(provider)
+    with _speech_release_lock:
+        state = _speech_release_workers.get(provider_key)
+        if state is None or state.completed.is_set():
+            state = _SpeechReleaseState(
+                completed=threading.Event(),
+                failure=[],
+            )
+            _speech_release_workers[provider_key] = state
+            start_worker = True
+        else:
+            start_worker = False
+
+    if start_worker:
+        def run_release() -> None:
+            try:
+                release()
+            except BaseException as exc:  # cleanup must not escape a daemon thread
+                state.failure.append(exc)
+            finally:
+                state.completed.set()
+                with _speech_release_lock:
+                    if _speech_release_workers.get(provider_key) is state:
+                        _speech_release_workers.pop(provider_key, None)
+
+        worker = threading.Thread(
+            target=run_release,
+            name="aac-speech-release",
+            daemon=True,
+        )
+        state.thread = worker
+        try:
+            worker.start()
+        except BaseException:
+            with _speech_release_lock:
+                if _speech_release_workers.get(provider_key) is state:
+                    _speech_release_workers.pop(provider_key, None)
+            raise
+
+    deadline = asyncio.get_running_loop().time() + max(timeout, 0.0)
+    completed = state.completed
+    while not completed.is_set():
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            logger.warning(
+                "Timed out releasing speech provider during shutdown; "
+                "dedicated cleanup worker remains tracked"
+            )
+            return
+        await asyncio.sleep(min(remaining, 0.05))
+
+    if state.failure:
+        logger.warning("Speech provider cleanup failed: {}", state.failure[0])
+
+
 def get_speech_provider() -> LocalSpeechProvider:
-    """Return the local speech provider singleton."""
+    """Return the configured local speech provider singleton."""
     global _speech_provider
+    configured_model = normalize_stt_model(_get_setting_value("stt_model", DEFAULT_STT_MODEL))
+    discarded: Any | None = None
     with _provider_lock:
         if _speech_provider is None:
-            logger.info("Initializing global LocalSpeechProvider")
-            _speech_provider = LocalSpeechProvider()
-    return _speech_provider
+            logger.info("Initializing global LocalSpeechProvider with model {}", configured_model)
+            _speech_provider = LocalSpeechProvider(model_size=configured_model)
+        elif _speech_provider.model_size != configured_model:
+            logger.info(
+                "STT model changed. Re-initializing LocalSpeechProvider ({} -> {})",
+                _speech_provider.model_size,
+                configured_model,
+            )
+            discarded = _speech_provider
+            _speech_provider = LocalSpeechProvider(model_size=configured_model)
+        provider = _speech_provider
+    _release_speech_provider(discarded)
+    return provider
 
 
 def get_achievement_system() -> AchievementSystem:
@@ -155,7 +409,8 @@ def get_achievement_system() -> AchievementSystem:
         if _achievement_system is None:
             logger.info("Initializing global AchievementSystem")
             _achievement_system = AchievementSystem()
-    return _achievement_system
+        provider = _achievement_system
+    return provider
 
 
 def get_vector_store() -> LocalVectorStore:
@@ -165,7 +420,8 @@ def get_vector_store() -> LocalVectorStore:
         if _vector_store is None:
             logger.info("Initializing global LocalVectorStore")
             _vector_store = LocalVectorStore()
-    return _vector_store
+        provider = _vector_store
+    return provider
 
 
 def _get_llm_settings() -> tuple[int, float]:
@@ -214,9 +470,21 @@ def _init_speech_provider_sync() -> bool:
     try:
         start = time.time()
         logger.info("Warmup: Initializing speech recognition provider (lazy mode)...")
-        _speech_provider = LocalSpeechProvider(lazy_load=True)
+        provider = LocalSpeechProvider(
+            model_size=normalize_stt_model(_get_setting_value("stt_model", DEFAULT_STT_MODEL)),
+            lazy_load=True,
+        )
+        with _startup_lock:
+            if (
+                getattr(_warmup_generation_local, "generation", None) is not None
+                and _warmup_generation_local.generation != _startup_generation
+            ):
+                _release_speech_provider(provider)
+                return False
+            with _provider_lock:
+                _speech_provider = provider
         elapsed = (time.time() - start) * 1000
-        if _speech_provider.is_available():
+        if provider.is_available():
             logger.info(
                 f"Warmup: Speech provider initialized in {elapsed:.0f}ms "
                 "(model will load on first use)"
@@ -239,23 +507,36 @@ def _init_llm_provider_sync() -> bool:
         provider_type = _get_setting_value("ai_provider", "ollama")
         logger.info(f"Warmup: Initializing {provider_type} LLM provider...")
 
-        if provider_type == "openrouter":
-            _openrouter_provider = OpenRouterProvider(
-                api_key=_get_setting_value("openrouter_api_key", "")
-            )
-        elif provider_type == "lmstudio":
-            _lmstudio_provider = LMStudioProvider(
-                base_url=_get_setting_value(
-                    "lmstudio_base_url", "http://localhost:1234/v1"
-                ),
-                model=_get_setting_value("lmstudio_model", ""),
-            )
-        else:
-            _ollama_provider = OllamaProvider(
-                base_url=_get_setting_value("ollama_base_url", config.OLLAMA_BASE_URL),
-                model=_get_setting_value("ollama_model", ""),
-            )
+        with _startup_lock:
+            if (
+                getattr(_warmup_generation_local, "generation", None) is not None
+                and _warmup_generation_local.generation != _startup_generation
+            ):
+                return False
+            with _provider_lock:
+                discarded_llm: Any | None = None
+                if provider_type == "openrouter":
+                    discarded_llm = _openrouter_provider
+                    _openrouter_provider = OpenRouterProvider(
+                        api_key=_get_setting_value("openrouter_api_key", ""),
+                        model=_get_setting_value("openrouter_model", ""),
+                    )
+                elif provider_type == "lmstudio":
+                    discarded_llm = _lmstudio_provider
+                    _lmstudio_provider = LMStudioProvider(
+                        base_url=_get_setting_value(
+                            "lmstudio_base_url", "http://localhost:1234/v1"
+                        ),
+                        model=_get_setting_value("lmstudio_model", ""),
+                    )
+                else:
+                    discarded_llm = _ollama_provider
+                    _ollama_provider = OllamaProvider(
+                        base_url=_get_setting_value("ollama_base_url", config.OLLAMA_BASE_URL),
+                        model=_get_setting_value("ollama_model", ""),
+                    )
 
+        _close_llm_provider(discarded_llm)
         elapsed = (time.time() - start) * 1000
         logger.info(f"Warmup: LLM provider ({provider_type}) ready in {elapsed:.0f}ms")
         return True
@@ -270,7 +551,14 @@ def _init_achievement_system_sync() -> bool:
     try:
         start = time.time()
         logger.info("Warmup: Initializing achievement system...")
-        _achievement_system = AchievementSystem()
+        with _startup_lock:
+            if (
+                getattr(_warmup_generation_local, "generation", None) is not None
+                and _warmup_generation_local.generation != _startup_generation
+            ):
+                return False
+            with _provider_lock:
+                _achievement_system = AchievementSystem()
         elapsed = (time.time() - start) * 1000
         logger.info(f"Warmup: Achievement system ready in {elapsed:.0f}ms")
         return True
@@ -285,9 +573,19 @@ def _init_vector_store_sync() -> bool:
     try:
         start = time.time()
         logger.info("Warmup: Initializing vector store (lazy mode)...")
-        _vector_store = LocalVectorStore(lazy_load=True)
+        with _startup_lock:
+            if (
+                getattr(_warmup_generation_local, "generation", None) is not None
+                and _warmup_generation_local.generation != _startup_generation
+            ):
+                return False
+            with _provider_lock:
+                previous_store = _vector_store
+                vector_store = LocalVectorStore(lazy_load=True)
+                _vector_store = vector_store
+            _close_vector_store(previous_store)
         elapsed = (time.time() - start) * 1000
-        if _vector_store.is_available():
+        if vector_store.is_available():
             logger.info(
                 f"Warmup: Vector store initialized in {elapsed:.0f}ms "
                 "(model will load on first use)"
@@ -304,14 +602,25 @@ def _init_vector_store_sync() -> bool:
 
 def warmup_providers(timeout_seconds: float = 30.0) -> dict[str, Any]:
     """Initialize provider clients in parallel while retaining lazy model loading."""
+    already_initialized = False
+    already_initializing = False
     with _startup_lock:
         if _startup_state["initialized"]:
-            logger.info("Warmup: Already initialized, skipping")
-            return _startup_state
-        if _startup_state["initializing"]:
-            logger.warning("Warmup: Already in progress, skipping")
-            return _startup_state
-        _startup_state["initializing"] = True
+            already_initialized = True
+            generation = _startup_generation
+        elif _startup_state["initializing"]:
+            already_initializing = True
+            generation = _startup_generation
+        else:
+            _startup_state["initializing"] = True
+            generation = _startup_generation
+
+    if already_initialized:
+        logger.info("Warmup: Already initialized, skipping")
+        return get_startup_state()
+    if already_initializing:
+        logger.warning("Warmup: Already in progress, skipping")
+        return get_startup_state()
 
     start_time = time.time()
     logger.info("=" * 60)
@@ -319,15 +628,40 @@ def warmup_providers(timeout_seconds: float = 30.0) -> dict[str, Any]:
     logger.info("=" * 60)
     errors = []
 
+    def measure_initialization(initializer) -> _InitializationResult:
+        started = time.perf_counter()
+        _warmup_generation_local.generation = generation
+        try:
+            success = initializer()
+            return _InitializationResult(
+                success=success,
+                duration_ms=(time.perf_counter() - started) * 1000,
+            )
+        except Exception as exc:
+            # Capture the provider-specific duration at the worker boundary so
+            # failure telemetry never falls back to overall warmup elapsed time.
+            return _InitializationResult(
+                success=False,
+                duration_ms=(time.perf_counter() - started) * 1000,
+                error=exc,
+            )
+        finally:
+            del _warmup_generation_local.generation
+
     executor = ThreadPoolExecutor(max_workers=4)
+    stale_generation = False
     try:
         futures = {
-            "speech": executor.submit(_init_speech_provider_sync),
-            "llm": executor.submit(_init_llm_provider_sync),
-            "achievement": executor.submit(_init_achievement_system_sync),
-            "vector_store": executor.submit(_init_vector_store_sync),
+            "speech": executor.submit(measure_initialization, _init_speech_provider_sync),
+            "llm": executor.submit(measure_initialization, _init_llm_provider_sync),
+            "achievement": executor.submit(measure_initialization, _init_achievement_system_sync),
+            "vector_store": executor.submit(measure_initialization, _init_vector_store_sync),
         }
         for name, future in futures.items():
+            with _startup_lock:
+                if generation != _startup_generation:
+                    stale_generation = True
+                    break
             try:
                 remaining_time = timeout_seconds - (time.time() - start_time)
                 if remaining_time <= 0:
@@ -336,22 +670,61 @@ def warmup_providers(timeout_seconds: float = 30.0) -> dict[str, Any]:
                     # be falsely reported as timed out (that corrupts /ready
                     # state).
                     if future.done():
-                        success = future.result()
+                        result = future.result()
                     else:
                         raise FutureTimeoutError("Overall timeout exceeded")
                 else:
-                    success = future.result(timeout=remaining_time)
-                _startup_state["providers_ready"][name] = success
-                if not success:
-                    errors.append(f"{name} initialization failed")
+                    result = future.result(timeout=remaining_time)
+                if isinstance(result, _InitializationResult):
+                    success = result.success
+                    duration_ms = result.duration_ms
+                    error = result.error
+                else:  # Compatibility with patched initializers returning tuples.
+                    success, duration_ms = result
+                    error = None
+                with _startup_lock:
+                    if generation != _startup_generation:
+                        stale_generation = True
+                        break
+                    _startup_state["providers_ready"][name] = success
+                    _startup_state["provider_metrics"][name] = ProviderMetric(
+                        success=success,
+                        duration_ms=round(duration_ms, 2),
+                        timed_out=False,
+                    )
+                    if not success:
+                        errors.append(
+                            f"{name}: {error}" if error is not None
+                            else f"{name} initialization failed"
+                        )
             except FutureTimeoutError:
                 logger.error(f"Warmup: Timeout waiting for {name} provider")
-                errors.append(f"{name} initialization timed out")
-                _startup_state["providers_ready"][name] = False
+                with _startup_lock:
+                    if generation != _startup_generation:
+                        stale_generation = True
+                        break
+                    errors.append(f"{name} initialization timed out")
+                    _startup_state["providers_ready"][name] = False
+                    _startup_state["provider_metrics"][name] = ProviderMetric(
+                        success=False,
+                        # The worker may still be running, so no provider-specific
+                        # duration exists yet. Never label total warmup time as it.
+                        duration_ms=None,
+                        timed_out=True,
+                    )
             except Exception as exc:
                 logger.error(f"Warmup: Exception initializing {name}: {exc}")
-                errors.append(f"{name}: {exc}")
-                _startup_state["providers_ready"][name] = False
+                with _startup_lock:
+                    if generation != _startup_generation:
+                        stale_generation = True
+                        break
+                    errors.append(f"{name}: {exc}")
+                    _startup_state["providers_ready"][name] = False
+                    _startup_state["provider_metrics"][name] = ProviderMetric(
+                        success=False,
+                        duration_ms=None,
+                        timed_out=False,
+                    )
     finally:
         # Do NOT wait for stuck workers — shutdown(wait=False) returns
         # immediately and cancel_futures=True cancels pending submissions.
@@ -361,10 +734,17 @@ def warmup_providers(timeout_seconds: float = 30.0) -> dict[str, Any]:
 
     total_time = (time.time() - start_time) * 1000
     with _startup_lock:
-        _startup_state["initialized"] = True
-        _startup_state["initializing"] = False
-        _startup_state["errors"] = errors
-        _startup_state["startup_time_ms"] = total_time
+        if generation != _startup_generation:
+            stale_generation = True
+        else:
+            _startup_state["initialized"] = True
+            _startup_state["initializing"] = False
+            _startup_state["errors"] = errors
+            _startup_state["startup_time_ms"] = total_time
+
+    if stale_generation:
+        logger.info("Warmup: Discarding results from a reset provider generation")
+        return get_startup_state()
 
     ready_count = sum(1 for ready in _startup_state["providers_ready"].values() if ready)
     total_count = len(_startup_state["providers_ready"])
@@ -374,12 +754,25 @@ def warmup_providers(timeout_seconds: float = 30.0) -> dict[str, Any]:
     if errors:
         logger.warning(f"Initialization errors: {errors}")
     logger.info("=" * 60)
-    return _startup_state
+    return get_startup_state()
 
 
 def get_startup_state() -> dict[str, Any]:
-    """Return a shallow copy of startup state."""
-    return _startup_state.copy()
+    """Return a defensive snapshot of startup state.
+
+    Provider metrics use ``duration_ms=None`` when a worker is still running
+    after the warmup deadline; ``timed_out=True`` identifies that condition.
+    """
+    with _startup_lock:
+        return {
+            **_startup_state,
+            "providers_ready": dict(_startup_state["providers_ready"]),
+            "errors": list(_startup_state["errors"]),
+            "provider_metrics": {
+                name: dict(metrics)
+                for name, metrics in _startup_state["provider_metrics"].items()
+            },
+        }
 
 
 def is_ready() -> bool:
@@ -391,15 +784,22 @@ def reset_providers() -> None:
     """Reset all provider singletons and warmup state."""
     global _ollama_provider, _openrouter_provider, _lmstudio_provider
     global _speech_provider, _achievement_system, _vector_store
-    global _startup_state
+    global _startup_state, _startup_generation
 
     with _startup_lock:
-        _ollama_provider = None
-        _openrouter_provider = None
-        _lmstudio_provider = None
-        _speech_provider = None
-        _achievement_system = None
-        _vector_store = None
+        _startup_generation += 1
+        with _provider_lock:
+            ollama_provider = _ollama_provider
+            openrouter_provider = _openrouter_provider
+            lmstudio_provider = _lmstudio_provider
+            _ollama_provider = None
+            _openrouter_provider = None
+            _lmstudio_provider = None
+            speech_provider = _speech_provider
+            vector_store = _vector_store
+            _speech_provider = None
+            _achievement_system = None
+            _vector_store = None
         _startup_state = {
             "initialized": False,
             "initializing": False,
@@ -411,14 +811,95 @@ def reset_providers() -> None:
             },
             "errors": [],
             "startup_time_ms": 0,
+            "provider_metrics": {},
         }
 
+    _release_speech_provider(speech_provider)
+    _close_vector_store(vector_store)
+    for provider in (ollama_provider, openrouter_provider, lmstudio_provider):
+        _close_llm_provider(provider)
     logger.info("All providers reset")
 
 
+def reset_speech_provider() -> None:
+    """Release and drop the cached STT client after settings change."""
+    global _speech_provider
+    with _provider_lock:
+        provider = _speech_provider
+        _speech_provider = None
+    _release_speech_provider(provider)
+
+
 def reset_llm_providers() -> None:
-    """Drop cached LLM clients after their database settings change."""
+    """Close and drop cached LLM clients after settings changes."""
     global _ollama_provider, _openrouter_provider, _lmstudio_provider
-    _ollama_provider = None
-    _openrouter_provider = None
-    _lmstudio_provider = None
+    with _provider_lock:
+        providers = (_ollama_provider, _openrouter_provider, _lmstudio_provider)
+        _ollama_provider = None
+        _openrouter_provider = None
+        _lmstudio_provider = None
+    for provider in providers:
+        _close_llm_provider(provider)
+
+
+async def reset_providers_async() -> None:
+    """Reset providers and await asynchronous transports during app shutdown."""
+    global _ollama_provider, _openrouter_provider, _lmstudio_provider
+    global _speech_provider, _achievement_system, _vector_store
+    global _startup_state, _startup_generation
+
+    with _startup_lock:
+        _startup_generation += 1
+        with _provider_lock:
+            llm_providers = (_ollama_provider, _openrouter_provider, _lmstudio_provider)
+            speech_provider = _speech_provider
+            vector_store = _vector_store
+            _ollama_provider = None
+            _openrouter_provider = None
+            _lmstudio_provider = None
+            _speech_provider = None
+            _achievement_system = None
+            _vector_store = None
+        _startup_state = {
+            "initialized": False,
+            "initializing": False,
+            "providers_ready": {
+                "speech": False,
+                "llm": False,
+                "achievement": False,
+                "vector_store": False,
+            },
+            "errors": [],
+            "startup_time_ms": 0,
+            "provider_metrics": {},
+        }
+
+    _close_vector_store(vector_store)
+    shutdown_timeout = max(float(config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS), 0.01)
+    deadline = asyncio.get_running_loop().time() + shutdown_timeout
+    remaining = deadline - asyncio.get_running_loop().time()
+    if remaining > 0:
+        # Give previously timed-out native cleanup a first chance to finish;
+        # then reserve the larger share for the provider being reset now.
+        await _drain_speech_release_workers(remaining * 0.25)
+    remaining = deadline - asyncio.get_running_loop().time()
+    if remaining > 0:
+        await _release_speech_provider_async(speech_provider, remaining * 0.75)
+    for provider in llm_providers:
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            logger.warning("Skipping provider cleanup after shutdown deadline")
+            break
+        try:
+            await asyncio.wait_for(_close_llm_provider_async(provider), timeout=remaining)
+        except TimeoutError:
+            logger.warning("Timed out closing LLM provider during shutdown")
+        except Exception as exc:
+            logger.warning("LLM provider cleanup failed: {}", exc)
+
+    # A final check catches workers that finished while LLM transports were
+    # being closed. The earlier reserved window handles the normal case.
+    remaining = deadline - asyncio.get_running_loop().time()
+    if remaining > 0:
+        await _drain_speech_release_workers(remaining)
+    logger.info("All providers reset")

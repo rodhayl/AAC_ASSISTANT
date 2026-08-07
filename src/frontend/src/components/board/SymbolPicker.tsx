@@ -16,7 +16,7 @@ interface SymbolPickerProps {
 
 export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPickerProps) {
   const { t } = useTranslation('boards');
-  const { addToast } = useToastStore();
+  const addToast = useToastStore((state) => state.addToast);
   const [symbols, setSymbols] = useState<Symbol[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -31,6 +31,19 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
   const [reorderMode, setReorderMode] = useState(false);
   const [reorderedSymbols, setReorderedSymbols] = useState<Symbol[]>([]);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen && (previewUrl || uploadFile)) {
+      setPreviewUrl(null);
+      setUploadFile(null);
+    }
+  }, [isOpen, previewUrl, uploadFile]);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
 
   // Fetch categories once on open
   useEffect(() => {

@@ -26,6 +26,9 @@ class LearningSession(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     topic_name = Column(String(100), nullable=False)
     purpose = Column(Text)
+    # Learning mode key (e.g. "practice", "regression_mode"); the mode's
+    # prompt_instruction is appended to the LLM system prompt for this session.
+    mode_key = Column(String(50), nullable=True)
     status = Column(String(20), default="active")
     comprehension_score = Column(Float, default=0.0)
     questions_asked = Column(Integer, default=0)
@@ -49,6 +52,9 @@ class LearningMode(Base):
     description = Column(Text)
     prompt_instruction = Column(Text)
     is_custom = Column(Boolean, default=True)
+    # When False, sessions using this mode skip auto-asking questions;
+    # teachers can still request a question manually.
+    auto_ask_enabled = Column(Boolean, default=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())

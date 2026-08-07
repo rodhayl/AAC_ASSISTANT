@@ -25,7 +25,8 @@ const COLORS = [
 
 export function SymbolEditorDialog({ isOpen, onClose, onSave, symbol }: SymbolEditorDialogProps) {
   const { t } = useTranslation('boards');
-  const { boards, fetchBoards } = useBoardStore();
+  const boards = useBoardStore((state) => state.boards);
+  const fetchBoards = useBoardStore((state) => state.fetchBoards);
   
   const [customText, setCustomText] = useState(symbol?.custom_text || symbol?.symbol.label || '');
   const [color, setColor] = useState(symbol?.color || '#ffffff');

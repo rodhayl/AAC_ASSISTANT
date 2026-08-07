@@ -1,11 +1,9 @@
 """Compatibility imports for the split learning companion service."""
 
-from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy.orm import Session
-
 from ..db import get_session as _get_session
+from ..db import session_scope
 from .learning import (
     AAC_SYSTEM_PROMPT,
     AACPromptProfile,
@@ -21,12 +19,11 @@ get_session = _get_session
 class LearningCompanionService(_LearningCompanionService):
     """Backward-compatible facade preserving the historical import path."""
 
+    @staticmethod
     @contextmanager
-    def _session_scope(self, db: Session | None) -> Iterator[Session]:
-        if db is not None:
-            yield db
-            return
-        with get_session() as session:
+    def _session_scope(db):
+        """Preserve the historical get_session monkeypatch seam."""
+        with session_scope(db, session_factory=get_session) as session:
             yield session
 
 

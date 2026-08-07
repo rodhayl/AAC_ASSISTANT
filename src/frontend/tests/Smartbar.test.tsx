@@ -9,9 +9,12 @@ vi.mock('../src/lib/api', () => ({
   },
 }));
 
-vi.mock('../src/store/learningStore', () => ({
-  useLearningStore: () => ({ messages: [] }),
-}));
+vi.mock('../src/store/learningStore', () => {
+  const state = { messages: [] };
+  const useLearningStore = (selector?: (value: typeof state) => unknown) =>
+    selector ? selector(state) : state;
+  return { useLearningStore };
+});
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({

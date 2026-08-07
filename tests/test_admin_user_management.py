@@ -64,6 +64,36 @@ def test_admin_manage_teachers(setup_test_db, admin_token, test_db_session):
     assert response.status_code == 404
 
 
+def test_students_endpoint_paginates(setup_test_db, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    student_ids = []
+    for i in range(3):
+        data = {
+            "username": f"page_student_{i}",
+            "password": "StudentPass123",
+            "confirm_password": "StudentPass123",
+            "display_name": f"Page Student {i}",
+            "user_type": "student",
+        }
+        response = client.post("/api/auth/admin/create-user", json=data, headers=headers)
+        assert response.status_code == 200
+        student_ids.append(response.json()["id"])
+
+    first_page = client.get("/api/users/students", params={"limit": 2}, headers=headers)
+    assert first_page.status_code == 200
+    assert len(first_page.json()) == 2
+    assert [s["id"] for s in first_page.json()] == sorted(s["id"] for s in first_page.json())
+
+    second_page = client.get(
+        "/api/users/students", params={"skip": 2, "limit": 2}, headers=headers
+    )
+    assert second_page.status_code == 200
+    assert len(second_page.json()) == 1
+
+    invalid = client.get("/api/users/students", params={"limit": 501}, headers=headers)
+    assert invalid.status_code == 422
+
+
 def test_teacher_isolation(setup_test_db, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
 

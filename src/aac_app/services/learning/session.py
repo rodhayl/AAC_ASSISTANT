@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from ...models import LearningPlan, LearningSession, LearningTask, User
 from ...services.achievement_system import AchievementSystem
+from .history import append_history_entry
 
 
 class SessionLifecycleMixin:
@@ -18,6 +19,7 @@ class SessionLifecycleMixin:
         purpose: str = "",
         difficulty: str = "basic",
         board_id: int | None = None,
+        mode_key: str | None = None,
         db: Session | None = None,
     ) -> dict:
         """Start AI tutoring session"""
@@ -58,6 +60,7 @@ class SessionLifecycleMixin:
                     user_id=user_id,
                     topic_name=topic,
                     purpose=purpose,
+                    mode_key=mode_key,
                     status="active",
                     conversation_history=[],
                     comprehension_score=0.0,
@@ -118,12 +121,13 @@ class SessionLifecycleMixin:
 
                 # Add welcome message to conversation history if it exists
                 if welcome:
-                    session.conversation_history.append(
+                    session.conversation_history = append_history_entry(
+                        session.conversation_history,
                         {
                             "type": "question",
                             "data": {"question": welcome},
                             "timestamp": datetime.now().isoformat(),
-                        }
+                        },
                     )
 
                 db.commit()

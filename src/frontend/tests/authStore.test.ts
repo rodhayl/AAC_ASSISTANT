@@ -52,6 +52,26 @@ describe('auth session refresh robustness', () => {
     vi.unstubAllGlobals();
   });
 
+  it('dispatches an auth-context event before switching users on login', async () => {
+    const nextUser = {
+      ...user,
+      id: 8,
+      username: 'next-user',
+    };
+    const token = makeJwt(Math.floor(Date.now() / 1000) + 3600, nextUser.id);
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      data: { access_token: token, refresh_token: 'next-refresh-token' },
+    } as never);
+    vi.spyOn(api, 'get').mockResolvedValue({ data: nextUser } as never);
+    const dispatch = vi.spyOn(window, 'dispatchEvent');
+
+    await useAuthStore.getState().login(nextUser.username, 'password');
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'aac:auth-context-changed' }));
+    expect(useAuthStore.getState().user).toEqual(nextUser);
+    expect(post).toHaveBeenCalledWith('/auth/token', expect.any(URLSearchParams), expect.anything());
+  });
+
   it('refreshes an undecodable access token and keeps the session', async () => {
     seedSession('not-a-jwt');
     const refreshedToken = makeJwt(Math.floor(Date.now() / 1000) + 7200);

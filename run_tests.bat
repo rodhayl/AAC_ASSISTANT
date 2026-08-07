@@ -64,9 +64,36 @@ if errorlevel 1 (
 )
 
 echo Running Ruff...
-call uv run ruff check src tests
+call uv run ruff check src tests scripts
 if errorlevel 1 (
-    echo Ruff checks failed.
+    echo Backend lint failed.
+    exit /b 1
+)
+
+call uv run python scripts/audit_codebase.py
+if errorlevel 1 (
+    echo Internal import audit failed.
+    exit /b 1
+)
+
+echo Verifying frontend lockfile and dependency graph...
+call npm --prefix src/frontend ci --dry-run
+if errorlevel 1 (
+    echo Frontend package-lock.json is out of sync.
+    exit /b 1
+)
+
+echo Running frontend typecheck...
+call npm --prefix src/frontend run typecheck
+if errorlevel 1 (
+    echo Frontend typecheck failed.
+    exit /b 1
+)
+
+echo Running frontend lint...
+call npm --prefix src/frontend run lint -- --max-warnings=0
+if errorlevel 1 (
+    echo Frontend lint failed.
     exit /b 1
 )
 
@@ -77,5 +104,33 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo All tests passed.
+echo Running frontend i18n audit...
+call npm --prefix src/frontend run i18n:audit
+if errorlevel 1 (
+    echo Frontend i18n audit failed.
+    exit /b 1
+)
+
+echo Running frontend production build...
+call npm --prefix src/frontend run build
+if errorlevel 1 (
+    echo Frontend production build failed.
+    exit /b 1
+)
+
+echo Running frontend E2E build...
+call npm --prefix src/frontend run build:e2e
+if errorlevel 1 (
+    echo Frontend production build failed.
+    exit /b 1
+)
+
+echo Verifying frontend bundle size...
+call npm --prefix src/frontend run check:bundle-size
+if errorlevel 1 (
+    echo Frontend bundle size budget exceeded.
+    exit /b 1
+)
+
+echo All tests and quality checks passed.
 exit /b 0

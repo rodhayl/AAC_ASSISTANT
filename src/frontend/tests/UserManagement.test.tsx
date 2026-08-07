@@ -4,12 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UserManagementPage } from '../src/pages/UserManagement';
 import api from '../src/lib/api';
 
-const authState = {
+const authState = vi.hoisted(() => ({
   user: { id: 1, username: 'admin1', display_name: 'Admin', user_type: 'admin' as const },
-};
+}));
 
 vi.mock('../src/store/authStore', () => ({
-  useAuthStore: () => authState,
+  useAuthStore: (selector?: (state: typeof authState) => unknown) =>
+    selector ? selector(authState) : authState,
 }));
 
 vi.mock('../src/lib/api', () => ({
@@ -25,7 +26,7 @@ vi.mock('../src/lib/api', () => ({
 
 const navigate = vi.fn();
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useNavigate: () => navigate,
 }));
 

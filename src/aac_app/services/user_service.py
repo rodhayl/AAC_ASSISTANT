@@ -6,14 +6,26 @@ from src.api import schemas
 
 
 class UserService:
-    def get_all_students(self, db: Session):
-        return db.query(User).filter(User.user_type == "student").all()
+    def get_all_students(self, db: Session, skip: int = 0, limit: int = 500):
+        return (
+            db.query(User)
+            .filter(User.user_type == "student")
+            .order_by(User.id)
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
 
-    def get_assigned_students(self, db: Session, teacher_id: int):
+    def get_assigned_students(
+        self, db: Session, teacher_id: int, skip: int = 0, limit: int = 500
+    ):
         return (
             db.query(User)
             .join(StudentTeacher, User.id == StudentTeacher.student_id)
             .filter(StudentTeacher.teacher_id == teacher_id)
+            .order_by(User.id)
+            .offset(skip)
+            .limit(limit)
             .all()
         )
 
@@ -65,28 +77,9 @@ class UserService:
             user.email = update_data.email
 
         if update_data.settings:
-            # Check if settings exist, if not create
             if not user.settings:
-                # Assuming UserSettings model requires user_id
-                settings = UserSettings(user_id=user_id)
-                db.add(settings)
-                # Flush to associate?
-                db.flush()
-                # SQLAlchemy should handle relationship update if user.settings is set?
-                # user.settings = settings
-                # Actually, if we add it, we might need to refresh user?
-                # Or just assign to relationship.
-                # If we used db.add(settings), user.settings might not update immediately in memory unless back_populates triggers.
-                # Safe way:
-                # user.settings = settings # This might fail if settings is not committed?
-                # Let's rely on relationship loading or explicit assignment.
-                pass
-
-            # If settings was None, we created it. But user.settings might still be None in this session context?
-            # Let's reload settings or ensure it's attached.
-            if not user.settings:
-                 user.settings = UserSettings(user_id=user_id)
-                 db.add(user.settings)
+                user.settings = UserSettings(user_id=user_id)
+                db.add(user.settings)
 
             # Update settings fields
             settings_dict = update_data.settings.model_dump(exclude_unset=True)

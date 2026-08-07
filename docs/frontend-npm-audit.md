@@ -1,56 +1,54 @@
-# Frontend npm audit triage
+# Frontend npm audit
 
-Audit date: 2026-08-04
+Audit date: 2026-08-07
 
 ## Result
 
-The baseline `npm --prefix src/frontend audit --json` reported 17
-vulnerability groups: 1 low, 2 moderate, 13 high, and 1 critical.
-`npm audit fix` applied the available non-breaking updates. The direct
-runtime dependencies were raised to fixed published versions:
+The frontend production dependency audit is clean:
 
-- `axios`: `1.13.5` -> `1.19.0`
-- `react-router-dom` and its `react-router` dependency: `7.13.0` -> `7.18.2`
+```text
+npm audit --omit=dev
+0 vulnerabilities
+```
 
-The lockfile also updates the vulnerable transitive packages used by the
-frontend toolchain. ESLint, Vitest, TypeScript, and the Vite production build
-remain green after the update.
+The current runtime dependencies include:
 
-## Finding classification
+- `axios` `^1.19.0`
+- `react` `19.2.7`
+- `react-dom` `19.2.7`
+- `react-router` `8.3.0`
 
-| Finding group | Scope | Remediation |
-| --- | --- | --- |
-| `axios` | Production dependency | Fixed by the `1.19.0` lockfile update. |
-| `follow-redirects`, `form-data` | Reachable through production `axios` (also used by dev `jsdom`) | Fixed by the lockfile update (`1.16.0` and `4.0.6`). |
-| `react-router`, `react-router-dom` | Production routing | Updated to the latest published compatible 7.x release, `7.18.2`. One advisory remains, described below. |
-| `@babel/core`, `ajv`, `brace-expansion`, `flatted`, `js-yaml`, `minimatch`, `picomatch` | Development-only lint/test/build tooling | Fixed by `npm audit fix`; none ship in `dist/`. |
-| `postcss`, `rollup`, `vite`, `vitest`, `ws` | Development-only CSS/build/test tooling | Fixed by `npm audit fix`; none ship in `dist/`. |
+The application is a client-only Vite SPA. It does not use React Server
+Components or server actions.
 
-## Accepted remaining finding
+## React Router v8 migration
 
-The final audit reports one high advisory group affecting
-`react-router`/`react-router-dom`: `GHSA-qwww-vcr4-c8h2`, an RSC-mode CSRF
-bypass. The app uses `createBrowserRouter` and client-side routes only; it
-does not use React Server Components or server actions.
+The application migrated from `react-router-dom` 7.x to the published
+`react-router` 8.3.0 package. React Router v8 separates core and DOM exports:
 
-`7.18.2` is the latest `react-router-dom` release available from the npm
-registry. The advisory's fixed range starts at `8.3.0`, but that release is
-not published. The final audit's suggested `7.11.0` "fix" is a semver-major
-downgrade from the current 7.18.2 floor, so it is intentionally rejected.
-Forcing an unavailable major upgrade or downgrading the stack would either
-fail installation or require an unverified migration. The finding is
-therefore accepted as no-fix-available for the current published compatible
-release and should be rechecked when React Router publishes a fixed version.
+- Core route APIs such as `Route`, `Routes`, `Navigate`, `Outlet`, and hooks are
+  imported from `react-router`.
+- Browser/document APIs such as `createBrowserRouter`, `RouterProvider`, and
+  `MemoryRouter` are imported from `react-router/dom`.
+
+The Vite vendor chunk and Vitest mocks were updated to use the new package
+name. TypeScript, lint, unit tests, production build, E2E build, and
+`npm ci --dry-run` all pass after the migration.
 
 ## Verification
 
-After each dependency update:
+Run these checks after changing frontend dependencies:
 
 ```text
-npm --prefix src/frontend run lint
+npm --prefix src/frontend ci
+npm --prefix src/frontend run typecheck
+npm --prefix src/frontend run lint -- --max-warnings=0
 npm --prefix src/frontend test -- --run
+npm --prefix src/frontend run i18n:audit
+npm --prefix src/frontend audit --omit=dev
 npm --prefix src/frontend run build
+npm --prefix src/frontend run build:e2e
 ```
 
-All three commands pass. The final audit has no low, moderate, or critical
-findings; the only remaining result is the documented React Router advisory.
+Do not use `npm audit fix --force` without reviewing the resulting major
+version changes and rerunning the complete frontend gate.

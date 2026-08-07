@@ -3,14 +3,20 @@ import { useAuthStore } from '../store/authStore';
 import { useBoardStore } from '../store/boardStore';
 import { useDashboardStore } from '../store/dashboardStore';
 import { LayoutGrid, Trophy, Star, Clock } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { formatDateTime } from '../lib/format';
 
 export function Dashboard() {
-  const { user } = useAuthStore();
-  const { boards, assignedBoards, fetchBoards, fetchAssignedBoards } = useBoardStore();
-  const { stats, recentActivity, fetchDashboardData, isLoading } = useDashboardStore();
+  const user = useAuthStore((state) => state.user);
+  const boards = useBoardStore((state) => state.boards);
+  const assignedBoards = useBoardStore((state) => state.assignedBoards);
+  const fetchBoards = useBoardStore((state) => state.fetchBoards);
+  const fetchAssignedBoards = useBoardStore((state) => state.fetchAssignedBoards);
+  const stats = useDashboardStore((state) => state.stats);
+  const recentActivity = useDashboardStore((state) => state.recentActivity);
+  const fetchDashboardData = useDashboardStore((state) => state.fetchDashboardData);
+  const isLoading = useDashboardStore((state) => state.isLoading);
   const { t } = useTranslation('dashboard');
 
   useEffect(() => {

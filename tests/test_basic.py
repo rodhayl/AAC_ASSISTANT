@@ -1,34 +1,21 @@
-import sys
-from pathlib import Path
-
 import pytest
-
-# Add src to path
-src_dir = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_dir))
 
 
 def test_imports():
     """Test that all main modules can be imported"""
     # Test providers - only import to verify they exist
-    try:
-        from aac_app.providers.local_speech_provider import LocalSpeechProvider
-        from aac_app.providers.ollama_provider import OllamaProvider
+    from src.aac_app.providers.local_speech_provider import LocalSpeechProvider
+    from src.aac_app.providers.ollama_provider import OllamaProvider
 
-        assert LocalSpeechProvider is not None
-        assert OllamaProvider is not None
-    except ImportError as e:
-        pytest.skip(f"Provider import failed: {e}")
+    assert LocalSpeechProvider is not None
+    assert OllamaProvider is not None
 
 
 def test_services():
     """Test that services can be imported"""
-    try:
-        from aac_app.services.learning_companion_service import LearningCompanionService
+    from src.aac_app.services.learning_companion_service import LearningCompanionService
 
-        assert LearningCompanionService is not None
-    except ImportError as e:
-        pytest.skip(f"Service import failed: {e}")
+    assert LearningCompanionService is not None
 
 
 def test_models():

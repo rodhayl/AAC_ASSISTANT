@@ -4,10 +4,8 @@ import type { Mock } from 'vitest';
 import { BoardPlayer } from '../src/pages/BoardPlayer';
 import { Settings } from '../src/pages/Settings';
 import { SymbolHunt } from '../src/pages/SymbolHunt';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import api from '../src/lib/api';
-import { useAuthStore } from '../src/store/authStore';
-import { useBoardStore } from '../src/store/boardStore';
 
 // Mock API
 vi.mock('../src/lib/api', () => ({
@@ -21,8 +19,20 @@ vi.mock('../src/lib/api', () => ({
 }));
 
 // Mock Board Store
+const boardStoreState = vi.hoisted(() => ({
+  currentBoard: null as unknown,
+  fetchBoard: vi.fn(),
+  isLoading: false,
+  isListLoading: false,
+  isBoardLoading: false,
+  error: null as string | null,
+}));
 vi.mock('../src/store/boardStore', () => ({
-  useBoardStore: vi.fn(),
+  useBoardStore: Object.assign(
+    (selector?: (state: typeof boardStoreState) => unknown) =>
+      selector ? selector(boardStoreState) : boardStoreState,
+    { getState: vi.fn() },
+  ),
 }));
 
 
@@ -63,6 +73,8 @@ const mockTTSState = {
   pitch: 1,
   volume: 1,
   setSelectedVoice: vi.fn(),
+  localVoice: 'default',
+  setLocalVoice: vi.fn(),
 };
 vi.mock('../src/store/ttsStore', () => ({
   useTTSStore: Object.assign(() => mockTTSState, { getState: () => mockTTSState }),
@@ -88,12 +100,17 @@ vi.mock('../src/store/localeStore', () => ({
 
 
 // Mock Auth
+const authStoreState = vi.hoisted(() => ({ user: null as unknown, isAuthenticated: false }));
 vi.mock('../src/store/authStore', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../src/store/authStore')>();
-    const mockUseAuthStore = Object.assign(vi.fn(), {
-      setState: vi.fn(),
-      getState: vi.fn(),
-    });
+    const mockUseAuthStore = Object.assign(
+      (selector?: (state: typeof authStoreState) => unknown) =>
+        selector ? selector(authStoreState) : authStoreState,
+      {
+        setState: vi.fn(),
+        getState: () => authStoreState,
+      },
+    );
     return {
         ...actual,
         useAuthStore: mockUseAuthStore,
@@ -116,8 +133,8 @@ Object.defineProperty(window, 'speechSynthesis', {
 
 // Mock React Router
 const mockNavigate = vi.fn();
-vi.mock('react-router-dom', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('react-router-dom')>();
+vi.mock('react-router', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('react-router')>();
     return {
         ...actual,
         useNavigate: () => mockNavigate,
@@ -129,13 +146,14 @@ describe('End-to-End Options Tests', () => {
   
   beforeEach(() => {
     vi.clearAllMocks();
-    (useAuthStore as unknown as Mock).mockReturnValue({ user: mockUser, isAuthenticated: true });
-    (useBoardStore as unknown as Mock).mockReturnValue({
-        currentBoard: null,
-        fetchBoard: vi.fn(),
-        isLoading: false,
-        error: null
-    });
+    authStoreState.user = mockUser;
+    authStoreState.isAuthenticated = true;
+    boardStoreState.currentBoard = null;
+    boardStoreState.fetchBoard = vi.fn();
+    boardStoreState.isLoading = false;
+    boardStoreState.isListLoading = false;
+    boardStoreState.isBoardLoading = false;
+    boardStoreState.error = null;
   });
 
   // --- Option 1: Speak Mode ---
@@ -150,12 +168,8 @@ describe('End-to-End Options Tests', () => {
       ]
     };
 
-    (useBoardStore as unknown as Mock).mockReturnValue({
-        currentBoard: mockBoard,
-        fetchBoard: vi.fn(),
-        isLoading: false,
-        error: null
-    });
+    boardStoreState.currentBoard = mockBoard;
+    boardStoreState.fetchBoard = vi.fn();
 
     (api.get as unknown as Mock).mockImplementation((url: string) => {
       if (url.includes('/analytics/next-symbol')) return Promise.resolve({ data: [] });
@@ -205,12 +219,8 @@ describe('End-to-End Options Tests', () => {
       ]
     };
 
-    (useBoardStore as unknown as Mock).mockReturnValue({
-        currentBoard: mockBoard1,
-        fetchBoard: vi.fn(),
-        isLoading: false,
-        error: null
-    });
+    boardStoreState.currentBoard = mockBoard1;
+    boardStoreState.fetchBoard = vi.fn();
 
     render(
       <MemoryRouter initialEntries={['/play/1']}>
@@ -246,12 +256,8 @@ describe('End-to-End Options Tests', () => {
       { symbol_id: 201, label: 'Water', image_path: '/water.png' }
     ];
 
-    (useBoardStore as unknown as Mock).mockReturnValue({
-        currentBoard: mockBoard,
-        fetchBoard: vi.fn(),
-        isLoading: false,
-        error: null
-    });
+    boardStoreState.currentBoard = mockBoard;
+    boardStoreState.fetchBoard = vi.fn();
 
     (api.get as unknown as Mock).mockImplementation((url: string) => {
       if (url.includes('/analytics/next-symbol')) {

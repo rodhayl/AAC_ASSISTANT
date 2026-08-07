@@ -36,7 +36,9 @@ Session stats:
 
 Be very positive and encouraging. Keep it to 2-3 sentences."""
 
-                system_prompt = self._get_system_prompt(session.user_id, db)
+                system_prompt = self._get_system_prompt(
+                    session.user_id, db, mode_key=session.mode_key
+                )
 
                 try:
                     if self.llm is None:

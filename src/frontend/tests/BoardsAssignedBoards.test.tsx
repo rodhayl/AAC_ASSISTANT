@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 
 import { Boards } from '../src/pages/Boards';
 import { useBoardStore } from '../src/store/boardStore';
@@ -57,19 +57,24 @@ describe('Boards assigned-board display', () => {
       boards: [],
       assignedBoards: [],
       isLoading: false,
+      isListLoading: false,
+      isBoardLoading: false,
       error: null,
       lastFetchTime: null,
     });
-    vi.mocked(useAuthStore).mockReturnValue({
+    const authState = {
       user: {
         id: 10,
         username: 'student',
         display_name: 'Student',
-        user_type: 'student',
+        user_type: 'student' as const,
         is_active: true,
         created_at: '2026-01-01T00:00:00Z',
       },
-    } as ReturnType<typeof useAuthStore>);
+    };
+    vi.mocked(useAuthStore).mockImplementation((selector?: (state: typeof authState) => unknown) =>
+      (selector ? selector(authState) : authState) as ReturnType<typeof useAuthStore>,
+    );
     vi.mocked(useSettingsStore).mockReturnValue({
       aiSettings: null,
       fetchAISettings: vi.fn().mockResolvedValue(undefined),

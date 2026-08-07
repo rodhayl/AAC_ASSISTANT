@@ -116,6 +116,24 @@ application. Route-level lazy loading keeps the production bundle small.
 Vite is a development server only; the production backend serves
 `src/frontend/dist/` as the SPA.
 
+Learning-session question flow (`src/frontend/src/components/learning/` and
+`src/frontend/src/store/learningStore.ts`):
+
+- After a session starts, the first adaptive question is auto-requested. After
+  each successful answer (text, voice, or symbols), the next question loads
+  after a short reveal delay so the correct answer stays highlighted on the
+  card (green = correct, red = wrong pick).
+- Each learning mode has an `auto_ask_enabled` flag (see
+  `src/aac_app/models/learning.py` and the editor in
+  `src/frontend/src/pages/Settings/LearningModesTab.tsx`). Conversational modes
+  can turn auto-asking off; the manual "New question" button still works.
+  The question flow also pauses while symbol-first view is active.
+- The chat header shows live progress chips (comprehension score, correct
+  count, current difficulty) fed by the answer responses, and an "End Session"
+  button that opens the session summary modal (score, questions answered,
+  correct answers, and the LLM-generated summary from
+  `POST /api/learning/{id}/end`).
+
 ## 4. API overview
 
 Local API base URL: `http://127.0.0.1:8086/api`

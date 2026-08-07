@@ -20,9 +20,9 @@ const defaultPreferences = (user: ReturnType<typeof useAuthStore.getState>['user
 });
 
 export function usePreferences() {
-  const { user } = useAuthStore();
+  const user = useAuthStore(state => state.user);
   const { t } = useTranslation('settings');
-  const { addToast } = useToastStore();
+  const addToast = useToastStore((state) => state.addToast);
   const [preferences, setPreferences] = useState<Preferences>(() => defaultPreferences(user));
   const [prefsLoading, setPrefsLoading] = useState(false);
   const [prefsSaveSuccess, setPrefsSaveSuccess] = useState(false);
@@ -58,15 +58,25 @@ export function usePreferences() {
   }, []);
 
   useEffect(() => {
+    const speechSynthesis = window.speechSynthesis;
+    if (!speechSynthesis) return undefined;
+
     const loadVoices = () => {
-      const voices = window.speechSynthesis.getVoices();
-      setAvailableVoices(voices);
+      setAvailableVoices(speechSynthesis.getVoices());
     };
 
     loadVoices();
-    if (window.speechSynthesis.onvoiceschanged !== undefined) {
-      window.speechSynthesis.onvoiceschanged = loadVoices;
+    if (speechSynthesis.addEventListener) {
+      speechSynthesis.addEventListener('voiceschanged', loadVoices);
+      return () => speechSynthesis.removeEventListener('voiceschanged', loadVoices);
     }
+    const previousHandler = speechSynthesis.onvoiceschanged;
+    speechSynthesis.onvoiceschanged = loadVoices;
+    return () => {
+      if (speechSynthesis.onvoiceschanged === loadVoices) {
+        speechSynthesis.onvoiceschanged = previousHandler;
+      }
+    };
   }, []);
 
   const filteredVoices = useMemo(

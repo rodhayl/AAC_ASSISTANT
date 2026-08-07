@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from src import config
 from src.api.main import app
 from tests.test_utils_auth import create_test_headers
 
@@ -16,8 +17,16 @@ def test_read_main():
     assert response.json() == {
         "status": "online",
         "app": "AAC Assistant API",
-        "version": "1.0.0",
+        "version": config.APP_VERSION,
     }
+
+
+def test_api_versions_are_consistent():
+    health_version = client.get("/api/health").json()["version"]
+    config_version = client.get("/api/config").json()["app_version"]
+    openapi_version = client.get("/openapi.json").json()["info"]["version"]
+
+    assert health_version == config_version == openapi_version == config.APP_VERSION
 
 
 def test_create_user():

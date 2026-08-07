@@ -162,7 +162,7 @@ class TestForgedTokens:
                 "iat": datetime.now(UTC),
                 "iss": "aac-assistant",
             },
-            "WRONG_SECRET_KEY_12345",  # Wrong secret!
+            "wrong-secret-" + ("x" * 48),  # Wrong, but HS256-length safe.
             algorithm=JWT_ALGORITHM,
         )
 
@@ -193,7 +193,9 @@ class TestForgedTokens:
         payload["user_type"] = "admin"  # Tamper!
 
         # Re-sign with wrong secret (real secret is unknown to attacker)
-        tampered_token = jwt.encode(payload, "ATTACKER_SECRET", algorithm=JWT_ALGORITHM)
+        tampered_token = jwt.encode(
+            payload, "attacker-secret-" + ("x" * 48), algorithm=JWT_ALGORITHM
+        )
 
         # Try to use tampered token on admin endpoint
         response = client.get(

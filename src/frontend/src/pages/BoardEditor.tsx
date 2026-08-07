@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router';
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { useBoardStore } from '../store/boardStore';
 import { SymbolPicker } from '../components/board/SymbolPicker';
@@ -17,15 +17,25 @@ import { useBoardAISuggestions } from '../hooks/useBoardAISuggestions';
 import { useBoardCollab } from '../hooks/useBoardCollab';
 import { useBoardEditorSymbols } from '../hooks/useBoardEditorSymbols';
 import { getBoardPlayabilityStatus } from './boardEditorUtils';
+import { LoadingState } from '../components/ui/LoadingState';
 
 export function BoardEditor() {
   const { t } = useTranslation('boards');
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { currentBoard, fetchBoard, isLoading, error, addSymbolToBoard, batchUpdateSymbols, updateBoard, deleteBoardSymbol } = useBoardStore();
-  const { user, token } = useAuthStore();
-  const { aiSettings, fetchAISettings } = useSettingsStore();
-  const { addToast } = useToastStore();
+  const currentBoard = useBoardStore((state) => state.currentBoard);
+  const fetchBoard = useBoardStore((state) => state.fetchBoard);
+  const isBoardLoading = useBoardStore((state) => state.isBoardLoading);
+  const error = useBoardStore((state) => state.error);
+  const addSymbolToBoard = useBoardStore((state) => state.addSymbolToBoard);
+  const batchUpdateSymbols = useBoardStore((state) => state.batchUpdateSymbols);
+  const updateBoard = useBoardStore((state) => state.updateBoard);
+  const deleteBoardSymbol = useBoardStore((state) => state.deleteBoardSymbol);
+  const user = useAuthStore((state) => state.user);
+  const token = useAuthStore((state) => state.token);
+  const aiSettings = useSettingsStore((state) => state.aiSettings);
+  const fetchAISettings = useSettingsStore((state) => state.fetchAISettings);
+  const addToast = useToastStore((state) => state.addToast);
   const [isSymbolPickerOpen, setIsSymbolPickerOpen] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState<{ x: number; y: number } | null>(null);
   const [gridPreset, setGridPreset] = useState<string>('4x5');
@@ -267,11 +277,9 @@ export function BoardEditor() {
     }
   }, [currentBoard, deleteBoardSymbol, fetchBoard, setAiError, setHasChanges, t]);
 
-  if (isLoading && !currentBoard) {
+  if (isBoardLoading && !currentBoard) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-      </div>
+      <LoadingState label={t('loadingBoard', { defaultValue: 'Loading board' })} />
     );
   }
 

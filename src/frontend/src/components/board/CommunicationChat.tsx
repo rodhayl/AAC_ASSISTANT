@@ -12,17 +12,15 @@ interface CommunicationChatProps {
 
 export function CommunicationChat({ voiceEnabled, onVoiceToggle }: CommunicationChatProps) {
   const { t, i18n } = useTranslation('learning');
-  const { user } = useAuthStore();
-  const {
-    messages,
-    isLoading,
-    currentSession,
-    startSession,
-    submitAnswer,
-    submitVoiceAnswer,
-    showAdminReasoning,
-    error
-  } = useLearningStore();
+  const user = useAuthStore((state) => state.user);
+  const messages = useLearningStore((state) => state.messages);
+  const isLoading = useLearningStore((state) => state.isLoading);
+  const currentSession = useLearningStore((state) => state.currentSession);
+  const startSession = useLearningStore((state) => state.startSession);
+  const submitAnswer = useLearningStore((state) => state.submitAnswer);
+  const submitVoiceAnswer = useLearningStore((state) => state.submitVoiceAnswer);
+  const showAdminReasoning = useLearningStore((state) => state.showAdminReasoning);
+  const error = useLearningStore((state) => state.error);
 
   const [input, setInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);

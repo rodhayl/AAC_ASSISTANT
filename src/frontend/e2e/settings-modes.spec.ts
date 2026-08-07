@@ -130,11 +130,12 @@ test.describe('Learning Modes Settings', () => {
 
     await page.goto('/settings');
     
-    // Use .first() to be safe against the strict mode error
     const modeRow = page.locator('div.border.border-gray-200').filter({ hasText: 'My Mode' }).first();
     await expect(modeRow).toBeVisible();
-    
-    const editBtn = modeRow.locator('button').first();
+
+    // The row also has a Preview action; target the edit action by its
+    // accessible name so adding row actions cannot change this test's meaning.
+    const editBtn = modeRow.getByRole('button', { name: 'Edit My Mode' });
     await expect(editBtn).toBeVisible();
     await editBtn.click();
     

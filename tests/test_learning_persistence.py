@@ -70,7 +70,10 @@ def test_start_session_creates_persisted_record(
     assert session.user_id == regular_user.id
     assert session.topic_name == "test_topic"
     assert session.status == "active"
-    assert session.conversation_history == []  # Initially empty
+    # Session startup persists the translated welcome message so the client
+    # can reconstruct the complete conversation after a reload.
+    assert session.conversation_history
+    assert session.conversation_history[0]["type"] == "question"
 
 
 @pytest.mark.usefixtures("setup_test_db")

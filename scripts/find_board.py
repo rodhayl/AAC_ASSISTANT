@@ -1,12 +1,14 @@
-import sys
 import os
+import sys
 
 # Add root to path so src can be imported
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+
 from src.config import DATABASE_PATH
+
 
 def find_board(name):
     engine = create_engine(f"sqlite:///{DATABASE_PATH}")

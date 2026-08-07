@@ -7,9 +7,14 @@ interface BoardState {
   boards: Board[];
   assignedBoards: Board[];
   currentBoard: Board | null;
+  // Mutation loading remains separate from read operations so navigation is not blocked by list fetches.
   isLoading: boolean;
+  isListLoading: boolean;
+  isBoardLoading: boolean;
   error: string | null;
   lastFetchTime: number | null;
+  assignedBoardsLastFetchTime: number | null;
+  assignedBoardsStudentId?: number;
   isFiltered: boolean;
   
   // Pagination State
@@ -39,25 +44,45 @@ interface BoardState {
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 const PAGE_SIZE = 100;
 
-export const useBoardStore = create<BoardState>((set, get) => ({
+let boardRequestSequence = 0;
+let boardsRequestSequence = 0;
+let assignedBoardsRequestSequence = 0;
+let listRequestCount = 0;
+let mutationRequestCount = 0;
+
+export const useBoardStore = create<BoardState>((set, get) => {
+  const beginMutation = () => {
+    mutationRequestCount += 1;
+    set({ isLoading: true, error: null });
+  };
+
+  const finishMutation = (errorMessage?: string) => {
+    mutationRequestCount = Math.max(0, mutationRequestCount - 1);
+    set(errorMessage
+      ? { error: errorMessage, isLoading: mutationRequestCount > 0 }
+      : { isLoading: mutationRequestCount > 0 });
+  };
+
+  return {
   boards: [],
   assignedBoards: [],
   currentBoard: null,
   isLoading: false,
   error: null,
   lastFetchTime: null,
+  assignedBoardsLastFetchTime: null,
+  assignedBoardsStudentId: undefined,
   isFiltered: false,
   hasMore: true,
   page: 1,
   currentUserId: undefined,
   currentSearchQuery: '',
+  isListLoading: false,
+  isBoardLoading: false,
 
   fetchBoards: async (userId, name, forceRefresh = false, page = 1) => {
     const { lastFetchTime, boards, isFiltered } = get();
     const now = Date.now();
-    
-    // Reset state if name filter changes or explicit page 1 fetch
-    // const isNewSearch = name !== get().currentSearchQuery; // Unused
     
     // For pagination (page > 1), we append. For page 1, we replace.
     const isPagination = page > 1;
@@ -67,16 +92,13 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         return;
       }
 
-      set({ isLoading: true, error: null });
+      const requestId = ++boardsRequestSequence;
+      listRequestCount += 1;
+      set({ isListLoading: true, error: null });
       try {
         const params: Record<string, string | number> = {};
         if (userId) params.user_id = userId;
         if (name) params.name = name;
-        
-        // If force refresh and page=1, we might want to fetch more if the user already has more loaded
-        // BUT simplicity first: if force refresh, we reset to page 1.
-        // The issue is that the user perceives "disappearing" boards.
-        // If we want to keep the current number of items, we would need to fetch limit = current items count (rounded up to page size)
         
         let limit = PAGE_SIZE;
         if (forceRefresh && page === 1 && boards.length > PAGE_SIZE) {
@@ -85,10 +107,8 @@ export const useBoardStore = create<BoardState>((set, get) => ({
             limit = Math.ceil(boards.length / PAGE_SIZE) * PAGE_SIZE;
         }
 
-        params.skip = (page - 1) * limit; // This might be weird if page > 1 and we changed limit. 
-        // Actually, if page > 1, we shouldn't change limit because pagination logic expects PAGE_SIZE chunks.
-        // So ONLY change limit if page === 1.
-        
+        params.skip = (page - 1) * limit;
+
         if (page > 1) {
             params.skip = (page - 1) * PAGE_SIZE;
             limit = PAGE_SIZE; // Enforce standard page size for subsequent pages
@@ -99,10 +119,9 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         const response = await api.get<Board[]>('/boards/', { params });
         const newBoards = response.data;
         
-        // Calculate if there are more
-        // If we fetched a large batch, hasMore logic needs to check if we got full batch
         const hasMore = newBoards.length === limit;
 
+        if (requestId !== boardsRequestSequence) return;
         set((state) => {
             const updatedBoards = isPagination ? [...state.boards, ...newBoards] : newBoards;
             
@@ -113,17 +132,22 @@ export const useBoardStore = create<BoardState>((set, get) => ({
 
             return {
               boards: uniqueBoards,
-              isLoading: false,
+              isListLoading: listRequestCount > 1,
               isFiltered: !!name,
               hasMore,
-              page: page, // We stay on page 1 if we refreshed page 1
+              page,
               lastFetchTime: !name && page === 1 ? now : state.lastFetchTime,
               currentUserId: userId,
               currentSearchQuery: name
             };
         });
       } catch (error: unknown) {
-      set({ error: extractError(error, 'Failed to fetch boards'), isLoading: false });
+      if (requestId === boardsRequestSequence) {
+        set({ error: extractError(error, 'Failed to fetch boards'), isListLoading: listRequestCount > 1 });
+      }
+    } finally {
+      listRequestCount = Math.max(0, listRequestCount - 1);
+      if (listRequestCount === 0) set({ isListLoading: false });
     }
   },
 
@@ -135,52 +159,64 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       return;
     }
 
-    set({ isLoading: true, error: null });
+    const requestId = ++boardRequestSequence;
+    set({
+      isBoardLoading: true,
+      error: null,
+      currentBoard: currentBoard?.id === id ? currentBoard : null,
+    });
     try {
       const response = await api.get(`/boards/${id}`);
-      set({ currentBoard: response.data, isLoading: false });
+      if (requestId !== boardRequestSequence) return;
+      set({
+        currentBoard: response.data,
+        isBoardLoading: false,
+      });
     } catch (error: unknown) {
-      console.error('Fetch board error:', error); // Added logging
-      set({ error: extractError(error, 'Failed to fetch board'), isLoading: false });
+      console.error('Fetch board error:', error);
+      if (requestId === boardRequestSequence) {
+        set({ error: extractError(error, 'Failed to fetch board'), isBoardLoading: false });
+      }
     }
   },
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   createBoard: async (boardData: any, userId) => {
-    set({ isLoading: true, error: null });
+    beginMutation();
     try {
       await api.post('/boards/', boardData, {
         params: { user_id: userId } // In real app, userId comes from token
       });
       const { currentUserId, currentSearchQuery } = get();
       await get().fetchBoards(currentUserId, currentSearchQuery, true, 1);
+      finishMutation();
     } catch (error: unknown) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (typeof error === 'object' && error && (error as any).message === 'offline') {
         // Offline handling logic if needed
       }
-      set({ error: extractError(error, 'Failed to create board'), isLoading: false });
+      finishMutation(extractError(error, 'Failed to create board'));
       throw error;
     }
   },
 
   updateBoard: async (id, boardData) => {
-    set({ isLoading: true, error: null });
+    beginMutation();
     try {
       const response = await api.put(`/boards/${id}`, boardData);
       set((state) => ({
         boards: state.boards.map(b => b.id === id ? response.data : b),
         currentBoard: state.currentBoard?.id === id ? response.data : state.currentBoard,
-        isLoading: false
       }));
+      finishMutation();
     } catch (error: unknown) {
-      set({ error: extractError(error, 'Failed to update board'), isLoading: false });
+      finishMutation(extractError(error, 'Failed to update board'));
       throw error;
     }
   },
 
   deleteBoard: async (id, skipRefresh = false) => {
-    set({ isLoading: true, error: null });
+    beginMutation();
     try {
       await api.delete(`/boards/${id}`);
       
@@ -188,21 +224,22 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         set((state) => ({
           boards: state.boards.filter(b => b.id !== id),
           currentBoard: state.currentBoard?.id === id ? null : state.currentBoard,
-          isLoading: false
         }));
+        finishMutation();
       } else {
         const { currentUserId, currentSearchQuery } = get();
         // Always refresh page 1 to handle pagination gaps correctly
         await get().fetchBoards(currentUserId, currentSearchQuery, true, 1);
+        finishMutation();
       }
     } catch (error: unknown) {
-      set({ error: extractError(error, 'Failed to delete board'), isLoading: false });
+      finishMutation(extractError(error, 'Failed to delete board'));
       throw error;
     }
   },
 
   duplicateBoard: async (id, userId) => {
-    set({ isLoading: true, error: null });
+    beginMutation();
     try {
       const offline = apiOffline.isOffline()
       let base: Board
@@ -232,30 +269,50 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         });
       }
       await get().fetchBoards(userId, get().currentSearchQuery, true, 1);
-      set({ isLoading: false });
+      finishMutation();
     } catch (e: unknown) {
-      set({ error: extractError(e, 'Failed to duplicate board'), isLoading: false });
+      finishMutation(extractError(e, 'Failed to duplicate board'));
       throw e;
     }
   },
 
   fetchAssignedBoards: async (studentId, forceRefresh = false) => {
-    const { lastFetchTime, assignedBoards } = get();
+    const { assignedBoardsLastFetchTime, assignedBoards, assignedBoardsStudentId } = get();
     const now = Date.now();
-    if (!forceRefresh && lastFetchTime && assignedBoards.length > 0 && (now - lastFetchTime) < CACHE_DURATION) {
+    if (
+      !forceRefresh &&
+      assignedBoardsLastFetchTime &&
+      assignedBoardsStudentId === studentId &&
+      assignedBoards.length > 0 &&
+      now - assignedBoardsLastFetchTime < CACHE_DURATION
+    ) {
       return;
     }
-    set({ isLoading: true, error: null });
+    const requestId = ++assignedBoardsRequestSequence;
+    listRequestCount += 1;
+    set({ isListLoading: true, error: null });
     try {
       const response = await api.get('/boards/assigned', { params: { student_id: studentId } });
-      set({ assignedBoards: response.data, isLoading: false, lastFetchTime: now });
+      if (requestId === assignedBoardsRequestSequence) {
+        set({
+          assignedBoards: response.data,
+          isListLoading: listRequestCount > 1,
+          assignedBoardsLastFetchTime: now,
+          assignedBoardsStudentId: studentId,
+        });
+      }
     } catch (error: unknown) {
-      set({ error: extractError(error, 'Failed to fetch assigned boards'), isLoading: false });
+      if (requestId === assignedBoardsRequestSequence) {
+        set({ error: extractError(error, 'Failed to fetch assigned boards'), isListLoading: listRequestCount > 1 });
+      }
+    } finally {
+      listRequestCount = Math.max(0, listRequestCount - 1);
+      if (listRequestCount === 0) set({ isListLoading: false });
     }
   },
 
   addSymbolToBoard: async (boardId, symbolId, position) => {
-    set({ isLoading: true, error: null });
+    beginMutation();
     try {
       const response = await api.post(`/boards/${boardId}/symbols`, {
         symbol_id: symbolId,
@@ -272,21 +329,19 @@ export const useBoardStore = create<BoardState>((set, get) => ({
           currentBoard: {
             ...currentBoard,
             symbols: [...currentBoard.symbols, response.data]
-          },
-          isLoading: false
+          }
         });
-      } else {
-        set({ isLoading: false });
       }
+      finishMutation();
       return response.data;
     } catch (error: unknown) {
-      set({ error: extractError(error, 'Failed to add symbol'), isLoading: false });
+      finishMutation(extractError(error, 'Failed to add symbol'));
       throw error;
     }
   },
 
   updateBoardSymbol: async (boardId, symbolId, updates) => {
-    set({ isLoading: true, error: null });
+    beginMutation();
     try {
       const response = await api.put(`/boards/${boardId}/symbols/${symbolId}`, updates);
       
@@ -297,20 +352,18 @@ export const useBoardStore = create<BoardState>((set, get) => ({
           currentBoard: {
             ...currentBoard,
             symbols: currentBoard.symbols.map(s => s.id === symbolId ? response.data : s)
-          },
-          isLoading: false
+          }
         });
-      } else {
-        set({ isLoading: false });
       }
+      finishMutation();
     } catch (error: unknown) {
-      set({ error: extractError(error, 'Failed to update symbol'), isLoading: false });
+      finishMutation(extractError(error, 'Failed to update symbol'));
       throw error;
     }
   },
 
   deleteBoardSymbol: async (boardId, symbolId) => {
-    set({ isLoading: true, error: null });
+    beginMutation();
     try {
       await api.delete(`/boards/${boardId}/symbols/${symbolId}`);
       
@@ -321,60 +374,67 @@ export const useBoardStore = create<BoardState>((set, get) => ({
           currentBoard: {
             ...currentBoard,
             symbols: currentBoard.symbols.filter(s => s.id !== symbolId)
-          },
-          isLoading: false
+          }
         });
-      } else {
-        set({ isLoading: false });
       }
+      finishMutation();
     } catch (error: unknown) {
-      set({ error: extractError(error, 'Failed to delete symbol'), isLoading: false });
+      finishMutation(extractError(error, 'Failed to delete symbol'));
       throw error;
     }
   },
 
   batchUpdateSymbols: async (boardId, updates) => {
-    set({ isLoading: true, error: null });
+    beginMutation();
     try {
       await api.put(`/boards/${boardId}/symbols/batch`, updates);
       
       // Refresh the board to get updated symbols
       await get().fetchBoard(boardId, true);
-      set({ isLoading: false });
+      finishMutation();
     } catch (error: unknown) {
-      set({ error: extractError(error, 'Failed to batch update symbols'), isLoading: false });
+      finishMutation(extractError(error, 'Failed to batch update symbols'));
       throw error;
     }
   },
 
   assignBoardToStudent: async (boardId, studentId, assignedBy) => {
-    set({ isLoading: true, error: null });
+    beginMutation();
     try {
       await api.post(`/boards/${boardId}/assign`, {
         student_id: studentId,
         assigned_by: assignedBy
       });
+      set((state) => ({
+        assignedBoardsLastFetchTime:
+          state.assignedBoardsStudentId === studentId ? null : state.assignedBoardsLastFetchTime,
+      }));
       try {
         useNotificationsStore.getState().add({ title: 'Board assigned', message: `Board ${boardId} assigned to student ${studentId}` })
       } catch { /* notification optional */ }
-      set({ isLoading: false });
+      finishMutation();
     } catch (e: unknown) {
-      set({ error: extractError(e, 'Failed to assign board'), isLoading: false });
+      finishMutation(extractError(e, 'Failed to assign board'));
       throw e;
     }
   }
   ,
   unassignBoardFromStudent: async (boardId, studentId) => {
-    set({ isLoading: true, error: null });
+    beginMutation();
     try {
       await api.delete(`/boards/${boardId}/assign/${studentId}`);
+      set((state) => ({
+        assignedBoardsLastFetchTime:
+          state.assignedBoardsStudentId === studentId ? null : state.assignedBoardsLastFetchTime,
+      }));
       try {
         useNotificationsStore.getState().add({ title: 'Board unassigned', message: `Board ${boardId} unassigned from student ${studentId}` })
       } catch { /* notification optional */ }
-      set({ isLoading: false });
+      finishMutation();
     } catch (e: unknown) {
-      set({ error: extractError(e, 'Failed to unassign board'), isLoading: false });
+      finishMutation(extractError(e, 'Failed to unassign board'));
       throw e;
     }
   }
-}));
+  };
+});

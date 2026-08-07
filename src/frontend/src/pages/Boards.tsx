@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { Plus, Trash2, LayoutGrid, Edit, Copy, UserPlus, Search, Play } from 'lucide-react';
 
 import { useBoardStore } from '../store/boardStore';
@@ -14,23 +14,23 @@ import { formatDate } from '../lib/format';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
 export function Boards() {
-  const {
-    boards,
-    assignedBoards,
-    isLoading,
-    error,
-    fetchBoards,
-    fetchAssignedBoards,
-    createBoard,
-    deleteBoard,
-    duplicateBoard,
-    assignBoardToStudent,
-    hasMore,
-    page,
-  } = useBoardStore();
-  const { user } = useAuthStore();
-  const { aiSettings, fetchAISettings } = useSettingsStore();
+  const boards = useBoardStore((state) => state.boards);
+  const assignedBoards = useBoardStore((state) => state.assignedBoards);
+  const isListLoading = useBoardStore((state) => state.isListLoading);
+  const error = useBoardStore((state) => state.error);
+  const fetchBoards = useBoardStore((state) => state.fetchBoards);
+  const fetchAssignedBoards = useBoardStore((state) => state.fetchAssignedBoards);
+  const createBoard = useBoardStore((state) => state.createBoard);
+  const deleteBoard = useBoardStore((state) => state.deleteBoard);
+  const duplicateBoard = useBoardStore((state) => state.duplicateBoard);
+  const assignBoardToStudent = useBoardStore((state) => state.assignBoardToStudent);
+  const hasMore = useBoardStore((state) => state.hasMore);
+  const page = useBoardStore((state) => state.page);
+  const user = useAuthStore((state) => state.user);
+  const aiSettings = useSettingsStore((state) => state.aiSettings);
+  const fetchAISettings = useSettingsStore((state) => state.fetchAISettings);
   const { t, i18n } = useTranslation('boards');
+  const { t: tError } = useTranslation('error');
 
   const [isCreating, setIsCreating] = useState(false);
   const [creatingBoard, setCreatingBoard] = useState(false);
@@ -233,7 +233,7 @@ export function Boards() {
     }
   };
 
-  if (isLoading && boards.length === 0) {
+  if (isListLoading && boards.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
@@ -281,7 +281,7 @@ export function Boards() {
               className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
           </div>
-          <Button data-testid="force-refresh" variant="ghost" onClick={handleForceRefresh} disabled={isLoading}>
+          <Button data-testid="force-refresh" variant="ghost" onClick={handleForceRefresh} disabled={isListLoading}>
             {t('refresh')}
           </Button>
           <Button onClick={() => setIsCreating(true)}>
@@ -311,7 +311,7 @@ export function Boards() {
             </Button>
           )}
           {hasMore && (
-            <Button variant="ghost" onClick={handleLoadMore} disabled={isLoading}>
+            <Button variant="ghost" onClick={handleLoadMore} disabled={isListLoading}>
               {t('loadMore')}
             </Button>
           )}
@@ -319,8 +319,21 @@ export function Boards() {
       </div>
 
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-4 rounded-lg">
-          {error}
+        <div
+          role="alert"
+          className="bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 p-4 rounded-lg"
+        >
+          <h2 className="font-semibold">{tError('title')}</h2>
+          <p className="text-sm mt-1">{tError('subtitle')}</p>
+          <p className="text-sm mt-2">{error}</p>
+          <button
+            type="button"
+            onClick={() => void handleForceRefresh()}
+            className="mt-3 px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+            disabled={isListLoading}
+          >
+            {tError('retry')}
+          </button>
         </div>
       )}
 

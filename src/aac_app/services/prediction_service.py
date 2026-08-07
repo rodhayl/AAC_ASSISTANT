@@ -1,12 +1,572 @@
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from threading import RLock
+from weakref import WeakKeyDictionary
 
 from loguru import logger
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from ..db import get_session
 from ..models import BoardSymbol, Symbol, SymbolUsageLog
+from ..services.runtime_translation import normalize_language_code, translate_text
 from ..services.symbol_analytics import SymbolAnalytics
+from ..services.symbol_catalog import NOUN_CATEGORY_KEYWORDS, standard_library_labels
+
+# Punctuation appended after all real suggestions (only when they fit).
+PUNCTUATION: tuple[str, ...] = (".", ",", "?", "!")
+
+
+@dataclass(frozen=True)
+class _SymbolCatalogEntry:
+    """Detached, immutable symbol data safe to retain between requests."""
+
+    id: int
+    label: str
+    category: str | None
+    image_path: str | None
+    language: str | None
+
+
+_catalog_lock = RLock()
+_catalog_cache: WeakKeyDictionary[Engine, dict[str, tuple[_SymbolCatalogEntry, ...]]] = (
+    WeakKeyDictionary()
+)
+
+
+def clear_prediction_cache() -> None:
+    """Invalidate cached symbol catalogs after any symbol mutation."""
+    with _catalog_lock:
+        _catalog_cache.clear()
+
+
+def _invalidate_after_symbol_change(*_args) -> None:
+    clear_prediction_cache()
+
+
+# Mapper events cover API routes, seed/import paths, and direct service writes in
+# one place, avoiding a fragile list of cache-invalidation call sites.
+event.listen(Symbol, "after_insert", _invalidate_after_symbol_change)
+event.listen(Symbol, "after_update", _invalidate_after_symbol_change)
+event.listen(Symbol, "after_delete", _invalidate_after_symbol_change)
+
+
+class _PredictionContext:
+    """Per-request state and helpers for the five suggestion tiers.
+
+    Kept in one object so the tier methods read the same mutable state the
+    original single-function implementation shared through closures.
+    """
+
+    def __init__(
+        self,
+        *,
+        user_id: int,
+        current_symbols: list[dict],
+        language: str,
+        offset: int,
+        base_limit: int,
+        limit: int,
+        board_id: int | None,
+        db: Session | None,
+        analytics_service: SymbolAnalytics,
+        load_model: Callable[[str], dict],
+    ) -> None:
+        self.user_id = user_id
+        self.current_symbols = current_symbols
+        self.language = language
+        self.offset = offset
+        self.base_limit = base_limit
+        self.limit = limit
+        self.board_id = board_id
+        self.db = db
+        self.analytics_service = analytics_service
+        self._load_model = load_model
+
+        self.suggestions: list[dict] = []
+        self.seen_labels: set[str] = set()
+
+        self.lang = normalize_language_code(language) or "en"
+        self.preferred_langs = [self.lang]
+        if self.lang != "en":
+            self.preferred_langs.append("en")
+
+        self.allowed_symbol_ids: set[int] | None = None
+        if board_id is not None:
+            self._resolve_allowed_symbol_ids()
+
+    def _resolve_allowed_symbol_ids(self) -> None:
+        """Load the visible symbol ids of the board scope, if any."""
+        try:
+            ids = None
+            if self.db is not None:
+                ids = self._board_symbol_ids(self.db)
+            else:
+                with get_session() as session:
+                    ids = self._board_symbol_ids(session)
+            if ids is not None:
+                self.allowed_symbol_ids = {sid for sid in ids if sid is not None}
+        except Exception as exc:
+            logger.warning(
+                "Failed to resolve board symbols for board_id={}: {}",
+                self.board_id,
+                exc,
+            )
+            self.allowed_symbol_ids = None
+
+    def _board_symbol_ids(self, session: Session) -> list[int]:
+        return list(
+            session.query(BoardSymbol.symbol_id)
+            .filter(
+                BoardSymbol.board_id == self.board_id,
+                BoardSymbol.is_visible == True,  # noqa: E712
+                BoardSymbol.symbol_id.isnot(None),
+            )
+            .all()
+        )
+
+    def normalize_label(self, label: str) -> str:
+        return (label or "").strip().lower()
+
+    def language_rank(self, language_code: str | None) -> int:
+        normalized = normalize_language_code(language_code)
+        try:
+            return self.preferred_langs.index(normalized)
+        except ValueError:
+            return len(self.preferred_langs) + 1
+
+    def localize_label(self, label: str, symbol_language: str | None) -> str:
+        if normalize_language_code(symbol_language) == self.lang:
+            return label
+        return translate_text(label, self.lang) or label
+
+    def add_symbol(
+        self,
+        *,
+        symbol_id: int,
+        label: str,
+        category: str | None,
+        image_path: str | None,
+        confidence: float,
+        source: str,
+        symbol_language: str | None = None,
+    ) -> None:
+        if len(self.suggestions) >= self.base_limit:
+            return
+        if (
+            self.allowed_symbol_ids is not None
+            and symbol_id > 0
+            and symbol_id not in self.allowed_symbol_ids
+        ):
+            return
+        localized_label = self.localize_label(label, symbol_language)
+        normalized_label = self.normalize_label(localized_label)
+        if not normalized_label or normalized_label in self.seen_labels:
+            return
+        self.suggestions.append(
+            {
+                "symbol_id": symbol_id,
+                "label": localized_label,
+                "category": category,
+                "image_path": image_path,
+                "confidence": confidence,
+                "source": source,
+            }
+        )
+        self.seen_labels.add(normalized_label)
+
+    def get_symbol_buckets(self) -> dict[str, tuple[_SymbolCatalogEntry, ...]]:
+        """Return a process-local catalog keyed to the owning DB engine.
+
+        Only detached immutable values are retained, so cached entries do
+        not keep ORM sessions alive. Mapper events clear the catalog after
+        inserts, updates, and deletes; the weak engine keys avoid retaining
+        test or short-lived engines.
+        """
+
+        def load(session: Session) -> dict[str, tuple[_SymbolCatalogEntry, ...]]:
+            bind = session.get_bind()
+            with _catalog_lock:
+                cached = _catalog_cache.get(bind)
+                if cached is not None:
+                    return cached
+                rows = session.query(Symbol).filter(Symbol.label.isnot(None)).all()
+                buckets: dict[str, list[_SymbolCatalogEntry]] = {}
+                for sym in rows:
+                    key = self.normalize_label(sym.label)
+                    if not key:
+                        continue
+                    buckets.setdefault(key, []).append(
+                        _SymbolCatalogEntry(
+                            id=sym.id,
+                            label=sym.label,
+                            category=sym.category,
+                            image_path=sym.image_path,
+                            language=getattr(sym, "language", None),
+                        )
+                    )
+                frozen = {key: tuple(entries) for key, entries in buckets.items()}
+                _catalog_cache[bind] = frozen
+                return frozen
+
+        if self.db is not None:
+            return load(self.db)
+        with get_session() as session:
+            return load(session)
+
+    def best_symbol(
+        self, options: Sequence[_SymbolCatalogEntry]
+    ) -> _SymbolCatalogEntry:
+        """Pick the preferred language match, then lowest ID for ties."""
+        return sorted(
+            options,
+            key=lambda sym: (
+                self.language_rank(getattr(sym, "language", None)),
+                sym.id,
+            ),
+        )[0]
+
+    def resolve_symbols_by_labels(
+        self, labels: Sequence[str]
+    ) -> list[tuple[_SymbolCatalogEntry, str]]:
+        wanted = [
+            self.normalize_label(label)
+            for label in labels
+            if self.normalize_label(label)
+        ]
+        if not wanted:
+            return []
+
+        buckets = self.get_symbol_buckets()
+        resolved: list[tuple[_SymbolCatalogEntry, str]] = []
+        for wanted_label in wanted:
+            options = buckets.get(wanted_label, [])
+            if not options:
+                continue
+            if self.allowed_symbol_ids is not None:
+                options = [o for o in options if o.id in self.allowed_symbol_ids]
+                if not options:
+                    continue
+            resolved.append((self.best_symbol(options), wanted_label))
+        return resolved
+
+    def resolve_symbol_for_label(self, label: str) -> _SymbolCatalogEntry | None:
+        # Normalized bucket lookup replaces the former per-label ``ilike``
+        # query: labels containing LIKE wildcards (%, _) are now matched
+        # literally, and non-ASCII labels fold case Unicode-aware instead
+        # of ASCII-only. Both are intentional correctness improvements.
+        normalized_label = self.normalize_label(label)
+        if not normalized_label:
+            return None
+        options = self.get_symbol_buckets().get(normalized_label, [])
+        if self.allowed_symbol_ids is not None:
+            options = [o for o in options if o.id in self.allowed_symbol_ids]
+        if not options:
+            return None
+        return self.best_symbol(options)
+
+    # -- suggestion tiers ---------------------------------------------------
+
+    def suggest_history(self) -> None:
+        """Tier 1: personalized suggestions from the user's usage history."""
+        history_suggestions = self.analytics_service.suggest_next_symbol(
+            user_id=self.user_id,
+            symbols=self.current_symbols,
+            limit=max(self.base_limit, 5),
+            db=self.db,
+        )
+        for suggestion in history_suggestions:
+            self.add_symbol(
+                symbol_id=suggestion.get("symbol_id"),
+                label=suggestion.get("label"),
+                category=suggestion.get("category"),
+                image_path=suggestion.get("image_path"),
+                confidence=float(suggestion.get("confidence", 0.5)),
+                source="history",
+                symbol_language=suggestion.get("language"),
+            )
+
+    def suggest_ngrams(self) -> None:
+        """Tier 2: bundled static N-gram model when history left room."""
+        if len(self.suggestions) >= self.base_limit or not self.current_symbols:
+            return
+        model = self._load_model(self.language)
+        bigrams = model.get("bigrams", {})
+        if not bigrams:
+            return
+        last_symbol_label = (
+            self.current_symbols[-1].get("label", "").lower()
+            if self.current_symbols
+            else ""
+        )
+        if not last_symbol_label or last_symbol_label not in bigrams:
+            return
+        next_word_probs = bigrams[last_symbol_label]
+        sorted_words = sorted(
+            next_word_probs.items(), key=lambda item: item[1], reverse=True
+        )
+        for word, _probability in sorted_words:
+            if len(self.suggestions) >= self.base_limit:
+                break
+            if self.normalize_label(word) in self.seen_labels:
+                continue
+            symbol_obj = self.resolve_symbol_for_label(word)
+            if symbol_obj:
+                self.add_symbol(
+                    symbol_id=symbol_obj.id,
+                    label=symbol_obj.label,
+                    category=symbol_obj.category,
+                    image_path=symbol_obj.image_path,
+                    confidence=0.4,
+                    source="general_model",
+                    symbol_language=symbol_obj.language,
+                )
+
+    def suggest_fallbacks(self) -> None:
+        """Tier 3: most-popular global symbols, interleaving nouns and others."""
+        if len(self.suggestions) >= self.base_limit:
+            return
+        try:
+            fallback_suggestions = self.analytics_service.suggest_next_symbol(
+                user_id=self.user_id,
+                symbols=[],
+                limit=max(self.base_limit * 2, 10),  # Request more to filter
+                db=self.db,
+            )
+
+            # If analytics has no usage data yet, fall back to standard-library
+            # symbols but keep the `fallback` source so tier-4 behavior is explicit.
+            if not fallback_suggestions:
+                resolved = self.resolve_symbols_by_labels(
+                    standard_library_labels(self.lang)
+                )
+                fallback_suggestions = [
+                    {
+                        "symbol_id": sym.id,
+                        "label": sym.label,
+                        "category": sym.category,
+                        "image_path": sym.image_path,
+                    }
+                    for sym, _ in resolved[: max(self.base_limit * 2, 10)]
+                ]
+
+            # Split fallbacks into nouns and others to mix them.
+            noun_candidates = []
+            other_candidates = []
+            for suggestion in fallback_suggestions:
+                category = (suggestion.get("category") or "").lower()
+                if any(keyword in category for keyword in NOUN_CATEGORY_KEYWORDS):
+                    noun_candidates.append(suggestion)
+                else:
+                    other_candidates.append(suggestion)
+
+            # Interleave or prioritize nouns if we have few.
+            while len(self.suggestions) < self.base_limit and (
+                noun_candidates or other_candidates
+            ):
+                if noun_candidates:
+                    suggestion = noun_candidates.pop(0)
+                    self.add_symbol(
+                        symbol_id=suggestion.get("symbol_id"),
+                        label=suggestion.get("label"),
+                        category=suggestion.get("category"),
+                        image_path=suggestion.get("image_path"),
+                        confidence=0.15,
+                        source="fallback",
+                        symbol_language=suggestion.get("language"),
+                    )
+                if len(self.suggestions) >= self.base_limit:
+                    break
+                if other_candidates:
+                    suggestion = other_candidates.pop(0)
+                    self.add_symbol(
+                        symbol_id=suggestion.get("symbol_id"),
+                        label=suggestion.get("label"),
+                        category=suggestion.get("category"),
+                        image_path=suggestion.get("image_path"),
+                        confidence=0.1,
+                        source="fallback",
+                        symbol_language=suggestion.get("language"),
+                    )
+        except Exception as exc:
+            logger.error("Fallback prediction failed: {}", exc)
+
+    def suggest_standard_library(self) -> None:
+        """Tier 4 (cold start): standard-library labels from the catalog."""
+        if len(self.suggestions) >= self.base_limit:
+            return
+        resolved = self.resolve_symbols_by_labels(
+            standard_library_labels(self.lang)
+        )
+        for sym, _ in resolved:
+            self.add_symbol(
+                symbol_id=sym.id,
+                label=sym.label,
+                category=sym.category,
+                image_path=sym.image_path,
+                confidence=0.25,
+                source="standard_library",
+                symbol_language=sym.language,
+            )
+
+    def suggest_board_library(self) -> None:
+        """Tier 5: board-scoped fallbacks (personal, popular, then layout)."""
+        if (
+            self.allowed_symbol_ids is None
+            or len(self.suggestions) >= self.base_limit
+        ):
+            return
+        try:
+            from sqlalchemy import desc, func
+
+            def fill_board_library(session: Session) -> None:
+                self._board_personal(session, desc, func)
+                if len(self.suggestions) < self.base_limit:
+                    self._board_popular(session, desc, func)
+                if len(self.suggestions) < self.base_limit and self.board_id is not None:
+                    self._board_layout(session)
+
+            if self.db is not None:
+                fill_board_library(self.db)
+            else:
+                with get_session() as session:
+                    fill_board_library(session)
+        except Exception as exc:
+            logger.warning(
+                "Board library fallback failed (board_id={}): {}",
+                self.board_id,
+                exc,
+            )
+
+    def _board_personal(self, session: Session, desc, func) -> None:
+        personal = (
+            session.query(
+                Symbol.id,
+                Symbol.label,
+                Symbol.category,
+                Symbol.image_path,
+                Symbol.language,
+                func.count(SymbolUsageLog.id).label("cnt"),
+            )
+            .join(SymbolUsageLog, SymbolUsageLog.symbol_id == Symbol.id)
+            .filter(
+                SymbolUsageLog.user_id == self.user_id,
+                Symbol.id.in_(self.allowed_symbol_ids),
+            )
+            .group_by(
+                Symbol.id,
+                Symbol.label,
+                Symbol.category,
+                Symbol.image_path,
+                Symbol.language,
+            )
+            .order_by(desc("cnt"))
+            .limit(max(self.base_limit * 2, 10))
+            .all()
+        )
+        for sid, label, cat, img, language_code, _cnt in personal:
+            self.add_symbol(
+                symbol_id=sid,
+                label=label,
+                category=cat,
+                image_path=img,
+                confidence=0.35,
+                source="board_personal",
+                symbol_language=language_code,
+            )
+
+    def _board_popular(self, session: Session, desc, func) -> None:
+        popular = (
+            session.query(
+                Symbol.id,
+                Symbol.label,
+                Symbol.category,
+                Symbol.image_path,
+                Symbol.language,
+                func.count(SymbolUsageLog.id).label("cnt"),
+            )
+            .join(SymbolUsageLog, SymbolUsageLog.symbol_id == Symbol.id)
+            .filter(Symbol.id.in_(self.allowed_symbol_ids))
+            .group_by(
+                Symbol.id,
+                Symbol.label,
+                Symbol.category,
+                Symbol.image_path,
+                Symbol.language,
+            )
+            .order_by(desc("cnt"))
+            .limit(max(self.base_limit * 2, 10))
+            .all()
+        )
+        for sid, label, cat, img, language_code, _cnt in popular:
+            self.add_symbol(
+                symbol_id=sid,
+                label=label,
+                category=cat,
+                image_path=img,
+                confidence=0.22,
+                source="board_popular",
+                symbol_language=language_code,
+            )
+
+    def _board_layout(self, session: Session) -> None:
+        placed = (
+            session.query(
+                BoardSymbol.symbol_id,
+                Symbol.label,
+                Symbol.category,
+                Symbol.image_path,
+                Symbol.language,
+                BoardSymbol.position_y,
+                BoardSymbol.position_x,
+            )
+            .join(Symbol, Symbol.id == BoardSymbol.symbol_id)
+            .filter(
+                BoardSymbol.board_id == self.board_id,
+                BoardSymbol.is_visible == True,  # noqa: E712
+                BoardSymbol.symbol_id.isnot(None),
+            )
+            .order_by(BoardSymbol.position_y, BoardSymbol.position_x)
+            .all()
+        )
+        seen_ids: set[int] = set()
+        for sid, label, cat, img, language_code, _, _ in placed:
+            if sid in seen_ids:
+                continue
+            seen_ids.add(sid)
+            self.add_symbol(
+                symbol_id=sid,
+                label=label,
+                category=cat,
+                image_path=img,
+                confidence=0.18,
+                source="board_layout",
+                symbol_language=language_code,
+            )
+
+    def suggest_punctuation(self) -> None:
+        """Tier 6: punctuation, only when it fits the remaining budget."""
+        if self.offset != 0:
+            return
+        for punct in PUNCTUATION:
+            if len(self.suggestions) >= self.limit:
+                break
+            if self.normalize_label(punct) in self.seen_labels:
+                continue
+            fake_id = -(abs(hash(punct)) % 1000000)
+            self.suggestions.append(
+                {
+                    "symbol_id": fake_id,
+                    "label": punct,
+                    "category": "punctuation",
+                    "image_path": None,
+                    "confidence": 1.0,
+                    "source": "punctuation",
+                }
+            )
+            self.seen_labels.add(self.normalize_label(punct))
 
 
 class PredictionService:
@@ -27,8 +587,7 @@ class PredictionService:
 
     def _load_model(self, language_code: str) -> dict:
         """Load static N-gram model for the given language."""
-        # Normalize language code (e.g. 'es-ES' -> 'es')
-        lang = language_code.split('-')[0].lower()
+        lang = normalize_language_code(language_code) or "en"
 
         if lang in self._models:
             return self._models[lang]
@@ -76,486 +635,31 @@ class PredictionService:
         Returns:
             List of suggested symbol dicts
         """
-        suggestions: list[dict] = []
-        seen_labels = set()
-
-        punctuation: list[str] = [".", ",", "?", "!"]
-        reserved_punct = len(punctuation) if offset == 0 else 0
+        reserved_punct = len(PUNCTUATION) if offset == 0 else 0
         base_limit = max(0, limit - reserved_punct)
 
-        lang = (language or "en").split("-")[0].lower()
-        preferred_langs = [lang]
-        if lang != "en":
-            preferred_langs.append("en")
-
-        allowed_symbol_ids: set[int] | None = None
-        if board_id is not None:
-            try:
-                if db is not None:
-                    ids = (
-                        db.query(BoardSymbol.symbol_id)
-                        .filter(
-                            BoardSymbol.board_id == board_id,
-                            BoardSymbol.is_visible == True,  # noqa: E712
-                            BoardSymbol.symbol_id.isnot(None),
-                        )
-                        .all()
-                    )
-                    allowed_symbol_ids = {sid for (sid,) in ids if sid is not None}
-                else:
-                    with get_session() as session:
-                        ids = (
-                            session.query(BoardSymbol.symbol_id)
-                            .filter(
-                                BoardSymbol.board_id == board_id,
-                                BoardSymbol.is_visible == True,  # noqa: E712
-                                BoardSymbol.symbol_id.isnot(None),
-                            )
-                            .all()
-                        )
-                        allowed_symbol_ids = {sid for (sid,) in ids if sid is not None}
-            except Exception as e:
-                logger.warning(f"Failed to resolve board symbols for board_id={board_id}: {e}")
-                allowed_symbol_ids = None
-
-        def normalize_label(label: str) -> str:
-            return (label or "").strip().lower()
-
-        def add_symbol(
-            *,
-            symbol_id: int,
-            label: str,
-            category: str | None,
-            image_path: str | None,
-            confidence: float,
-            source: str,
-        ) -> None:
-            if len(suggestions) >= base_limit:
-                return
-            if allowed_symbol_ids is not None and symbol_id > 0 and symbol_id not in allowed_symbol_ids:
-                return
-            nl = normalize_label(label)
-            if not nl or nl in seen_labels:
-                return
-            suggestions.append(
-                {
-                    "symbol_id": symbol_id,
-                    "label": label,
-                    "category": category,
-                    "image_path": image_path,
-                    "confidence": confidence,
-                    "source": source,
-                }
-            )
-            seen_labels.add(nl)
-
-        def resolve_symbols_by_labels(
-            labels: Sequence[str],
-            *,
-            prefer_language: Sequence[str],
-        ) -> list[tuple[Symbol, str]]:
-            wanted = [normalize_label(label) for label in labels if normalize_label(label)]
-            if not wanted:
-                return []
-
-            # Small enough library: load once and match in memory to avoid
-            # per-label query overhead and case issues.
-            if db is not None:
-                rows = db.query(Symbol).filter(Symbol.label.isnot(None)).all()
-            else:
-                with get_session() as session:
-                    rows = session.query(Symbol).filter(Symbol.label.isnot(None)).all()
-
-            buckets: dict[str, list[Symbol]] = {}
-            for sym in rows:
-                key = normalize_label(sym.label)
-                if not key:
-                    continue
-                buckets.setdefault(key, []).append(sym)
-
-            def lang_rank(sym: Symbol) -> int:
-                s_lang = (getattr(sym, "language", None) or "").split("-")[0].lower()
-                try:
-                    return prefer_language.index(s_lang)
-                except ValueError:
-                    return len(prefer_language) + 1
-
-            resolved: list[tuple[Symbol, str]] = []
-            for w in wanted:
-                options = buckets.get(w, [])
-                if not options:
-                    continue
-                if allowed_symbol_ids is not None:
-                    options = [o for o in options if o.id in allowed_symbol_ids]
-                    if not options:
-                        continue
-                best = sorted(options, key=lang_rank)[0]
-                resolved.append((best, w))
-            return resolved
-
-        def standard_library_labels(lang_code: str) -> list[str]:
-            if lang_code == "es":
-                return [
-                    # pronouns/core
-                    "yo",
-                    "tú",
-                    "tu",
-                    "me",
-                    "mi",
-                    "nosotros",
-                    "nosotras",
-                    "ellos",
-                    "ellas",
-                    # common verbs
-                    "quiero",
-                    "ir",
-                    "ayudar",
-                    "parar",
-                    "comer",
-                    "beber",
-                    "jugar",
-                    "ver",
-                    "tener",
-                    # function words
-                    "por favor",
-                    "más",
-                    "no",
-                    "sí",
-                    "a",
-                    "el",
-                    "la",
-                    "un",
-                    "una",
-                ]
-
-            return [
-                # pronouns/core
-                "I",
-                "you",
-                "he",
-                "she",
-                "it",
-                "we",
-                "they",
-                "me",
-                "my",
-                "your",
-                # common verbs
-                "want",
-                "go",
-                "like",
-                "help",
-                "stop",
-                "eat",
-                "drink",
-                "play",
-                "see",
-                "have",
-                # function words
-                "please",
-                "more",
-                "no",
-                "yes",
-                "the",
-                "a",
-                "an",
-                "to",
-                "in",
-                "on",
-            ]
-
-        # 1. Get personalized suggestions from user history (SymbolAnalytics)
-        # This uses the user's past patterns
-        history_suggestions = self.analytics_service.suggest_next_symbol(
+        context = _PredictionContext(
             user_id=user_id,
-            symbols=current_symbols,
-            limit=max(base_limit, 5),
+            current_symbols=current_symbols,
+            language=language,
+            offset=offset,
+            base_limit=base_limit,
+            limit=limit,
+            board_id=board_id,
             db=db,
+            analytics_service=self.analytics_service,
+            load_model=self._load_model,
         )
 
-        for s in history_suggestions:
-            add_symbol(
-                symbol_id=s.get("symbol_id"),
-                label=s.get("label"),
-                category=s.get("category"),
-                image_path=s.get("image_path"),
-                confidence=float(s.get("confidence", 0.5)),
-                source="history",
-            )
+        context.suggest_history()
+        context.suggest_ngrams()
+        context.suggest_fallbacks()
+        context.suggest_standard_library()
+        context.suggest_board_library()
+        context.suggest_punctuation()
 
-        # 2. Use the bundled static N-gram model when history has not filled the bar.
-        if len(suggestions) < base_limit and current_symbols:
-            model = self._load_model(language)
-            bigrams = model.get("bigrams", {})
-            target_count = base_limit
+        return context.suggestions[:limit]
 
-            last_symbol_label = current_symbols[-1].get("label", "").lower() if current_symbols else ""
-            if last_symbol_label and last_symbol_label in bigrams:
-                next_word_probs = bigrams[last_symbol_label]
-                sorted_words = sorted(next_word_probs.items(), key=lambda x: x[1], reverse=True)
-                if db is not None:
-                    for word, _ in sorted_words:
-                        if len(suggestions) >= target_count:
-                            break
-                        if normalize_label(word) in seen_labels:
-                            continue
-                        query = db.query(Symbol).filter(Symbol.label.ilike(word))
-                        if allowed_symbol_ids is not None:
-                            query = query.filter(Symbol.id.in_(allowed_symbol_ids))
-                        symbol_obj = query.first()
-                        if symbol_obj:
-                            add_symbol(
-                                symbol_id=symbol_obj.id,
-                                label=symbol_obj.label,
-                                category=symbol_obj.category,
-                                image_path=symbol_obj.image_path,
-                                confidence=0.4,
-                                source="general_model",
-                            )
-                else:
-                    with get_session() as session:
-                        for word, _ in sorted_words:
-                            if len(suggestions) >= target_count:
-                                break
-                            if normalize_label(word) in seen_labels:
-                                continue
-                            query = session.query(Symbol).filter(Symbol.label.ilike(word))
-                            if allowed_symbol_ids is not None:
-                                query = query.filter(Symbol.id.in_(allowed_symbol_ids))
-                            symbol_obj = query.first()
-                            if symbol_obj:
-                                add_symbol(
-                                    symbol_id=symbol_obj.id,
-                                    label=symbol_obj.label,
-                                    category=symbol_obj.category,
-                                    image_path=symbol_obj.image_path,
-                                    confidence=0.4,
-                                    source="general_model",
-                                )
-
-        # 3. Fill remaining slots with most popular symbols if needed (fallback)
-        # PRIORITIZE NOUNS/OBJECTS here if we are low on suggestions
-        if len(suggestions) < base_limit:
-            # If we still don't have enough, fill with most frequent global symbols
-            # We call suggest_next_symbol with empty list to get global top used
-            try:
-                fallback_suggestions = self.analytics_service.suggest_next_symbol(
-                    user_id=user_id,
-                    symbols=[],
-                    limit=max(base_limit * 2, 10),  # Request more to filter
-                    db=db,
-                )
-
-                # If analytics has no usage data yet, fall back to standard-library
-                # symbols but keep the `fallback` source so tier-4 behavior is explicit.
-                if not fallback_suggestions:
-                    resolved = resolve_symbols_by_labels(
-                        standard_library_labels(lang), prefer_language=preferred_langs
-                    )
-                    fallback_suggestions = [
-                        {
-                            "symbol_id": sym.id,
-                            "label": sym.label,
-                            "category": sym.category,
-                            "image_path": sym.image_path,
-                        }
-                        for sym, _ in resolved[: max(base_limit * 2, 10)]
-                    ]
-
-                # Split fallbacks into nouns and others to mix them
-                noun_candidates = []
-                other_candidates = []
-
-                noun_keywords = ["food", "drink", "toy", "animal", "place", "object", "noun"]
-
-                for s in fallback_suggestions:
-                    cat = (s.get('category') or '').lower()
-                    if any(k in cat for k in noun_keywords):
-                        noun_candidates.append(s)
-                    else:
-                        other_candidates.append(s)
-
-                # Interleave or prioritize nouns if we have few
-                # Simple strategy: add a noun, then an other, etc.
-
-                while len(suggestions) < base_limit and (noun_candidates or other_candidates):
-                    # Try to add a noun
-                    if noun_candidates:
-                        s = noun_candidates.pop(0)
-                        add_symbol(
-                            symbol_id=s.get("symbol_id"),
-                            label=s.get("label"),
-                            category=s.get("category"),
-                            image_path=s.get("image_path"),
-                            confidence=0.15,
-                            source="fallback",
-                        )
-
-                    if len(suggestions) >= base_limit:
-                        break
-
-                    # Try to add another
-                    if other_candidates:
-                        s = other_candidates.pop(0)
-                        add_symbol(
-                            symbol_id=s.get("symbol_id"),
-                            label=s.get("label"),
-                            category=s.get("category"),
-                            image_path=s.get("image_path"),
-                            confidence=0.1,
-                            source="fallback",
-                        )
-
-            except Exception as e:
-                logger.error(f"Fallback prediction failed: {e}")
-
-        # 5. Cold start: if still low, use standard-library labels from DB
-        if len(suggestions) < base_limit:
-            resolved = resolve_symbols_by_labels(
-                standard_library_labels(lang), prefer_language=preferred_langs
-            )
-            for sym, _ in resolved:
-                add_symbol(
-                    symbol_id=sym.id,
-                    label=sym.label,
-                    category=sym.category,
-                    image_path=sym.image_path,
-                    confidence=0.25,
-                    source="standard_library",
-                )
-
-        # 5b. If board-scoped and still low, fill from board library.
-        # Prefer the user's most-used symbols on that board; then fall back to globally popular
-        # symbols on that board; finally fall back to board layout order.
-        if allowed_symbol_ids is not None and len(suggestions) < base_limit:
-            try:
-                from sqlalchemy import desc, func
-
-                def fill_board_library(session: Session) -> None:
-                    # User-personal, restricted to the board
-                    personal = (
-                        session.query(
-                            Symbol.id,
-                            Symbol.label,
-                            Symbol.category,
-                            Symbol.image_path,
-                            func.count(SymbolUsageLog.id).label("cnt"),
-                        )
-                        .join(SymbolUsageLog, SymbolUsageLog.symbol_id == Symbol.id)
-                        .filter(
-                            SymbolUsageLog.user_id == user_id,
-                            Symbol.id.in_(allowed_symbol_ids),
-                        )
-                        .group_by(Symbol.id, Symbol.label, Symbol.category, Symbol.image_path)
-                        .order_by(desc("cnt"))
-                        .limit(max(base_limit * 2, 10))
-                        .all()
-                    )
-
-                    for sid, label, cat, img, _cnt in personal:
-                        add_symbol(
-                            symbol_id=sid,
-                            label=label,
-                            category=cat,
-                            image_path=img,
-                            confidence=0.35,
-                            source="board_personal",
-                        )
-
-                    # Global popularity, restricted to the board
-                    if len(suggestions) < base_limit:
-                        popular = (
-                            session.query(
-                                Symbol.id,
-                                Symbol.label,
-                                Symbol.category,
-                                Symbol.image_path,
-                                func.count(SymbolUsageLog.id).label("cnt"),
-                            )
-                            .join(SymbolUsageLog, SymbolUsageLog.symbol_id == Symbol.id)
-                            .filter(Symbol.id.in_(allowed_symbol_ids))
-                            .group_by(
-                                Symbol.id, Symbol.label, Symbol.category, Symbol.image_path
-                            )
-                            .order_by(desc("cnt"))
-                            .limit(max(base_limit * 2, 10))
-                            .all()
-                        )
-
-                        for sid, label, cat, img, _cnt in popular:
-                            add_symbol(
-                                symbol_id=sid,
-                                label=label,
-                                category=cat,
-                                image_path=img,
-                                confidence=0.22,
-                                source="board_popular",
-                            )
-
-                    # Layout order fallback (top-left to bottom-right), unique by symbol_id
-                    if len(suggestions) < base_limit and board_id is not None:
-                        placed = (
-                            session.query(
-                                BoardSymbol.symbol_id,
-                                Symbol.label,
-                                Symbol.category,
-                                Symbol.image_path,
-                                BoardSymbol.position_y,
-                                BoardSymbol.position_x,
-                            )
-                            .join(Symbol, Symbol.id == BoardSymbol.symbol_id)
-                            .filter(
-                                BoardSymbol.board_id == board_id,
-                                BoardSymbol.is_visible == True,  # noqa: E712
-                                BoardSymbol.symbol_id.isnot(None),
-                            )
-                            .order_by(BoardSymbol.position_y, BoardSymbol.position_x)
-                            .all()
-                        )
-
-                        seen_ids = set()
-                        for sid, label, cat, img, _, _ in placed:
-                            if sid in seen_ids:
-                                continue
-                            seen_ids.add(sid)
-                            add_symbol(
-                                symbol_id=sid,
-                                label=label,
-                                category=cat,
-                                image_path=img,
-                                confidence=0.18,
-                                source="board_layout",
-                            )
-
-                if db is not None:
-                    fill_board_library(db)
-                else:
-                    with get_session() as session:
-                        fill_board_library(session)
-            except Exception as e:
-                logger.warning(f"Board library fallback failed (board_id={board_id}): {e}")
-
-        # 6. Punctuation (only if it fits, never the only thing we return unless limit is tiny)
-        if offset == 0:
-            for p in punctuation:
-                if len(suggestions) >= limit:
-                    break
-                if normalize_label(p) in seen_labels:
-                    continue
-                fake_id = -(abs(hash(p)) % 1000000)
-                suggestions.append(
-                    {
-                        "symbol_id": fake_id,
-                        "label": p,
-                        "category": "punctuation",
-                        "image_path": None,
-                        "confidence": 1.0,
-                        "source": "punctuation",
-                    }
-                )
-                seen_labels.add(normalize_label(p))
-
-        return suggestions[:limit]
 
 # Global instance
 prediction_service = PredictionService()

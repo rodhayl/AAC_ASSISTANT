@@ -56,3 +56,4 @@ def test_foreign_keys_defined():
 
     # If we got here, the SQL generation works (no invalid column types/references)
     assert True
+    engine.dispose()

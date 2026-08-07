@@ -21,11 +21,13 @@ class MockBoard:
 
 # Import the function to test
 # We might need to mock the broader module if it has side effects on import
+from src.api.routers.board_helpers import get_playable_count as canonical_get_playable_count
 from src.api.routers.boards import get_playable_count
 
 
 def test_get_playable_count():
     print("Running test_get_playable_count...")
+    assert get_playable_count is canonical_get_playable_count
 
     # Test case 1: Empty board
     board1 = MockBoard(symbols=[])

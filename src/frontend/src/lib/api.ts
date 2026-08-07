@@ -9,6 +9,8 @@ type ApiError = {
   response?: {
     data?: {
       detail?: unknown;
+      error?: unknown;
+      message?: unknown;
     };
   };
 };
@@ -38,6 +40,12 @@ export function extractError(error: unknown, fallback: string): string {
   if (typeof detail === 'object' && detail !== null) {
     return JSON.stringify(detail);
   }
+
+  const responseError = apiError?.response?.data?.error;
+  if (typeof responseError === 'string' && responseError) return responseError;
+
+  const responseMessage = apiError?.response?.data?.message;
+  if (typeof responseMessage === 'string' && responseMessage) return responseMessage;
 
   return typeof apiError?.message === 'string' && apiError.message ? apiError.message : fallback;
 }

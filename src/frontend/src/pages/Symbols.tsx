@@ -6,6 +6,7 @@ import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import type { Symbol as SymbolType } from '../types';
 import { useTranslation } from 'react-i18next';
+import { DEFAULT_SYMBOL_CATEGORIES } from '../lib/symbolCategories';
 
 type UsageFilter = 'all' | 'in_use' | 'unused';
 
@@ -27,7 +28,6 @@ export function Symbols() {
   const [category, setCategory] = useState('all');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({ label: '', description: '', category: 'general', keywords: '' });
-  // const [uploadingId, setUploadingId] = useState<number | 'new' | null>(null);
   const [newFile, setNewFile] = useState<File | null>(null);
   const [newPreview, setNewPreview] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -35,6 +35,12 @@ export function Symbols() {
   const pageSize = 100;
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const formRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    return () => {
+      if (newPreview) URL.revokeObjectURL(newPreview);
+    };
+  }, [newPreview]);
 
   const [deleteState, setDeleteState] = useState<{
     isOpen: boolean;
@@ -84,23 +90,16 @@ export function Symbols() {
     fetchSymbols();
   }, [fetchSymbols]);
 
-  const categories = useMemo(() => {
-    const set = new Set<string>([
-      'general', 'action', 'feeling', 'person', 'social', 
-      'food', 'object', 'place', 'question', 'time', 'adjective', 'core', 'ARASAAC'
-    ]);
-    symbols.forEach(s => s.category && set.add(s.category));
-    return ['all', ...Array.from(set).sort()];
+  const availableCategories = useMemo(() => {
+    const categories = new Set<string>(DEFAULT_SYMBOL_CATEGORIES);
+    symbols.forEach(s => s.category && categories.add(s.category));
+    return Array.from(categories).sort();
   }, [symbols]);
 
-  const availableCategories = useMemo(() => {
-    const set = new Set<string>([
-      'general', 'action', 'feeling', 'person', 'social', 
-      'food', 'object', 'place', 'question', 'time', 'adjective', 'core', 'ARASAAC'
-    ]);
-    symbols.forEach(s => s.category && set.add(s.category));
-    return Array.from(set).sort();
-  }, [symbols]);
+  const categories = useMemo(
+    () => ['all', ...availableCategories],
+    [availableCategories],
+  );
 
   const resetForm = () => {
     setForm({ label: '', description: '', category: 'general', keywords: '' });

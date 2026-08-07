@@ -10,6 +10,21 @@ test.describe('Learning', () => {
     // Mock Learning Answer API to avoid real LLM dependency
     page.on('request', request => console.log(`[Request] ${request.url()}`));
 
+    // Mock auto-asked adaptive questions so the flow does not hit the LLM
+    await page.route('**/api/learning/*/ask', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          question_id: 1,
+          question_text: 'Mock question',
+          choices: ['Choice A', 'Choice B', 'Choice C'],
+          correct_answer_index: 0
+        })
+      });
+    });
+
     // Mock Learning Answer API to avoid real LLM dependency
     await page.route('**/api/learning/*/answer', async route => {
       console.log(`[Mock] Intercepted Learning Answer: ${route.request().url()}`);

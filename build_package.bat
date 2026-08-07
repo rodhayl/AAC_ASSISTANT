@@ -5,10 +5,22 @@ REM Requires uv, npm, and Inno Setup 6.7.3 (per-user install is supported).
 setlocal
 cd /d "%~dp0"
 
-set "VERSION=2.0.0"
+for /f "tokens=3" %%V in ('findstr /r /b /c:"#define MyAppVersion " installer.iss') do set "VERSION=%%~V"
+if not defined VERSION (
+    echo ERROR: Could not read MyAppVersion from installer.iss.
+    exit /b 1
+)
 set "APP_DIR=dist\AAC_Assistant"
 set "INSTALLER=dist\AAC_Assistant_Setup_%VERSION%.exe"
-set "ISCC_EXE=C:\Users\rulfe\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
+set "ISCC_EXE="
+if defined INNO_SETUP_PATH set "ISCC_EXE=%INNO_SETUP_PATH:"=%"
+if not defined ISCC_EXE if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
+if not defined ISCC_EXE if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%ProgramFiles%\Inno Setup 6\ISCC.exe"
+if not defined ISCC_EXE if exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
+if not defined ISCC_EXE (
+    where ISCC.exe >nul 2>&1
+    if not errorlevel 1 set "ISCC_EXE=ISCC.exe"
+)
 
 if not exist ".env.example" (
     echo ERROR: .env.example is missing.
@@ -25,14 +37,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
-if not exist "%ISCC_EXE%" (
-    where ISCC.exe >nul 2>&1
-    if errorlevel 1 (
-        echo ERROR: Inno Setup compiler was not found.
-        echo Expected: %ISCC_EXE%
-        exit /b 1
-    )
-    set "ISCC_EXE=ISCC.exe"
+if not defined ISCC_EXE (
+    echo ERROR: Inno Setup compiler was not found.
+    echo Install Inno Setup 6.7.3 or set INNO_SETUP_PATH to ISCC.exe.
+    exit /b 1
+)
+if /i not "%ISCC_EXE%"=="ISCC.exe" if not exist "%ISCC_EXE%" (
+    echo ERROR: Configured Inno Setup compiler does not exist: %ISCC_EXE%
+    exit /b 1
 )
 
 echo [1/4] Building the frontend...
@@ -43,6 +55,16 @@ if errorlevel 1 (
 )
 
 echo [2/4] Building the PyInstaller onedir package...
+if exist "%APP_DIR%\.env" (
+    echo ERROR: Existing runtime config found under %APP_DIR%.
+    echo Stop using this portable copy and move .env before rebuilding.
+    exit /b 1
+)
+if exist "%APP_DIR%\env.properties" (
+    echo ERROR: Existing legacy runtime config found under %APP_DIR%.
+    echo Stop using this portable copy and move env.properties before rebuilding.
+    exit /b 1
+)
 if exist "%APP_DIR%\uploads\" (
     dir /b /s /a-d "%APP_DIR%\uploads\*" >nul 2>&1
     if not errorlevel 1 (
@@ -52,10 +74,10 @@ if exist "%APP_DIR%\uploads\" (
     )
 )
 if exist "%APP_DIR%\data\" (
-    dir /b /s /a-d "%APP_DIR%\data\*.db" >nul 2>&1
+    dir /b /s /a-d "%APP_DIR%\data\*" >nul 2>&1
     if not errorlevel 1 (
-        echo ERROR: Existing database found under %APP_DIR%.
-        echo Stop using this portable copy and move user data before rebuilding.
+        echo ERROR: Existing runtime data found under %APP_DIR%.
+        echo Stop using this portable copy and move all user data before rebuilding.
         exit /b 1
     )
 )

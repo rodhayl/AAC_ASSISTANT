@@ -38,8 +38,8 @@ export function BoardsAndTopicsSidebar({
     className = ""
 }: BoardsAndTopicsSidebarProps) {
     const { t } = useTranslation('learning');
-    const { user } = useAuthStore();
-    const { boards } = useBoardStore();
+    const user = useAuthStore((state) => state.user);
+    const boards = useBoardStore((state) => state.boards);
 
     const [topicsRevision, setTopicsRevision] = useState(0);
     const [selectedBoardId, setSelectedBoardId] = useState<string>('');

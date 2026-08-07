@@ -1,5 +1,6 @@
-import { Cloud, Cpu, Grid as GridIcon, Sparkles, Volume2, VolumeX } from 'lucide-react';
+import { Cloud, Cpu, Grid as GridIcon, HelpCircle, Sparkles, Volume2, VolumeX } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import type { DifficultyOverride } from '../../store/learningStore';
 
 interface LearningHeaderProps {
   showHistory: boolean;
@@ -9,10 +10,14 @@ interface LearningHeaderProps {
   selectedModeKey: string;
   onModeChange: (modeKey: string) => void;
   availableModes: Array<{ id: number; name: string; key: string; description: string }>;
-  providerInUse?: 'ollama' | 'openrouter';
+  difficultyOverride: DifficultyOverride;
+  onDifficultyChange: (difficulty: DifficultyOverride) => void;
+  providerInUse?: 'ollama' | 'openrouter' | 'lmstudio';
   providerNotice: string | null;
   voiceEnabled: boolean;
   onToggleVoice: () => void;
+  onNewQuestion: () => void;
+  canAskQuestion: boolean;
 }
 
 export function LearningHeader({
@@ -23,10 +28,14 @@ export function LearningHeader({
   selectedModeKey,
   onModeChange,
   availableModes,
+  difficultyOverride,
+  onDifficultyChange,
   providerInUse,
   providerNotice,
   voiceEnabled,
   onToggleVoice,
+  onNewQuestion,
+  canAskQuestion,
 }: LearningHeaderProps) {
   const { t } = useTranslation('learning');
 
@@ -59,9 +68,18 @@ export function LearningHeader({
             <GridIcon className="w-4 h-4 inline-block mr-2" />
             {symbolView ? t('textChat') : t('symbolFirst')}
           </button>
+          <button
+            onClick={onNewQuestion}
+            disabled={!canAskQuestion}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+            title="Get a new question"
+          >
+            <HelpCircle className="w-4 h-4" />
+            {t('newQuestion', 'New question')}
+          </button>
           <div className="flex items-center gap-2 border-l border-gray-200 dark:border-gray-600 pl-3 ml-1">
             <label htmlFor="learning-mode" className="text-xs font-medium text-gray-500 dark:text-gray-400">
-              Mode:
+              {t('modeLabel', 'Mode')}:
             </label>
             <select
               id="learning-mode"
@@ -75,23 +93,50 @@ export function LearningHeader({
               ))}
             </select>
           </div>
+          <div className="flex items-center gap-2 border-l border-gray-200 dark:border-gray-600 pl-3 ml-1">
+            <label htmlFor="learning-difficulty" className="text-xs font-medium text-gray-500 dark:text-gray-400">
+              {t('difficultyLabel', 'Difficulty')}:
+            </label>
+            <select
+              id="learning-difficulty"
+              name="learning_difficulty"
+              value={difficultyOverride}
+              onChange={(event) => onDifficultyChange(event.target.value as DifficultyOverride)}
+              className="px-2 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 border-none text-sm text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500"
+              title={t('difficultyHelp', 'Choose a fixed level or let the AI adapt')}
+            >
+              <option value="adaptive">{t('difficulty.adaptive', 'Adaptive')}</option>
+              <option value="basic">{t('difficulty.basic', 'Basic')}</option>
+              <option value="intermediate">{t('difficulty.intermediate', 'Intermediate')}</option>
+              <option value="advanced">{t('difficulty.advanced', 'Advanced')}</option>
+            </select>
+          </div>
         </div>
       </div>
 
       <div className="flex items-center gap-3">
-        {providerInUse && (
-          <span
-            className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border ${
-              providerInUse === 'openrouter'
-                ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800'
-                : 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800'
-            }`}
-            title="Current AI provider"
-          >
-            {providerInUse === 'openrouter' ? <Cloud className="w-4 h-4" /> : <Cpu className="w-4 h-4" />}
-            <span>AI: {providerInUse === 'openrouter' ? 'OpenRouter' : 'Ollama'}</span>
-          </span>
-        )}
+        {providerInUse && (() => {
+          const label =
+            providerInUse === 'openrouter'
+              ? 'OpenRouter'
+              : providerInUse === 'lmstudio'
+                ? 'LM Studio'
+                : 'Ollama';
+          const isCloud = providerInUse === 'openrouter';
+          return (
+            <span
+              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border ${
+                isCloud
+                  ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800'
+                  : 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800'
+              }`}
+              title="Current AI provider"
+            >
+              {isCloud ? <Cloud className="w-4 h-4" /> : <Cpu className="w-4 h-4" />}
+              <span>AI: {label}</span>
+            </span>
+          );
+        })()}
         {providerNotice && (
           <div
             className="px-3 py-1 rounded-md text-xs bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800"

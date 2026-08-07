@@ -1,11 +1,15 @@
-import re
-
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import StudentTeacher, User, UserSettings
+from src.aac_app.models import (
+    BoardAssignment,
+    CommunicationBoard,
+    StudentTeacher,
+    User,
+    UserSettings,
+)
 from src.aac_app.services.audit_service import audit_service
 from src.aac_app.services.auth_service import (
     get_password_hash,
@@ -20,89 +24,13 @@ from src.aac_app.utils.jwt_utils import (
 )
 from src.api import schemas
 from src.api.deps import get_current_active_user, get_current_admin_user, get_db
+from src.api.routers.auth_helpers import (
+    conditional_limiter,
+    validate_email_format,
+    validate_password_strength,
+)
 
 router = APIRouter()
-
-# Import limiter from main app
-import os
-from functools import wraps
-
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
-_limiter_instance = Limiter(key_func=get_remote_address)
-
-def conditional_limiter(rate: str):
-    """
-    Apply rate limiting only in non-testing environments.
-
-    Args:
-        rate: Rate limit string like "10/minute"
-
-    Returns:
-        Decorator that applies rate limiting in production, passthrough in tests
-    """
-    def decorator(func):
-        # Apply the actual limiter decorator
-        limited_func = _limiter_instance.limit(rate)(func)
-
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            # At runtime, check if we're testing
-            if os.getenv('TESTING', '0') == '1':
-                # Skip rate limiting, call original function
-                return func(*args, **kwargs)
-            else:
-                # Use rate-limited version
-                return limited_func(*args, **kwargs)
-
-        # Return wrapper with same metadata as original
-        return wrapper
-
-    return decorator
-
-
-def validate_password_strength(password: str) -> None:
-    """
-    Validate password meets strength requirements.
-
-    Requirements:
-    - At least 8 characters
-    - At least one uppercase letter (A-Z)
-    - At least one lowercase letter (a-z)
-    - At least one digit (0-9)
-
-    Args:
-        password: Password to validate
-
-    Raises:
-        HTTPException: 400 with specific error message if validation fails
-    """
-    if not password or len(password.strip()) == 0:
-        raise HTTPException(status_code=400, detail="Password is required")
-
-    if len(password) < 8:
-        raise HTTPException(
-            status_code=400,
-            detail="Password must be at least 8 characters long"
-        )
-
-    # Check password complexity: at least one uppercase, one lowercase, one digit
-    if not re.search(r"[A-Z]", password):
-        raise HTTPException(
-            status_code=400,
-            detail="Password must contain at least one uppercase letter"
-        )
-    if not re.search(r"[a-z]", password):
-        raise HTTPException(
-            status_code=400,
-            detail="Password must contain at least one lowercase letter"
-        )
-    if not re.search(r"[0-9]", password):
-        raise HTTPException(
-            status_code=400,
-            detail="Password must contain at least one number"
-        )
 
 @router.post("/token")
 @conditional_limiter("10/minute")  # Max 10 login attempts per minute per IP
@@ -337,13 +265,7 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
     validate_password_strength(user.password)
 
     # Validate email format if provided
-    if user.email:
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, user.email):
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid email format"
-            )
+    validate_email_format(user.email)
 
     # Check if username exists
     existing_user = db.query(User).filter(User.username == user.username).first()
@@ -459,13 +381,7 @@ def admin_create_user(
     validate_password_strength(user.password)
 
     # Validate email format if provided
-    if user.email:
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, user.email):
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid email format"
-            )
+    validate_email_format(user.email)
 
     # Validate password confirmation for admin-created users
     if not user.confirm_password:
@@ -594,6 +510,107 @@ def get_users(
         query = query.filter(User.user_type == user_type)
     return query.offset(skip).limit(limit).all()
 
+
+@router.get(
+    "/users/student-summaries",
+    response_model=list[schemas.StudentBoardSummaryResponse],
+)
+def get_student_summaries(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Return visible students and assigned boards without per-student requests."""
+    if current_user.user_type not in {"admin", "teacher"}:
+        raise HTTPException(status_code=403, detail="Not authorized to view user list")
+
+    query = db.query(User).filter(User.user_type == "student")
+    if current_user.user_type == "teacher":
+        assignment_count = (
+            db.query(StudentTeacher)
+            .filter(StudentTeacher.teacher_id == current_user.id)
+            .count()
+        )
+        if assignment_count:
+            query = (
+                query.join(
+                    StudentTeacher,
+                    StudentTeacher.student_id == User.id,
+                )
+                .filter(StudentTeacher.teacher_id == current_user.id)
+                .distinct()
+            )
+
+    students = (
+        query.order_by(User.id)
+        .offset(max(skip, 0))
+        .limit(min(max(limit, 1), 500))
+        .all()
+    )
+    student_ids = [student.id for student in students]
+    if not student_ids:
+        return []
+
+    assignments = (
+        db.query(BoardAssignment)
+        .filter(BoardAssignment.student_id.in_(student_ids))
+        .order_by(BoardAssignment.id)
+        .all()
+    )
+    board_ids_by_student: dict[int, list[int]] = {}
+    all_board_ids: set[int] = set()
+    for assignment in assignments:
+        student_board_ids = board_ids_by_student.setdefault(assignment.student_id, [])
+        if assignment.board_id not in student_board_ids:
+            student_board_ids.append(assignment.board_id)
+            all_board_ids.add(assignment.board_id)
+
+    boards_by_id = {}
+    if all_board_ids:
+        boards = (
+            db.query(CommunicationBoard)
+            .filter(CommunicationBoard.id.in_(all_board_ids))
+            .all()
+        )
+        boards_by_id = {board.id: board for board in boards}
+
+    return [
+        schemas.StudentBoardSummaryResponse(
+            id=student.id,
+            username=student.username,
+            email=student.email,
+            display_name=student.display_name,
+            user_type=student.user_type,
+            is_active=student.is_active,
+            created_at=student.created_at,
+            assigned_boards=[
+                schemas.BoardSummaryResponse(
+                    id=boards_by_id[board_id].id,
+                    user_id=boards_by_id[board_id].user_id,
+                    name=boards_by_id[board_id].name,
+                    description=boards_by_id[board_id].description,
+                    category=boards_by_id[board_id].category,
+                    is_public=boards_by_id[board_id].is_public,
+                    is_template=boards_by_id[board_id].is_template,
+                    created_at=boards_by_id[board_id].created_at,
+                    updated_at=boards_by_id[board_id].updated_at,
+                    grid_rows=boards_by_id[board_id].grid_rows,
+                    grid_cols=boards_by_id[board_id].grid_cols,
+                    ai_enabled=boards_by_id[board_id].ai_enabled,
+                    ai_provider=boards_by_id[board_id].ai_provider,
+                    ai_model=boards_by_id[board_id].ai_model,
+                    locale=boards_by_id[board_id].locale,
+                    is_language_learning=boards_by_id[board_id].is_language_learning,
+                )
+                for board_id in board_ids_by_student.get(student.id, [])
+                if board_id in boards_by_id
+            ],
+        )
+        for student in students
+    ]
+
+
 @router.get("/users/{user_id}", response_model=schemas.UserResponse)
 def get_user(
     user_id: int,
@@ -717,6 +734,44 @@ def delete_user(
     db.commit()
     return {"ok": True}
 
+def _validate_preference_updates(updates: dict) -> None:
+    """Reject negative timing preferences consistently across preference routes."""
+    for key in ("dwell_time", "ignore_repeats"):
+        value = updates.get(key)
+        if value is not None and int(value) < 0:
+            raise HTTPException(status_code=400, detail=f"{key} must be >= 0")
+
+
+def _build_preferences_response(
+    settings: UserSettings | None,
+) -> schemas.UserPreferencesResponse:
+    """Convert persisted settings to the stable preferences API shape.
+
+    Explicit defaults preserve compatibility with older databases where newer
+    columns may be absent or nullable.
+    """
+    if settings is None:
+        return schemas.UserPreferencesResponse()
+
+    notifications_enabled = getattr(settings, "notifications_enabled", None)
+    voice_mode_enabled = getattr(settings, "voice_mode_enabled", None)
+    dark_mode = getattr(settings, "dark_mode", None)
+
+    return schemas.UserPreferencesResponse(
+        tts_voice=getattr(settings, "tts_voice", None) or "default",
+        tts_language=getattr(settings, "tts_language", None),
+        ui_language=getattr(settings, "ui_language", None),
+        notifications_enabled=(
+            notifications_enabled if notifications_enabled is not None else True
+        ),
+        voice_mode_enabled=voice_mode_enabled if voice_mode_enabled is not None else True,
+        dark_mode=dark_mode if dark_mode is not None else False,
+        dwell_time=int(getattr(settings, "dwell_time", 0) or 0),
+        ignore_repeats=int(getattr(settings, "ignore_repeats", 0) or 0),
+        high_contrast=bool(getattr(settings, "high_contrast", False) or False),
+    )
+
+
 @router.get("/preferences", response_model=schemas.UserPreferencesResponse)
 def get_preferences(
     current_user: User = Depends(get_current_active_user),
@@ -724,23 +779,7 @@ def get_preferences(
 ):
     """Get current user's preferences"""
     settings = db.query(UserSettings).filter(UserSettings.user_id == current_user.id).first()
-    if not settings:
-        # Return defaults if no settings exist
-        return schemas.UserPreferencesResponse()
-
-    return schemas.UserPreferencesResponse(
-        tts_voice=settings.tts_voice or "default",
-        tts_language=getattr(settings, "tts_language", None),
-        ui_language=getattr(settings, "ui_language", None),
-        notifications_enabled=settings.notifications_enabled if settings.notifications_enabled is not None else True,
-        voice_mode_enabled=getattr(settings, "voice_mode_enabled", True)
-        if getattr(settings, "voice_mode_enabled", None) is not None
-        else True,
-        dark_mode=settings.dark_mode if settings.dark_mode is not None else False,
-        dwell_time=int(getattr(settings, "dwell_time", 0) or 0),
-        ignore_repeats=int(getattr(settings, "ignore_repeats", 0) or 0),
-        high_contrast=bool(getattr(settings, "high_contrast", False) or False),
-    )
+    return _build_preferences_response(settings)
 
 @router.put("/preferences", response_model=schemas.UserPreferencesResponse)
 def update_preferences(
@@ -756,9 +795,7 @@ def update_preferences(
         db.add(settings)
 
     updates = prefs.model_dump(exclude_unset=True)
-    for k in ["dwell_time", "ignore_repeats"]:
-        if k in updates and updates[k] is not None and int(updates[k]) < 0:
-            raise HTTPException(status_code=400, detail=f"{k} must be >= 0")
+    _validate_preference_updates(updates)
 
     for key, value in updates.items():
         setattr(settings, key, value)
@@ -767,19 +804,7 @@ def update_preferences(
     db.refresh(settings)
     logger.info(f"Updated preferences for user {current_user.username}")
 
-    return schemas.UserPreferencesResponse(
-        tts_voice=settings.tts_voice or "default",
-        tts_language=getattr(settings, "tts_language", None),
-        ui_language=getattr(settings, "ui_language", None),
-        notifications_enabled=settings.notifications_enabled if settings.notifications_enabled is not None else True,
-        voice_mode_enabled=getattr(settings, "voice_mode_enabled", True)
-        if getattr(settings, "voice_mode_enabled", None) is not None
-        else True,
-        dark_mode=settings.dark_mode if settings.dark_mode is not None else False,
-        dwell_time=int(getattr(settings, "dwell_time", 0) or 0),
-        ignore_repeats=int(getattr(settings, "ignore_repeats", 0) or 0),
-        high_contrast=bool(getattr(settings, "high_contrast", False) or False),
-    )
+    return _build_preferences_response(settings)
 
 
 def _ensure_can_access_user_prefs(
@@ -816,22 +841,7 @@ def get_user_preferences(
     _ensure_can_access_user_prefs(current_user=current_user, target_user=target, db=db)
 
     settings = db.query(UserSettings).filter(UserSettings.user_id == target.id).first()
-    if not settings:
-        return schemas.UserPreferencesResponse()
-
-    return schemas.UserPreferencesResponse(
-        tts_voice=settings.tts_voice or "default",
-        tts_language=getattr(settings, "tts_language", None),
-        ui_language=getattr(settings, "ui_language", None),
-        notifications_enabled=settings.notifications_enabled if settings.notifications_enabled is not None else True,
-        voice_mode_enabled=getattr(settings, "voice_mode_enabled", True)
-        if getattr(settings, "voice_mode_enabled", None) is not None
-        else True,
-        dark_mode=settings.dark_mode if settings.dark_mode is not None else False,
-        dwell_time=int(getattr(settings, "dwell_time", 0) or 0),
-        ignore_repeats=int(getattr(settings, "ignore_repeats", 0) or 0),
-        high_contrast=bool(getattr(settings, "high_contrast", False) or False),
-    )
+    return _build_preferences_response(settings)
 
 
 @router.put("/users/{user_id}/preferences", response_model=schemas.UserPreferencesResponse)
@@ -857,9 +867,7 @@ def update_user_preferences(
         db.add(settings)
 
     updates = prefs.model_dump(exclude_unset=True)
-    for k in ["dwell_time", "ignore_repeats"]:
-        if k in updates and updates[k] is not None and int(updates[k]) < 0:
-            raise HTTPException(status_code=400, detail=f"{k} must be >= 0")
+    _validate_preference_updates(updates)
 
     for key, value in updates.items():
         setattr(settings, key, value)
@@ -868,19 +876,7 @@ def update_user_preferences(
     db.refresh(settings)
     logger.info(f"Updated preferences for user {target.username} by {current_user.username}")
 
-    return schemas.UserPreferencesResponse(
-        tts_voice=settings.tts_voice or "default",
-        tts_language=getattr(settings, "tts_language", None),
-        ui_language=getattr(settings, "ui_language", None),
-        notifications_enabled=settings.notifications_enabled if settings.notifications_enabled is not None else True,
-        voice_mode_enabled=getattr(settings, "voice_mode_enabled", True)
-        if getattr(settings, "voice_mode_enabled", None) is not None
-        else True,
-        dark_mode=settings.dark_mode if settings.dark_mode is not None else False,
-        dwell_time=int(getattr(settings, "dwell_time", 0) or 0),
-        ignore_repeats=int(getattr(settings, "ignore_repeats", 0) or 0),
-        high_contrast=bool(getattr(settings, "high_contrast", False) or False),
-    )
+    return _build_preferences_response(settings)
 
 @router.post("/admin/unlock-account")
 def admin_unlock_account(

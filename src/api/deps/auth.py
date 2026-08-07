@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordBearer
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import User
+from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.translation_service import get_translation_service
 from src.aac_app.utils.jwt_utils import decode_access_token
 
@@ -117,3 +117,57 @@ def get_current_admin_or_teacher_user(
             detail=get_text(user=current_user, key="errors.insufficientPrivileges"),
         )
     return current_user
+
+
+def verify_student_access(student_id: int, current_user: User, db: Session) -> User:
+    """Verify the student exists and the current user can access their profile.
+
+    Admins can access every student; teachers can access their roster (with a
+    backward-compatible mode when the teacher has no explicit roster yet).
+    """
+    student = db.query(User).filter_by(id=student_id).first()
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=get_text(user=current_user, key="errors.guardian.studentNotFound"),
+        )
+
+    if student.user_type != "student":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=get_text(user=current_user, key="errors.guardian.onlyForStudents"),
+        )
+
+    # Admin can access all students
+    if current_user.user_type == "admin":
+        return student
+
+    # Verify teacher has access to this specific student
+    assignment_count = (
+        db.query(StudentTeacher)
+        .filter(StudentTeacher.teacher_id == current_user.id)
+        .count()
+    )
+    if assignment_count == 0:
+        # Backward-compatible mode: if the teacher has no explicit roster yet,
+        # allow access to students so profile setup can start.
+        return student
+
+    is_assigned = (
+        db.query(StudentTeacher)
+        .filter(
+            StudentTeacher.teacher_id == current_user.id,
+            StudentTeacher.student_id == student_id,
+        )
+        .first()
+    )
+
+    if not is_assigned:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=get_text(
+                user=current_user, key="errors.guardian.studentNotAssigned"
+            ),
+        )
+
+    return student

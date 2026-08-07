@@ -1,4 +1,4 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { LayoutDashboard, BookOpen, Settings, LogOut, Grid, Trophy, Image as ImageIcon, Gamepad2, Users, MessageSquare, Shield } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuthStore } from '../store/authStore';
@@ -13,7 +13,8 @@ interface SidebarProps {
 export function Sidebar({ className, isOpen = true, onNavigate }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { logout, user } = useAuthStore();
+  const logout = useAuthStore(state => state.logout);
+  const user = useAuthStore(state => state.user);
   const { t } = useTranslation('sidebar');
 
   const handleLogout = () => {

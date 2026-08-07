@@ -68,13 +68,15 @@ print("PERMISSION_ERROR" if "PermissionError" in captured.getvalue() else "OK")
     ]
 
     try:
-        deadline = time.monotonic() + 20
+        # Full-suite runs can have several Python workers starting at once;
+        # allow process startup to finish without weakening the assertion.
+        deadline = time.monotonic() + 60
         while time.monotonic() < deadline and not all(path.exists() for path in ready_paths):
             time.sleep(0.05)
         assert all(path.exists() for path in ready_paths)
 
         start_path.write_text("start", encoding="utf-8")
-        results = [worker.communicate(timeout=30) for worker in workers]
+        results = [worker.communicate(timeout=60) for worker in workers]
     finally:
         for worker in workers:
             if worker.poll() is None:

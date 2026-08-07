@@ -25,7 +25,11 @@ def get_setting_value(key: str, default: str = "") -> str:
             value = setting.setting_value if setting else default
     except Exception as exc:
         logger.warning(f"Failed to get setting {key}: {exc}")
-        value = default
+        # Do NOT cache the fallback on a transient read failure: a later
+        # request must retry the query, otherwise one startup race (e.g.
+        # provider warmup) would permanently hide a configured value behind
+        # the process-wide default for the lifetime of the process.
+        return default
 
     with _settings_cache_lock:
         # Another thread may have populated the value while this query ran.

@@ -3,14 +3,14 @@
  * Values are loaded from the backend /api/config endpoint or use defaults.
  */
 
-// Default configuration (should match .env)
+// Default configuration (should match .env.example and backend release metadata)
 const defaults = {
   BACKEND_PORT: Number(import.meta.env.VITE_BACKEND_PORT) || 8086,
   FRONTEND_PORT: Number(import.meta.env.VITE_FRONTEND_PORT) || 5176,
   API_BASE_URL: import.meta.env.VITE_API_BASE_URL || '',
   OLLAMA_BASE_URL: import.meta.env.VITE_OLLAMA_BASE_URL || 'http://localhost:11434',
   APP_NAME: import.meta.env.VITE_APP_NAME || 'AAC Assistant',
-  APP_VERSION: import.meta.env.VITE_APP_VERSION || '1.0.0',
+  APP_VERSION: import.meta.env.VITE_APP_VERSION || '2.0.0',
 };
 
 function getDefaultApiBaseUrl() {

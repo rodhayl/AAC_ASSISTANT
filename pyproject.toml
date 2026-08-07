@@ -1,6 +1,6 @@
 [project]
 name = "aac-assistant"
-version = "0.1.0"
+version = "2.0.0"
 description = "Local-first AAC Assistant"
 requires-python = ">=3.13,<3.15"
 dependencies = [
@@ -29,6 +29,9 @@ dependencies = [
 [project.optional-dependencies]
 voice = [
     "faster-whisper==1.2.1",
+]
+tts = [
+    "kokoro-onnx>=0.5.0",
 ]
 
 [dependency-groups]

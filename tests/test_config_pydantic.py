@@ -1,6 +1,54 @@
+import json
+import re
+import tomllib
 from pathlib import Path
 
 from src.config import Settings, ensure_env_file, ensure_jwt_secret, load_settings
+
+REPO_ROOT = Path(__file__).parents[1]
+
+
+def test_release_version_defaults_are_aligned(monkeypatch):
+    env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    legacy_example = (REPO_ROOT / "env.properties.example").read_text(encoding="utf-8")
+    installer = (REPO_ROOT / "installer.iss").read_text(encoding="utf-8")
+    pyproject_path = REPO_ROOT / "pyproject.toml"
+    pyproject = pyproject_path.read_text(encoding="utf-8")
+    uv_lock = (REPO_ROOT / "uv.lock").read_text(encoding="utf-8")
+    frontend_config = (REPO_ROOT / "src/frontend/src/config.ts").read_text(encoding="utf-8")
+    frontend_package = json.loads(
+        (REPO_ROOT / "src/frontend/package.json").read_text(encoding="utf-8")
+    )
+
+    package_version = tomllib.loads(pyproject)["project"]["version"]
+    installer_version = re.search(r'#define MyAppVersion "([^"]+)"', installer)
+    lock_version = re.search(r'name = "aac-assistant"\s+version = "([^"]+)"', uv_lock)
+    frontend_version = re.search(
+        r"APP_VERSION: import\.meta\.env\.VITE_APP_VERSION \|\| '([^']+)'", frontend_config
+    )
+    assert installer_version is not None
+    assert lock_version is not None
+    assert frontend_version is not None
+
+    versions = {
+        package_version,
+        installer_version.group(1),
+        lock_version.group(1),
+        frontend_version.group(1),
+    }
+    assert len(versions) == 1
+    version = package_version
+
+    monkeypatch.delenv("APP_VERSION", raising=False)
+    assert [line for line in env_example.splitlines() if line.startswith("APP_VERSION=")] == [
+        f"APP_VERSION={version}"
+    ]
+    assert [line for line in legacy_example.splitlines() if line.startswith("APP_VERSION=")] == [
+        f"APP_VERSION={version}"
+    ]
+    assert f'version = "{version}"' in pyproject
+    assert frontend_package["version"] == "0.0.0"
+    assert version == Settings(_env_file=None).APP_VERSION
 
 
 def test_settings_uses_pydantic_settings_and_ignores_unknown_keys():
@@ -41,7 +89,12 @@ def test_first_run_creates_env_and_reuses_one_jwt_secret(tmp_path: Path):
     assert first_secret != "CHANGE_ME_TO_A_SECURE_RANDOM_STRING"
 
 
-def test_legacy_env_properties_is_copied_and_values_are_preserved(tmp_path: Path):
+def test_legacy_env_properties_is_copied_and_values_are_preserved(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.delenv("BACKEND_PORT", raising=False)
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+
     legacy_path = tmp_path / "env.properties"
     legacy_secret = "legacy-test-" + ("x" * 40)
     legacy_path.write_text(

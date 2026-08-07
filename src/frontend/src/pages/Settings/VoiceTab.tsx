@@ -1,8 +1,9 @@
 import type { Dispatch, SetStateAction } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Circle, Volume2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import api, { extractError } from '../../lib/api';
+import { useTTSStore } from '../../store/ttsStore';
 import type { Preferences, VoiceStatus } from './types';
 
 interface VoiceTabProps {
@@ -12,12 +13,42 @@ interface VoiceTabProps {
   showStatus: boolean;
 }
 
+type LocalVoiceEntry = {
+  name: string;
+  language: string;
+  gender: string;
+  region?: string | null;
+};
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  es: 'Español',
+  en: 'English',
+  fr: 'Français',
+  it: 'Italiano',
+  pt: 'Português',
+  ja: '日本語',
+  zh: '中文',
+};
+
+function languageLabel(code: string): string {
+  return LANGUAGE_LABELS[code] || code;
+}
+
+function localVoiceLabel(voice: LocalVoiceEntry): string {
+  const parts = [voice.name];
+  if (voice.region === 'american') parts.push('American English');
+  else if (voice.region === 'british') parts.push('British English');
+  parts.push(voice.gender === 'female' ? 'Female' : 'Male');
+  return parts.join(' · ');
+}
+
 export function VoiceTab({ preferences, setPreferences, filteredVoices, showStatus }: VoiceTabProps) {
   const { t } = useTranslation('settings');
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
   const [installingVoiceDeps, setInstallingVoiceDeps] = useState(false);
   const [installMessage, setInstallMessage] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
+  const [sttModelSaving, setSttModelSaving] = useState(false);
 
   const fetchVoiceStatus = useCallback(async () => {
     const res = await api.get('/providers/voice-status');
@@ -57,6 +88,104 @@ export function VoiceTab({ preferences, setPreferences, filteredVoices, showStat
     }
   };
 
+  const installTTS = async () => {
+    setInstallingVoiceDeps(true);
+    setInstallMessage(null);
+    setInstallError(null);
+    try {
+      const res = await api.post(
+        '/providers/tts/install',
+        {},
+        { timeout: 30 * 60 * 1000 }
+      );
+      setInstallMessage(res.data?.message || t('ai.installComplete', 'Local neural TTS installed.'));
+      await fetchVoiceStatus();
+    } catch (err) {
+      setInstallError(
+        extractError(err, t('ai.installFailed', 'Automatic TTS installation failed.'))
+      );
+    } finally {
+      setInstallingVoiceDeps(false);
+    }
+  };
+
+  const localTTSAvailable = voiceStatus?.tts_local?.available === true;
+  const sttModel = voiceStatus?.stt?.model || 'tiny';
+  const sttModels = voiceStatus?.stt?.models || {};
+
+  const saveSttModel = async (model: string) => {
+    setSttModelSaving(true);
+    setInstallError(null);
+    try {
+      await api.put('/providers/stt/model', { model });
+      await fetchVoiceStatus();
+      setInstallMessage(t('ai.sttModelSaved', 'Speech-to-text model updated.'));
+    } catch (err) {
+      setInstallError(extractError(err, t('ai.sttModelSaveFailed', 'Could not update the speech-to-text model.')));
+    } finally {
+      setSttModelSaving(false);
+    }
+  };
+  const useLocalTTS = useTTSStore((state) => state.useLocalTTS);
+  const setUseLocalTTS = useTTSStore((state) => state.setUseLocalTTS);
+  const localVoice = useTTSStore((state) => state.localVoice);
+  const setLocalVoice = useTTSStore((state) => state.setLocalVoice);
+  const localTTSToggle = (
+    <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+      <input
+        type="checkbox"
+        checked={useLocalTTS}
+        disabled={!localTTSAvailable}
+        onChange={(event) => setUseLocalTTS(event.target.checked)}
+        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+      />
+      {t('ai.localTtsToggle', 'Use local neural voice (Kokoro)')}
+    </label>
+  );
+
+  const groupedLocalVoices = useMemo(() => {
+    const groups = new Map<string, LocalVoiceEntry[]>();
+    for (const voice of voiceStatus?.tts_local?.voices || []) {
+      const list = groups.get(voice.language) || [];
+      list.push(voice);
+      groups.set(voice.language, list);
+    }
+    return Array.from(groups.entries());
+  }, [voiceStatus?.tts_local?.voices]);
+
+  const localVoicePicker = (
+    <div className="flex items-center justify-between gap-4">
+      <div>
+        <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          {t('ai.localVoice', 'Local neural voice')}
+        </p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          {t('ai.localVoiceHelp', 'Pick a specific Kokoro voice. Its language is used for synthesis, so choose one matching the language you speak.')}
+        </p>
+      </div>
+      <select
+        id="pref-local-tts-voice"
+        name="local_tts_voice"
+        aria-label={t('ai.localVoice', 'Local neural voice')}
+        value={localVoice}
+        disabled={!localTTSAvailable}
+        onChange={(event) => setLocalVoice(event.target.value)}
+        className="block w-72 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        <option value="default">{t('ai.voiceDefault', 'Default (auto)')}</option>
+        {groupedLocalVoices.map(([language, voices]) => (
+          <optgroup key={language} label={`${languageLabel(language)} (${language})`}>
+            {voices.map((voice) => (
+              <option key={voice.name} value={voice.name}>
+                {localVoiceLabel(voice)}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+    </div>
+  );
+
   const voiceStatusItems = [
     {
       key: 'ffmpeg',
@@ -81,6 +210,15 @@ export function VoiceTab({ preferences, setPreferences, filteredVoices, showStat
       link: 'https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesis',
       status: voiceStatus?.tts?.client_side === true,
       optional: true,
+    },
+    {
+      key: 'tts_local',
+      label: t('ai.dependencies.localTts.label', 'Local neural voice (Kokoro)'),
+      help: t('ai.dependencies.localTts.help', 'Natural multi-language speech that runs locally on your computer.'),
+      link: 'https://github.com/thewh1teagle/kokoro-onnx',
+      status: localTTSAvailable,
+      optional: true,
+      extra: voiceStatus?.tts_local?.model_size_mb ? `~${voiceStatus.tts_local.model_size_mb} MB` : undefined,
     },
   ];
 
@@ -124,6 +262,42 @@ export function VoiceTab({ preferences, setPreferences, filteredVoices, showStat
             ))}
           </select>
         </div>
+
+        <div className="flex items-center justify-between">
+          {localTTSToggle}
+        </div>
+
+        {localVoicePicker}
+
+        {showStatus && (
+          <div className="border-t border-gray-200 pt-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {t('ai.sttModel', 'Speech-to-text model')}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {t('ai.sttModelHelp', 'Whisper-tiny is the fast 39M-parameter default. The selected model downloads on first use.')}
+                </p>
+              </div>
+              <select
+                id="stt-model"
+                name="stt_model"
+                aria-label={t('ai.sttModel', 'Speech-to-text model')}
+                value={sttModel}
+                disabled={Object.keys(sttModels).length === 0 || sttModelSaving}
+                onChange={(event) => { void saveSttModel(event.target.value); }}
+                className="block w-72 pl-3 pr-10 py-2 text-sm border-gray-300 rounded-md disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {Object.entries(sttModels).map(([model, details]) => (
+                  <option key={model} value={model}>
+                    {model} — {details.description} ({details.size})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
 
         {showStatus && <div className="border-t border-gray-200 pt-6">
           <div className="flex items-center justify-between mb-2">
@@ -169,6 +343,18 @@ export function VoiceTab({ preferences, setPreferences, filteredVoices, showStat
                       title={item.help}
                     >
                       {installingVoiceDeps || voiceStatus.actions.install_voice.in_progress
+                        ? t('ai.installing', 'Installing...')
+                        : t('ai.installAutomatically', 'Install automatically')}
+                    </button>
+                  ) : !ok && item.key === 'tts_local' && voiceStatus?.actions?.install_tts?.supported ? (
+                    <button
+                      type="button"
+                      onClick={installTTS}
+                      disabled={installingVoiceDeps || voiceStatus.actions.install_tts.in_progress}
+                      className="rounded-md bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      title={item.help}
+                    >
+                      {installingVoiceDeps || voiceStatus.actions.install_tts.in_progress
                         ? t('ai.installing', 'Installing...')
                         : t('ai.installAutomatically', 'Install automatically')}
                     </button>

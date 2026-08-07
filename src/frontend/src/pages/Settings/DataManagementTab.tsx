@@ -5,8 +5,8 @@ import { Download, Upload } from 'lucide-react';
 import api from '../../lib/api';
 
 export function DataManagementTab() {
-  const { user } = useAuthStore();
-  const { addToast } = useToastStore();
+  const user = useAuthStore(state => state.user);
+  const addToast = useToastStore((state) => state.addToast);
   const { t } = useTranslation('settings');
   const isTeacherOrAdmin = user?.user_type === 'admin' || user?.user_type === 'teacher';
 

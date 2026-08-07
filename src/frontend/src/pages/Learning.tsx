@@ -12,49 +12,46 @@ import { BoardsAndTopicsSidebar } from '../components/learning/BoardsAndTopicsSi
 import { LearningChatPanel } from '../components/learning/LearningChatPanel';
 import { LearningHistoryPanel } from '../components/learning/LearningHistoryPanel';
 import { LearningHeader } from '../components/learning/LearningHeader';
-import { LearningSymbolPanel, type LearningSymbolItem } from '../components/learning/LearningSymbolPanel';
+import { LearningSymbolPanel } from '../components/learning/LearningSymbolPanel';
+import type { LearningSymbolItem } from '../types';
+import { SessionSummaryModal } from '../components/learning/SessionSummaryModal';
 import { useVoiceRecorder } from '../components/learning/useVoiceRecorder';
+import { dedupeLearningSymbols } from '../lib/symbols';
 
 type SymbolItem = LearningSymbolItem;
-const dedupeSymbolItems = (items: SymbolItem[]): SymbolItem[] => {
-  const map = new Map<string, SymbolItem>();
-  const normalize = (value: string) => value.trim().toLowerCase();
-  for (const item of items) {
-    const label = normalize(item.label || '');
-    if (!label) continue;
-
-    const key = `${label}|${normalize(item.category || '')}`;
-    const existing = map.get(key);
-    if (!existing || (!existing.image_path && item.image_path)) {
-      map.set(key, item);
-    }
-  }
-  return Array.from(map.values());
-};
 
 export function Learning() {
-  const {
-    messages,
-    isLoading,
-    error,
-    clearError,
-    currentSession,
-    sessionHistory,
-    isLoadingHistory,
-    startSession,
-    submitAnswer,
-    submitVoiceAnswer,
-    submitSymbolAnswer,
-    fetchSessionHistory,
-    loadSession,
-    showAdminReasoning,
-    setShowAdminReasoning,
-    providerInUse,
-    providerHistory,
-  } = useLearningStore();
-  const { user } = useAuthStore();
-  const { addToast } = useToastStore();
-  const { fetchBoards } = useBoardStore();
+  const messages = useLearningStore((state) => state.messages);
+  const isLoading = useLearningStore((state) => state.isLoading);
+  const error = useLearningStore((state) => state.error);
+  const clearError = useLearningStore((state) => state.clearError);
+  const currentSession = useLearningStore((state) => state.currentSession);
+  const currentQuestion = useLearningStore((state) => state.currentQuestion);
+  const revealedAnswer = useLearningStore((state) => state.revealedAnswer);
+  const progressStats = useLearningStore((state) => state.progressStats);
+  const lastSessionSummary = useLearningStore((state) => state.lastSessionSummary);
+  const clearSessionSummary = useLearningStore((state) => state.clearSessionSummary);
+  const endSession = useLearningStore((state) => state.endSession);
+  const sessionHistory = useLearningStore((state) => state.sessionHistory);
+  const isLoadingHistory = useLearningStore((state) => state.isLoadingHistory);
+  const startSession = useLearningStore((state) => state.startSession);
+  const askQuestion = useLearningStore((state) => state.askQuestion);
+  const askNextQuestion = useLearningStore((state) => state.askNextQuestion);
+  const submitAnswer = useLearningStore((state) => state.submitAnswer);
+  const submitVoiceAnswer = useLearningStore((state) => state.submitVoiceAnswer);
+  const submitSymbolAnswer = useLearningStore((state) => state.submitSymbolAnswer);
+  const fetchSessionHistory = useLearningStore((state) => state.fetchSessionHistory);
+  const loadSession = useLearningStore((state) => state.loadSession);
+  const showAdminReasoning = useLearningStore((state) => state.showAdminReasoning);
+  const setShowAdminReasoning = useLearningStore((state) => state.setShowAdminReasoning);
+  const providerInUse = useLearningStore((state) => state.providerInUse);
+  const providerHistory = useLearningStore((state) => state.providerHistory);
+  const setAutoAskEnabled = useLearningStore((state) => state.setAutoAskEnabled);
+  const difficultyOverride = useLearningStore((state) => state.difficultyOverride);
+  const setDifficultyOverride = useLearningStore((state) => state.setDifficultyOverride);
+  const user = useAuthStore((state) => state.user);
+  const addToast = useToastStore((state) => state.addToast);
+  const fetchBoards = useBoardStore((state) => state.fetchBoards);
   const { t, i18n } = useTranslation('learning');
   const currentLang = i18n.language?.split('-')[0] || 'en';
 
@@ -62,7 +59,7 @@ export function Learning() {
   const [voiceEnabled, setVoiceEnabled] = useState(user?.settings?.voice_mode_enabled ?? true);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedModeKey, setSelectedModeKey] = useState('practice');
-  const [availableModes, setAvailableModes] = useState<Array<{ id: number; name: string; key: string; description: string }>>([]);
+  const [availableModes, setAvailableModes] = useState<Array<{ id: number; name: string; key: string; description: string; auto_ask_enabled?: boolean }>>([]);
   const [savedTopics, setSavedTopics] = useState<SavedTopic[]>([]);
   const [symbolView, setSymbolView] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState('');
@@ -79,6 +76,10 @@ export function Learning() {
   const lastProviderHistoryLengthRef = useRef(0);
 
   const isAdmin = user?.user_type === 'admin';
+  // Session metadata still needs a concrete starting level. "Adaptive" starts
+  // at basic and lets the backend adjust; a fixed override is sent verbatim.
+  const sessionDifficulty = difficultyOverride === 'adaptive' ? 'basic' : difficultyOverride;
+
   const {
     isRecording,
     hasRecording,
@@ -94,6 +95,7 @@ export function Learning() {
     submitVoiceAnswer,
     addToast,
     microphoneAccessMessage: t('errors.microphoneAccess'),
+    sessionDifficulty,
   });
 
   useEffect(() => {
@@ -126,13 +128,28 @@ export function Learning() {
     }
   }, [fetchSessionHistory, user?.id]);
 
+  // The selected mode may disable auto-asking (e.g. conversational modes like
+  // roleplay). Combined with symbol-first view, auto-asking is paused: the
+  // question card is hidden and auto-asks are skipped, while the manual
+  // "New question" button still works.
+  const selectedModeAutoAsk = useMemo(() => {
+    const mode = availableModes.find((item) => item.key === selectedModeKey);
+    return mode?.auto_ask_enabled !== false;
+  }, [availableModes, selectedModeKey]);
+
+  useEffect(() => {
+    setAutoAskEnabled(!symbolView && selectedModeAutoAsk);
+  }, [selectedModeAutoAsk, setAutoAskEnabled, symbolView]);
+
   const startActivity = useCallback(async (topic: string, purpose: string, boardId?: number) => {
     if (!user) return;
     setIsStartingSession(true);
     setSessionStartError(null);
     try {
-      await startSession({ topic, purpose, difficulty: 'basic', board_id: boardId }, user.id);
+      await startSession({ topic, purpose, difficulty: sessionDifficulty, board_id: boardId, mode_key: selectedModeKey }, user.id);
       await fetchSessionHistory(user.id);
+      // Auto-request the first adaptive question now that the session is active
+      void askNextQuestion();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : t('errors.unknownError');
       setSessionStartError(t('errors.sessionStartError', { error: message }));
@@ -140,7 +157,7 @@ export function Learning() {
     } finally {
       setIsStartingSession(false);
     }
-  }, [fetchSessionHistory, startSession, t, user]);
+  }, [askNextQuestion, fetchSessionHistory, selectedModeKey, sessionDifficulty, startSession, t, user]);
 
   const handleToggleHistory = useCallback(() => {
     const nextVisible = !showHistory;
@@ -154,6 +171,12 @@ export function Learning() {
     await startActivity('general conversation', 'practice');
     setShowHistory(false);
   }, [startActivity]);
+  // Submit an answer; the store auto-requests the next adaptive question.
+  const answerAndContinue = useCallback(async (answer: string) => {
+    if (!currentSession) return;
+    await submitAnswer(currentSession.session_id, answer);
+  }, [currentSession, submitAnswer]);
+
   const handleSend = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!input.trim()) return;
@@ -166,8 +189,21 @@ export function Learning() {
     }
     const answer = input;
     setInput('');
-    await submitAnswer(currentSession.session_id, answer);
+    await answerAndContinue(answer);
   };
+
+  // Manual request bypasses the auto-ask gate so teachers can still pull a
+  // question in modes where auto-asking is disabled.
+  const handleNewQuestion = useCallback(() => {
+    if (isLoading || !currentSession) return;
+    const requestedDifficulty = difficultyOverride === 'adaptive' ? undefined : difficultyOverride;
+    void askQuestion(currentSession.session_id, requestedDifficulty);
+  }, [askQuestion, currentSession, difficultyOverride, isLoading]);
+
+  const handleEndSession = useCallback(async () => {
+    if (!currentSession || isLoading) return;
+    await endSession(currentSession.session_id);
+  }, [currentSession, endSession, isLoading]);
 
   const handleLoadSession = async (sessionId: number) => {
     await loadSession(sessionId);
@@ -185,7 +221,8 @@ export function Learning() {
         await startSession({
           topic: 'symbol conversation',
           purpose: 'aac symbols',
-          difficulty: 'basic',
+          difficulty: sessionDifficulty,
+          mode_key: selectedModeKey,
         }, user.id);
         sessionId = useLearningStore.getState().currentSession?.session_id;
         if (!sessionId) {
@@ -223,7 +260,7 @@ export function Learning() {
       const response = await api.get('/boards/symbols', {
         params: { limit: 1000, language: currentLang },
       });
-      setSymbolItems(dedupeSymbolItems(response.data || []));
+      setSymbolItems(dedupeLearningSymbols(response.data || []));
     } catch {
       setSymbolItems([]);
     } finally {
@@ -284,8 +321,14 @@ export function Learning() {
 
     const last = providerHistory[currentLength - 1];
     lastProviderHistoryLengthRef.current = currentLength;
+    const providerName =
+      last.provider === 'openrouter'
+        ? 'OpenRouter'
+        : last.provider === 'lmstudio'
+          ? 'LM Studio'
+          : 'Ollama';
     Promise.resolve().then(() => {
-      setProviderNotice(`Switched to ${last.provider === 'openrouter' ? 'OpenRouter' : 'Ollama'}`);
+      setProviderNotice(`Switched to ${providerName}`);
     });
     const timeoutId = setTimeout(() => setProviderNotice(null), 3000);
     return () => clearTimeout(timeoutId);
@@ -325,10 +368,14 @@ export function Learning() {
         selectedModeKey={selectedModeKey}
         onModeChange={setSelectedModeKey}
         availableModes={availableModes}
+        difficultyOverride={difficultyOverride}
+        onDifficultyChange={setDifficultyOverride}
         providerInUse={providerInUse}
         providerNotice={providerNotice}
         voiceEnabled={voiceEnabled}
         onToggleVoice={() => setVoiceEnabled((enabled) => !enabled)}
+        onNewQuestion={handleNewQuestion}
+        canAskQuestion={Boolean(currentSession) && !isLoading && !symbolView}
       />
 
       <div className="flex-1 flex gap-4 overflow-hidden">
@@ -349,6 +396,11 @@ export function Learning() {
           isStartingSession={isStartingSession}
           sessionStartError={sessionStartError}
           currentSession={currentSession}
+          currentQuestion={symbolView ? null : currentQuestion}
+          revealed={revealedAnswer}
+          progress={progressStats}
+          onAnswerQuestion={(choice) => { void answerAndContinue(choice); }}
+          onEndSession={() => { void handleEndSession(); }}
           isAdmin={isAdmin}
           showAdminReasoning={showAdminReasoning}
           onShowAdminReasoningChange={setShowAdminReasoning}
@@ -391,11 +443,11 @@ export function Learning() {
             onClearSymbols={() => setSymbolUtterance([])}
             onSendSymbols={() => { void sendSymbolUtterance(); }}
             onSpeakSymbols={(text) => {
-              if (text && window.speechSynthesis) {
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.lang = 'en-US';
-                utterance.rate = 0.9;
-                window.speechSynthesis.speak(utterance);
+              if (text) {
+                tts.enqueue(text, {
+                  rate: 0.9,
+                  lang: currentLang === 'es' ? 'es-ES' : 'en-US',
+                });
               }
             }}
             isLoading={isLoading}
@@ -403,6 +455,10 @@ export function Learning() {
           />
         )}
       </div>
+
+      {lastSessionSummary && (
+        <SessionSummaryModal summary={lastSessionSummary} onClose={clearSessionSummary} />
+      )}
     </div>
   );
 }

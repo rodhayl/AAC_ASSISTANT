@@ -3,6 +3,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 
 class TranslationService:
     _instance = None
@@ -131,17 +133,15 @@ class TranslationService:
         file_path = self.locales_dir / lang / f"{namespace}.json"
 
         if not file_path.exists():
-            # print(f"DEBUG: Locale file not found: {file_path}")
             return None
 
         try:
             with open(file_path, encoding="utf-8") as f:
                 data = json.load(f)
                 self._cache[cache_key] = data
-                # Locale loaded successfully - no need to log every load
                 return data
         except Exception as e:
-            print(f"Error loading locale {file_path}: {e}")
+            logger.warning("Error loading locale {}: {}", file_path, e)
             return None
 
 
