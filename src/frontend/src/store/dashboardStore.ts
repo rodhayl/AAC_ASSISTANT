@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import api from '../lib/api';
+import api, { extractError } from '../lib/api';
 
 interface DashboardStats {
   boardCount: number;
@@ -72,14 +72,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
         isLoading: false
       });
     } catch (error: unknown) {
-      const detail = (() => {
-        if (typeof error === 'object' && error && 'response' in error) {
-          const r = error as { response?: { data?: { detail?: string } } };
-          return r.response?.data?.detail || 'Failed to load dashboard data';
-        }
-        return 'Failed to load dashboard data';
-      })();
-      set({ error: detail, isLoading: false });
+      set({ error: extractError(error, 'Failed to load dashboard data'), isLoading: false });
     }
   }
 }));

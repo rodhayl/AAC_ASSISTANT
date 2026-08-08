@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import User
-from src.aac_app.services.learning_companion_service import LearningCompanionService
+from src.aac_app.services.learning.service import LearningCompanionService
 from src.aac_app.services.translation_service import get_translation_service
 from src.api import schemas
 from src.api.deps import (

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from src.aac_app.models import LearningMode, User
 from src.aac_app.services.guardian_profile_service import get_guardian_profile_service
-from src.aac_app.services.learning_companion_service import LearningCompanionService
+from src.aac_app.services.learning.service import LearningCompanionService
 from src.api.deps import (
     get_current_active_user,
     get_db,

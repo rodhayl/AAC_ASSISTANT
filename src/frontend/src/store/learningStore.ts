@@ -255,7 +255,49 @@ async function triggerAchievementCheck(userId: number): Promise<void> {
   }
 }
 
-export const useLearningStore = create<LearningState>((set, get) => ({
+export const useLearningStore = create<LearningState>((set, get) => {
+  const finishAnswer = (
+    requestEpoch: number,
+    requestId: number,
+    sessionId: number,
+    result: AnswerResponse & WithProvider,
+    failureMessage: string,
+    choice: string,
+    userMessage?: string,
+    symbolImages?: Array<{ label: string; image_path?: string; category?: string }>,
+  ): void => {
+    if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
+    if (!result.success) {
+      set({ error: result.error || failureMessage, isLoading: false });
+      return;
+    }
+
+    const isAdmin = useAuthStore.getState().user?.user_type === 'admin';
+    const showReasoning = Boolean(isAdmin && get().showAdminReasoning);
+    const reply = buildAssistantReply(result, showReasoning);
+    set((state) => ({
+      lastAnswer: result,
+      revealedAnswer: { choice, isCorrect: result.is_correct ?? null },
+      progressStats: mergeProgress(state.progressStats, result),
+      messages: [
+        ...state.messages,
+        ...(userMessage
+          ? [{ role: 'user' as const, content: userMessage, ...(symbolImages ? { symbolImages } : {}) }]
+          : []),
+        { role: 'assistant' as const, content: reply },
+      ],
+      isLoading: false,
+    }));
+
+    scheduleAutoAsk(get, requestEpoch, sessionId);
+    const { user } = useAuthStore.getState();
+    if (user && requestEpoch === sessionEpoch && get().currentSession?.session_id === sessionId) {
+      void triggerAchievementCheck(user.id);
+    }
+    if (result.provider_used) setProviderState(set, get, result.provider_used);
+  };
+
+  return {
   currentSession: null,
   currentQuestion: null,
   lastAnswer: null,
@@ -417,55 +459,25 @@ export const useLearningStore = create<LearningState>((set, get) => ({
     const requestEpoch = sessionEpoch;
     const requestId = ++answerRequestId;
     set({ isLoading: true, error: null });
-    // Add user message immediately for UI responsiveness
     set((state) => ({
-      messages: [...state.messages, { role: 'user' as const, content: answer }]
+      messages: [...state.messages, { role: 'user' as const, content: answer }],
     }));
-
     try {
       const response = await api.post(`/learning/${sessionId}/answer`, {
-        answer: answer,
-        is_voice: false
+        answer,
+        is_voice: false,
       });
-      
-      const result = response.data;
-      if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-      if (result.success) {
-        const prev = get().messages;
-        // Prefer final answer; hide chain-of-thought unless admin
-        const isAdmin = useAuthStore.getState().user?.user_type === 'admin';
-        const showReasoning = Boolean(isAdmin && get().showAdminReasoning);
-        const reply = buildAssistantReply(result, showReasoning);
-        set({
-          lastAnswer: result,
-          // Keep the question visible in its revealed (answered) state until
-          // the next adaptive question replaces it.
-          revealedAnswer: { choice: answer, isCorrect: result.is_correct ?? null },
-          progressStats: mergeProgress(get().progressStats, result),
-          messages: [...prev, { role: 'assistant' as const, content: reply }],
-          isLoading: false
-        });
-        // Auto-request the next adaptive question after a short reveal delay
-        scheduleAutoAsk(get, requestEpoch, sessionId);
-        const { user } = useAuthStore.getState()
-        if (user && requestEpoch === sessionEpoch && get().currentSession?.session_id === sessionId) {
-          void triggerAchievementCheck(user.id);
-        }
-        if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-        const resultWithProvider = result as AnswerResponse & WithProvider
-        if (resultWithProvider.provider_used) {
-          const provider = resultWithProvider.provider_used
-          setProviderState(set, get, provider)
-        }
-      } else {
-        set({ error: result.error || 'Failed to submit answer', isLoading: false });
-      }
+      finishAnswer(
+        requestEpoch,
+        requestId,
+        sessionId,
+        response.data as AnswerResponse & WithProvider,
+        'Failed to submit answer',
+        answer,
+      );
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-      const detail = (() => {
-        return extractError(error, 'Failed to submit answer');
-      })();
-      set({ error: detail, isLoading: false });
+      set({ error: extractError(error, 'Failed to submit answer'), isLoading: false });
     }
   },
 
@@ -474,59 +486,25 @@ export const useLearningStore = create<LearningState>((set, get) => ({
     const requestEpoch = sessionEpoch;
     const requestId = ++answerRequestId;
     set({ isLoading: true, error: null });
-    
     const formData = new FormData();
     formData.append('file', audioBlob, 'recording.wav');
-
     try {
       const response = await api.post(`/learning/${sessionId}/answer/voice`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
-      
-      const result = response.data;
-      if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-      if (result.success) {
-        const prev = get().messages;
-        const isAdmin = useAuthStore.getState().user?.user_type === 'admin';
-        const showReasoning = Boolean(isAdmin && get().showAdminReasoning);
-        const reply = buildAssistantReply(result, showReasoning);
-        set({
-          lastAnswer: result,
-          revealedAnswer: {
-            choice: result.transcription || '[voice]',
-            isCorrect: result.is_correct ?? null,
-          },
-          progressStats: mergeProgress(get().progressStats, result),
-          messages: [
-            ...prev,
-            { role: 'user' as const, content: `[voice] ${result.transcription || 'Audio message'}` },
-            { role: 'assistant' as const, content: reply }
-          ],
-          isLoading: false
-        });
-        // Auto-request the next adaptive question after a short reveal delay
-        scheduleAutoAsk(get, requestEpoch, sessionId);
-        const { user } = useAuthStore.getState()
-        if (user && requestEpoch === sessionEpoch && get().currentSession?.session_id === sessionId) {
-          void triggerAchievementCheck(user.id);
-        }
-        if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-        const resultWithProvider = result as AnswerResponse & WithProvider
-        if (resultWithProvider.provider_used) {
-          const provider = resultWithProvider.provider_used
-          setProviderState(set, get, provider)
-        }
-      } else {
-        set({ error: result.error || 'Failed to submit voice answer', isLoading: false });
-      }
+      const result = response.data as AnswerResponse & WithProvider;
+      finishAnswer(
+        requestEpoch,
+        requestId,
+        sessionId,
+        result,
+        'Failed to submit voice answer',
+        result.transcription || '[voice]',
+        `[voice] ${result.transcription || 'Audio message'}`,
+      );
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-      const detail = (() => {
-        return extractError(error, 'Failed to submit voice answer');
-      })();
-      set({ error: detail, isLoading: false });
+      set({ error: extractError(error, 'Failed to submit voice answer'), isLoading: false });
     }
   },
 
@@ -535,73 +513,30 @@ export const useLearningStore = create<LearningState>((set, get) => ({
     const requestEpoch = sessionEpoch;
     const requestId = ++answerRequestId;
     set({ isLoading: true, error: null });
-
-    // Build a readable user message for the chat UI using enriched gloss
-    const userMessage = enriched_gloss || raw_gloss || symbols.map(s => s.label).join(' ');
+    const userMessage = enriched_gloss || raw_gloss || symbols.map((s) => s.label).join(' ');
     const userContent = userMessage || '[symbols]';
-
-    // Optimistically show user message with symbol images
+    const symbolImages = symbols.map((s) => ({ label: s.label, image_path: s.image_path, category: s.category }));
     set((state) => ({
-      messages: [...state.messages, {
-        role: 'user' as const,
-        content: userContent,
-        symbolImages: symbols.map(s => ({
-          label: s.label,
-          image_path: s.image_path,
-          category: s.category
-        }))
-      }]
+      messages: [...state.messages, { role: 'user' as const, content: userContent, symbolImages }],
     }));
-
     try {
       const response = await api.post(`/learning/${sessionId}/answer/symbols`, {
         symbols,
         enriched_gloss: enriched_gloss || undefined,
         raw_gloss: raw_gloss || undefined,
-        text: userMessage || undefined, // Keep for backwards compatibility
+        text: userMessage || undefined,
       });
-
-      const result = response.data;
-      if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-      if (result.success) {
-        const prev = get().messages;
-        const isAdmin = useAuthStore.getState().user?.user_type === 'admin';
-        const showReasoning = Boolean(isAdmin && get().showAdminReasoning);
-        const reply = buildAssistantReply(result, showReasoning);
-        set({
-          lastAnswer: result,
-          revealedAnswer: {
-            choice: userMessage || '[symbols]',
-            isCorrect: result.is_correct ?? null,
-          },
-          progressStats: mergeProgress(get().progressStats, result),
-          messages: [
-            ...prev,
-            { role: 'assistant' as const, content: reply }
-          ],
-          isLoading: false
-        });
-        // Auto-request the next adaptive question after a short reveal delay
-        scheduleAutoAsk(get, requestEpoch, sessionId);
-        const { user } = useAuthStore.getState();
-        if (user && requestEpoch === sessionEpoch && get().currentSession?.session_id === sessionId) {
-          void triggerAchievementCheck(user.id);
-        }
-        if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-        const resultWithProvider = result as AnswerResponse & WithProvider;
-        if (resultWithProvider.provider_used) {
-          const provider = resultWithProvider.provider_used;
-          setProviderState(set, get, provider);
-        }
-      } else {
-        set({ error: result.error || 'Failed to submit symbol answer', isLoading: false });
-      }
+      finishAnswer(
+        requestEpoch,
+        requestId,
+        sessionId,
+        response.data as AnswerResponse & WithProvider,
+        'Failed to submit symbol answer',
+        userContent,
+      );
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-      const detail = (() => {
-        return extractError(error, 'Failed to submit symbol answer');
-      })();
-      set({ error: detail, isLoading: false });
+      set({ error: extractError(error, 'Failed to submit symbol answer'), isLoading: false });
     }
   },
 
@@ -717,7 +652,8 @@ export const useLearningStore = create<LearningState>((set, get) => ({
   },
 
   clearError: () => set({ error: null })
-}));
+  };
+});
 
 if (typeof window !== 'undefined') {
   const resetForAuthContextChange = () => {

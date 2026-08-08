@@ -398,19 +398,20 @@ def get_local_tts_provider() -> LocalTTSProvider:
     return _local_tts_provider
 
 
-def reset_local_tts_provider() -> None:
-    """Drop the singleton and clear cached import state.
+def reset_local_tts_provider(*, clear_import_state: bool = False) -> None:
+    """Drop the singleton and optionally clear cached import state.
 
-    Used by tests and after a runtime ``uv sync --extra tts`` install so the
-    engine can be picked up without a full server restart (the failed-import
-    cache from startup would otherwise keep the provider unavailable).
+    Resetting the provider instance is safe after settings/model changes. The
+    import capability cache is cleared only after runtime installation; this
+    keeps test doubles and an already-detected optional dependency stable.
     """
     global _local_tts_provider, _available, _import_error, _import_attempted
     global _voice_catalog_cache
     with _provider_lock:
         _local_tts_provider = None
-    with _import_lock:
-        _available = False
-        _import_error = None
-        _import_attempted = False
+    if clear_import_state:
+        with _import_lock:
+            _available = False
+            _import_error = None
+            _import_attempted = False
     _voice_catalog_cache = None

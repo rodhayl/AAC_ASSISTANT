@@ -56,6 +56,8 @@ class UserProfileUpdate(BaseModel):
 
 
 class LoginRequest(BaseModel):
+    """Deprecated JSON login contract retained for external clients."""
+
     username: str
     password: str
 
@@ -296,7 +298,7 @@ class BoardResponse(BoardBase):
     user_id: int
     created_at: datetime
     updated_at: datetime
-    symbols: list[BoardSymbolResponse] = []
+    symbols: list[BoardSymbolResponse] = Field(default_factory=list)
     playable_symbols_count: int | None = 0
 
     model_config = ConfigDict(from_attributes=True)
@@ -503,7 +505,7 @@ class SymbolUsageRequest(BaseModel):
 
 class NextSymbolRequest(BaseModel):
     current_symbols: str = ""
-    chat_history: list[dict[str, str]] = []
+    chat_history: list[dict[str, str]] = Field(default_factory=list)
     limit: int = 5
     intent: str = "general"
     offset: int = 0

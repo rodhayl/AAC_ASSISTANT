@@ -14,6 +14,7 @@ import { AISuggestionPanel } from '../components/board/AISuggestionPanel';
 import { BoardSettingsDialog } from '../components/board/BoardSettingsDialog';
 import { BoardEditorToolbar } from '../components/board/BoardEditorToolbar';
 import { useBoardAISuggestions } from '../hooks/useBoardAISuggestions';
+import { extractError } from '../lib/api';
 import { useBoardCollab } from '../hooks/useBoardCollab';
 import { useBoardEditorSymbols } from '../hooks/useBoardEditorSymbols';
 import { getBoardPlayabilityStatus } from './boardEditorUtils';
@@ -254,8 +255,7 @@ export function BoardEditor() {
       await fetchBoard(currentBoard.id, true);
       setHasChanges(true);
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } };
-      setAiError(err?.response?.data?.detail || t('failedToRemoveSymbol'));
+      setAiError(extractError(e, t('failedToRemoveSymbol')));
     }
   }, [currentBoard, deleteBoardSymbol, fetchBoard, setAiError, setHasChanges, t]);
 
@@ -270,8 +270,7 @@ export function BoardEditor() {
       await fetchBoard(currentBoard.id, true);
       setHasChanges(true);
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } };
-      setAiError(err?.response?.data?.detail || t('failedToClearBoard'));
+      setAiError(extractError(e, t('failedToClearBoard')));
     } finally {
       setClearLoading(false);
     }

@@ -68,17 +68,18 @@ class TestAuthAPI:
 
         # Login
         response = client.post(
-            "/api/auth/login",
-            json={"username": "logintest", "password": test_password},
+            "/api/auth/token",
+            data={"username": "logintest", "password": test_password},
         )
         assert response.status_code == 200
-        assert response.json()["username"] == "logintest"
+        assert response.json()["token_type"] == "bearer"
+        assert response.json()["access_token"]
 
     def test_login_wrong_password(self, test_password):
         """Test login with wrong password"""
         response = client.post(
-            "/api/auth/login",
-            json={"username": "logintest", "password": "wrongpass"},
+            "/api/auth/token",
+            data={"username": "logintest", "password": "wrongpass"},
         )
         assert response.status_code == 401
 

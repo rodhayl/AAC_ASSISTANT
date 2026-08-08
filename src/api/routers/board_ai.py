@@ -22,30 +22,6 @@ from src.api.deps import (
 
 router = APIRouter()
 
-_DEFAULT_BOARD_GENERATION_SERVICE = BoardGenerationService
-_DEFAULT_OLLAMA_PROVIDER = OllamaProvider
-
-
-def _get_board_generation_service(provider):
-    """Use legacy board-module patches while keeping AI code in this router."""
-    if BoardGenerationService is not _DEFAULT_BOARD_GENERATION_SERVICE:
-        return BoardGenerationService(provider)
-
-    from src.api.routers import boards as legacy_board_router
-
-    return legacy_board_router.BoardGenerationService(provider)
-
-
-def _get_ollama_provider(*, base_url: str, model: str):
-    """Use legacy board-module patches while keeping AI code in this router."""
-    if OllamaProvider is not _DEFAULT_OLLAMA_PROVIDER:
-        return OllamaProvider(base_url=base_url, model=model)
-
-    from src.api.routers import boards as legacy_board_router
-
-    return legacy_board_router.OllamaProvider(base_url=base_url, model=model)
-
-
 def _fallback_board_suggestions(
     db: Session, *, board: CommunicationBoard, item_count: int
 ) -> list[dict]:
@@ -181,16 +157,14 @@ async def create_board(
             provider = None
             if board.ai_provider == "ollama":
                 base_url = get_setting_value("ollama_base_url", config.OLLAMA_BASE_URL)
-                provider = _get_ollama_provider(
-                    base_url=base_url, model=board.ai_model
-                )
+                provider = OllamaProvider(base_url=base_url, model=board.ai_model)
             elif board.ai_provider == "openrouter":
                 api_key = get_setting_value("openrouter_api_key", "")
                 provider = OpenRouterProvider(api_key=api_key, model=board.ai_model)
 
             if provider:
                 # Create a temporary service instance
-                ai_service = _get_board_generation_service(provider)
+                ai_service = BoardGenerationService(provider)
 
                 # Calculate item count based on grid size, default to 12 if not specified
                 item_count = 12
@@ -301,7 +275,7 @@ def _resolve_provider_for_board(
         return OpenRouterProvider(api_key=api_key, model=model_name)
 
     base_url = get_setting_value("ollama_base_url", config.OLLAMA_BASE_URL)
-    return _get_ollama_provider(base_url=base_url, model=model_name)
+    return OllamaProvider(base_url=base_url, model=model_name)
 
 
 @router.post("/{board_id}/ai/suggestions")
@@ -332,7 +306,7 @@ async def generate_ai_suggestions(
             detail=get_text(user=current_user, key="errors.boards.aiNotConfigured"),
         )
 
-    service = _get_board_generation_service(provider)
+    service = BoardGenerationService(provider)
 
     # Resolve language for generation
     ts = get_translation_service()

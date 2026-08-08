@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import api from '../lib/api';
+import api, { extractError } from '../lib/api';
 
 export interface AISettings {
   provider: 'ollama' | 'openrouter' | 'lmstudio';
@@ -61,8 +61,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const response = await api.get('/settings/ai');
       set({ aiSettings: response.data, loading: false });
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { detail?: string } }, message?: string };
-      const message = err.response?.data?.detail || err.message || 'Failed to fetch AI settings';
+      const message = extractError(error, 'Failed to fetch AI settings');
       set({ error: message, loading: false });
     }
   },
@@ -73,8 +72,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       await api.put('/settings/ai', settings);
       await get().fetchAISettings();
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { detail?: string } }, message?: string };
-      const message = err.response?.data?.detail || err.message || 'Failed to update settings';
+      const message = extractError(error, 'Failed to update settings');
       set({ error: message, loading: false });
       throw error;
     }
@@ -86,8 +84,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const response = await api.get('/settings/ai/models/ollama');
       set({ ollamaModels: response.data.models, loading: false });
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { detail?: string } }, message?: string };
-      const message = err.response?.data?.detail || err.message || 'Failed to fetch Ollama models';
+      const message = extractError(error, 'Failed to fetch Ollama models');
       set({ error: message, loading: false });
     }
   },
@@ -98,8 +95,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const response = await api.get('/settings/ai/models/openrouter');
       set({ openRouterModels: response.data.models, loading: false });
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { detail?: string } }, message?: string };
-      const message = err.response?.data?.detail || err.message || 'Failed to fetch OpenRouter models';
+      const message = extractError(error, 'Failed to fetch OpenRouter models');
       set({ error: message, loading: false });
     }
   },
@@ -110,8 +106,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const response = await api.get('/settings/ai/models/lmstudio');
       set({ lmStudioModels: response.data.models, loading: false });
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { detail?: string } }, message?: string };
-      const message = err.response?.data?.detail || err.message || 'Failed to fetch LM Studio models';
+      const message = extractError(error, 'Failed to fetch LM Studio models');
       set({ error: message, loading: false });
     }
   },

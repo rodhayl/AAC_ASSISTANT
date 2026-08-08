@@ -1,0 +1,88 @@
+"""Consolidated local account administration commands.
+
+Examples:
+    python -m src.scripts.account_admin check
+    python -m src.scripts.account_admin reset --username admin1 --password 'NewPass123'
+    python -m src.scripts.account_admin unlock --username teacher1
+
+The password may also be supplied through AAC_ADMIN_RESET_PASSWORD for reset.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+
+from sqlalchemy.orm import Session
+
+from src.aac_app.db import get_session
+from src.aac_app.models import User
+from src.aac_app.services.auth_service import get_password_hash
+from src.aac_app.services.lockout_service import lockout_service
+
+
+def reset_password(session: Session, username: str, new_password: str) -> bool:
+    """Reset a user's password and report whether the user exists."""
+    user = session.query(User).filter(User.username == username).first()
+    if not user:
+        return False
+    user.password_hash = get_password_hash(new_password)
+    session.commit()
+    return True
+
+
+def clear_lockout(session: Session, username: str) -> None:
+    """Clear failed-login attempts for a username."""
+    lockout_service.reset_attempts(session, username)
+
+
+def check_account(session: Session, username: str) -> bool:
+    """Print account information and return whether the account exists."""
+    user = session.query(User).filter(User.username == username).first()
+    if not user:
+        print(f"User {username!r} not found.")
+        return False
+    print(f"Found user: {user.username}, type: {user.user_type}, active: {user.is_active}")
+    return True
+
+
+def _password(value: str | None) -> str:
+    password = (value or os.environ.get("AAC_ADMIN_RESET_PASSWORD", "")).strip()
+    if not password:
+        raise SystemExit(
+            "Provide --password <new_password> or set AAC_ADMIN_RESET_PASSWORD."
+        )
+    return password
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    check = subparsers.add_parser("check", help="show whether an account exists")
+    check.add_argument("--username", default="admin1")
+
+    reset = subparsers.add_parser("reset", help="replace an account password")
+    reset.add_argument("--username", default="admin1")
+    reset.add_argument("--password")
+
+    unlock = subparsers.add_parser("unlock", help="clear failed-login lockout attempts")
+    unlock.add_argument("--username", default="admin1")
+
+    args = parser.parse_args()
+    with get_session() as session:
+        if args.command == "check":
+            return 0 if check_account(session, args.username) else 1
+        if args.command == "reset":
+            if not reset_password(session, args.username, _password(args.password)):
+                print(f"User {args.username!r} not found.")
+                return 1
+            print(f"Password for {args.username!r} was reset.")
+            return 0
+        clear_lockout(session, args.username)
+        print(f"Lockout cleared for {args.username!r}.")
+        return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

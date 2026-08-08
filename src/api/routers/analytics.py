@@ -292,6 +292,35 @@ def get_next_symbol_suggestions_post(
 
 
 
+@router.post("/log", status_code=status.HTTP_201_CREATED)
+async def log_symbol_usage_legacy(
+    request: SymbolUsageRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Log symbol usage for older clients that still use ``/analytics/log``."""
+    try:
+        _log_usage_request(
+            request,
+            current_user,
+            db,
+            failure_detail=get_text(
+                user=current_user, key="errors.analytics.logSymbolFailed"
+            ),
+        )
+        return {"status": "success"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to log symbol usage: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=get_text(
+                user=current_user, key="errors.analytics.logFailed", error=str(e)
+            ),
+        )
+
+
 @router.get("/category-preferences", response_model=dict)
 async def get_category_preferences(
     current_user: User = Depends(get_current_active_user),
@@ -353,37 +382,5 @@ async def get_usage_statistics(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=get_text(
                 user=current_user, key="errors.analytics.statsFailed", error=str(e)
-            ),
-        )
-
-
-@router.post("/log", status_code=status.HTTP_201_CREATED)
-async def log_symbol_usage_legacy(
-    request: SymbolUsageRequest,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Log symbol usage for analytics.
-    """
-    try:
-        _log_usage_request(
-            request,
-            current_user,
-            db,
-            failure_detail=get_text(
-                user=current_user, key="errors.analytics.logSymbolFailed"
-            ),
-        )
-        return {"status": "success"}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to log symbol usage: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=get_text(
-                user=current_user, key="errors.analytics.logFailed", error=str(e)
             ),
         )

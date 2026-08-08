@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuthStore } from '../store/authStore'
-import api from '../lib/api'
+import api, { extractError } from '../lib/api'
 import type { Board, StudentBoardSummary, User } from '../types'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
@@ -73,19 +73,7 @@ export function Students() {
           ),
         )
       } catch (e: unknown) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const r = e as { response?: { data?: { detail?: any } } };
-        const d = r.response?.data?.detail;
-        let msg = t('errors.loadFailed');
-        if (Array.isArray(d)) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          msg = d.map((err: any) => err.msg).join(', ');
-        } else if (typeof d === 'string') {
-          msg = d;
-        } else if (d) {
-          msg = JSON.stringify(d);
-        }
-        setError(msg)
+        setError(extractError(e, t('errors.loadFailed')))
       } finally {
         setLoading(false)
       }
@@ -111,8 +99,7 @@ export function Students() {
       setStudents(prev => prev.filter(x => x.id !== s.id))
       setDeleteState({ isOpen: false, student: null })
     } catch (e: unknown) {
-      const errWithResponse = e as { response?: { data?: { detail?: string } } }
-      setError(errWithResponse?.response?.data?.detail || t('errors.deleteFailed'))
+      setError(extractError(e, t('errors.deleteFailed')))
       setDeleteState({ isOpen: false, student: null })
     }
   }
@@ -126,8 +113,7 @@ export function Students() {
       setAssignedBoards(prev => ({ ...prev, [selectedStudent.id]: assignedRes.data }))
       setAssignModalOpen(false)
     } catch (e: unknown) {
-      const errWithResponse = e as { response?: { data?: { detail?: string } } }
-      setError(errWithResponse?.response?.data?.detail || t('errors.assignFailed'))
+      setError(extractError(e, t('errors.assignFailed')))
     } finally {
       setAssignLoading(false)
     }
@@ -139,8 +125,7 @@ export function Students() {
       const assignedRes = await api.get('/boards/assigned', { params: { student_id: studentId } })
       setAssignedBoards(prev => ({ ...prev, [studentId]: assignedRes.data }))
     } catch (e: unknown) {
-      const errWithResponse = e as { response?: { data?: { detail?: string } } }
-      setError(errWithResponse?.response?.data?.detail || t('errors.unassignFailed'))
+      setError(extractError(e, t('errors.unassignFailed')))
     }
   }
 
@@ -173,8 +158,7 @@ export function Students() {
       setPreferencesModalOpen(false)
       setPreferencesStudent(null)
     } catch (e: unknown) {
-      const errWithResponse = e as { response?: { data?: { detail?: string } } }
-      setError(errWithResponse?.response?.data?.detail || t('errors.updateFailed'))
+      setError(extractError(e, t('errors.updateFailed')))
     } finally {
       setPreferencesLoading(false)
     }
@@ -230,8 +214,7 @@ export function Students() {
       setConfirmPassword('')
       setCreateModalOpen(false)
     } catch (e: unknown) {
-      const errWithResponse = e as { response?: { data?: { detail?: string } } }
-      setError(errWithResponse?.response?.data?.detail || t('errors.createFailed'))
+      setError(extractError(e, t('errors.createFailed')))
     } finally {
       setCreateLoading(false)
     }
@@ -252,8 +235,7 @@ export function Students() {
       setResetPasswordStudent(null)
       // Optional: show success message
     } catch (e: unknown) {
-      const errWithResponse = e as { response?: { data?: { detail?: string } } }
-      setError(errWithResponse?.response?.data?.detail || t('errors.resetPasswordFailed', { defaultValue: 'Failed to reset password' }))
+      setError(extractError(e, t('errors.resetPasswordFailed', { defaultValue: 'Failed to reset password' })))
     } finally {
       setResetPasswordLoading(false)
     }
@@ -400,8 +382,7 @@ export function Students() {
                           setStudents(prev => prev.map(x => x.id === editId ? res.data : x))
                           setEditId(null)
                         } catch (e: unknown) {
-                          const errWithResponse = e as { response?: { data?: { detail?: string } } }
-                          setError(errWithResponse?.response?.data?.detail || t('errors.updateFailed'))
+                          setError(extractError(e, t('errors.updateFailed')))
                         }
                       }}
                       className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"

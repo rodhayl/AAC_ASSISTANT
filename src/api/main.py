@@ -31,6 +31,8 @@ from src.api.routers import (
     analytics,
     arasaac,
     auth,
+    auth_preferences,
+    auth_users,
     board_ai,
     board_assignments,
     boards,
@@ -306,6 +308,8 @@ async def readiness_check():
 
 app.include_router(config_router.router)
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(auth_users.router, prefix="/api/auth", tags=["auth"])
+app.include_router(auth_preferences.router, prefix="/api/auth", tags=["auth"])
 app.include_router(symbols.router, prefix="/api/boards", tags=["boards"])
 app.include_router(board_ai.router, prefix="/api/boards", tags=["boards"])
 app.include_router(board_assignments.router, prefix="/api/boards", tags=["boards"])

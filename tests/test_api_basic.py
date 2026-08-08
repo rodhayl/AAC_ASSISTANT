@@ -58,12 +58,13 @@ def test_login():
     )
 
     response = client.post(
-        "/api/auth/login",
-        json={"username": "loginuser", "password": "LoginPassword123"},
+        "/api/auth/token",
+        data={"username": "loginuser", "password": "LoginPassword123"},
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["username"] == "loginuser"
+    assert data["token_type"] == "bearer"
+    assert data["access_token"]
 
 
 def test_create_board():

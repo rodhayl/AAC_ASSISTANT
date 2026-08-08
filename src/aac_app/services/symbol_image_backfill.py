@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from contextlib import suppress
+from pathlib import PurePosixPath
 
 from loguru import logger
 from sqlalchemy import func, or_
@@ -41,7 +42,7 @@ def _public_path_exists(public_path: str | None) -> bool:
         return True
     if not public_path.startswith("/uploads/"):
         return False
-    relative_path = public_path.removeprefix("/uploads/").replace("/", "\\")
+    relative_path = PurePosixPath(public_path.removeprefix("/uploads/"))
     return (config.UPLOADS_DIR / relative_path).exists()
 
 

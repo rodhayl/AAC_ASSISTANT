@@ -1,16 +1,20 @@
 """Regression coverage for the frozen launcher error-reporting path."""
 
-import importlib.util
+from importlib.machinery import SourceFileLoader
+from importlib.util import module_from_spec, spec_from_loader
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parents[1]
 
 
 def _load_launcher():
-    spec = importlib.util.spec_from_file_location("aac_launcher", REPO_ROOT / "launcher.pyw")
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    """Load the Windows .pyw entry point consistently on every host OS."""
+    launcher_path = REPO_ROOT / "launcher.pyw"
+    loader = SourceFileLoader("aac_launcher", str(launcher_path))
+    spec = spec_from_loader(loader.name, loader)
+    assert spec is not None
+    module = module_from_spec(spec)
+    loader.exec_module(module)
     return module
 
 

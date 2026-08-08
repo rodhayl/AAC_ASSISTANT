@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { X, Search, ArrowUp, ArrowDown, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useToastStore } from '../../store/toastStore';
-import api from '../../lib/api';
+import api, { extractError } from '../../lib/api';
 import { SymbolImage } from '../common/SymbolImage';
 import type { Symbol } from '../../types';
 import { getCategoryStyle } from '../../lib/symbolCategoryStyle';
@@ -152,8 +152,7 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
       onClose();
     } catch (e: unknown) {
       console.error('Failed to upload symbol:', e);
-      const err = e as { response?: { data?: { detail?: string } } };
-      const detail = err?.response?.data?.detail || t('symbolPicker.uploadFailed');
+      const detail = extractError(e, t('symbolPicker.uploadFailed'));
       setUploadError(detail);
     } finally {
       setIsUploading(false);

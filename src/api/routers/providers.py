@@ -317,7 +317,7 @@ def install_tts_dependencies(
             logger.info("Admin {} requested Kokoro model download", current_user.username)
             if not download_kokoro_model():
                 raise RuntimeError("Kokoro model download failed")
-        reset_local_tts_provider()
+        reset_local_tts_provider(clear_import_state=True)
     except subprocess.CalledProcessError as exc:
         logger.error("TTS dependency installation failed with exit code {}", exc.returncode)
         raise HTTPException(

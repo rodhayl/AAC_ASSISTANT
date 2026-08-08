@@ -17,9 +17,6 @@ from src.aac_app.models import (
 from src.api.deps import get_current_active_user, get_db, get_text
 from src.api.routers.board_helpers import serialize_export_board
 
-# Compatibility name retained for scripts that imported the old module helper.
-serialize_board = serialize_export_board
-
 router = APIRouter()
 
 

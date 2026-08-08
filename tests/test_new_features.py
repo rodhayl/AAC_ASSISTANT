@@ -30,7 +30,7 @@ def test_change_password_flow(client):
     # Login with old password works
     assert (
         client.post(
-            "/api/auth/login", json={"username": "u1", "password": "OldPass123"}
+            "/api/auth/token", data={"username": "u1", "password": "OldPass123"}
         ).status_code
         == 200
     )
@@ -52,14 +52,14 @@ def test_change_password_flow(client):
     # Old password fails
     assert (
         client.post(
-            "/api/auth/login", json={"username": "u1", "password": "OldPass123"}
+            "/api/auth/token", data={"username": "u1", "password": "OldPass123"}
         ).status_code
         == 401
     )
     # New password succeeds
     assert (
         client.post(
-            "/api/auth/login", json={"username": "u1", "password": "NewPass123"}
+            "/api/auth/token", data={"username": "u1", "password": "NewPass123"}
         ).status_code
         == 200
     )

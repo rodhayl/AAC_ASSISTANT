@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Trophy, Star, Lock, CheckCircle, Settings, Plus, Pencil, Trash2, Award, X, Users } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
-import api from '../lib/api'
+import api, { extractError } from '../lib/api'
 import type { Achievement, AchievementFull, User } from '../types'
 import { useTranslation } from 'react-i18next'
 
@@ -61,14 +61,7 @@ export function Achievements() {
       setAchievements(achRes.data)
       setPoints(ptsRes.data)
     } catch (e: unknown) {
-      const detail = (() => {
-        if (typeof e === 'object' && e && 'response' in e) {
-          const r = e as { response?: { data?: { detail?: string } } }
-          return r.response?.data?.detail || 'Failed to load achievements'
-        }
-        return 'Failed to load achievements'
-      })()
-      setError(detail)
+      setError(extractError(e, 'Failed to load achievements'))
     } finally {
       setLoading(false)
     }
@@ -137,14 +130,7 @@ export function Achievements() {
       await api.post(`/achievements/user/${user.id}/check`)
       await loadData()
     } catch (e: unknown) {
-      const detail = (() => {
-        if (typeof e === 'object' && e && 'response' in e) {
-          const r = e as { response?: { data?: { detail?: string } } }
-          return r.response?.data?.detail || 'Failed to check achievements'
-        }
-        return 'Failed to check achievements'
-      })()
-      setError(detail)
+      setError(extractError(e, 'Failed to check achievements'))
     } finally {
       setLoading(false)
     }
@@ -201,7 +187,7 @@ export function Achievements() {
       setSelectedStudentId(null)
       loadAllAchievements()
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to award'
+      const msg = extractError(e, 'Failed to award')
       alert(msg)
     }
   }

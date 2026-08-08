@@ -67,6 +67,22 @@ commit your local `.env`.
 
 ## Run the application
 
+### Linux source checkout
+
+The Linux launcher is separate from the Windows scripts and does not change the
+Windows startup or packaging flow. From the repository root:
+
+```bash
+uv sync
+npm --prefix src/frontend ci
+npm --prefix src/frontend run build
+chmod +x start.sh
+./start.sh
+```
+
+Use `./start.sh --dev` for the backend plus Vite development mode. The launcher
+uses `.venv/bin/python` when available and otherwise delegates to `uv run`.
+
 ### Production mode, one process
 
 ```bat

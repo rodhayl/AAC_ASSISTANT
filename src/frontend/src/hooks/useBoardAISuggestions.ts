@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { Board, BoardSymbol } from '../types';
 import type { AISuggestion } from '../components/board/AISuggestionPanel';
 import type { BoardPosition } from './useBoardCollab';
+import { extractError } from '../lib/api';
 
 interface UseBoardAISuggestionsOptions {
   currentBoard: Board | null;
@@ -49,8 +50,7 @@ export function useBoardAISuggestions({
       setAiSuggestions(items);
       if (!items.length) setAiError(t('noSuggestions'));
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { detail?: string } } };
-      setAiError(err?.response?.data?.detail || t('failedToLoadSuggestions'));
+      setAiError(extractError(error, t('failedToLoadSuggestions')));
       setAiSuggestions([]);
     } finally {
       setAiLoading(false);
@@ -96,8 +96,7 @@ export function useBoardAISuggestions({
       await fetchBoard(currentBoard.id, true);
       setHasChanges(true);
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { detail?: string } } };
-      setAiError(err?.response?.data?.detail || t('failedToAddSuggestion'));
+      setAiError(extractError(error, t('failedToAddSuggestion')));
     } finally {
       setApplyId(null);
     }
@@ -127,15 +126,13 @@ export function useBoardAISuggestions({
           await api.post(`/boards/${currentBoard.id}/ai/suggestions/apply`, { item });
           successCount += 1;
         } catch (error: unknown) {
-          const err = error as { response?: { data?: { detail?: string } }; message?: string };
-          failures.push(`${item.label}: ${err?.response?.data?.detail || err?.message || 'unknown error'}`);
+          failures.push(`${item.label}: ${extractError(error, 'unknown error')}`);
         }
       }
       await fetchBoard(currentBoard.id, true);
       setHasChanges(true);
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { detail?: string } } };
-      setAiError(err?.response?.data?.detail || t('failedToAddAll'));
+      setAiError(extractError(error, t('failedToAddAll')));
     } finally {
       if (failures.length) {
         setAiError(t('addSuggestionResult', {

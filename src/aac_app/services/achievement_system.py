@@ -26,16 +26,7 @@ class AchievementSystem:
         logger.info("Achievement system initialized")
 
     def _initialize_achievements(self) -> dict[str, dict]:
-        """Initialize predefined achievements"""
-        return {
-            **self._get_beginner_achievements(),
-            **self._get_performance_achievements(),
-            **self._get_consistency_achievements(),
-            **self._get_exploration_achievements(),
-        }
-
-    def _get_beginner_achievements(self) -> dict[str, dict]:
-        """Get beginner category achievements"""
+        """Initialize predefined achievements."""
         return {
             "first_steps": {
                 "name": "First Steps",
@@ -55,11 +46,6 @@ class AchievementSystem:
                 "points": 25,
                 "icon": "📚",
             },
-        }
-
-    def _get_performance_achievements(self) -> dict[str, dict]:
-        """Get performance category achievements"""
-        return {
             "quick_learner": {
                 "name": "Quick Learner",
                 "description": "Answer 5 questions correctly",
@@ -78,11 +64,6 @@ class AchievementSystem:
                 "points": 100,
                 "icon": "🏆",
             },
-        }
-
-    def _get_consistency_achievements(self) -> dict[str, dict]:
-        """Get consistency category achievements"""
-        return {
             "streak_master": {
                 "name": "Streak Master",
                 "description": "Complete sessions for 3 consecutive days",
@@ -101,11 +82,6 @@ class AchievementSystem:
                 "points": 75,
                 "icon": "📖",
             },
-        }
-
-    def _get_exploration_achievements(self) -> dict[str, dict]:
-        """Get exploration and interaction achievements"""
-        return {
             "topic_expert": {
                 "name": "Topic Expert",
                 "description": "Complete sessions in 5 different topics",

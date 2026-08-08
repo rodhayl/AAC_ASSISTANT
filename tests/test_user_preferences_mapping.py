@@ -1,10 +1,10 @@
 from types import SimpleNamespace
 
-from src.api.routers.auth import _build_preferences_response
+from src.api.routers.auth_helpers import build_preferences_response
 
 
 def test_build_preferences_response_uses_defaults_without_settings():
-    response = _build_preferences_response(None)
+    response = build_preferences_response(None)
 
     assert response.model_dump() == {
         "tts_voice": "default",
@@ -29,7 +29,7 @@ def test_build_preferences_response_handles_legacy_and_null_values():
         high_contrast=None,
     )
 
-    response = _build_preferences_response(settings)
+    response = build_preferences_response(settings)
 
     assert response.tts_voice == "default"
     assert response.tts_language is None
@@ -55,7 +55,7 @@ def test_build_preferences_response_maps_populated_settings():
         high_contrast=True,
     )
 
-    response = _build_preferences_response(settings)
+    response = build_preferences_response(settings)
 
     assert response.model_dump() == {
         "tts_voice": "female",

@@ -26,13 +26,13 @@ def test_create_board_with_ai(
 
     # Mock the BoardGenerationService.generate_board_items method
     # Since we instantiate BoardGenerationService inside the route, we need to patch it
-    with patch("src.api.routers.boards.BoardGenerationService") as MockServiceClass:
+    with patch("src.api.routers.board_ai.BoardGenerationService") as MockServiceClass:
         # Configure the mock instance
         mock_instance = MockServiceClass.return_value
         mock_instance.generate_board_items = AsyncMock(return_value=mock_ai_response)
 
         # Mock the provider instantiation as well to avoid actual connections
-        with patch("src.api.routers.boards.OllamaProvider"):
+        with patch("src.api.routers.board_ai.OllamaProvider"):
 
             response = client.post(
                 f"/api/boards/?user_id={admin_user.id}",
