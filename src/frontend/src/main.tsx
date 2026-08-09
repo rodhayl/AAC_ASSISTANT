@@ -18,7 +18,3 @@ createRoot(document.getElementById('root')!).render(
     </I18nextProvider>
   </StrictMode>,
 )
-
-if (import.meta.env.DEV || import.meta.env.VITE_ENABLE_PERF === 'true') {
-  void import('./lib/perf').then(({ initPerfMetrics }) => initPerfMetrics())
-}

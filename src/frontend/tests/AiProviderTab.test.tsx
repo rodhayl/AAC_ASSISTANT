@@ -86,6 +86,7 @@ vi.mock('react-i18next', () => ({
 describe('AiProviderTab', () => {
   beforeEach(() => {
     get.mockReset();
+    authState.user = { id: 1, username: 'admin1', user_type: 'admin' };
     useSettingsStoreMock.mockImplementation((selector?: (state: typeof settingsState) => unknown) =>
       selector ? selector(settingsState) : settingsState
     );
@@ -127,5 +128,28 @@ describe('AiProviderTab', () => {
     await waitFor(() => {
       expect(screen.getByText((content, element) => element?.textContent === 'OpenRouter: down')).toBeInTheDocument();
     });
+  });
+
+  it('loads read-only settings with one request for non-admin users', async () => {
+    authState.user = { id: 2, username: 'student1', user_type: 'student' };
+    get.mockResolvedValueOnce({
+      data: {
+        provider: 'ollama',
+        ollama_model: 'student-visible-model',
+        openrouter_model: '',
+        lmstudio_model: '',
+        ollama_base_url: 'http://localhost:11434',
+        lmstudio_base_url: 'http://localhost:1234/v1',
+        max_tokens: 512,
+        temperature: 0.4,
+        can_edit: false,
+      },
+    });
+
+    render(<AiProviderTab />);
+
+    expect(await screen.findByText('student-visible-model')).toBeInTheDocument();
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith('/settings/ai', expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 });

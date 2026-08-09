@@ -699,4 +699,3 @@ No explicit cleanup needed as this is a read-only usage test. However:
 - `src/frontend/src/components/board/CommunicationBoard.tsx` - Communication board UI
 - `src/frontend/src/components/board/CommunicationToolbar.tsx` - Communication toolbar UI
 - `src/frontend/src/components/board/MessageStrip.tsx` - Message strip UI
-- `scripts/cdp_harness.py` - CDP harness for automation

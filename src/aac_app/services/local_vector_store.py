@@ -68,6 +68,10 @@ SQLITE_VEC_AVAILABLE = _module_available("sqlite_vec")
 TextEmbedding: Any | None = None
 sqlite_vec: Any | None = None
 _engine_listener_lock = threading.Lock()
+# Warmup and background indexing may both touch the singleton. Serialize
+# replacement/close and index operations so one thread cannot close a store
+# while another is using it.
+vector_store_operation_lock = threading.RLock()
 
 
 def _load_sqlite_vec_extension(
@@ -511,29 +515,45 @@ class LocalVectorStore:
                         "limit": max(1, int(k)),
                     },
                 ).fetchall()
-                results: list[dict[str, Any]] = []
-                for symbol_id, distance in rows:
-                    if float(distance) > self._distance_threshold:
-                        continue
-                    metadata = connection.execute(
-                        text(
-                            f"SELECT symbol_id, type, label, text "
-                            f"FROM {METADATA_TABLE} WHERE symbol_id = :symbol_id"
-                        ),
-                        {"symbol_id": int(symbol_id)},
-                    ).mappings().first()
-                    if metadata is None:
-                        continue
-                    results.append(
-                        {
-                            "id": metadata["symbol_id"],
-                            "type": metadata["type"],
-                            "label": metadata["label"],
-                            "text": metadata["text"],
-                            "score": float(distance),
-                        }
-                    )
-                return results
+                valid_rows = [
+                    (int(symbol_id), float(distance))
+                    for symbol_id, distance in rows
+                    if float(distance) <= self._distance_threshold
+                ]
+                if not valid_rows:
+                    return []
+
+                # Fetch metadata in one bounded query instead of issuing one
+                # SQL query per nearest vector. Rebuild the result order from
+                # the sqlite-vec rows because an IN query has no ordering
+                # guarantee.
+                parameters = {
+                    f"symbol_{index}": symbol_id
+                    for index, (symbol_id, _distance) in enumerate(valid_rows)
+                }
+                placeholders = ", ".join(f":symbol_{index}" for index in range(len(parameters)))
+                metadata_rows = connection.execute(
+                    text(
+                        f"SELECT symbol_id, type, label, text "
+                        f"FROM {METADATA_TABLE} WHERE symbol_id IN ({placeholders})"
+                    ),
+                    parameters,
+                ).mappings()
+                metadata_by_id = {
+                    int(metadata["symbol_id"]): metadata for metadata in metadata_rows
+                }
+
+                return [
+                    {
+                        "id": metadata_by_id[symbol_id]["symbol_id"],
+                        "type": metadata_by_id[symbol_id]["type"],
+                        "label": metadata_by_id[symbol_id]["label"],
+                        "text": metadata_by_id[symbol_id]["text"],
+                        "score": distance,
+                    }
+                    for symbol_id, distance in valid_rows
+                    if symbol_id in metadata_by_id
+                ]
         except Exception as exc:
             logger.error("Semantic vector search failed: {}", exc)
             return []

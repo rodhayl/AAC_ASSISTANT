@@ -31,6 +31,7 @@ class _SymbolCatalogEntry:
 
 
 _catalog_lock = RLock()
+_catalog_generation = 0
 _catalog_cache: WeakKeyDictionary[Engine, dict[str, tuple[_SymbolCatalogEntry, ...]]] = (
     WeakKeyDictionary()
 )
@@ -38,7 +39,9 @@ _catalog_cache: WeakKeyDictionary[Engine, dict[str, tuple[_SymbolCatalogEntry, .
 
 def clear_prediction_cache() -> None:
     """Invalidate cached symbol catalogs after any symbol mutation."""
+    global _catalog_generation
     with _catalog_lock:
+        _catalog_generation += 1
         _catalog_cache.clear()
 
 
@@ -117,7 +120,7 @@ class _PredictionContext:
             self.allowed_symbol_ids = None
 
     def _board_symbol_ids(self, session: Session) -> list[int]:
-        return list(
+        rows = (
             session.query(BoardSymbol.symbol_id)
             .filter(
                 BoardSymbol.board_id == self.board_id,
@@ -126,6 +129,7 @@ class _PredictionContext:
             )
             .all()
         )
+        return [row[0] for row in rows]
 
     def normalize_label(self, label: str) -> str:
         return (label or "").strip().lower()
@@ -188,28 +192,53 @@ class _PredictionContext:
 
         def load(session: Session) -> dict[str, tuple[_SymbolCatalogEntry, ...]]:
             bind = session.get_bind()
-            with _catalog_lock:
-                cached = _catalog_cache.get(bind)
-                if cached is not None:
-                    return cached
-                rows = session.query(Symbol).filter(Symbol.label.isnot(None)).all()
+            while True:
+                with _catalog_lock:
+                    cached = _catalog_cache.get(bind)
+                    if cached is not None:
+                        return cached
+                    query_generation = _catalog_generation
+
+                # Keep ORM objects and the catalog lock out of the hot path.
+                # The catalog only needs five scalar columns, and yield_per
+                # avoids materializing every Symbol instance at once.
+                rows = (
+                    session.query(
+                        Symbol.id,
+                        Symbol.label,
+                        Symbol.category,
+                        Symbol.image_path,
+                        Symbol.language,
+                    )
+                    .filter(Symbol.label.isnot(None))
+                    .yield_per(1000)
+                )
                 buckets: dict[str, list[_SymbolCatalogEntry]] = {}
-                for sym in rows:
-                    key = self.normalize_label(sym.label)
+                for row in rows:
+                    key = self.normalize_label(row.label)
                     if not key:
                         continue
                     buckets.setdefault(key, []).append(
                         _SymbolCatalogEntry(
-                            id=sym.id,
-                            label=sym.label,
-                            category=sym.category,
-                            image_path=sym.image_path,
-                            language=getattr(sym, "language", None),
+                            id=row.id,
+                            label=row.label,
+                            category=row.category,
+                            image_path=row.image_path,
+                            language=row.language,
                         )
                     )
                 frozen = {key: tuple(entries) for key, entries in buckets.items()}
-                _catalog_cache[bind] = frozen
-                return frozen
+
+                # Do not publish a snapshot that raced a symbol mutation.
+                # A concurrent mutation invalidates and retries this query.
+                with _catalog_lock:
+                    cached = _catalog_cache.get(bind)
+                    if cached is not None:
+                        return cached
+                    if query_generation != _catalog_generation:
+                        continue
+                    _catalog_cache[bind] = frozen
+                    return frozen
 
         if self.db is not None:
             return load(self.db)

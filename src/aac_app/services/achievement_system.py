@@ -15,6 +15,7 @@ from ..models import (
     UserAchievement,
     UserProgress,
 )
+from .achievement_catalog import PREDEFINED_ACHIEVEMENTS
 from .notification_events import stage_notification
 
 
@@ -26,81 +27,8 @@ class AchievementSystem:
         logger.info("Achievement system initialized")
 
     def _initialize_achievements(self) -> dict[str, dict]:
-        """Initialize predefined achievements."""
-        return {
-            "first_steps": {
-                "name": "First Steps",
-                "description": "Complete your first learning session",
-                "category": "beginner",
-                "criteria_type": "sessions_completed",
-                "criteria_value": 1,
-                "points": 10,
-                "icon": "🎯",
-            },
-            "vocabulary_explorer": {
-                "name": "Vocabulary Explorer",
-                "description": "Learn 10 new words",
-                "category": "vocabulary",
-                "criteria_type": "vocabulary_size",
-                "criteria_value": 10,
-                "points": 25,
-                "icon": "📚",
-            },
-            "quick_learner": {
-                "name": "Quick Learner",
-                "description": "Answer 5 questions correctly",
-                "category": "performance",
-                "criteria_type": "correct_answers",
-                "criteria_value": 5,
-                "points": 20,
-                "icon": "⚡",
-            },
-            "comprehension_champion": {
-                "name": "Comprehension Champion",
-                "description": "Achieve 80% comprehension score",
-                "category": "performance",
-                "criteria_type": "comprehension_score",
-                "criteria_value": 0.8,
-                "points": 100,
-                "icon": "🏆",
-            },
-            "streak_master": {
-                "name": "Streak Master",
-                "description": "Complete sessions for 3 consecutive days",
-                "category": "consistency",
-                "criteria_type": "consecutive_days",
-                "criteria_value": 3,
-                "points": 50,
-                "icon": "🔥",
-            },
-            "dedicated_learner": {
-                "name": "Dedicated Learner",
-                "description": "Complete 10 learning sessions",
-                "category": "consistency",
-                "criteria_type": "sessions_completed",
-                "criteria_value": 10,
-                "points": 75,
-                "icon": "📖",
-            },
-            "topic_expert": {
-                "name": "Topic Expert",
-                "description": "Complete sessions in 5 different topics",
-                "category": "exploration",
-                "criteria_type": "topics_completed",
-                "criteria_value": 5,
-                "points": 60,
-                "icon": "🌟",
-            },
-            "voice_pioneer": {
-                "name": "Voice Pioneer",
-                "description": "Use voice input 10 times",
-                "category": "interaction",
-                "criteria_type": "voice_usage",
-                "criteria_value": 10,
-                "points": 30,
-                "icon": "🎤",
-            },
-        }
+        """Return a per-instance copy of the predefined catalog."""
+        return {key: values.copy() for key, values in PREDEFINED_ACHIEVEMENTS.items()}
 
     def check_achievements(
         self, user_id: int, db: Session | None = None
@@ -217,29 +145,22 @@ class AchievementSystem:
         """Get voice usage and vocabulary stats from user progress"""
         stats = {}
 
-        # Voice usage
-        voice_progress = (
-            session.query(UserProgress)
+        progress_rows = (
+            session.query(UserProgress.metric_type, UserProgress.metric_value)
             .filter(
                 UserProgress.user_id == user_id,
-                UserProgress.metric_type == "voice_usage",
+                UserProgress.metric_type.in_(("voice_usage", "vocabulary_size")),
             )
-            .first()
+            .order_by(UserProgress.id)
+            .all()
         )
-        stats["voice_usage"] = voice_progress.metric_value if voice_progress else 0
-
-        # Vocabulary size
-        vocab_progress = (
-            session.query(UserProgress)
-            .filter(
-                UserProgress.user_id == user_id,
-                UserProgress.metric_type == "vocabulary_size",
-            )
-            .first()
-        )
-        stats["vocabulary_size"] = (
-            int(vocab_progress.metric_value) if vocab_progress else 0
-        )
+        # Preserve the former ``first()`` behavior if an older database has
+        # duplicate metric rows: the lowest-id row remains authoritative.
+        progress: dict[str, float] = {}
+        for metric_type, value in progress_rows:
+            progress.setdefault(metric_type, value)
+        stats["voice_usage"] = progress.get("voice_usage", 0)
+        stats["vocabulary_size"] = int(progress.get("vocabulary_size", 0))
 
         return stats
 

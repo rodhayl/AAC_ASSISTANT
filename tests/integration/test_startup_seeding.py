@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.aac_app.models import Achievement, Base, User  # noqa: E402
+from src.aac_app.models import Achievement, Base, User, UserAchievement  # noqa: E402
 from src.aac_app.services.auth_service import verify_password  # noqa: E402
 
 # Use a separate test database file for this test to verify seeding logic specifically
@@ -72,6 +72,54 @@ def test_default_users_exist_and_can_login(monkeypatch):
         assert verify_password(
             password, user.password_hash
         ), f"Password for {username} is incorrect"
+
+    session.close()
+    engine.dispose()
+
+
+def test_seed_preserves_custom_achievement_with_system_definition():
+    """System cleanup must not delete a custom matching achievement."""
+    from src.aac_app.seed import _create_sample_achievements
+
+    engine = create_engine(TEST_DB_URL)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    owner = User(
+        username="custom_achievement_owner",
+        display_name="Custom Owner",
+        user_type="teacher",
+        password_hash="test-hash",
+    )
+    session.add(owner)
+    session.flush()
+    custom = Achievement(
+        name="First Steps",
+        description="Complete your first learning session",
+        category="beginner",
+        criteria_type="sessions_completed",
+        criteria_value=1,
+        points=99,
+        icon="🌈",
+        created_by=owner.id,
+    )
+    session.add(custom)
+    session.flush()
+    earned = UserAchievement(user_id=owner.id, achievement_id=custom.id)
+    session.add(earned)
+    session.flush()
+
+    _create_sample_achievements(session)
+    session.commit()
+
+    preserved = session.get(Achievement, custom.id)
+    assert preserved is not None
+    assert preserved.created_by == owner.id
+    assert preserved.points == 99
+    assert preserved.icon == "🌈"
+    assert session.get(UserAchievement, earned.id).achievement_id == custom.id
+    assert session.query(Achievement).filter(Achievement.name == "First Steps").count() == 2
 
     session.close()
     engine.dispose()

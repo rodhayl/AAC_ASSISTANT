@@ -129,8 +129,8 @@ def get_current_user_info(
 
 @router.get("/users", response_model=list[schemas.UserResponse])
 def get_users(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0, le=100_000),
+    limit: int = Query(100, ge=1, le=1000),
     user_type: str | None = None,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -336,7 +336,8 @@ def change_password(
     if payload.new_password != payload.confirm_password:
         raise HTTPException(status_code=400, detail="Passwords do not match")
 
-    user = db.query(User).filter(User.username == payload.username).first() # Should be current_user
+    # Use the authenticated identity rather than re-querying by client input.
+    user = current_user
     user.password_hash = get_password_hash(payload.new_password)
     db.add(user)
     db.commit()

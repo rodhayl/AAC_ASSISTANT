@@ -121,57 +121,6 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
         return None
 
 
-def get_token_expiration(token: str) -> datetime | None:
-    """
-    Get the expiration time of a token without full validation.
-
-    Args:
-        token: JWT token string
-
-    Returns:
-        datetime object of expiration, or None if token is invalid
-    """
-    try:
-        # Decode without verification to just check expiration
-        payload = jwt.decode(token, options={"verify_signature": False})
-        exp_timestamp = payload.get("exp")
-        if exp_timestamp:
-            return datetime.fromtimestamp(exp_timestamp, tz=UTC)
-        return None
-    except Exception as e:
-        logger.debug(f"Could not extract expiration from token: {e}")
-        return None
-
-
-def validate_token_signature(token: str) -> bool:
-    """
-    Validate only the signature of a token (not expiration).
-    Useful for checking if a token was issued by this server.
-
-    Args:
-        token: JWT token string
-
-    Returns:
-        True if signature is valid, False otherwise
-    """
-    try:
-        jwt.decode(
-            token,
-            JWT_SECRET_KEY,
-            algorithms=[JWT_ALGORITHM],
-            options={
-                "verify_signature": True,
-                "verify_exp": False,  # Don't verify expiration
-            },
-        )
-        return True
-    except jwt.InvalidTokenError:
-        return False
-    except Exception as e:
-        logger.error(f"Error validating token signature: {e}")
-        return False
-
-
 def create_refresh_token(data: dict[str, Any]) -> str:
     """
     Create a JWT refresh token with longer expiration.

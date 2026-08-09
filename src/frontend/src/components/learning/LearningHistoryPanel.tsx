@@ -26,7 +26,7 @@ export function LearningHistoryPanel({
   const { t } = useTranslation('learning');
 
   return (
-    <div className="w-80 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
+    <div data-testid="learning-history-panel" className="w-80 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
       <div className="p-4 border-b border-gray-200 dark:border-gray-700">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
           {t('conversationHistory')}
@@ -52,6 +52,7 @@ export function LearningHistoryPanel({
           <div className="space-y-2">
             {sessionHistory.map((session) => (
               <button
+                data-testid="learning-history-item"
                 key={session.id}
                 onClick={() => onLoadSession(session.id)}
                 className={`w-full text-left p-3 rounded-lg border transition-colors ${

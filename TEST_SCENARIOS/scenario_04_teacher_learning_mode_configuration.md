@@ -686,4 +686,3 @@ print(f"Custom learning mode '{mode_name}' deleted successfully")
 - `src/api/routers/learning.py` - Learning activities API endpoints
 - `src/frontend/src/components/learning/LearningModes.tsx` - Learning modes UI
 - `src/frontend/src/components/learning/LearningPage.tsx` - Learning page UI
-- `scripts/cdp_harness.py` - CDP harness for automation

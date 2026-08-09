@@ -264,7 +264,7 @@ test.describe('Voice Mode - Teacher', () => {
     
     // Create new API context with token
     const apiContext = await request.newContext({
-        baseURL: 'http://localhost:8086',
+        baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:8086',
         extraHTTPHeaders: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'

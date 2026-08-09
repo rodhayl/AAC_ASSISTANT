@@ -557,4 +557,3 @@ assert current_path == "/login", f"Expected redirect to /login, got {current_pat
 - `src/api/routers/settings.py` - Settings API endpoints
 - `src/api/routers/admin.py` - Admin-specific endpoints
 - `src/frontend/src/components/SettingsManager.tsx` - Settings UI component
-- `scripts/cdp_harness.py` - CDP harness for automation

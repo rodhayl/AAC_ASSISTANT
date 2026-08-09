@@ -169,7 +169,7 @@ test.describe('Boards - Pagination & Bulk (Real)', () => {
     console.log(`[Seeding] Using User ID: ${userId}`);
     
     const apiContext = await playwright.request.newContext({
-        baseURL: 'http://localhost:8086'
+        baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:8086'
     });
 
     // Create 105 boards
@@ -308,7 +308,7 @@ test.describe('Boards - Pagination & Bulk (Real)', () => {
     const userId = tokenPayload.user_id;
 
     const apiContext = await playwright.request.newContext({
-        baseURL: 'http://localhost:8086'
+        baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:8086'
     });
     
     // Fetch all boards

@@ -723,4 +723,3 @@ No explicit cleanup needed as this is a read-only monitoring test. However, if t
 - `src/api/routers/analytics.py` - Analytics API endpoints
 - `src/frontend/src/components/admin/StudentList.tsx` - Students list UI
 - `src/frontend/src/components/admin/StudentProfile.tsx` - Student profile UI
-- `scripts/cdp_harness.py` - CDP harness for automation

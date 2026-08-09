@@ -112,10 +112,5 @@ def setup_logging():
     return logger
 
 
-def get_request_logger():
-    """Get a logger specifically for HTTP request/response logging."""
-    return logger.bind(context="HTTP")
-
-
 # Initialize logging on import
 setup_logging()

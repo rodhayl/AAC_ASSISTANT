@@ -783,4 +783,3 @@ print(f"Test board '{board_name}' deleted successfully")
 - `src/api/routers/collab.py` - Board collaboration/assignment endpoints
 - `src/frontend/src/components/board/BoardEditor.tsx` - Board editor UI
 - `src/frontend/src/components/Boards.tsx` - Boards list UI
-- `scripts/cdp_harness.py` - CDP harness for automation

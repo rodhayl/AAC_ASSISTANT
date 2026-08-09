@@ -22,8 +22,8 @@ router = APIRouter()
 @router.get("")
 @router.get("/")
 def get_boards(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0, le=100_000),
+    limit: int = Query(100, ge=1, le=1000),
     user_id: int | None = None,
     name: str | None = None,
     current_user: User = Depends(get_current_active_user),
@@ -180,6 +180,12 @@ def delete_board(
     # SQLAlchemy relationship cascade="all, delete" might be needed on model.
     # Let's assume manual cleanup of association table if not.
     db.query(BoardSymbol).filter(BoardSymbol.board_id == board_id).delete()
+    db.query(BoardAssignment).filter(BoardAssignment.board_id == board_id).delete()
+    # Other boards may link to this board through a symbol; clear those
+    # nullable references before deleting the target board.
+    db.query(BoardSymbol).filter(BoardSymbol.linked_board_id == board_id).update(
+        {BoardSymbol.linked_board_id: None}, synchronize_session=False
+    )
 
     db.delete(db_board)
     db.commit()

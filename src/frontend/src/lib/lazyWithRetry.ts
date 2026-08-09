@@ -19,28 +19,12 @@ function isChunkLoadError(error: unknown): boolean {
   );
 }
 
-let reloadPage = () => {
-  window.location.reload();
-};
-
 export function lazyWithRetry<Props extends object>(
   importer: () => Promise<ModuleWithDefault<Props>>,
   cacheKey: string,
 ) {
   return lazy(() => loadWithRetry(importer, cacheKey));
 }
-
-export const __lazyWithRetryForTests = {
-  isChunkLoadError,
-  setReloadPage(handler: () => void) {
-    reloadPage = handler;
-  },
-  resetReloadPage() {
-    reloadPage = () => {
-      window.location.reload();
-    };
-  },
-};
 
 export async function loadWithRetry<Props extends object>(
   importer: () => Promise<ModuleWithDefault<Props>>,
@@ -64,7 +48,7 @@ export async function loadWithRetry<Props extends object>(
       const alreadyRetried = !offline && window.sessionStorage.getItem(storageKey) === '1';
       if (!alreadyRetried && !offline) {
         window.sessionStorage.setItem(storageKey, '1');
-        reloadPage();
+        window.location.reload();
         return new Promise<ModuleWithDefault<Props>>(() => {});
       }
     }

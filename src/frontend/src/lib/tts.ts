@@ -113,17 +113,6 @@ async function refreshLocalTTSCapability() {
   capabilityChecked = true
 }
 
-/** Enable/disable the local neural TTS engine (e.g. from the Settings tab). */
-export function setLocalTTSEnabled(enabled: boolean) {
-  useTTSStore.getState().setUseLocalTTS(Boolean(enabled))
-  capabilityChecked = true
-}
-
-/** Return whether local neural TTS is currently enabled. */
-export function isLocalTTSEnabled(): boolean {
-  return useTTSStore.getState().useLocalTTS
-}
-
 /** Probe the backend once (cached) and enable local TTS when available. */
 export function initLocalTTS() {
   if (capabilityChecked) return

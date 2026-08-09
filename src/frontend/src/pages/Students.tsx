@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useAuthStore } from '../store/authStore'
 import api, { extractError } from '../lib/api'
 import type { Board, StudentBoardSummary, User } from '../types'
@@ -57,29 +57,31 @@ export function Students() {
   const [studentPreferences, setStudentPreferences] = useState<any>({ voice_mode_enabled: true })
   const [preferencesLoading, setPreferencesLoading] = useState(false)
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true)
-      setError(null)
-      try {
-        const res = await api.get('/auth/users/student-summaries', {
-          params: { limit: 100 },
-        })
-        const summaries = res.data as StudentBoardSummary[]
-        setStudents(summaries)
-        setAssignedBoards(
-          Object.fromEntries(
-            summaries.map((student) => [student.id, student.assigned_boards ?? []]),
-          ),
-        )
-      } catch (e: unknown) {
-        setError(extractError(e, t('errors.loadFailed')))
-      } finally {
-        setLoading(false)
-      }
+  const loadStudents = useCallback(async (rethrow = false) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await api.get('/auth/users/student-summaries', {
+        params: { limit: 100 },
+      })
+      const summaries = res.data as StudentBoardSummary[]
+      setStudents(summaries)
+      setAssignedBoards(
+        Object.fromEntries(
+          summaries.map((student) => [student.id, student.assigned_boards ?? []]),
+        ),
+      )
+    } catch (e: unknown) {
+      setError(extractError(e, t('errors.loadFailed')))
+      if (rethrow) throw e
+    } finally {
+      setLoading(false)
     }
-    load()
-  }, [user, t])
+  }, [t])
+
+  useEffect(() => {
+    void loadStudents()
+  }, [loadStudents, user])
 
   const loadAvailableBoards = async () => {
     try {
@@ -109,8 +111,21 @@ export function Students() {
     setAssignLoading(true)
     try {
       await api.post(`/boards/${boardId}/assign`, { student_id: selectedStudent.id })
-      const assignedRes = await api.get('/boards/assigned', { params: { student_id: selectedStudent.id } })
-      setAssignedBoards(prev => ({ ...prev, [selectedStudent.id]: assignedRes.data }))
+      const board = availableBoards.find((candidate) => candidate.id === boardId)
+      if (board) {
+        setAssignedBoards((prev) => {
+          const current = prev[selectedStudent.id] || []
+          if (current.some((assigned) => assigned.id === board.id)) return prev
+          return {
+            ...prev,
+            [selectedStudent.id]: [...current, board],
+          }
+        })
+      } else {
+        // The available-board list may have changed while the modal was open.
+        // Refresh the authoritative summary before closing the modal.
+        await loadStudents(true)
+      }
       setAssignModalOpen(false)
     } catch (e: unknown) {
       setError(extractError(e, t('errors.assignFailed')))
@@ -122,8 +137,10 @@ export function Students() {
   const handleUnassignBoard = async (studentId: number, boardId: number) => {
     try {
       await api.delete(`/boards/${boardId}/assign/${studentId}`)
-      const assignedRes = await api.get('/boards/assigned', { params: { student_id: studentId } })
-      setAssignedBoards(prev => ({ ...prev, [studentId]: assignedRes.data }))
+      setAssignedBoards((prev) => ({
+        ...prev,
+        [studentId]: (prev[studentId] || []).filter((board) => board.id !== boardId),
+      }))
     } catch (e: unknown) {
       setError(extractError(e, t('errors.unassignFailed')))
     }
@@ -196,16 +213,7 @@ export function Students() {
         })
       }
 
-      const res = await api.get('/auth/users/student-summaries', {
-        params: { limit: 100 },
-      })
-      const summaries = res.data as Array<User & { assigned_boards?: Board[] }>
-      setStudents(summaries)
-      setAssignedBoards(
-        Object.fromEntries(
-          summaries.map((student) => [student.id, student.assigned_boards ?? []]),
-        ),
-      )
+      await loadStudents(true)
 
       setNewUsername('')
       setNewDisplayName('')

@@ -4,12 +4,6 @@ test.describe('Learning', () => {
   test.use({ storageState: 'playwright/.auth/admin.json' });
 
   test.beforeEach(async ({ page }) => {
-    // Debug: Log all requests
-    page.on('request', request => console.log(`[Request] ${request.url()}`));
-
-    // Mock Learning Answer API to avoid real LLM dependency
-    page.on('request', request => console.log(`[Request] ${request.url()}`));
-
     // Mock auto-asked adaptive questions so the flow does not hit the LLM
     await page.route('**/api/learning/*/ask', async route => {
       await route.fulfill({
@@ -135,40 +129,34 @@ test.describe('Learning', () => {
       console.log('[Test] Spinners still present after timeout - continuing');
     }
 
-    // Find History Tab/Link
-    const historyTab = page.getByText(/history|historial/i).first();
+    const historyToggle = page.getByRole('button', {
+      name: /show history|hide history|mostrar historial|ocultar historial/i,
+    });
+    await expect(historyToggle).toBeVisible();
+    const historyResponsePromise = page.waitForResponse((response) =>
+      response.request().method() === 'GET' &&
+      response.url().includes('/api/learning/history/')
+    );
+    await historyToggle.click();
+    const historyResponse = await historyResponsePromise;
+    expect(historyResponse.ok()).toBe(true);
 
-    // If history tab doesn't exist, skip
-    const historyTabVisible = await historyTab.isVisible().catch(() => false);
-    if (!historyTabVisible) {
-      console.log('[Test] History tab not found - skipping');
-      test.skip();
+    const historyPanel = page.getByTestId('learning-history-panel');
+    await expect(historyPanel).toBeVisible();
+    await expect(
+      historyPanel.getByRole('heading', { name: /conversation history|historial de conversación/i }),
+    ).toBeVisible();
+    await expect(historyPanel.locator('.animate-spin')).not.toBeVisible();
+
+    const historyItems = historyPanel.getByTestId('learning-history-item');
+    if (await historyItems.count() === 0) {
+      await expect(
+        historyPanel.getByText(/no previous sessions|no hay sesiones previas/i),
+      ).toBeVisible();
       return;
     }
 
-    await historyTab.click();
-
-    // Wait for list to load
-    await page.waitForTimeout(2000);
-
-    // Check for history items
-    const historyItemSelectors = ['li', 'tr', '.history-item', '[data-testid="history-item"]'];
-    let firstItem = null;
-
-    for (const selector of historyItemSelectors) {
-      const item = page.locator(selector).first();
-      if (await item.isVisible().catch(() => false)) {
-        firstItem = item;
-        break;
-      }
-    }
-
-    if (!firstItem || !(await firstItem.isVisible().catch(() => false))) {
-      console.log('[Test] No history items found - test passes (empty history is valid)');
-      return;
-    }
-
-    await firstItem.click();
+    await historyItems.first().click();
 
     const input = page.getByPlaceholder(/type|escribe/i).last();
     await expect(input).toBeVisible({ timeout: 10000 });

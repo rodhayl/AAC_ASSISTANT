@@ -2,7 +2,7 @@ import asyncio
 import json
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -12,7 +12,6 @@ from src.aac_app.services.notification_events import (
     subscribe,
     unsubscribe,
 )
-from src.api.debug_reporting import report_debug
 from src.api.deps import (
     get_current_active_user,
     get_current_admin_user,
@@ -36,9 +35,6 @@ async def notifications_stream(token: str = None, db: Session = Depends(get_db))
 
     async def event_generator():
         queue = subscribe(user.id)
-        # #region debug-point B:sse-subscribed
-        report_debug("B", "src/api/routers/notifications.py:event_generator:subscribe", "SSE subscriber connected", {"user_id": user.id})
-        # #endregion
         # Initial heartbeat to unblock clients. DB event delivery will be
         # connected before yielding so notifications cannot be missed.
         try:
@@ -51,9 +47,6 @@ async def notifications_stream(token: str = None, db: Session = Depends(get_db))
                 else:
                     yield f"data: {json.dumps(notification)}\n\n"
         finally:
-            # #region debug-point B:sse-finally
-            report_debug("B", "src/api/routers/notifications.py:event_generator:finally", "SSE subscriber cleanup", {"user_id": user.id})
-            # #endregion
             unsubscribe(user.id, queue)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
@@ -62,8 +55,8 @@ async def notifications_stream(token: str = None, db: Session = Depends(get_db))
 @router.get("/api/notifications")
 def get_notifications(
     user_id: int,
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(0, ge=0, le=100_000),
+    limit: int = Query(50, ge=1, le=100),
     unread_only: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),

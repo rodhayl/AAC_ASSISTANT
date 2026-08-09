@@ -2,7 +2,7 @@
 import contextlib
 import os
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import User
@@ -273,7 +273,7 @@ def get_progress(
 @router.get("/history/{user_id}")
 def get_history(
     user_id: int,
-    limit: int = 10,
+    limit: int = Query(10, ge=1, le=1000),
     service: LearningCompanionService = Depends(get_learning_service),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),

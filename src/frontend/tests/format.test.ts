@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatDate, formatDateTime, formatTime, formatNumber } from '../src/lib/format'
+import { formatDate, formatDateTime, formatTime } from '../src/lib/format'
 import '../src/i18n/index'
 import i18n from '../src/i18n/index'
 
@@ -10,9 +10,5 @@ describe('format utilities', () => {
     expect(formatDate(d)).toBeTypeOf('string')
     expect(formatDateTime(d)).toBeTypeOf('string')
     expect(formatTime(d)).toBeTypeOf('string')
-  })
-  it('formats numbers by locale', () => {
-    i18n.changeLanguage('es')
-    expect(formatNumber(1234.56)).toBeTypeOf('string')
   })
 })

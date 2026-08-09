@@ -151,6 +151,8 @@ variables take precedence over the file.
 | `DEFAULT_LOCALE` | `es` | Default locale for seeded and newly created application content. |
 | `ALLOW_DB_RESET` | `false` | Enables the administrative database reset endpoint. Keep false outside disposable local development. |
 | `AAC_SEED_SAMPLE_DATA` | `false` | Seeds demo users and boards when true. Keep false for a fresh production database. |
+| `AAC_ENABLE_SYMBOL_IMAGE_BACKFILL` | `false` | Opt-in maintenance task that looks up and downloads missing symbol images during startup. Keep false for normal low-resource operation. |
+| `AAC_SYMBOL_IMAGE_BACKFILL_LIMIT` | `100` | Maximum missing symbol images processed when backfill is enabled. Set to `0` to skip it. |
 | `AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN` | `true` | Creates the bootstrap administrator when no administrator exists. |
 | `AAC_BOOTSTRAP_ADMIN_USERNAME` | `admin1` | Username created by the first-run bootstrap. |
 | `AAC_BOOTSTRAP_ADMIN_PASSWORD` | `Admin123` | Password created by the first-run bootstrap. Change it immediately after login. |

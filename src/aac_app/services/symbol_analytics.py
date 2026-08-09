@@ -4,7 +4,7 @@ Tracks and analyzes symbol usage patterns for personalization and insights.
 """
 
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from loguru import logger
 from sqlalchemy import and_, desc, func, or_
@@ -210,7 +210,7 @@ class SymbolAnalytics:
                 # Start new sequence if different session or time gap > 5 minutes
                 if current_session != log.session_id or (
                     current_timestamp
-                    and (log.timestamp - current_timestamp).seconds > 300
+                    and (log.timestamp - current_timestamp).total_seconds() > 300
                 ):
                     if len(current_sequence) >= 2:
                         _record_sequence(
@@ -314,7 +314,10 @@ class SymbolAnalytics:
             Dict with usage statistics
         """
         with self._session_scope(db) as db:
-            cutoff_date = datetime.now() - timedelta(days=days)
+            # Usage-log timestamps use a legacy naive DateTime column whose
+            # values are stored as UTC; keep the comparison representation
+            # naive for SQLite and other supported databases.
+            cutoff_date = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days)
 
             # Total symbols used
             total_count = (

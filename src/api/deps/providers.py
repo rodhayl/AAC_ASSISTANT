@@ -24,7 +24,10 @@ from src.aac_app.providers.openrouter_provider import OpenRouterProvider
 from src.aac_app.services.achievement_system import AchievementSystem
 from src.aac_app.services.board_generation_service import BoardGenerationService
 from src.aac_app.services.learning_companion_service import LearningCompanionService
-from src.aac_app.services.local_vector_store import LocalVectorStore
+from src.aac_app.services.local_vector_store import (
+    LocalVectorStore,
+    vector_store_operation_lock,
+)
 from src.api import deps as deps_package
 
 _ollama_provider: OllamaProvider | None = None
@@ -33,20 +36,26 @@ _lmstudio_provider: LMStudioProvider | None = None
 _speech_provider: LocalSpeechProvider | None = None
 _achievement_system: AchievementSystem | None = None
 _vector_store: LocalVectorStore | None = None
+_deferred_vector_store_events: list[threading.Event] = []
 
-_startup_state: dict[str, Any] = {
-    "initialized": False,
-    "initializing": False,
-    "providers_ready": {
-        "speech": False,
-        "llm": False,
-        "achievement": False,
-        "vector_store": False,
-    },
-    "errors": [],
-    "startup_time_ms": 0,
-    "provider_metrics": {},
-}
+def _new_startup_state() -> dict[str, Any]:
+    """Create an isolated startup snapshot for initialization and resets."""
+    return {
+        "initialized": False,
+        "initializing": False,
+        "providers_ready": {
+            "speech": False,
+            "llm": False,
+            "achievement": False,
+            "vector_store": False,
+        },
+        "errors": [],
+        "startup_time_ms": 0,
+        "provider_metrics": {},
+    }
+
+
+_startup_state: dict[str, Any] = _new_startup_state()
 _startup_lock = threading.Lock()
 _startup_generation = 0
 _warmup_generation_local = threading.local()
@@ -74,6 +83,22 @@ class _SpeechReleaseState:
 
 _speech_release_workers: dict[int, _SpeechReleaseState] = {}
 
+# Third-party providers may expose only an async ``close`` method. Keep the
+# fallback tasks strongly referenced until completion so a loop cannot collect
+# them before the transport has been released.
+_pending_llm_close_tasks: set[asyncio.Task[Any]] = set()
+
+
+def _consume_llm_close_task(task: asyncio.Task[Any]) -> None:
+    """Consume and log failures from a fallback async provider close."""
+    _pending_llm_close_tasks.discard(task)
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        pass
+    except Exception as exc:
+        logger.warning("LLM provider cleanup failed: {}", exc)
+
 
 def _close_vector_store(store: LocalVectorStore | None) -> None:
     """Release a discarded vector store without disposing the shared DB engine."""
@@ -83,6 +108,81 @@ def _close_vector_store(store: LocalVectorStore | None) -> None:
             close()
         except Exception as exc:
             logger.warning("Vector store cleanup failed: {}", exc)
+
+
+def _start_deferred_vector_store_close(
+    store: LocalVectorStore | None,
+    completed: threading.Event,
+) -> None:
+    """Close one already-registered store after vector operations release."""
+    if store is None:
+        with _provider_lock:
+            _deferred_vector_store_events.remove(completed)
+        completed.set()
+        return
+
+    def close_store() -> None:
+        global _vector_store
+        try:
+            with vector_store_operation_lock:
+                with _provider_lock:
+                    if _vector_store is store:
+                        _vector_store = None
+                _close_vector_store(store)
+        finally:
+            with _provider_lock:
+                if completed in _deferred_vector_store_events:
+                    _deferred_vector_store_events.remove(completed)
+            completed.set()
+
+    try:
+        threading.Thread(
+            target=close_store,
+            name="aac-vector-store-cleanup",
+            daemon=True,
+        ).start()
+    except Exception as exc:
+        # Do not strand a pending event if thread creation is unavailable.
+        logger.warning("Could not start deferred vector-store cleanup: {}", exc)
+        close_store()
+
+
+def _defer_vector_store_for_reset() -> threading.Event:
+    """Detach a store and register its bounded cleanup atomically."""
+    global _vector_store
+    completed = threading.Event()
+    with _provider_lock:
+        store = _vector_store
+        _vector_store = None
+        _deferred_vector_store_events.append(completed)
+    _start_deferred_vector_store_close(store, completed)
+    return completed
+
+
+def _detach_vector_store_for_reset(*, close: bool) -> None:
+    """Detach a vector store without closing it underneath an active operation."""
+    global _vector_store
+    if not vector_store_operation_lock.acquire(blocking=False):
+        if close:
+            completed = threading.Event()
+            with _provider_lock:
+                store = _vector_store
+                _vector_store = None
+                _deferred_vector_store_events.append(completed)
+            _start_deferred_vector_store_close(store, completed)
+            logger.warning(
+                "Vector-store operation active; deferring provider reset for that store"
+            )
+        return
+    try:
+        with _provider_lock:
+            store = _vector_store
+            if close:
+                _vector_store = None
+        if close:
+            _close_vector_store(store)
+    finally:
+        vector_store_operation_lock.release()
 
 
 class ProviderMetric(TypedDict):
@@ -132,9 +232,11 @@ def _close_llm_provider(provider: Any | None) -> None:
         except RuntimeError:
             asyncio.run(result)
         else:
-            # This fallback is only for third-party/test providers without a
+            # This fallback is only for third-party providers without a
             # close_sync method; concrete providers use the awaited path below.
-            asyncio.create_task(result)
+            task = asyncio.create_task(result)
+            _pending_llm_close_tasks.add(task)
+            task.add_done_callback(_consume_llm_close_task)
     except Exception as exc:
         logger.warning("LLM provider cleanup failed: {}", exc)
 
@@ -413,15 +515,42 @@ def get_achievement_system() -> AchievementSystem:
     return provider
 
 
+def _vector_store_lock_owned() -> bool:
+    """Return whether the current thread already owns the reentrant vector lock."""
+    return bool(getattr(vector_store_operation_lock, "_is_owned", lambda: False)())
+
+
+def _wait_for_deferred_vector_store_cleanup() -> None:
+    """Wait for reset-detached stores before allowing a replacement singleton."""
+    while True:
+        with _provider_lock:
+            pending = list(_deferred_vector_store_events)
+        if not pending:
+            return
+        for completed in pending:
+            completed.wait()
+
+
 def get_vector_store() -> LocalVectorStore:
     """Return the local vector store singleton."""
     global _vector_store
-    with _provider_lock:
+    # Do not create a replacement while an older reset-detached store is still
+    # closing; otherwise two stores could touch the same persisted corpus.
+    # Locked operations are allowed to finish using the still-attached store.
+    if not _vector_store_lock_owned():
+        _wait_for_deferred_vector_store_cleanup()
+    with vector_store_operation_lock, _provider_lock:
+        if not _vector_store_lock_owned() and _deferred_vector_store_events:
+            _wait_for_deferred_vector_store_cleanup()
         if _vector_store is None:
+            if _deferred_vector_store_events and _vector_store_lock_owned():
+                raise RuntimeError(
+                    "Cannot create a replacement vector store while a detached "
+                    "instance awaits lock release"
+                )
             logger.info("Initializing global LocalVectorStore")
             _vector_store = LocalVectorStore()
-        provider = _vector_store
-    return provider
+        return _vector_store
 
 
 def _get_llm_settings() -> tuple[int, float]:
@@ -573,7 +702,7 @@ def _init_vector_store_sync() -> bool:
     try:
         start = time.time()
         logger.info("Warmup: Initializing vector store (lazy mode)...")
-        with _startup_lock:
+        with vector_store_operation_lock, _startup_lock:
             if (
                 getattr(_warmup_generation_local, "generation", None) is not None
                 and _warmup_generation_local.generation != _startup_generation
@@ -796,26 +925,12 @@ def reset_providers() -> None:
             _openrouter_provider = None
             _lmstudio_provider = None
             speech_provider = _speech_provider
-            vector_store = _vector_store
             _speech_provider = None
             _achievement_system = None
-            _vector_store = None
-        _startup_state = {
-            "initialized": False,
-            "initializing": False,
-            "providers_ready": {
-                "speech": False,
-                "llm": False,
-                "achievement": False,
-                "vector_store": False,
-            },
-            "errors": [],
-            "startup_time_ms": 0,
-            "provider_metrics": {},
-        }
+        _startup_state = _new_startup_state()
 
     _release_speech_provider(speech_provider)
-    _close_vector_store(vector_store)
+    _detach_vector_store_for_reset(close=True)
     for provider in (ollama_provider, openrouter_provider, lmstudio_provider):
         _close_llm_provider(provider)
     logger.info("All providers reset")
@@ -842,8 +957,16 @@ def reset_llm_providers() -> None:
         _close_llm_provider(provider)
 
 
-async def reset_providers_async() -> None:
-    """Reset providers and await asynchronous transports during app shutdown."""
+async def reset_providers_async(
+    *, close_vector_store: bool = True, timeout_seconds: float | None = None
+) -> None:
+    """Reset providers and await asynchronous transports during app shutdown.
+
+    ``close_vector_store=False`` is reserved for a shutdown path whose
+    synchronous indexing worker outlives its cancelled asyncio wrapper. Closing
+    that store in that case would race the worker; the process is exiting, so
+    retaining the store is safer than use-after-close.
+    """
     global _ollama_provider, _openrouter_provider, _lmstudio_provider
     global _speech_provider, _achievement_system, _vector_store
     global _startup_state, _startup_generation
@@ -853,29 +976,29 @@ async def reset_providers_async() -> None:
         with _provider_lock:
             llm_providers = (_ollama_provider, _openrouter_provider, _lmstudio_provider)
             speech_provider = _speech_provider
-            vector_store = _vector_store
             _ollama_provider = None
             _openrouter_provider = None
             _lmstudio_provider = None
             _speech_provider = None
             _achievement_system = None
-            _vector_store = None
-        _startup_state = {
-            "initialized": False,
-            "initializing": False,
-            "providers_ready": {
-                "speech": False,
-                "llm": False,
-                "achievement": False,
-                "vector_store": False,
-            },
-            "errors": [],
-            "startup_time_ms": 0,
-            "provider_metrics": {},
-        }
+        _startup_state = _new_startup_state()
 
-    _close_vector_store(vector_store)
-    shutdown_timeout = max(float(config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS), 0.01)
+    deferred_store_done: threading.Event | None = None
+    if close_vector_store:
+        _detach_vector_store_for_reset(close=True)
+    else:
+        # Even when shutdown must not close an active store immediately, detach
+        # it from the singleton and queue it for cleanup after the operation.
+        deferred_store_done = _defer_vector_store_for_reset()
+        logger.warning("Deferring vector-store close until the indexing worker exits")
+    shutdown_timeout = max(
+        float(
+            config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS
+            if timeout_seconds is None
+            else timeout_seconds
+        ),
+        0.01,
+    )
     deadline = asyncio.get_running_loop().time() + shutdown_timeout
     remaining = deadline - asyncio.get_running_loop().time()
     if remaining > 0:
@@ -902,4 +1025,8 @@ async def reset_providers_async() -> None:
     remaining = deadline - asyncio.get_running_loop().time()
     if remaining > 0:
         await _drain_speech_release_workers(remaining)
+    if deferred_store_done is not None:
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining > 0:
+            await asyncio.to_thread(deferred_store_done.wait, remaining)
     logger.info("All providers reset")

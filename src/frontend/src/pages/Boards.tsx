@@ -123,7 +123,7 @@ export function Boards() {
     if (!students.length) {
       setStudentsLoading(true);
       try {
-        const res = await (await import('../lib/api')).default.get('/auth/users');
+        const res = await api.get('/auth/users');
         setStudents((res.data as User[]).filter(u => u.user_type === 'student'));
       } catch {
         setAssignError(t('loadStudentsError'));

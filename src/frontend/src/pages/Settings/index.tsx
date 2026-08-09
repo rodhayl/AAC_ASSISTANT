@@ -80,7 +80,7 @@ export function Settings() {
         filteredVoices={preferences.filteredVoices}
         showStatus={isAdmin}
       />
-      <AiProviderTab />
+      <AiProviderTab key={`${user?.id ?? 'anonymous'}:${user?.user_type ?? 'unknown'}`} />
       {isStaff && <LearningModesTab />}
       <DataManagementTab />
     </div>

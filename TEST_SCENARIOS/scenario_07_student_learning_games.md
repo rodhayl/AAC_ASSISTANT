@@ -733,4 +733,3 @@ No explicit cleanup needed as this is a read-only usage test. However:
 - `src/frontend/src/components/learning/LearningPage.tsx` - Learning page UI
 - `src/frontend/src/components/learning/LearningActivity.tsx` - Learning activity UI
 - `src/frontend/src/components/achievements/AchievementsPage.tsx` - Achievements page UI
-- `scripts/cdp_harness.py` - CDP harness for automation

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { Trophy, Star, Lock, CheckCircle, Settings, Plus, Pencil, Trash2, Award, X, Users } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import api, { extractError } from '../lib/api'
@@ -46,6 +46,14 @@ export function Achievements() {
     criteria_value: null,
   })
   const { t } = useTranslation('achievements')
+  const filteredStudents = useMemo(() => {
+    const search = studentSearch.trim().toLowerCase()
+    if (!search) return students
+    return students.filter((student) =>
+      student.display_name.toLowerCase().includes(search) ||
+      student.username.toLowerCase().includes(search),
+    )
+  }, [studentSearch, students])
 
   const isTeacherOrAdmin = user?.user_type === 'teacher' || user?.user_type === 'admin'
 
@@ -67,47 +75,27 @@ export function Achievements() {
     }
   }, [user])
 
-  const loadAllAchievements = useCallback(async () => {
+  const loadManagementData = useCallback(async () => {
     if (!isTeacherOrAdmin) return
-    try {
-      const res = await api.get('/achievements/')
-      setAllAchievements(res.data)
-    } catch (e) {
-      console.error('Failed to load all achievements', e)
-    }
-  }, [isTeacherOrAdmin])
+    setError(null)
 
-  const loadStudents = useCallback(async () => {
-    if (!isTeacherOrAdmin) return
-    try {
-      // For teachers, get their students; for admins, get all users (via same endpoint with role check)
-      const endpoint = '/users/students'
-      const res = await api.get(endpoint)
-      setStudents(res.data)
-    } catch (e) {
-      console.error('Failed to load students', e)
+    const labels = ['all achievements', 'students', 'categories', 'criteria types']
+    const requests = [
+      api.get('/achievements/').then((response) => setAllAchievements(response.data)),
+      api.get('/users/students').then((response) => setStudents(response.data)),
+      api.get('/achievements/categories').then((response) => setCategories(response.data)),
+      api.get('/achievements/criteria-types').then((response) => setCriteriaTypes(response.data)),
+    ]
+    const results = await Promise.allSettled(requests)
+    const failed = results.find((result) => result.status === 'rejected')
+    if (failed?.status === 'rejected') {
+      const failedIndex = results.indexOf(failed)
+      console.error(`Failed to load ${labels[failedIndex]}`, failed.reason)
+      setError(t('errors.managementLoadFailed', {
+        defaultValue: 'Some management data could not be loaded. Please try again.',
+      }))
     }
-  }, [isTeacherOrAdmin])
-
-  const loadCategories = useCallback(async () => {
-    if (!isTeacherOrAdmin) return
-    try {
-      const res = await api.get('/achievements/categories')
-      setCategories(res.data)
-    } catch (e) {
-      console.error('Failed to load categories', e)
-    }
-  }, [isTeacherOrAdmin])
-
-  const loadCriteriaTypes = useCallback(async () => {
-    if (!isTeacherOrAdmin) return
-    try {
-      const res = await api.get('/achievements/criteria-types')
-      setCriteriaTypes(res.data)
-    } catch (e) {
-      console.error('Failed to load criteria types', e)
-    }
-  }, [isTeacherOrAdmin])
+  }, [isTeacherOrAdmin, t])
 
   useEffect(() => {
     loadData()
@@ -115,12 +103,9 @@ export function Achievements() {
 
   useEffect(() => {
     if (showManage) {
-      loadAllAchievements()
-      loadStudents()
-      loadCategories()
-      loadCriteriaTypes()
+      void loadManagementData()
     }
-  }, [showManage, loadAllAchievements, loadStudents, loadCategories, loadCriteriaTypes])
+  }, [showManage, loadManagementData])
 
   const handleCheck = async () => {
     if (!user) return
@@ -141,9 +126,9 @@ export function Achievements() {
       await api.post('/achievements/', formData)
       setShowModal(false)
       resetForm()
-      loadAllAchievements()
-    } catch (e) {
-      console.error('Failed to create achievement', e)
+      void loadManagementData()
+    } catch (e: unknown) {
+      setError(extractError(e, t('errors.createFailed', { defaultValue: 'Failed to create achievement' })))
     }
   }
 
@@ -162,9 +147,9 @@ export function Achievements() {
       setShowModal(false)
       setEditingAchievement(null)
       resetForm()
-      loadAllAchievements()
-    } catch (e) {
-      console.error('Failed to update achievement', e)
+      void loadManagementData()
+    } catch (e: unknown) {
+      setError(extractError(e, t('errors.updateFailed', { defaultValue: 'Failed to update achievement' })))
     }
   }
 
@@ -172,9 +157,9 @@ export function Achievements() {
     if (!confirm(t('confirmDelete', 'Are you sure you want to delete this achievement?'))) return
     try {
       await api.delete(`/achievements/${id}`)
-      loadAllAchievements()
-    } catch (e) {
-      console.error('Failed to delete achievement', e)
+      void loadManagementData()
+    } catch (e: unknown) {
+      setError(extractError(e, t('errors.deleteFailed', { defaultValue: 'Failed to delete achievement' })))
     }
   }
 
@@ -185,7 +170,7 @@ export function Achievements() {
       setShowAwardModal(false)
       setAwardingAchievementId(null)
       setSelectedStudentId(null)
-      loadAllAchievements()
+      void loadManagementData()
     } catch (e: unknown) {
       const msg = extractError(e, 'Failed to award')
       alert(msg)
@@ -536,18 +521,12 @@ export function Achievements() {
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-t-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
               <div className="max-h-60 overflow-y-auto border-x border-b border-gray-300 dark:border-gray-600 rounded-b-lg bg-white dark:bg-gray-700">
-                {students.filter(s =>
-                  s.display_name.toLowerCase().includes(studentSearch.toLowerCase()) ||
-                  s.username.toLowerCase().includes(studentSearch.toLowerCase())
-                ).length === 0 ? (
+                {filteredStudents.length === 0 ? (
                   <div className="p-3 text-sm text-gray-500 dark:text-gray-400 text-center">
                     {t('noStudents', 'No students found')}
                   </div>
                 ) : (
-                  students.filter(s =>
-                    s.display_name.toLowerCase().includes(studentSearch.toLowerCase()) ||
-                    s.username.toLowerCase().includes(studentSearch.toLowerCase())
-                  ).map(s => (
+                  filteredStudents.map(s => (
                     <div
                       key={s.id}
                       onClick={() => setSelectedStudentId(s.id)}

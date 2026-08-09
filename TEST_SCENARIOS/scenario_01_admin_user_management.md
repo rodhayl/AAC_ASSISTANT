@@ -575,4 +575,3 @@ No explicit cleanup needed as the test deletes the created users. However, if th
 - `src/api/routers/users.py` - User management API endpoints
 - `src/api/routers/admin.py` - Admin-specific endpoints
 - `src/frontend/src/components/admin/UserManagement.tsx` - User management UI
-- `scripts/cdp_harness.py` - CDP harness for automation

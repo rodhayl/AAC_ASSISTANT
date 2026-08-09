@@ -128,7 +128,9 @@ class Settings(BaseSettings):
     AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN: bool = True
     AAC_BOOTSTRAP_ADMIN_USERNAME: str = "admin1"
     AAC_BOOTSTRAP_ADMIN_PASSWORD: str = "Admin123"
-    AAC_ENABLE_SYMBOL_IMAGE_BACKFILL: bool = True
+    # Image backfill is maintenance work; keep it opt-in so normal startup
+    # does not perform avoidable network and database work.
+    AAC_ENABLE_SYMBOL_IMAGE_BACKFILL: bool = False
     AAC_SYMBOL_IMAGE_BACKFILL_LIMIT: int = 100
 
     # Optional deterministic passwords are intentionally unset by default.

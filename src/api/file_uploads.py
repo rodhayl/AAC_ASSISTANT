@@ -135,29 +135,6 @@ async def save_audio_upload(
         raise
 
 
-async def read_audio_upload(
-    upload: UploadFile,
-    *,
-    max_bytes: int = DEFAULT_MAX_AUDIO_BYTES,
-    invalid_type_detail: str,
-    too_large_detail: str,
-    empty_detail: str,
-) -> bytes:
-    """Read bounded audio and reject content that does not match its container."""
-    content = await read_upload_bytes(
-        upload,
-        max_bytes=max_bytes,
-        allowed_content_types=ALLOWED_AUDIO_CONTENT_TYPES,
-        invalid_type_detail=invalid_type_detail,
-        too_large_detail=too_large_detail,
-        empty_detail=empty_detail,
-    )
-    content_type = (upload.content_type or "").split(";", 1)[0].strip().lower()
-    if not _has_audio_signature(content, content_type):
-        raise HTTPException(status_code=400, detail=invalid_type_detail)
-    return content
-
-
 async def read_image_upload(
     upload: UploadFile,
     *,

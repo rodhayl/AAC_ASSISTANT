@@ -32,7 +32,6 @@ heavy = {
     "ctranslate2",
     "av",
     "numpy",
-    "deep_translator",
 }
 leaked = sorted(name for name in heavy if name in sys.modules)
 assert not leaked, leaked

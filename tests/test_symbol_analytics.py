@@ -118,6 +118,53 @@ def test_frequent_sequences_preserves_session_and_time_boundaries(
     assert sequences[0]["count"] == 2
 
 
+def test_frequent_sequences_breaks_after_multi_day_gap(
+    test_db_session, regular_user
+):
+    """A gap of more than five minutes must not be reduced modulo one day."""
+    session = LearningSession(user_id=regular_user.id, topic_name="long-gap")
+    test_db_session.add(session)
+    test_db_session.flush()
+    start = datetime(2024, 1, 1, 12, 0, 0)
+    _add_log(
+        test_db_session,
+        user_id=regular_user.id,
+        label="I",
+        symbol_id=None,
+        position=0,
+        session_id=session.id,
+        timestamp=start,
+    )
+    _add_log(
+        test_db_session,
+        user_id=regular_user.id,
+        label="want",
+        symbol_id=None,
+        position=1,
+        session_id=session.id,
+        timestamp=start + timedelta(seconds=1),
+    )
+    _add_log(
+        test_db_session,
+        user_id=regular_user.id,
+        label="cookie",
+        symbol_id=None,
+        position=2,
+        session_id=session.id,
+        timestamp=start + timedelta(days=1),
+    )
+    test_db_session.commit()
+
+    sequences = SymbolAnalytics().get_frequent_sequences(
+        regular_user.id,
+        limit=5,
+        min_occurrences=1,
+        db=test_db_session,
+    )
+
+    assert [item["sequence"] for item in sequences] == ["I → want"]
+
+
 def test_suggest_next_symbol_handles_null_sessions_and_duplicate_next_rows(
     test_db_session, regular_user
 ):

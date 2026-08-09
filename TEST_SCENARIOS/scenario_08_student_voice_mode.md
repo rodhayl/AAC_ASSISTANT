@@ -815,4 +815,3 @@ No explicit cleanup needed as this is a read-only usage test. However:
 - `src/frontend/src/components/voice/VoiceMode.tsx` - Voice mode UI
 - `src/frontend/src/components/SettingsManager.tsx` - Settings UI
 - `src/aac_app/providers/local_speech_provider.py` - Local speech provider
-- `scripts/cdp_harness.py` - CDP harness for automation

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -57,7 +57,11 @@ def prune_completed_learning_sessions(
     This never touches active sessions and defaults to dry-run so operators must
     explicitly opt into destructive retention behavior.
     """
-    cutoff = datetime.now() - timedelta(days=max(0, older_than_days))
+    # Legacy learning-session columns are naive DateTime values stored as UTC.
+    # Compare them with the same UTC-naive representation across databases.
+    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(
+        days=max(0, older_than_days)
+    )
     query = db.query(LearningSession).filter(
         LearningSession.status == "completed",
         LearningSession.ended_at.is_not(None),

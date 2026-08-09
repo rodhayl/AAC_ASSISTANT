@@ -1,6 +1,13 @@
 from fastapi.testclient import TestClient
 
-from src.aac_app.models import Achievement, BoardSymbol, CommunicationBoard, Symbol
+from src.aac_app.models import (
+    Achievement,
+    BoardAssignment,
+    BoardSymbol,
+    CommunicationBoard,
+    Symbol,
+    User,
+)
 from src.api.main import app
 
 
@@ -76,6 +83,71 @@ def test_board_list_includes_positioned_symbols(
             },
         }
     ]
+
+
+def test_delete_board_removes_assignments(
+    setup_test_db, test_db_session, admin_user, admin_token
+):
+    board = CommunicationBoard(
+        user_id=admin_user.id,
+        name="Assigned board",
+        description="Assignment deletion regression",
+    )
+    test_db_session.add(board)
+    test_db_session.flush()
+
+    student = User(
+        username="board-delete-student",
+        display_name="Board Delete Student",
+        user_type="student",
+        password_hash="unused",
+        is_active=True,
+    )
+    test_db_session.add(student)
+    test_db_session.flush()
+    assignment = BoardAssignment(board_id=board.id, student_id=student.id)
+    test_db_session.add(assignment)
+    test_db_session.commit()
+
+    client = TestClient(app)
+    response = client.delete(f"/api/boards/{board.id}", headers=_headers(admin_token))
+
+    assert response.status_code == 200
+    assert test_db_session.query(BoardAssignment).filter_by(board_id=board.id).count() == 0
+
+
+def test_delete_board_clears_incoming_links(
+    setup_test_db, test_db_session, admin_user, admin_token
+):
+    target = CommunicationBoard(
+        user_id=admin_user.id,
+        name="Linked target",
+        description="Incoming link target",
+    )
+    source = CommunicationBoard(
+        user_id=admin_user.id,
+        name="Linked source",
+        description="Incoming link source",
+    )
+    test_db_session.add_all([target, source])
+    test_db_session.flush()
+    symbol = Symbol(label="Linked symbol", category="general")
+    test_db_session.add(symbol)
+    test_db_session.flush()
+    placement = BoardSymbol(
+        board_id=source.id,
+        symbol_id=symbol.id,
+        linked_board_id=target.id,
+    )
+    test_db_session.add(placement)
+    test_db_session.commit()
+
+    client = TestClient(app)
+    response = client.delete(f"/api/boards/{target.id}", headers=_headers(admin_token))
+
+    assert response.status_code == 200
+    test_db_session.refresh(placement)
+    assert placement.linked_board_id is None
 
 
 def test_export_delete_import_round_trip_lists_restored_symbols(

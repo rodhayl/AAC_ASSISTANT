@@ -107,18 +107,6 @@ def get_current_admin_user(
     return current_user
 
 
-def get_current_admin_or_teacher_user(
-    current_user: User = Depends(get_current_active_user),
-) -> User:
-    """Require an active administrator or teacher account."""
-    if current_user.user_type not in ["admin", "teacher"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=get_text(user=current_user, key="errors.insufficientPrivileges"),
-        )
-    return current_user
-
-
 def verify_student_access(student_id: int, current_user: User, db: Session) -> User:
     """Verify the student exists and the current user can access their profile.
 

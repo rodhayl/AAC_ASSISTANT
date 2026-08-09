@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from src import config
 from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol, SymbolUsageLog, User
 from src.aac_app.services.achievement_system import AchievementSystem
+from src.aac_app.services.local_vector_store import vector_store_operation_lock
 from src.aac_app.services.vector_utils import delete_symbol as delete_symbol_embedding
 from src.aac_app.services.vector_utils import index_symbol
 from src.api import schemas
@@ -46,9 +47,13 @@ def _apply_symbol_search(query, search: str, db: Session):
     try:
         from src.api.deps import get_vector_store
 
-        vs = get_vector_store()
-        if vs and len(search) > 3:
-            semantic_results = vs.search(search, k=20)
+        vs = None
+        semantic_results = []
+        if len(search) > 3:
+            with vector_store_operation_lock:
+                vs = get_vector_store()
+                semantic_results = vs.search(search, k=20) if vs else []
+        if vs and semantic_results:
             semantic_ids = [
                 item["id"]
                 for item in semantic_results
@@ -91,8 +96,8 @@ def _apply_symbol_search(query, search: str, db: Session):
 
 @router.get("/symbols", response_model=list[schemas.SymbolResponse])
 def get_symbols(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0, le=100_000),
+    limit: int = Query(100, ge=1, le=1000),
     category: str = None,
     search: str = None,
     keywords: str = None,

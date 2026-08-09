@@ -8,7 +8,6 @@ from .access import (
 )
 from .auth import (
     get_current_active_user,
-    get_current_admin_or_teacher_user,
     get_current_admin_user,
     get_current_user,
     get_text,
@@ -52,7 +51,6 @@ __all__ = [
     "get_achievement_system",
     "get_board_generation_service",
     "get_current_active_user",
-    "get_current_admin_or_teacher_user",
     "get_current_admin_user",
     "get_current_user",
     "require_board_owner_or_admin",

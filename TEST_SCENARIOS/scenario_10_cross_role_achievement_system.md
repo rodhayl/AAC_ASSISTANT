@@ -935,4 +935,3 @@ print("Achievement system working correctly across all roles")
 - `src/frontend/src/components/achievements/AchievementsPage.tsx` - Achievements page UI
 - `src/frontend/src/components/achievements/Leaderboard.tsx` - Leaderboard UI
 - `src/frontend/src/components/admin/StudentProfile.tsx` - Student profile UI
-- `scripts/cdp_harness.py` - CDP harness for automation

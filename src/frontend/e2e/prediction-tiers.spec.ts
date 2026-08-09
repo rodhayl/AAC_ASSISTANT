@@ -22,7 +22,7 @@ test.describe('Prediction Tiers', () => {
         if (!token) console.log("Warning: Token not found in admin.json auth-storage");
 
         const request = await playwrightRequest.newContext({
-            baseURL: 'http://127.0.0.1:8086',
+            baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:8086',
             extraHTTPHeaders: { 'Authorization': `Bearer ${token}` }
         });
 
@@ -83,7 +83,7 @@ test.describe('Prediction Tiers', () => {
 
         // Create board
         try {
-            const symResp = await request.get('/api/boards/symbols?limit=3000');
+            const symResp = await request.get('/api/boards/symbols?limit=1000');
             const allSymbols = await symResp.json();
             const items = Array.isArray(allSymbols) ? allSymbols : (allSymbols.items || allSymbols.data || []);
             const symbolMap = new Map(items.map((s: any) => [s.label, s.id]));

@@ -19,6 +19,10 @@ from src.aac_app.models import (
     User,
     UserAchievement,
 )
+from src.aac_app.services.achievement_catalog import (
+    INITIAL_ACHIEVEMENT_KEYS,
+    PREDEFINED_ACHIEVEMENTS,
+)
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -229,26 +233,18 @@ def _create_sample_achievements(session: Session) -> None:
     """Create the three system achievements without duplicating them."""
     sample_achievements = [
         {
-            "name": "First Steps",
-            "description": "Complete your first learning session",
-            "category": "beginner",
-            "criteria_type": "sessions_completed",
-            "criteria_value": 1,
-        },
-        {
-            "name": "Vocabulary Explorer",
-            "description": "Learn 10 new words",
-            "category": "vocabulary",
-            "criteria_type": "vocabulary_size",
-            "criteria_value": 10,
-        },
-        {
-            "name": "Quick Learner",
-            "description": "Answer 5 questions correctly",
-            "category": "performance",
-            "criteria_type": "correct_answers",
-            "criteria_value": 5,
-        },
+            field: PREDEFINED_ACHIEVEMENTS[key][field]
+            for field in (
+                "name",
+                "description",
+                "category",
+                "criteria_type",
+                "criteria_value",
+                "points",
+                "icon",
+            )
+        }
+        for key in INITIAL_ACHIEVEMENT_KEYS
     ]
 
     for values in sample_achievements:
@@ -264,15 +260,19 @@ def _create_sample_achievements(session: Session) -> None:
             .order_by(Achievement.id)
             .all()
         )
-        if not matches:
+        system_matches = [match for match in matches if match.created_by is None]
+        if not system_matches:
             session.add(Achievement(**values))
             continue
 
         # Older releases inserted the same system rows on every boot. Keep
-        # the first row as the stable definition and move any earned records
-        # before removing duplicate seed rows.
-        canonical = matches[0]
-        for duplicate in matches[1:]:
+        # the first system row as the stable definition and move any earned
+        # records before removing duplicate system rows. Custom achievements
+        # with the same definition are intentionally left untouched.
+        canonical = system_matches[0]
+        canonical.points = values["points"]
+        canonical.icon = values["icon"]
+        for duplicate in system_matches[1:]:
             session.query(UserAchievement).filter(
                 UserAchievement.achievement_id == duplicate.id
             ).update(

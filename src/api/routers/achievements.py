@@ -1,7 +1,7 @@
 from contextlib import nullcontext
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 from sqlalchemy.orm import Session
 
@@ -403,7 +403,7 @@ def get_user_points(
 
 @router.get("/leaderboard", response_model=list[schemas.LeaderboardEntry])
 def get_leaderboard(
-    limit: int = 10,
+    limit: int = Query(10, ge=1, le=100),
     system: AchievementSystem = Depends(get_achievement_system),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),

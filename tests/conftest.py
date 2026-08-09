@@ -14,18 +14,10 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
-from src.aac_app import db as database
 from src.aac_app.models import Base, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.api.deps import clear_settings_cache, get_db
 from src.api.main import app
-
-
-@pytest.fixture(scope="session", autouse=True)
-def cleanup_process_resources():
-    """Dispose process-wide database resources after all tests finish."""
-    yield
-    database.dispose_engine_instance()
 
 
 @pytest.fixture(scope="function")
@@ -58,9 +50,7 @@ def test_db_engine(tmp_path: Path, monkeypatch, reset_production_db):
 
     yield engine
 
-    # This finalizer runs after dependent sessions have closed. Dispose any
-    # process-wide engine opened by API/service code before forcing collection.
-    database.dispose_engine_instance()
+    # This finalizer runs after dependent sessions have closed.
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
 

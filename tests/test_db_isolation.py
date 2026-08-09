@@ -6,7 +6,6 @@ from sqlalchemy import text
 from src.aac_app.db import (
     create_engine_instance,
     create_session_factory,
-    dispose_engine_instance,
 )
 
 
@@ -45,14 +44,8 @@ def test_database_isolation(test_db_session, monkeypatch, tmp_path):
     alternate_path = tmp_path / "alternate.sqlite3"
     alternate_url = f"sqlite:///{alternate_path.as_posix()}"
     monkeypatch.setenv("DATABASE_URL", alternate_url)
-    try:
-        engine_file = create_engine_instance()
-        assert str(engine_file.url) == alternate_url
-    finally:
-        # This test temporarily replaces the process-wide engine. Clear the
-        # replacement completely; the next database access recreates it for the
-        # restored URL and no disposed reference survives this test.
-        dispose_engine_instance()
+    engine_file = create_engine_instance()
+    assert str(engine_file.url) == alternate_url
 
 
 def test_session_factory_is_cached():

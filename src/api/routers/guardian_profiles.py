@@ -13,7 +13,7 @@ The guardian profile system allows teachers/admins to:
 """
 
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
@@ -373,7 +373,7 @@ async def delete_student_profile(
 )
 async def get_profile_history(
     student_id: int,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=100),
     current_user: User = Depends(get_current_teacher_or_admin),
     db: Session = Depends(get_db),
 ):

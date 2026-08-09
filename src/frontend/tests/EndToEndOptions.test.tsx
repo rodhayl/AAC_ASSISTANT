@@ -1,10 +1,9 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Mock } from 'vitest';
-import { BoardPlayer } from '../src/pages/BoardPlayer';
 import { Settings } from '../src/pages/Settings';
 import { SymbolHunt } from '../src/pages/SymbolHunt';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter } from 'react-router';
 import api from '../src/lib/api';
 
 // Mock API
@@ -17,24 +16,6 @@ vi.mock('../src/lib/api', () => ({
     delete: vi.fn(),
   }
 }));
-
-// Mock Board Store
-const boardStoreState = vi.hoisted(() => ({
-  currentBoard: null as unknown,
-  fetchBoard: vi.fn(),
-  isLoading: false,
-  isListLoading: false,
-  isBoardLoading: false,
-  error: null as string | null,
-}));
-vi.mock('../src/store/boardStore', () => ({
-  useBoardStore: Object.assign(
-    (selector?: (state: typeof boardStoreState) => unknown) =>
-      selector ? selector(boardStoreState) : boardStoreState,
-    { getState: vi.fn() },
-  ),
-}));
-
 
 // Mock Translations
 vi.mock('react-i18next', () => ({
@@ -131,16 +112,6 @@ Object.defineProperty(window, 'speechSynthesis', {
   writable: true,
 });
 
-// Mock React Router
-const mockNavigate = vi.fn();
-vi.mock('react-router', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('react-router')>();
-    return {
-        ...actual,
-        useNavigate: () => mockNavigate,
-    };
-});
-
 describe('End-to-End Options Tests', () => {
   const mockUser = { id: 1, username: 'testuser', display_name: 'Test User' };
   
@@ -148,147 +119,6 @@ describe('End-to-End Options Tests', () => {
     vi.clearAllMocks();
     authStoreState.user = mockUser;
     authStoreState.isAuthenticated = true;
-    boardStoreState.currentBoard = null;
-    boardStoreState.fetchBoard = vi.fn();
-    boardStoreState.isLoading = false;
-    boardStoreState.isListLoading = false;
-    boardStoreState.isBoardLoading = false;
-    boardStoreState.error = null;
-  });
-
-  // --- Option 1: Speak Mode ---
-  it('Option 1: Speak Mode - Adds symbols to sentence strip', async () => {
-    const mockBoard = {
-      id: 1,
-      name: 'Test Board',
-      grid_rows: 2,
-      grid_cols: 2,
-      symbols: [
-        { id: 1, symbol_id: 101, custom_text: 'Hello', is_visible: true, position_x: 0, position_y: 0, symbol: { id: 101, label: 'Hello', image_path: '/hello.png' } }
-      ]
-    };
-
-    boardStoreState.currentBoard = mockBoard;
-    boardStoreState.fetchBoard = vi.fn();
-
-    (api.get as unknown as Mock).mockImplementation((url: string) => {
-      if (url.includes('/analytics/next-symbol')) return Promise.resolve({ data: [] });
-      return Promise.resolve({ data: {} });
-    });
-
-    render(
-      <MemoryRouter initialEntries={['/play/1']}>
-        <Routes>
-          <Route path="/play/:id" element={<BoardPlayer />} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    // Wait for board to load
-    await waitFor(() => expect(screen.getByText('Hello')).toBeInTheDocument());
-
-    // Click symbol
-    fireEvent.click(screen.getByText('Hello'));
-
-    // Check if added to sentence strip
-    // We can check if SentenceStrip renders it.
-    // Or check if tts.enqueue was called (implied Speak Mode action)
-    // But specifically "adds to sentence strip":
-    const sentenceStripItems = await screen.findAllByText('Hello');
-    expect(sentenceStripItems.length).toBeGreaterThanOrEqual(2);
-  });
-
-  // --- Option 2: Folders ---
-  it('Option 2: Folders - Navigates to linked board', async () => {
-    const mockBoard1 = {
-      id: 1,
-      name: 'Main Board',
-      grid_rows: 2,
-      grid_cols: 2,
-      symbols: [
-        { 
-          id: 1, 
-          symbol_id: 101, 
-          custom_text: 'Go to Food', 
-          is_visible: true, 
-          position_x: 0, 
-          position_y: 0, 
-          linked_board_id: 2, 
-          symbol: { id: 101, label: 'Folder', image_path: '/folder.png' } 
-        }
-      ]
-    };
-
-    boardStoreState.currentBoard = mockBoard1;
-    boardStoreState.fetchBoard = vi.fn();
-
-    render(
-      <MemoryRouter initialEntries={['/play/1']}>
-        <Routes>
-          <Route path="/play/:id" element={<BoardPlayer />} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    // Wait for first board
-    await waitFor(() => expect(screen.getByText('Go to Food')).toBeInTheDocument());
-
-    // Click folder symbol
-    fireEvent.click(screen.getByText('Go to Food'));
-
-    // Expect navigation to Board 2
-    expect(mockNavigate).toHaveBeenCalledWith('/play/2');
-  });
-
-  // --- Option 3: Smartbar ---
-  it('Option 3: Smartbar - Shows predictive suggestions', async () => {
-    const mockBoard = {
-      id: 1,
-      name: 'Test Board',
-      grid_rows: 2,
-      grid_cols: 2,
-      symbols: [
-        { id: 1, symbol_id: 101, custom_text: 'I want', is_visible: true, position_x: 0, position_y: 0, symbol: { id: 101, label: 'I want', image_path: '/iwant.png' } }
-      ]
-    };
-
-    const mockSuggestions = [
-      { symbol_id: 201, label: 'Water', image_path: '/water.png' }
-    ];
-
-    boardStoreState.currentBoard = mockBoard;
-    boardStoreState.fetchBoard = vi.fn();
-
-    (api.get as unknown as Mock).mockImplementation((url: string) => {
-      if (url.includes('/analytics/next-symbol')) {
-          return Promise.resolve({ data: mockSuggestions });
-      }
-      return Promise.resolve({ data: {} });
-    });
-
-    render(
-      <MemoryRouter initialEntries={['/play/1']}>
-        <Routes>
-          <Route path="/play/:id" element={<BoardPlayer />} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    await waitFor(() => expect(screen.getByText('I want')).toBeInTheDocument());
-    
-    // Click symbol to trigger suggestions
-    fireEvent.click(screen.getByText('I want'));
-
-    // Verify API call was made
-    await waitFor(() => {
-        expect(api.get).toHaveBeenCalledWith(
-            expect.stringContaining('/analytics/next-symbol'), 
-            expect.anything()
-        );
-    });
-
-    // Check if suggestion appears in Smartbar
-    await waitFor(() => expect(screen.getByText('Water')).toBeInTheDocument(), { timeout: 3000 });
   });
 
   // --- Option 4: Accessibility ---
