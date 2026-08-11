@@ -19,21 +19,11 @@ class BaseLLMProvider(ABC):
         """Get the current model"""
         return self._model or self.get_default_model()
 
-    def set_model(self, model: str):
-        """Set the default model for generation"""
-        self._model = model
-        self.on_model_changed(model)
-
     @abstractmethod
     def get_default_model(
         self,
     ) -> str:
         """Return the default model for this provider"""
-
-    def on_model_changed(
-        self, model: str
-    ):
-        """Hook called when model is changed (override in subclass)"""
 
     @abstractmethod
     async def generate(

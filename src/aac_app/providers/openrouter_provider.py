@@ -34,11 +34,6 @@ class OpenRouterProvider(BaseLLMProvider):
         """Get the default model for this provider"""
         return self.default_model
 
-    def on_model_changed(self, model: str):
-        """Update internal model when changed"""
-        self.default_model = model
-        logger.info(f"OpenRouter default model set to {model}")
-
     def is_configured(self) -> bool:
         """Check if OpenRouter is properly configured"""
         return self.api_key is not None and len(self.api_key.strip()) > 0

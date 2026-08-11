@@ -1,6 +1,5 @@
 import asyncio
 import json
-from collections.abc import Callable
 
 import httpx
 from loguru import logger
@@ -57,11 +56,6 @@ class OllamaProvider(BaseLLMProvider):
     def get_default_model(self) -> str:
         """Get the default model for this provider"""
         return self.recommended_model
-
-    def on_model_changed(self, model: str):
-        """Update internal model when changed"""
-        self.recommended_model = model
-        logger.info(f"Ollama default model set to {model}")
 
     async def generate(
         self,
@@ -165,96 +159,6 @@ class OllamaProvider(BaseLLMProvider):
             logger.error(f"Unexpected response format from Ollama: {e}")
             raise ValueError("Unexpected response format from Ollama")
 
-    async def generate_streaming(
-        self,
-        prompt: str,
-        callback: Callable[[str], None],
-        model: str = None,
-        system: str = None,
-        **kwargs,
-    ):
-        """Stream generated text"""
-
-        if not model:
-            model = self.recommended_model
-
-        messages = []
-        if system:
-            messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
-
-        try:
-            logger.debug(f"Streaming generation with model {model}")
-
-            async with self.client.stream(
-                "POST",
-                f"{self.base_url}/api/chat",
-                json={"model": model, "messages": messages, "stream": True},
-            ) as response:
-                response.raise_for_status()
-
-                async for line in response.aiter_lines():
-                    if line.strip():
-                        try:
-                            data = json.loads(line)
-                            if "message" in data and "content" in data["message"]:
-                                callback(data["message"]["content"])
-                        except json.JSONDecodeError:
-                            logger.warning(
-                                f"Failed to parse streaming response line: {line}"
-                            )
-
-        except httpx.RequestError as e:
-            logger.error(f"Ollama streaming request failed: {e}")
-            raise ConnectionError(f"Failed to connect to Ollama at {self.base_url}")
-
-    def generate_sync(
-        self,
-        prompt: str,
-        model: str = None,
-        system: str = None,
-        temperature: float = 0.7,
-        max_tokens: int = 500,
-        **kwargs,
-    ) -> str:
-        """Synchronous text generation (for non-async contexts)"""
-
-        if not model:
-            model = self.recommended_model
-
-        messages = []
-        if system:
-            messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
-
-        try:
-            logger.debug(f"Sync generation with model {model}")
-
-            response = self.sync_client.post(
-                f"{self.base_url}/api/chat",
-                json={
-                    "model": model,
-                    "messages": messages,
-                    "stream": False,
-                    "options": {
-                        "temperature": temperature,
-                        "num_predict": max_tokens,
-                        **kwargs,
-                    },
-                },
-            )
-
-            response.raise_for_status()
-            result = response.json()
-            return result["message"]["content"]
-
-        except httpx.TimeoutException as e:
-            logger.error(f"Ollama sync timeout: {e}")
-            raise ConnectionError(f"Ollama timed out at {self.base_url}.")
-        except httpx.RequestError as e:
-            logger.error(f"Ollama sync request failed: {e}")
-            raise ConnectionError(f"Failed to connect to Ollama at {self.base_url}")
-
     def list_models(self) -> list[str]:
         """List installed Ollama models"""
         try:
@@ -283,18 +187,6 @@ class OllamaProvider(BaseLLMProvider):
         except Exception as e:
             logger.debug(f"Ollama not available: {e}")
             return False
-
-    def get_model_info(self, model: str) -> dict | None:
-        """Get information about a specific model"""
-        try:
-            response = self.sync_client.get(
-                f"{self.base_url}/api/show", params={"name": model}
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"Failed to get model info for {model}: {e}")
-            return None
 
     def _consume_close_task(self, task: asyncio.Task) -> None:
         """Retrieve background close failures so they are never unhandled."""

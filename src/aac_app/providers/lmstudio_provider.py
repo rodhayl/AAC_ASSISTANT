@@ -40,8 +40,3 @@ class LMStudioProvider(OpenRouterProvider):
         except Exception as e:
             logger.error(f"LM Studio get_models failed: {e}")
             return {"data": []}
-
-    def on_model_changed(self, model: str):
-        """Update internal model when changed"""
-        self.default_model = model
-        logger.info(f"LM Studio default model set to {model}")
