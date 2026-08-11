@@ -30,6 +30,20 @@ def create_user(session, username, role, password="password123"):
     return user
 
 
+def test_unassigned_teacher_cannot_access_student_with_empty_roster(
+    test_db_session: Session, setup_test_db
+):
+    teacher = create_user(test_db_session, "empty_roster_teacher", "teacher")
+    student = create_user(test_db_session, "private_student", "student")
+
+    response = client.get(
+        f"/api/guardian-profiles/students/{student.id}",
+        headers=get_auth_header(teacher),
+    )
+
+    assert response.status_code == 403
+
+
 def test_teacher_student_access(test_db_session: Session, setup_test_db):
     # Create users
     admin = create_user(test_db_session, "admin1", "admin")

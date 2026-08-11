@@ -52,7 +52,13 @@ def create_admin_for_tests(test_db_session, test_password) -> tuple[dict, str]:
     return {"id": admin.id, "username": admin.username}, token
 
 
-def create_user(username: str, user_type: str, password: str, admin_token: str = None) -> dict:
+def create_user(
+    username: str,
+    user_type: str,
+    password: str,
+    admin_token: str = None,
+    assigned_teacher_id: int | None = None,
+) -> dict:
     """Create a user and return their info including ID."""
     # Students can self-register
     if user_type == "student":
@@ -67,6 +73,17 @@ def create_user(username: str, user_type: str, password: str, admin_token: str =
         )
         assert response.status_code == 200, f"Failed to create student: {response.text}"
         data = response.json()
+        if assigned_teacher_id is not None:
+            from src.aac_app.services.guardian_profile_service import get_session
+
+            with get_session() as db:
+                db.add(
+                    StudentTeacher(
+                        student_id=data["id"],
+                        teacher_id=assigned_teacher_id,
+                    )
+                )
+                db.commit()
         _USER_CONTEXT[data["id"]] = (data["username"], data["user_type"])
         return data
 
@@ -114,6 +131,15 @@ def create_user(username: str, user_type: str, password: str, admin_token: str =
     return data
 
 
+def assign_student_to_teacher(student: dict, teacher: dict) -> None:
+    """Create the explicit roster relationship required by staff access checks."""
+    from src.aac_app.services.guardian_profile_service import get_session
+
+    with get_session() as db:
+        db.add(StudentTeacher(student_id=student["id"], teacher_id=teacher["id"]))
+        db.commit()
+
+
 def get_auth_header(user_id: int, username: str = None, user_type: str = None) -> dict:
     """Get authorization header for a user."""
     if username is None or user_type is None:
@@ -149,6 +175,7 @@ class TestAccessControl:
         admin, admin_token = create_admin_for_tests(test_db_session, test_password)
         student = create_user("student_ac2", "student", test_password)
         teacher = create_user("teacher_ac2", "teacher", test_password, admin_token)
+        assign_student_to_teacher(student, teacher)
 
         # Teacher creates profile for student
         response = client.post(
@@ -189,7 +216,7 @@ class TestAccessControl:
     def test_teacher_can_access_profiles(self, test_password):
         """Teachers should be able to access guardian profiles."""
         teacher = create_user("teacher_ac5", "teacher", test_password)
-        create_user("student_ac5", "student", test_password)
+        create_user("student_ac5", "student", test_password, assigned_teacher_id=teacher["id"])
 
         # List templates
         response = client.get(
@@ -229,6 +256,7 @@ class TestAccessControl:
         admin = create_user("admin_ac7", "admin", test_password)
         teacher = create_user("teacher_ac7", "teacher", test_password)
         student = create_user("student_ac7", "student", test_password)
+        assign_student_to_teacher(student, teacher)
 
         # Create profile
         response = client.post(
@@ -327,7 +355,7 @@ class TestProfileCRUD:
     def test_create_profile(self, test_password):
         """Should create a profile for a student."""
         teacher = create_user("teacher_c1", "teacher", test_password)
-        student = create_user("student_c1", "student", test_password)
+        student = create_user("student_c1", "student", test_password, assigned_teacher_id=teacher["id"])
 
         response = client.post(
             f"/api/guardian-profiles/students/{student['id']}",
@@ -353,7 +381,7 @@ class TestProfileCRUD:
     def test_create_profile_duplicate_conflict(self, test_password):
         """Should return 409 when profile already exists."""
         teacher = create_user("teacher_c2", "teacher", test_password)
-        student = create_user("student_c2", "student", test_password)
+        student = create_user("student_c2", "student", test_password, assigned_teacher_id=teacher["id"])
 
         # Create first profile
         response = client.post(
@@ -374,7 +402,7 @@ class TestProfileCRUD:
     def test_get_profile(self, test_password):
         """Should retrieve an existing profile."""
         teacher = create_user("teacher_c3", "teacher", test_password)
-        student = create_user("student_c3", "student", test_password)
+        student = create_user("student_c3", "student", test_password, assigned_teacher_id=teacher["id"])
 
         # Create profile
         client.post(
@@ -397,7 +425,7 @@ class TestProfileCRUD:
     def test_get_profile_not_found(self, test_password):
         """Should return 404 when profile doesn't exist."""
         teacher = create_user("teacher_c4", "teacher", test_password)
-        student = create_user("student_c4", "student", test_password)
+        student = create_user("student_c4", "student", test_password, assigned_teacher_id=teacher["id"])
 
         response = client.get(
             f"/api/guardian-profiles/students/{student['id']}",
@@ -409,7 +437,7 @@ class TestProfileCRUD:
     def test_update_profile(self, test_password):
         """Should update an existing profile."""
         teacher = create_user("teacher_c5", "teacher", test_password)
-        student = create_user("student_c5", "student", test_password)
+        student = create_user("student_c5", "student", test_password, assigned_teacher_id=teacher["id"])
 
         # Create profile
         client.post(
@@ -437,7 +465,7 @@ class TestProfileCRUD:
     def test_update_profile_no_changes_error(self, test_password):
         """Should return 400 when no changes provided."""
         teacher = create_user("teacher_c6", "teacher", test_password)
-        student = create_user("student_c6", "student", test_password)
+        student = create_user("student_c6", "student", test_password, assigned_teacher_id=teacher["id"])
 
         # Create profile
         client.post(
@@ -507,7 +535,7 @@ class TestProfileResolution:
     def test_effective_profile_with_template_only(self, test_password):
         """Should return template defaults when no overrides."""
         teacher = create_user("teacher_r1", "teacher", test_password)
-        student = create_user("student_r1", "student", test_password)
+        student = create_user("student_r1", "student", test_password, assigned_teacher_id=teacher["id"])
 
         # Create profile with just template
         client.post(
@@ -530,7 +558,7 @@ class TestProfileResolution:
     def test_effective_profile_with_overrides(self, test_password):
         """Should merge overrides with template defaults."""
         teacher = create_user("teacher_r2", "teacher", test_password)
-        student = create_user("student_r2", "student", test_password)
+        student = create_user("student_r2", "student", test_password, assigned_teacher_id=teacher["id"])
 
         # Create profile with overrides
         client.post(
@@ -561,7 +589,7 @@ class TestProfileResolution:
     def test_system_prompt_generation(self, test_password):
         """Should generate complete system prompt from profile."""
         teacher = create_user("teacher_r3", "teacher", test_password)
-        student = create_user("student_r3", "student", test_password)
+        student = create_user("student_r3", "student", test_password, assigned_teacher_id=teacher["id"])
 
         # Create profile
         client.post(
@@ -600,7 +628,7 @@ class TestAuditTrail:
     def test_history_records_creation(self, test_password):
         """Should record profile creation in history."""
         teacher = create_user("teacher_a1", "teacher", test_password)
-        student = create_user("student_a1", "student", test_password)
+        student = create_user("student_a1", "student", test_password, assigned_teacher_id=teacher["id"])
 
         # Create profile
         client.post(
@@ -622,7 +650,7 @@ class TestAuditTrail:
     def test_history_records_updates(self, test_password):
         """Should record all profile updates in history."""
         teacher = create_user("teacher_a2", "teacher", test_password)
-        student = create_user("student_a2", "student", test_password)
+        student = create_user("student_a2", "student", test_password, assigned_teacher_id=teacher["id"])
 
         # Create profile
         client.post(
@@ -796,6 +824,8 @@ class TestAuditTrail:
         teacher1 = create_user("teacher_a3a", "teacher", test_password)
         teacher2 = create_user("teacher_a3b", "teacher", test_password)
         student = create_user("student_a3", "student", test_password)
+        assign_student_to_teacher(student, teacher1)
+        assign_student_to_teacher(student, teacher2)
 
         # Teacher 1 creates profile
         client.post(
@@ -835,7 +865,7 @@ class TestSafetyConfiguration:
     def test_safety_constraints_stored(self, test_password):
         """Should store safety constraints correctly."""
         teacher = create_user("teacher_s1", "teacher", test_password)
-        student = create_user("student_s1", "student", test_password)
+        student = create_user("student_s1", "student", test_password, assigned_teacher_id=teacher["id"])
 
         # Create profile with safety constraints
         response = client.post(
@@ -861,7 +891,7 @@ class TestSafetyConfiguration:
     def test_medical_context_stored_but_private(self, test_password):
         """Should store medical context privately (never sent to LLM)."""
         teacher = create_user("teacher_s2", "teacher", test_password)
-        student = create_user("student_s2", "student", test_password)
+        student = create_user("student_s2", "student", test_password, assigned_teacher_id=teacher["id"])
 
         # Create profile with medical context
         response = client.post(
@@ -1011,8 +1041,8 @@ class TestStudentListing:
     def test_list_students_shows_profile_status(self, test_password):
         """Should show which students have profiles configured."""
         teacher = create_user("teacher_l1", "teacher", test_password)
-        student_with = create_user("student_l1a", "student", test_password)
-        student_without = create_user("student_l1b", "student", test_password)
+        student_with = create_user("student_l1a", "student", test_password, assigned_teacher_id=teacher["id"])
+        student_without = create_user("student_l1b", "student", test_password, assigned_teacher_id=teacher["id"])
 
         # Create profile for one student
         client.post(
@@ -1073,7 +1103,7 @@ class TestEdgeCases:
     def test_create_with_invalid_template(self, test_password):
         """Should handle gracefully when template doesn't exist."""
         teacher = create_user("teacher_e3", "teacher", test_password)
-        student = create_user("student_e3", "student", test_password)
+        student = create_user("student_e3", "student", test_password, assigned_teacher_id=teacher["id"])
 
         # Create with nonexistent template - should still work (falls back to default)
         response = client.post(
@@ -1088,7 +1118,7 @@ class TestEdgeCases:
     def test_update_profile_preserves_unmentioned_fields(self, test_password):
         """Should preserve existing fields when updating only some fields."""
         teacher = create_user("teacher_e4", "teacher", test_password)
-        student = create_user("student_e4", "student", test_password)
+        student = create_user("student_e4", "student", test_password, assigned_teacher_id=teacher["id"])
 
         # Create profile with multiple fields
         client.post(

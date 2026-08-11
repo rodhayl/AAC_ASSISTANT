@@ -13,7 +13,12 @@ from src.aac_app.services.auth_service import get_password_hash, verify_password
 from src.aac_app.services.credential_service import mark_credentials_changed
 from src.aac_app.services.lockout_service import lockout_service
 from src.api import schemas
-from src.api.deps import get_current_active_user, get_current_admin_user, get_db
+from src.api.deps import (
+    authorize_user_access,
+    get_current_active_user,
+    get_current_admin_user,
+    get_db,
+)
 from src.api.routers.auth_helpers import (
     conditional_limiter,
     validate_email_format,
@@ -153,27 +158,20 @@ def get_users(
     if current_user.user_type == "teacher":
         if user_type is not None and user_type != "student":
             return []
-        assignment_count = (
-            db.query(StudentTeacher)
+        query = (
+            db.query(User)
+            .join(StudentTeacher, User.id == StudentTeacher.student_id)
             .filter(StudentTeacher.teacher_id == current_user.id)
-            .count()
+            .filter(User.user_type == "student")
+            .distinct()
         )
-        if assignment_count == 0:
-            query = db.query(User).filter(User.user_type == "student")
-        else:
-            query = (
-                db.query(User)
-                .join(StudentTeacher, User.id == StudentTeacher.student_id)
-                .filter(StudentTeacher.teacher_id == current_user.id)
-                .filter(User.user_type == "student")
-            )
-        return query.offset(skip).limit(limit).all()
+        return query.order_by(User.id).offset(skip).limit(limit).all()
 
     # Admin: all users, optionally filtered by role
     query = db.query(User)
     if user_type is not None:
         query = query.filter(User.user_type == user_type)
-    return query.offset(skip).limit(limit).all()
+    return query.order_by(User.id).offset(skip).limit(limit).all()
 
 
 @router.get(
@@ -192,20 +190,14 @@ def get_student_summaries(
 
     query = db.query(User).filter(User.user_type == "student")
     if current_user.user_type == "teacher":
-        assignment_count = (
-            db.query(StudentTeacher)
-            .filter(StudentTeacher.teacher_id == current_user.id)
-            .count()
-        )
-        if assignment_count:
-            query = (
-                query.join(
-                    StudentTeacher,
-                    StudentTeacher.student_id == User.id,
-                )
-                .filter(StudentTeacher.teacher_id == current_user.id)
-                .distinct()
+        query = (
+            query.join(
+                StudentTeacher,
+                StudentTeacher.student_id == User.id,
             )
+            .filter(StudentTeacher.teacher_id == current_user.id)
+            .distinct()
+        )
 
     students = (
         query.order_by(User.id)
@@ -287,28 +279,12 @@ def get_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Permission check
-    if current_user.user_type != "admin" and current_user.id != user_id:
-        if current_user.user_type == "teacher" and user.user_type == "student":
-            # Teacher can view all students until explicit roster assignments exist.
-            assignment_count = (
-                db.query(StudentTeacher)
-                .filter(StudentTeacher.teacher_id == current_user.id)
-                .count()
-            )
-            if assignment_count > 0:
-                assigned = (
-                    db.query(StudentTeacher)
-                    .filter(
-                        StudentTeacher.teacher_id == current_user.id,
-                        StudentTeacher.student_id == user_id,
-                    )
-                    .first()
-                )
-                if not assigned:
-                    raise HTTPException(status_code=403, detail="Not authorized to view this user")
-        else:
-            raise HTTPException(status_code=403, detail="Not authorized to view this user")
+    authorize_user_access(
+        target_user=user,
+        current_user=current_user,
+        db=db,
+        forbidden_detail="Not authorized to view this user",
+    )
 
     return user
 

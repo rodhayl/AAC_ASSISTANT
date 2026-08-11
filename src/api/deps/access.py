@@ -89,12 +89,7 @@ def require_board_staff_or_owner(
     if current_user.user_type == "teacher":
         owner = db.query(User).filter(User.id == board.user_id).first()
         if owner is not None and owner.user_type == "student":
-            verify_student_access(
-                owner.id,
-                current_user,
-                db,
-                allow_empty_roster=False,
-            )
+            verify_student_access(owner.id, current_user, db)
             return board
 
     raise HTTPException(

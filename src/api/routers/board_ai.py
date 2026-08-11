@@ -378,7 +378,7 @@ async def generate_ai_suggestions(
 @router.post(
     "/{board_id}/ai/suggestions/apply", response_model=schemas.BoardSymbolResponse
 )
-async def apply_ai_suggestion(
+def apply_ai_suggestion(
     board_id: int,
     payload: schemas.AISuggestionApplyRequest,
     current_user: User = Depends(get_current_active_user),

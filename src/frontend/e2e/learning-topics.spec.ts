@@ -56,7 +56,11 @@ test.describe('Learning Page - Boards and Topics', () => {
         
         // Mock session start (if referenced)
         await page.route('**/api/learning/start*', async route => {
-             await route.fulfill({ status: 200, body: JSON.stringify({ session_id: 123 }) });
+             await route.fulfill({
+                 status: 200,
+                 contentType: 'application/json',
+                 body: JSON.stringify({ success: true, session_id: 123 }),
+             });
         });
 
         // Mock auto-asked adaptive questions so the flow does not hit the LLM
@@ -165,9 +169,12 @@ test.describe('Learning Page - Boards and Topics', () => {
         // Empty state has "Start Session".
         
         const startBtn = page.getByRole('button', { name: /Start Session|Iniciar sesión/i });
-        if (await startBtn.isVisible()) {
-             await startBtn.click();
-             // We can verify the POST request payload if we want, but simple click interaction is enough for e2e UI test
-        }
+        await expect(startBtn).toBeVisible();
+        const startRequest = page.waitForRequest((request) =>
+            request.url().includes('/api/learning/start') && request.method() === 'POST',
+        );
+        await startBtn.click();
+        await startRequest;
+        await expect(page.getByTestId('learning-session-active')).toBeVisible();
     });
 });

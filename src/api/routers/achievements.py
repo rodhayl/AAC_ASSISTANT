@@ -115,7 +115,6 @@ def create_achievement(
             data.target_user_id,
             current_user,
             db,
-            allow_empty_roster=False,
         )
 
     with nullcontext(db) as session:
@@ -308,12 +307,7 @@ def award_achievement(
 
         # Only award achievements to an existing student the actor can access.
         # This prevents teachers from targeting unrelated users or non-students.
-        verify_student_access(
-            data.user_id,
-            current_user,
-            session,
-            allow_empty_roster=False,
-        )
+        verify_student_access(data.user_id, current_user, session)
 
         # Check if user already has this achievement
         existing = (
@@ -370,7 +364,6 @@ def get_user_achievements(
             user_id,
             current_user,
             db,
-            allow_empty_roster=False,
         )
 
     return system.get_user_achievements(user_id, db=db)
@@ -389,11 +382,14 @@ def check_achievements(
             user_id,
             current_user,
             db,
-            allow_empty_roster=False,
         )
 
     # Check for new achievements first to trigger awarding
     system.check_achievements(user_id, db=db)
+    # Commit the awards before responding: the request dependency's teardown
+    # commit runs after the response is sent, and the UI typically re-reads
+    # the achievement list immediately after this check.
+    db.commit()
 
     # Return the full list of user achievements with earned_at timestamps
     return system.get_user_achievements(user_id, db=db)
@@ -412,7 +408,6 @@ def get_user_points(
             user_id,
             current_user,
             db,
-            allow_empty_roster=False,
         )
 
     return system.get_user_points(user_id, db=db)

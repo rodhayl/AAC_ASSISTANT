@@ -140,7 +140,11 @@ def _create_sample_boards(session: Session) -> None:
     session.add(board)
     session.flush()
 
-    for index, symbol in enumerate(session.query(Symbol).order_by(Symbol.id)):
+    # The demo board contains at most 12 symbols; do not scan the full
+    # catalog when a large production symbol library is present.
+    for index, symbol in enumerate(
+        session.query(Symbol).order_by(Symbol.id).limit(12)
+    ):
         if index >= 12:
             break
         session.add(

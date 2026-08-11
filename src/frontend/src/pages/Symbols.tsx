@@ -7,6 +7,7 @@ import { SymbolGrid } from '../components/symbols/SymbolGrid';
 import type { Symbol as SymbolType } from '../types';
 import { useTranslation } from 'react-i18next';
 import { DEFAULT_SYMBOL_CATEGORIES } from '../lib/symbolCategories';
+import { isValidImageFile } from '../lib/download';
 
 type UsageFilter = 'all' | 'in_use' | 'unused';
 
@@ -283,9 +284,8 @@ export function Symbols() {
       setNewPreview(null);
       return;
     }
-    const isImage = file.type.startsWith('image/');
     const maxSizeMb = 5;
-    if (!isImage || file.size > maxSizeMb * 1024 * 1024) {
+    if (!isValidImageFile(file)) {
       setError(`Invalid file. Must be an image under ${maxSizeMb}MB.`);
       setNewFile(null);
       setNewPreview(null);

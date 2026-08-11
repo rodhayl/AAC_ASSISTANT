@@ -32,7 +32,11 @@ def update_current_user(
     db: Session = Depends(get_db),
 ):
     """Update current user profile/settings"""
-    return user_service.update_user(db, current_user.id, user_update)
+    updated = user_service.update_user(db, current_user.id, user_update)
+    # Commit before responding so the updated profile is durable for the
+    # immediate follow-up reads in the UI.
+    db.commit()
+    return updated
 
 
 @router.get("/students", response_model=list[UserResponse])
@@ -88,7 +92,12 @@ def create_student(
         if teacher is None:
             raise HTTPException(status_code=404, detail="Teacher not found")
 
-    return user_service.create_user(db, user)
+    created = user_service.create_user(db, user)
+    # Commit before responding: the UI re-fetches the student list right
+    # after this create, and the request dependency's teardown commit runs
+    # only after the response is sent.
+    db.commit()
+    return created
 
 
 @router.post("/assign-student")
@@ -218,4 +227,7 @@ def reset_user_password(
 
     # Reset password
     user_service.reset_password(db, target_user_id, data.new_password)
+    # Commit before responding so a login with the new password (which
+    # follows this response in the UI flow) cannot read the old hash.
+    db.commit()
     return {"message": "Password reset successfully"}

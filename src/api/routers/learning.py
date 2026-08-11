@@ -28,7 +28,7 @@ def get_text(user: User, key: str, **kwargs) -> str:
 
 
 @router.post("/start", response_model=schemas.LearningSessionResponse)
-async def start_session(
+def start_session(
     session_data: schemas.LearningSessionStart,
     user_id: int,
     service: LearningCompanionService = Depends(get_learning_service),
@@ -41,7 +41,7 @@ async def start_session(
             status_code=403, detail=get_text(current_user, "errors.unauthorizedUser")
         )
 
-    result = await service.start_learning_session(
+    result = service.start_learning_session(
         user_id=user_id,
         topic=session_data.topic,
         purpose=session_data.purpose,

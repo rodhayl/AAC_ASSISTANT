@@ -43,8 +43,13 @@ def _log_usage_request(
     ):
         raise HTTPException(status_code=500, detail=failure_detail)
 
-    # The request dependency owns the transaction commit. Keeping that
-    # boundary in one place avoids committing unrelated pending request work.
+    # Commit before responding: the UI requests next-symbol predictions right
+    # after logging usage, and the request dependency's teardown commit runs
+    # only after the response is sent. A prediction could otherwise miss the
+    # symbols the user just selected. (The analytics service itself documents
+    # that a caller-supplied request session remains responsible for its
+    # commit.)
+    db.commit()
     return len(symbols)
 
 

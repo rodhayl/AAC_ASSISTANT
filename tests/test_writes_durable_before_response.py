@@ -21,6 +21,8 @@ from src.aac_app.models import (
     AppSettings,
     GuardianProfile,
     LearningSession,
+    Symbol,
+    SymbolUsageLog,
     User,
     UserAchievement,
     UserSettings,
@@ -327,6 +329,113 @@ class TestGuardianProfileWrites:
         assert profile is not None
         assert profile.is_active is True
         assert profile.template_name == "default"
+
+
+class TestAnalyticsWrites:
+    def test_usage_logging_is_durable_before_response(
+        self, no_teardown_commit_db, test_db_engine, test_db_session, test_password
+    ):
+        """Analytics rows must be visible to the immediate follow-up read."""
+        user = _make_user(test_db_session, "durable_analytics", "student", test_password)
+        symbol = Symbol(
+            label="hello",
+            category="social",
+            language="en",
+            is_builtin=True,
+        )
+        test_db_session.add(symbol)
+        test_db_session.commit()
+        test_db_session.refresh(symbol)
+
+        response = client.post(
+            "/api/analytics/usage",
+            headers=_token(user.id, user.username, "student"),
+            json={
+                "symbols": [
+                    {
+                        "id": symbol.id,
+                        "label": symbol.label,
+                        "category": symbol.category,
+                    }
+                ],
+                "context_topic": "greetings",
+            },
+        )
+        assert response.status_code == 201, response.text
+
+        with _fresh_session(test_db_engine) as session:
+            logs = (
+                session.query(SymbolUsageLog)
+                .filter(SymbolUsageLog.user_id == user.id)
+                .all()
+            )
+        assert len(logs) == 1
+        assert logs[0].symbol_id == symbol.id
+
+
+class TestGuardianProfileMutationWrites:
+    def test_update_profile_is_durable_before_response(
+        self, no_teardown_commit_db, test_db_engine, test_db_session, test_password
+    ):
+        """A profile update must be visible to the immediate follow-up read."""
+        admin = _make_user(test_db_session, "durable_gp_update_admin", "admin", test_password)
+        student = _make_user(
+            test_db_session, "durable_gp_update_student", "student", test_password
+        )
+
+        created = client.post(
+            f"/api/guardian-profiles/students/{student.id}",
+            headers=_token(admin.id, admin.username, "admin"),
+            json={"template_name": "default", "age": 8},
+        )
+        assert created.status_code == 200, created.text
+
+        response = client.put(
+            f"/api/guardian-profiles/students/{student.id}",
+            headers=_token(admin.id, admin.username, "admin"),
+            json={"age": 9, "change_reason": "birthday"},
+        )
+        assert response.status_code == 200, response.text
+
+        with _fresh_session(test_db_engine) as session:
+            profile = (
+                session.query(GuardianProfile)
+                .filter(GuardianProfile.user_id == student.id)
+                .first()
+            )
+        assert profile is not None
+        assert profile.age == 9
+
+    def test_delete_profile_is_durable_before_response(
+        self, no_teardown_commit_db, test_db_engine, test_db_session, test_password
+    ):
+        """A soft-deleted profile must be inactive in a fresh session."""
+        admin = _make_user(test_db_session, "durable_gp_delete_admin", "admin", test_password)
+        student = _make_user(
+            test_db_session, "durable_gp_delete_student", "student", test_password
+        )
+
+        created = client.post(
+            f"/api/guardian-profiles/students/{student.id}",
+            headers=_token(admin.id, admin.username, "admin"),
+            json={"template_name": "default"},
+        )
+        assert created.status_code == 200, created.text
+
+        response = client.delete(
+            f"/api/guardian-profiles/students/{student.id}",
+            headers=_token(admin.id, admin.username, "admin"),
+        )
+        assert response.status_code == 200, response.text
+
+        with _fresh_session(test_db_engine) as session:
+            profile = (
+                session.query(GuardianProfile)
+                .filter(GuardianProfile.user_id == student.id)
+                .first()
+            )
+        assert profile is not None
+        assert profile.is_active is False
 
 
 class TestImportWrites:

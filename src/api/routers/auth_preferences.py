@@ -6,10 +6,10 @@ from sqlalchemy.orm import Session
 
 from src.aac_app.models import User, UserSettings
 from src.api import schemas
-from src.api.deps import get_current_active_user, get_db
+from src.api.deps import authorize_user_access, get_current_active_user, get_db
 from src.api.routers.auth_helpers import (
     build_preferences_response,
-    ensure_can_access_user_preferences,
+    update_user_settings,
     validate_preference_updates,
 )
 
@@ -37,19 +37,9 @@ def update_preferences(
     db: Session = Depends(get_db),
 ):
     """Update current user's preferences."""
-    settings = (
-        db.query(UserSettings)
-        .filter(UserSettings.user_id == current_user.id)
-        .first()
-    )
-    if not settings:
-        settings = UserSettings(user_id=current_user.id)
-        db.add(settings)
-
     updates = prefs.model_dump(exclude_unset=True)
     validate_preference_updates(updates)
-    for key, value in updates.items():
-        setattr(settings, key, value)
+    settings = update_user_settings(db, current_user.id, updates)
 
     db.commit()
     db.refresh(settings)
@@ -70,10 +60,11 @@ def get_user_preferences(
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
 
-    ensure_can_access_user_preferences(
-        current_user=current_user,
+    authorize_user_access(
         target_user=target,
+        current_user=current_user,
         db=db,
+        forbidden_detail="Not authorized to access preferences",
     )
     settings = db.query(UserSettings).filter(UserSettings.user_id == target.id).first()
     return build_preferences_response(settings)
@@ -92,23 +83,15 @@ def update_user_preferences(
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
-    if current_user.user_type == "teacher" and target.user_type != "student":
-        raise HTTPException(status_code=403, detail="Not authorized to update preferences")
-
-    ensure_can_access_user_preferences(
-        current_user=current_user,
+    authorize_user_access(
         target_user=target,
+        current_user=current_user,
         db=db,
+        forbidden_detail="Not authorized to access preferences",
     )
-    settings = db.query(UserSettings).filter(UserSettings.user_id == target.id).first()
-    if not settings:
-        settings = UserSettings(user_id=target.id)
-        db.add(settings)
-
     updates = prefs.model_dump(exclude_unset=True)
     validate_preference_updates(updates)
-    for key, value in updates.items():
-        setattr(settings, key, value)
+    settings = update_user_settings(db, target.id, updates)
 
     db.commit()
     db.refresh(settings)

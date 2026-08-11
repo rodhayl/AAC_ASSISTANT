@@ -41,7 +41,9 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       const [achievementsRes, pointsRes, learningHistoryRes] = await Promise.all([
         api.get(`/achievements/user/${userId}`),
         api.get(`/achievements/user/${userId}/points`),
-        api.get(`/learning/history/${userId}`, { params: { limit: 5 } })
+        // Keep the history window bounded while leaving enough rows for a
+        // meaningful streak calculation when a user has several sessions per day.
+        api.get(`/learning/history/${userId}`, { params: { limit: 100 } })
       ]);
 
       const achievements = achievementsRes.data;

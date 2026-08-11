@@ -7,6 +7,7 @@ from .access import (
     require_board_staff_or_owner,
 )
 from .auth import (
+    authorize_user_access,
     get_current_active_user,
     get_current_admin_user,
     get_current_user,
@@ -42,6 +43,7 @@ from .providers import (
 from .settings import clear_settings_cache, get_setting_value, invalidate_setting
 
 __all__ = [
+    "authorize_user_access",
     "clear_settings_cache",
     "get_board_or_404",
     "get_learning_session_or_404",

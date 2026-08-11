@@ -8,6 +8,7 @@ from src.api.deps import (
     get_current_active_user,
     get_db,
     get_text,
+    require_board_owner_or_admin,
     verify_student_access,
 )
 from src.api.routers.board_helpers import serialize_board
@@ -22,8 +23,7 @@ def get_assigned_boards(
     db: Session = Depends(get_db),
 ):
     # Students may view only their own assignments. Teachers are limited to
-    # their roster once they have explicit roster entries; the shared helper
-    # preserves the legacy empty-roster setup behavior.
+    # their explicit roster.
     if current_user.user_type == "teacher":
         verify_student_access(student_id, current_user, db)
     elif current_user.user_type != "admin" and current_user.id != student_id:
@@ -61,7 +61,12 @@ def assign_board_to_student(
             detail=get_text(user=current_user, key="errors.boards.unauthorizedAssign"),
         )
 
-    get_board_or_404(db, board_id, current_user)
+    board = get_board_or_404(db, board_id, current_user)
+    require_board_owner_or_admin(
+        board,
+        current_user,
+        error_key="errors.boards.unauthorizedAssign",
+    )
 
     if current_user.user_type == "teacher":
         verify_student_access(payload.student_id, current_user, db)
@@ -108,7 +113,12 @@ def unassign_board_from_student(
             detail=get_text(user=current_user, key="errors.boards.unauthorizedUnassign"),
         )
 
-    get_board_or_404(db, board_id, current_user)
+    board = get_board_or_404(db, board_id, current_user)
+    require_board_owner_or_admin(
+        board,
+        current_user,
+        error_key="errors.boards.unauthorizedUnassign",
+    )
 
     if current_user.user_type == "teacher":
         verify_student_access(student_id, current_user, db)

@@ -23,7 +23,7 @@ from src.api.schemas import (
 router = APIRouter(tags=["learning-modes"])
 
 @router.get("/", response_model=list[LearningModeResponse])
-async def get_learning_modes(
+def get_learning_modes(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -50,7 +50,7 @@ async def get_learning_modes(
     )
 
 @router.post("/preview", response_model=LearningModePreviewResponse)
-async def preview_learning_mode_system_prompt(
+def preview_learning_mode_system_prompt(
     payload: LearningModePreviewRequest,
     current_user: User = Depends(get_current_active_user),
     service: LearningCompanionService = Depends(get_learning_service),
@@ -130,7 +130,7 @@ async def preview_learning_mode_system_prompt(
 
 
 @router.post("/", response_model=LearningModeResponse)
-async def create_learning_mode(
+def create_learning_mode(
     mode: LearningModeCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -163,7 +163,7 @@ async def create_learning_mode(
     return db_mode
 
 @router.put("/{mode_id}", response_model=LearningModeResponse)
-async def update_learning_mode(
+def update_learning_mode(
     mode_id: int,
     mode_update: LearningModeUpdate,
     current_user: User = Depends(get_current_active_user),
@@ -197,7 +197,7 @@ async def update_learning_mode(
     return db_mode
 
 @router.delete("/{mode_id}")
-async def delete_learning_mode(
+def delete_learning_mode(
     mode_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),

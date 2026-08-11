@@ -7,13 +7,10 @@ core-only/offline startup healthy even when the model cannot be downloaded.
 
 from __future__ import annotations
 
-import contextlib
-import io
 import os
 import sqlite3
-import sys
 import threading
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -23,19 +20,10 @@ from sqlalchemy.engine import Engine
 
 from src import config
 from src.aac_app.utils.module_availability import module_available
+from src.aac_app.utils.runtime import safe_streams
 
-
-@contextlib.contextmanager
-def _safe_streams() -> Iterator[tuple[io.StringIO | Any, io.StringIO | Any]]:
-    """Ensure optional model libraries always see writable output streams."""
-    saved_out, saved_err = sys.stdout, sys.stderr
-    redirect_out = saved_out if saved_out is not None else io.StringIO()
-    redirect_err = saved_err if saved_err is not None else io.StringIO()
-    try:
-        with contextlib.redirect_stdout(redirect_out), contextlib.redirect_stderr(redirect_err):
-            yield redirect_out, redirect_err
-    finally:
-        sys.stdout, sys.stderr = saved_out, saved_err
+# Keep the historical private name as a compatibility seam for callers/tests.
+_safe_streams = safe_streams
 
 
 def _load_text_embedding_class() -> Any:

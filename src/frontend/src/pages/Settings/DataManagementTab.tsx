@@ -3,6 +3,7 @@ import { useToastStore } from '../../store/toastStore';
 import { useTranslation } from 'react-i18next';
 import { Download, Upload } from 'lucide-react';
 import api from '../../lib/api';
+import { downloadJson } from '../../lib/download';
 
 export function DataManagementTab() {
   const user = useAuthStore(state => state.user);
@@ -10,37 +11,17 @@ export function DataManagementTab() {
   const { t } = useTranslation('settings');
   const isTeacherOrAdmin = user?.user_type === 'admin' || user?.user_type === 'teacher';
 
-  const handleExportData = async () => {
+  const handleExportData = async (serverExport = false) => {
     if (!user) return;
     try {
       const response = await api.get('/data/export', { params: { username: user.username } });
-      const data = response.data;
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `aac-data-${user.username}.json`;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      const suffix = serverExport ? '-server' : '';
+      downloadJson(response.data, `aac-data-${user.username}${suffix}.json`);
     } catch (error) {
-      console.error('Failed to export data:', error);
-    }
-  };
-
-  const handleServerExport = async () => {
-    if (!user) return;
-    try {
-      const response = await api.get('/data/export', { params: { username: user.username } });
-      const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `aac-data-${user.username}-server.json`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Server export failed:', error);
-      addToast(t('data.exportServerFailed'), 'error');
+      console.error(serverExport ? 'Server export failed:' : 'Failed to export data:', error);
+      if (serverExport) {
+        addToast(t('data.exportServerFailed'), 'error');
+      }
     }
   };
 
@@ -77,7 +58,7 @@ export function DataManagementTab() {
       <div className="p-6 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <button
-            onClick={handleExportData}
+            onClick={() => void handleExportData()}
             className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center justify-center"
             title={t('data.exportClientTitle')}
           >
@@ -86,7 +67,7 @@ export function DataManagementTab() {
           </button>
           {isTeacherOrAdmin && (
             <button
-              onClick={handleServerExport}
+              onClick={() => void handleExportData(true)}
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center justify-center"
               title={t('data.exportServerTitle')}
             >

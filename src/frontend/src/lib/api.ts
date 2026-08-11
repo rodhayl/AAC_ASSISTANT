@@ -74,38 +74,52 @@ export function isAuthFlowEndpoint(url?: string): boolean {
 }
 
 let offline = typeof navigator !== 'undefined' ? !navigator.onLine : false
+const MAX_OFFLINE_QUEUE_SIZE = 100
 const queue: Array<AxiosRequestConfig> = []
 const replayControllers = new Set<AbortController>()
 let replayGeneration = 0
 
-function flushQueue() {
+async function flushQueue() {
   if (queue.length === 0) return
   const items = queue.splice(0)
   const generation = replayGeneration
+
+  // Replay in FIFO order rather than launching an outage-sized write burst.
+  // The queue is deliberately small and mutations may depend on earlier IDs.
   for (const cfg of items) {
+    if (generation !== replayGeneration) return
+
     const controller = new AbortController()
     replayControllers.add(controller)
-    api.request({ ...cfg, signal: controller.signal }).catch((error) => {
+    try {
+      await api.request({ ...cfg, signal: controller.signal })
+    } catch (error) {
+      const replayError = error as ApiError & { code?: unknown; name?: unknown };
+      const cancelled =
+        replayError.code === 'ERR_CANCELED' || replayError.name === 'CanceledError';
       // Logout cancellation and late results from an invalidated session are
       // intentional, not user-visible conflicts.
-      if (
-        generation === replayGeneration &&
-        error?.code !== 'ERR_CANCELED' &&
-        error?.name !== 'CanceledError'
-      ) {
-        const errorMsg = error?.response?.data?.detail || error?.message || 'Request failed after reconnection'
-        useOfflineStore.getState().addConflict(cfg, errorMsg)
+      if (generation === replayGeneration && !cancelled) {
+        const errorMsg =
+          replayError.response?.data?.detail ||
+          replayError.message ||
+          'Request failed after reconnection';
+        useOfflineStore.getState().addConflict(cfg, String(errorMsg));
+        // Preserve dependent mutations for explicit conflict resolution rather
+        // than replaying them after a prerequisite failed.
+        queue.unshift(...items.slice(items.indexOf(cfg) + 1));
+        return;
       }
-    }).finally(() => {
+    } finally {
       replayControllers.delete(controller)
-    })
+    }
   }
 }
 
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
     offline = false
-    flushQueue()
+    void flushQueue()
   })
   window.addEventListener('offline', () => {
     offline = true
@@ -144,6 +158,19 @@ api.interceptors.request.use((config) => {
   ) {
     // The original request may be cancelled while offline; replay must get a
     // fresh lifecycle and therefore cannot reuse its aborted signal.
+    if (queue.length >= MAX_OFFLINE_QUEUE_SIZE) {
+      // Bound offline memory use and avoid an unbounded write burst after a
+      // long outage. Record the rejected request in the existing conflict UI
+      // so the user can retry or dismiss it explicitly.
+      useOfflineStore.getState().addConflict(
+        { ...config, signal: undefined },
+        'Offline mutation queue is full',
+      )
+      return Promise.reject({
+        message: 'Offline mutation queue is full',
+        code: 'ERR_OFFLINE_QUEUE_FULL',
+      })
+    }
     queue.push({ ...config, signal: undefined })
     // Throw a controlled error to let UI disable actions
     return Promise.reject({ message: 'offline', code: 'ERR_OFFLINE' })

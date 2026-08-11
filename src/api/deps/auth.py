@@ -144,14 +144,11 @@ def verify_student_access(
     student_id: int,
     current_user: User,
     db: Session,
-    *,
-    allow_empty_roster: bool = True,
 ) -> User:
     """Verify the student exists and the current user can access their profile.
 
-    Admins can access every student; teachers can access their roster. The
-    legacy empty-roster setup behavior remains available to profile/assignment
-    flows, while sensitive staff actions can require an explicit roster.
+    Admins can access every student; teachers can access only students in their
+    explicit roster. A teacher with no roster has no student access.
     """
     student = db.query(User).filter_by(id=student_id).first()
     if not student:
@@ -183,20 +180,32 @@ def verify_student_access(
     if assignment is not None:
         return student
 
-    # Preserve the legacy empty-roster behavior with a bounded existence query.
-    has_roster = (
-        db.query(StudentTeacher)
-        .filter(StudentTeacher.teacher_id == current_user.id)
-        .first()
-    )
-    if has_roster is None and allow_empty_roster:
-        # If the teacher has no explicit roster yet, allow access to students so
-        # profile setup can start.
-        return student
-
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail=get_text(
             user=current_user, key="errors.guardian.studentNotAssigned"
         ),
     )
+
+
+def authorize_user_access(
+    target_user: User,
+    current_user: User,
+    db: Session,
+    *,
+    forbidden_detail: str = "Not authorized",
+) -> None:
+    """Authorize access to another user's resource.
+
+    Self-access and administrators are allowed. Teachers must use the same
+    explicit student-roster policy as student-specific endpoints; all other
+    cross-user combinations are forbidden.
+    """
+    if current_user.id == target_user.id or current_user.user_type == "admin":
+        return
+
+    if current_user.user_type == "teacher" and target_user.user_type == "student":
+        verify_student_access(target_user.id, current_user, db)
+        return
+
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=forbidden_detail)

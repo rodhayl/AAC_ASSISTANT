@@ -21,6 +21,7 @@ from src.api.deps import (
     invalidate_setting,
 )
 from src.api.deps import providers as provider_deps
+from src.api.routers.auth_helpers import update_user_settings
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -41,9 +42,9 @@ def set_setting(db: Session, key: str, value: str, user_id: int):
     else:
         setting = AppSettings(setting_key=key, setting_value=value, updated_by=user_id)
         db.add(setting)
-    # Keep the whole settings request in the transaction owned by get_db().
-    # Committing here would make earlier keys durable if a later validation
-    # fails, leaving a partially applied configuration.
+    # Keep the whole settings request atomic: the route commits once after all
+    # validation passes. Committing here would make earlier keys durable if a
+    # later validation fails, leaving a partially applied configuration.
     invalidate_setting(key)
     return setting
 
@@ -63,7 +64,7 @@ async def _close_provider(provider: Any | None) -> None:
 
 # Endpoints
 @router.get("/ai")
-async def get_ai_settings(
+def get_ai_settings(
     current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """Get current AI provider settings (all users can view, sensitive data masked for non-admins)"""
@@ -101,7 +102,7 @@ async def get_ai_settings(
 
 
 @router.put("/ai")
-async def update_ai_settings(
+def update_ai_settings(
     settings: dict[str, Any],
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
@@ -191,6 +192,11 @@ async def update_ai_settings(
         log_settings["openrouter_api_key"] = "********"
 
     logger.info(f"Admin {current_user.username} updated AI settings: {log_settings}")
+    # Make the new values durable before the provider singletons are rebuilt:
+    # the request dependency's teardown commit runs after the response is
+    # sent, so a follow-up request that lazily constructs a provider could
+    # otherwise read the previous settings from the database.
+    db.commit()
     provider_deps.reset_llm_providers()
 
     return {"message": "Settings updated successfully", "settings": settings}
@@ -336,7 +342,7 @@ async def get_lmstudio_models(
 
 # UI Language endpoints
 @router.get("/ui")
-async def get_ui_language(
+def get_ui_language(
     current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     settings = (
@@ -347,7 +353,7 @@ async def get_ui_language(
 
 
 @router.put("/ui")
-async def update_ui_language(
+def update_ui_language(
     payload: dict[str, Any],
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -363,14 +369,11 @@ async def update_ui_language(
                 ),
             ),
         )
-    settings = (
-        db.query(UserSettings).filter(UserSettings.user_id == current_user.id).first()
+    settings = update_user_settings(
+        db,
+        current_user.id,
+        {"ui_language": lang},
     )
-    if not settings:
-        settings = UserSettings(user_id=current_user.id, ui_language=lang)
-        db.add(settings)
-    else:
-        settings.ui_language = lang
     db.commit()
     db.refresh(settings)
     clear_settings_cache()

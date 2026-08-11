@@ -42,7 +42,7 @@ class UserService:
         # Keep account creation and the optional roster assignment in the
         # caller's transaction.  Committing the user first could leave a
         # partially-created account if assignment validation or persistence
-        # failed; the request dependency commits once after this returns.
+        # failed; the route commits once after this returns.
         db.add(db_user)
         db.flush()
 
@@ -95,9 +95,9 @@ class UserService:
             for key, value in settings_dict.items():
                 setattr(user.settings, key, value)
 
-        # The request-scoped dependency owns the final commit. Flush here so
-        # callers receive database-generated values without splitting the
-        # update into a second transaction.
+        # The calling route owns the final commit. Flush here so callers
+        # receive database-generated values without splitting the update into
+        # a second transaction.
         db.flush()
         db.refresh(user)
         return user

@@ -11,40 +11,17 @@ directory.
 from __future__ import annotations
 
 import argparse
-import contextlib
 import importlib.util
-import io
-import sys
-from collections.abc import Iterator
 from pathlib import Path
 
 from loguru import logger
 
 from ... import config
+from ..utils.runtime import safe_streams
 from .local_speech_provider import DEFAULT_STT_MODEL, SUPPORTED_STT_MODELS, normalize_stt_model
 
-
-@contextlib.contextmanager
-def _safe_streams() -> Iterator[tuple[io.StringIO | object, io.StringIO | object]]:
-    """Redirect stdio to throwaway buffers when ``sys.stdout``/``sys.stderr`` are ``None``.
-
-    Frozen / windowed PyInstaller builds leave both standard streams as
-    ``None``; libraries such as faster_whisper, huggingface_hub, and
-    onnxruntime write progress to those streams during model download.
-    Without a working stream the underlying ``.write`` raises
-    ``AttributeError`` and the request fails.  We swap in ``StringIO``
-    buffers while the wrapped code runs, then restore the originals.
-    """
-    saved_out, saved_err = sys.stdout, sys.stderr
-    redirect_out = saved_out if saved_out is not None else io.StringIO()
-    redirect_err = saved_err if saved_err is not None else io.StringIO()
-    try:
-        with contextlib.redirect_stdout(redirect_out), contextlib.redirect_stderr(
-            redirect_err
-        ):
-            yield redirect_out, redirect_err
-    finally:
-        sys.stdout, sys.stderr = saved_out, saved_err
+# Keep the historical private name as a compatibility seam for callers/tests.
+_safe_streams = safe_streams
 
 
 def download_speech_model(

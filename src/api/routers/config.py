@@ -8,7 +8,7 @@ router = APIRouter(prefix="/api/config", tags=["config"])
 
 
 @router.get("")
-async def get_config():
+def get_config():
     """Get frontend-relevant configuration values."""
     return {
         "backend_port": config.BACKEND_PORT,

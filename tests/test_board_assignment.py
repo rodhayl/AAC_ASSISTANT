@@ -27,6 +27,8 @@ def teacher_and_student(test_db_session):
     )
     test_db_session.add(teacher)
     test_db_session.add(student)
+    test_db_session.flush()
+    test_db_session.add(StudentTeacher(student_id=student.id, teacher_id=teacher.id))
     test_db_session.commit()
     return teacher, student
 
@@ -144,6 +146,115 @@ def test_student_board_owner_cannot_manage_assignments(teacher_and_student, test
         headers=student_headers,
     )
     assert unassign_response.status_code == 403
+
+
+def test_rostered_teacher_cannot_assign_another_teachers_private_board(
+    teacher_and_student, test_db_session
+):
+    teacher, student = teacher_and_student
+    other_teacher = User(
+        username="other_board_owner",
+        password_hash=get_password_hash("StrongPass123"),
+        display_name="Other Board Owner",
+        user_type="teacher",
+    )
+    test_db_session.add(other_teacher)
+    test_db_session.commit()
+
+    other_teacher_headers = create_test_headers(
+        other_teacher.id, other_teacher.username, other_teacher.user_type
+    )
+    teacher_headers = create_test_headers(teacher.id, teacher.username, teacher.user_type)
+    board_response = client.post(
+        "/api/boards/",
+        json={"name": "Private board", "category": "general", "is_public": False},
+        params={"user_id": other_teacher.id},
+        headers=other_teacher_headers,
+    )
+    assert board_response.status_code == 200
+    board_id = board_response.json()["id"]
+
+    assign_response = client.post(
+        f"/api/boards/{board_id}/assign",
+        json={"student_id": student.id},
+        headers=teacher_headers,
+    )
+    assert assign_response.status_code == 403
+    assert (
+        test_db_session.query(BoardAssignment)
+        .filter_by(board_id=board_id, student_id=student.id)
+        .count()
+        == 0
+    )
+
+    test_db_session.add(
+        BoardAssignment(board_id=board_id, student_id=student.id, assigned_by=other_teacher.id)
+    )
+    test_db_session.commit()
+    unassign_response = client.delete(
+        f"/api/boards/{board_id}/assign/{student.id}",
+        headers=teacher_headers,
+    )
+    assert unassign_response.status_code == 403
+    assert (
+        test_db_session.query(BoardAssignment)
+        .filter_by(board_id=board_id, student_id=student.id)
+        .count()
+        == 1
+    )
+
+
+def test_admin_can_manage_another_owners_board_assignment(
+    teacher_and_student, test_db_session
+):
+    teacher, student = teacher_and_student
+    admin = User(
+        username="assignment_admin",
+        password_hash=get_password_hash("StrongPass123"),
+        display_name="Assignment Admin",
+        user_type="admin",
+    )
+    owner = User(
+        username="assignment_board_owner",
+        password_hash=get_password_hash("StrongPass123"),
+        display_name="Assignment Board Owner",
+        user_type="teacher",
+    )
+    test_db_session.add_all([admin, owner])
+    test_db_session.commit()
+
+    owner_headers = create_test_headers(owner.id, owner.username, owner.user_type)
+    admin_headers = create_test_headers(admin.id, admin.username, admin.user_type)
+    board_response = client.post(
+        "/api/boards/",
+        json={"name": "Admin-managed board", "category": "general"},
+        params={"user_id": owner.id},
+        headers=owner_headers,
+    )
+    assert board_response.status_code == 200
+    board_id = board_response.json()["id"]
+
+    assert client.post(
+        f"/api/boards/{board_id}/assign",
+        json={"student_id": student.id},
+        headers=admin_headers,
+    ).status_code == 200
+    assert (
+        test_db_session.query(BoardAssignment)
+        .filter_by(board_id=board_id, student_id=student.id)
+        .count()
+        == 1
+    )
+    assert client.delete(
+        f"/api/boards/{board_id}/assign/{student.id}",
+        headers=admin_headers,
+    ).status_code == 200
+    assert (
+        test_db_session.query(BoardAssignment)
+        .filter_by(board_id=board_id, student_id=student.id)
+        .count()
+        == 0
+    )
 
 
 def test_teacher_cannot_access_or_modify_unassigned_student(teacher_and_student, test_db_session):

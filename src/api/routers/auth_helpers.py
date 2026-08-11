@@ -11,6 +11,8 @@ from typing import Any, TypeVar
 from fastapi import HTTPException
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from src.aac_app.models import UserSettings
 from src.api import schemas
@@ -72,6 +74,42 @@ def validate_preference_updates(updates: dict) -> None:
             raise HTTPException(status_code=400, detail=f"{key} must be >= 0")
 
 
+def update_user_settings(
+    db: Session,
+    user_id: int,
+    updates: dict[str, Any],
+) -> UserSettings:
+    """Update one user's settings, tolerating concurrent first-write races.
+
+    Preference updates can arrive through both the authentication preferences
+    route and the UI-language route at the same time. Since ``user_id`` is
+    unique, two requests that both observe a missing row can race on INSERT.
+    Flush the new row early; if another request wins, roll back only this
+    request's failed transaction, reload the winner, and apply the update.
+    """
+    settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+    if settings is None:
+        try:
+            # Keep the insert inside a savepoint so a concurrent unique-key
+            # winner cannot roll back unrelated work in the caller's session.
+            with db.begin_nested():
+                settings = UserSettings(user_id=user_id)
+                db.add(settings)
+                db.flush()
+        except IntegrityError:
+            settings = (
+                db.query(UserSettings)
+                .filter(UserSettings.user_id == user_id)
+                .first()
+            )
+            if settings is None:
+                raise
+
+    for key, value in updates.items():
+        setattr(settings, key, value)
+    return settings
+
+
 def build_preferences_response(
     settings: UserSettings | None,
 ) -> schemas.UserPreferencesResponse:
@@ -100,36 +138,3 @@ def build_preferences_response(
         ignore_repeats=int(getattr(settings, "ignore_repeats", 0) or 0),
         high_contrast=bool(getattr(settings, "high_contrast", False) or False),
     )
-
-
-def ensure_can_access_user_preferences(*, current_user, target_user, db) -> None:
-    """Raise when a user cannot read or update another user's preferences."""
-    if current_user.user_type == "admin":
-        return
-    if current_user.id == target_user.id:
-        return
-    if current_user.user_type == "teacher" and target_user.user_type == "student":
-        from src.aac_app.models import StudentTeacher
-
-        assigned = (
-            db.query(StudentTeacher)
-            .filter(
-                StudentTeacher.teacher_id == current_user.id,
-                StudentTeacher.student_id == target_user.id,
-            )
-            .first()
-        )
-        if assigned:
-            return
-
-        # Preserve the profile-setup flow used by the other teacher/student
-        # endpoints: an empty roster means the teacher has not configured
-        # assignments yet, so all students remain visible until then.
-        has_roster = (
-            db.query(StudentTeacher)
-            .filter(StudentTeacher.teacher_id == current_user.id)
-            .first()
-        )
-        if has_roster is None:
-            return
-    raise HTTPException(status_code=403, detail="Not authorized to access preferences")

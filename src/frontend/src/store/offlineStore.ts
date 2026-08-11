@@ -17,10 +17,43 @@ interface OfflineState {
   incrementRetry: (id: string) => void
 }
 
+function isSafeJson(value: unknown, seen = new WeakSet<object>()): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value !== 'object') return typeof value !== 'function' && typeof value !== 'symbol';
+  if (seen.has(value)) return false;
+  seen.add(value);
+  if (Array.isArray(value)) return value.every((item) => isSafeJson(item, seen));
+  if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+    return false;
+  }
+  return Object.values(value).every((item) => isSafeJson(item, seen));
+}
+
+function conflictRequestKey(config: AxiosRequestConfig): string | null {
+  if (!isSafeJson(config.params) || !isSafeJson(config.data)) return null;
+  try {
+    return JSON.stringify({
+      method: config.method?.toUpperCase(),
+      url: config.url,
+      params: config.params,
+      data: config.data,
+    });
+  } catch {
+    return null;
+  }
+}
+
 export const useOfflineStore = create<OfflineState>((set, get) => ({
   conflicts: [],
 
   addConflict: (config, error) => {
+    const requestKey = conflictRequestKey(config);
+    if (
+      requestKey !== null &&
+      get().conflicts.some((conflict) => conflictRequestKey(conflict.config) === requestKey)
+    ) {
+      return;
+    }
     const id = `conflict_${Date.now()}_${Math.random().toString(36).slice(2)}`
     const conflict: OfflineConflict = {
       id,
