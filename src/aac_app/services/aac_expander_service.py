@@ -350,10 +350,7 @@ class AACExpanderService:
         """Apply pronoun normalization rules."""
         for pattern, replacement in self.grammar_rules["pronoun"]["patterns"]:
             if re.search(pattern, text, re.IGNORECASE):
-                if callable(replacement):
-                    text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
-                else:
-                    text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+                text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
                 return text, "pronoun_fix"
         return text, None
 
