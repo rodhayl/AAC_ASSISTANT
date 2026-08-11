@@ -13,29 +13,8 @@ export function DataManagementTab() {
   const handleExportData = async () => {
     if (!user) return;
     try {
-      const boardsRes = await api.get('/boards/', { params: { user_id: user.id } });
-      const achievementsRes = await api.get(`/achievements/user/${user.id}`);
-      const pointsRes = await api.get(`/achievements/user/${user.id}/points`);
-      const historyRes = await api.get(`/learning/history/${user.id}`, { params: { limit: 100 } });
-      const assignedRes =
-        user.user_type === 'student'
-          ? await api.get('/boards/assigned', { params: { student_id: user.id } })
-          : { data: [] };
-      const base = {
-        meta: { exported_at: new Date().toISOString(), username: user.username },
-        boards: boardsRes.data,
-        assignedBoards: assignedRes.data,
-        achievements: achievementsRes.data,
-        totalPoints: pointsRes.data,
-        learningHistory: historyRes.data,
-      };
-      const encoder = new TextEncoder();
-      const raw = JSON.stringify(base);
-      const digest = await crypto.subtle.digest('SHA-256', encoder.encode(raw));
-      const hex = Array.from(new Uint8Array(digest))
-        .map((byte) => byte.toString(16).padStart(2, '0'))
-        .join('');
-      const data = { ...base, meta: { ...base.meta, checksum_sha256: hex, schema_version: '1' } };
+      const response = await api.get('/data/export', { params: { username: user.username } });
+      const data = response.data;
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
@@ -74,61 +53,7 @@ export function DataManagementTab() {
       if (!Array.isArray(json.boards)) throw new Error('Invalid export: boards must be array');
       if (!Array.isArray(json.assignedBoards)) throw new Error('Invalid export: assignedBoards must be array');
       if (!Array.isArray(json.achievements)) throw new Error('Invalid export: achievements must be array');
-      const baseForChecksum = {
-        meta: { exported_at: json.meta.exported_at, username: json.meta.username },
-        boards: json.boards,
-        assignedBoards: json.assignedBoards,
-        achievements: json.achievements,
-        totalPoints: json.totalPoints,
-        learningHistory: json.learningHistory,
-      };
-      const encoder = new TextEncoder();
-      const digest = await crypto.subtle.digest(
-        'SHA-256',
-        encoder.encode(JSON.stringify(baseForChecksum)),
-      );
-      const hex = Array.from(new Uint8Array(digest))
-        .map((byte) => byte.toString(16).padStart(2, '0'))
-        .join('');
-      const expected = json.meta.checksum_sha256;
-      if (!expected || typeof expected !== 'string' || expected !== hex) {
-        throw new Error('Checksum mismatch: file may be tampered');
-      }
-      for (const board of json.boards) {
-        const createRes = await api.post(
-          '/boards/',
-          {
-            name: board.name,
-            description: board.description,
-            category: board.category,
-            is_public: board.is_public,
-            is_template: board.is_template,
-            grid_rows: board.grid_rows ?? 4,
-            grid_cols: board.grid_cols ?? 5,
-          },
-          { params: { user_id: user.id } },
-        );
-        const newBoard = createRes.data;
-        for (const symbol of board.symbols || []) {
-          await api.post(`/boards/${newBoard.id}/symbols`, {
-            symbol_id: symbol.symbol?.id ?? symbol.symbol_id,
-            position_x: symbol.position_x,
-            position_y: symbol.position_y,
-            size: symbol.size,
-            is_visible: symbol.is_visible,
-            custom_text: symbol.custom_text,
-          });
-        }
-      }
-      if (user.user_type === 'student' && Array.isArray(json.assignedBoards)) {
-        for (const assignedBoard of json.assignedBoards) {
-          try {
-            await api.post(`/boards/${assignedBoard.id}/assign`, { student_id: user.id });
-          } catch {
-            // Assignment is optional during client-side import.
-          }
-        }
-      }
+      await api.post('/data/import', json);
       addToast(t('data.importSuccess'), 'success');
     } catch (error) {
       console.error('Failed to import data:', error);

@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 
 from src.aac_app.models import StudentTeacher, User, UserSettings
 from src.aac_app.services.auth_service import get_password_hash
+from src.aac_app.services.credential_service import mark_credentials_changed
 from src.api import schemas
 
 
@@ -38,17 +39,32 @@ class UserService:
             user_type=user.user_type,
             password_hash=hashed_password
         )
+        # Keep account creation and the optional roster assignment in the
+        # caller's transaction.  Committing the user first could leave a
+        # partially-created account if assignment validation or persistence
+        # failed; the request dependency commits once after this returns.
         db.add(db_user)
-        db.commit()
-        db.refresh(db_user)
+        db.flush()
 
         if user.created_by_teacher_id:
+            teacher = (
+                db.query(User)
+                .filter(
+                    User.id == user.created_by_teacher_id,
+                    User.user_type == "teacher",
+                    User.is_active.is_(True),
+                )
+                .first()
+            )
+            if teacher is None:
+                raise ValueError("created_by_teacher_id must identify an active teacher")
+
             assignment = StudentTeacher(
                 student_id=db_user.id,
-                teacher_id=user.created_by_teacher_id
+                teacher_id=teacher.id,
             )
             db.add(assignment)
-            db.commit()
+            db.flush()
 
         return db_user
 
@@ -56,7 +72,8 @@ class UserService:
         user = db.query(User).filter(User.id == user_id).first()
         if user:
             user.password_hash = get_password_hash(new_password)
-            db.commit()
+            mark_credentials_changed(user)
+            db.flush()
 
     def update_user(self, db: Session, user_id: int, update_data: schemas.UserUpdate):
         user = db.query(User).filter(User.id == user_id).first()
@@ -78,6 +95,9 @@ class UserService:
             for key, value in settings_dict.items():
                 setattr(user.settings, key, value)
 
-        db.commit()
+        # The request-scoped dependency owns the final commit. Flush here so
+        # callers receive database-generated values without splitting the
+        # update into a second transaction.
+        db.flush()
         db.refresh(user)
         return user

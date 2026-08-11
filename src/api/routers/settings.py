@@ -1,5 +1,6 @@
 """Settings API router for admin configuration"""
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -40,10 +41,24 @@ def set_setting(db: Session, key: str, value: str, user_id: int):
     else:
         setting = AppSettings(setting_key=key, setting_value=value, updated_by=user_id)
         db.add(setting)
-    db.commit()
-    db.refresh(setting)
+    # Keep the whole settings request in the transaction owned by get_db().
+    # Committing here would make earlier keys durable if a later validation
+    # fails, leaving a partially applied configuration.
     invalidate_setting(key)
     return setting
+
+
+async def _close_provider(provider: Any | None) -> None:
+    """Best-effort cleanup for short-lived provider clients used by settings."""
+    if provider is None:
+        return
+    close_async = getattr(provider, "close_async", None)
+    if not callable(close_async):
+        return
+    try:
+        await close_async()
+    except Exception as exc:
+        logger.debug("Provider cleanup failed after settings request: {}", exc)
 
 
 # Endpoints
@@ -187,11 +202,12 @@ async def get_ollama_models(
     db: Session = Depends(get_db),
 ):
     """Fetch available Ollama models (admin only)"""
+    provider: OllamaProvider | None = None
     try:
         base_url = get_setting(db, "ollama_base_url") or config.OLLAMA_BASE_URL
         provider = OllamaProvider(base_url=base_url)
 
-        if not provider.is_available():
+        if not await asyncio.to_thread(provider.is_available):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=get_text(
@@ -204,7 +220,7 @@ async def get_ollama_models(
                 ),
             )
 
-        model_names = provider.list_models()
+        model_names = await asyncio.to_thread(provider.list_models)
         # Convert to format expected by frontend
         models = [{"name": name} for name in model_names]
         return {"models": models, "base_url": base_url}
@@ -222,6 +238,8 @@ async def get_ollama_models(
                 ),
             ),
         )
+    finally:
+        await _close_provider(provider)
 
 
 @router.get("/ai/models/openrouter")
@@ -230,6 +248,7 @@ async def get_openrouter_models(
     db: Session = Depends(get_db),
 ):
     """Fetch available OpenRouter models (admin only)"""
+    provider: OpenRouterProvider | None = None
     try:
         api_key = get_setting(db, "openrouter_api_key")
         if not api_key:
@@ -266,6 +285,8 @@ async def get_openrouter_models(
                 ),
             ),
         )
+    finally:
+        await _close_provider(provider)
 
 
 @router.get("/ai/models/lmstudio")
@@ -274,11 +295,12 @@ async def get_lmstudio_models(
     db: Session = Depends(get_db),
 ):
     """Fetch available LM Studio models (admin only)"""
+    provider: LMStudioProvider | None = None
     try:
         base_url = get_setting(db, "lmstudio_base_url") or "http://localhost:1234/v1"
         provider = LMStudioProvider(base_url=base_url)
 
-        if not provider.is_available():
+        if not await asyncio.to_thread(provider.is_available):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=get_text(
@@ -308,6 +330,8 @@ async def get_lmstudio_models(
                 ),
             ),
         )
+    finally:
+        await _close_provider(provider)
 
 
 # UI Language endpoints

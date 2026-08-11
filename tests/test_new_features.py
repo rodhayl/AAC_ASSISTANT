@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.api.main import app
+from src.api.routers.export_import import compute_checksum
 from tests.test_utils_auth import create_test_headers
 
 
@@ -104,6 +105,39 @@ def test_symbol_search_filters(client):
     assert "water" in names2
 
 
+def test_checksum_is_stable_when_object_keys_are_reordered():
+    first = {
+        "meta": {"exported_at": "2024-01-01T00:00:00Z", "username": "stable"},
+        "boards": [{"name": "B1", "symbols": [{"symbol_id": 1, "position_x": 0}]}],
+        "assignedBoards": [],
+        "achievements": [],
+        "totalPoints": 0,
+        "learningHistory": [],
+    }
+    reordered = {
+        "learningHistory": [],
+        "totalPoints": 0,
+        "achievements": [],
+        "assignedBoards": [],
+        "boards": [{"symbols": [{"position_x": 0, "symbol_id": 1}], "name": "B1"}],
+        "meta": {"username": "stable", "exported_at": "2024-01-01T00:00:00Z"},
+    }
+
+    assert first == reordered
+    assert compute_checksum(first) == compute_checksum(reordered)
+
+    unicode_first = {**first, "boards": [{"name": "niño 🧸", "symbols": []}]}
+    unicode_reordered = {
+        "learningHistory": [],
+        "totalPoints": 0,
+        "achievements": [],
+        "assignedBoards": [],
+        "boards": [{"symbols": [], "name": "niño 🧸"}],
+        "meta": {"username": "stable", "exported_at": "2024-01-01T00:00:00Z"},
+    }
+    assert compute_checksum(unicode_first) == compute_checksum(unicode_reordered)
+
+
 def test_import_endpoint_checksum_and_boards(client):
     # Register user
     r = client.post(
@@ -173,6 +207,65 @@ def test_import_endpoint_checksum_and_boards(client):
     assert client.post("/api/data/import", json=bad, headers=headers).status_code == 400
 
 
+def test_import_rejects_invalid_history_atomically(client):
+    registration = client.post(
+        "/api/auth/register",
+        json={
+            "username": "atomic_importer",
+            "password": "AtomicPass123",
+            "display_name": "Atomic Importer",
+            "user_type": "student",
+        },
+    )
+    assert registration.status_code == 200
+    user_id = registration.json()["id"]
+    headers = create_test_headers(user_id, "atomic_importer", "student")
+
+    base = {
+        "meta": {
+            "exported_at": "2024-01-01T00:00:00Z",
+            "username": "atomic_importer",
+        },
+        "boards": [
+            {
+                "name": "Should Roll Back",
+                "description": "",
+                "category": "general",
+                "is_public": False,
+                "is_template": False,
+                "grid_rows": 4,
+                "grid_cols": 5,
+                "symbols": [],
+            }
+        ],
+        "assignedBoards": [],
+        "achievements": [],
+        "totalPoints": 0,
+        "learningHistory": [{"started_at": "not-a-date"}],
+    }
+    checksum_payload = {
+        "meta": base["meta"],
+        "boards": base["boards"],
+        "assignedBoards": base["assignedBoards"],
+        "achievements": base["achievements"],
+        "totalPoints": base["totalPoints"],
+        "learningHistory": base["learningHistory"],
+    }
+    checksum_payload["learningHistory"] = base["learningHistory"]
+    raw = json.dumps(checksum_payload, separators=(",", ":"))
+    import hashlib
+
+    checksum = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    payload = {**base, "meta": {**base["meta"], "checksum_sha256": checksum}}
+
+    response = client.post("/api/data/import", json=payload, headers=headers)
+    assert response.status_code == 400
+
+    boards = client.get("/api/boards/", params={"user_id": user_id}, headers=headers)
+    assert boards.status_code == 200
+    assert all(board["name"] != "Should Roll Back" for board in boards.json())
+
+
 def test_upload_validation(client):
     # Register user
     reg = client.post(
@@ -237,44 +330,3 @@ def test_students_update_delete(client, admin_user):
     # Delete student
     de = client.delete(f"/api/auth/users/{stu['id']}", headers=headers)
     assert de.status_code == 200
-
-
-# @pytest.mark.skip(reason="SSE stream validated via heartbeat; skipping in unit environment")
-def test_notifications_stream_available(client):
-    # Stream endpoint should be available without hanging the test
-    # Register and login to get token
-    client.post(
-        "/api/auth/register",
-        json={
-            "username": "streamer",
-            "password": "StreamPass123",
-            "display_name": "S",
-            "user_type": "student",
-        },
-    )
-    login = client.post(
-        "/api/auth/token", data={"username": "streamer", "password": "StreamPass123"}
-    )
-    if login.status_code == 200:
-        token = login.json()["access_token"]
-        # headers = {"Authorization": f"Bearer {token}"}
-    else:
-        # Fallback if user exists
-        login = client.post(
-            "/api/auth/token",
-            data={"username": "streamer", "password": "StreamPass123"},
-        )
-        token = login.json()["access_token"]
-
-        # The endpoint expects token as query parameter: notifications_stream(token: str = None, ...)
-        try:
-            with client.stream(
-                "GET", f"/api/notifications/stream?token={token}"
-            ) as res:
-                assert res.status_code == 200
-                # Read a single heartbeat event and stop
-                for _ in res.iter_text():
-                    break
-        except Exception as e:
-            # If it fails (e.g. not implemented or connection error), fail the test
-            pytest.fail(f"Stream endpoint failed: {e}")

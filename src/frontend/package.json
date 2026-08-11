@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "verify:prod-build": "node scripts/verify-prod-build.mjs",
     "i18n:audit": "node scripts/i18n-audit.mjs"
   },

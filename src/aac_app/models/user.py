@@ -15,6 +15,10 @@ class User(Base):
     username = Column(String(50), unique=True, nullable=False)
     email = Column(String(100), unique=True, nullable=True)
     password_hash = Column(String(255), nullable=False)
+    # Incremented whenever credentials are replaced so issued sessions can be revoked.
+    security_version = Column(Integer, nullable=False, default=1, server_default="1")
+    # Used to revoke legacy tokens that predate security-version claims.
+    credentials_changed_at = Column(DateTime, nullable=True)
     display_name = Column(String(100), nullable=False)
     user_type = Column(String(20), default="student")
     is_active = Column(Boolean, default=True)

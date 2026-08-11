@@ -5,7 +5,7 @@ Test suite for user preferences and profile endpoints
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models import User
+from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.api.main import app
 from tests.test_utils_auth import create_test_headers
@@ -119,6 +119,78 @@ class TestUserPreferences:
 
         response = client.put("/api/auth/preferences", json={"tts_voice": "female"})
         assert response.status_code == 401
+
+    def test_empty_roster_teacher_can_manage_student_preferences(
+        self, test_db_session
+    ):
+        """Teachers may bootstrap student preferences before creating a roster."""
+        teacher = User(
+            username="prefs_empty_roster_teacher",
+            password_hash="test-hash",
+            display_name="Empty Roster Teacher",
+            user_type="teacher",
+        )
+        student = User(
+            username="prefs_empty_roster_student",
+            password_hash="test-hash",
+            display_name="Empty Roster Student",
+            user_type="student",
+        )
+        test_db_session.add_all([teacher, student])
+        test_db_session.commit()
+        test_db_session.refresh(teacher)
+        test_db_session.refresh(student)
+        headers = create_test_headers(teacher.id, teacher.username, teacher.user_type)
+        url = f"/api/auth/users/{student.id}/preferences"
+
+        assert client.get(url, headers=headers).status_code == 200
+        response = client.put(
+            url,
+            headers=headers,
+            json={"high_contrast": True},
+        )
+        assert response.status_code == 200
+        assert response.json()["high_contrast"] is True
+
+    def test_rostered_teacher_cannot_manage_unassigned_student_preferences(
+        self, test_db_session
+    ):
+        """Once a roster exists, preference access is limited to assigned students."""
+        teacher = User(
+            username="prefs_scoped_teacher",
+            password_hash="test-hash",
+            display_name="Scoped Teacher",
+            user_type="teacher",
+        )
+        assigned_student = User(
+            username="prefs_assigned_student",
+            password_hash="test-hash",
+            display_name="Assigned Student",
+            user_type="student",
+        )
+        unassigned_student = User(
+            username="prefs_unassigned_student",
+            password_hash="test-hash",
+            display_name="Unassigned Student",
+            user_type="student",
+        )
+        test_db_session.add_all([teacher, assigned_student, unassigned_student])
+        test_db_session.commit()
+        test_db_session.refresh(teacher)
+        test_db_session.refresh(unassigned_student)
+        test_db_session.add(
+            StudentTeacher(teacher_id=teacher.id, student_id=assigned_student.id)
+        )
+        test_db_session.commit()
+
+        headers = create_test_headers(teacher.id, teacher.username, teacher.user_type)
+        url = f"/api/auth/users/{unassigned_student.id}/preferences"
+        assert client.get(url, headers=headers).status_code == 403
+        assert client.put(
+            url,
+            headers=headers,
+            json={"high_contrast": True},
+        ).status_code == 403
 
 
 class TestUserProfile:

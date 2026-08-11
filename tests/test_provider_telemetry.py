@@ -204,7 +204,9 @@ def test_reset_providers_defers_and_closes_vector_store_after_active_operation(
     holder.start()
     assert lock_held.wait(timeout=1)
     providers.reset_providers()
-    assert providers._vector_store is None
+    # Keep the active store attached until the operation releases the lock so
+    # nested vector calls cannot race a deferred close.
+    assert providers._vector_store is store
     assert closed == []
     release_lock.set()
     holder.join(timeout=1)
@@ -256,8 +258,9 @@ def test_reentrant_vector_getter_does_not_create_overlap_after_reset(monkeypatch
     release_lock.set()
     holder.join(timeout=1)
 
-    assert reentrant_error
-    assert "replacement vector store" in str(reentrant_error[0])
+    # Nested access continues using the active store; cleanup closes it only
+    # after the operation releases the lock.
+    assert not reentrant_error
     assert closed_event.wait(timeout=1)
 
 

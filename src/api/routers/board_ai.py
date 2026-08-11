@@ -1,3 +1,5 @@
+import random
+
 from fastapi import APIRouter, Body, Depends, HTTPException
 from loguru import logger
 from sqlalchemy import func, or_
@@ -46,14 +48,38 @@ def _fallback_board_suggestions(
             )
         )
 
-    # SQLite-friendly randomness; good enough for a fallback.
-    candidates = query.order_by(func.random()).limit(max(item_count * 5, 25)).all()
+    # Sample from the indexed primary key instead of sorting the whole symbol
+    # table with ORDER BY RANDOM().  The cyclic second query handles sparse IDs
+    # and keeps the candidate set bounded for this development fallback.
+    def sample_candidates(candidate_query):
+        candidate_limit = max(item_count * 5, 25)
+        max_id = candidate_query.with_entities(func.max(Symbol.id)).scalar()
+        if not max_id:
+            return []
+
+        anchor = random.randint(1, max_id)
+        candidates = (
+            candidate_query.filter(Symbol.id >= anchor)
+            .order_by(Symbol.id)
+            .limit(candidate_limit)
+            .all()
+        )
+        if len(candidates) < candidate_limit:
+            candidates.extend(
+                candidate_query.filter(Symbol.id < anchor)
+                .order_by(Symbol.id)
+                .limit(candidate_limit - len(candidates))
+                .all()
+            )
+        return candidates
+
+    candidates = sample_candidates(query)
     if not candidates and apply_cat_filter:
         # Category filters can be too strict for our built-in symbol sets; retry unfiltered.
         query = db.query(Symbol).filter(Symbol.label.isnot(None))
         if existing_symbol_ids:
             query = query.filter(~Symbol.id.in_(existing_symbol_ids))
-        candidates = query.order_by(func.random()).limit(max(item_count * 5, 25)).all()
+        candidates = sample_candidates(query)
 
     seen: set[str] = set()
     items: list[dict] = []
@@ -169,7 +195,7 @@ async def create_board(
                 # Calculate item count based on grid size, default to 12 if not specified
                 item_count = 12
                 if board.grid_rows and board.grid_cols:
-                    item_count = board.grid_rows * board.grid_cols
+                    item_count = min(board.grid_rows * board.grid_cols, 100)
 
                 # Pass fail_silently=False to catch errors and abort board creation
                 items = await ai_service.generate_board_items(
@@ -290,6 +316,7 @@ async def generate_ai_suggestions(
     require_board_staff_or_owner(
         board,
         current_user,
+        db,
         error_key="errors.boards.unauthorizedSuggestions",
     )
 
@@ -317,7 +344,7 @@ async def generate_ai_suggestions(
     if payload and payload.item_count:
         item_count = payload.item_count
     elif board.grid_rows and board.grid_cols:
-        item_count = board.grid_rows * board.grid_cols
+        item_count = min(board.grid_rows * board.grid_cols, 100)
 
     try:
         items = await service.generate_board_items(
@@ -358,7 +385,7 @@ async def apply_ai_suggestion(
     Apply a single AI suggestion by creating a symbol (if needed) and placing it on the board.
     """
     board = get_board_or_404(db, board_id, current_user)
-    require_board_staff_or_owner(board, current_user)
+    require_board_staff_or_owner(board, current_user, db)
 
     if not board.ai_enabled:
         raise HTTPException(

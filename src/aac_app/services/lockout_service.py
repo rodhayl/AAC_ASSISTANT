@@ -80,10 +80,10 @@ class AccountLockoutService:
                     f"Locked until {lockout_until}"
                 )
 
-                db.commit()
+                db.flush()
                 return True, lockout_until, recent_attempt.attempt_count
 
-            db.commit()
+            db.flush()
             return False, None, recent_attempt.attempt_count
         else:
             # First failed attempt
@@ -95,7 +95,7 @@ class AccountLockoutService:
                 locked_until=None,
             )
             db.add(new_attempt)
-            db.commit()
+            db.flush()
 
             logger.info(
                 f"Recorded first failed login attempt for '{username}' from IP {ip_address}"
@@ -151,7 +151,7 @@ class AccountLockoutService:
         db.query(FailedLoginAttempt).filter(
             FailedLoginAttempt.username == username
         ).delete()
-        db.commit()
+        db.flush()
 
         logger.info(
             f"Reset failed login attempts for '{username}' after successful login"
@@ -173,7 +173,7 @@ class AccountLockoutService:
             .filter(FailedLoginAttempt.username == username)
             .delete()
         )
-        db.commit()
+        db.flush()
 
         logger.info(
             f"Admin '{admin_username}' manually unlocked account '{username}' "

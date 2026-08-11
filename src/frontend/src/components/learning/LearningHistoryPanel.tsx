@@ -1,12 +1,5 @@
 import { useTranslation } from 'react-i18next';
-
-interface SessionHistoryItem {
-  id: number;
-  topic: string;
-  created_at: string;
-  status: string;
-  comprehension_score?: number;
-}
+import type { SessionHistoryItem } from '../../store/learningStore';
 
 interface LearningHistoryPanelProps {
   sessionHistory: SessionHistoryItem[];

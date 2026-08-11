@@ -1,10 +1,10 @@
 from contextlib import nullcontext
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from loguru import logger
-from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy import case, func, or_
+from sqlalchemy.orm import Session, joinedload
 
 from ..db import get_session
 from ..models import (
@@ -73,73 +73,88 @@ class AchievementSystem:
         return newly_earned
 
     def _get_user_stats(self, user_id: int, session) -> dict[str, Any]:
-        """Get comprehensive user statistics"""
-        stats = {}
-
-        # Get all completed sessions
-        sessions = (
-            session.query(LearningSession)
-            .filter(
-                LearningSession.user_id == user_id,
-                LearningSession.status == "completed",
+        """Get comprehensive user statistics with bounded database reads."""
+        completed_filter = (
+            LearningSession.user_id == user_id,
+            LearningSession.status == "completed",
+        )
+        aggregates = (
+            session.query(
+                func.count(LearningSession.id).label("sessions_completed"),
+                func.coalesce(func.sum(LearningSession.questions_answered), 0).label(
+                    "total_questions_answered"
+                ),
+                func.coalesce(func.sum(LearningSession.correct_answers), 0).label(
+                    "total_correct_answers"
+                ),
+                (
+                    func.count(func.distinct(LearningSession.topic_name))
+                    + func.coalesce(
+                        func.max(
+                            case(
+                                (LearningSession.topic_name.is_(None), 1),
+                                else_=0,
+                            )
+                        ),
+                        0,
+                    )
+                ).label("topics_completed"),
+                func.avg(
+                    case(
+                        (LearningSession.comprehension_score > 0, LearningSession.comprehension_score),
+                        else_=None,
+                    )
+                ).label("average_comprehension"),
             )
-            .all()
+            .filter(*completed_filter)
+            .one()
         )
 
-        # Gather statistics from different sources
-        stats.update(self._get_session_stats(sessions))
-        stats.update(self._get_topic_stats(sessions))
-        stats.update(self._get_streak_stats(sessions))
-        stats.update(self._get_progress_stats(user_id, session))
+        # Only positive comprehension scores contributed to the former Python
+        # average. Keep that rule in SQL so large histories do not cross the
+        # application/database boundary as full ORM rows.
+        stats = {
+            "sessions_completed": int(aggregates.sessions_completed or 0),
+            "total_questions_answered": int(aggregates.total_questions_answered or 0),
+            "total_correct_answers": int(aggregates.total_correct_answers or 0),
+            "topics_completed": int(aggregates.topics_completed or 0),
+            "average_comprehension": float(aggregates.average_comprehension or 0),
+        }
 
-        logger.debug(f"User {user_id} stats: {stats}")
-        return stats
-
-    def _get_session_stats(self, sessions) -> dict[str, Any]:
-        """Calculate statistics from learning sessions"""
-        stats = {}
-        stats["sessions_completed"] = len(sessions)
-        stats["total_questions_answered"] = sum(s.questions_answered for s in sessions)
-        stats["total_correct_answers"] = sum(s.correct_answers for s in sessions)
-
-        # Comprehension score (average of all sessions)
-        if sessions:
-            comprehension_scores = [
-                s.comprehension_score for s in sessions if s.comprehension_score > 0
-            ]
-            stats["average_comprehension"] = (
-                sum(comprehension_scores) / len(comprehension_scores)
-                if comprehension_scores
-                else 0
-            )
-        else:
-            stats["average_comprehension"] = 0
-
-        return stats
-
-    def _get_topic_stats(self, sessions) -> dict[str, Any]:
-        """Calculate topic-related statistics"""
-        topics = set(s.topic_name for s in sessions)
-        return {"topics_completed": len(topics)}
-
-    def _get_streak_stats(self, sessions) -> dict[str, Any]:
-        """Calculate consecutive days streak"""
-        if not sessions:
-            return {"consecutive_days": 0}
-
-        session_dates = [s.started_at.date() for s in sessions]
-        unique_dates = sorted(set(session_dates))
+        # Streak calculation still needs ordered dates, but the database returns
+        # one small scalar row per active day instead of every learning session.
+        date_rows = (
+            session.query(func.date(LearningSession.started_at))
+            .filter(*completed_filter, LearningSession.started_at.is_not(None))
+            .distinct()
+            .order_by(func.date(LearningSession.started_at))
+            .all()
+        )
+        unique_dates = []
+        for (raw_date,) in date_rows:
+            if isinstance(raw_date, datetime):
+                normalized_date = raw_date.date()
+            elif isinstance(raw_date, date):
+                normalized_date = raw_date
+            else:
+                normalized_date = date.fromisoformat(raw_date)
+            unique_dates.append(normalized_date)
 
         consecutive = 1
-        max_consecutive = 1
-        for i in range(1, len(unique_dates)):
-            if (unique_dates[i] - unique_dates[i - 1]).days == 1:
+        max_consecutive = 1 if unique_dates else 0
+        for index in range(1, len(unique_dates)):
+            current = unique_dates[index]
+            previous = unique_dates[index - 1]
+            if (current - previous).days == 1:
                 consecutive += 1
                 max_consecutive = max(max_consecutive, consecutive)
             else:
                 consecutive = 1
+        stats["consecutive_days"] = max_consecutive
 
-        return {"consecutive_days": max_consecutive}
+        stats.update(self._get_progress_stats(user_id, session))
+        logger.debug(f"User {user_id} stats: {stats}")
+        return stats
 
     def _get_progress_stats(self, user_id: int, session) -> dict[str, Any]:
         """Get voice usage and vocabulary stats from user progress"""
@@ -285,6 +300,7 @@ class AchievementSystem:
                 # Get all earned achievements
                 user_achievements = (
                     session.query(UserAchievement)
+                    .options(joinedload(UserAchievement.achievement))
                     .filter(UserAchievement.user_id == user_id)
                     .all()
                 )
@@ -424,7 +440,6 @@ class AchievementSystem:
         try:
             session_context = nullcontext(db) if db is not None else get_session()
             with session_context as session:
-                from sqlalchemy import func
 
                 total_points = (
                     session.query(func.sum(Achievement.points))
@@ -485,7 +500,6 @@ class AchievementSystem:
             session_context = nullcontext(db) if db is not None else get_session()
             with session_context as session:
                 # Get users with their total points
-                from sqlalchemy import func
 
                 leaderboard = (
                     session.query(

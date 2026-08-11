@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect, s
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import BoardAssignment, CommunicationBoard
-from src.api.deps import get_db, get_text, validate_token
+from src.aac_app.models import BoardAssignment, CommunicationBoard, StudentTeacher, User
+from src.api.deps import get_db, get_text, validate_active_token
 
 router = APIRouter(prefix="/api/collab", tags=["collab"])
 
@@ -53,7 +53,7 @@ async def board_channel(
         )
 
         # Authenticate user
-        user = validate_token(token, db)
+        user = validate_active_token(token, db)
 
         # Get language preference from headers
         accept_language = websocket.headers.get("accept-language")
@@ -95,22 +95,34 @@ async def board_channel(
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=reason)
             return
 
-        # Access rules...
-        has_access = False
-        if user.user_type == "admin" or user.user_type == "teacher" or board.user_id == user.id:
-            has_access = True
-        else:
-            # Check if assigned
-            assignment = (
+        # Access rules: owners and admins may collaborate; students need an
+        # explicit board assignment; teachers need an explicit roster
+        # relationship to the student who owns the board. Public boards remain
+        # available as read-only channels below.
+        has_access = user.user_type == "admin" or board.user_id == user.id
+        if not has_access and user.user_type == "teacher":
+            owner = db.query(User).filter(User.id == board.user_id).first()
+            if owner is not None and owner.user_type == "student":
+                has_access = (
+                    db.query(StudentTeacher)
+                    .filter(
+                        StudentTeacher.teacher_id == user.id,
+                        StudentTeacher.student_id == owner.id,
+                    )
+                    .first()
+                    is not None
+                )
+
+        if not has_access and user.user_type == "student":
+            has_access = (
                 db.query(BoardAssignment)
                 .filter(
                     BoardAssignment.board_id == board_id,
                     BoardAssignment.student_id == user.id,
                 )
                 .first()
+                is not None
             )
-            if assignment:
-                has_access = True
 
         if not has_access:
             logger.warning(f"User {user.username} denied access to board {board_id}")

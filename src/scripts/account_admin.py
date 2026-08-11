@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from src.aac_app.db import get_session
 from src.aac_app.models import User
 from src.aac_app.services.auth_service import get_password_hash
+from src.aac_app.services.credential_service import mark_credentials_changed
 from src.aac_app.services.lockout_service import lockout_service
 
 
@@ -27,6 +28,7 @@ def reset_password(session: Session, username: str, new_password: str) -> bool:
     if not user:
         return False
     user.password_hash = get_password_hash(new_password)
+    mark_credentials_changed(user)
     session.commit()
     return True
 

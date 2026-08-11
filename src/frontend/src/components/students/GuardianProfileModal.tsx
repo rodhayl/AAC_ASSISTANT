@@ -53,6 +53,16 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
     }, [student, t]);
 
     useEffect(() => {
+        if (!isOpen || !success) return;
+        const timeoutId = setTimeout(onClose, 1500);
+        return () => clearTimeout(timeoutId);
+    }, [isOpen, onClose, success]);
+
+    useEffect(() => {
+        if (!isOpen && success) setSuccess(null);
+    }, [isOpen, success]);
+
+    useEffect(() => {
         if (isOpen && student) {
             loadData();
         }
@@ -76,7 +86,6 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                 await api.post(`/guardian-profiles/students/${student.id}`, data);
             }
             setSuccess(t('success.saved', 'Profile saved successfully'));
-            setTimeout(onClose, 1500);
         } catch (e: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
             setError(extractError(e, t('errors.saveFailed', 'Failed to save profile')));
         } finally {

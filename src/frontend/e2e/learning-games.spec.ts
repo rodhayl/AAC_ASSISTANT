@@ -69,28 +69,16 @@ test.describe('Learning', () => {
     const input = page.getByPlaceholder(/type|escribe/i).last();
 
     // Ensure session is started via API/Store injection if button not clicked
-    await page.evaluate(async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const store = (window as any).useLearningStore;
-      if (store && !store.getState().currentSession) {
-        console.log('[Test] Forcing session start');
-        // Mock session object
-        const mockSession = {
-          id: 'test-session-123',
-          status: 'active',
-          messages: []
-        };
-        store.setState({ currentSession: mockSession });
-      }
-    });
-
-    // Check if button is visible (it shouldn't be if session is active)
-    const startBtn = page.getByRole('button', { name: /start session|comenzar sesión/i });
-    if (await startBtn.isVisible()) {
+    // Wait for the session state to settle before submitting. The input can
+    // render while the initial session request is still in flight; checking
+    // only input visibility can otherwise submit with no active session.
+    const startBtn = page.getByTestId('learning-session-start');
+    const endBtn = page.getByTestId('learning-session-active');
+    if (!(await endBtn.isVisible())) {
+      await expect(startBtn).toBeVisible({ timeout: 15000 });
       await startBtn.click();
-      await expect(startBtn).not.toBeVisible({ timeout: 10000 });
-      await page.waitForTimeout(2000);
     }
+    await expect(endBtn).toBeVisible({ timeout: 15000 });
 
     await expect(input).toBeVisible();
     await input.fill('Hello');
@@ -99,7 +87,6 @@ test.describe('Learning', () => {
     const sendBtn = page.locator('button[type="submit"]').first();
 
     // Check if button is disabled?
-    // await expect(sendBtn).toBeEnabled();
 
     // Count messages before
     // Use a more generic selector for message bubbles (bg-gray-100 or bg-indigo-100)

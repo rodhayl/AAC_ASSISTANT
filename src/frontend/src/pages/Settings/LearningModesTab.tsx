@@ -81,6 +81,18 @@ export function LearningModesTab() {
     }
   }, [fetchLearningModes, user]);
 
+  useEffect(() => {
+    if (!copied) return;
+    const timeoutId = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(timeoutId);
+  }, [copied]);
+
+  useEffect(() => {
+    if (!modeSuccess) return;
+    const timeoutId = setTimeout(() => setModeSuccess(null), 3000);
+    return () => clearTimeout(timeoutId);
+  }, [modeSuccess]);
+
   const runPreview = useCallback(
     async (studentId?: number | null, source?: LearningMode | null) => {
       const resolvedId =
@@ -180,7 +192,6 @@ export function LearningModesTab() {
     try {
       await navigator.clipboard.writeText(previewPrompt);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
     } catch {
       /* clipboard may be unavailable (e.g. insecure context) */
     }
@@ -220,7 +231,6 @@ export function LearningModesTab() {
       }
       fetchLearningModes();
       handleCancelModeEdit();
-      setTimeout(() => setModeSuccess(null), 3000);
     } catch (err: unknown) {
       setModeError(extractError(err, 'Failed to save mode'));
     }
@@ -232,7 +242,6 @@ export function LearningModesTab() {
       await api.delete(`/learning-modes/${id}`);
       fetchLearningModes();
       setModeSuccess('Mode deleted');
-      setTimeout(() => setModeSuccess(null), 3000);
     } catch (err: unknown) {
       setModeError(extractError(err, 'Failed to delete mode'));
     }

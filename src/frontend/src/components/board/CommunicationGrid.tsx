@@ -1,5 +1,6 @@
 import { memo, useMemo } from 'react';
 import type { BoardSymbol } from '../../types';
+import { indexBoardSymbols } from '../../lib/boardGrid';
 import { SymbolCard } from './SymbolCard';
 
 interface CommunicationGridProps {
@@ -16,13 +17,7 @@ export const CommunicationGrid = memo(function CommunicationGrid({
   onSymbolClick,
 }: CommunicationGridProps) {
   const cells = useMemo(() => {
-    const symbolsByPosition = new Map<string, BoardSymbol>();
-    for (const symbol of symbols) {
-      const key = `${symbol.position_x}-${symbol.position_y}`;
-      // Preserve the previous Array.find behavior if malformed data contains
-      // duplicate placements: the first symbol remains visible.
-      if (!symbolsByPosition.has(key)) symbolsByPosition.set(key, symbol);
-    }
+    const symbolsByPosition = indexBoardSymbols(symbols);
     return Array.from({ length: rows }).flatMap((_, row) =>
       Array.from({ length: cols }, (_, col) => {
         const key = `${col}-${row}`;

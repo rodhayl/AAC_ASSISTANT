@@ -5,9 +5,6 @@ test.describe('Advanced Scenarios', () => {
 
   test.beforeEach(async ({ page }) => {
     // Clear board storage only if needed
-    // await page.addInitScript(() => {
-    //    window.localStorage.removeItem('board-storage');
-    // });
   });
 
   test('should handle offline mode', async ({ page }) => {
@@ -94,7 +91,6 @@ test.describe('Advanced Scenarios', () => {
     
     // Go online
     await page.context().setOffline(false);
-    // await expect(page.getByRole('status').filter({ hasText: /offline|conexión/i })).not.toBeVisible();
   });
 
   test('should handle offline conflicts', async ({ page }) => {

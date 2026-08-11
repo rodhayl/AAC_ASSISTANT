@@ -114,26 +114,20 @@ test.describe('Communication', () => {
     // Now we should be in board view
     await expect(page.locator('.grid')).toBeVisible();
 
-    // Verify symbols are loaded
-    await expect(page.getByText('Hello')).toBeVisible();
-
-    // Click symbol "Hello"
-    const symbol = page.locator('.grid').getByText('Hello').first();
+    // Verify and click the grid symbol itself. The assistant panel may also
+    // contain the same label, so use the card's accessible action name.
+    const symbol = page.locator('.grid').getByRole('button', {
+      name: 'Add Hello to sentence',
+    });
     await expect(symbol).toBeVisible();
-    await symbol.click({ force: true });
+    // Keyboard activation is deterministic and follows the accessibility
+    // contract even when dwell-time pointer activation is enabled.
+    await symbol.press('Enter');
 
-    // Verify symbol added to strip
-    // The strip usually contains the text of the symbol
-    // We check for the text OR the image with alt text
-    const strip = page.locator('.min-h-\\[5rem\\]').first();
+    // Verify the symbol label was added to the sentence strip. The strip's
+    // label span is stable even when drag-and-drop wrappers change shape.
+    const strip = page.getByTestId('sentence-strip');
     await expect(strip).toBeVisible();
-    // Try finding text or image
-    const hasText = await strip.getByText('Hello').isVisible().catch(() => false);
-    const hasImage = await strip.locator('img[alt="Hello"]').isVisible().catch(() => false);
-    
-    if (!hasText && !hasImage) {
-        // Fallback: check if any child exists (assuming it was empty before)
-        await expect(strip.locator('div').first()).toBeVisible();
-    }
+    await expect(strip.locator('span').filter({ hasText: 'Hello' })).toBeVisible();
   });
 });

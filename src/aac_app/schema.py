@@ -32,6 +32,8 @@ def _ensure_sqlite_columns(engine: Engine) -> None:
             return any(row[1] == column for row in rows)
 
         columns = (
+            ("users", "security_version", "INTEGER NOT NULL DEFAULT 1"),
+            ("users", "credentials_changed_at", "DATETIME"),
             ("symbols", "order_index", "INTEGER DEFAULT 0"),
             ("board_symbols", "order_index", "INTEGER DEFAULT 0"),
             ("user_settings", "ui_language", "TEXT DEFAULT 'es-ES'"),
@@ -109,12 +111,38 @@ def _ensure_sqlite_indexes(engine: Engine) -> None:
         ),
         ("ix_learning_sessions_user_started", "learning_sessions", "user_id, started_at"),
         (
+            "ix_learning_sessions_user_status_started",
+            "learning_sessions",
+            "user_id, status, started_at",
+        ),
+        (
+            "ix_learning_sessions_status_ended",
+            "learning_sessions",
+            "status, ended_at",
+        ),
+        (
             "ix_notifications_user_read_created",
             "notifications",
             "user_id, is_read, created_at",
         ),
         ("ix_notifications_user_created", "notifications", "user_id, created_at"),
         ("ix_learning_modes_key", "learning_modes", "key"),
+        (
+            "ix_user_achievements_user_achievement",
+            "user_achievements",
+            "user_id, achievement_id",
+        ),
+        ("ix_user_progress_user_metric", "user_progress", "user_id, metric_type, id"),
+        (
+            "ix_student_teachers_teacher_student",
+            "student_teachers",
+            "teacher_id, student_id",
+        ),
+        (
+            "ix_student_teachers_student_teacher",
+            "student_teachers",
+            "student_id, teacher_id",
+        ),
     )
 
     with engine.begin() as connection:
@@ -161,8 +189,3 @@ def ensure(engine: Engine | None = None) -> Engine:
     _ensure_sqlite_indexes(engine)
     mark_tables_initialized(engine)
     return engine
-
-
-# Kept as a small compatibility name for code that used the old private helper
-# while the actual implementation now lives in this module.
-_ensure_sqlite_schema = _ensure_sqlite_columns

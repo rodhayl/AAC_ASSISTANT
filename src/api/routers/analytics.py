@@ -49,7 +49,7 @@ def _log_usage_request(
 
 
 @router.post("/usage", status_code=status.HTTP_201_CREATED)
-async def log_symbol_usage(
+def log_symbol_usage(
     request: SymbolUsageRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -67,7 +67,7 @@ async def log_symbol_usage(
 
 
 @router.get("/frequent-sequences", response_model=list[dict])
-async def get_frequent_sequences(
+def get_frequent_sequences(
     limit: int = Query(10, ge=1, le=50, description="Maximum sequences to return"),
     min_occurrences: int = Query(
         2, ge=1, le=100, description="Minimum times sequence must appear"
@@ -293,7 +293,7 @@ def get_next_symbol_suggestions_post(
 
 
 @router.post("/log", status_code=status.HTTP_201_CREATED)
-async def log_symbol_usage_legacy(
+def log_symbol_usage_legacy(
     request: SymbolUsageRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -322,7 +322,7 @@ async def log_symbol_usage_legacy(
 
 
 @router.get("/category-preferences", response_model=dict)
-async def get_category_preferences(
+def get_category_preferences(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -353,7 +353,7 @@ async def get_category_preferences(
 
 
 @router.get("/usage-stats", response_model=dict)
-async def get_usage_statistics(
+def get_usage_statistics(
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),

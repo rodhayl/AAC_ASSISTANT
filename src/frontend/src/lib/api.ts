@@ -75,15 +75,29 @@ export function isAuthFlowEndpoint(url?: string): boolean {
 
 let offline = typeof navigator !== 'undefined' ? !navigator.onLine : false
 const queue: Array<AxiosRequestConfig> = []
+const replayControllers = new Set<AbortController>()
+let replayGeneration = 0
 
 function flushQueue() {
   if (queue.length === 0) return
   const items = queue.splice(0)
+  const generation = replayGeneration
   for (const cfg of items) {
-    api.request(cfg).catch((error) => {
-      // Track conflicts that fail on replay
-      const errorMsg = error?.response?.data?.detail || error?.message || 'Request failed after reconnection'
-      useOfflineStore.getState().addConflict(cfg, errorMsg)
+    const controller = new AbortController()
+    replayControllers.add(controller)
+    api.request({ ...cfg, signal: controller.signal }).catch((error) => {
+      // Logout cancellation and late results from an invalidated session are
+      // intentional, not user-visible conflicts.
+      if (
+        generation === replayGeneration &&
+        error?.code !== 'ERR_CANCELED' &&
+        error?.name !== 'CanceledError'
+      ) {
+        const errorMsg = error?.response?.data?.detail || error?.message || 'Request failed after reconnection'
+        useOfflineStore.getState().addConflict(cfg, errorMsg)
+      }
+    }).finally(() => {
+      replayControllers.delete(controller)
     })
   }
 }
@@ -96,18 +110,41 @@ if (typeof window !== 'undefined') {
   window.addEventListener('offline', () => {
     offline = true
   })
+  const clearSessionMutations = () => {
+    // Queued mutations and replay conflicts belong to the previous session.
+    // Never replay them after another user signs in on this browser.
+    queue.length = 0
+    replayGeneration += 1
+    replayControllers.forEach((controller) => controller.abort())
+    replayControllers.clear()
+    useOfflineStore.getState().clearConflicts()
+  }
+  window.addEventListener('aac:auth-logout', clearSessionMutations)
+  window.addEventListener('aac:auth-context-changed', clearSessionMutations)
 }
 
 api.interceptors.request.use((config) => {
   const { token } = useAuthStore.getState();
-  if (token) {
+  const headers = config.headers;
+  const explicitAuthorization =
+    typeof headers?.has === 'function'
+      ? headers.has('Authorization')
+      : headers?.Authorization !== undefined || headers?.authorization !== undefined;
+  if (token && !explicitAuthorization) {
     const bearer = token;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     config.headers = { ...config.headers, Authorization: `Bearer ${bearer}` } as any;
   }
   // If offline and non-GET, queue the request for retry
-  if (offline && config.method && config.method.toUpperCase() !== 'GET') {
-    queue.push({ ...config })
+  if (
+    offline &&
+    config.method &&
+    config.method.toUpperCase() !== 'GET' &&
+    !isAuthFlowEndpoint(config.url)
+  ) {
+    // The original request may be cancelled while offline; replay must get a
+    // fresh lifecycle and therefore cannot reuse its aborted signal.
+    queue.push({ ...config, signal: undefined })
     // Throw a controlled error to let UI disable actions
     return Promise.reject({ message: 'offline', code: 'ERR_OFFLINE' })
   }

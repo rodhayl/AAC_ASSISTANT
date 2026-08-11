@@ -11,6 +11,7 @@ import { CommunicationChat } from '../components/board/CommunicationChat';
 import { SymbolSearchModal } from '../components/board/SymbolSearchModal';
 import { PartnerOverlay } from '../components/board/PartnerOverlay';
 import type { BoardSymbol } from '../types';
+import { getBoardCapacity } from '../lib/boardGrid';
 import { tts } from '../lib/tts';
 import api from '../lib/api';
 import { glossSymbolUtterance } from '../lib/gloss';
@@ -109,9 +110,7 @@ export function Communication() {
   };
 
   const isBoardPlayable = useCallback((board: BoardPlayableInfo) => {
-    const rows = board.grid_rows || 4;
-    const cols = board.grid_cols || 5;
-    const capacity = rows * cols;
+    const capacity = getBoardCapacity(board);
 
     // Use playable_symbols_count if available (from backend), otherwise count symbols array
     let symbolCount = 0;
@@ -452,7 +451,7 @@ export function Communication() {
                   ? board.playable_symbols_count
                   : (board.symbols?.filter(s => s.is_visible).length || 0);
 
-                const capacity = (board.grid_rows || 4) * (board.grid_cols || 5);
+                const capacity = getBoardCapacity(board);
                 const threshold = Math.ceil(capacity * 0.5);
                 const progress = Math.round((symbolCount / threshold) * 100);
                 const needed = Math.max(0, threshold - symbolCount);

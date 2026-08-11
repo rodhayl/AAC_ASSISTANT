@@ -77,10 +77,11 @@ def get_boards(
 
         return result
     except Exception as e:
-        logger.error(f"Error fetching boards: {e}")
-        logger.exception("Traceback:")
-        # Fallback empty list to avoid UI crash; error logged by FastAPI
-        return []
+        logger.exception("Error fetching boards: {}", e)
+        raise HTTPException(
+            status_code=500,
+            detail=get_text(user=current_user, key="errors.unknown"),
+        ) from e
 
 
 @router.get("/{board_id}", response_model=schemas.BoardResponse)

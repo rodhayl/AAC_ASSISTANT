@@ -183,6 +183,7 @@ export function LearningChatPanel({
                 aria-expanded={showEndConfirmation}
                 aria-haspopup="dialog"
                 aria-controls="end-session-confirmation"
+                data-testid="learning-session-active"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 title="End this session and see a summary"
               >
@@ -268,6 +269,7 @@ export function LearningChatPanel({
             <button
               onClick={onStartSession}
               aria-label="Start Session"
+              data-testid="learning-session-start"
               className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
               disabled={isStartingSession}
             >

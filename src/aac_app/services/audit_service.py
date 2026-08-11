@@ -77,8 +77,12 @@ class AuditLogService:
             success=success,
         )
 
+        # Audit entries participate in the caller's transaction. Request
+        # handlers commit once through get_db; committing here could persist
+        # business changes before a later operation fails and make rollback
+        # semantics inconsistent.
         db.add(audit_entry)
-        db.commit()
+        db.flush()
         db.refresh(audit_entry)
 
         # Also log to application logger for immediate visibility

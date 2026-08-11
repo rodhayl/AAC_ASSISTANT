@@ -5,23 +5,10 @@ import { Layout } from './components/Layout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Login } from './pages/Login';
 import { useAuthStore } from './store/authStore';
-import { useBoardStore } from './store/boardStore';
-import { useLearningStore } from './store/learningStore';
 import { ToastContainer } from './components/ui/ToastContainer';
 import { SettingsManager } from './components/SettingsManager';
 import { lazyWithRetry } from './lib/lazyWithRetry';
 import { LoadingState } from './components/ui/LoadingState';
-
-// Expose stores for local E2E testing only. Production builds require the
-// explicit VITE_ENABLE_E2E_HOOKS flag; normal production builds expose nothing.
-if (import.meta.env.DEV || import.meta.env.VITE_ENABLE_E2E_HOOKS === 'true') {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (window as any).useAuthStore = useAuthStore;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (window as any).useBoardStore = useBoardStore;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (window as any).useLearningStore = useLearningStore;
-}
 
 const Dashboard = lazyWithRetry(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })), 'dashboard');
 const Communication = lazyWithRetry(() => import('./pages/Communication').then(m => ({ default: m.Communication })), 'communication');

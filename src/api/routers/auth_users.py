@@ -10,6 +10,7 @@ from src.aac_app.models import (
 )
 from src.aac_app.services.audit_service import audit_service
 from src.aac_app.services.auth_service import get_password_hash, verify_password
+from src.aac_app.services.credential_service import mark_credentials_changed
 from src.aac_app.services.lockout_service import lockout_service
 from src.api import schemas
 from src.api.deps import get_current_active_user, get_current_admin_user, get_db
@@ -85,10 +86,11 @@ def admin_create_user(
     )
 
     db.add(new_user)
-    db.commit()
+    db.flush()
     db.refresh(new_user)
 
-    # Log admin action and account creation
+    # Log admin action and account creation; the request dependency commits
+    # the user and its audit entries atomically after the handler returns.
     client_ip = request.client.host if request.client else "unknown"
     audit_service.log_admin_action(
         db=db,
@@ -325,9 +327,8 @@ def change_password(
         if not verify_password(payload.current_password, current_user.password_hash):
             raise HTTPException(status_code=401, detail="Current password incorrect")
     else:
-        # Trying to change someone else's password
-        # Even admin shouldn't use this endpoint if it requires current_password of the target.
-        # Admin should use a reset-password endpoint (not implemented yet, or use update_user).
+        # This endpoint changes only the authenticated user's password. Admins
+        # and teachers use the separately authorized reset-password route.
         raise HTTPException(status_code=403, detail="Cannot change another user's password via this endpoint")
 
     # Validate new password strength using shared validation function
@@ -339,10 +340,11 @@ def change_password(
     # Use the authenticated identity rather than re-querying by client input.
     user = current_user
     user.password_hash = get_password_hash(payload.new_password)
+    mark_credentials_changed(user)
     db.add(user)
-    db.commit()
+    db.flush()
 
-    # Log password change
+    # Log password change in the same request transaction.
     client_ip = request.client.host if request.client else "unknown"
     audit_service.log_password_changed(
         db=db,
@@ -373,7 +375,7 @@ def update_user(
         if key in payload:
             setattr(user, key, payload[key])
     db.add(user)
-    db.commit()
+    db.flush()
     db.refresh(user)
     return user
 
@@ -445,7 +447,7 @@ def update_profile(
             raise HTTPException(status_code=400, detail="Email already in use")
         current_user.email = profile.email
 
-    db.commit()
+    db.flush()
     db.refresh(current_user)
     logger.info(f"Updated profile for user {current_user.username}")
     return current_user

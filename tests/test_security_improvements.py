@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.aac_app.models import Notification
 from src.api.main import app
@@ -168,6 +169,23 @@ class TestAdminResetDbSafeguards:
         response = self.client.post("/api/admin/reset-db")
         assert response.status_code == 401
 
+    def test_reset_db_reports_internal_failure_as_server_error(self, admin_token):
+        """Reset failures must not look like successful HTTP responses."""
+        with patch('src.api.routers.admin.config') as mock_config, patch(
+            'src.api.routers.admin.create_engine_instance',
+            side_effect=SQLAlchemyError('reset failed'),
+        ):
+            mock_config.ALLOW_DB_RESET = True
+            mock_config.ENVIRONMENT = "development"
+
+            response = self.client.post(
+                "/api/admin/reset-db",
+                headers={"Authorization": f"Bearer {admin_token}"}
+            )
+
+        assert response.status_code == 500
+        assert response.json()["detail"]
+
 
 class TestEnvPropertiesCleanup:
     """Further Considerations: Test env.properties is properly formatted."""
@@ -186,9 +204,6 @@ class TestEnvPropertiesCleanup:
     def test_config_loads_without_errors(self):
         """Test that configuration loads correctly after cleanup."""
         from src import config
-
-        # Reload to ensure fresh state
-        config.reload()
 
         # Should be able to read key configuration values
         assert config.BACKEND_PORT > 0

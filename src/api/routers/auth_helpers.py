@@ -121,4 +121,15 @@ def ensure_can_access_user_preferences(*, current_user, target_user, db) -> None
         )
         if assigned:
             return
+
+        # Preserve the profile-setup flow used by the other teacher/student
+        # endpoints: an empty roster means the teacher has not configured
+        # assignments yet, so all students remain visible until then.
+        has_roster = (
+            db.query(StudentTeacher)
+            .filter(StudentTeacher.teacher_id == current_user.id)
+            .first()
+        )
+        if has_roster is None:
+            return
     raise HTTPException(status_code=403, detail="Not authorized to access preferences")

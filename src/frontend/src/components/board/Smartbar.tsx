@@ -135,7 +135,6 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
   };
 
   // Always render to allow access to categories
-  // if (suggestions.length === 0 && activeIntent === 'general') return null;
 
   return (
     <div className="w-full bg-indigo-50 dark:bg-indigo-900/20 border-b border-indigo-100 dark:border-indigo-800/50 p-1.5 transition-all">

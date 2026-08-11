@@ -131,7 +131,7 @@ export const SentenceStrip = memo(function SentenceStrip({
   const sentenceText = symbols.map(s => s.custom_text || s.symbol.label).join(' ');
 
   return (
-    <div className="glass-panel border-b border-border dark:border-white/5 shadow-sm sticky top-0 z-20">
+    <div data-testid="sentence-strip" className="glass-panel border-b border-border dark:border-white/5 shadow-sm sticky top-0 z-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
         <div className="flex items-center gap-4">
           {/* Sentence Display Area */}

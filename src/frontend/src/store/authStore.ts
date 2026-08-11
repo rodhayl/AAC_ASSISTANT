@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import api, { extractError } from '../lib/api';
 import type { User } from '../types';
-// Remove duplicate import if present or keep only one
 import { useLocaleStore } from './localeStore';
 import { useThemeStore } from './themeStore';
 
@@ -245,10 +244,6 @@ export const useAuthStore = create<AuthState>()(
         if (!refreshToken) return false;
         
         try {
-          // Use URLSearchParams for form data
-          const params = new URLSearchParams();
-          params.append('refresh_token', refreshToken);
-          
           const response = await api.post('/auth/refresh', null, {
             params: { refresh_token: refreshToken } // Some backends might want query param or body
           });

@@ -21,39 +21,115 @@ router = APIRouter()
 
 
 def compute_checksum(payload: dict[str, Any]) -> str:
-    """Compute SHA-256 checksum for export data integrity verification."""
+    """Compute a canonical SHA-256 checksum for export data integrity."""
+    from hashlib import sha256
+
+    raw = json.dumps(
+        payload,
+        separators=(",", ":"),
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    return sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _compute_legacy_checksum(payload: dict[str, Any]) -> str:
+    """Compute the pre-canonical checksum for backward-compatible imports."""
     from hashlib import sha256
 
     raw = json.dumps(payload, separators=(",", ":"))
     return sha256(raw.encode("utf-8")).hexdigest()
 
 
-def _import_boards(db: Session, user: User, boards_data: list[dict[str, Any]]):
-    """Helper to import boards."""
-    for b in boards_data:
-        board = CommunicationBoard(
-            user_id=user.id,
-            name=b.get("name"),
-            description=b.get("description"),
-            category=b.get("category") or "general",
-            is_public=bool(b.get("is_public")),
-            is_template=bool(b.get("is_template")),
-            grid_rows=b.get("grid_rows") or 4,
-            grid_cols=b.get("grid_cols") or 5,
-        )
-        db.add(board)
-        db.flush()
-        for s in b.get("symbols") or []:
-            bs = BoardSymbol(
+def _create_imported_board(
+    db: Session,
+    user: User,
+    board_data: dict[str, Any],
+) -> CommunicationBoard:
+    """Create one imported board and its symbol placements."""
+    board = CommunicationBoard(
+        user_id=user.id,
+        name=board_data.get("name"),
+        description=board_data.get("description"),
+        category=board_data.get("category") or "general",
+        is_public=bool(board_data.get("is_public")),
+        is_template=bool(board_data.get("is_template")),
+        grid_rows=board_data.get("grid_rows") or 4,
+        grid_cols=board_data.get("grid_cols") or 5,
+    )
+    db.add(board)
+    db.flush()
+    for symbol_data in board_data.get("symbols") or []:
+        db.add(
+            BoardSymbol(
                 board_id=board.id,
-                symbol_id=(s.get("symbol", {}) or {}).get("id") or s.get("symbol_id"),
-                position_x=s.get("position_x") or 0,
-                position_y=s.get("position_y") or 0,
-                size=s.get("size") or 1,
-                is_visible=bool(s.get("is_visible")),
-                custom_text=s.get("custom_text"),
+                symbol_id=(symbol_data.get("symbol", {}) or {}).get("id")
+                or symbol_data.get("symbol_id"),
+                position_x=symbol_data.get("position_x") or 0,
+                position_y=symbol_data.get("position_y") or 0,
+                size=symbol_data.get("size") or 1,
+                is_visible=bool(symbol_data.get("is_visible")),
+                custom_text=symbol_data.get("custom_text"),
             )
-            db.add(bs)
+        )
+    return board
+
+
+def _import_boards(
+    db: Session, user: User, boards_data: list[dict[str, Any]]
+) -> dict[int, CommunicationBoard]:
+    """Import owned boards and return source-ID to new-board mappings."""
+    imported: dict[int, CommunicationBoard] = {}
+    for board_data in boards_data:
+        board = _create_imported_board(db, user, board_data)
+        source_id = board_data.get("id")
+        if isinstance(source_id, int):
+            imported[source_id] = board
+    return imported
+
+
+def _import_assigned_boards(
+    db: Session,
+    user: User,
+    assigned_boards_data: list[dict[str, Any]],
+    imported_boards: dict[int, CommunicationBoard],
+) -> None:
+    """Restore assigned boards without trusting unrelated ID collisions."""
+    for board_data in assigned_boards_data:
+        source_id = board_data.get("id")
+        board = imported_boards.get(source_id) if isinstance(source_id, int) else None
+        if board is None and isinstance(source_id, int):
+            # Never grant access to an existing board owned by another user
+            # based only on an uploaded ID/name pair. IDs in exports are not
+            # authenticators; unrelated boards must be cloned instead.
+            board = (
+                db.query(CommunicationBoard)
+                .filter(
+                    CommunicationBoard.id == source_id,
+                    CommunicationBoard.user_id == user.id,
+                    CommunicationBoard.name == board_data.get("name"),
+                )
+                .first()
+            )
+        if board is None:
+            board = _create_imported_board(db, user, board_data)
+
+        exists = (
+            db.query(BoardAssignment)
+            .filter(
+                BoardAssignment.board_id == board.id,
+                BoardAssignment.student_id == user.id,
+            )
+            .first()
+        )
+        if exists is None:
+            db.add(
+                BoardAssignment(
+                    board_id=board.id,
+                    student_id=user.id,
+                    assigned_by=user.id,
+                )
+            )
 
 
 def _import_achievements(
@@ -117,8 +193,14 @@ def _import_learning_history(
                 ),
             )
             db.add(ls)
-        except Exception:
-            continue
+        except (AttributeError, TypeError, ValueError, OverflowError) as exc:
+            # Do not silently discard user data. Raising aborts the request and
+            # lets get_db roll back every staged board, achievement, and history
+            # row from this import.
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid learning history record in import",
+            ) from exc
 
 
 @router.get("/api/data/export")
@@ -280,7 +362,8 @@ def import_data(
         "learningHistory": data.get("learningHistory") or [],
     }
     actual = compute_checksum(base)
-    if not expected or expected != actual:
+    legacy_actual = _compute_legacy_checksum(base)
+    if not expected or expected not in {actual, legacy_actual}:
         raise HTTPException(
             status_code=400,
             detail=get_text(user=current_user, key="errors.export.checksumMismatch"),
@@ -303,11 +386,17 @@ def import_data(
         )
 
     # Import data using helpers
-    _import_boards(db, user, base["boards"])
+    imported_boards = _import_boards(db, user, base["boards"])
+    _import_assigned_boards(
+        db,
+        user,
+        base["assignedBoards"],
+        imported_boards,
+    )
     _import_achievements(db, user, base["achievements"])
-    db.commit()
-
     _import_learning_history(db, user, base["learningHistory"])
-    db.commit()
+    # Keep the entire import atomic: the request dependency commits once after
+    # every section has been validated and staged successfully.
+    db.flush()
 
     return {"ok": True}

@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from loguru import logger
@@ -9,11 +11,12 @@ from src.aac_app.services.auth_service import (
     get_password_hash,
     verify_password_and_update,
 )
+from src.aac_app.services.credential_service import mark_credentials_changed
 from src.aac_app.services.lockout_service import lockout_service
 from src.aac_app.utils.jwt_utils import (
     create_access_token,
     create_refresh_token,
-    decode_access_token,
+    decode_refresh_token,
 )
 from src.api import schemas
 from src.api.deps import get_db
@@ -52,6 +55,10 @@ def login_for_access_token(
             ip_address=client_ip,
             reason=f"Account locked until {locked_until}"
         )
+        # Authentication failures intentionally persist their security events
+        # even though the request raises and the dependency would otherwise
+        # roll the transaction back.
+        db.commit()
 
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -68,6 +75,7 @@ def login_for_access_token(
             ip_address=client_ip,
             reason="User not found"
         )
+        db.commit()
 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -83,6 +91,7 @@ def login_for_access_token(
             ip_address=client_ip,
             reason="Account inactive"
         )
+        db.commit()
 
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -112,6 +121,7 @@ def login_for_access_token(
             ip_address=client_ip,
             reason=reason
         )
+        db.commit()
 
         if is_locked:
             raise HTTPException(
@@ -127,8 +137,9 @@ def login_for_access_token(
 
     if updated_password_hash:
         user.password_hash = updated_password_hash
+        mark_credentials_changed(user)
         db.add(user)
-        db.commit()
+        db.flush()
 
     # Login successful - reset failed attempts
     lockout_service.reset_attempts(db, form_data.username)
@@ -147,14 +158,16 @@ def login_for_access_token(
         data={
             "sub": user.username,
             "user_id": user.id,
-            "user_type": user.user_type
+            "user_type": user.user_type,
+            "sec_ver": user.security_version or 1,
         }
     )
 
     refresh_token = create_refresh_token(
         data={
             "sub": user.username,
-            "user_id": user.id
+            "user_id": user.id,
+            "sec_ver": user.security_version or 1,
         }
     )
 
@@ -182,21 +195,12 @@ def refresh_access_token(
     Rate limited to 30 attempts per minute per IP.
     """
     # Decode and validate refresh token
-    payload = decode_access_token(refresh_token)
+    payload = decode_refresh_token(refresh_token)
     if not payload:
         logger.warning("Refresh token validation failed: Invalid or expired token")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    # Verify this is a refresh token
-    if payload.get("type") != "refresh":
-        logger.warning("Token type mismatch: Expected refresh token, got access token")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token type. Expected refresh token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -220,6 +224,26 @@ def refresh_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    token_security_version = payload.get("sec_ver")
+    if token_security_version is not None:
+        token_is_revoked = token_security_version != (user.security_version or 1)
+    elif user.credentials_changed_at is not None:
+        token_issued_at = payload.get("iat")
+        token_is_revoked = (
+            token_issued_at is None
+            or datetime.fromtimestamp(token_issued_at, UTC).replace(tzinfo=None)
+            < user.credentials_changed_at
+        )
+    else:
+        token_is_revoked = False
+    if token_is_revoked:
+        logger.warning("Refresh token security state mismatch for user {}", user_id)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     # Check if account is still active
     if not user.is_active:
         logger.warning(f"Refresh attempt for inactive user '{user.username}'")
@@ -233,7 +257,8 @@ def refresh_access_token(
         data={
             "sub": user.username,
             "user_id": user.id,
-            "user_type": user.user_type
+            "user_type": user.user_type,
+            "sec_ver": user.security_version or 1,
         }
     )
 
@@ -290,10 +315,10 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
     )
 
     db.add(new_user)
-    db.commit()
+    db.flush()
     db.refresh(new_user)
 
-    # Log successful account creation
+    # Log successful account creation in the same request transaction.
     client_ip = request.client.host if request.client else "unknown"
     audit_service.log_account_created(
         db=db,
@@ -345,8 +370,9 @@ def login(credentials: schemas.LoginRequest, db: Session = Depends(get_db)):
 
     if updated_password_hash:
         user.password_hash = updated_password_hash
+        mark_credentials_changed(user)
         db.add(user)
-        db.commit()
+        db.flush()
 
     logger.info(
         f"Login successful for user '{credentials.username}' "

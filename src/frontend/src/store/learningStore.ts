@@ -12,7 +12,7 @@ interface WithProvider {
   provider_used?: 'ollama' | 'openrouter' | 'lmstudio';
 }
 
-interface SessionHistoryItem {
+export interface SessionHistoryItem {
   id: number;
   topic: string;
   purpose: string;
@@ -630,7 +630,6 @@ export const useLearningStore = create<LearningState>((set, get) => {
         }
       }
 
-      // console.log('[loadSession] Reconstructed messages:', messages);
 
       set({
         currentSession: {

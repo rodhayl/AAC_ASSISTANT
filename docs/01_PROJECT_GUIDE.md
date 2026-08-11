@@ -184,6 +184,50 @@ Core enforcement paths are `src/api/deps/` and `src/api/routers/`. Keep
 `JWT_SECRET_KEY` for any shared or deployed instance. Change the bootstrap
 administrator password immediately after first login.
 
+### Token revocation and security-version policy
+
+Authentication issues two signed JWTs at login (`POST /api/auth/token`):
+
+- **Access token** — HS256-signed, valid 120 minutes, carries the claims
+  `sub` (username), `user_id`, `user_type`, `sec_ver`, `iat`, `exp`,
+  `iss` (`aac-assistant`), and `type` (`"access"`).
+- **Refresh token** — HS256-signed, valid 7 days, carries `sub`, `user_id`,
+  `sec_ver`, `iat`, `exp`, `iss`, and `type` (`"refresh"`).
+
+Token types are enforced when decoding: `decode_access_token` rejects
+refresh tokens, and `decode_refresh_token` rejects anything that is not a
+refresh token. Tokens issued before the `type` claim was introduced (no
+`type` present) remain accepted as access tokens for backward compatibility.
+
+Every password mutation path (`mark_credentials_changed` in
+`src/aac_app/services/credential_service.py`) increments the user's
+`security_version` column and records `credentials_changed_at`. This covers:
+
+- self-service password change (`POST /api/auth/change-password`)
+- admin/teacher password reset (`POST /api/users/reset-password`)
+- legacy-hash rehash performed during login when the password verifier
+  upgrades the stored hash
+- operator scripts (`account_admin.py`, `ensure_bootstrap_admin.py`,
+  `fix_null_passwords.py`, `migrate_passwords.py`) and seeding
+
+**Revocation semantics.** A token is rejected if its `sec_ver` claim does not
+match the user's current `security_version` — so any password change
+immediately invalidates every previously issued access and refresh token for
+that account. Clients must re-authenticate. Both the access-token validator
+(`validate_token` in `src/api/deps/auth.py`) and the refresh endpoint
+(`POST /api/auth/refresh`) enforce this check.
+
+**Legacy-token compatibility.** Tokens without a `sec_ver` claim (issued
+before security versions existed) are validated against
+`credentials_changed_at`: if the token's `iat` predates the recorded
+credential change, it is rejected. This keeps old sessions valid until the
+first password change without letting them survive one.
+
+**Related lifecycle checks.** `validate_active_token` and the refresh endpoint
+also reject accounts whose `is_active` is false. Login, refresh, and
+registration endpoints are rate limited per IP, and failed logins trigger the
+account-lockout service after repeated attempts.
+
 ## 6. Utilities and manual QA
 
 Project utilities under `scripts/` cover setup, bootstrap administration,

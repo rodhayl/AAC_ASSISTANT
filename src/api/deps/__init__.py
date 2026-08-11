@@ -12,6 +12,7 @@ from .auth import (
     get_current_user,
     get_text,
     oauth2_scheme,
+    validate_active_token,
     validate_token,
     verify_student_access,
 )
@@ -73,6 +74,7 @@ __all__ = [
     "reset_providers_async",
     "reset_llm_providers",
     "reset_speech_provider",
+    "validate_active_token",
     "validate_token",
     "verify_student_access",
     "warmup_providers",

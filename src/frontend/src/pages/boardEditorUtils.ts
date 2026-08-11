@@ -1,3 +1,4 @@
+import { getBoardCapacity } from '../lib/boardGrid';
 import type { Board, BoardSymbol } from '../types';
 
 export type BoardSymbolOverrides = Record<number, Partial<BoardSymbol>>;
@@ -21,7 +22,7 @@ export function mergeBoardSymbols(
 }
 
 export function getBoardPlayabilityStatus(board: Board, symbols: BoardSymbol[]): BoardPlayabilityStatus {
-  const capacity = (board.grid_rows ?? 4) * (board.grid_cols ?? 5);
+  const capacity = getBoardCapacity(board);
   const threshold = Math.ceil(capacity * 0.5);
   const count = symbols.filter((symbol) =>
     symbol.is_visible && (symbol.custom_text || symbol.symbol?.label),

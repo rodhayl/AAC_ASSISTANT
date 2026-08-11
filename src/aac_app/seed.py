@@ -23,6 +23,7 @@ from src.aac_app.services.achievement_catalog import (
     INITIAL_ACHIEVEMENT_KEYS,
     PREDEFINED_ACHIEVEMENTS,
 )
+from src.aac_app.services.credential_service import mark_credentials_changed
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -90,6 +91,7 @@ def _ensure_bootstrap_admin(session: Session) -> None:
         user.user_type = "admin"
         user.is_active = True
         user.password_hash = get_password_hash(password)
+        mark_credentials_changed(user)
         if not user.display_name:
             user.display_name = "Administrator"
     else:

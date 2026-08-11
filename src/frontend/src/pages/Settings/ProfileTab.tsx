@@ -22,6 +22,12 @@ export function ProfileTab() {
     }
   }, [user, editingProfile]);
 
+  useEffect(() => {
+    if (!profileSuccess) return;
+    const timeoutId = setTimeout(() => setProfileSuccess(false), 3000);
+    return () => clearTimeout(timeoutId);
+  }, [profileSuccess]);
+
   const handleSaveProfile = async () => {
     setProfileSaving(true);
     setProfileError(null);
@@ -39,7 +45,6 @@ export function ProfileTab() {
       });
       setProfileSuccess(true);
       setEditingProfile(false);
-      setTimeout(() => setProfileSuccess(false), 3000);
     } catch (err: unknown) {
       setProfileError(extractError(err, 'Failed to save profile'));
     } finally {

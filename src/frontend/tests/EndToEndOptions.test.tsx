@@ -192,6 +192,7 @@ describe('End-to-End Options Tests', () => {
 
     (api.get as unknown as Mock).mockImplementation((url: string) => {
       if (url === '/boards/') return Promise.resolve({ data: mockBoards });
+      if (url === '/boards/assigned') return Promise.resolve({ data: [] });
       if (url === '/boards/1') return Promise.resolve({ data: mockFullBoard });
       return Promise.resolve({ data: {} });
     });
@@ -204,6 +205,7 @@ describe('End-to-End Options Tests', () => {
 
     // 1. Select Board
     await waitFor(() => expect(screen.getByText('Game Board')).toBeInTheDocument());
+    expect(api.get).toHaveBeenCalledWith('/boards/');
     fireEvent.click(screen.getByText('Play Now'));
 
     // 2. Game Starts

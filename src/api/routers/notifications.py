@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from src.aac_app.db import create_session_factory, ensure_tables
 from src.aac_app.models import Notification, User
 from src.aac_app.services.notification_events import (
     publish_notification,
@@ -17,7 +18,7 @@ from src.api.deps import (
     get_current_admin_user,
     get_db,
     get_text,
-    validate_token,
+    validate_active_token,
 )
 from src.api.schemas import NotificationCreate
 
@@ -25,16 +26,26 @@ router = APIRouter()
 
 
 @router.get("/api/notifications/stream")
-async def notifications_stream(token: str = None, db: Session = Depends(get_db)):
-    # Authenticate
-    user = validate_token(token, db)
-    if not user:
-        raise HTTPException(
-            status_code=401, detail=get_text(key="errors.notifications.invalidToken")
-        )
+async def notifications_stream(token: str = None):
+    # Authenticate with a short-lived session. The response stream is
+    # intentionally unbounded, so it must not retain a request-scoped DB
+    # session or connection for the lifetime of an SSE client.
+    ensure_tables()
+    db = create_session_factory()()
+    try:
+        user = validate_active_token(token, db)
+        if not user:
+            raise HTTPException(
+                status_code=401, detail=get_text(key="errors.notifications.invalidToken")
+            )
+        user_id = user.id
+    finally:
+        db.rollback()
+        db.close()
+
 
     async def event_generator():
-        queue = subscribe(user.id)
+        queue = subscribe(user_id)
         # Initial heartbeat to unblock clients. DB event delivery will be
         # connected before yielding so notifications cannot be missed.
         try:
@@ -47,7 +58,7 @@ async def notifications_stream(token: str = None, db: Session = Depends(get_db))
                 else:
                     yield f"data: {json.dumps(notification)}\n\n"
         finally:
-            unsubscribe(user.id, queue)
+            unsubscribe(user_id, queue)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

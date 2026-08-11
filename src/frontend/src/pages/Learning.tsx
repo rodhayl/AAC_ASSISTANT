@@ -74,6 +74,7 @@ export function Learning() {
   const [providerNotice, setProviderNotice] = useState<string | null>(null);
   const lastSpokenMessageRef = useRef<string | null>(null);
   const lastProviderHistoryLengthRef = useRef(0);
+  const sessionStartErrorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isAdmin = user?.user_type === 'admin';
   // Session metadata still needs a concrete starting level. "Adaptive" starts
@@ -97,6 +98,25 @@ export function Learning() {
     microphoneAccessMessage: t('errors.microphoneAccess'),
     sessionDifficulty,
   });
+
+  useEffect(() => {
+    return () => {
+      if (sessionStartErrorTimeoutRef.current) {
+        clearTimeout(sessionStartErrorTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const showSessionStartError = useCallback((message: string, timeoutMs: number) => {
+    if (sessionStartErrorTimeoutRef.current) {
+      clearTimeout(sessionStartErrorTimeoutRef.current);
+    }
+    setSessionStartError(message);
+    sessionStartErrorTimeoutRef.current = setTimeout(() => {
+      setSessionStartError(null);
+      sessionStartErrorTimeoutRef.current = null;
+    }, timeoutMs);
+  }, []);
 
   useEffect(() => {
     if (user?.settings?.voice_mode_enabled !== undefined) {
@@ -152,12 +172,11 @@ export function Learning() {
       void askNextQuestion();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : t('errors.unknownError');
-      setSessionStartError(t('errors.sessionStartError', { error: message }));
-      setTimeout(() => setSessionStartError(null), 8000);
+      showSessionStartError(t('errors.sessionStartError', { error: message }), 8000);
     } finally {
       setIsStartingSession(false);
     }
-  }, [askNextQuestion, fetchSessionHistory, selectedModeKey, sessionDifficulty, startSession, t, user]);
+  }, [askNextQuestion, fetchSessionHistory, selectedModeKey, sessionDifficulty, showSessionStartError, startSession, t, user]);
 
   const handleToggleHistory = useCallback(() => {
     const nextVisible = !showHistory;
@@ -183,8 +202,7 @@ export function Learning() {
     clearError();
 
     if (!currentSession) {
-      setSessionStartError(t('errors.startSessionFirst'));
-      setTimeout(() => setSessionStartError(null), 5000);
+      showSessionStartError(t('errors.startSessionFirst'), 5000);
       return;
     }
     const answer = input;
@@ -232,8 +250,7 @@ export function Learning() {
         }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : t('errors.unknownError');
-        setSessionStartError(t('errors.sessionStartError', { error: message }));
-        setTimeout(() => setSessionStartError(null), 8000);
+        showSessionStartError(t('errors.sessionStartError', { error: message }), 8000);
         setIsStartingSession(false);
         return;
       }
@@ -327,9 +344,7 @@ export function Learning() {
         : last.provider === 'lmstudio'
           ? 'LM Studio'
           : 'Ollama';
-    Promise.resolve().then(() => {
-      setProviderNotice(`Switched to ${providerName}`);
-    });
+    setProviderNotice(`Switched to ${providerName}`);
     const timeoutId = setTimeout(() => setProviderNotice(null), 3000);
     return () => clearTimeout(timeoutId);
   }, [providerHistory]);

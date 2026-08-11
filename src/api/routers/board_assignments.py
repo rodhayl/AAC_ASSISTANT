@@ -8,7 +8,7 @@ from src.api.deps import (
     get_current_active_user,
     get_db,
     get_text,
-    require_board_staff_or_owner,
+    verify_student_access,
 )
 from src.api.routers.board_helpers import serialize_board
 
@@ -21,12 +21,12 @@ def get_assigned_boards(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    # Only allow if admin, teacher, or the student themselves
-    if (
-        current_user.user_type != "admin"
-        and current_user.user_type != "teacher"
-        and current_user.id != student_id
-    ):
+    # Students may view only their own assignments. Teachers are limited to
+    # their roster once they have explicit roster entries; the shared helper
+    # preserves the legacy empty-roster setup behavior.
+    if current_user.user_type == "teacher":
+        verify_student_access(student_id, current_user, db)
+    elif current_user.user_type != "admin" and current_user.id != student_id:
         raise HTTPException(
             status_code=403,
             detail=get_text(
@@ -53,13 +53,18 @@ def assign_board_to_student(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    # Only Admin, Teacher, or Board Owner can assign
-    board = get_board_or_404(db, board_id, current_user)
-    require_board_staff_or_owner(
-        board,
-        current_user,
-        error_key="errors.boards.unauthorizedAssign",
-    )
+    # Assignment management is a staff action. Board ownership alone must not
+    # let a student change another student's roster or forge distribution.
+    if current_user.user_type not in {"admin", "teacher"}:
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(user=current_user, key="errors.boards.unauthorizedAssign"),
+        )
+
+    get_board_or_404(db, board_id, current_user)
+
+    if current_user.user_type == "teacher":
+        verify_student_access(payload.student_id, current_user, db)
 
     student = db.query(User).filter(User.id == payload.student_id).first()
     if not student or student.user_type != "student":
@@ -78,9 +83,10 @@ def assign_board_to_student(
     if existing:
         return {"ok": True}
 
-    assigned_by_id = payload.assigned_by if payload.assigned_by else current_user.id
+    # The authenticated actor is the only trusted assignment author; do not
+    # allow a client-supplied ID to forge the audit field.
     assignment = BoardAssignment(
-        board_id=board_id, student_id=payload.student_id, assigned_by=assigned_by_id
+        board_id=board_id, student_id=payload.student_id, assigned_by=current_user.id
     )
     db.add(assignment)
     db.commit()
@@ -94,13 +100,18 @@ def unassign_board_from_student(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    # Only Admin, Teacher, or Board Owner can unassign
-    board = get_board_or_404(db, board_id, current_user)
-    require_board_staff_or_owner(
-        board,
-        current_user,
-        error_key="errors.boards.unauthorizedUnassign",
-    )
+    # Assignment management is a staff action. Board ownership alone must not
+    # let a student change another student's roster or forge distribution.
+    if current_user.user_type not in {"admin", "teacher"}:
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(user=current_user, key="errors.boards.unauthorizedUnassign"),
+        )
+
+    get_board_or_404(db, board_id, current_user)
+
+    if current_user.user_type == "teacher":
+        verify_student_access(student_id, current_user, db)
 
     assignment = (
         db.query(BoardAssignment)

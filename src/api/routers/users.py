@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.user_service import UserService
 from src.api.deps import get_current_active_user, get_db
+from src.api.routers.auth_helpers import validate_password_strength
 from src.api.schemas import (
     ResetPasswordRequest,
     StudentAssignRequest,
@@ -69,9 +70,23 @@ def create_student(
     # Force user_type to student
     user.user_type = "student"
 
-    # If teacher, automatically assign
+    # Teachers always assign students to themselves. Admins may optionally
+    # provide an assignment target, but it must be an active teacher rather
+    # than an arbitrary user ID.
     if current_user.user_type == "teacher":
         user.created_by_teacher_id = current_user.id
+    elif user.created_by_teacher_id is not None:
+        teacher = (
+            db.query(User)
+            .filter(
+                User.id == user.created_by_teacher_id,
+                User.user_type == "teacher",
+                User.is_active.is_(True),
+            )
+            .first()
+        )
+        if teacher is None:
+            raise HTTPException(status_code=404, detail="Teacher not found")
 
     return user_service.create_user(db, user)
 
@@ -198,6 +213,8 @@ def reset_user_password(
             raise HTTPException(
                 status_code=403, detail="Student is not assigned to this teacher"
             )
+
+    validate_password_strength(data.new_password)
 
     # Reset password
     user_service.reset_password(db, target_user_id, data.new_password)

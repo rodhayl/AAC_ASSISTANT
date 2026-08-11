@@ -148,13 +148,26 @@ def _start_deferred_vector_store_close(
 
 
 def _defer_vector_store_for_reset() -> threading.Event:
-    """Detach a store and register its bounded cleanup atomically."""
+    """Register vector cleanup without detaching an active operation's store."""
     global _vector_store
     completed = threading.Event()
-    with _provider_lock:
-        store = _vector_store
-        _vector_store = None
-        _deferred_vector_store_events.append(completed)
+
+    # If no operation owns the lock, detach immediately. Otherwise leave the
+    # store attached so the active worker can make nested getter calls; the
+    # cleanup worker will detach it atomically after the operation completes.
+    operation_is_active = _vector_store_lock_owned()
+    if not operation_is_active:
+        operation_is_active = not vector_store_operation_lock.acquire(blocking=False)
+    try:
+        with _provider_lock:
+            store = _vector_store
+            if not operation_is_active:
+                _vector_store = None
+            _deferred_vector_store_events.append(completed)
+    finally:
+        if not operation_is_active:
+            vector_store_operation_lock.release()
+
     _start_deferred_vector_store_close(store, completed)
     return completed
 
@@ -166,8 +179,11 @@ def _detach_vector_store_for_reset(*, close: bool) -> None:
         if close:
             completed = threading.Event()
             with _provider_lock:
+                # Keep the store attached while its current operation owns the
+                # reentrant lock. This lets nested callers continue using the
+                # in-flight instance; cleanup clears it only after the lock is
+                # released, avoiding both use-after-close and transient 500s.
                 store = _vector_store
-                _vector_store = None
                 _deferred_vector_store_events.append(completed)
             _start_deferred_vector_store_close(store, completed)
             logger.warning(
@@ -534,22 +550,26 @@ def _wait_for_deferred_vector_store_cleanup() -> None:
 def get_vector_store() -> LocalVectorStore:
     """Return the local vector store singleton."""
     global _vector_store
-    # Do not create a replacement while an older reset-detached store is still
-    # closing; otherwise two stores could touch the same persisted corpus.
-    # Locked operations are allowed to finish using the still-attached store.
+
+    # Wait only outside the operation/provider locks. Deferred cleanup needs
+    # both locks before it can signal completion; waiting while holding either
+    # lock would deadlock the cleanup worker.
     if not _vector_store_lock_owned():
         _wait_for_deferred_vector_store_cleanup()
+
     with vector_store_operation_lock, _provider_lock:
-        if not _vector_store_lock_owned() and _deferred_vector_store_events:
-            _wait_for_deferred_vector_store_cleanup()
-        if _vector_store is None:
-            if _deferred_vector_store_events and _vector_store_lock_owned():
-                raise RuntimeError(
-                    "Cannot create a replacement vector store while a detached "
-                    "instance awaits lock release"
-                )
-            logger.info("Initializing global LocalVectorStore")
-            _vector_store = LocalVectorStore()
+        if _vector_store is not None:
+            return _vector_store
+        if _deferred_vector_store_events:
+            # A detached store is still being closed by another reset. The
+            # outer wait normally handles this; keep the guard for a reset that
+            # begins between that wait and lock acquisition.
+            raise RuntimeError(
+                "Cannot create a replacement vector store while a detached "
+                "instance awaits lock release"
+            )
+        logger.info("Initializing global LocalVectorStore")
+        _vector_store = LocalVectorStore()
         return _vector_store
 
 

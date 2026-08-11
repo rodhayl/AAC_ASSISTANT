@@ -255,7 +255,7 @@ def test_voice_answer_is_graceful_when_provider_is_unavailable(
 def test_voice_status_reports_faster_whisper_and_browser_tts(monkeypatch, admin_token):
     from src.api.routers import providers
 
-    monkeypatch.setattr(providers, "_module_available", lambda name: name == "faster_whisper")
+    monkeypatch.setattr(providers, "is_faster_whisper_available", lambda: True)
     monkeypatch.setattr(providers, "_voice_auto_install_support", lambda: (True, None))
 
     response = client.get(
@@ -290,7 +290,7 @@ def test_voice_install_endpoint_short_circuits_when_already_installed(monkeypatc
     from src.api.routers import providers
 
     monkeypatch.setattr(providers, "_voice_auto_install_support", lambda: (True, None))
-    monkeypatch.setattr(providers, "_module_available", lambda name: name == "faster_whisper")
+    monkeypatch.setattr(providers, "is_faster_whisper_available", lambda: True)
 
     called = {"run": False}
 

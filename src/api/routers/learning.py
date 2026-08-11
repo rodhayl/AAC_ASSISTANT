@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from src.aac_app.models import User
 from src.aac_app.services.learning.service import LearningCompanionService
-from src.aac_app.services.translation_service import get_translation_service
 from src.api import schemas
 from src.api.deps import (
     get_current_active_user,
@@ -15,17 +14,17 @@ from src.api.deps import (
     get_learning_service,
     get_learning_session_or_404,
 )
+from src.api.deps import (
+    get_text as get_shared_text,
+)
 from src.api.file_uploads import DEFAULT_MAX_AUDIO_BYTES, save_audio_upload
 
 router = APIRouter()
 
 
 def get_text(user: User, key: str, **kwargs) -> str:
-    lang = "en"
-    if user.settings and user.settings.ui_language:
-        lang = user.settings.ui_language
-
-    return get_translation_service().get(lang, "pages/learning", key, **kwargs)
+    """Translate a learning-namespace message for the current user."""
+    return get_shared_text(user, key, namespace="pages/learning", **kwargs)
 
 
 @router.post("/start", response_model=schemas.LearningSessionResponse)

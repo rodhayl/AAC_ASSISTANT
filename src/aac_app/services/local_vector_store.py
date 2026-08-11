@@ -8,7 +8,6 @@ core-only/offline startup healthy even when the model cannot be downloaded.
 from __future__ import annotations
 
 import contextlib
-import importlib.util
 import io
 import os
 import sqlite3
@@ -23,6 +22,7 @@ from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 
 from src import config
+from src.aac_app.utils.module_availability import module_available
 
 
 @contextlib.contextmanager
@@ -55,16 +55,8 @@ STATE_TABLE = "symbol_embedding_state"
 DEFAULT_DISTANCE_THRESHOLD = 1.15
 
 
-def _module_available(module_name: str) -> bool:
-    """Check for an optional dependency without importing it."""
-    try:
-        return importlib.util.find_spec(module_name) is not None
-    except (ImportError, ModuleNotFoundError, ValueError):
-        return False
-
-
-FASTEMBED_AVAILABLE = _module_available("fastembed")
-SQLITE_VEC_AVAILABLE = _module_available("sqlite_vec")
+FASTEMBED_AVAILABLE = module_available("fastembed")
+SQLITE_VEC_AVAILABLE = module_available("sqlite_vec")
 TextEmbedding: Any | None = None
 sqlite_vec: Any | None = None
 _engine_listener_lock = threading.Lock()

@@ -117,7 +117,6 @@ test.describe('Boards - Student', () => {
     // Wait, the store has `duplicateBoard`, so the UI *should* have it.
     // Let's check if the card has a Copy icon.
     // Reading Boards.tsx snippet again...
-    // import { Plus, Trash2, LayoutGrid, Edit, Copy, UserPlus, Search } from 'lucide-react';
     // It imports Copy. It probably uses it.
     // I'll try to find a button with the Copy icon or title "Duplicate".
     

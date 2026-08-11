@@ -312,23 +312,6 @@ def get_bool(key: str, default: bool = False) -> bool:
     return str(value).lower() in {"true", "1", "yes", "on"}
 
 
-def reload() -> None:
-    """Reload typed settings from the canonical dotenv files."""
-    global settings
-    settings = load_settings()
-    _sync_module_settings()
-
-
-def get_api_base_url(host: str = "localhost") -> str:
-    """Get the full API base URL."""
-    return f"http://{host}:{settings.BACKEND_PORT}/api"
-
-
-def get_ws_base_url(host: str = "localhost") -> str:
-    """Get the WebSocket base URL."""
-    return f"ws://{host}:{settings.BACKEND_PORT}/api"
-
-
 def get_bundled_path(relative_path: str) -> Path:
     """
     Get the path to a bundled resource file.

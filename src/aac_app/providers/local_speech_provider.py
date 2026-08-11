@@ -1,23 +1,25 @@
-import importlib.util
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
 from ... import config
-
-
-def _module_available(module_name: str) -> bool:
-    """Check whether an optional module exists without importing it."""
-    try:
-        return importlib.util.find_spec(module_name) is not None
-    except (ImportError, ModuleNotFoundError, ValueError):
-        return False
-
+from ..utils.module_availability import module_available
 
 # Keep startup checks cheap. faster-whisper and its PyAV/CTranslate2 stack are
 # imported only when the first transcription or explicit warmup is requested.
-FASTER_WHISPER_AVAILABLE = _module_available("faster_whisper")
+# Checking the native dependencies too prevents a partial installation from
+# being advertised as available before the lazy import can actually work.
+
+def is_faster_whisper_available() -> bool:
+    """Return whether the complete optional voice stack is installed."""
+    return all(
+        module_available(module_name)
+        for module_name in ("faster_whisper", "ctranslate2", "av")
+    )
+
+
+FASTER_WHISPER_AVAILABLE = is_faster_whisper_available()
 faster_whisper = None
 
 DEFAULT_STT_MODEL = "tiny"

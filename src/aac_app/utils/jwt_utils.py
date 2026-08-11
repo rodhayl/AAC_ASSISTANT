@@ -68,6 +68,7 @@ def create_access_token(
             "exp": expire,
             "iat": datetime.now(UTC),
             "iss": "aac-assistant",  # Issuer claim
+            "type": "access",
         }
     )
 
@@ -78,16 +79,10 @@ def create_access_token(
     return encoded_jwt
 
 
-def decode_access_token(token: str) -> dict[str, Any] | None:
-    """
-    Decode and validate a JWT access token.
-
-    Args:
-        token: The JWT token string to decode
-
-    Returns:
-        Dictionary of claims if token is valid, None if invalid or expired
-    """
+def _decode_token(
+    token: str, *, expected_type: str | None
+) -> dict[str, Any] | None:
+    """Decode a signed token and optionally enforce its token type."""
     try:
         payload = jwt.decode(
             token,
@@ -101,9 +96,20 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
             },
         )
 
-        # Verify issuer if present
         if payload.get("iss") != "aac-assistant":
             logger.warning(f"Invalid token issuer: {payload.get('iss')}")
+            return None
+
+        token_type = payload.get("type")
+        if expected_type == "refresh":
+            if token_type != "refresh":
+                logger.warning("Token type mismatch: expected refresh token")
+                return None
+        elif expected_type == "access" and token_type not in (None, "access"):
+            # Reject non-access tokens as bearer credentials. Tokens without a
+            # type remain valid for backwards compatibility with already-issued
+            # access tokens from before token types were added.
+            logger.warning("Non-access token cannot be used as an access token")
             return None
 
         return payload
@@ -119,6 +125,16 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
     except Exception as e:
         logger.error(f"Unexpected error decoding token: {e}")
         return None
+
+
+def decode_access_token(token: str) -> dict[str, Any] | None:
+    """Decode and validate an access token, rejecting other token types."""
+    return _decode_token(token, expected_type="access")
+
+
+def decode_refresh_token(token: str) -> dict[str, Any] | None:
+    """Decode and validate a refresh token."""
+    return _decode_token(token, expected_type="refresh")
 
 
 def create_refresh_token(data: dict[str, Any]) -> str:

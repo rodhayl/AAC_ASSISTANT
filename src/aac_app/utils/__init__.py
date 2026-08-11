@@ -10,12 +10,14 @@ from .jwt_utils import (
     JWT_SECRET_KEY,
     create_access_token,
     decode_access_token,
+    decode_refresh_token,
     generate_secret_key,
 )
 
 __all__ = [
     "create_access_token",
     "decode_access_token",
+    "decode_refresh_token",
     "generate_secret_key",
     "JWT_SECRET_KEY",
     "JWT_ALGORITHM",

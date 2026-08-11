@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { useBoardStore } from '../store/boardStore';
@@ -46,9 +46,10 @@ export function BoardEditor() {
   const [boardDescription, setBoardDescription] = useState('');
   const [boardCategory, setBoardCategory] = useState('general');
   const [aiEnabled, setAiEnabled] = useState(false);
-  const [aiConfigError, setAiConfigError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false)
-  const [clearLoading, setClearLoading] = useState(false);
+  const [aiConfigError, setAiConfigError] = useState<string | null>(null);  const [saveSuccess, setSaveSuccess] = useState(false)
+  const [clearLoading, setClearLoading] = useState(false)
+  const saveSettingsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+;
 
   const primaryProvider = aiSettings?.provider;
   const primaryModel = primaryProvider === 'openrouter'
@@ -134,6 +135,14 @@ export function BoardEditor() {
     deleteBoardSymbol,
     setHasChanges,
   });
+
+  useEffect(() => {
+    return () => {
+      if (saveSettingsTimer.current !== null) {
+        clearTimeout(saveSettingsTimer.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!aiEnabled) {
@@ -235,7 +244,11 @@ export function BoardEditor() {
       });
 
       setSaveSuccess(true);
-      setTimeout(() => {
+      if (saveSettingsTimer.current !== null) {
+        clearTimeout(saveSettingsTimer.current);
+      }
+      saveSettingsTimer.current = setTimeout(() => {
+        saveSettingsTimer.current = null;
         setSaveSuccess(false);
         setIsSettingsOpen(false);
       }, 1500);

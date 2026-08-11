@@ -182,6 +182,60 @@ def test_export_delete_import_round_trip_lists_restored_symbols(
     assert restored["symbols"][0]["custom_text"] == "Use this label"
 
 
+def test_import_restores_assigned_board_relationship(
+    setup_test_db, test_db_session, admin_user, admin_token
+):
+    student = User(
+        username="assigned-import-student",
+        display_name="Assigned Import Student",
+        user_type="student",
+        password_hash="unused",
+        is_active=True,
+    )
+    test_db_session.add(student)
+    test_db_session.flush()
+    board = CommunicationBoard(
+        user_id=admin_user.id,
+        name="Assigned import board",
+        description="Assignment round-trip",
+    )
+    test_db_session.add(board)
+    test_db_session.flush()
+    test_db_session.add(BoardAssignment(board_id=board.id, student_id=student.id))
+    test_db_session.commit()
+
+    client = TestClient(app)
+    payload = client.get(
+        "/api/data/export",
+        params={"username": student.username},
+        headers=_headers(admin_token),
+    )
+    assert payload.status_code == 200
+    export = payload.json()
+    assert [item["id"] for item in export["assignedBoards"]] == [board.id]
+
+    imported = client.post(
+        "/api/data/import",
+        json=export,
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert imported.status_code == 200
+    restored_board = (
+        test_db_session.query(CommunicationBoard)
+        .filter(
+            CommunicationBoard.user_id == student.id,
+            CommunicationBoard.name == board.name,
+        )
+        .one()
+    )
+    assert (
+        test_db_session.query(BoardAssignment)
+        .filter_by(board_id=restored_board.id, student_id=student.id)
+        .count()
+        == 1
+    )
+
+
 def test_achievements_list_and_create_accept_both_slash_variants(
     setup_test_db, test_db_session, admin_user, admin_token
 ):

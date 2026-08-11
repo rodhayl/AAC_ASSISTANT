@@ -4,6 +4,8 @@ import { useLearningStore, stripReasoning } from '../../store/learningStore';
 import { useAuthStore } from '../../store/authStore';
 import { useTranslation } from 'react-i18next';
 import { tts } from '../../lib/tts';
+import { useVoiceRecorder } from '../learning/useVoiceRecorder';
+import { useToastStore } from '../../store/toastStore';
 
 interface CommunicationChatProps {
   voiceEnabled: boolean;
@@ -23,10 +25,7 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle }: Communication
   const error = useLearningStore((state) => state.error);
 
   const [input, setInput] = useState('');
-  const [isRecording, setIsRecording] = useState(false);
-  const [hasRecording, setHasRecording] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<BlobPart[]>([]);
+  const addToast = useToastStore((state) => state.addToast);
   const lastSpokenMessageRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const initAttempted = useRef(false);
@@ -88,48 +87,23 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle }: Communication
     await submitAnswer(currentSession.session_id, answer);
   };
 
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      chunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-
-      mediaRecorder.onstop = () => {
-        setHasRecording(true);
-        stream.getTracks().forEach(track => track.stop());
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-    } catch (err) {
-      console.error('Error accessing microphone:', err);
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
-  };
-
-  const discardRecording = () => {
-    chunksRef.current = [];
-    setHasRecording(false);
-  };
-
-  const sendRecording = async () => {
-    if (!currentSession || chunksRef.current.length === 0 || isLoading) return;
-    const audioBlob = new Blob(chunksRef.current, { type: 'audio/wav' });
-    await submitVoiceAnswer(currentSession.session_id, audioBlob);
-    chunksRef.current = [];
-    setHasRecording(false);
-  };
+  const {
+    isRecording,
+    hasRecording,
+    startRecording,
+    stopRecording,
+    discardRecording,
+    sendRecording,
+  } = useVoiceRecorder({
+    currentSession,
+    userId: user?.id,
+    isLoading,
+    sessionDifficulty: 'adaptive',
+    startSession,
+    submitVoiceAnswer,
+    addToast,
+    microphoneAccessMessage: t('errors.microphoneAccess', 'Microphone access denied'),
+  });
 
   return (
     <div className="flex flex-col h-full glass-panel border-l border-border dark:border-white/5">

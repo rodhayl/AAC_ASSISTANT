@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from fastapi import HTTPException, UploadFile
+from pydantic import ValidationError
 
 from src.api.file_uploads import (
     ALLOWED_AUDIO_CONTENT_TYPES,
@@ -12,6 +13,7 @@ from src.api.file_uploads import (
     remove_owned_upload,
     save_audio_upload,
 )
+from src.api.schemas import AISuggestionsRequest, NextSymbolRequest
 
 
 def test_read_upload_bytes_rejects_oversized_input_without_unbounded_read():
@@ -96,6 +98,15 @@ def test_image_upload_uses_decoded_format_and_rejects_fake_content():
 
     assert exc.value.status_code == 400
     assert exc.value.detail == "invalid image"
+
+
+def test_request_bounds_reject_unbounded_ai_and_prediction_work():
+    with pytest.raises(ValidationError):
+        AISuggestionsRequest(item_count=101)
+    with pytest.raises(ValidationError):
+        NextSymbolRequest(limit=51)
+    with pytest.raises(ValidationError):
+        NextSymbolRequest(offset=-1)
 
 
 def test_remove_owned_upload_does_not_delete_outside_upload_root(tmp_path: Path):

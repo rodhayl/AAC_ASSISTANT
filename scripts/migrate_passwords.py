@@ -21,6 +21,7 @@ sys.path.insert(0, str(project_root))
 
 from src.aac_app.db import get_session  # noqa: E402
 from src.aac_app.models import User  # noqa: E402
+from src.aac_app.services.credential_service import mark_credentials_changed  # noqa: E402
 
 TEMP_PASSWORD_ENV = "AAC_MIGRATION_TEMP_PASSWORD"
 
@@ -90,6 +91,7 @@ def migrate_passwords(temp_password: str, skip_confirmation: bool = False) -> No
 
                 if is_sha256:
                     user.password_hash = new_hash
+                    mark_credentials_changed(user)
                     logger.info(
                         f"Migrated user: {user.username} (id={user.id}, type={user.user_type})"
                     )

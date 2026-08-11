@@ -35,7 +35,7 @@ interface BoardState {
   duplicateBoard: (id: number, userId: number) => Promise<void>;
   addSymbolToBoard: (boardId: number, symbolId: number, position: { x: number, y: number }) => Promise<BoardSymbol>;
   updateBoardSymbol: (boardId: number, symbolId: number, updates: Record<string, unknown>) => Promise<void>;
-  deleteBoardSymbol: (boardId: number, symbolId: number) => Promise<void>;
+  deleteBoardSymbol: (boardId: number, symbolId: number, signal?: AbortSignal) => Promise<void>;
   batchUpdateSymbols: (boardId: number, updates: Array<Record<string, unknown>>) => Promise<void>;
   assignBoardToStudent: (boardId: number, studentId: number, assignedBy?: number) => Promise<void>;
   unassignBoardFromStudent: (boardId: number, studentId: number) => Promise<void>;
@@ -81,14 +81,14 @@ export const useBoardStore = create<BoardState>((set, get) => {
   isBoardLoading: false,
 
   fetchBoards: async (userId, name, forceRefresh = false, page = 1) => {
-    const { lastFetchTime, boards, isFiltered } = get();
+    const { lastFetchTime, boards, isFiltered, currentUserId } = get();
     const now = Date.now();
     
     // For pagination (page > 1), we append. For page 1, we replace.
     const isPagination = page > 1;
 
       // Use cache if available and not expired (only if no name filter is applied and current list is not filtered AND we are on page 1)
-      if (!forceRefresh && !name && !userId && !isFiltered && !isPagination && lastFetchTime && boards.length > 0 && (now - lastFetchTime) < CACHE_DURATION) {
+      if (!forceRefresh && !name && userId === currentUserId && !isFiltered && !isPagination && lastFetchTime && boards.length > 0 && (now - lastFetchTime) < CACHE_DURATION) {
         return;
       }
 
@@ -362,10 +362,10 @@ export const useBoardStore = create<BoardState>((set, get) => {
     }
   },
 
-  deleteBoardSymbol: async (boardId, symbolId) => {
+  deleteBoardSymbol: async (boardId, symbolId, signal) => {
     beginMutation();
     try {
-      await api.delete(`/boards/${boardId}/symbols/${symbolId}`);
+      await api.delete(`/boards/${boardId}/symbols/${symbolId}`, { signal });
       
       // Update current board symbols
       const currentBoard = get().currentBoard;

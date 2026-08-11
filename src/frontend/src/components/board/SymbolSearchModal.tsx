@@ -69,8 +69,9 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
     setSelectedLanguage(currentLang);
   }, [isOpen, i18n.language]);
 
-  const handleSearch = async (e?: React.FormEvent) => {
+  const handleSearch = async (e?: React.FormEvent, queryOverride?: string) => {
     e?.preventDefault();
+    const searchQuery = queryOverride ?? query;
     const generation = ++searchGeneration.current;
     if (searchTimer.current) {
       clearTimeout(searchTimer.current);
@@ -79,7 +80,7 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
     searchController.current?.abort();
 
     // Allow empty query if category is selected
-    if (!query.trim() && !category) {
+    if (!searchQuery.trim() && !category) {
       setResults([]);
       setIsLoading(false);
       return;
@@ -92,7 +93,7 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
       // Use server-side search
       const params: Record<string, string | number> = {
         limit: 100,
-        search: query // Pass search query to backend
+        search: searchQuery // Pass search query to backend
       };
 
       if (selectedLanguage && selectedLanguage !== 'all') {
@@ -160,7 +161,7 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
                 }
                 searchTimer.current = setTimeout(() => {
                   searchTimer.current = null;
-                  void handleSearch();
+                  void handleSearch(undefined, nextQuery);
                 }, 200);
               }}
               placeholder={t('symbolSearchPlaceholder', 'Search for a symbol...')}

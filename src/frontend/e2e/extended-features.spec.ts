@@ -106,7 +106,6 @@ test.describe('Extended Features', () => {
       // Try typing space then delete?
       
       // Just check that the page is still responsive.
-      // await expect(page.locator('.grid').first()).toBeVisible({ timeout: 10000 });
       
       // Let's just assert the search input is cleared.
       await expect(searchInput).toBeEmpty();

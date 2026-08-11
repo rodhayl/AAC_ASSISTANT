@@ -73,6 +73,9 @@ def test_schema_ensure_upgrades_legacy_sqlite_without_losing_data():
     schema.ensure(engine)
     inspector = inspect(engine)
 
+    user_columns = {column["name"] for column in inspector.get_columns("users")}
+    assert {"security_version", "credentials_changed_at"} <= user_columns
+
     assert "order_index" in {column["name"] for column in inspector.get_columns("symbols")}
     assert "order_index" in {
         column["name"] for column in inspector.get_columns("board_symbols")
@@ -93,6 +96,9 @@ def test_schema_ensure_upgrades_legacy_sqlite_without_losing_data():
         assert connection.execute(text("SELECT username FROM users WHERE id = 1")).scalar_one() == (
             "legacy"
         )
+        assert connection.execute(
+            text("SELECT security_version FROM users WHERE id = 1")
+        ).scalar_one() == 1
 
     # A second ensure is the normal restart path and must remain idempotent.
     schema.ensure(engine)
@@ -168,8 +174,29 @@ def test_schema_ensure_adds_targeted_indexes_to_current_schema():
         "ix_symbol_usage_logs_user_session_position",
         "ix_symbol_usage_logs_user_symbol_label",
         "ix_learning_sessions_user_started",
+        "ix_learning_sessions_user_status_started",
+        "ix_learning_sessions_status_ended",
         "ix_notifications_user_read_created",
         "ix_notifications_user_created",
         "ix_learning_modes_key",
     } <= indexes
+
+    with engine.connect() as connection:
+        def index_columns(index_name: str) -> list[str]:
+            return [
+                row[2]
+                for row in connection.execute(
+                    text(f'PRAGMA index_info("{index_name}")')
+                )
+            ]
+
+        assert index_columns("ix_learning_sessions_user_status_started") == [
+            "user_id",
+            "status",
+            "started_at",
+        ]
+        assert index_columns("ix_learning_sessions_status_ended") == [
+            "status",
+            "ended_at",
+        ]
     engine.dispose()

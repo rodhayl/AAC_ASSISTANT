@@ -121,11 +121,6 @@ class StudentBoardSummaryResponse(BaseModel):
     assigned_boards: list[BoardSummaryResponse] = Field(default_factory=list)
 
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-
 # --- Learning Mode Schemas ---
 class LearningModeBase(BaseModel):
     name: str
@@ -315,7 +310,7 @@ class AISuggestion(BaseModel):
 class AISuggestionsRequest(BaseModel):
     refine_prompt: str | None = None
     regenerate: bool = False
-    item_count: int | None = None
+    item_count: int | None = Field(None, ge=1, le=100)
 
 
 class AISuggestionApplyRequest(BaseModel):
@@ -506,9 +501,9 @@ class SymbolUsageRequest(BaseModel):
 class NextSymbolRequest(BaseModel):
     current_symbols: str = ""
     chat_history: list[dict[str, str]] = Field(default_factory=list)
-    limit: int = 5
+    limit: int = Field(5, ge=1, le=50)
     intent: str = "general"
-    offset: int = 0
+    offset: int = Field(0, ge=0, le=100_000)
     board_id: int | None = None
 
 

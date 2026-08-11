@@ -27,6 +27,7 @@ from src.aac_app.db import get_session  # noqa: E402
 from src.aac_app.models import User  # noqa: E402
 from src.aac_app.seed import init_database  # noqa: E402
 from src.aac_app.services.auth_service import get_password_hash  # noqa: E402
+from src.aac_app.services.credential_service import mark_credentials_changed  # noqa: E402
 
 
 def _read_bool(key: str, default: bool) -> bool:
@@ -62,6 +63,7 @@ def ensure_bootstrap_admin() -> int:
             user.user_type = "admin"
             user.is_active = True
             user.password_hash = get_password_hash(password)
+            mark_credentials_changed(user)
             if not user.display_name:
                 user.display_name = "Administrator"
             action = "promoted existing user to admin"

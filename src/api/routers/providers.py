@@ -1,4 +1,4 @@
-import importlib.util
+import asyncio
 import shutil
 import subprocess
 import sys
@@ -15,6 +15,7 @@ from src.aac_app.models import AppSettings, User
 from src.aac_app.providers.local_speech_provider import (
     DEFAULT_STT_MODEL,
     SUPPORTED_STT_MODELS,
+    is_faster_whisper_available,
     normalize_stt_model,
 )
 from src.aac_app.providers.local_tts_provider import (
@@ -64,13 +65,6 @@ def providers_health(current_user: User = Depends(get_current_active_user)):
     }
 
 
-def _module_available(name: str) -> bool:
-    try:
-        return importlib.util.find_spec(name) is not None
-    except (ImportError, ModuleNotFoundError, ValueError):
-        return False
-
-
 def _executable_available(name: str) -> bool:
     return shutil.which(name) is not None
 
@@ -113,7 +107,7 @@ def voice_status(current_user: User = Depends(get_current_active_user)):
     faster-whisper uses PyAV to decode WAV/WebM uploads, so ffmpeg and the
     old server-side microphone packages are not runtime requirements.
     """
-    stt_installed = _module_available("faster_whisper")
+    stt_installed = is_faster_whisper_available()
     configured_stt_model = normalize_stt_model(get_setting_value("stt_model", DEFAULT_STT_MODEL))
     ffmpeg_installed = _executable_available("ffmpeg")
     auto_install_supported, auto_install_reason = _voice_auto_install_support()
@@ -352,7 +346,7 @@ def install_voice_dependencies(
             detail=auto_install_reason or "Automatic voice installation is unavailable.",
         )
 
-    if _module_available("faster_whisper"):
+    if is_faster_whisper_available():
         return {
             "success": True,
             "installed": True,
@@ -398,7 +392,7 @@ def install_voice_dependencies(
 
     return {
         "success": True,
-        "installed": _module_available("faster_whisper"),
+        "installed": is_faster_whisper_available(),
         "message": "Voice dependencies installed successfully.",
     }
 
@@ -410,8 +404,8 @@ async def get_lmstudio_models(
     """Fetch available LM Studio models"""
     try:
         provider = get_lmstudio_provider()
-        if not provider.is_available():
-             pass
+        if not await asyncio.to_thread(provider.is_available):
+            return {"models": [], "error": "LM Studio is not available"}
 
         models_response = await provider.get_available_models()
         models_list = models_response.get("data", [])

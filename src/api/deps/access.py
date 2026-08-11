@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from src.aac_app.models import CommunicationBoard, LearningSession, User
 
-from .auth import get_text
+from .auth import get_text, verify_student_access
 
 
 def get_learning_session_or_404(
@@ -73,16 +73,31 @@ def require_board_owner_or_admin(
 def require_board_staff_or_owner(
     board: CommunicationBoard,
     current_user: User,
+    db: Session,
     *,
     error_key: str = "errors.boards.unauthorizedModifyBoard",
 ) -> CommunicationBoard:
-    """Require an administrator, teacher, or board owner for staff actions."""
-    if (
-        current_user.user_type not in {"admin", "teacher"}
-        and board.user_id != current_user.id
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail=get_text(user=current_user, key=error_key),
-        )
-    return board
+    """Require an admin, owner, or rostered teacher for staff actions.
+
+    Teachers may work on their own boards. For a student's board, they must
+    have an explicit roster assignment; a teacher role alone is not sufficient
+    to mutate another student's board or invoke its AI features.
+    """
+    if current_user.user_type == "admin" or board.user_id == current_user.id:
+        return board
+
+    if current_user.user_type == "teacher":
+        owner = db.query(User).filter(User.id == board.user_id).first()
+        if owner is not None and owner.user_type == "student":
+            verify_student_access(
+                owner.id,
+                current_user,
+                db,
+                allow_empty_roster=False,
+            )
+            return board
+
+    raise HTTPException(
+        status_code=403,
+        detail=get_text(user=current_user, key=error_key),
+    )

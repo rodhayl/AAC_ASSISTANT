@@ -40,6 +40,12 @@ export function AiProviderTab() {
   const readOnlyRequestKey = `${userId ?? 'none'}:${userRole ?? 'none'}`;
 
   useEffect(() => {
+    if (!saveSuccess) return;
+    const timeoutId = setTimeout(() => setSaveSuccess(false), 3000);
+    return () => clearTimeout(timeoutId);
+  }, [saveSuccess]);
+
+  useEffect(() => {
     if (!userId) return;
     if (isAdmin) {
       fetchAISettings();
@@ -186,7 +192,6 @@ export function AiProviderTab() {
         temperature: currentTemperature,
       });
       setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
       console.error('Failed to save settings:', err);
     }
