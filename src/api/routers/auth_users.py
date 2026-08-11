@@ -111,6 +111,10 @@ def admin_create_user(
         ip_address=client_ip
     )
 
+    # Commit before responding: FastAPI resumes this yield dependency's
+    # teardown after the response is sent, so a follow-up request could
+    # otherwise read the new user before the create transaction commits.
+    db.commit()
     logger.info(
         f"Admin '{current_user.username}' created new {new_user.user_type} account: "
         f"{new_user.username} (id={new_user.id})"
@@ -354,6 +358,9 @@ def change_password(
         ip_address=client_ip
     )
 
+    # Commit before responding so a re-login with the new password (which
+    # follows this response in the UI flow) cannot read the old hash.
+    db.commit()
     logger.info(f"Password changed for user '{user.username}' (id={user.id})")
     return {"ok": True}
 
@@ -376,6 +383,7 @@ def update_user(
             setattr(user, key, payload[key])
     db.add(user)
     db.flush()
+    db.commit()
     db.refresh(user)
     return user
 
@@ -448,6 +456,7 @@ def update_profile(
         current_user.email = profile.email
 
     db.flush()
+    db.commit()
     db.refresh(current_user)
     logger.info(f"Updated profile for user {current_user.username}")
     return current_user

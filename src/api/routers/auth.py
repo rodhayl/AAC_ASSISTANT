@@ -140,6 +140,10 @@ def login_for_access_token(
         mark_credentials_changed(user)
         db.add(user)
         db.flush()
+        # Commit before the token is issued: the token embeds the bumped
+        # security version, and a follow-up request would otherwise reject it
+        # against the still-uncommitted user row.
+        db.commit()
 
     # Login successful - reset failed attempts
     lockout_service.reset_attempts(db, form_data.username)
@@ -329,6 +333,9 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
         ip_address=client_ip
     )
 
+    # Commit before responding so a follow-up login/token request cannot read
+    # the account before registration is durable.
+    db.commit()
     logger.info(f"New student account registered: {new_user.username} (id={new_user.id})")
     return new_user
 
@@ -373,6 +380,9 @@ def login(credentials: schemas.LoginRequest, db: Session = Depends(get_db)):
         mark_credentials_changed(user)
         db.add(user)
         db.flush()
+        # Commit the rehash before responding so the durable user row matches
+        # the security version the issued token carries.
+        db.commit()
 
     logger.info(
         f"Login successful for user '{credentials.username}' "

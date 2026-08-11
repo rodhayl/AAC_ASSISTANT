@@ -270,10 +270,13 @@ async def create_board(
                 ),
             )
 
-    db.commit()
     db.refresh(db_board)
     for symbol in created_symbols:
         index_symbol(symbol)
+    # Commit before responding: the board and its symbols must be durable
+    # before the client navigates to it in a follow-up request. A single
+    # commit here also keeps the whole create atomic if indexing fails.
+    db.commit()
     return db_board
 
 
@@ -470,4 +473,5 @@ async def apply_ai_suggestion(
     db.refresh(board_symbol)
     if created_symbol is not None:
         index_symbol(created_symbol)
+    db.commit()
     return board_symbol

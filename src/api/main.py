@@ -5,7 +5,7 @@ import time
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -252,6 +252,22 @@ app = FastAPI(
 # Add rate limiter to app state (exemptions handled per-route)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.middleware("http")
+async def add_api_cache_control(request: Request, call_next):
+    """Prevent browsers from caching API responses.
+
+    API payloads are dynamic (lists, profiles, settings) and can change
+    between requests, e.g. immediately after a create/update. Without an
+    explicit Cache-Control policy Chromium may serve a stale response for a
+    repeated GET from its in-memory cache, hiding newly created data. Static
+    assets and /uploads are deliberately not covered.
+    """
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
 
 
 @app.get("/api/health")

@@ -395,8 +395,9 @@ def import_data(
     )
     _import_achievements(db, user, base["achievements"])
     _import_learning_history(db, user, base["learningHistory"])
-    # Keep the entire import atomic: the request dependency commits once after
-    # every section has been validated and staged successfully.
-    db.flush()
+    # Keep the entire import atomic: commit once after every section has been
+    # validated and staged. This must happen before the response is sent (the
+    # dependency teardown otherwise commits after the client sees the 200).
+    db.commit()
 
     return {"ok": True}

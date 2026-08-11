@@ -1,4 +1,5 @@
 import pytest
+from fastapi.testclient import TestClient
 
 from src.api.main import app, resolve_allowed_origins
 
@@ -42,3 +43,19 @@ def test_loaded_app_uses_explicit_configured_origins():
 
     assert cors.kwargs["allow_origins"]
     assert "*" not in cors.kwargs["allow_origins"]
+
+
+def test_api_responses_are_not_browser_cacheable():
+    """API responses must not be served from a browser cache.
+
+    Repeated identical GETs (e.g. a list reload right after a create) must
+    return fresh data; Chromium can otherwise serve the first response from
+    its in-memory cache and hide newly created records.
+    """
+    client = TestClient(app)
+    api_response = client.get("/api/health")
+    assert api_response.headers.get("cache-control") == "no-store"
+
+    # Routes outside the /api prefix keep their default caching behavior.
+    non_api_response = client.get("/ready")
+    assert non_api_response.headers.get("cache-control") is None
