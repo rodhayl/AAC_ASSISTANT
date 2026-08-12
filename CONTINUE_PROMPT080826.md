@@ -5,9 +5,9 @@ Continue work on the `080826_continuation` branch of AAC Assistant.
 ## Current repository state
 
 - Current branch: `080826_continuation`
-- Latest commit: `96389ab refactor: reduce production footprint and preserve compatibility`
+- Latest commit: `d4375dd refactor(settings): deduplicate voice dependency install flows`
 - Remote branch: `origin/080826_continuation`
-- The working tree was clean when this prompt was created.
+- The working tree is clean and in sync with the remote.
 - The branch's configured upstream may still display as `origin/020826_improvements`; push explicitly to `origin/080826_continuation` when needed.
 
 ## User's standing requirements
@@ -46,32 +46,32 @@ Continue work on the `080826_continuation` branch of AAC Assistant.
 
 Measured while excluding tests, E2E files, generated files, dependencies, and test-only files:
 
-- Total: **39,349 lines**
-- `src/frontend/src`: 18,072
-- `src/aac_app`: 10,726
-- `src/api`: 9,055
-- `scripts`: 1,408
-- `src/scripts`: 88
+- Total: **40,178 lines** (as of `d4375dd`, 2026-08-12)
+- `src/frontend/src`: 18,333
+- `src/api`: 9,922
+- `src/aac_app`: 10,558
+- `scripts`: 1,275
+- `src/scripts`: 90
 
-This replaces the earlier pre-cleanup estimate; remeasure after any future production edits.
+This replaces the earlier 39,349-line estimate; remeasure after any future production edits.
 
 Largest remaining files:
 
-1. `src/api/deps/providers.py` — 905
-2. `src/frontend/src/pages/Communication.tsx` — 674
-3. `src/aac_app/services/prediction_service.py` — 665
-4. `src/frontend/src/store/learningStore.ts` — 664
-5. `src/api/schemas.py` — 648
-6. `src/frontend/src/pages/Students.tsx` — 636
-7. `src/frontend/src/pages/Settings/LearningModesTab.tsx` — 621
+1. `src/api/deps/providers.py` — 1052
+2. `src/aac_app/services/prediction_service.py` — 695
+3. `src/frontend/src/pages/Communication.tsx` — 675
+4. `src/frontend/src/store/learningStore.ts` — 663
+5. `src/frontend/src/pages/Students.tsx` — 644
+6. `src/api/schemas.py` — 643
+7. `src/frontend/src/pages/Settings/LearningModesTab.tsx` — 630
 8. `src/aac_app/services/local_vector_store.py` — 603
-9. `src/aac_app/services/achievement_system.py` — 600
-10. `src/frontend/src/pages/Symbols.tsx` — 587
-11. `src/frontend/src/pages/Achievements.tsx` — 582
-12. `src/frontend/src/lib/tts.ts` — 556
-13. `src/api/routers/symbols.py` — 554
-14. `src/aac_app/services/symbol_analytics.py` — 554
-15. `src/aac_app/services/learning/responses.py` — 546
+9. `src/frontend/src/pages/Symbols.tsx` — 587
+10. `src/api/routers/symbols.py` — 561
+11. `src/frontend/src/pages/Achievements.tsx` — 561
+12. `src/aac_app/services/symbol_analytics.py` — 557
+13. `src/aac_app/services/learning/responses.py` — 546
+14. `src/frontend/src/lib/tts.ts` — 545
+15. `src/aac_app/services/achievement_system.py` — 535
 
 ## Recommended next implementation order
 
@@ -221,6 +221,28 @@ Final live smoke evidence: a direct uvicorn process on `127.0.0.1:8086` returned
 Final production E2E evidence: with the exact CI fixture environment (sample data enabled and `Admin123`/`Student123`/`Teacher123` passwords), Playwright scheduled 94 tests: **94 passed, 0 skipped, and 0 failures**. The learning-history flow now requires the history control, a successful history HTTP response, the rendered panel, completed loading, and either the localized empty state or a real history item that can be loaded. Logged 503/422 responses were expected negative-path provider/settings checks and did not fail assertions.
 
 The final hygiene pass reported no stale deleted-production references, no diff or shell errors, valid required routes, and a measured production footprint of **39,349** Python/TypeScript/TSX lines across the production roots. The vector indexer now uses scalar-column batches with deterministic keyset pagination for the production SQLAlchemy path; repair mode intentionally retains one scalar expected-text snapshot because the current vector-store API requires it for stale/orphan detection. As with any background index rebuild, catalog mutations concurrent with the repair snapshot are reconciled by the next indexing pass rather than treated as a transactional snapshot guarantee. `scripts/audit_codebase.py` reported no broken internal imports.
+
+## Final near-duplicate consolidation wave (2026-08-12)
+
+An area-by-area near-duplicate sweep (largest files → services → routers → stores → pages → mid-size components) produced six behavior-preserving commits, all pushed to `origin/080826_continuation`:
+
+| Commit | Change |
+|---|---|
+| `b049b02` | Remove orphaned `scripts/validate_database.py` (zero references anywhere; logic duplicated in `fix_null_passwords.py`) plus stale `scripts/__pycache__` artifacts |
+| `4071e4a` | `settingsStore.ts`: three identical model-list fetch actions → one `fetchModelList(endpoint, stateKey, failureMessage)` helper |
+| `6a8688e` | `prediction_service.py`: `_board_personal`/`_board_popular` (identical usage-ranked board queries) → one `_board_usage_symbols(user_id, confidence, source)` helper |
+| `673f20c` | `board_ai.py`: duplicated find-or-create-symbol block → `get_or_create_symbol(db, label, symbol_key)` used by `create_board` and `apply_ai_suggestion` |
+| `8c6cfb8` | `Communication.tsx`: three identical TTS utterance handlers → one `speakText` helper |
+| `d4375dd` | `VoiceTab.tsx`: `installVoiceDependencies`/`installTTS` (identical flows) → one `runInstall(endpoint, timeoutMs, messages)` helper |
+
+Reviewed without change (verified non-duplicates): provider lifecycle functions (`providers.py`), pydantic schema inheritance (`schemas.py`), board-store mutation scaffolding, learning-store answer flows (already share `finishAnswer`/request-id guards), auth-store actions (divergent success paths), export/import and symbols routers, the four largest pages (already use shared `LoadingState`/`ConfirmDialog`/`SymbolGrid`), and `LearningModesTab`/`AiProviderFields` (per-provider differences are genuine).
+
+Final-tree validation (all green on `d4375dd`):
+
+- Backend: Ruff clean, compileall clean, full pytest suite passed (1 expected skip), `git diff --check` clean.
+- Frontend: typecheck passed, ESLint clean, 41 files / 197 tests passed, production build within bundle budgets (largest JS 333.9 kB / 450 kB budget).
+- Footprint: 40,178 production lines, inside the 40,000–40,500 stop-condition target.
+- `scripts/audit_codebase.py`: no broken internal imports. Dead-code audit confirmed every new helper is used by exactly its intended call sites and no stale references to removed code remain.
 
 ## Stop condition
 
