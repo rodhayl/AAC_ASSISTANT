@@ -48,22 +48,37 @@ def _cleanup_old_logs(_logs: list[str] | None = None) -> None:
     Loguru's built-in retention only sees files matching the active sink path,
     which would limit cleanup to the current PID. Scan the unchanged log
     directory instead and ignore files that another process still holds.
+    A single os.scandir pass replaces per-pattern globs so process startup
+    stays fast even when the log directory has accumulated many files.
     """
     now = time.time()
-    retention_patterns = (
-        ("aac_assistant_*.log*", LOG_RETENTION_SECONDS),
-        ("errors_*.log*", ERROR_LOG_RETENTION_SECONDS),
+    retention_rules = (
+        ("aac_assistant_", LOG_RETENTION_SECONDS),
+        ("errors_", ERROR_LOG_RETENTION_SECONDS),
     )
-    for pattern, retention_seconds in retention_patterns:
-        cutoff = now - retention_seconds
-        for path in LOGS_DIR.glob(pattern):
-            try:
-                if path.is_file() and path.stat().st_mtime <= cutoff:
-                    path.unlink()
-            except OSError:
-                # A different process may still have an aged file open on
-                # Windows. It will be retried by a later process startup.
+    try:
+        with os.scandir(LOGS_DIR) as iterator:
+            entries = list(iterator)
+    except OSError:
+        return
+    for entry in entries:
+        try:
+            if not entry.is_file():
                 continue
+            name = entry.name
+            for prefix, retention_seconds in retention_rules:
+                if not name.startswith(prefix) or ".log" not in name:
+                    continue
+                try:
+                    if entry.stat().st_mtime <= now - retention_seconds:
+                        os.unlink(entry.path)
+                except OSError:
+                    # A different process may still have an aged file open on
+                    # Windows. It will be retried by a later process startup.
+                    continue
+                break
+        except OSError:
+            continue
 
 
 def setup_logging():
