@@ -433,8 +433,10 @@ def add_symbol_to_board(
             user_id, "vocabulary_size", float(count), db=db
         )
         AchievementSystem().check_achievements(user_id, db=db)
-    except Exception:
-        pass
+    except Exception as exc:
+        # The symbol is already committed and returned; progress is a
+        # best-effort update that must not fail the request.
+        logger.warning("Vocabulary progress update failed: {}", exc)
     return db_board_symbol
 
 
