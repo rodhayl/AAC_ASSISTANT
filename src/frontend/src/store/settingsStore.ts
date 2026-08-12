@@ -47,67 +47,65 @@ interface SettingsState {
   fetchLmStudioModels: () => Promise<void>;
 }
 
-export const useSettingsStore = create<SettingsState>((set, get) => ({
-  aiSettings: null,
-  ollamaModels: [],
-  openRouterModels: [],
-  lmStudioModels: [],
-  loading: false,
-  error: null,
-
-  fetchAISettings: async () => {
+export const useSettingsStore = create<SettingsState>((set, get) => {
+  // The three model-fetch actions share one load-and-store shape; only the
+  // endpoint, state key, and failure message differ.
+  const fetchModelList = async (
+    endpoint: string,
+    stateKey: 'ollamaModels' | 'openRouterModels' | 'lmStudioModels',
+    failureMessage: string
+  ) => {
     set({ loading: true, error: null });
     try {
-      const response = await api.get('/settings/ai');
-      set({ aiSettings: response.data, loading: false });
+      const response = await api.get(endpoint);
+      set({ [stateKey]: response.data.models, loading: false });
     } catch (error: unknown) {
-      const message = extractError(error, 'Failed to fetch AI settings');
+      const message = extractError(error, failureMessage);
       set({ error: message, loading: false });
     }
-  },
+  };
 
-  updateAISettings: async (settings: Partial<AISettings>) => {
-    set({ loading: true, error: null });
-    try {
-      await api.put('/settings/ai', settings);
-      await get().fetchAISettings();
-    } catch (error: unknown) {
-      const message = extractError(error, 'Failed to update settings');
-      set({ error: message, loading: false });
-      throw error;
-    }
-  },
+  return {
+    aiSettings: null,
+    ollamaModels: [],
+    openRouterModels: [],
+    lmStudioModels: [],
+    loading: false,
+    error: null,
 
-  fetchOllamaModels: async () => {
-    set({ loading: true, error: null });
-    try {
-      const response = await api.get('/settings/ai/models/ollama');
-      set({ ollamaModels: response.data.models, loading: false });
-    } catch (error: unknown) {
-      const message = extractError(error, 'Failed to fetch Ollama models');
-      set({ error: message, loading: false });
-    }
-  },
+    fetchAISettings: async () => {
+      set({ loading: true, error: null });
+      try {
+        const response = await api.get('/settings/ai');
+        set({ aiSettings: response.data, loading: false });
+      } catch (error: unknown) {
+        const message = extractError(error, 'Failed to fetch AI settings');
+        set({ error: message, loading: false });
+      }
+    },
 
-  fetchOpenRouterModels: async () => {
-    set({ loading: true, error: null });
-    try {
-      const response = await api.get('/settings/ai/models/openrouter');
-      set({ openRouterModels: response.data.models, loading: false });
-    } catch (error: unknown) {
-      const message = extractError(error, 'Failed to fetch OpenRouter models');
-      set({ error: message, loading: false });
-    }
-  },
+    updateAISettings: async (settings: Partial<AISettings>) => {
+      set({ loading: true, error: null });
+      try {
+        await api.put('/settings/ai', settings);
+        await get().fetchAISettings();
+      } catch (error: unknown) {
+        const message = extractError(error, 'Failed to update settings');
+        set({ error: message, loading: false });
+        throw error;
+      }
+    },
 
-  fetchLmStudioModels: async () => {
-    set({ loading: true, error: null });
-    try {
-      const response = await api.get('/settings/ai/models/lmstudio');
-      set({ lmStudioModels: response.data.models, loading: false });
-    } catch (error: unknown) {
-      const message = extractError(error, 'Failed to fetch LM Studio models');
-      set({ error: message, loading: false });
-    }
-  },
-}));
+    fetchOllamaModels: async () => {
+      await fetchModelList('/settings/ai/models/ollama', 'ollamaModels', 'Failed to fetch Ollama models');
+    },
+
+    fetchOpenRouterModels: async () => {
+      await fetchModelList('/settings/ai/models/openrouter', 'openRouterModels', 'Failed to fetch OpenRouter models');
+    },
+
+    fetchLmStudioModels: async () => {
+      await fetchModelList('/settings/ai/models/lmstudio', 'lmStudioModels', 'Failed to fetch LM Studio models');
+    },
+  };
+});
