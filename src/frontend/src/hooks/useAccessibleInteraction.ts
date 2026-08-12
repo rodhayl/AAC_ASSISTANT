@@ -32,9 +32,7 @@ export function useAccessibleInteraction({ onClick, disabled }: UseAccessibleInt
 
     if (dwellTime > 0) {
       isDwellingRef.current = true;
-      // Persist event if needed, though usually we just pass it
-      // e.persist(); 
-      
+
       timerRef.current = setTimeout(() => {
         if (isDwellingRef.current) {
           triggerClick(e);
@@ -44,25 +42,20 @@ export function useAccessibleInteraction({ onClick, disabled }: UseAccessibleInt
     }
   }, [dwellTime, disabled, triggerClick]);
 
-  const handlePointerUp = useCallback(() => {
-    if (dwellTime > 0) {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-      isDwellingRef.current = false;
+  // Cancel an in-progress dwell timer when the pointer lifts or leaves.
+  const cancelDwell = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
     }
-  }, [dwellTime]);
+    isDwellingRef.current = false;
+  }, []);
 
-  const handlePointerLeave = useCallback(() => {
-    if (dwellTime > 0) {
-        if (timerRef.current) {
-            clearTimeout(timerRef.current);
-            timerRef.current = null;
-        }
-        isDwellingRef.current = false;
-    }
-  }, [dwellTime]);
+  const handlePointerUp = useCallback(() => {
+    if (dwellTime > 0) cancelDwell();
+  }, [dwellTime, cancelDwell]);
+
+  const handlePointerLeave = handlePointerUp;
 
   const handleClick = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     if (disabled) return;

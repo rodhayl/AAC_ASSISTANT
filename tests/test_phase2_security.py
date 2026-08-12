@@ -506,6 +506,28 @@ class TestEnvironmentEnforcement:
             importlib.reload(jwt_utils_module)
         assert os.environ["JWT_SECRET_KEY"] == jwt_utils_module.JWT_SECRET_KEY
 
+    def test_production_with_secure_secret_mints_tokens(self):
+        """A valid secret must still mint tokens when ENVIRONMENT=production."""
+        import importlib
+
+        import src.aac_app.utils.jwt_utils
+
+        with patch.dict(
+            os.environ,
+            {
+                "ENVIRONMENT": "production",
+                "JWT_SECRET_KEY": "unit_test_secret_key_32_chars_min",
+            },
+        ):
+            jwt_utils = importlib.reload(src.aac_app.utils.jwt_utils)
+            access = jwt_utils.create_access_token({"sub": "u1", "user_id": 1})
+            assert access
+            refresh = jwt_utils.create_refresh_token({"sub": "u1", "user_id": 1})
+            assert refresh
+
+        # Restore module state from the real test environment.
+        importlib.reload(src.aac_app.utils.jwt_utils)
+
 
 class TestTokenExpirationValidation:
     """Tests for token expiration handling."""

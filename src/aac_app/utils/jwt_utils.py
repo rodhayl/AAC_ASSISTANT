@@ -29,6 +29,34 @@ if config.get("ENVIRONMENT", "development") == "production":  # noqa: SIM102
         )
 
 
+def _require_secure_secret() -> None:
+    """Refuse to mint tokens with the placeholder secret in production."""
+    if JWT_SECRET_KEY != "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION":
+        return
+    logger.critical(
+        "JWT_SECRET_KEY is using default insecure value! Set JWT_SECRET_KEY environment variable."
+    )
+    # In production, this should raise an error. For development, we'll log a warning.
+    if config.get("ENVIRONMENT", "development") == "production":
+        raise ValueError("JWT_SECRET_KEY must be set in production environment")
+
+
+def _encode_token(
+    data: dict[str, Any], *, token_type: str, expire: datetime
+) -> str:
+    """Encode a signed JWT with the standard claims and a type marker."""
+    to_encode = data.copy()
+    to_encode.update(
+        {
+            "exp": expire,
+            "iat": datetime.now(UTC),
+            "iss": "aac-assistant",  # Issuer claim
+            "type": token_type,
+        }
+    )
+    return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+
 def create_access_token(
     data: dict[str, Any], expires_delta: timedelta | None = None
 ) -> str:
@@ -45,15 +73,7 @@ def create_access_token(
     Raises:
         ValueError: If JWT_SECRET_KEY is not set or is the default insecure value in production
     """
-    if JWT_SECRET_KEY == "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION":
-        logger.critical(
-            "JWT_SECRET_KEY is using default insecure value! Set JWT_SECRET_KEY environment variable."
-        )
-        # In production, this should raise an error. For development, we'll log a warning.
-    if config.get("ENVIRONMENT", "development") == "production":
-        raise ValueError("JWT_SECRET_KEY must be set in production environment")
-
-    to_encode = data.copy()
+    _require_secure_secret()
 
     # Set expiration time
     if expires_delta:
@@ -63,17 +83,7 @@ def create_access_token(
             minutes=ACCESS_TOKEN_EXPIRE_MINUTES
         )
 
-    to_encode.update(
-        {
-            "exp": expire,
-            "iat": datetime.now(UTC),
-            "iss": "aac-assistant",  # Issuer claim
-            "type": "access",
-        }
-    )
-
-    # Create the JWT token
-    encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    encoded_jwt = _encode_token(data, token_type="access", expire=expire)
 
     logger.debug(f"Created JWT token for subject: {data.get('sub')}, expires: {expire}")
     return encoded_jwt
@@ -147,24 +157,10 @@ def create_refresh_token(data: dict[str, Any]) -> str:
     Returns:
         Encoded JWT refresh token as a string
     """
-    if JWT_SECRET_KEY == "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION":
-        logger.critical("JWT_SECRET_KEY is using default insecure value!")
-        if config.get("ENVIRONMENT", "development") == "production":
-            raise ValueError("JWT_SECRET_KEY must be set in production environment")
+    _require_secure_secret()
 
-    to_encode = data.copy()
     expire = datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-
-    to_encode.update(
-        {
-            "exp": expire,
-            "iat": datetime.now(UTC),
-            "iss": "aac-assistant",
-            "type": "refresh",  # Mark as refresh token
-        }
-    )
-
-    encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    encoded_jwt = _encode_token(data, token_type="refresh", expire=expire)
     logger.debug(
         f"Created refresh token for subject: {data.get('sub')}, expires: {expire}"
     )
