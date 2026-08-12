@@ -109,6 +109,8 @@ def serialize_export_board(board: CommunicationBoard) -> dict:
                 "size": symbol["size"],
                 "is_visible": symbol["is_visible"],
                 "custom_text": symbol["custom_text"],
+                "color": symbol["color"],
+                "linked_board_id": symbol["linked_board_id"],
                 "symbol": (
                     {
                         key: symbol["symbol"][key]
@@ -118,6 +120,7 @@ def serialize_export_board(board: CommunicationBoard) -> dict:
                             "description",
                             "category",
                             "image_path",
+                            "audio_path",
                             "keywords",
                             "language",
                         )

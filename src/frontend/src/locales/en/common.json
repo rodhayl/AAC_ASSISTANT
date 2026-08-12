@@ -92,6 +92,11 @@
     "export": {
        "unauthorizedExport": "Not authorized to export data for this user",
        "checksumMismatch": "Checksum mismatch",
+       "invalidPayload": "Invalid export data",
+       "payloadTooLarge": "Export data is too large",
+       "invalidAchievementTimestamp": "Invalid achievement timestamp in import",
+       "legacyChecksumUnsupported": "This older export format is no longer accepted. Export the data again from the current application.",
+       "unsupportedSchemaVersion": "Unsupported export schema version",
        "unauthorizedImport": "Not authorized to import data for another user"
     },
     "boards": {

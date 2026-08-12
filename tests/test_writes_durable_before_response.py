@@ -474,7 +474,7 @@ class TestImportWrites:
             "meta": {
                 **base["meta"],
                 "checksum_sha256": compute_checksum(base),
-                "schema_version": "1",
+                "schema_version": "2",
             },
         }
 

@@ -127,7 +127,16 @@ Useful endpoints:
 - ReDoc: `http://127.0.0.1:8086/redoc`
 - Health check: `http://127.0.0.1:8086/api/health`
 
-## Configuration reference
+## Configuration
+
+Server-side data exports use an authenticated schema-2 checksum tied to the
+configured `JWT_SECRET_KEY`. This prevents clients from forging imported
+achievements or learning records, but means an export must be created again
+after rotating that secret; schema-2 exports are not portable between server
+instances with different secrets. Board placements also retain database symbol
+IDs, so imports require a compatible symbol catalog; cross-board links
+(`linked_board_id`) are not restored because source board IDs are not remapped;
+older unsigned schema-1 exports are rejected.
 
 Copy `.env.example` to `.env` only when setting up manually. The table below
 lists every key in the template. Values supplied as process environment

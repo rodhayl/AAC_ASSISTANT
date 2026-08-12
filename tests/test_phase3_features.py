@@ -126,6 +126,7 @@ def test_export_endpoint(teacher_user, test_board):
     assert len(data["boards"]) >= 1
     assert data["boards"][0]["name"] == "Test Board"
     assert "checksum_sha256" in data["meta"]
+    assert data["meta"]["schema_version"] == "2"
 
 
 def test_export_deduplicates_duplicate_assignments(
