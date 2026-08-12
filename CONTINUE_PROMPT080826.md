@@ -5,9 +5,9 @@ Continue work on the `080826_continuation` branch of AAC Assistant.
 ## Current repository state
 
 - Current branch: `080826_continuation`
-- Latest committed base: `8791a89 docs(handoff): record final production build evidence` (the release-safety and documentation changes described below are still uncommitted).
+- Latest committed base: `b2bd6e4 fix(release): make installer upgrades report and close safely`
 - Remote branch: `origin/080826_continuation`
-- The working tree currently contains uncommitted release-safety and documentation changes; it is not clean or in sync until those changes are reviewed and committed.
+- The working tree is clean and synchronized with `origin/080826_continuation`; the release-safety and documentation changes described below are included in `b2bd6e4`.
 - The configured upstream is `origin/080826_continuation`; use that explicit branch when publishing reviewed commits.
 
 ## User's standing requirements
@@ -281,12 +281,12 @@ The build produced no tracked changes. The working tree remained clean and no ge
 ## Release safety follow-up (2026-08-12)
 
 The final installer/launcher safety cycle completed after the near-duplicate
-wave. The working-tree changes are intentionally still uncommitted for review:
+wave and was committed and pushed as `b2bd6e4`:
 `launcher.pyw`, `installer.iss`, the launcher/packaging tests, `README.md`,
 `AGENTS.md`, `CONTINUE_PROMPT080826.md`, `docs/01_PROJECT_GUIDE.md`,
 `docs/RELEASE_READINESS.md`, the historical plan/scenario status notices, and
-`TEST_SCENARIOS` path corrections. The complete list is always available from
-`git status --short`; this handoff intentionally avoids a partial file list.
+`TEST_SCENARIOS` path corrections. The working tree is clean after that
+release-safety update.
 
 - The installer now uses the same single-backslash `Local\\AACAssistantShutdown_`
   event namespace as the frozen launcher. It polls the path-matched process for
