@@ -5,7 +5,7 @@ Continue work on the `080826_continuation` branch of AAC Assistant.
 ## Current repository state
 
 - Current branch: `080826_continuation`
-- Latest commit: `d4375dd refactor(settings): deduplicate voice dependency install flows`
+- Latest commit: `a77c723 refactor(providers): hoist shared HTTP client close lifecycle into base provider`
 - Remote branch: `origin/080826_continuation`
 - The working tree is clean and in sync with the remote.
 - The branch's configured upstream may still display as `origin/020826_improvements`; push explicitly to `origin/080826_continuation` when needed.
@@ -46,14 +46,14 @@ Continue work on the `080826_continuation` branch of AAC Assistant.
 
 Measured while excluding tests, E2E files, generated files, dependencies, and test-only files:
 
-- Total: **40,178 lines** (as of `d4375dd`, 2026-08-12)
-- `src/frontend/src`: 18,333
+- Total: **40,125 lines** (as of `a77c723`, 2026-08-12)
+- `src/frontend/src`: 18,326
 - `src/api`: 9,922
-- `src/aac_app`: 10,558
+- `src/aac_app`: 10,512
 - `scripts`: 1,275
 - `src/scripts`: 90
 
-This replaces the earlier 39,349-line estimate; remeasure after any future production edits.
+This replaces the earlier 40,178-line estimate; remeasure after any future production edits.
 
 Largest remaining files:
 
@@ -224,7 +224,7 @@ The final hygiene pass reported no stale deleted-production references, no diff 
 
 ## Final near-duplicate consolidation wave (2026-08-12)
 
-An area-by-area near-duplicate sweep (largest files → services → routers → stores → pages → mid-size components) produced six behavior-preserving commits, all pushed to `origin/080826_continuation`:
+An area-by-area near-duplicate sweep (largest files → services → routers → stores → pages → mid-size components → hooks/lib/utils → providers) produced eight behavior-preserving commits, all pushed to `origin/080826_continuation`: one of them also fixed a latent production JWT bug found during the sweep.
 
 | Commit | Change |
 |---|---|
@@ -234,15 +234,17 @@ An area-by-area near-duplicate sweep (largest files → services → routers →
 | `673f20c` | `board_ai.py`: duplicated find-or-create-symbol block → `get_or_create_symbol(db, label, symbol_key)` used by `create_board` and `apply_ai_suggestion` |
 | `8c6cfb8` | `Communication.tsx`: three identical TTS utterance handlers → one `speakText` helper |
 | `d4375dd` | `VoiceTab.tsx`: `installVoiceDependencies`/`installTTS` (identical flows) → one `runInstall(endpoint, timeoutMs, messages)` helper |
+| `4d5093d` | **Bug fix + dedup:** `jwt_utils.py` `create_access_token` raised in production even with a valid secret — now guarded only when the placeholder secret is in use (`_require_secure_secret`); the near-identical token-encode blocks of `create_access_token`/`create_refresh_token` merged into `_encode_token`; `useAccessibleInteraction.ts` byte-identical `handlePointerUp`/`handlePointerLeave` merged behind `cancelDwell`; regression test added |
+| `a77c723` | `providers/`: byte-identical HTTP-client close lifecycle (`_consume_close_task`/`close_async`/`close_sync` plus state) copied in `OllamaProvider`/`OpenRouterProvider` → hoisted into `BaseLLMProvider` |
 
 Reviewed without change (verified non-duplicates): provider lifecycle functions (`providers.py`), pydantic schema inheritance (`schemas.py`), board-store mutation scaffolding, learning-store answer flows (already share `finishAnswer`/request-id guards), auth-store actions (divergent success paths), export/import and symbols routers, the four largest pages (already use shared `LoadingState`/`ConfirmDialog`/`SymbolGrid`), and `LearningModesTab`/`AiProviderFields` (per-provider differences are genuine).
 
-Final-tree validation (all green on `d4375dd`):
+Final-tree validation (all green on `a77c723`):
 
 - Backend: Ruff clean, compileall clean, full pytest suite passed (1 expected skip), `git diff --check` clean.
 - Frontend: typecheck passed, ESLint clean, 41 files / 197 tests passed, production build within bundle budgets (largest JS 333.9 kB / 450 kB budget).
-- Footprint: 40,178 production lines, inside the 40,000–40,500 stop-condition target.
-- `scripts/audit_codebase.py`: no broken internal imports. Dead-code audit confirmed every new helper is used by exactly its intended call sites and no stale references to removed code remain.
+- Footprint: 40,125 production lines, inside the 40,000–40,500 stop-condition target.
+- `scripts/audit_codebase.py`: no broken internal imports. Dead-code audit confirmed every new helper is used by exactly its intended call sites and no stale references to removed code remain. The `jwt_utils` refactor leaves no stale references: private helpers are used only internally, all public API symbols have live production callers, and the module's `__init__` re-exports resolve.
 
 ## Stop condition
 
