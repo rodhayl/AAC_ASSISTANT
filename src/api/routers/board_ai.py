@@ -24,6 +24,31 @@ from src.api.deps import (
 
 router = APIRouter()
 
+
+def get_or_create_symbol(
+    db: Session, label: str, symbol_key: str
+) -> tuple[Symbol, bool]:
+    """Return the symbol matching ``label``, creating it when absent.
+
+    Returns ``(symbol, created)`` so callers know whether the symbol is new
+    (and therefore needs embedding indexing). Reuse by label keeps AI board
+    creation and AI suggestions from duplicating symbols.
+    """
+    symbol = db.query(Symbol).filter(Symbol.label == label).first()
+    if symbol is not None:
+        return symbol, False
+    created = Symbol(
+        label=label,
+        keywords=symbol_key,
+        image_path=f"/static/symbols/generated/{symbol_key}.png",  # placeholder
+        category="generated",
+        is_builtin=False,
+    )
+    db.add(created)
+    db.flush()
+    return created, True
+
+
 def _fallback_board_suggestions(
     db: Session, *, board: CommunicationBoard, item_count: int
 ) -> list[dict]:
@@ -208,28 +233,15 @@ async def create_board(
                 logger.info(f"AI generated {len(items)} items")
 
                 for idx, item in enumerate(items):
-                    # Check if symbol exists
                     symbol_key = item["symbol_key"]
                     # Use label as fallback if symbol_key is empty
                     if not symbol_key:
                         symbol_key = item["label"].lower().replace(" ", "_")
 
-                    # Search by label since we don't have a unique key column
-                    symbol = (
-                        db.query(Symbol).filter(Symbol.label == item["label"]).first()
+                    symbol, is_new = get_or_create_symbol(
+                        db, item["label"], symbol_key
                     )
-
-                    if not symbol:
-                        # Create new symbol
-                        symbol = Symbol(
-                            label=item["label"],
-                            keywords=symbol_key,
-                            image_path=f"/static/symbols/generated/{symbol_key}.png",  # Placeholder
-                            category="generated",
-                            is_builtin=False,
-                        )
-                        db.add(symbol)
-                        db.flush()
+                    if is_new:
                         created_symbols.append(symbol)
 
                     # Add to board
@@ -408,20 +420,9 @@ def apply_ai_suggestion(
     symbol_key = item.symbol_key or item.label.lower().replace(" ", "_")
 
     # Try to reuse existing symbol by label to avoid duplicates
-    symbol = db.query(Symbol).filter(Symbol.label == item.label).first()
-    if not symbol:
-        symbol = Symbol(
-            label=item.label,
-            keywords=symbol_key,
-            image_path=f"/static/symbols/generated/{symbol_key}.png",  # placeholder
-            category="generated",
-            is_builtin=False,
-        )
-        db.add(symbol)
-        db.flush()
-        created_symbol = symbol
-    else:
-        created_symbol = None
+    symbol, was_created = get_or_create_symbol(db, item.label, symbol_key)
+    created_symbol = symbol if was_created else None
+    if created_symbol is None:
         # Avoid duplicate symbol entries per board
         existing_board_symbol = (
             db.query(BoardSymbol)
