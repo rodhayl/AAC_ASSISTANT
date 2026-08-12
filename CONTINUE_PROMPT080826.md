@@ -246,6 +246,25 @@ Final-tree validation (all green on `a77c723`):
 - Footprint: 40,125 production lines, inside the 40,000–40,500 stop-condition target.
 - `scripts/audit_codebase.py`: no broken internal imports. Dead-code audit confirmed every new helper is used by exactly its intended call sites and no stale references to removed code remain. The `jwt_utils` refactor leaves no stale references: private helpers are used only internally, all public API symbols have live production callers, and the module's `__init__` re-exports resolve.
 
+## Live JWT login smoke test (2026-08-12)
+
+Live end-to-end verification of the `4d5093d` JWT production fix. The server ran as a real uvicorn process on `127.0.0.1:8233` with **`ENVIRONMENT=production`** and a valid 32-character `JWT_SECRET_KEY` — the exact scenario the fix unblocked (previously `create_access_token` raised `ValueError` unconditionally in production, so login returned HTTP 500).
+
+| Step | Result |
+|---|---|
+| `/api/health` | `200` `{"status":"online"}` |
+| `/ready` | `200`, all 4 providers ready (speech, llm, achievement, vector_store) |
+| `POST /api/auth/token` (`admin1`/`Admin123`) | `200` — `access_token` + `refresh_token` minted, `token_type: bearer` |
+| Access-token claims | `sub=admin1, user_id=1, type=access, iss=aac-assistant`, `exp` in the future |
+| `GET /api/auth/me` (Bearer access token) | `200` — `user: admin1 type: admin active: True` |
+| `POST /api/auth/refresh?refresh_token=…` | `200` — new access token minted |
+| `GET /api/auth/me` (refreshed Bearer token) | `200` — `user: admin1 type: admin` |
+| Negative path (wrong password) | `401` — credentials rejected |
+
+Note: the authenticated identity endpoint is **`/api/auth/me`** (the `auth_users` router mounts at `/api/auth`). `GET /api/auth/users/me` correctly returns `422` because it matches `/users/{user_id}` with `user_id: int` and `"me"` is not an integer — app behavior is correct, not a regression.
+
+The harness cleaned up after itself (temp data dir removed, port closed, no stray processes). Working tree remained clean.
+
 ## Stop condition
 
 A reasonable target is approximately **40,000–40,500 production lines**. Stop before deleting supported compatibility behavior or introducing abstractions that make ownership less clear. The goal is a smaller, easier-to-maintain application—not the lowest possible line count.
