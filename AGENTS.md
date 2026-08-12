@@ -22,11 +22,11 @@ For audit work, inspect every production root at least once, then repeat the sca
 - Keep optional ML/voice/vector dependencies lazy and out of the startup critical path.
 - Avoid broad provider frameworks, state-management rewrites, and changes to compatibility-sensitive migrations without concrete evidence.
 - Reduce duplicate database/API work, unnecessary allocations, and unbounded concurrency where behavior remains clear.
-- Do not modify Windows launch or packaging behavior unless the task specifically requires it.
+- Do not modify Windows launch or packaging behavior unless the task specifically requires it. The 2026-08-12 release-safety task explicitly required and validated launcher/installer changes; future work must still keep those changes isolated and tested.
 
 ## Validation
 
-Backend changes: `uv run ruff check src tests scripts`, `uv run python -m compileall -q src scripts`, and relevant pytest tests (full `uv run pytest -q` for broad changes).
+Backend changes: `uv run ruff check src tests scripts`, `uv run python -m compileall -q src scripts`, and relevant pytest tests (full `uv run pytest -q` for broad changes). Launcher/packaging changes additionally require `uv run ruff check launcher.pyw`, `uv run python -m compileall -q launcher.pyw`, packaging tests, a rebuilt PyInstaller/Inno artifact, and an isolated smoke with `AAC_ASSISTANT_NO_BROWSER=1`.
 
 Frontend changes: from `src/frontend`, run `npm run typecheck`, `npm run lint`, `npm test -- --run`, and `npm run build` as appropriate.
 

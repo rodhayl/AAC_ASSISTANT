@@ -90,8 +90,42 @@ def test_packaging_scripts_describe_slim_unattended_build():
     assert 'echo rem' not in build
     assert "uvicorn.Server" in launcher
     assert "_wait_for_server" in launcher
+    assert "AAC_ASSISTANT_NO_BROWSER" in launcher
     assert "dist\\aac_assistant\\*" in installer
+    assert "closeapplications=force" in installer
+    assert "restartapplications=no" in installer
+    assert "[custommessages]" in installer
+    assert "english.updatewelcome=" in installer
+    assert "spanish.updatewelcome=" in installer
+    assert "unsaved work may be lost" in installer
+    assert "trabajo no guardado" in installer
+    assert "procedure initializewizard;" in installer
+    assert "procedure curpagechanged(curpageid: integer);" in installer
+    assert "function preparetoinstall(var needsrestart: boolean): string;" in installer
+    assert "powershell.exe" in installer
+    assert "openeventw@kernel32.dll stdcall" in installer
+    assert "setevent@kernel32.dll stdcall" in installer
+    assert "getsha256ofstring" in installer
+    assert "requestgracefulshutdown" in installer
+    assert "result := 'local\\aacassistantshutdown_'" in installer
+    assert "addseconds(25)" in installer
+    assert "start-sleep -milliseconds 250" in installer
+    assert "sleep(5000)" not in installer
+    assert '#define myappprocessname "aac_assistant"' in installer
+    assert "get-process -name ''{#myappprocessname}''" in installer
+    assert "[io.path]::getfullpath($_.path)" in installer
+    assert "stop-process -force" in installer
+    assert "start-sleep -milliseconds 500" in installer
+    assert "exit 1" in installer
+    assert "custommessage('closefailed')" in installer
+    assert "resultcode <> 0" in installer
+    assert "/f /t /im {#myappexename}" not in installer
+    assert "addbackslash(wizardform.diredit.text) + '{#myappexename}'" in installer
+    assert "defaultwelcomemessage" in installer
+    assert "wizardform.diredit.onchange := @direditchanged" in installer
+    assert "custommessage('updatewelcome')" in installer
     assert "source: \".env.example\"" in installer
     uninstall = installer.split("[uninstalldelete]", 1)[1].split("[messages]", 1)[0]
     assert 'name: "{app}\\data"' not in uninstall
     assert 'name: "{app}\\uploads"' not in uninstall
+    assert 'type: filesandordirs' in uninstall

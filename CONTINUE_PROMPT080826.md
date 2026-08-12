@@ -5,10 +5,10 @@ Continue work on the `080826_continuation` branch of AAC Assistant.
 ## Current repository state
 
 - Current branch: `080826_continuation`
-- Latest commit: `a77c723 refactor(providers): hoist shared HTTP client close lifecycle into base provider`
+- Latest committed base: `8791a89 docs(handoff): record final production build evidence` (the release-safety and documentation changes described below are still uncommitted).
 - Remote branch: `origin/080826_continuation`
-- The working tree is clean and in sync with the remote.
-- The branch's configured upstream may still display as `origin/020826_improvements`; push explicitly to `origin/080826_continuation` when needed.
+- The working tree currently contains uncommitted release-safety and documentation changes; it is not clean or in sync until those changes are reviewed and committed.
+- The configured upstream is `origin/080826_continuation`; use that explicit branch when publishing reviewed commits.
 
 ## User's standing requirements
 
@@ -40,7 +40,7 @@ Continue work on the `080826_continuation` branch of AAC Assistant.
 - Retained `/api/analytics/log` because production frontend code still calls it from `DraggableSymbol.tsx`.
 - Retained `/api/auth/login` as a deprecated compatibility endpoint because external clients cannot be ruled out. `/api/auth/token` is the recommended JWT endpoint.
 - Updated tests to use canonical token login and canonical board-AI imports where appropriate.
-- Windows launcher/package files were preserved unchanged.
+- Windows launcher/package behavior was changed explicitly in the release-safety follow-up: graceful update signaling, bounded close polling, and the opt-in `AAC_ASSISTANT_NO_BROWSER=1` headless mode are now documented and tested.
 
 ## Current production-only footprint
 
@@ -157,7 +157,7 @@ git diff --check
 bash -n start.sh
 ```
 
-Check production-only references separately from test references. Chrome/Chromium was unavailable in the previous environment, so do not claim Chrome DevTools validation unless a browser is actually installed and used.
+Check production-only references separately from test references. Chrome is installed in the current environment. Claim browser validation only when the browser was actually used; managed/frozen smoke tests must set `AAC_ASSISTANT_NO_BROWSER=1` to avoid opening the user's default browser.
 
 ## Additional verification completed on 2026-08-08
 
@@ -239,7 +239,7 @@ An area-by-area near-duplicate sweep (largest files → services → routers →
 
 Reviewed without change (verified non-duplicates): provider lifecycle functions (`providers.py`), pydantic schema inheritance (`schemas.py`), board-store mutation scaffolding, learning-store answer flows (already share `finishAnswer`/request-id guards), auth-store actions (divergent success paths), export/import and symbols routers, the four largest pages (already use shared `LoadingState`/`ConfirmDialog`/`SymbolGrid`), and `LearningModesTab`/`AiProviderFields` (per-provider differences are genuine).
 
-Final-tree validation (all green on `a77c723`):
+Near-duplicate-wave validation (all green on `a77c723`; subsequent commits recorded the JWT smoke, build evidence, and handoff updates):
 
 - Backend: Ruff clean, compileall clean, full pytest suite passed (1 expected skip), `git diff --check` clean.
 - Frontend: typecheck passed, ESLint clean, 41 files / 197 tests passed, production build within bundle budgets (largest JS 333.9 kB / 450 kB budget).
@@ -277,6 +277,42 @@ A fresh production build was run from `src/frontend` with `npm run build` after 
 - No bundle-budget warnings or build failures were reported.
 
 The build produced no tracked changes. The working tree remained clean and no generated artifacts were committed.
+
+## Release safety follow-up (2026-08-12)
+
+The final installer/launcher safety cycle completed after the near-duplicate
+wave. The working-tree changes are intentionally still uncommitted for review:
+`launcher.pyw`, `installer.iss`, the launcher/packaging tests, `README.md`,
+`AGENTS.md`, `CONTINUE_PROMPT080826.md`, `docs/01_PROJECT_GUIDE.md`,
+`docs/RELEASE_READINESS.md`, the historical plan/scenario status notices, and
+`TEST_SCENARIOS` path corrections. The complete list is always available from
+`git status --short`; this handoff intentionally avoids a partial file list.
+
+- The installer now uses the same single-backslash `Local\\AACAssistantShutdown_`
+  event namespace as the frozen launcher. It polls the path-matched process for
+  up to 25 seconds before using the force-kill fallback, and aborts if the
+  process remains.
+- A rebuilt installer passed clean install, `/ready=200`, active upgrade with
+  exit 0, graceful log evidence (`Shutting down AAC Assistant API...`), closed
+  port, and preserved data/upload sentinels.
+- A two-artifact isolated mechanics check passed `1.9.0 → 2.0.0 → 1.9.0`,
+  preserving a valid SQLite database and upload sentinel and returning health
+  200 after each transition. Both temporary artifacts used the current payload;
+  this is installer/data-preservation evidence, not schema compatibility proof.
+- `AAC_ASSISTANT_NO_BROWSER=1` now prevents the frozen launcher from opening
+  the default browser. The rebuilt package passed a headless active-upgrade
+  smoke on port 8258 with readiness, graceful shutdown, port closure, and data
+  preservation. All test ports and temporary data were cleaned.
+- Technical security review passed: internal import audit clean, focused security
+  tests green, and `npm audit --omit=dev` reported 0 vulnerabilities.
+- Complete gates passed after the change: backend suite with one expected skip,
+  Ruff, compileall, frontend typecheck/lint, 41 Vitest files / 197 tests,
+  production build, and bundle budgets (333.9 kB JS / 450 kB; 96.7 kB CSS /
+  150 kB). PyInstaller rebuilt successfully with only existing optional hidden
+  import/ctypes warnings; Inno Setup compiled with 0 errors and 0 warnings.
+- `docs/RELEASE_READINESS.md` now documents physical SQLite backup, authenticated
+  export/import recovery, operator versioned rollback, and the non-automated
+  clinical/beta readiness requirements.
 
 ## Stop condition
 

@@ -1,17 +1,19 @@
 # Scenario 10: Cross-Role - Achievement System Flow
 
+> **Current-state notice (2026-08-12): HISTORICAL MANUAL QA REFERENCE — DO NOT EXECUTE.** The CDP snippets below are archived and are not executable because the former CDP harness was removed. For current repeatable browser validation use `src/frontend/e2e` against a production build; use fixture credentials only in isolated test data, and set `AAC_ASSISTANT_NO_BROWSER=1` for managed launcher smoke tests. Verify every route/component name against the current source before adapting this scenario. This historical document's remaining headings and code blocks are provenance only; do not execute them. This technical reference does not validate clinical suitability, switch/eye-gaze/screen-reader accessibility, or target audio hardware. All credentials, variables, URLs, commands and cleanup snippets below are historical and must not be copied or executed.
+
 ## Title
 Cross-Role Achievement System Flow - Student Earns, Teacher Views, Admin Manages
 
 ## Description
-This end-to-end test scenario validates the complete achievement system workflow across all three roles. It covers a student earning achievements through activities, a teacher viewing student achievements, and an admin managing the achievement system. All interactions are performed through the GUI using Chrome DevTools Protocol (CDP) commands.
+This historical end-to-end QA scenario recorded the complete achievement system workflow across all three roles. It covers a student earning achievements through activities, a teacher viewing student achievements, and an admin managing the achievement system. The archived procedure used GUI automation; it is retained for historical provenance only and is not a supported test command.
 
 ## Prerequisites
 - Application running at `http://localhost:8086`
 - Admin user credentials available (set via environment variables `AAC_ADMIN_USERNAME` and `AAC_ADMIN_PASSWORD`)
 - Teacher user credentials available (set via environment variables `AAC_TEACHER_USERNAME` and `AAC_TEACHER_PASSWORD`)
 - Student user credentials available (set via environment variables `AAC_STUDENT_USERNAME` and `AAC_STUDENT_PASSWORD`)
-- Chrome browser with remote debugging enabled on port 9222
+- Current validation uses the Playwright suite; do not enable Chrome remote debugging for this historical document
 - At least one learning activity exists in the system
 
 ## Test Steps
@@ -932,6 +934,5 @@ print("Achievement system working correctly across all roles")
 - `src/api/routers/achievements.py` - Achievements API endpoints
 - `src/api/routers/learning.py` - Learning activities API endpoints
 - `src/aac_app/services/achievement_system.py` - Achievement system service
-- `src/frontend/src/components/achievements/AchievementsPage.tsx` - Achievements page UI
-- `src/frontend/src/components/achievements/Leaderboard.tsx` - Leaderboard UI
-- `src/frontend/src/components/admin/StudentProfile.tsx` - Student profile UI
+- `src/frontend/src/pages/Achievements.tsx` - Achievements page UI, including the current leaderboard view
+- `src/frontend/src/pages/Students.tsx` - Student-management/profile UI

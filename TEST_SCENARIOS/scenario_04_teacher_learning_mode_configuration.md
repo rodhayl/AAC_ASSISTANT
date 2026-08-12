@@ -1,16 +1,18 @@
 # Scenario 04: Teacher - Learning Mode Configuration Flow
 
+> **Current-state notice (2026-08-12): HISTORICAL MANUAL QA REFERENCE — DO NOT EXECUTE.** The CDP snippets below are archived and are not executable because the former CDP harness was removed. For current repeatable browser validation use `src/frontend/e2e` against a production build; use fixture credentials only in isolated test data, and set `AAC_ASSISTANT_NO_BROWSER=1` for managed launcher smoke tests. Verify every route/component name against the current source before adapting this scenario. This historical document's remaining headings and code blocks are provenance only; do not execute them. This technical reference does not validate clinical suitability, switch/eye-gaze/screen-reader accessibility, or target audio hardware. All credentials, variables, URLs, commands and cleanup snippets below are historical and must not be copied or executed.
+
 ## Title
 Teacher Learning Mode Configuration Flow - Set Up Learning Modes, Assign to Students
 
 ## Description
-This end-to-end test scenario validates the complete learning mode configuration workflow for teachers. It covers viewing existing learning modes, creating custom learning modes, editing mode settings, and assigning learning modes to students. All interactions are performed through the GUI using Chrome DevTools Protocol (CDP) commands.
+This historical end-to-end QA scenario recorded the complete learning mode configuration workflow for teachers. It covers viewing existing learning modes, creating custom learning modes, editing mode settings, and assigning learning modes to students. The archived procedure used GUI automation; it is retained for historical provenance only and is not a supported test command.
 
 ## Prerequisites
 - Application running at `http://localhost:8086`
 - Teacher user credentials available (set via environment variables `AAC_TEACHER_USERNAME` and `AAC_TEACHER_PASSWORD`)
 - Student user credentials available (set via environment variables `AAC_STUDENT_USERNAME` and `AAC_STUDENT_PASSWORD`)
-- Chrome browser with remote debugging enabled on port 9222
+- Current validation uses the Playwright suite; do not enable Chrome remote debugging for this historical document
 - At least one student exists in the system
 
 ## Test Steps
@@ -684,5 +686,5 @@ print(f"Custom learning mode '{mode_name}' deleted successfully")
 ## Related Files
 - `src/api/routers/learning_modes.py` - Learning modes API endpoints
 - `src/api/routers/learning.py` - Learning activities API endpoints
-- `src/frontend/src/components/learning/LearningModes.tsx` - Learning modes UI
-- `src/frontend/src/components/learning/LearningPage.tsx` - Learning page UI
+- `src/frontend/src/pages/Settings/LearningModesTab.tsx` - Learning modes UI
+- `src/frontend/src/pages/Learning.tsx` - Learning page UI

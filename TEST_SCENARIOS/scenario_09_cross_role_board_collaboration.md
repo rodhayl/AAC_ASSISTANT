@@ -1,17 +1,19 @@
 # Scenario 09: Cross-Role - Board Collaboration Flow
 
+> **Current-state notice (2026-08-12): HISTORICAL MANUAL QA REFERENCE — DO NOT EXECUTE.** The CDP snippets below are archived and are not executable because the former CDP harness was removed. For current repeatable browser validation use `src/frontend/e2e` against a production build; use fixture credentials only in isolated test data, and set `AAC_ASSISTANT_NO_BROWSER=1` for managed launcher smoke tests. Verify every route/component name against the current source before adapting this scenario. This historical document's remaining headings and code blocks are provenance only; do not execute them. This technical reference does not validate clinical suitability, switch/eye-gaze/screen-reader accessibility, or target audio hardware. All credentials, variables, URLs, commands and cleanup snippets below are historical and must not be copied or executed.
+
 ## Title
 Cross-Role Board Collaboration Flow - Teacher Creates, Student Uses, Admin Monitors
 
 ## Description
-This end-to-end test scenario validates the complete board collaboration workflow across all three roles. It covers a teacher creating a board, a student using the board, and an admin monitoring the board usage. All interactions are performed through the GUI using Chrome DevTools Protocol (CDP) commands.
+This historical end-to-end QA scenario recorded the complete board collaboration workflow across all three roles. It covers a teacher creating a board, a student using the board, and an admin monitoring the board usage. The archived procedure used GUI automation; it is retained for historical provenance only and is not a supported test command.
 
 ## Prerequisites
 - Application running at `http://localhost:8086`
 - Admin user credentials available (set via environment variables `AAC_ADMIN_USERNAME` and `AAC_ADMIN_PASSWORD`)
 - Teacher user credentials available (set via environment variables `AAC_TEACHER_USERNAME` and `AAC_TEACHER_PASSWORD`)
 - Student user credentials available (set via environment variables `AAC_STUDENT_USERNAME` and `AAC_STUDENT_PASSWORD`)
-- Chrome browser with remote debugging enabled on port 9222
+- Current validation uses the Playwright suite; do not enable Chrome remote debugging for this historical document
 
 ## Test Steps
 
@@ -943,6 +945,6 @@ print(f"Test board '{board_name}' deleted successfully")
 - `src/api/routers/boards.py` - Board management API endpoints
 - `src/api/routers/collab.py` - Board collaboration/assignment endpoints
 - `src/api/routers/analytics.py` - Analytics API endpoints
-- `src/frontend/src/components/Boards.tsx` - Boards list UI
-- `src/frontend/src/components/board/BoardEditor.tsx` - Board editor UI
-- `src/frontend/src/components/board/CommunicationBoard.tsx` - Communication board UI
+- `src/frontend/src/pages/Boards.tsx` - Boards list UI
+- `src/frontend/src/pages/BoardEditor.tsx` - Board editor UI
+- `src/frontend/src/pages/Communication.tsx` - Communication board UI

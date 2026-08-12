@@ -1,6 +1,8 @@
 # Release PyInstaller Inno Slim Implementation Plan
 
-> **For Antigravity:** REQUIRED WORKFLOW: Use `.agent/workflows/execute-plan.md` to execute this plan in single-flow mode.
+> **Document status (2026-08-12): COMPLETED / HISTORICAL.** The onedir packaging pipeline, installer, runtime paths, graceful update event, headless launcher flag, and release gates are already integrated. This plan records the original design and validation intent; it is not an outstanding checklist. Current recovery and rollback procedures live in `docs/RELEASE_READINESS.md`. The verified two-artifact rollback exercise used the current payload under two version labels, so it proves installer/data preservation mechanics but not cross-version schema compatibility or automatic rollback.
+
+> **Historical workflow note:** the original plan referenced an external plan-execution workflow file, which is not part of the current repository. Do not follow that historical instruction; use the current release gates in `README.md` and `docs/RELEASE_READINESS.md`.
 
 **Goal:** Produce a slim, reproducible PyInstaller onedir build and Inno Setup installer that runs the production SPA on port 8086 while keeping installed user data writable and preserving it during uninstall.
 

@@ -7,6 +7,7 @@
 #define MyAppPublisher "AAC Assistant Team"
 #define MyAppURL "https://github.com/your-repo/aac-assistant"
 #define MyAppExeName "AAC_Assistant.exe"
+#define MyAppProcessName "AAC_Assistant"
 
 [Setup]
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
@@ -26,6 +27,10 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=dialog
+; The windowless PyInstaller launcher can keep the executable locked during an upgrade.
+; Force Inno Setup to close only applications using the files being replaced.
+CloseApplications=force
+RestartApplications=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
@@ -64,3 +69,125 @@ Type: filesandordirs; Name: "{app}\logs"
 
 [Messages]
 WelcomeLabel2=This will install [name/ver] on your computer.%n%nAAC Assistant is a communication tool for people who need augmentative and alternative communication support.%n%nInstalled runs may require UAC approval. User data is preserved when the app is uninstalled.
+
+[CustomMessages]
+english.UpdateWelcome=An existing AAC Assistant installation was found.%n%nThis will update the application to version {#MyAppVersion}. Save your work and close the app before continuing; unsaved work may be lost. Your settings, database, and uploaded files will be preserved.
+spanish.UpdateWelcome=Se ha encontrado una instalación existente de AAC Assistant.%n%nEsta operación actualizará la aplicación a la versión {#MyAppVersion}. Guarda tu trabajo y cierra la aplicación antes de continuar; podrías perder el trabajo no guardado. Se conservarán tus ajustes, la base de datos y los archivos subidos.
+english.CloseFailed=The existing AAC Assistant process could not be closed. Close it manually and try again.
+spanish.CloseFailed=No se pudo cerrar el proceso existente de AAC Assistant. Ciérralo manualmente y vuelve a intentarlo.
+
+[Code]
+const
+  EVENT_MODIFY_STATE = $0002;
+
+var
+  DefaultWelcomeMessage: String;
+
+function OpenEvent(dwDesiredAccess: Cardinal; bInheritHandle: Boolean; lpName: String): THandle;
+  external 'OpenEventW@kernel32.dll stdcall';
+function SetEvent(hEvent: THandle): Boolean;
+  external 'SetEvent@kernel32.dll stdcall';
+function CloseHandle(hObject: THandle): Boolean;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+function ShutdownEventName(const AppPath: String): String;
+begin
+  Result := 'Local\AACAssistantShutdown_' +
+    Copy(GetSHA256OfString(Lowercase(AppPath)), 1, 32);
+end;
+
+function RequestGracefulShutdown(const AppPath: String): Boolean;
+var
+  EventHandle: THandle;
+begin
+  EventHandle := OpenEvent(EVENT_MODIFY_STATE, False, ShutdownEventName(AppPath));
+  Result := EventHandle <> 0;
+  if Result then
+  begin
+    Result := SetEvent(EventHandle);
+    CloseHandle(EventHandle);
+  end;
+end;
+
+function ExistingInstallationSelected(): Boolean;
+begin
+  // The app constant is not initialized during InitializeWizard; DirEdit
+  // already holds the previous/default destination and remains correct later.
+  Result := FileExists(
+    AddBackslash(WizardForm.DirEdit.Text) + '{#MyAppExeName}'
+  );
+end;
+
+procedure UpdateWelcomeMessage;
+begin
+  if ExistingInstallationSelected() then
+    WizardForm.WelcomeLabel2.Caption := CustomMessage('UpdateWelcome')
+  else
+    WizardForm.WelcomeLabel2.Caption := DefaultWelcomeMessage;
+end;
+
+procedure DirEditChanged(Sender: TObject);
+begin
+  UpdateWelcomeMessage();
+end;
+
+procedure InitializeWizard;
+begin
+  DefaultWelcomeMessage := WizardForm.WelcomeLabel2.Caption;
+  WizardForm.DirEdit.OnChange := @DirEditChanged;
+  UpdateWelcomeMessage();
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if CurPageID = wpWelcome then
+    UpdateWelcomeMessage();
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+  AppPath: String;
+  PowerShellPath: String;
+  PowerShellArgs: String;
+begin
+  Result := '';
+  NeedsRestart := False;
+  if ExistingInstallationSelected() then
+  begin
+    // The frozen launcher is windowless, so Restart Manager may not close it.
+    // Filter by the selected installation path so portable or other-user
+    // instances of the same executable are never terminated.
+    AppPath := AddBackslash(WizardForm.DirEdit.Text) + '{#MyAppExeName}';
+    StringChangeEx(AppPath, '''', '''''', True);
+    RequestGracefulShutdown(AppPath);
+    PowerShellPath := ExpandConstant(
+      '{sys}\\WindowsPowerShell\\v1.0\\powershell.exe'
+    );
+    PowerShellArgs :=
+      '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ' +
+      '"$target = [IO.Path]::GetFullPath(''' + AppPath + '''); ' +
+      '$deadline = [DateTime]::UtcNow.AddSeconds(25); ' +
+      'do { $processes = @(Get-Process -Name ''{#MyAppProcessName}'' ' +
+      '-ErrorAction SilentlyContinue | Where-Object { $_.Path -and ' +
+      '([IO.Path]::GetFullPath($_.Path) -ieq $target) }); ' +
+      'if ($processes.Count -eq 0) { exit 0 }; ' +
+      'Start-Sleep -Milliseconds 250 } while ([DateTime]::UtcNow -lt $deadline); ' +
+      '$processes | Stop-Process -Force; Start-Sleep -Milliseconds 500; ' +
+      'if (Get-Process -Name ''{#MyAppProcessName}'' -ErrorAction SilentlyContinue ' +
+      '| Where-Object { $_.Path -and ([IO.Path]::GetFullPath($_.Path) ' +
+      '-ieq $target) }) { exit 1 }"';
+    if (not Exec(
+      PowerShellPath,
+      PowerShellArgs,
+      '',
+      SW_HIDE,
+      ewWaitUntilTerminated,
+      ResultCode
+    )) or (ResultCode <> 0) then
+    begin
+      Result := CustomMessage('CloseFailed');
+      Exit;
+    end;
+  end;
+end;

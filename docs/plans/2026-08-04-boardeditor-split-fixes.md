@@ -1,6 +1,10 @@
 # BoardEditor Split and Bug Fixes Implementation Plan
 
-> **For Antigravity:** REQUIRED WORKFLOW: Use `.agent/workflows/execute-plan.md` to execute this plan in single-flow mode.
+> **Document status (2026-08-12): COMPLETED / HISTORICAL.** The split, synchronization fix, tests, and frontend gates described below are already integrated. Treat task steps and commit commands as provenance only; do not execute them as an outstanding checklist.
+>
+> **Current outcome:** the implementation is in `src/frontend/src/pages/BoardEditor.tsx` and focused components/hooks; the regression is `src/frontend/tests/BoardEditorStructure.test.tsx` (not `src/frontend/tests/BoardEditorStructure.test.tsx`). Use the current frontend gate in `README.md` for revalidation.
+
+> **Historical workflow note:** the original plan referenced an external plan-execution workflow file, which is not part of the current repository. Do not follow that historical instruction; use the current validation commands in `README.md`.
 
 **Goal:** Split the BoardEditor god page into focused collaboration, AI, and settings modules while preserving all editor behavior and removing the delayed store sync and eager status callback invocation.
 
@@ -13,7 +17,7 @@
 ### Task 1: Add regression coverage
 
 **Files:**
-- Create: `src/frontend/src/tests/BoardEditorStructure.test.tsx`
+- Create: `src/frontend/tests/BoardEditorStructure.test.tsx`
 
 Write focused tests for the collaboration hook's encoded-token connection, local move broadcast, remote move callback, and the AI panel's inline unconfigured-provider error.
 

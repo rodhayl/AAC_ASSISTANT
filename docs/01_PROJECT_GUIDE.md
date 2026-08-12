@@ -60,8 +60,11 @@ AAC_BOOTSTRAP_ADMIN_PASSWORD=Admin123
 
 The README contains the complete key-by-key configuration reference.
 `TESTING=1` is an operational environment variable for automated validation;
-it disables request rate limiting. `DATABASE_URL` may be supplied for isolated
-tests, but normal deployments use SQLite at `DATA_DIR/DATABASE_NAME`.
+it disables request rate limiting. `AAC_ASSISTANT_NO_BROWSER=1` is the
+headless validation/managed-launch flag and prevents the frozen launcher from
+opening a browser; normal desktop launches omit it. `DATABASE_URL` may be
+supplied for isolated tests, but normal deployments use SQLite at
+`DATA_DIR/DATABASE_NAME`.
 
 ## 3. Architecture
 
@@ -255,7 +258,16 @@ PyInstaller creates an onedir application and Inno Setup creates the Windows
 installer. The optional speech model is downloaded after installation rather
 than bundled. Installed copies use `%APPDATA%\AACAssistant` for writable data
 when the application is under Program Files; portable copies can keep runtime
-data beside the executable.
+data beside the executable. When an existing installation is selected, the
+wizard identifies the operation as an update. The launcher receives a private,
+installation-scoped shutdown event; the installer waits up to 25 seconds for a
+normal exit before using a path-filtered force fallback. Uninstall removes
+application files and disposable logs, but preserves the database and uploads.
+
+See [`RELEASE_READINESS.md`](RELEASE_READINESS.md) for physical SQLite
+backup, authenticated export/import recovery, versioned rollback, and beta
+readiness procedures. The installer preserves data but does not provide
+automatic cross-version rollback.
 
 Before a release, verify:
 

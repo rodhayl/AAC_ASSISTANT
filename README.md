@@ -174,6 +174,9 @@ are intentionally not in the distributable template:
 - `TESTING=1`: disables rate limiting for automated validation.
 - `AAC_ASSISTANT_PORTABLE=1`: in a frozen onedir build, keeps `data/`, `logs/`,
   and `uploads/` beside the executable instead of using `%APPDATA%`.
+- `AAC_ASSISTANT_NO_BROWSER=1`: headless validation/managed-launch mode; keeps
+  the launcher from opening the local URL automatically. Desktop launches omit
+  this flag so normal browser-opening behavior remains unchanged.
 
 ## Optional voice setup
 
@@ -279,6 +282,18 @@ under Program Files. A portable onedir copy can keep `data/`, `logs/`, and
 `uploads/` beside the executable. Uninstall removes application files and
 disposable logs, but preserves the database and uploads.
 
+When an existing installation is selected, the wizard explicitly says that the
+operation is an update. The running copy receives a private,
+installation-scoped graceful-shutdown signal; the installer waits up to 25
+seconds before using a path-filtered force fallback, and aborts if the matching
+process still cannot be closed.
+
+Backup, export/import recovery, versioned rollback, and beta-release gates are
+documented in [`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md). The
+installer preserves user data during replacement but does not perform automatic
+cross-version rollback; retain two independently versioned installers and a
+physical SQLite backup for operator recovery.
+
 ## Repository layout
 
 - `src/api/main.py`: FastAPI application and lifespan setup
@@ -302,7 +317,8 @@ disposable logs, but preserves the database and uploads.
   authoritative for repeatable validation
 
 The detailed technical guide is
-[`docs/01_PROJECT_GUIDE.md`](docs/01_PROJECT_GUIDE.md).
+[`docs/01_PROJECT_GUIDE.md`](docs/01_PROJECT_GUIDE.md). Release recovery and
+beta-readiness procedures are in [`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md).
 
 ## Troubleshooting
 

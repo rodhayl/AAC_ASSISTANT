@@ -18,6 +18,46 @@ def _load_launcher():
     return module
 
 
+def test_shutdown_event_name_is_stable_and_install_scoped():
+    launcher = _load_launcher()
+
+    first = launcher._shutdown_event_name(
+        r"C:\\Program Files\\AAC Assistant\\AAC_Assistant.exe"
+    )
+    same = launcher._shutdown_event_name(
+        r"C:\\Program Files\\AAC Assistant\\AAC_Assistant.exe"
+    )
+    other = launcher._shutdown_event_name(
+        r"D:\\Portable\\AAC Assistant\\AAC_Assistant.exe"
+    )
+
+    assert first == same
+    assert first.startswith("Local\\AACAssistantShutdown_")
+    assert first != other
+
+
+def test_browser_auto_open_can_be_disabled_for_headless_runs(monkeypatch):
+    launcher = _load_launcher()
+
+    for value in ("1", "true", "yes", "on"):
+        monkeypatch.setenv("AAC_ASSISTANT_NO_BROWSER", value)
+        assert launcher._should_open_browser() is False
+    for value in ("0", "false", "no", "off", ""):
+        monkeypatch.setenv("AAC_ASSISTANT_NO_BROWSER", value)
+        assert launcher._should_open_browser() is True
+
+
+def test_headless_mode_never_calls_webbrowser(monkeypatch):
+    launcher = _load_launcher()
+    monkeypatch.setenv("AAC_ASSISTANT_NO_BROWSER", "1")
+    opened = []
+    monkeypatch.setattr(launcher.webbrowser, "open", opened.append)
+
+    launcher._open_browser("http://127.0.0.1:8257/")
+
+    assert opened == []
+
+
 def test_startup_error_writes_to_first_available_candidate(tmp_path):
     launcher = _load_launcher()
     first = tmp_path / "first" / "logs"
