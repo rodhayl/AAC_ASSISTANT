@@ -469,45 +469,23 @@ class _PredictionContext:
                 exc,
             )
 
-    def _board_personal(self, session: Session, desc, func) -> None:
-        personal = (
-            session.query(
-                Symbol.id,
-                Symbol.label,
-                Symbol.category,
-                Symbol.image_path,
-                Symbol.language,
-                func.count(SymbolUsageLog.id).label("cnt"),
-            )
-            .join(SymbolUsageLog, SymbolUsageLog.symbol_id == Symbol.id)
-            .filter(
-                SymbolUsageLog.user_id == self.user_id,
-                Symbol.id.in_(self.allowed_symbol_ids),
-            )
-            .group_by(
-                Symbol.id,
-                Symbol.label,
-                Symbol.category,
-                Symbol.image_path,
-                Symbol.language,
-            )
-            .order_by(desc("cnt"))
-            .limit(max(self.base_limit * 2, 10))
-            .all()
-        )
-        for sid, label, cat, img, language_code, _cnt in personal:
-            self.add_symbol(
-                symbol_id=sid,
-                label=label,
-                category=cat,
-                image_path=img,
-                confidence=0.35,
-                source="board_personal",
-                symbol_language=language_code,
-            )
+    def _board_usage_symbols(
+        self,
+        session: Session,
+        desc,
+        func,
+        *,
+        user_id: int | None,
+        confidence: float,
+        source: str,
+    ) -> None:
+        """Fill suggestions from board symbols ranked by usage.
 
-    def _board_popular(self, session: Session, desc, func) -> None:
-        popular = (
+        ``user_id`` restricts to the user's own usage (personal tier);
+        ``None`` ranks by global usage (popular tier). The two tiers differ
+        only in that filter plus their confidence and source labels.
+        """
+        query = (
             session.query(
                 Symbol.id,
                 Symbol.label,
@@ -518,7 +496,11 @@ class _PredictionContext:
             )
             .join(SymbolUsageLog, SymbolUsageLog.symbol_id == Symbol.id)
             .filter(Symbol.id.in_(self.allowed_symbol_ids))
-            .group_by(
+        )
+        if user_id is not None:
+            query = query.filter(SymbolUsageLog.user_id == user_id)
+        query = (
+            query.group_by(
                 Symbol.id,
                 Symbol.label,
                 Symbol.category,
@@ -527,18 +509,37 @@ class _PredictionContext:
             )
             .order_by(desc("cnt"))
             .limit(max(self.base_limit * 2, 10))
-            .all()
         )
-        for sid, label, cat, img, language_code, _cnt in popular:
+        for sid, label, cat, img, language_code, _cnt in query.all():
             self.add_symbol(
                 symbol_id=sid,
                 label=label,
                 category=cat,
                 image_path=img,
-                confidence=0.22,
-                source="board_popular",
+                confidence=confidence,
+                source=source,
                 symbol_language=language_code,
             )
+
+    def _board_personal(self, session: Session, desc, func) -> None:
+        self._board_usage_symbols(
+            session,
+            desc,
+            func,
+            user_id=self.user_id,
+            confidence=0.35,
+            source="board_personal",
+        )
+
+    def _board_popular(self, session: Session, desc, func) -> None:
+        self._board_usage_symbols(
+            session,
+            desc,
+            func,
+            user_id=None,
+            confidence=0.22,
+            source="board_popular",
+        )
 
     def _board_layout(self, session: Session) -> None:
         placed = (
