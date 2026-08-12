@@ -3,7 +3,6 @@ OpenRouter Provider - Optional cloud LLM functionality
 This provider is only used when users explicitly provide an OpenRouter API key
 """
 
-import asyncio
 import os
 from typing import Any
 
@@ -25,8 +24,6 @@ class OpenRouterProvider(BaseLLMProvider):
         self._configured_model = model or ""
         self.client = httpx.AsyncClient(timeout=30.0)
         self.sync_client = httpx.Client(timeout=5.0)
-        self._pending_close_task: asyncio.Task | None = None
-        self._close_started = False
         self.default_model = model or "meta-llama/llama-3.1-8b-instruct"
         self._model = self.default_model
 
@@ -143,59 +140,6 @@ class OpenRouterProvider(BaseLLMProvider):
             logger.error(f"Failed to get OpenRouter models: {e}")
             return {}
 
-    def _consume_close_task(self, task: asyncio.Task) -> None:
-        """Retrieve background close failures so they are never unhandled."""
-        try:
-            task.result()
-        except asyncio.CancelledError:
-            pass
-        except Exception as exc:
-            logger.debug("OpenRouter async client close failed: {}", exc)
-
-    async def close_async(self) -> None:
-        """Close both HTTP transports while an event loop is running."""
-        if self._close_started:
-            pending = self._pending_close_task
-            self._pending_close_task = None
-            try:
-                if pending is not None:
-                    await pending
-            except Exception as exc:
-                logger.debug("OpenRouter async client close failed: {}", exc)
-            finally:
-                try:
-                    self.sync_client.close()
-                except Exception as exc:
-                    logger.debug("OpenRouter sync client close failed: {}", exc)
-            return
-
-        self._close_started = True
-        try:
-            await self.client.aclose()
-        finally:
-            try:
-                self.sync_client.close()
-            except Exception as exc:
-                logger.debug("OpenRouter sync client close failed: {}", exc)
-
     async def close(self):
         """Backward-compatible async close alias."""
         await self.close_async()
-
-    def close_sync(self) -> None:
-        """Close provider transports from synchronous cleanup paths."""
-        if self._close_started:
-            return
-        self._close_started = True
-        try:
-            self.sync_client.close()
-        except Exception as exc:
-            logger.debug("OpenRouter sync client close failed: {}", exc)
-        finally:
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                asyncio.run(self.client.aclose())
-            else:
-                self._pending_close_task = loop.create_task(self.client.aclose())
-                self._pending_close_task.add_done_callback(self._consume_close_task)

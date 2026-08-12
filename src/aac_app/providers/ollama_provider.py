@@ -1,4 +1,3 @@
-import asyncio
 import json
 
 import httpx
@@ -47,8 +46,6 @@ class OllamaProvider(BaseLLMProvider):
         self.sync_client = httpx.Client(
             timeout=httpx.Timeout(120.0, connect=5.0, read=120.0)
         )
-        self._pending_close_task: asyncio.Task | None = None
-        self._close_started = False
         logger.info(
             f"Ollama provider initialized with profile={hardware_profile}, model={self.recommended_model}"
         )
@@ -187,59 +184,6 @@ class OllamaProvider(BaseLLMProvider):
         except Exception as e:
             logger.debug(f"Ollama not available: {e}")
             return False
-
-    def _consume_close_task(self, task: asyncio.Task) -> None:
-        """Retrieve background close failures so they are never unhandled."""
-        try:
-            task.result()
-        except asyncio.CancelledError:
-            pass
-        except Exception as exc:
-            logger.debug("Ollama async client close failed: {}", exc)
-
-    async def close_async(self) -> None:
-        """Close both HTTP transports while an event loop is running."""
-        if self._close_started:
-            pending = self._pending_close_task
-            self._pending_close_task = None
-            try:
-                if pending is not None:
-                    await pending
-            except Exception as exc:
-                logger.debug("Ollama async client close failed: {}", exc)
-            finally:
-                try:
-                    self.sync_client.close()
-                except Exception as exc:
-                    logger.debug("Ollama sync client close failed: {}", exc)
-            return
-
-        self._close_started = True
-        try:
-            await self.client.aclose()
-        finally:
-            try:
-                self.sync_client.close()
-            except Exception as exc:
-                logger.debug("Ollama sync client close failed: {}", exc)
-
-    def close_sync(self) -> None:
-        """Close HTTP clients from synchronous cleanup paths."""
-        if self._close_started:
-            return
-        self._close_started = True
-        try:
-            self.sync_client.close()
-        except Exception as exc:
-            logger.debug("Ollama sync client close failed: {}", exc)
-        finally:
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                asyncio.run(self.client.aclose())
-            else:
-                self._pending_close_task = loop.create_task(self.client.aclose())
-                self._pending_close_task.add_done_callback(self._consume_close_task)
 
     def close(self):
         """Backward-compatible synchronous close alias."""
