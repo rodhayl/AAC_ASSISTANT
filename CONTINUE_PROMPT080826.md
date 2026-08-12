@@ -5,7 +5,8 @@ Continue work on the `080826_continuation` branch of AAC Assistant.
 ## Current repository state
 
 - Current branch: `080826_continuation`
-- Latest committed base: `d5ee1bf docs(handoff): reconcile post-release repository status`
+- Current release baseline: `b2bd6e4 fix(release): make installer upgrades report and close safely`
+- Handoff status last reconciled in: `d5ee1bf docs(handoff): reconcile post-release repository status`
 - Remote branch: `origin/080826_continuation`
 - The working tree is clean and synchronized with `origin/080826_continuation`; the release-safety and documentation changes described below are included in `b2bd6e4`.
 - The configured upstream is `origin/080826_continuation`; use that explicit branch when publishing reviewed commits.
