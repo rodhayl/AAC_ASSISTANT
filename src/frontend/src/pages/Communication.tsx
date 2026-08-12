@@ -325,26 +325,28 @@ export function Communication() {
     }
   }, [history, handleHome]);
 
-  const handleQuickResponse = useCallback((text: string) => {
+  // Cancel any pending speech and speak one message. All utterance helpers
+  // (quick responses, attention phrase, keyboard/modal speak) share this.
+  const speakText = useCallback((text: string) => {
     if (voiceEnabled) {
       tts.cancelAll();
       tts.enqueue(text);
     }
   }, [voiceEnabled]);
+
+  const handleQuickResponse = useCallback(
+    (text: string) => speakText(text),
+    [speakText],
+  );
 
   const handleAttention = useCallback(() => {
-    if (voiceEnabled) {
-      tts.cancelAll();
-      tts.enqueue(t('attentionPhrase', 'Excuse me!'));
-    }
-  }, [t, voiceEnabled]);
+    speakText(t('attentionPhrase', 'Excuse me!'));
+  }, [speakText, t]);
 
-  const handleSpeakText = useCallback((text: string) => {
-    if (voiceEnabled) {
-      tts.cancelAll();
-      tts.enqueue(text);
-    }
-  }, [voiceEnabled]);
+  const handleSpeakText = useCallback(
+    (text: string) => speakText(text),
+    [speakText],
+  );
 
   const handleReorder = useCallback((fromIndex: number, toIndex: number) => {
     setSentence(prev => {
