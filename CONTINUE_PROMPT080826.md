@@ -265,6 +265,19 @@ Note: the authenticated identity endpoint is **`/api/auth/me`** (the `auth_users
 
 The harness cleaned up after itself (temp data dir removed, port closed, no stray processes). Working tree remained clean.
 
+## Final production build and bundle budgets (2026-08-12)
+
+A fresh production build was run from `src/frontend` with `npm run build` after the JWT/provider/documentation updates.
+
+- Build completed successfully in **5.25 seconds** with exit code 0.
+- The repository bundle-size gate passed:
+  - Largest measured JavaScript: **333.9 kB** (budget: 450 kB).
+  - Largest measured CSS: **96.7 kB** (budget: 150 kB).
+- The largest emitted JavaScript chunk was 341.91 kB raw / 108.74 kB gzip; the budget script's measured 333.9 kB value remained below the configured 450 kB limit.
+- No bundle-budget warnings or build failures were reported.
+
+The build produced no tracked changes. The working tree remained clean and no generated artifacts were committed.
+
 ## Stop condition
 
 A reasonable target is approximately **40,000–40,500 production lines**. Stop before deleting supported compatibility behavior or introducing abstractions that make ownership less clear. The goal is a smaller, easier-to-maintain application—not the lowest possible line count.
