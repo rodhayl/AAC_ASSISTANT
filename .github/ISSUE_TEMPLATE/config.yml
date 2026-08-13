@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/rodhayl/AAC_ASSISTANT/security/advisories/new
+    about: Report a security vulnerability privately. Do not post exploit details in public issues.
+  - name: Documentation
+    url: https://github.com/rodhayl/AAC_ASSISTANT/blob/main/README.md
+    about: Read the README and project documentation first.
