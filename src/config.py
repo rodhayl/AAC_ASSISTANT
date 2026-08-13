@@ -90,7 +90,11 @@ JWT_PLACEHOLDERS = frozenset(
         "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION",
     }
 )
+# Legacy insecure development default. It is retained only so existing
+# installations keep working; fresh first runs without an explicitly configured
+# password receive a cryptographically random one-time credential instead.
 DEFAULT_BOOTSTRAP_ADMIN_PASSWORD = "Admin123"
+_BOOTSTRAP_PASSWORD_KEY = "AAC_BOOTSTRAP_ADMIN_PASSWORD"
 
 
 class Settings(BaseSettings):
@@ -103,7 +107,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    BACKEND_HOST: str = "0.0.0.0"
+    # Local-first default: bind to loopback so the app is not reachable from
+    # the network unless the operator explicitly opts into a remote bind.
+    BACKEND_HOST: str = "127.0.0.1"
     BACKEND_PORT: int = 8086
     BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: int = 10
     FRONTEND_PORT: int = 5176
@@ -238,6 +244,78 @@ def ensure_jwt_secret(env_path: Path | None = None) -> str:
         path.write_text(updated_content, encoding="utf-8")
 
     return secret
+
+
+def _dotenv_value(path: Path, key: str) -> str | None:
+    """Return the last non-empty assignment for ``key`` in a dotenv file."""
+    if not path.exists():
+        return None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if _env_key(line) == key:
+            value = line.partition("=")[2].strip()
+            if value:
+                return value
+    return None
+
+
+def explicit_bootstrap_password() -> str | None:
+    """Return an explicitly configured bootstrap password, or ``None``.
+
+    Only the process environment and the local dotenv files are consulted. When
+    the operator has not configured a password at all, callers generate a
+    random one-time credential instead of falling back to the insecure legacy
+    development default.
+    """
+    environment_value = os.environ.get(_BOOTSTRAP_PASSWORD_KEY, "").strip()
+    if environment_value:
+        return environment_value
+    for candidate in (ENV_FILE, LEGACY_ENV_FILE):
+        value = _dotenv_value(candidate, _BOOTSTRAP_PASSWORD_KEY)
+        if value is not None:
+            return value
+    return None
+
+
+def write_bootstrap_password(password: str) -> None:
+    """Persist a generated bootstrap password to the canonical dotenv file."""
+    path = ENV_FILE.absolute()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    updated_lines: list[str] = []
+    replaced = False
+    for line in lines:
+        if _env_key(line) == _BOOTSTRAP_PASSWORD_KEY:
+            if not replaced:
+                updated_lines.append(f"{_BOOTSTRAP_PASSWORD_KEY}={password}")
+                replaced = True
+            continue
+        updated_lines.append(line)
+    if not replaced:
+        if updated_lines and updated_lines[-1].strip():
+            updated_lines.append("")
+        updated_lines.append(f"{_BOOTSTRAP_PASSWORD_KEY}={password}")
+    path.write_text("\n".join(updated_lines).rstrip() + "\n", encoding="utf-8")
+
+
+def resolve_bootstrap_password() -> str:
+    """Return the bootstrap admin password for this run.
+
+    An explicitly configured value is used verbatim. When no password is
+    configured, a cryptographically random one-time credential is generated and
+    persisted to ``.env`` so the operator can retrieve it locally. The caller is
+    responsible for telling the operator to change it after first login.
+    """
+    explicit = explicit_bootstrap_password()
+    if explicit is not None:
+        return explicit
+    generated = secrets.token_urlsafe(18)
+    write_bootstrap_password(generated)
+    logger.warning(
+        "No AAC_BOOTSTRAP_ADMIN_PASSWORD was configured; generated a one-time "
+        "administrator password and stored it in {}.",
+        ENV_FILE,
+    )
+    return generated
 
 
 def load_settings(project_root: Path | None = None) -> Settings:

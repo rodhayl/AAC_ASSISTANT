@@ -82,14 +82,19 @@ def _ensure_bootstrap_admin(session: Session) -> None:
         return
 
     username = config.get("AAC_BOOTSTRAP_ADMIN_USERNAME", "admin1").strip() or "admin1"
-    password = config.get(
-        "AAC_BOOTSTRAP_ADMIN_PASSWORD",
-        config.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD,
-    ).strip() or config.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD
     if session.query(User).filter(User.user_type == "admin").first():
         return
 
+    explicit_password = config.explicit_bootstrap_password()
     if config.ENVIRONMENT.strip().casefold() == "production":
+        # Production must never fall back to a generated credential or the
+        # insecure development default: a unique password is mandatory.
+        if explicit_password is None:
+            raise ValueError(
+                "AAC_BOOTSTRAP_ADMIN_PASSWORD is not acceptable in production: "
+                "a unique password must be configured"
+            )
+        password = explicit_password
         error = password_strength_error(password)
         if password == config.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD:
             error = "the development default must be changed"
@@ -98,6 +103,15 @@ def _ensure_bootstrap_admin(session: Session) -> None:
                 "AAC_BOOTSTRAP_ADMIN_PASSWORD is not acceptable in production: "
                 + error
             )
+    else:
+        # Development/default: use an explicitly configured password verbatim,
+        # otherwise generate a cryptographically random one-time credential
+        # (persisted to .env so the operator can retrieve it locally).
+        password = (
+            explicit_password
+            if explicit_password is not None
+            else config.resolve_bootstrap_password()
+        )
 
     from src.aac_app.services.auth_service import get_password_hash
 
