@@ -12,20 +12,9 @@ client = TestClient(app)
 
 
 @pytest.mark.usefixtures("setup_test_db")
-def test_symbol_image_upload_and_accessible():
-    # Register user
-    reg = client.post(
-        "/api/auth/register",
-        json={
-            "username": "imguser",
-            "password": "TestPassword123",
-            "display_name": "Img User",
-            "user_type": "teacher",
-        },
-    )
-    assert reg.status_code == 200
-    user_id = reg.json()["id"]
-    headers = create_test_headers(user_id, "imguser", "teacher")
+def test_symbol_image_upload_and_accessible(admin_user):
+    user_id = admin_user.id
+    headers = create_test_headers(user_id, admin_user.username, "admin")
 
     # Upload tiny PNG
     png_buffer = io.BytesIO()

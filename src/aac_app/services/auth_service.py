@@ -1,5 +1,7 @@
 """Password hashing and verification helpers for authentication."""
 
+import re
+
 import bcrypt
 from loguru import logger
 from pwdlib import PasswordHash
@@ -7,6 +9,22 @@ from pwdlib.exceptions import PwdlibError, UnknownHashError
 
 _PASSWORD_HASHER = PasswordHash.recommended()
 _BCRYPT_PREFIXES = ("$2a$", "$2b$", "$2y$")
+
+
+def password_strength_error(password: str) -> str | None:
+    """Return a user-facing password validation error, if one exists."""
+    if not password or len(password.strip()) == 0:
+        return "Password is required"
+    if len(password) < 8:
+        return "Password must be at least 8 characters long"
+    for pattern, message in (
+        (r"[A-Z]", "Password must contain at least one uppercase letter"),
+        (r"[a-z]", "Password must contain at least one lowercase letter"),
+        (r"[0-9]", "Password must contain at least one number"),
+    ):
+        if not re.search(pattern, password):
+            return message
+    return None
 
 
 def get_password_hash(password: str) -> str:

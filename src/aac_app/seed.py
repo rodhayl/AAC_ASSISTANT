@@ -23,6 +23,7 @@ from src.aac_app.services.achievement_catalog import (
     INITIAL_ACHIEVEMENT_KEYS,
     PREDEFINED_ACHIEVEMENTS,
 )
+from src.aac_app.services.auth_service import password_strength_error
 from src.aac_app.services.credential_service import mark_credentials_changed
 
 
@@ -80,9 +81,22 @@ def _ensure_bootstrap_admin(session: Session) -> None:
         return
 
     username = config.get("AAC_BOOTSTRAP_ADMIN_USERNAME", "admin1").strip() or "admin1"
-    password = config.get("AAC_BOOTSTRAP_ADMIN_PASSWORD", "Admin123").strip() or "Admin123"
+    password = config.get(
+        "AAC_BOOTSTRAP_ADMIN_PASSWORD",
+        config.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD,
+    ).strip() or config.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD
     if session.query(User).filter(User.user_type == "admin").first():
         return
+
+    if config.ENVIRONMENT.strip().casefold() == "production":
+        error = password_strength_error(password)
+        if password == config.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD:
+            error = "the development default must be changed"
+        if error:
+            raise ValueError(
+                "AAC_BOOTSTRAP_ADMIN_PASSWORD is not acceptable in production: "
+                + error
+            )
 
     from src.aac_app.services.auth_service import get_password_hash
 

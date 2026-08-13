@@ -9,7 +9,7 @@ Behavior:
 Bootstrap settings (env or env.properties via src.config):
 - AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN (default: true)
 - AAC_BOOTSTRAP_ADMIN_USERNAME (default: admin1)
-- AAC_BOOTSTRAP_ADMIN_PASSWORD (default: Admin123)
+- AAC_BOOTSTRAP_ADMIN_PASSWORD (development default: Admin123; required in production)
 """
 
 from __future__ import annotations
@@ -46,7 +46,10 @@ def ensure_bootstrap_admin() -> int:
         return 0
 
     username = _read_str("AAC_BOOTSTRAP_ADMIN_USERNAME", "admin1")
-    password = _read_str("AAC_BOOTSTRAP_ADMIN_PASSWORD", "Admin123")
+    password = _read_str(
+        "AAC_BOOTSTRAP_ADMIN_PASSWORD",
+        config.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD,
+    )
 
     # Ensure DB/tables exist first.
     schema.ensure()
@@ -88,5 +91,18 @@ def ensure_bootstrap_admin() -> int:
     return 0
 
 
+def main() -> int:
+    try:
+        return ensure_bootstrap_admin()
+    except ValueError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        print(
+            "Fix AAC_BOOTSTRAP_ADMIN_PASSWORD (or set "
+            "AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=false) and re-run.",
+            file=sys.stderr,
+        )
+        return 1
+
+
 if __name__ == "__main__":
-    raise SystemExit(ensure_bootstrap_admin())
+    raise SystemExit(main())

@@ -15,6 +15,7 @@ from src.api import schemas
 from src.api.deps import (
     get_board_or_404,
     get_current_active_user,
+    get_current_staff_user,
     get_db,
     get_text,
     require_board_owner_or_admin,
@@ -180,7 +181,7 @@ def get_symbols(
 def create_symbol(
     symbol: schemas.SymbolCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_staff_user),
 ):
     """Create a new symbol"""
     db_symbol = Symbol(**symbol.model_dump())
@@ -195,7 +196,7 @@ def create_symbol(
 def reorder_symbols(
     updates: list[schemas.SymbolReorderUpdate],
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_staff_user),
 ):
     """
     Batch update symbol order_index for global library ordering.
@@ -239,7 +240,7 @@ async def upload_symbol(
     language: str = Form("en"),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_staff_user),
 ):
     """Upload a new symbol image"""
     uploads_dir = config.UPLOADS_DIR / "symbols"
@@ -292,7 +293,7 @@ def update_symbol(
     symbol_id: int,
     payload: schemas.SymbolUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_staff_user),
 ):
     db_symbol = db.query(Symbol).filter(Symbol.id == symbol_id).first()
     if not db_symbol:
@@ -316,7 +317,7 @@ async def update_symbol_image(
     symbol_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_staff_user),
 ):
     db_symbol = db.query(Symbol).filter(Symbol.id == symbol_id).first()
     if not db_symbol:
@@ -364,7 +365,7 @@ def delete_symbol(
     symbol_id: int,
     force: bool = False,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_staff_user),
 ):
     symbol = db.query(Symbol).filter(Symbol.id == symbol_id).first()
     if not symbol:

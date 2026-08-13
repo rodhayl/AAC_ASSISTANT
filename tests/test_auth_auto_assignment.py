@@ -1,7 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models import StudentTeacher
+from src.aac_app.models import StudentTeacher, User
+from src.aac_app.services.auth_service import get_password_hash
 from src.api.main import app
 
 client = TestClient(app)
@@ -10,20 +11,38 @@ client = TestClient(app)
 pytestmark = pytest.mark.usefixtures("setup_test_db")
 
 
-def test_auto_assign_student_to_teacher(test_db_session):
-    """
-    Test that a student is automatically assigned to a teacher when
-    created_by_teacher_id is provided during registration.
-
-    NOTE: This test documents intended functionality that is not yet implemented
-    in the public /register endpoint. The functionality exists in UserService.create_user
-    but the /register endpoint creates users directly without using the service.
-    For security, teachers should create students via the admin endpoint.
-    """
-    pytest.skip(
-        "created_by_teacher_id not implemented in /register endpoint for security. "
-        "Teachers should create students via /auth/admin/create-user or the teacher portal."
+def test_public_registration_does_not_auto_assign_valid_teacher(test_db_session):
+    """Public registration must ignore even a valid teacher ID."""
+    teacher = User(
+        username="existing_teacher",
+        email="teacher@example.com",
+        display_name="Existing Teacher",
+        user_type="teacher",
+        password_hash=get_password_hash("TestPassword123"),
+        is_active=True,
     )
+    test_db_session.add(teacher)
+    test_db_session.commit()
+    test_db_session.refresh(teacher)
+
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "username": "student_assigned_attempt",
+            "password": "TestPassword123",
+            "display_name": "Student Attempt",
+            "user_type": "student",
+            "created_by_teacher_id": teacher.id,
+        },
+    )
+
+    assert response.status_code == 200
+    student_id = response.json()["id"]
+    assignment = test_db_session.query(StudentTeacher).filter_by(
+        student_id=student_id,
+        teacher_id=teacher.id,
+    ).first()
+    assert assignment is None
 
 
 def test_auto_assign_fails_invalid_teacher(test_db_session):

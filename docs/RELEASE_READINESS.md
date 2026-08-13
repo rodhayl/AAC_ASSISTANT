@@ -4,6 +4,38 @@ This runbook is for a local or managed AAC Assistant installation. It is an
 operational safety checklist, not a substitute for clinical or user-acceptance
 validation.
 
+## Current working-tree validation (2026-08-12)
+
+The current continuation working tree has not been committed yet and contains
+pending tracked and untracked changes. The complete current gates pass: backend Ruff, compileall, and pytest
+(**629 passed, 2 optional `faster-whisper` skips, 0 failed**); frontend
+typecheck, ESLint, **42 Vitest files / 211 tests**, production build, and
+bundle budgets (338.8 kB JS / 450 kB and 96.7 kB CSS / 150 kB). `uv lock
+--check`, production `npm audit` (0 vulnerabilities), `bash -n start.sh`, and
+`git diff --check` also passed.
+
+After that baseline, a production-build regression exposed and fixed a static
+`api.ts` ↔ `authStore.ts` import cycle that emitted four browser
+`ReferenceError: Cannot access 'et' before initialization` errors during the
+forged-token flow. The fix uses the cycle-free `src/frontend/src/lib/authState.ts`
+reader bridge. Post-fix focused API/auth tests passed **33/33**, typecheck and
+ESLint passed, the production build passed, and `maintenance.spec.ts` passed
+**5/5** against an isolated server with all four providers ready and no page
+errors. A fresh production build and isolated backend then passed **107/107
+Playwright E2E tests**, with 0 skips/failures and no unexpected page/server
+errors. The server reached readiness with all four providers and shut down
+cleanly. Interactive browser automation was not repeated separately because
+the delegated browser agent returned a temporary rate-limit response; this
+headless Playwright run is the available GUI evidence for the current tree.
+These are technical repository checks only and do not replace the
+clinical/beta gate below.
+
+A focused follow-up also exercised the authenticated legacy `/play/1` route
+against a fresh production build: `advanced.spec.ts` passed **8/8** including
+setup, and the route redirected to `/communication?boardId=1`. Frontend
+typecheck and ESLint passed afterward. The full-suite result above remains the
+last complete run; this focused check was added to close the route-coverage gap.
+
 ## Before every release
 
 1. Confirm the release version in `installer.iss`, `README.md`, and the build
@@ -28,6 +60,31 @@ Uvicorn to shut down normally and the installer waits up to 25 seconds for the
 matching executable to exit. A path-filtered force termination is only the
 last fallback; if the process still remains, installation aborts rather than
 continuing with an unknown running process.
+
+## Automated readiness evidence (2026-08-12)
+
+The local automated release-safety rehearsal was repeated with an isolated
+port/data directory and `AAC_ASSISTANT_NO_BROWSER=1`:
+
+- Cold start through the supported `scripts/start_server.py` launcher reached
+  `/api/health` in 4.24 seconds and `/ready` in 9.60 seconds.
+- `CTRL_BREAK_EVENT` caused the wrapper to request graceful child shutdown;
+  the wrapper exited with code 0 in 0.27 seconds.
+- The log contained `Application shutdown complete` and no traceback,
+  connection-reset, or proactor diagnostics when probes used
+  `Connection: close` and stopped before shutdown.
+- Isolated data was removed and the test port was closed afterward.
+- Focused lifecycle/packaging tests passed: 56 passed, 1 expected skip
+  (`faster-whisper` optional dependency unavailable), 0 failed; Ruff and
+  `git diff --check` also passed.
+
+A direct Uvicorn process also shut down cleanly, but returned signal-specific
+exit code 3 when sent `CTRL_BREAK_EVENT`; this is not the supported launcher
+exit path, which normalizes a user-requested shutdown to exit code 0.
+
+These checks establish technical local evidence only. They do not replace a
+clean Windows VM update/rollback rehearsal, AAC hardware testing, or clinical
+and user-acceptance review described in the beta gate below.
 
 ## Physical SQLite backup
 
@@ -69,6 +126,21 @@ secrets. Verify after import:
 
 Use a disposable copy of the database for recovery rehearsal. Never rehearse
 with a real user's only copy of their data.
+
+## Offline mutation recovery
+
+Offline board mutations are retained in a bounded, session-scoped queue and
+restored after a page reload only for the same authenticated user. Tokens,
+non-serializable uploads, and authentication requests are never persisted.
+Failed replays appear in the conflict panel and are not silently retried after
+a session change.
+
+Replay is deliberately FIFO and **at-least-once**, not exactly-once: a crash
+immediately after a server accepts a mutation but before the browser removes its
+local queue entry can cause a duplicate replay. Do not treat offline POST
+operations as exactly-once until the API provides idempotency keys or the
+operation is otherwise made idempotent. The release rehearsal must include
+interrupted replay and verify the affected endpoint's duplicate behavior.
 
 ## Versioned rollback
 

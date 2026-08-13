@@ -287,22 +287,10 @@ class TestSymbolManagementAPI:
     """Test symbol management endpoints"""
 
     @pytest.fixture
-    def test_setup(self, test_password):
-        """Create test user, board, and symbols"""
-        # Create user
-        user_response = client.post(
-            "/api/auth/register",
-            json={
-                "username": f"symboluser_{id(self)}",
-                "password": test_password,
-                "display_name": "Symbol User",
-                "user_type": "student",
-            },
-        )
-        user_id = user_response.json()["id"]
-        headers = create_test_headers(
-            user_id, user_response.json()["username"], "student"
-        )
+    def test_setup(self, admin_user):
+        """Create a staff-owned board and symbols for management tests."""
+        user_id = admin_user.id
+        headers = create_test_headers(user_id, admin_user.username, "admin")
 
         # Create board
         board_response = client.post(

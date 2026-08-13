@@ -57,6 +57,10 @@ async def lifespan(app: FastAPI):
     startup_started = time.perf_counter()
     app.state.database_ready = False
     app.state.database_startup_error = False
+    app.state.lifespan_active = False
+    # Long-lived SSE/WebSocket handlers use this signal to leave their receive
+    # loops before Uvicorn's graceful-shutdown deadline expires.
+    app.state.shutdown_event = asyncio.Event()
     logger.info("=" * 60)
     logger.info("Starting AAC Assistant API...")
     logger.info(f"Log file: {LOG_FILE}")
@@ -158,10 +162,12 @@ async def lifespan(app: FastAPI):
         f"Serving URL: http://{display_host}:{config.BACKEND_PORT}"
     )
     logger.info("Server ready to accept requests")
+    app.state.lifespan_active = True
     try:
         yield
     finally:
         logger.info("Shutting down AAC Assistant API...")
+        app.state.shutdown_event.set()
         shutdown_started.set()
         # Uvicorn applies the same value as a hard lifespan timeout. Reserve a
         # strictly positive handoff buffer so application cleanup finishes
@@ -237,6 +243,7 @@ async def lifespan(app: FastAPI):
             close_vector_store=index_finished.is_set(),
             timeout_seconds=remaining,
         )
+        app.state.lifespan_active = False
 
 
 # Initialize FastAPI app

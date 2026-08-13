@@ -234,14 +234,20 @@ def kokoro_voices_path() -> Path:
 
 def model_files_present() -> bool:
     """Return whether both model files exist and look valid (non-empty)."""
-    model = kokoro_model_path()
-    voices = kokoro_voices_path()
-    return (
-        model.is_file()
-        and model.stat().st_size > 1_000_000
-        and voices.is_file()
-        and voices.stat().st_size > 1_000_000
-    )
+    try:
+        model = kokoro_model_path()
+        voices = kokoro_voices_path()
+        return (
+            model.is_file()
+            and model.stat().st_size > 1_000_000
+            and voices.is_file()
+            and voices.stat().st_size > 1_000_000
+        )
+    except OSError as exc:
+        # Optional model caches may be on removable or restricted storage;
+        # report them as unavailable instead of turning status/TTS into a 500.
+        logger.debug("Kokoro model cache cannot be inspected: {}", exc)
+        return False
 
 
 def download_kokoro_model() -> bool:

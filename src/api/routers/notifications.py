@@ -2,7 +2,7 @@ import asyncio
 import json
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -26,7 +26,7 @@ router = APIRouter()
 
 
 @router.get("/api/notifications/stream")
-async def notifications_stream(token: str = None):
+async def notifications_stream(request: Request, token: str = None):
     # Authenticate with a short-lived session. The response stream is
     # intentionally unbounded, so it must not retain a request-scoped DB
     # session or connection for the lifetime of an SSE client.
@@ -46,17 +46,42 @@ async def notifications_stream(token: str = None):
 
     async def event_generator():
         queue = subscribe(user_id)
+        shutdown_event = getattr(request.app.state, "shutdown_event", None)
+        if not getattr(request.app.state, "lifespan_active", False):
+            shutdown_event = None
+        if shutdown_event is None:
+            # Direct ASGI callers that do not run the application lifespan still
+            # receive the normal stream behavior; production lifespan always
+            # installs the shared event.
+            shutdown_event = asyncio.Event()
         # Initial heartbeat to unblock clients. DB event delivery will be
         # connected before yielding so notifications cannot be missed.
         try:
+            if shutdown_event.is_set():
+                return
             yield "data: {}\n\n"
             while True:
+                queue_task = asyncio.create_task(queue.get())
+                shutdown_task = asyncio.create_task(shutdown_event.wait())
                 try:
-                    notification = await asyncio.wait_for(queue.get(), timeout=15)
-                except TimeoutError:
-                    yield ": keep-alive\n\n"
-                else:
-                    yield f"data: {json.dumps(notification)}\n\n"
+                    done, _ = await asyncio.wait(
+                        (queue_task, shutdown_task),
+                        timeout=15,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if not done:
+                        yield ": keep-alive\n\n"
+                    elif shutdown_task in done:
+                        return
+                    else:
+                        yield f"data: {json.dumps(queue_task.result())}\n\n"
+                finally:
+                    for task in (queue_task, shutdown_task):
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(
+                        queue_task, shutdown_task, return_exceptions=True
+                    )
         finally:
             unsubscribe(user_id, queue)
 

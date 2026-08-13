@@ -71,8 +71,7 @@ def _server_command() -> list[str]:
     return [
         sys.executable,
         "-m",
-        "uvicorn",
-        "src.api.main:app",
+        "scripts.run_server",
         "--host",
         str(config.BACKEND_HOST),
         "--port",

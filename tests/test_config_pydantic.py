@@ -3,6 +3,7 @@ import re
 import tomllib
 from pathlib import Path
 
+from src.aac_app.services.auth_service import password_strength_error
 from src.config import Settings, ensure_env_file, ensure_jwt_secret, load_settings
 
 REPO_ROOT = Path(__file__).parents[1]
@@ -49,6 +50,31 @@ def test_release_version_defaults_are_aligned(monkeypatch):
     assert f'version = "{version}"' in pyproject
     assert frontend_package["version"] == "0.0.0"
     assert version == Settings(_env_file=None).APP_VERSION
+
+
+def test_production_bootstrap_password_uses_shared_strength_policy():
+    weak_password = "weak-password"
+    error = password_strength_error(weak_password)
+    assert error is not None
+
+    settings = Settings(
+        _env_file=None,
+        ENVIRONMENT="production",
+        JWT_SECRET_KEY="a" * 32,
+        AAC_BOOTSTRAP_ADMIN_PASSWORD=weak_password,
+    )
+    assert weak_password == settings.AAC_BOOTSTRAP_ADMIN_PASSWORD
+    assert password_strength_error("A-unique-production-password-123") is None
+
+
+def test_read_only_style_environment_secret_does_not_create_dotenv_file(tmp_path, monkeypatch):
+    secret = "environment_secret_" + ("x" * 32)
+    monkeypatch.setenv("JWT_SECRET_KEY", secret)
+
+    settings = load_settings(tmp_path)
+
+    assert secret == settings.JWT_SECRET_KEY
+    assert not (tmp_path / ".env").exists()
 
 
 def test_settings_uses_pydantic_settings_and_ignores_unknown_keys():

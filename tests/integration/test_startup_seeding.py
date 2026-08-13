@@ -77,6 +77,59 @@ def test_default_users_exist_and_can_login(monkeypatch):
     engine.dispose()
 
 
+def test_production_bootstrap_rejects_weak_password_before_creation(monkeypatch):
+    """A weak production bootstrap password must never create an admin."""
+    from src import config
+    from src.aac_app.seed import _ensure_bootstrap_admin
+
+    engine = create_engine(TEST_DB_URL)
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    monkeypatch.setattr(config, "ENVIRONMENT", "production")
+    monkeypatch.setenv("AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN", "true")
+    monkeypatch.setenv("AAC_BOOTSTRAP_ADMIN_USERNAME", "admin1")
+    monkeypatch.setenv("AAC_BOOTSTRAP_ADMIN_PASSWORD", "weak-password")
+
+    with pytest.raises(ValueError, match="AAC_BOOTSTRAP_ADMIN_PASSWORD"):
+        _ensure_bootstrap_admin(session)
+    assert session.query(User).count() == 0
+
+    monkeypatch.setenv("AAC_BOOTSTRAP_ADMIN_PASSWORD", "Admin123")
+    with pytest.raises(ValueError, match="development default"):
+        _ensure_bootstrap_admin(session)
+    assert session.query(User).count() == 0
+    session.close()
+    engine.dispose()
+
+
+def test_production_bootstrap_ignores_weak_password_when_admin_exists(monkeypatch):
+    """Existing installations are not blocked by an unused bootstrap setting."""
+    from src import config
+    from src.aac_app.seed import _ensure_bootstrap_admin
+    from src.aac_app.services.auth_service import get_password_hash
+
+    engine = create_engine(TEST_DB_URL)
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    session.add(
+        User(
+            username="existing-admin",
+            display_name="Existing Admin",
+            user_type="admin",
+            password_hash=get_password_hash("ExistingAdmin123"),
+        )
+    )
+    session.commit()
+    monkeypatch.setattr(config, "ENVIRONMENT", "production")
+    monkeypatch.setenv("AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN", "true")
+    monkeypatch.setenv("AAC_BOOTSTRAP_ADMIN_PASSWORD", "weak-password")
+
+    _ensure_bootstrap_admin(session)
+    assert session.query(User).count() == 1
+    session.close()
+    engine.dispose()
+
+
 def test_seed_preserves_custom_achievement_with_system_definition():
     """System cleanup must not delete a custom matching achievement."""
     from src.aac_app.seed import _create_sample_achievements
@@ -123,6 +176,29 @@ def test_seed_preserves_custom_achievement_with_system_definition():
 
     session.close()
     engine.dispose()
+
+
+def test_ensure_bootstrap_admin_script_reports_rejection_cleanly(monkeypatch):
+    """The operator script must surface a rejected production bootstrap
+    as a clear message and a non-zero exit code, not a raw traceback."""
+    import importlib
+
+    script = importlib.import_module("scripts.ensure_bootstrap_admin")
+
+    def _raise_value_error() -> int:
+        raise ValueError("AAC_BOOTSTRAP_ADMIN_PASSWORD is not acceptable in production")
+
+    monkeypatch.setattr(script, "ensure_bootstrap_admin", _raise_value_error)
+    assert script.main() == 1
+
+
+def test_ensure_bootstrap_admin_script_propagates_disabled(monkeypatch):
+    """A successful script run exits zero."""
+    import importlib
+
+    script = importlib.import_module("scripts.ensure_bootstrap_admin")
+    monkeypatch.setattr(script, "ensure_bootstrap_admin", lambda: 0)
+    assert script.main() == 0
 
 
 def test_database_initialization_idempotency():

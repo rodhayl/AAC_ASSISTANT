@@ -16,16 +16,17 @@ test.describe.serial('Admin Management', () => {
     }
   });
 
-  test('should backup and reset (admin only)', async ({ page }) => {
+  test('should export server data from the admin settings', async ({ page }) => {
     await page.goto('/settings');
-    // Look for Backup/Reset
-    // In Settings.tsx, we see "handleExportData" and "handleSaveAllSettings"
-    // Look for text "Export Data" or similar
-    const exportBtn = page.getByText(/export data/i).or(page.getByText(/backup/i));
-    if (await exportBtn.isVisible()) {
-       await expect(exportBtn).toBeVisible();
-       // We could click and verify download, but that requires event listener
-    }
+    const exportButton = page.getByRole('button', {
+      name: /server export|exportar del servidor/i,
+    });
+    await expect(exportButton).toBeVisible();
+
+    const downloadPromise = page.waitForEvent('download');
+    await exportButton.click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/^aac-data-.+-server\.json$/);
   });
 
   test('should manage teachers', async ({ page }) => {

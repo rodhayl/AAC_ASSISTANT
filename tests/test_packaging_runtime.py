@@ -88,7 +88,9 @@ def test_packaging_scripts_describe_slim_unattended_build():
     assert "where iscc.exe" in build
     assert 'echo @echo off' not in build
     assert 'echo rem' not in build
-    assert "uvicorn.Server" in launcher
+    assert "ShutdownAwareServer" in launcher
+    assert "src.api.server" in launcher
+    assert "timeout_graceful_shutdown" in launcher
     assert "_wait_for_server" in launcher
     assert "AAC_ASSISTANT_NO_BROWSER" in launcher
     assert "dist\\aac_assistant\\*" in installer

@@ -44,6 +44,18 @@ def _inject_fake_kokoro(monkeypatch, model: _FakeKokoro) -> None:
     )
 
 
+def test_model_cache_permission_errors_degrade_to_unavailable(monkeypatch):
+    """A broken model cache must not make provider status fail with 500."""
+    from src.aac_app.providers import local_tts_provider as mod
+
+    class BrokenPath:
+        def is_file(self):
+            raise OSError("cache is unavailable")
+
+    monkeypatch.setattr(mod, "kokoro_model_path", lambda: BrokenPath())
+    assert mod.model_files_present() is False
+
+
 def test_provider_reports_unavailable_without_dependency(monkeypatch):
     """Without kokoro-onnx the provider must degrade cleanly (no import crash)."""
     from src.aac_app.providers import local_tts_provider as mod

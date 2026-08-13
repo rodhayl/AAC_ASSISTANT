@@ -74,19 +74,8 @@ def test_change_password_flow(client):
     )
 
 
-def test_symbol_search_filters(client):
-    # Register user to get auth
-    reg = client.post(
-        "/api/auth/register",
-        json={
-            "username": "searcher",
-            "password": "SearchPass123",
-            "display_name": "Searcher",
-            "user_type": "student",
-        },
-    )
-    user_id = reg.json()["id"]
-    headers = create_test_headers(user_id, "searcher", "student")
+def test_symbol_search_filters(client, admin_user):
+    headers = create_test_headers(admin_user.id, admin_user.username, "admin")
 
     # Create symbols
     for lbl, cat in [("apple", "food"), ("cow", "farm"), ("water", "drinks")]:
@@ -991,19 +980,8 @@ def test_import_rejects_malformed_and_oversized_payloads(client):
     assert unauthenticated_response.status_code == 401
 
 
-def test_upload_validation(client):
-    # Register user
-    reg = client.post(
-        "/api/auth/register",
-        json={
-            "username": "uploader",
-            "password": "UploadPass123",
-            "display_name": "Up",
-            "user_type": "student",
-        },
-    )
-    user_id = reg.json()["id"]
-    headers = create_test_headers(user_id, "uploader", "student")
+def test_upload_validation(client, admin_user):
+    headers = create_test_headers(admin_user.id, admin_user.username, "admin")
 
     # Prepare a non-image file content
     files = {"file": ("test.txt", b"hello", "text/plain")}

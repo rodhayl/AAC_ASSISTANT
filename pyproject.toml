@@ -39,7 +39,6 @@ dev = [
     "pytest-cov",
     "ruff==0.16.1",
     "pyinstaller==6.21.0",
-    "requests",
     "pip-audit",
 ]
 

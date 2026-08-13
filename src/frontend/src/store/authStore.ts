@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import api, { extractError } from '../lib/api';
+import { registerAuthStateReader } from '../lib/authState';
 import type { User } from '../types';
 import { useLocaleStore } from './localeStore';
 import { useThemeStore } from './themeStore';
@@ -282,6 +283,13 @@ export const useAuthStore = create<AuthState>()(
         isAuthenticated: state.isAuthenticated,
         sessionExpiresAt: state.sessionExpiresAt
       }),
+      onRehydrateStorage: () => () => {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('aac:auth-ready'));
+        }
+      },
     }
   )
 );
+
+registerAuthStateReader(() => useAuthStore.getState());

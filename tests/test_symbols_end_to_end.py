@@ -12,20 +12,10 @@ client = TestClient(app)
 
 
 @pytest.mark.usefixtures("setup_test_db")
-def test_symbol_crud_with_usage_and_board_flow(tmp_path):
-    # 1) Create user and auth header
-    reg = client.post(
-        "/api/auth/register",
-        json={
-            "username": "symboltester",
-            "password": "TestPassword123",
-            "display_name": "Symbol Tester",
-            "user_type": "teacher",
-        },
-    )
-    assert reg.status_code == 200
-    user_id = reg.json()["id"]
-    headers = create_test_headers(user_id, "symboltester", "teacher")
+def test_symbol_crud_with_usage_and_board_flow(admin_user):
+    # 1) Use a real staff account for global symbol management.
+    user_id = admin_user.id
+    headers = create_test_headers(user_id, admin_user.username, "admin")
 
     # 2) Upload a small valid PNG symbol
     png_bytes = base64.b64decode(

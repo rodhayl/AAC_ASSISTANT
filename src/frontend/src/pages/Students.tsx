@@ -9,11 +9,9 @@ import { GuardianProfileModal } from '../components/students/GuardianProfileModa
 import { Sparkles, Volume2 } from 'lucide-react'
 import { LoadingState } from '../components/ui/LoadingState'
 
-import { useNavigate } from 'react-router'
 
 export function Students() {
   const user = useAuthStore((state) => state.user)
-  const navigate = useNavigate()
   const { t } = useTranslation(['students', 'settings'])
   const [students, setStudents] = useState<User[]>([])
   const [loading, setLoading] = useState(false)
@@ -25,12 +23,6 @@ export function Students() {
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [guardianModalOpen, setGuardianModalOpen] = useState(false)
   const [selectedGuardianStudent, setSelectedGuardianStudent] = useState<User | null>(null)
-
-  useEffect(() => {
-    if (user && user.user_type === 'student') {
-      navigate('/')
-    }
-  }, [user, navigate])
 
   const [newUsername, setNewUsername] = useState('')
   const [newDisplayName, setNewDisplayName] = useState('')

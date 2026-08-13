@@ -8,7 +8,8 @@ Continue work on the `080826_continuation` branch of AAC Assistant.
 - Current release baseline: `b2bd6e4 fix(release): make installer upgrades report and close safely`
 - Handoff status last reconciled in: `d5ee1bf docs(handoff): reconcile post-release repository status`
 - Remote branch: `origin/080826_continuation`
-- The working tree is clean and synchronized with `origin/080826_continuation`; the release-safety and documentation changes described below are included in `b2bd6e4`.
+- HEAD is `bb3bbc3` (`docs(handoff): use stable release baseline wording`) and the branch tracks `origin/080826_continuation`.
+- The working tree contains pending reviewed continuation changes and seven untracked source/test/runtime files; it is **not** clean or release-ready until those changes are intentionally committed. The release-safety baseline remains included in `b2bd6e4`.
 - The configured upstream is `origin/080826_continuation`; use that explicit branch when publishing reviewed commits.
 
 ## User's standing requirements
@@ -47,14 +48,14 @@ Continue work on the `080826_continuation` branch of AAC Assistant.
 
 Measured while excluding tests, E2E files, generated files, dependencies, and test-only files:
 
-- Total: **40,125 lines** (as of `a77c723`, 2026-08-12)
-- `src/frontend/src`: 18,326
-- `src/api`: 9,922
-- `src/aac_app`: 10,512
-- `scripts`: 1,275
+- Total: **40,776 lines** (current working tree, 2026-08-12)
+- `src/frontend/src`: 18,799
+- `src/api`: 10,036
+- `src/aac_app`: 10,539
+- `scripts`: 1,312
 - `src/scripts`: 90
 
-This replaces the earlier 40,178-line estimate; remeasure after any future production edits.
+This replaces the earlier 40,328-line estimate; remeasure after any future production edits. The count includes the current untracked production launcher/server helpers and the cycle-free frontend auth bridge, and excludes tests, E2E files, generated files, dependencies, and `__pycache__`. Every later section carrying an earlier date is historical evidence from that checkpoint; the current footprint, pending status, and latest validation in this opening section and the dated current-verification section below are authoritative.
 
 Largest remaining files:
 
@@ -158,7 +159,7 @@ git diff --check
 bash -n start.sh
 ```
 
-Check production-only references separately from test references. Chrome is installed in the current environment. Claim browser validation only when the browser was actually used; managed/frozen smoke tests must set `AAC_ASSISTANT_NO_BROWSER=1` to avoid opening the user's default browser.
+Check production-only references separately from test references. Chrome is installed in the current environment, but the delegated browser agent was rate-limited during the latest pass; do not claim a new interactive browser session from that pass. Managed/frozen smoke tests must set `AAC_ASSISTANT_NO_BROWSER=1` to avoid opening the user's default browser.
 
 ## Additional verification completed on 2026-08-08
 
@@ -264,7 +265,7 @@ Live end-to-end verification of the `4d5093d` JWT production fix. The server ran
 
 Note: the authenticated identity endpoint is **`/api/auth/me`** (the `auth_users` router mounts at `/api/auth`). `GET /api/auth/users/me` correctly returns `422` because it matches `/users/{user_id}` with `user_id: int` and `"me"` is not an integer — app behavior is correct, not a regression.
 
-The harness cleaned up after itself (temp data dir removed, port closed, no stray processes). Working tree remained clean.
+The harness cleaned up after itself (temp data dir removed, port closed, no stray processes) at that historical checkpoint; the current working-tree status is recorded at the top of this handoff.
 
 ## Final production build and bundle budgets (2026-08-12)
 
@@ -277,7 +278,7 @@ A fresh production build was run from `src/frontend` with `npm run build` after 
 - The largest emitted JavaScript chunk was 341.91 kB raw / 108.74 kB gzip; the budget script's measured 333.9 kB value remained below the configured 450 kB limit.
 - No bundle-budget warnings or build failures were reported.
 
-The build produced no tracked changes. The working tree remained clean and no generated artifacts were committed.
+The build produced no tracked changes and no generated artifacts were committed at that historical checkpoint; the current working-tree status is recorded at the top of this handoff.
 
 ## Release safety follow-up (2026-08-12)
 
@@ -286,8 +287,9 @@ wave and was committed and pushed as `b2bd6e4`:
 `launcher.pyw`, `installer.iss`, the launcher/packaging tests, `README.md`,
 `AGENTS.md`, `CONTINUE_PROMPT080826.md`, `docs/01_PROJECT_GUIDE.md`,
 `docs/RELEASE_READINESS.md`, the historical plan/scenario status notices, and
-`TEST_SCENARIOS` path corrections. The working tree is clean after that
-release-safety update.
+`TEST_SCENARIOS` path corrections. That historical release-safety update
+ended with a clean working tree; the current status is recorded at the top of
+this handoff and currently contains pending changes.
 
 - The installer now uses the same single-backslash `Local\\AACAssistantShutdown_`
   event namespace as the frozen launcher. It polls the path-matched process for
@@ -314,6 +316,85 @@ release-safety update.
 - `docs/RELEASE_READINESS.md` now documents physical SQLite backup, authenticated
   export/import recovery, operator versioned rollback, and the non-automated
   clinical/beta readiness requirements.
+
+## Dependency cleanup verification (2026-08-12)
+
+A fresh production-only dependency audit found no imports of the direct development dependency `requests`; the direct declaration was removed from `pyproject.toml` and `uv.lock` was regenerated without unrelated package changes. `requests` remains transitively required by `cachecontrol`, `fastembed`, and `pip-audit`, so it was intentionally not force-removed; this improves dependency accuracy but does not reduce the installed runtime footprint. `bcrypt` remains supported because the authentication service and password migration use it; `globby` remains because `src/frontend/scripts/i18n-audit.mjs` imports it.
+
+The ten-pass review also confirmed that CI setup/build repetition is necessary because jobs use isolated runners, sample seeding is a small fixed dataset where batching would add complexity without measurable benefit, and no test-only production file or dead compatibility route was found.
+
+## Current continuation verification (2026-08-12)
+
+A fresh production build reproduced the JWT maintenance regression before the fix: the backend and readiness were healthy, but the forged-token browser flow emitted four `ReferenceError: Cannot access 'et' before initialization` page errors. The root cause was the static `api.ts` ↔ `authStore.ts` import cycle. The cycle is now removed through the small `src/frontend/src/lib/authState.ts` reader bridge; `api.ts` reads the bridge and `authStore.ts` registers its Zustand snapshot after initialization.
+
+Post-fix evidence: focused frontend API/auth tests passed **33/33**, typecheck and ESLint passed, the production build passed, and the isolated production `maintenance.spec.ts` passed **5/5** (three fixture setup tests, settings-cache regression, and forged-token JWT regression) with no page errors. The isolated server reached `/ready` with all four providers ready and shut down cleanly; no traceback, timeout, proactor, or connection-reset diagnostics were found.
+
+The latest ten-pass maintainability sweep found no additional safe production consolidation: image backfill is already bounded, export history is limited, and complete board/achievement export is intentional. The current working tree is pending and must not be represented as release-ready until intentionally committed and the complete gates are rerun after the bridge change. Interactive browser automation was not repeated because the browser agent returned a temporary rate-limit response; the focused Playwright production test is the available GUI evidence for this pass.
+
+## Final readiness smoke follow-up (2026-08-12)
+
+The earlier runtime shutdown discrepancy was reproduced with an unreliable
+probe/log capture and was not accepted as a product failure. A repeatable
+headless rehearsal was then run on isolated port 8247 with explicit
+`Connection: close` probes:
+
+- Supported `scripts/start_server.py` launcher reached `/api/health` in 4.24 s
+  and `/ready` in 9.60 s; all four providers reported ready.
+- `CTRL_BREAK_EVENT` produced a graceful wrapper exit code 0 in 0.27 s.
+- The captured log contained `Application shutdown complete` and no traceback,
+  connection-reset, or Windows proactor diagnostics.
+- Temporary data, logs, processes, and the test port were cleaned.
+- Focused lifecycle/packaging validation: 56 passed, 1 expected skip for the
+  optional `faster-whisper` dependency, 0 failed; Ruff and diff checks passed.
+
+Direct Uvicorn cold and warm runs also reached readiness and shut down in about
+0.2 s, with exit code 3 caused by direct signal injection. The supported
+launcher normalizes the controlled shutdown to exit code 0. This does not
+claim clinical, hardware, clean-VM rollback, or real-user acceptance; those
+remain the explicit release blockers in `docs/RELEASE_READINESS.md`.
+
+## Current continuation validation (2026-08-12)
+
+The lifecycle follow-up fixed a real test-resource race without changing production behavior: collaboration WebSocket tests now use isolated contextual `TestClient` fixtures, consume server close frames while the portal is alive, and preserve original assertion failures during cleanup; the board-router test removed its global `TestClient`. Generated `.phase3-e2e-data` and `.phase4-e2e-data` directories were removed.
+
+- Backend: Ruff, compileall, and the complete pytest suite passed: **629 passed, 2 expected skips, 0 failed**. The skips are optional `faster-whisper` tests.
+- Focused lifecycle regression: boards/collaboration tests passed **9/9 in three consecutive runs** with `PytestUnraisableExceptionWarning` promoted to an error; no closed-database warnings remained.
+- Frontend: typecheck, ESLint, **42 Vitest files / 211 tests**, production build, and bundle budgets passed. Largest measured JS was 338.8 kB / 450 kB and CSS 96.7 kB / 150 kB.
+- GUI E2E: after removing the production `api.ts` ↔ `authStore.ts` initialization cycle through `src/frontend/src/lib/authState.ts`, a fresh production build and isolated backend passed **107/107 Playwright tests**, with 0 skipped/failures and no unexpected page/server errors. The run used explicit fixture passwords, `PLAYWRIGHT_BASE_URL=http://127.0.0.1:8262`, and `AAC_ASSISTANT_NO_BROWSER=1`; the server reached readiness with all four providers and shut down cleanly.
+- Runtime: isolated uvicorn smoke returned HTTP 200 from `/api/health` and `/ready`, reported all four providers ready, and left no matching pytest/uvicorn/python process. `uv lock --check`, production `npm audit` (0 vulnerabilities), `bash -n start.sh`, and `git diff --check` passed.
+- Independent review found no material unresolved lifecycle, accessibility, security, or duplication issue. The only remaining warnings are third-party deprecations from `slowapi` and Starlette's TestClient/httpx integration.
+
+The current pending changes still require an intentional commit/review before release; this handoff does not claim the working tree is clean.
+
+## GUI route follow-up (2026-08-12)
+
+A fresh headless production-build check covered the previously untested legacy
+speak-mode route. The new Playwright regression navigates to `/play/1` and
+asserts the authenticated redirect to `/communication?boardId=1`; the focused
+`advanced.spec.ts` run passed **8/8** including setup, with no failures. Frontend
+typecheck and ESLint also passed. The current full GUI evidence is **107/107 Playwright tests passed** after the
+latest frontend bridge change; the focused route follow-up remains additional
+coverage, not a replacement for the full suite.
+
+The route and 404 paths are now both directly covered. No production change was
+needed: `/play/:id` is an authenticated compatibility redirect intentionally
+implemented in `src/frontend/src/App.tsx` and used by the Boards and Board
+Editor pages.
+
+## Offline queue follow-up (2026-08-12)
+
+The continuation pass added bounded, session-scoped offline mutation recovery:
+JSON-safe requests are restored after reload for the same authenticated user,
+Authorization headers are stripped before storage and replay, FormData and auth
+flows are excluded from persistence, conflicts are user-bound, storage is size
+bounded, malformed entries are discarded safely, and the current request remains
+persisted until successful completion. Focused validation passed **28/28**
+frontend tests across API/auth/conflict behavior, plus typecheck and ESLint.
+
+The queue remains intentionally **at-least-once**. A crash after a server accepts
+a mutation but before local dequeue can replay it; exact-once behavior requires
+server-side idempotency keys or endpoint-specific idempotency. This is recorded
+as a release limitation rather than hidden as a frontend guarantee.
 
 ## Stop condition
 

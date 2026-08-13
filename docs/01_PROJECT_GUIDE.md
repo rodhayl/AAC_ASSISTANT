@@ -55,10 +55,17 @@ ALLOW_DB_RESET=false
 AAC_SEED_SAMPLE_DATA=false
 AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=true
 AAC_BOOTSTRAP_ADMIN_USERNAME=admin1
-AAC_BOOTSTRAP_ADMIN_PASSWORD=Admin123
+# Use a unique value in production; Admin123 is development-only.
+AAC_BOOTSTRAP_ADMIN_PASSWORD=REPLACE_WITH_A_UNIQUE_PASSWORD
+DATA_DIR=data
+LOGS_DIR=logs
+UPLOADS_DIR=uploads
 ```
 
-The README contains the complete key-by-key configuration reference.
+`DATA_DIR`, `LOGS_DIR`, and `UPLOADS_DIR` must be writable. Managed or
+read-only installations should point all three settings at writable locations
+outside the application directory. The README contains the complete
+key-by-key configuration reference.
 `TESTING=1` is an operational environment variable for automated validation;
 it disables request rate limiting. `AAC_ASSISTANT_NO_BROWSER=1` is the
 headless validation/managed-launch flag and prevents the frozen launcher from
@@ -183,9 +190,13 @@ installations. `.gitignore` also excludes `data/`, `logs/`, `dist/`, `build/`,
 uploads, local caches, and dependency directories.
 
 Core enforcement paths are `src/api/deps/` and `src/api/routers/`. Keep
-`ALLOW_DB_RESET=false`, `AAC_SEED_SAMPLE_DATA=false`, and a unique
-`JWT_SECRET_KEY` for any shared or deployed instance. Change the bootstrap
-administrator password immediately after first login.
+`ALLOW_DB_RESET=false`, `AAC_SEED_SAMPLE_DATA=false`, a unique
+`JWT_SECRET_KEY`, and a unique `AAC_BOOTSTRAP_ADMIN_PASSWORD` for any shared
+or deployed instance. When bootstrap is enabled and no administrator exists,
+production rejects passwords that fail the normal password-strength policy.
+Existing installations with an administrator are not blocked by an unused
+bootstrap setting. Change the bootstrap administrator password immediately
+after first login.
 
 ### Token revocation and security-version policy
 

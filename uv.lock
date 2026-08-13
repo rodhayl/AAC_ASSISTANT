@@ -46,7 +46,6 @@ dev = [
     { name = "pyinstaller" },
     { name = "pytest" },
     { name = "pytest-cov" },
-    { name = "requests" },
     { name = "ruff" },
 ]
 
@@ -82,7 +81,6 @@ dev = [
     { name = "pyinstaller", specifier = "==6.21.0" },
     { name = "pytest", specifier = "==9.1.1" },
     { name = "pytest-cov" },
-    { name = "requests" },
     { name = "ruff", specifier = "==0.16.1" },
 ]
 

@@ -165,14 +165,18 @@ def main() -> int:
     display_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
     url = f"http://{display_host}:{port}/"
 
-    server = uvicorn.Server(
+    from src.api.server import ShutdownAwareServer
+
+    server = ShutdownAwareServer(
         uvicorn.Config(
             app,
             host=host,
             port=port,
+            timeout_graceful_shutdown=config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
             log_level="info",
             log_config=None,
-        )
+        ),
+        app=app,
     )
     shutdown_watcher = _start_shutdown_watcher(server)
 

@@ -93,14 +93,17 @@ The default launcher runs one uvicorn process on `http://127.0.0.1:8086` and
 serves the API, built React application, uploads, and API docs from that port.
 If `uv` is missing on Windows, `start.bat` tries to install it automatically
 before launching. If the frontend build is missing and Node.js is available,
-the launcher builds it automatically. On first run, the default bootstrap
+the launcher builds it automatically. On first run in the default development configuration, the bootstrap
 administrator is:
 
 - Username: `admin1`
 - Password: `Admin123`
 
-Change this password after first login. The bootstrap values can be changed in
-`.env` before first run.
+Change this password after first login. When bootstrap is enabled and no
+administrator exists, production rejects passwords that fail the normal
+password-strength policy; set a unique `AAC_BOOTSTRAP_ADMIN_PASSWORD` in
+`.env` before first run. The bootstrap values can be changed in `.env` before
+first run.
 
 ### Development mode, uvicorn plus Vite
 
@@ -152,6 +155,7 @@ variables take precedence over the file.
 | `JWT_SECRET_KEY` | `CHANGE_ME_TO_A_SECURE_RANDOM_STRING` in the template | Secret used to sign access and refresh tokens. The placeholder is replaced in place with a stable random value on first run. |
 | `ALLOWED_ORIGINS` | `http://localhost:5176,http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1:5176` | Comma-separated browser origins permitted by CORS. |
 | `LOGS_DIR` | `logs` | Writable directory for application logs. |
+| `UPLOADS_DIR` | `uploads` | Writable directory for uploaded symbol images. Set this explicitly in managed/read-only deployments. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Base URL for the optional Ollama provider. |
 | `OPENROUTER_API_KEY` | Empty | Optional API key for OpenRouter. Leave empty when unused. |
 | `APP_NAME` | `AAC Assistant` | Display/application name used by the backend. |
@@ -164,13 +168,15 @@ variables take precedence over the file.
 | `AAC_SYMBOL_IMAGE_BACKFILL_LIMIT` | `100` | Maximum missing symbol images processed when backfill is enabled. Set to `0` to skip it. |
 | `AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN` | `true` | Creates the bootstrap administrator when no administrator exists. |
 | `AAC_BOOTSTRAP_ADMIN_USERNAME` | `admin1` | Username created by the first-run bootstrap. |
-| `AAC_BOOTSTRAP_ADMIN_PASSWORD` | `Admin123` | Password created by the first-run bootstrap. Change it immediately after login. |
+| `AAC_BOOTSTRAP_ADMIN_PASSWORD` | `Admin123` (development only) | Password created by the first-run bootstrap. Production requires a unique value; change it before deployment and immediately after local first login. |
 
 The application also accepts these operational environment variables, which
 are intentionally not in the distributable template:
 
 - `DATABASE_URL`: optional SQLAlchemy URL for tests or an explicitly managed
   database; otherwise SQLite uses `DATA_DIR/DATABASE_NAME`.
+- `DATA_DIR`, `LOGS_DIR`, and `UPLOADS_DIR` may point to writable locations
+  outside a read-only installation directory.
 - `TESTING=1`: disables rate limiting for automated validation.
 - `AAC_ASSISTANT_PORTABLE=1`: in a frozen onedir build, keeps `data/`, `logs/`,
   and `uploads/` beside the executable instead of using `%APPDATA%`.
@@ -378,7 +384,7 @@ again; never remove a production database to recover an account.
 - Use a unique `JWT_SECRET_KEY` and rotate credentials if a secret is exposed.
 - Keep `ALLOW_DB_RESET=false` and `AAC_SEED_SAMPLE_DATA=false` for deployed
   instances.
-- Change the bootstrap administrator password immediately after first login.
+- Change the bootstrap administrator password immediately after first login; production enforces the normal password-strength policy when creating the first administrator.
 - The frontend uses the published React Router `8.3.0` package and its v8
   import split (`react-router` plus `react-router/dom`). The current production
   dependency audit reports zero vulnerabilities. Re-run `npm audit

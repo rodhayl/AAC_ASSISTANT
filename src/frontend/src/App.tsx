@@ -5,10 +5,12 @@ import { Layout } from './components/Layout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Login } from './pages/Login';
 import { useAuthStore } from './store/authStore';
+import { apiOffline } from './lib/api';
 import { ToastContainer } from './components/ui/ToastContainer';
 import { SettingsManager } from './components/SettingsManager';
 import { lazyWithRetry } from './lib/lazyWithRetry';
 import { LoadingState } from './components/ui/LoadingState';
+import type { User } from './types';
 
 const Dashboard = lazyWithRetry(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })), 'dashboard');
 const Communication = lazyWithRetry(() => import('./pages/Communication').then(m => ({ default: m.Communication })), 'communication');
@@ -27,6 +29,8 @@ const NotFound = lazyWithRetry(() => import('./pages/NotFound').then(m => ({ def
 function LoadingSpinner() {
   return <LoadingState size="lg" fullHeight />;
 }
+
+type UserRole = User['user_type'];
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -50,6 +54,18 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }, [sessionExpiresAt, logout]);
 
   if (!isAuthenticated || isExpired) return <Navigate to="/login" />;
+  return <>{children}</>;
+}
+
+function RoleProtectedRoute({
+  children,
+  roles,
+}: {
+  children: React.ReactNode;
+  roles: UserRole[];
+}) {
+  const userRole = useAuthStore((state) => state.user?.user_type);
+  if (!userRole || !roles.includes(userRole)) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -97,12 +113,12 @@ const router = createBrowserRouter(
         <Route path="boards/:id" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><BoardEditor /></Suspense></ErrorBoundary>} />
         <Route path="learning" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Learning /></Suspense></ErrorBoundary>} />
         <Route path="symbol-hunt" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><SymbolHunt /></Suspense></ErrorBoundary>} />
-        <Route path="symbols" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Symbols /></Suspense></ErrorBoundary>} />
+        <Route path="symbols" element={<RoleProtectedRoute roles={['admin', 'teacher']}><ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Symbols /></Suspense></ErrorBoundary></RoleProtectedRoute>} />
         <Route path="settings" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Settings /></Suspense></ErrorBoundary>} />
         <Route path="achievements" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Achievements /></Suspense></ErrorBoundary>} />
-        <Route path="students" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Students /></Suspense></ErrorBoundary>} />
-        <Route path="teachers" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><UserManagementPage role="teacher" /></Suspense></ErrorBoundary>} />
-        <Route path="admins" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><UserManagementPage role="admin" /></Suspense></ErrorBoundary>} />
+        <Route path="students" element={<RoleProtectedRoute roles={['admin', 'teacher']}><ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Students /></Suspense></ErrorBoundary></RoleProtectedRoute>} />
+        <Route path="teachers" element={<RoleProtectedRoute roles={['admin']}><ErrorBoundary><Suspense fallback={<LoadingSpinner />}><UserManagementPage role="teacher" /></Suspense></ErrorBoundary></RoleProtectedRoute>} />
+        <Route path="admins" element={<RoleProtectedRoute roles={['admin']}><ErrorBoundary><Suspense fallback={<LoadingSpinner />}><UserManagementPage role="admin" /></Suspense></ErrorBoundary></RoleProtectedRoute>} />
       </Route>
       <Route path="*" element={<Suspense fallback={<LoadingSpinner />}><NotFound /></Suspense>} />
     </Route>
@@ -125,8 +141,14 @@ function App() {
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
     void checkAuth().then(
-      () => setAuthReady(true),
-      () => setAuthReady(true),
+      () => {
+        apiOffline.resumeQueue();
+        setAuthReady(true);
+      },
+      () => {
+        apiOffline.resumeQueue();
+        setAuthReady(true);
+      },
     );
   }, [checkAuth]);
 

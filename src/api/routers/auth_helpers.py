@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import UserSettings
+from src.aac_app.services.auth_service import password_strength_error
 from src.api import schemas
 
 _F = TypeVar("_F", bound=Callable[..., Any])
@@ -49,21 +50,9 @@ def validate_email_format(email: str | None) -> None:
 
 def validate_password_strength(password: str) -> None:
     """Require a non-empty password with length and character diversity."""
-    if not password or len(password.strip()) == 0:
-        raise HTTPException(status_code=400, detail="Password is required")
-    if len(password) < 8:
-        raise HTTPException(
-            status_code=400,
-            detail="Password must be at least 8 characters long",
-        )
-    requirements = (
-        (r"[A-Z]", "Password must contain at least one uppercase letter"),
-        (r"[a-z]", "Password must contain at least one lowercase letter"),
-        (r"[0-9]", "Password must contain at least one number"),
-    )
-    for pattern, message in requirements:
-        if not re.search(pattern, password):
-            raise HTTPException(status_code=400, detail=message)
+    error = password_strength_error(password)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
 
 
 def validate_preference_updates(updates: dict) -> None:

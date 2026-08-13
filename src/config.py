@@ -90,6 +90,7 @@ JWT_PLACEHOLDERS = frozenset(
         "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION",
     }
 )
+DEFAULT_BOOTSTRAP_ADMIN_PASSWORD = "Admin123"
 
 
 class Settings(BaseSettings):
@@ -110,6 +111,7 @@ class Settings(BaseSettings):
     DATABASE_NAME: str = "aac_assistant.db"
     DATA_DIR: str = "data"
     LOGS_DIR: str = "logs"
+    UPLOADS_DIR: str = "uploads"
 
     JWT_SECRET_KEY: str = ""
 
@@ -127,7 +129,7 @@ class Settings(BaseSettings):
 
     AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN: bool = True
     AAC_BOOTSTRAP_ADMIN_USERNAME: str = "admin1"
-    AAC_BOOTSTRAP_ADMIN_PASSWORD: str = "Admin123"
+    AAC_BOOTSTRAP_ADMIN_PASSWORD: str = DEFAULT_BOOTSTRAP_ADMIN_PASSWORD
     # Image backfill is maintenance work; keep it opt-in so normal startup
     # does not perform avoidable network and database work.
     AAC_ENABLE_SYMBOL_IMAGE_BACKFILL: bool = False
@@ -138,7 +140,6 @@ class Settings(BaseSettings):
     AAC_SEED_STUDENT1_PASSWORD: str | None = None
     AAC_SEED_TEACHER1_PASSWORD: str | None = None
     AAC_SEED_ADMIN1_PASSWORD: str | None = None
-
 
 def _find_example_file(project_root: Path) -> Path | None:
     """Find the current example config in a project or frozen bundle."""
@@ -242,17 +243,28 @@ def ensure_jwt_secret(env_path: Path | None = None) -> str:
 def load_settings(project_root: Path | None = None) -> Settings:
     """Prepare config files and load typed settings for a project root."""
     root = Path(project_root or RUNTIME_ROOT).absolute()
-    env_path = ensure_env_file(root)
-    ensure_jwt_secret(env_path)
+    env_path = root / ENV_FILE_NAME
     legacy_path = root / LEGACY_ENV_FILE_NAME
+    environment_secret = os.environ.get("JWT_SECRET_KEY", "")
 
-    # pydantic-settings gives later files precedence.  Explicitly put .env
-    # last so a retained legacy file cannot override migrated settings.
-    env_files: tuple[Path, ...]
-    if legacy_path.exists() and legacy_path != env_path:
-        env_files = (legacy_path, env_path)
-    else:
-        env_files = (env_path,)
+    # A managed/read-only deployment can provide all settings through the
+    # process environment. Do not create or rewrite dotenv files in that case.
+    # Existing files remain readable and environment variables still take
+    # precedence through pydantic-settings.
+    if env_path.exists():
+        if not _is_jwt_secret(environment_secret):
+            ensure_jwt_secret(env_path)
+    elif not _is_jwt_secret(environment_secret):
+        env_path = ensure_env_file(root)
+        ensure_jwt_secret(env_path)
+    elif _is_jwt_secret(environment_secret):
+        logger.info("Using JWT_SECRET_KEY from the environment without writing dotenv files")
+
+    # pydantic-settings gives later files precedence. Explicitly put .env last
+    # so a retained legacy file cannot override migrated settings.
+    env_files = tuple(
+        path for path in (legacy_path, env_path) if path.exists()
+    ) or (env_path,)
     return Settings(_env_file=env_files)
 
 
@@ -267,21 +279,21 @@ def _path_setting(value: str) -> Path:
 
 def _sync_module_settings() -> None:
     """Expose typed settings through the legacy module-level API."""
-    global DATA_DIR, DATABASE_PATH, LOGS_DIR
+    global DATA_DIR, DATABASE_PATH, LOGS_DIR, UPLOADS_DIR
     for field_name in Settings.model_fields:
-        if field_name in {"DATA_DIR", "LOGS_DIR", "DATABASE_NAME"}:
+        if field_name in {"DATA_DIR", "LOGS_DIR", "UPLOADS_DIR", "DATABASE_NAME"}:
             continue
         globals()[field_name] = getattr(settings, field_name)
     DATA_DIR = _path_setting(settings.DATA_DIR)
     DATABASE_PATH = DATA_DIR / settings.DATABASE_NAME
     LOGS_DIR = _path_setting(settings.LOGS_DIR)
+    UPLOADS_DIR = _path_setting(settings.UPLOADS_DIR)
 
 
 _sync_module_settings()
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
-UPLOADS_DIR = RUNTIME_ROOT / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 

@@ -1,12 +1,17 @@
 from unittest.mock import Mock
 
+import pytest
 from fastapi.testclient import TestClient
 
 from src.aac_app.models import CommunicationBoard
 from src.api.main import app
 from src.api.routers import board_ai, board_assignments, boards, symbols
 
-client = TestClient(app)
+
+@pytest.fixture
+def client():
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 def test_board_domains_are_exposed_as_focused_routers():
@@ -17,7 +22,7 @@ def test_board_domains_are_exposed_as_focused_routers():
 
 
 def test_board_list_returns_server_error_when_query_fails(
-    setup_test_db, admin_user, admin_token
+    setup_test_db, admin_user, admin_token, client
 ):
     broken_db = Mock()
     broken_db.query.side_effect = RuntimeError("database unavailable")
@@ -44,7 +49,7 @@ def test_board_list_returns_server_error_when_query_fails(
 
 
 def test_board_list_returns_server_error_when_serialization_fails(
-    setup_test_db, test_db_session, admin_user, admin_token, monkeypatch
+    setup_test_db, test_db_session, admin_user, admin_token, monkeypatch, client
 ):
     test_db_session.add(
         CommunicationBoard(
@@ -79,7 +84,7 @@ def test_board_list_returns_server_error_when_serialization_fails(
 
 
 def test_board_list_accepts_slash_and_no_slash(
-    setup_test_db, admin_user, admin_token
+    setup_test_db, admin_user, admin_token, client
 ):
     headers = {"Authorization": f"Bearer {admin_token}"}
 

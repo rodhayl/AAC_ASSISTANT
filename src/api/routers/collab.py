@@ -1,4 +1,5 @@
 
+import asyncio
 import contextlib
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect, status
@@ -141,10 +142,41 @@ async def board_channel(
                 )
                 return
 
+        # Mark the room registration before awaiting accept so cancellation in
+        # this tiny handoff window still triggers the outer cleanup path.
+        connected = True
         await manager.connect(board_id, websocket)
+        shutdown_event = getattr(websocket.app.state, "shutdown_event", None)
+        if not getattr(websocket.app.state, "lifespan_active", False):
+            shutdown_event = None
+        if shutdown_event is None:
+            # Direct ASGI callers that do not run the application lifespan still
+            # receive normal WebSocket behavior; production lifespan installs it.
+            shutdown_event = asyncio.Event()
         try:
             while True:
-                data = await websocket.receive_json()
+                receive_task = asyncio.create_task(websocket.receive_json())
+                shutdown_task = asyncio.create_task(shutdown_event.wait())
+                try:
+                    done, _ = await asyncio.wait(
+                        (receive_task, shutdown_task),
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if shutdown_task in done:
+                        with contextlib.suppress(Exception):
+                            await websocket.close(
+                                code=status.WS_1001_GOING_AWAY,
+                                reason="Server shutting down",
+                            )
+                        return
+                    data = receive_task.result()
+                finally:
+                    for task in (receive_task, shutdown_task):
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(
+                        receive_task, shutdown_task, return_exceptions=True
+                    )
 
                 if not has_access and board.is_public:
                     continue
@@ -158,11 +190,25 @@ async def board_channel(
                 }
                 await manager.broadcast(board_id, message, sender=websocket)
         except WebSocketDisconnect:
-            manager.disconnect(board_id, websocket)
+            pass
+        except asyncio.CancelledError:
+            # TestClient and ASGI servers may cancel the handler while closing
+            # a client connection. This is an expected lifecycle outcome, not
+            # an application error; the manager cleanup below still runs.
+            pass
         except Exception as e:
             logger.error(f"WebSocket error in loop: {e}")
+        finally:
             manager.disconnect(board_id, websocket)
 
+    except asyncio.CancelledError:
+        # A cancellation before the connection loop starts is also a normal
+        # teardown path and must not become an unhandled server exception.
+        # If room registration completed (or was being attempted), remove the
+        # socket even when cancellation landed before the inner finally block.
+        if "connected" in locals() and connected:
+            manager.disconnect(board_id, websocket)
+        return
     except Exception as e:
         logger.error(f"Unexpected WebSocket error: {e}")
         with contextlib.suppress(Exception):
