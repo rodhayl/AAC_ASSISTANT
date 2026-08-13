@@ -10,7 +10,8 @@ and the built single-page application.
 - FastAPI API and SQLite data layer for AAC workflows
 - React/Vite interface for communication, boards, symbols, learning, and
   administration
-- Optional local speech-to-text through the `voice` uv extra
+- Local speech-to-text (faster-whisper, bundled in the packaged installer; an
+  optional `voice` uv extra for source checkouts)
 - Learning sessions with adaptive LLM questions: auto-ask questions (can be
   toggled per learning mode for conversational modes), a manual "New question"
   button, correct-answer highlighting, live progress chips, and an end-of-session
@@ -213,8 +214,12 @@ uv run python -m src.aac_app.providers.model_download
 
 The model cache is local runtime data and is ignored by Git. See
 [`docs/voice.md`](docs/voice.md) for the browser recording and cache details.
-The packaged installer does not bundle the model, so the first voice use on a
-new installation needs network access.
+
+The packaged installer bundles the `tiny` faster-whisper model and the
+fastembed semantic-search model, so a fresh installation works fully offline:
+no model download is needed on first voice or semantic-search use. Selecting a
+different voice model size in Settings -> Voice falls back to on-demand download
+into `data/models/` (only for that non-bundled size).
 
 ## Test and lint
 
@@ -288,11 +293,14 @@ under Program Files. A portable onedir copy can keep `data/`, `logs/`, and
 `uploads/` beside the executable. Uninstall removes application files and
 disposable logs, but preserves the database and uploads.
 
-When an existing installation is selected, the wizard explicitly says that the
-operation is an update. The running copy receives a private,
-installation-scoped graceful-shutdown signal; the installer waits up to 25
-seconds before using a path-filtered force fallback, and aborts if the matching
-process still cannot be closed.
+When an existing installation is detected (wizard-selected directory,
+registered previous install, or a standard default location), the wizard runs
+as an update instead of a fresh install: the window caption, welcome heading,
+and body explicitly say "Update/Actualizar AAC Assistant to version 2.0.0" in
+English and Spanish. The running copy receives a private, installation-scoped
+graceful-shutdown signal; the installer waits up to 25 seconds before using a
+path-filtered force fallback, and aborts if the matching process still cannot
+be closed.
 
 Backup, export/import recovery, versioned rollback, and beta-release gates are
 documented in [`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md). The

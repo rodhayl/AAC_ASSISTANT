@@ -13,8 +13,10 @@ uv sync --extra voice --group dev
 ```
 
 On Windows source checkouts, an administrator can also install the missing
-voice extra from Settings -> Voice with one click. The packaged app still keeps
-voice transcription optional and downloads the model on first use.
+voice extra from Settings -> Voice with one click. The packaged installer
+bundles the `tiny` model, so the installed app needs no first-use download for
+the default voice model; selecting another model size falls back to on-demand
+download into `data/models/`.
 
 The first transcription downloads the `tiny` faster-whisper model by default (about 39M parameters / 75 MB; the compatible CTranslate2 conversion of OpenAI's `openai/whisper-tiny`). Administrators can choose `tiny`, `base`, `small`, `medium`, or `large-v3` in Settings → Voice. It is
 cached in `data/models/`, not the operating system temporary directory. To

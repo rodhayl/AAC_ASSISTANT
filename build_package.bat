@@ -47,14 +47,28 @@ if /i not "%ISCC_EXE%"=="ISCC.exe" if not exist "%ISCC_EXE%" (
     exit /b 1
 )
 
-echo [1/4] Building the frontend...
+echo [1/5] Syncing Python dependencies (including the voice extra)...
+call uv sync --extra voice
+if errorlevel 1 (
+    echo ERROR: uv sync failed.
+    exit /b 1
+)
+
+echo [2/5] Downloading offline AI models into the bundle...
+call uv run python scripts\bundle_models.py
+if errorlevel 1 (
+    echo ERROR: Model download failed.
+    exit /b 1
+)
+
+echo [3/5] Building the frontend...
 call npm --prefix src\frontend run build
 if errorlevel 1 (
     echo ERROR: Frontend build failed.
     exit /b 1
 )
 
-echo [2/4] Building the PyInstaller onedir package...
+echo [4/5] Building the PyInstaller onedir package...
 if exist "%APP_DIR%\.env" (
     echo ERROR: Existing runtime config found under %APP_DIR%.
     echo Stop using this portable copy and move .env before rebuilding.
@@ -96,7 +110,7 @@ if not exist "%APP_DIR%\AAC_Assistant.exe" (
 for /f %%S in ('powershell -NoProfile -Command "(Get-ChildItem -LiteralPath %APP_DIR% -Recurse -File | Measure-Object -Property Length -Sum).Sum"') do set "DIST_BYTES=%%S"
 echo       Onedir output bytes: %DIST_BYTES%
 
-echo [3/4] Compiling the Inno Setup installer...
+echo [5/5] Compiling the Inno Setup installer...
 call "%ISCC_EXE%" installer.iss
 if errorlevel 1 (
     echo ERROR: Inno Setup compilation failed.

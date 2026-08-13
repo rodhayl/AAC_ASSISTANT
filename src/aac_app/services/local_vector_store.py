@@ -105,7 +105,14 @@ class LocalVectorStore:
         self.device = device
         self.engine = engine
         self.embedding_dim = embedding_dim
-        self.cache_dir = Path(cache_dir or config.get_data_path("models")).absolute()
+        if cache_dir is not None:
+            self.cache_dir = Path(cache_dir).absolute()
+            self._local_files_only = False
+        else:
+            resolved, self._local_files_only = config.resolve_model_cache_dir(
+                "models--qdrant--all-MiniLM-L6-v2-onnx"
+            )
+            self.cache_dir = Path(resolved).absolute()
         self.model: Any | None = embedder
         self.embedder = embedder
         self._embedder_factory = embedder_factory
@@ -229,6 +236,7 @@ class LocalVectorStore:
                         model_name=self.model_name,
                         cache_dir=str(self.cache_dir),
                         lazy_load=True,
+                        local_files_only=self._local_files_only,
                     )
             self.model = self.embedder
             self._model_loaded = True

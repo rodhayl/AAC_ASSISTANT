@@ -341,6 +341,36 @@ def get_bundled_path(relative_path: str) -> Path:
     return candidates[0]
 
 
+def get_bundled_models_dir() -> Path | None:
+    """
+    Return the read-only bundled AI-models cache directory, or None.
+
+    Release builds ship optional model weights under ``models`` so the packaged
+    application works fully offline. Providers load from this directory with
+    ``local_files_only=True`` when it is present, and otherwise fall back to the
+    writable ``data/models`` directory with on-demand download.
+    """
+    candidate = get_bundled_path("models")
+    return candidate if candidate.is_dir() else None
+
+
+def resolve_model_cache_dir(model_dir_name: str) -> tuple[Path, bool]:
+    """
+    Resolve an optional AI model's cache directory and offline mode.
+
+    Returns ``(cache_dir, local_files_only)``. When the release bundle ships the
+    requested model (identified by its Hugging Face cache directory name, e.g.
+    ``models--Systran--faster-whisper-tiny``), the read-only bundled directory is
+    used with ``local_files_only=True`` so no network access is attempted. Any
+    other model size falls back to the writable ``data/models`` directory with
+    on-demand download.
+    """
+    bundled = get_bundled_models_dir()
+    if bundled is not None and (bundled / model_dir_name).is_dir():
+        return bundled, True
+    return get_data_path("models"), False
+
+
 def get_data_path(relative_path: str = "") -> Path:
     """
     Get path within the data directory.

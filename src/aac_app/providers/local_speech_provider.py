@@ -58,9 +58,14 @@ class LocalSpeechProvider:
         self.model_size = normalize_stt_model(model_size)
         self.device = device
         self.compute_type = compute_type
-        self.model_cache_dir = Path(
-            model_cache_dir or config.get_data_path("models")
-        ).absolute()
+        if model_cache_dir is not None:
+            self.model_cache_dir = Path(model_cache_dir).absolute()
+            self._local_files_only = False
+        else:
+            resolved, self._local_files_only = config.resolve_model_cache_dir(
+                f"models--Systran--faster-whisper-{self.model_size}"
+            )
+            self.model_cache_dir = Path(resolved).absolute()
         self.model_cache_dir.mkdir(parents=True, exist_ok=True)
         self.model: Any | None = None
         self._model_loaded = False
@@ -123,6 +128,7 @@ class LocalSpeechProvider:
                     device=self.device,
                     compute_type=self.compute_type,
                     download_root=str(self.model_cache_dir),
+                    local_files_only=self._local_files_only,
                 )
                 self._model_loaded = True
                 logger.info("faster-whisper model loaded successfully")

@@ -52,13 +52,16 @@ last complete run; this focused check was added to close the route-coverage gap.
 validation never opens a user's default browser. Normal desktop launches omit
 this flag and retain the expected browser opening.
 
-The installer displays an explicit update message when the selected directory
-already contains `AAC_Assistant.exe`. During an update it signals the running
-copy through a private, installation-scoped Windows event.
- The launcher asks
-Uvicorn to shut down normally and the installer waits up to 25 seconds for the
-matching executable to exit. A path-filtered force termination is only the
-last fallback; if the process still remains, installation aborts rather than
+The installer detects an existing installation from the wizard-selected
+directory, the registered previous install (per-user and per-machine uninstall
+keys), and the standard default locations. When one is found, the wizard shows
+an update flow instead of a fresh install: the window caption, welcome heading,
+and body text say "Update/Actualizar AAC Assistant to version 2.0.0" in both
+English and Spanish. During an update it signals the running copy through a
+private, installation-scoped Windows event. The launcher asks Uvicorn to shut
+down normally and the installer waits up to 25 seconds for the matching
+executable to exit. A path-filtered force termination is only the last
+fallback; if the process still remains, installation aborts rather than
 continuing with an unknown running process.
 
 ## Automated readiness evidence (2026-08-12)
