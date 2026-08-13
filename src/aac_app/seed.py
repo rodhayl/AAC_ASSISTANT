@@ -13,6 +13,7 @@ from src.aac_app import schema
 from src.aac_app.db import get_session
 from src.aac_app.models import (
     Achievement,
+    BoardAssignment,
     BoardSymbol,
     CommunicationBoard,
     Symbol,
@@ -122,7 +123,7 @@ def _ensure_bootstrap_admin(session: Session) -> None:
 
 
 def _create_sample_boards(session: Session) -> None:
-    """Create the demo communication board when it is missing."""
+    """Create the demo communication board and its student assignment."""
     admin = session.query(User).filter(User.username == "admin1").first()
     if not admin:
         admin = session.query(User).first()
@@ -137,39 +138,61 @@ def _create_sample_boards(session: Session) -> None:
         )
         .first()
     )
-    if board:
-        return
-
-    board = CommunicationBoard(
-        name="General Communication",
-        description="Basic vocabulary board with common symbols",
-        user_id=admin.id,
-        is_public=True,
-        is_template=True,
-        grid_rows=3,
-        grid_cols=4,
-        ai_enabled=True,
-        ai_provider="ollama",
-    )
-    session.add(board)
-    session.flush()
-
-    # The demo board contains at most 12 symbols; do not scan the full
-    # catalog when a large production symbol library is present.
-    for index, symbol in enumerate(
-        session.query(Symbol).order_by(Symbol.id).limit(12)
-    ):
-        if index >= 12:
-            break
-        session.add(
-            BoardSymbol(
-                board_id=board.id,
-                symbol_id=symbol.id,
-                position_x=index % 4,
-                position_y=index // 4,
-                is_visible=True,
-            )
+    if board is None:
+        board = CommunicationBoard(
+            name="General Communication",
+            description="Basic vocabulary board with common symbols",
+            user_id=admin.id,
+            is_public=True,
+            is_template=True,
+            grid_rows=3,
+            grid_cols=4,
+            ai_enabled=True,
+            ai_provider="ollama",
         )
+        session.add(board)
+        session.flush()
+
+        # The demo board contains at most 12 symbols; do not scan the full
+        # catalog when a large production symbol library is present. The 12
+        # seeded sample symbols fill the 3x4 grid so the board crosses the
+        # 50% playability threshold instead of rendering as "Board Locked".
+        for index, symbol in enumerate(
+            session.query(Symbol).order_by(Symbol.id).limit(12)
+        ):
+            if index >= 12:
+                break
+            session.add(
+                BoardSymbol(
+                    board_id=board.id,
+                    symbol_id=symbol.id,
+                    position_x=index % 4,
+                    position_y=index // 4,
+                    is_visible=True,
+                )
+            )
+
+    # Students only see assigned boards in the Communication view, so assign
+    # the demo board to the demo student. Idempotent for existing installs.
+    student = session.query(User).filter(User.username == "student1").first()
+    if student is not None:
+        existing = (
+            session.query(BoardAssignment)
+            .filter(
+                BoardAssignment.board_id == board.id,
+                BoardAssignment.student_id == student.id,
+            )
+            .first()
+        )
+        if existing is None:
+            session.add(
+                BoardAssignment(
+                    board_id=board.id,
+                    student_id=student.id,
+                    assigned_by=admin.id,
+                )
+            )
+
     session.flush()
 
 
@@ -230,6 +253,48 @@ def _create_sample_symbols(session: Session) -> None:
             "description": "Clear liquid for drinking",
             "category": "drinks",
             "keywords": "water, drink, liquid",
+        },
+        {
+            "label": "hello",
+            "description": "A friendly greeting",
+            "category": "social",
+            "keywords": "hello, hi, greetings",
+        },
+        {
+            "label": "goodbye",
+            "description": "A parting word",
+            "category": "social",
+            "keywords": "goodbye, bye, leave",
+        },
+        {
+            "label": "yes",
+            "description": "Agreement or confirmation",
+            "category": "social",
+            "keywords": "yes, agree, correct",
+        },
+        {
+            "label": "no",
+            "description": "Disagreement or refusal",
+            "category": "social",
+            "keywords": "no, disagree, incorrect",
+        },
+        {
+            "label": "please",
+            "description": "A polite request word",
+            "category": "social",
+            "keywords": "please, polite",
+        },
+        {
+            "label": "thank you",
+            "description": "Expressing gratitude",
+            "category": "social",
+            "keywords": "thanks, gratitude, thank you",
+        },
+        {
+            "label": "help",
+            "description": "Asking for assistance",
+            "category": "social",
+            "keywords": "help, assist, support",
         },
     ]
 

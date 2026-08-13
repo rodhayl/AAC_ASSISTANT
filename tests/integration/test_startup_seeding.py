@@ -241,7 +241,57 @@ def test_database_initialization_idempotency():
     assert session.query(User).count() == 0
     from src.aac_app.models import Symbol
 
-    assert session.query(Symbol).count() == 5
+    assert session.query(Symbol).count() == 12
     assert session.query(Achievement).count() == 3
+    session.close()
+    engine.dispose()
+
+
+def test_seeded_demo_board_is_playable():
+    """
+    The seeded demo board must cross the 50% fill threshold so a student or
+    admin can actually open it in the Communication view instead of seeing
+    "Board Locked".
+    """
+    from src.aac_app.models import BoardSymbol, CommunicationBoard
+    from src.aac_app.seed import _create_sample_boards, _create_sample_symbols
+
+    engine = create_engine(TEST_DB_URL)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    session.add(
+        User(
+            username="admin1",
+            display_name="Admin",
+            user_type="admin",
+            password_hash="test-hash",
+        )
+    )
+    session.flush()
+    _create_sample_symbols(session)
+    _create_sample_boards(session)
+    session.commit()
+
+    board = (
+        session.query(CommunicationBoard)
+        .filter(CommunicationBoard.name == "General Communication")
+        .first()
+    )
+    assert board is not None
+    symbol_count = (
+        session.query(BoardSymbol)
+        .filter(
+            BoardSymbol.board_id == board.id,
+            BoardSymbol.is_visible.is_(True),
+        )
+        .count()
+    )
+    capacity = board.grid_rows * board.grid_cols
+    assert capacity > 0
+    assert symbol_count / capacity >= 0.5, (
+        f"demo board underfilled: {symbol_count}/{capacity}"
+    )
     session.close()
     engine.dispose()
