@@ -117,7 +117,9 @@ supplied for isolated tests, but normal deployments use SQLite at
   microphone capture; server-side audio devices are not required.
 - Semantic search uses fastembed embeddings and sqlite-vec in the SQLite
   database. Runtime model caches belong under `data/models/` and are never
-  committed.
+  committed. Release builds stage the bundled fastembed and faster-whisper
+  weights in the gitignored `bundled_models/models/` directory via
+  `scripts/bundle_models.py`.
 
 ### Frontend
 

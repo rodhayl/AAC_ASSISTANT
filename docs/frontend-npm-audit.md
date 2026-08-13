@@ -1,6 +1,6 @@
 # Frontend npm audit
 
-Audit date: 2026-08-12
+Audit date: 2026-08-12 (re-verified 2026-08-13: still 0 vulnerabilities)
 
 > This is the current production-dependency audit record. Re-run the commands below after any dependency change; build/test counts belong to the current validation run, not to this audit record unless explicitly dated.
 

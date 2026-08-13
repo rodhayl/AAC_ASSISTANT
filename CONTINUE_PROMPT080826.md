@@ -6,10 +6,10 @@ Continue work on the `080826_continuation` branch of AAC Assistant.
 
 - Current branch: `080826_continuation`
 - Current release baseline: `b2bd6e4 fix(release): make installer upgrades report and close safely`
-- Handoff status last reconciled in: `d5ee1bf docs(handoff): reconcile post-release repository status`
+- Handoff status last reconciled in: `d7c9b69`/`808432f` (offline model bundling + regression coverage)
 - Remote branch: `origin/080826_continuation`
-- HEAD is `bb3bbc3` (`docs(handoff): use stable release baseline wording`) and the branch tracks `origin/080826_continuation`.
-- The working tree contains pending reviewed continuation changes and seven untracked source/test/runtime files; it is **not** clean or release-ready until those changes are intentionally committed. The release-safety baseline remains included in `b2bd6e4`.
+- HEAD is `808432f` (`test(models): cover bundled-model cache resolution and skip writable mkdir offline`) and the branch is two commits ahead of `origin/080826_continuation`.
+- The working tree is clean and release-ready; the offline bundling and installer update-wizard changes are committed.
 - The configured upstream is `origin/080826_continuation`; use that explicit branch when publishing reviewed commits.
 
 ## User's standing requirements
@@ -365,6 +365,30 @@ The lifecycle follow-up fixed a real test-resource race without changing product
 - Independent review found no material unresolved lifecycle, accessibility, security, or duplication issue. The only remaining warnings are third-party deprecations from `slowapi` and Starlette's TestClient/httpx integration.
 
 The current pending changes still require an intentional commit/review before release; this handoff does not claim the working tree is clean.
+
+## Offline packaging follow-up (2026-08-13)
+
+The release now ships fully offline: `build_package.bat` syncs the `voice`
+extra, runs `scripts/bundle_models.py` to stage the fastembed semantic-search
+model and the `tiny` faster-whisper model into the gitignored
+`bundled_models/models/` directory, and `AAC_Assistant.spec` bundles those
+weights plus the faster-whisper/ctranslate2/av runtime and the silero VAD asset
+into the package. `src/config.py` gained `get_bundled_models_dir()` and
+`resolve_model_cache_dir()`; the vector store and speech provider now prefer the
+read-only bundled cache with `local_files_only=True` and fall back to on-demand
+download into `data/models/` only for non-bundled voice sizes.
+
+Verified end-to-end: the rebuilt PyInstaller onedir and the Inno Setup installer
+(~218 MB versus the earlier ~48 MB) were installed silently, and the installed
+application — with `HF_HUB_OFFLINE=1` and no network — reached `/ready` with all
+four providers, loaded both models from `_internal/models`, and transcribed a
+real voice sample (`"Hello, and I want to practice on Amal's today."`).
+
+Validation for this pass: backend **642 passed, 0 skipped, 0 failed** (the two
+optional `faster-whisper` skips are gone because the extra is now installed);
+frontend typecheck, ESLint, **42 files / 212 tests**, production build, and
+bundle budgets passed; `ruff`, `compileall`, and `git diff --check` passed.
+Regression coverage was added in `tests/test_model_cache_resolution.py`.
 
 ## GUI route follow-up (2026-08-12)
 

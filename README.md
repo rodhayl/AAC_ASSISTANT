@@ -206,7 +206,7 @@ For development and tests, use both groups:
 uv sync --group dev --extra voice
 ```
 
-The first transcription downloads the `tiny` faster-whisper model (about 39M parameters / 75 MB; the compatible CTranslate2 conversion of OpenAI's Whisper-tiny) by default. Administrators can choose `tiny`, `base`, `small`, `medium`, or `large-v3` in Settings → Voice. The selected model is cached in `data/models/`. Download it ahead of time with:
+In a source checkout, the first transcription downloads the `tiny` faster-whisper model (about 39M parameters / 75 MB; the compatible CTranslate2 conversion of OpenAI's Whisper-tiny) by default. Administrators can choose `tiny`, `base`, `small`, `medium`, or `large-v3` in Settings → Voice. The selected model is cached in `data/models/`. Download it ahead of time with:
 
 ```powershell
 uv run python -m src.aac_app.providers.model_download
@@ -269,7 +269,8 @@ random fallback users.
 
 ## Build a Windows package
 
-Packaging requires the dev group, Node.js/npm, and Inno Setup 6.7.3:
+Packaging requires the dev group, Node.js/npm, Inno Setup 6.7.3, and network
+access the first time it downloads the bundled models:
 
 ```powershell
 uv sync --group dev
@@ -282,8 +283,10 @@ then discovers Inno Setup from the standard per-user/system locations or
 `PATH`. For a custom installation, set `INNO_SETUP_PATH` to the full path of
 `ISCC.exe` before running the script (quoted environment values are accepted).
 
-`build_package.bat` builds the frontend, creates the PyInstaller onedir output,
-and compiles the Inno Setup installer. Outputs are:
+`build_package.bat` syncs the `voice` extra, downloads the fastembed
+semantic-search model and the `tiny` faster-whisper model into the gitignored
+`bundled_models/models` directory, builds the frontend, creates the PyInstaller
+onedir output, and compiles the Inno Setup installer. Outputs are:
 
 - `dist\AAC_Assistant\AAC_Assistant.exe`
 - `dist\AAC_Assistant_Setup_<version>.exe` (currently `2.0.0`)
@@ -325,7 +328,7 @@ physical SQLite backup for operator recovery.
   response, and summary modules
 - `src/aac_app/providers/`: optional speech and HTTP AI providers
 - `src/frontend/`: React/Vite application
-- `scripts/`: database, setup, diagnostic, and server utilities
+- `scripts/`: database, setup, diagnostic, server, and model-bundling utilities
 - `tests/`: automated backend tests
 - `TEST_SCENARIOS/`: retained manual QA references; the automated suites are
   authoritative for repeatable validation

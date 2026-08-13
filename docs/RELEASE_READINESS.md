@@ -4,15 +4,16 @@ This runbook is for a local or managed AAC Assistant installation. It is an
 operational safety checklist, not a substitute for clinical or user-acceptance
 validation.
 
-## Current working-tree validation (2026-08-12)
+## Current working-tree validation (2026-08-13)
 
-The current continuation working tree has not been committed yet and contains
-pending tracked and untracked changes. The complete current gates pass: backend Ruff, compileall, and pytest
-(**629 passed, 2 optional `faster-whisper` skips, 0 failed**); frontend
-typecheck, ESLint, **42 Vitest files / 211 tests**, production build, and
-bundle budgets (338.8 kB JS / 450 kB and 96.7 kB CSS / 150 kB). `uv lock
---check`, production `npm audit` (0 vulnerabilities), `bash -n start.sh`, and
-`git diff --check` also passed.
+The current branch (`080826_continuation`) is committed and clean. The
+complete current gates pass: backend Ruff, compileall, and pytest
+(**642 passed, 0 failed, 0 skipped** — the optional `faster-whisper` extra is
+now installed, so its two historical skips are gone); frontend typecheck,
+ESLint, **42 Vitest files / 212 tests**, production build, and bundle budgets
+(338.8 kB JS / 450 kB and 96.7 kB CSS / 150 kB). `uv lock --check`, production
+`npm audit` (0 vulnerabilities), `bash -n start.sh`, and `git diff --check`
+also passed.
 
 After that baseline, a production-build regression exposed and fixed a static
 `api.ts` ↔ `authStore.ts` import cycle that emitted four browser
@@ -43,7 +44,8 @@ last complete run; this focused check was added to close the route-coverage gap.
 2. Run the backend and frontend gates from the README, including Ruff,
    compilation, pytest, TypeScript checks, ESLint, Vitest, and the production
    build.
-3. Build both artifacts with `build_package.bat`:
+3. Build both artifacts with `build_package.bat` (requires network the first
+time it downloads the bundled models into `bundled_models/models`):
    - `dist\AAC_Assistant\AAC_Assistant.exe`
    - `dist\AAC_Assistant_Setup_<version>.exe`
 4. Keep the previous installer artifact. A same-version filesystem snapshot is
@@ -64,6 +66,19 @@ executable to exit. A path-filtered force termination is only the last
 fallback; if the process still remains, installation aborts rather than
 continuing with an unknown running process.
 
+### Fully offline packaging
+
+`build_package.bat` now syncs the `voice` extra and downloads the fastembed
+semantic-search model and the `tiny` faster-whisper model into the gitignored
+`bundled_models/models` directory before running PyInstaller. The installer
+bundles those weights plus the faster-whisper/ctranslate2/av runtime and the
+silero VAD asset, so a fresh installation works fully offline: no model
+download is needed on first voice or semantic-search use. The packaged
+installer is therefore larger (~218 MB versus the earlier ~48 MB), which is the
+deliberate cost of removing first-use network access. Selecting a voice model
+size other than `tiny` still falls back to on-demand download into
+`data/models/` (only for that non-bundled size).
+
 ## Automated readiness evidence (2026-08-12)
 
 The local automated release-safety rehearsal was repeated with an isolated
@@ -77,9 +92,8 @@ port/data directory and `AAC_ASSISTANT_NO_BROWSER=1`:
   connection-reset, or proactor diagnostics when probes used
   `Connection: close` and stopped before shutdown.
 - Isolated data was removed and the test port was closed afterward.
-- Focused lifecycle/packaging tests passed: 56 passed, 1 expected skip
-  (`faster-whisper` optional dependency unavailable), 0 failed; Ruff and
-  `git diff --check` also passed.
+- Focused lifecycle/packaging tests passed: 56 passed, 0 skipped, 0 failed;
+  Ruff and `git diff --check` also passed.
 
 A direct Uvicorn process also shut down cleanly, but returned signal-specific
 exit code 3 when sent `CTRL_BREAK_EVENT`; this is not the supported launcher
