@@ -159,23 +159,15 @@ test.describe('Games', () => {
     // Wait for content
     await expect(page.locator('main')).toBeVisible();
 
-    // We need to select a board first
-    // Look for "Play Now" or "Jugar" buttons
+    // The seeded demo board is playable (12 symbols), so a "Play Now" action
+    // must be present. Its absence would mean the seed/assignment regressed.
     const playBtn = page.locator('button').filter({ hasText: /play now|jugar/i }).first();
+    await expect(playBtn).toBeVisible({ timeout: 15000 });
 
-    // If no boards, we can't play. Skip or fail gracefully.
-    if (await playBtn.isVisible()) {
-      await playBtn.click();
-      // Should see target symbol instruction
-      await expect(page.getByText(/find|encuentra/i)).toBeVisible();
-      await expect(page.locator('.grid')).toBeVisible();
-    } else {
-      console.log('No playable boards found for Symbol Hunt');
-      // If we are admin/student, maybe we need to create one?
-      // But board creation is tested elsewhere.
-      // We can just assert that the "No boards" message or "Needs more symbols" is visible if empty
-      // But let's assume seed data provides at least one board.
-      // If fails, it means seed data is missing.
-    }
+    await playBtn.click();
+
+    // The game shows the target instruction and the symbol grid.
+    await expect(page.getByText(/find|encuentra/i)).toBeVisible();
+    await expect(page.locator('.grid')).toBeVisible();
   });
 });

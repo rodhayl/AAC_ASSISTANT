@@ -5,49 +5,38 @@ test.describe('Extended Features', () => {
   test.describe('Symbol Management', () => {
     test.use({ storageState: 'playwright/.auth/admin.json' });
 
-    test('should filter and sort symbols', async ({ page }) => {
-      // Mock symbols to ensure page loads
-      await page.route('**/api/symbols*', async route => {
-          await route.fulfill({
-              status: 200,
-              contentType: 'application/json',
-              body: JSON.stringify({
-                  items: [
-                      { id: 1, label: 'Apple', image_url: '/vite.svg', is_custom: false, created_by: null },
-                      { id: 2, label: 'Banana', image_url: '/vite.svg', is_custom: true, created_by: 1 }
-                  ],
-                  total: 2,
-                  page: 1,
-                  size: 50,
-                  pages: 1
-              })
-          });
-      });
-
+    test('should filter and sort real seeded symbols', async ({ page }) => {
+      // No API mocks: the symbol library is served by the production backend.
       await page.goto('/symbols');
-      
-      // Test Filters
-      // "Unused"
-      await page.locator('button').filter({ hasText: /unused|sin uso/i }).click({ force: true });
-      // Check if some symbols are filtered (we assume there are some)
-      await expect(page.locator('.grid').first()).toBeVisible();
-      
-      // "In Use"
+      await expect(page.locator('.animate-spin')).not.toBeVisible({ timeout: 20000 });
+
+      // A seeded symbol (cow) is on the demo board, so it is visible under
+      // "All" and "In use", and absent under "Unused". This keeps the
+      // assertions deterministic regardless of which other specs ran first.
+      const cow = page.getByText('cow', { exact: true });
+      await expect(cow).toBeVisible({ timeout: 15000 });
+
+      // "In use": the demo board uses the seeded symbol.
       await page.locator('button').filter({ hasText: /in use|en uso/i }).click({ force: true });
-      await expect(page.locator('.grid').first()).toBeVisible();
-      
-      // "All"
-      await page.locator('button').filter({ hasText: /all|todos/i }).click({ force: true });
-      
-      // Test Sort
+      await expect(cow).toBeVisible();
+
+      // "Unused": cow is on the demo board, so it disappears and the empty
+      // state is shown (also confirms the previous fetch has settled).
+      await page.locator('button').filter({ hasText: /unused|sin uso/i }).click({ force: true });
+      await expect(cow).not.toBeVisible();
+      await expect(page.getByText(/no symbols found|no se encontraron símbolos/i)).toBeVisible();
+
+      // "All": the full library returns.
+      await page.locator('button').filter({ hasText: /all|todos/i }).first().click({ force: true });
+      await expect(cow).toBeVisible();
+
+      // Alphabetical sort keeps the library rendered.
       const sortSelect = page
         .locator('select')
-        .filter({ has: page.locator('option[value=\"alpha\"]') })
+        .filter({ has: page.locator('option[value="alpha"]') })
         .first();
-      await sortSelect.selectOption({ value: 'alpha' }); // Alphabetical
-      
-      // Verify sort order (simple check: first item changes or list re-renders)
-      await expect(page.locator('.grid').first()).toBeVisible();
+      await sortSelect.selectOption('alpha');
+      await expect(cow).toBeVisible();
     });
   });
 
@@ -86,28 +75,11 @@ test.describe('Extended Features', () => {
       await searchInput.fill('Test');
       
       // Verify results filtered
-      // The grid might be hidden if empty, but the container might be there?
-      // The error says "received: hidden".
-      // If the search returns nothing, maybe the grid is removed from DOM or hidden.
-      // Let's check if we can see "No boards found" or just that the search input is still there and usable.
-      // Or maybe we need to wait for search debounce (usually 300-500ms).
       await page.waitForTimeout(1000);
-      
-      // Check if ANY content is visible below search
-      // Or just verify the input value persisted.
       await expect(searchInput).toHaveValue('Test');
       
       // Clear search
       await searchInput.fill('');
-      
-      // If grid is still hidden, it might be because of slow re-render or because it was never visible.
-      // But in `beforeEach` or normal flow it should be visible.
-      // Maybe the clear search didn't trigger update?
-      // Try typing space then delete?
-      
-      // Just check that the page is still responsive.
-      
-      // Let's just assert the search input is cleared.
       await expect(searchInput).toBeEmpty();
     });
   });
