@@ -65,6 +65,70 @@ def test_admin_manage_teachers(setup_test_db, admin_token, test_db_session):
     assert response.status_code == 404
 
 
+def test_update_user_validates_role_email_and_active_flag(setup_test_db, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    def create_user(username, email, user_type):
+        response = client.post(
+            "/api/auth/admin/create-user",
+            json={
+                "username": username,
+                "password": "StudentPass123",
+                "confirm_password": "StudentPass123",
+                "display_name": username,
+                "user_type": user_type,
+                "email": email,
+            },
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    first = create_user("edit_role_student", "role_edit@example.com", "student")
+    second = create_user("edit_email_student", "email_edit@example.com", "student")
+
+    # A role outside the supported set must be rejected, not persisted.
+    invalid_role = client.put(
+        f"/api/auth/users/{first['id']}",
+        json={"user_type": "superadmin"},
+        headers=headers,
+    )
+    assert invalid_role.status_code == 400
+
+    # An explicit null role must also be rejected, not persisted as a broken role.
+    null_role = client.put(
+        f"/api/auth/users/{first['id']}",
+        json={"user_type": None},
+        headers=headers,
+    )
+    assert null_role.status_code == 400
+
+    # A duplicate email must be rejected rather than corrupting uniqueness.
+    duplicate_email = client.put(
+        f"/api/auth/users/{second['id']}",
+        json={"email": "role_edit@example.com"},
+        headers=headers,
+    )
+    assert duplicate_email.status_code == 400
+
+    # is_active must be a real boolean, not a truthy string.
+    invalid_active = client.put(
+        f"/api/auth/users/{first['id']}",
+        json={"is_active": "false"},
+        headers=headers,
+    )
+    assert invalid_active.status_code == 400
+
+    # A valid role transition still works.
+    valid_role = client.put(
+        f"/api/auth/users/{first['id']}",
+        json={"user_type": "teacher"},
+        headers=headers,
+    )
+    assert valid_role.status_code == 200
+    assert valid_role.json()["user_type"] == "teacher"
+
+
 def test_students_endpoint_paginates(setup_test_db, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
     student_ids = []

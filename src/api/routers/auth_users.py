@@ -353,6 +353,27 @@ def update_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # The admin edit contract accepts a raw dict, so validate the fields that
+    # affect role checks and uniqueness before mutating the row. This keeps the
+    # endpoint consistent with admin_create_user and update_profile, which
+    # already reject invalid roles and duplicate emails.
+    valid_types = ['student', 'teacher', 'admin']
+    if 'user_type' in payload and payload.get('user_type') not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid user_type. Must be one of: {', '.join(valid_types)}",
+        )
+
+    new_email = payload.get('email')
+    if new_email is not None and new_email != user.email:
+        validate_email_format(new_email)
+        if db.query(User).filter(User.email == new_email, User.id != user.id).first():
+            raise HTTPException(status_code=400, detail="Email already registered")
+
+    if 'is_active' in payload and not isinstance(payload['is_active'], bool):
+        raise HTTPException(status_code=400, detail="is_active must be a boolean")
+
     # Allowed fields
     for key in ["display_name", "user_type", "email", "is_active"]:
         if key in payload:
