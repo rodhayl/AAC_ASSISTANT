@@ -73,44 +73,6 @@ class GuardianProfileService:
         with get_session() as session:
             return _get(session)
 
-    def get_or_create_profile(
-        self, student_id: int, created_by: int, db: Session | None = None
-    ) -> dict:
-        """
-        Get a student's profile, creating a default one if it doesn't exist.
-
-        Args:
-            student_id: The student's user ID
-            created_by: ID of the teacher/admin creating the profile
-            db: Optional database session
-
-        Returns:
-            Profile dict
-        """
-
-        def _get_or_create(session: Session) -> dict:
-            profile = (
-                session.query(GuardianProfile).filter_by(user_id=student_id).first()
-            )
-
-            if not profile:
-                profile = GuardianProfile(
-                    user_id=student_id,
-                    template_name="default",
-                    created_by=created_by,
-                )
-                session.add(profile)
-                session.flush()
-                logger.info(f"Created guardian profile for student {student_id}")
-
-            return self._profile_to_dict(profile)
-
-        if db:
-            return _get_or_create(db)
-
-        with get_session() as session:
-            return _get_or_create(session)
-
     def update_profile(
         self,
         student_id: int,

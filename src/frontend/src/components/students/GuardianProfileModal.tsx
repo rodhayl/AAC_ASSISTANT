@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { X, Save, Sparkles, AlertTriangle, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import api from '../../lib/api';
+import api, { extractError } from '../../lib/api';
 import type { User, GuardianProfile, TemplateInfo } from '../../types';
 
 interface GuardianProfileModalProps {
@@ -53,6 +53,16 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
     }, [student, t]);
 
     useEffect(() => {
+        if (!isOpen || !success) return;
+        const timeoutId = setTimeout(onClose, 1500);
+        return () => clearTimeout(timeoutId);
+    }, [isOpen, onClose, success]);
+
+    useEffect(() => {
+        if (!isOpen && success) setSuccess(null);
+    }, [isOpen, success]);
+
+    useEffect(() => {
         if (isOpen && student) {
             loadData();
         }
@@ -76,9 +86,8 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                 await api.post(`/guardian-profiles/students/${student.id}`, data);
             }
             setSuccess(t('success.saved', 'Profile saved successfully'));
-            setTimeout(onClose, 1500);
         } catch (e: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
-            setError(e.response?.data?.detail || t('errors.saveFailed', 'Failed to save profile'));
+            setError(extractError(e, t('errors.saveFailed', 'Failed to save profile')));
         } finally {
             setLoading(false);
         }

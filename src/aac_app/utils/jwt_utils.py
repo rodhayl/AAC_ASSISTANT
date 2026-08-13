@@ -29,6 +29,34 @@ if config.get("ENVIRONMENT", "development") == "production":  # noqa: SIM102
         )
 
 
+def _require_secure_secret() -> None:
+    """Refuse to mint tokens with the placeholder secret in production."""
+    if JWT_SECRET_KEY != "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION":
+        return
+    logger.critical(
+        "JWT_SECRET_KEY is using default insecure value! Set JWT_SECRET_KEY environment variable."
+    )
+    # In production, this should raise an error. For development, we'll log a warning.
+    if config.get("ENVIRONMENT", "development") == "production":
+        raise ValueError("JWT_SECRET_KEY must be set in production environment")
+
+
+def _encode_token(
+    data: dict[str, Any], *, token_type: str, expire: datetime
+) -> str:
+    """Encode a signed JWT with the standard claims and a type marker."""
+    to_encode = data.copy()
+    to_encode.update(
+        {
+            "exp": expire,
+            "iat": datetime.now(UTC),
+            "iss": "aac-assistant",  # Issuer claim
+            "type": token_type,
+        }
+    )
+    return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+
 def create_access_token(
     data: dict[str, Any], expires_delta: timedelta | None = None
 ) -> str:
@@ -45,15 +73,7 @@ def create_access_token(
     Raises:
         ValueError: If JWT_SECRET_KEY is not set or is the default insecure value in production
     """
-    if JWT_SECRET_KEY == "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION":
-        logger.critical(
-            "JWT_SECRET_KEY is using default insecure value! Set JWT_SECRET_KEY environment variable."
-        )
-        # In production, this should raise an error. For development, we'll log a warning.
-    if config.get("ENVIRONMENT", "development") == "production":
-        raise ValueError("JWT_SECRET_KEY must be set in production environment")
-
-    to_encode = data.copy()
+    _require_secure_secret()
 
     # Set expiration time
     if expires_delta:
@@ -63,31 +83,16 @@ def create_access_token(
             minutes=ACCESS_TOKEN_EXPIRE_MINUTES
         )
 
-    to_encode.update(
-        {
-            "exp": expire,
-            "iat": datetime.now(UTC),
-            "iss": "aac-assistant",  # Issuer claim
-        }
-    )
-
-    # Create the JWT token
-    encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    encoded_jwt = _encode_token(data, token_type="access", expire=expire)
 
     logger.debug(f"Created JWT token for subject: {data.get('sub')}, expires: {expire}")
     return encoded_jwt
 
 
-def decode_access_token(token: str) -> dict[str, Any] | None:
-    """
-    Decode and validate a JWT access token.
-
-    Args:
-        token: The JWT token string to decode
-
-    Returns:
-        Dictionary of claims if token is valid, None if invalid or expired
-    """
+def _decode_token(
+    token: str, *, expected_type: str | None
+) -> dict[str, Any] | None:
+    """Decode a signed token and optionally enforce its token type."""
     try:
         payload = jwt.decode(
             token,
@@ -101,9 +106,20 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
             },
         )
 
-        # Verify issuer if present
         if payload.get("iss") != "aac-assistant":
             logger.warning(f"Invalid token issuer: {payload.get('iss')}")
+            return None
+
+        token_type = payload.get("type")
+        if expected_type == "refresh":
+            if token_type != "refresh":
+                logger.warning("Token type mismatch: expected refresh token")
+                return None
+        elif expected_type == "access" and token_type not in (None, "access"):
+            # Reject non-access tokens as bearer credentials. Tokens without a
+            # type remain valid for backwards compatibility with already-issued
+            # access tokens from before token types were added.
+            logger.warning("Non-access token cannot be used as an access token")
             return None
 
         return payload
@@ -121,55 +137,14 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
         return None
 
 
-def get_token_expiration(token: str) -> datetime | None:
-    """
-    Get the expiration time of a token without full validation.
-
-    Args:
-        token: JWT token string
-
-    Returns:
-        datetime object of expiration, or None if token is invalid
-    """
-    try:
-        # Decode without verification to just check expiration
-        payload = jwt.decode(token, options={"verify_signature": False})
-        exp_timestamp = payload.get("exp")
-        if exp_timestamp:
-            return datetime.fromtimestamp(exp_timestamp, tz=UTC)
-        return None
-    except Exception as e:
-        logger.debug(f"Could not extract expiration from token: {e}")
-        return None
+def decode_access_token(token: str) -> dict[str, Any] | None:
+    """Decode and validate an access token, rejecting other token types."""
+    return _decode_token(token, expected_type="access")
 
 
-def validate_token_signature(token: str) -> bool:
-    """
-    Validate only the signature of a token (not expiration).
-    Useful for checking if a token was issued by this server.
-
-    Args:
-        token: JWT token string
-
-    Returns:
-        True if signature is valid, False otherwise
-    """
-    try:
-        jwt.decode(
-            token,
-            JWT_SECRET_KEY,
-            algorithms=[JWT_ALGORITHM],
-            options={
-                "verify_signature": True,
-                "verify_exp": False,  # Don't verify expiration
-            },
-        )
-        return True
-    except jwt.InvalidTokenError:
-        return False
-    except Exception as e:
-        logger.error(f"Error validating token signature: {e}")
-        return False
+def decode_refresh_token(token: str) -> dict[str, Any] | None:
+    """Decode and validate a refresh token."""
+    return _decode_token(token, expected_type="refresh")
 
 
 def create_refresh_token(data: dict[str, Any]) -> str:
@@ -182,24 +157,10 @@ def create_refresh_token(data: dict[str, Any]) -> str:
     Returns:
         Encoded JWT refresh token as a string
     """
-    if JWT_SECRET_KEY == "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION":
-        logger.critical("JWT_SECRET_KEY is using default insecure value!")
-        if config.get("ENVIRONMENT", "development") == "production":
-            raise ValueError("JWT_SECRET_KEY must be set in production environment")
+    _require_secure_secret()
 
-    to_encode = data.copy()
     expire = datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-
-    to_encode.update(
-        {
-            "exp": expire,
-            "iat": datetime.now(UTC),
-            "iss": "aac-assistant",
-            "type": "refresh",  # Mark as refresh token
-        }
-    )
-
-    encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    encoded_jwt = _encode_token(data, token_type="refresh", expire=expire)
     logger.debug(
         f"Created refresh token for subject: {data.get('sub')}, expires: {expire}"
     )

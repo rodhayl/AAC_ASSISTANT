@@ -1,3 +1,4 @@
+import contextlib
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -66,6 +67,9 @@ async def import_arasaac_symbol(
     Downloads the image and creates a Symbol record.
     """
     service = ArasaacService()
+    file_path = None
+    committed = False
+    db_symbol = None
     try:
         # Check if symbol already exists (optional, maybe by label or some external ID field if we added one)
         # For now, we just allow duplicates or user manages them.
@@ -114,12 +118,29 @@ async def import_arasaac_symbol(
         )
         db.add(db_symbol)
         db.commit()
+        committed = True
         db.refresh(db_symbol)
-        index_symbol(db_symbol)
+        # Indexing is an optional acceleration path. The durable symbol and
+        # image must remain available when the vector store is unavailable or
+        # temporarily fails.
+        try:
+            index_symbol(db_symbol)
+        except Exception as exc:
+            logger.warning("ARASAAC symbol indexing failed: {}", exc)
 
         return db_symbol
 
+    except HTTPException:
+        db.rollback()
+        if file_path is not None and not committed:
+            with contextlib.suppress(OSError):
+                file_path.unlink(missing_ok=True)
+        raise
     except Exception as e:
+        db.rollback()
+        if file_path is not None and not committed:
+            with contextlib.suppress(OSError):
+                file_path.unlink(missing_ok=True)
         logger.error(f"Import failed: {e}")
         raise HTTPException(
             status_code=500,

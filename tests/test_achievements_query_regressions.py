@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models import Achievement, User, UserAchievement
+from src.aac_app.models import Achievement, StudentTeacher, User, UserAchievement
 from src.aac_app.services.achievement_system import AchievementSystem
 from src.api.main import app
 from tests.test_utils_auth import create_test_headers
@@ -12,9 +12,9 @@ def achievements_client(setup_test_db, test_db_session):
     yield TestClient(app)
 
 
-def _create_student(test_db_session) -> User:
+def _create_student(test_db_session, *, username="achievement_student") -> User:
     student = User(
-        username="achievement_student",
+        username=username,
         display_name="Achievement Student",
         user_type="student",
         password_hash="test-hash",
@@ -23,6 +23,19 @@ def _create_student(test_db_session) -> User:
     test_db_session.commit()
     test_db_session.refresh(student)
     return student
+
+
+def _create_teacher(test_db_session) -> User:
+    teacher = User(
+        username="achievement_teacher",
+        display_name="Achievement Teacher",
+        user_type="teacher",
+        password_hash="test-hash",
+    )
+    test_db_session.add(teacher)
+    test_db_session.commit()
+    test_db_session.refresh(teacher)
+    return teacher
 
 
 def _seed_system_achievements(test_db_session) -> list[Achievement]:
@@ -98,6 +111,123 @@ def test_award_then_list_has_earned_at_and_full_progress(
 
     assert first_steps["earned_at"] is not None
     assert first_steps["progress"] == 100.0
+
+
+def test_teacher_cannot_target_unassigned_student_for_achievement(
+    achievements_client, test_db_session
+):
+    teacher = _create_teacher(test_db_session)
+    student = _create_student(test_db_session, username="unassigned_achievement_student")
+    headers = create_test_headers(teacher.id, teacher.username, "teacher")
+
+    response = achievements_client.post(
+        "/api/achievements/",
+        headers=headers,
+        json={
+            "name": "Restricted Target",
+            "description": "Only the student's teacher may target it",
+            "target_user_id": student.id,
+        },
+    )
+
+    assert response.status_code == 403
+
+
+def test_teacher_can_target_assigned_student_for_achievement(
+    achievements_client, test_db_session
+):
+    teacher = _create_teacher(test_db_session)
+    student = _create_student(test_db_session, username="assigned_achievement_student")
+    test_db_session.add(StudentTeacher(teacher_id=teacher.id, student_id=student.id))
+    test_db_session.commit()
+    headers = create_test_headers(teacher.id, teacher.username, "teacher")
+
+    response = achievements_client.post(
+        "/api/achievements/",
+        headers=headers,
+        json={
+            "name": "Assigned Target",
+            "description": "The assigned teacher may target it",
+            "target_user_id": student.id,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["target_user_id"] == student.id
+
+
+def test_teacher_cannot_award_unassigned_student(
+    achievements_client, test_db_session
+):
+    teacher = _create_teacher(test_db_session)
+    student = _create_student(test_db_session, username="unassigned_award_student")
+    achievement = _seed_system_achievements(test_db_session)[0]
+    headers = create_test_headers(teacher.id, teacher.username, "teacher")
+
+    response = achievements_client.post(
+        f"/api/achievements/{achievement.id}/award",
+        headers=headers,
+        json={"user_id": student.id},
+    )
+
+    assert response.status_code == 403
+
+
+def test_teacher_without_roster_cannot_access_other_student_achievements(
+    achievements_client, test_db_session
+):
+    teacher = _create_teacher(test_db_session)
+    student = _create_student(test_db_session, username="empty_roster_view_student")
+    headers = create_test_headers(teacher.id, teacher.username, "teacher")
+
+    for method, path in (
+        ("get", f"/api/achievements/user/{student.id}"),
+        ("post", f"/api/achievements/user/{student.id}/check"),
+        ("get", f"/api/achievements/user/{student.id}/points"),
+    ):
+        response = getattr(achievements_client, method)(path, headers=headers)
+        assert response.status_code == 403, response.text
+
+
+def test_teacher_can_access_assigned_student_achievements(
+    achievements_client, test_db_session
+):
+    teacher = _create_teacher(test_db_session)
+    student = _create_student(test_db_session, username="assigned_view_student")
+    test_db_session.add(StudentTeacher(teacher_id=teacher.id, student_id=student.id))
+    test_db_session.commit()
+    headers = create_test_headers(teacher.id, teacher.username, "teacher")
+
+    for method, path in (
+        ("get", f"/api/achievements/user/{student.id}"),
+        ("post", f"/api/achievements/user/{student.id}/check"),
+        ("get", f"/api/achievements/user/{student.id}/points"),
+    ):
+        response = getattr(achievements_client, method)(path, headers=headers)
+        assert response.status_code == 200, response.text
+
+
+def test_teacher_cannot_access_unassigned_student_achievements(
+    achievements_client, test_db_session
+):
+    teacher = _create_teacher(test_db_session)
+    assigned_student = _create_student(
+        test_db_session, username="assigned_scope_student"
+    )
+    target_student = _create_student(test_db_session, username="unassigned_view_student")
+    test_db_session.add(
+        StudentTeacher(teacher_id=teacher.id, student_id=assigned_student.id)
+    )
+    test_db_session.commit()
+    headers = create_test_headers(teacher.id, teacher.username, "teacher")
+
+    for method, path in (
+        ("get", f"/api/achievements/user/{target_student.id}"),
+        ("post", f"/api/achievements/user/{target_student.id}/check"),
+        ("get", f"/api/achievements/user/{target_student.id}/points"),
+    ):
+        response = getattr(achievements_client, method)(path, headers=headers)
+        assert response.status_code == 403, response.text
 
 
 def test_create_achievement_with_zero_criteria_value_is_automatic(

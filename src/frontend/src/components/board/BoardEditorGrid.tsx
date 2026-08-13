@@ -10,6 +10,7 @@ import { DraggableSymbol } from './DraggableSymbol';
 import { DroppableCell } from './DroppableCell';
 import { useMemo } from 'react';
 import type { BoardSymbol } from '../../types';
+import { indexBoardSymbols } from '../../lib/boardGrid';
 
 interface BoardEditorGridProps {
   rows: number;
@@ -35,15 +36,7 @@ export function BoardEditorGrid({
   onEditSymbol,
 }: BoardEditorGridProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
-  const symbolsByPosition = useMemo(() => {
-    const positions = new Map<string, BoardSymbol>();
-    for (const symbol of symbols) {
-      const key = `${symbol.position_x}-${symbol.position_y}`;
-      // Preserve the previous Array.find behavior for malformed data.
-      if (!positions.has(key)) positions.set(key, symbol);
-    }
-    return positions;
-  }, [symbols]);
+  const symbolsByPosition = useMemo(() => indexBoardSymbols(symbols), [symbols]);
 
   return (
     <div className="flex-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-8 overflow-auto">

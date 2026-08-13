@@ -2,7 +2,11 @@
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_dynamic_libs, collect_submodules
+from PyInstaller.utils.hooks import (
+    collect_data_files,
+    collect_dynamic_libs,
+    collect_submodules,
+)
 
 block_cipher = None
 
@@ -13,10 +17,18 @@ if not (frontend_dist / "index.html").is_file():
         "Built frontend not found. Run `npm --prefix src/frontend run build` first."
     )
 
+bundled_models = project_root / "bundled_models" / "models"
+if not bundled_models.is_dir():
+    raise SystemExit(
+        "Bundled AI models not found. Run `uv run python scripts/bundle_models.py` first."
+    )
+
 a = Analysis(
     ["launcher.pyw"],
     pathex=[str(project_root)],
-    binaries=collect_dynamic_libs("sqlite_vec"),
+    binaries=collect_dynamic_libs("sqlite_vec")
+    + collect_dynamic_libs("ctranslate2")
+    + collect_dynamic_libs("av"),
     datas=[
         (str(frontend_dist), "frontend"),
         ("src/aac_app/data/ngrams", "src/aac_app/data/ngrams"),
@@ -24,17 +36,17 @@ a = Analysis(
             "src/aac_app/config/companion_templates",
             "src/aac_app/config/companion_templates",
         ),
+        (str(bundled_models), "models"),
         (".env.example", "."),
-    ],
-    hiddenimports=collect_submodules("src.aac_app") + collect_submodules("src.api"),
+    ]
+    + collect_data_files("faster_whisper"),
+    hiddenimports=collect_submodules("src.aac_app")
+    + collect_submodules("src.api")
+    + collect_submodules("faster_whisper"),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # Optional voice support is installed and downloaded after packaging.
-        "faster_whisper",
-        "ctranslate2",
-        "av",
         "torch",
         "torchaudio",
         "torchvision",

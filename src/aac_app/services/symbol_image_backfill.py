@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 from contextlib import suppress
+from pathlib import PurePosixPath
+from uuid import uuid4
 
 from loguru import logger
 from sqlalchemy import func, or_
@@ -41,27 +43,42 @@ def _public_path_exists(public_path: str | None) -> bool:
         return True
     if not public_path.startswith("/uploads/"):
         return False
-    relative_path = public_path.removeprefix("/uploads/").replace("/", "\\")
+    relative_path = PurePosixPath(public_path.removeprefix("/uploads/"))
     return (config.UPLOADS_DIR / relative_path).exists()
 
 
-def _reusable_image_path(db, symbol: Symbol) -> str | None:
-    candidate = (
-        db.query(Symbol.image_path)
+def _reusable_image_paths(
+    db, symbols
+) -> dict[tuple[str, str | None], list[tuple[int, str]]]:
+    """Load reusable image candidates for a batch in one database query."""
+    keys = {
+        (symbol.label.casefold(), symbol.category)
+        for symbol in symbols
+        if symbol.label
+    }
+    if not keys:
+        return {}
+
+    labels = {label for label, _category in keys}
+    categories = {category for _label, category in keys}
+    query = (
+        db.query(Symbol.id, Symbol.image_path, Symbol.category, func.lower(Symbol.label))
         .filter(
-            Symbol.id != symbol.id,
-            func.lower(Symbol.label) == symbol.label.casefold(),
-            Symbol.category == symbol.category,
+            func.lower(Symbol.label).in_(labels),
             Symbol.image_path.is_not(None),
             func.trim(Symbol.image_path) != "",
         )
         .order_by(Symbol.id.asc())
-        .first()
     )
-    if not candidate:
-        return None
-    public_path = candidate[0]
-    return public_path if _public_path_exists(public_path) else None
+    if None not in categories:
+        query = query.filter(Symbol.category.in_(categories))
+
+    reusable: dict[tuple[str, str | None], list[tuple[int, str]]] = {}
+    for symbol_id, image_path, category, label in query.yield_per(1000):
+        key = (label, category)
+        if key in keys and _public_path_exists(image_path):
+            reusable.setdefault(key, []).append((symbol_id, image_path))
+    return reusable
 
 
 def _best_arasaac_match(label: str, results: list[dict]) -> dict | None:
@@ -122,10 +139,34 @@ def _search_queries(symbol: Symbol) -> list[str]:
 def _store_downloaded_image(symbol_id: int, arasaac_id: int, content: bytes) -> str:
     uploads_dir = config.UPLOADS_DIR / "symbols"
     uploads_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"arasaac_auto_{symbol_id}_{arasaac_id}.png"
+    # Use a unique name so concurrent backfill workers never overwrite a
+    # winner's file while racing to fill the same database row.
+    filename = f"arasaac_auto_{symbol_id}_{arasaac_id}_{uuid4().hex}.png"
     file_path = uploads_dir / filename
     file_path.write_bytes(content)
     return f"/uploads/symbols/{filename}"
+
+
+def _set_image_path(db, symbol_id: int, image_path: str) -> bool:
+    """Set a still-missing image without reloading the symbol row."""
+    updated = (
+        db.query(Symbol)
+        .filter(Symbol.id == symbol_id, _missing_image_clause())
+        .update({Symbol.image_path: image_path}, synchronize_session=False)
+    )
+    return bool(updated)
+
+
+def _remove_stored_image_if_unreferenced(db, symbol_id: int, image_path: str) -> None:
+    """Remove a lost download unless another worker won with this same path."""
+    current_path = db.query(Symbol.image_path).filter(Symbol.id == symbol_id).scalar()
+    if current_path == image_path:
+        return
+    if not image_path.startswith("/uploads/"):
+        return
+    relative_path = PurePosixPath(image_path.removeprefix("/uploads/"))
+    with suppress(OSError):
+        (config.UPLOADS_DIR / relative_path).unlink()
 
 
 async def backfill_missing_symbol_images(limit: int = 100) -> dict[str, int]:
@@ -139,36 +180,55 @@ async def backfill_missing_symbol_images(limit: int = 100) -> dict[str, int]:
     if limit <= 0:
         return summary
 
+    # Take one bounded, detached snapshot before network work. The previous
+    # implementation selected IDs and then issued one ORM lookup per symbol;
+    # keeping the columns needed by the worker avoids that N+1 pattern while
+    # preserving short per-symbol write transactions.
     with get_session() as db:
-        symbol_ids = [
-            symbol_id
-            for symbol_id, in (
-                db.query(Symbol.id)
-                .filter(_missing_image_clause())
-                .order_by(Symbol.is_builtin.desc(), Symbol.id.asc())
-                .limit(limit)
-                .all()
+        symbols = (
+            db.query(
+                Symbol.id,
+                Symbol.label,
+                Symbol.category,
+                Symbol.language,
+                Symbol.image_path,
+                Symbol.keywords,
+                Symbol.description,
             )
-        ]
+            .filter(_missing_image_clause())
+            .order_by(Symbol.is_builtin.desc(), Symbol.id.asc())
+            .limit(limit)
+            .all()
+        )
 
-    if not symbol_ids:
+    if not symbols:
         return summary
+
+    with get_session() as db:
+        reusable_paths = _reusable_image_paths(db, symbols)
 
     service = ArasaacService()
     try:
-        for symbol_id in symbol_ids:
+        for symbol in symbols:
+            symbol_id = symbol.id
             summary["processed"] += 1
             try:
                 with get_session() as db:
-                    symbol = db.query(Symbol).filter(Symbol.id == symbol_id).first()
-                    if symbol is None or (symbol.image_path and symbol.image_path.strip()):
-                        continue
-
-                    reusable_path = _reusable_image_path(db, symbol)
+                    reusable_candidates = reusable_paths.get(
+                        (symbol.label.casefold(), symbol.category), []
+                    )
+                    reusable_path = next(
+                        (
+                            image_path
+                            for candidate_id, image_path in reusable_candidates
+                            if candidate_id != symbol_id
+                        ),
+                        None,
+                    )
                     if reusable_path:
-                        symbol.image_path = reusable_path
-                        summary["updated"] += 1
-                        summary["reused"] += 1
+                        if _set_image_path(db, symbol_id, reusable_path):
+                            summary["updated"] += 1
+                            summary["reused"] += 1
                         continue
 
                     match = None
@@ -191,11 +251,16 @@ async def backfill_missing_symbol_images(limit: int = 100) -> dict[str, int]:
                         summary["failed"] += 1
                         continue
 
-                    symbol.image_path = _store_downloaded_image(
-                        symbol.id, int(arasaac_id), image_content
+                    image_path = _store_downloaded_image(
+                        symbol_id, int(arasaac_id), image_content
                     )
-                    summary["updated"] += 1
-                    summary["downloaded"] += 1
+                    if _set_image_path(db, symbol_id, image_path):
+                        summary["updated"] += 1
+                        summary["downloaded"] += 1
+                    else:
+                        # Another worker filled the row while the network
+                        # request was in flight; do not leak our unused file.
+                        _remove_stored_image_if_unreferenced(db, symbol_id, image_path)
             except Exception as exc:
                 summary["failed"] += 1
                 logger.warning(

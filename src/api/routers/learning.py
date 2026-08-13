@@ -2,12 +2,11 @@
 import contextlib
 import os
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import User
-from src.aac_app.services.learning_companion_service import LearningCompanionService
-from src.aac_app.services.translation_service import get_translation_service
+from src.aac_app.services.learning.service import LearningCompanionService
 from src.api import schemas
 from src.api.deps import (
     get_current_active_user,
@@ -15,21 +14,21 @@ from src.api.deps import (
     get_learning_service,
     get_learning_session_or_404,
 )
+from src.api.deps import (
+    get_text as get_shared_text,
+)
 from src.api.file_uploads import DEFAULT_MAX_AUDIO_BYTES, save_audio_upload
 
 router = APIRouter()
 
 
 def get_text(user: User, key: str, **kwargs) -> str:
-    lang = "en"
-    if user.settings and user.settings.ui_language:
-        lang = user.settings.ui_language
-
-    return get_translation_service().get(lang, "pages/learning", key, **kwargs)
+    """Translate a learning-namespace message for the current user."""
+    return get_shared_text(user, key, namespace="pages/learning", **kwargs)
 
 
 @router.post("/start", response_model=schemas.LearningSessionResponse)
-async def start_session(
+def start_session(
     session_data: schemas.LearningSessionStart,
     user_id: int,
     service: LearningCompanionService = Depends(get_learning_service),
@@ -42,7 +41,7 @@ async def start_session(
             status_code=403, detail=get_text(current_user, "errors.unauthorizedUser")
         )
 
-    result = await service.start_learning_session(
+    result = service.start_learning_session(
         user_id=user_id,
         topic=session_data.topic,
         purpose=session_data.purpose,
@@ -273,7 +272,7 @@ def get_progress(
 @router.get("/history/{user_id}")
 def get_history(
     user_id: int,
-    limit: int = 10,
+    limit: int = Query(10, ge=1, le=1000),
     service: LearningCompanionService = Depends(get_learning_service),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),

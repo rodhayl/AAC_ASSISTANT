@@ -31,6 +31,7 @@ class _SymbolCatalogEntry:
 
 
 _catalog_lock = RLock()
+_catalog_generation = 0
 _catalog_cache: WeakKeyDictionary[Engine, dict[str, tuple[_SymbolCatalogEntry, ...]]] = (
     WeakKeyDictionary()
 )
@@ -38,7 +39,9 @@ _catalog_cache: WeakKeyDictionary[Engine, dict[str, tuple[_SymbolCatalogEntry, .
 
 def clear_prediction_cache() -> None:
     """Invalidate cached symbol catalogs after any symbol mutation."""
+    global _catalog_generation
     with _catalog_lock:
+        _catalog_generation += 1
         _catalog_cache.clear()
 
 
@@ -117,7 +120,7 @@ class _PredictionContext:
             self.allowed_symbol_ids = None
 
     def _board_symbol_ids(self, session: Session) -> list[int]:
-        return list(
+        rows = (
             session.query(BoardSymbol.symbol_id)
             .filter(
                 BoardSymbol.board_id == self.board_id,
@@ -126,6 +129,7 @@ class _PredictionContext:
             )
             .all()
         )
+        return [row[0] for row in rows]
 
     def normalize_label(self, label: str) -> str:
         return (label or "").strip().lower()
@@ -188,28 +192,53 @@ class _PredictionContext:
 
         def load(session: Session) -> dict[str, tuple[_SymbolCatalogEntry, ...]]:
             bind = session.get_bind()
-            with _catalog_lock:
-                cached = _catalog_cache.get(bind)
-                if cached is not None:
-                    return cached
-                rows = session.query(Symbol).filter(Symbol.label.isnot(None)).all()
+            while True:
+                with _catalog_lock:
+                    cached = _catalog_cache.get(bind)
+                    if cached is not None:
+                        return cached
+                    query_generation = _catalog_generation
+
+                # Keep ORM objects and the catalog lock out of the hot path.
+                # The catalog only needs five scalar columns, and yield_per
+                # avoids materializing every Symbol instance at once.
+                rows = (
+                    session.query(
+                        Symbol.id,
+                        Symbol.label,
+                        Symbol.category,
+                        Symbol.image_path,
+                        Symbol.language,
+                    )
+                    .filter(Symbol.label.isnot(None))
+                    .yield_per(1000)
+                )
                 buckets: dict[str, list[_SymbolCatalogEntry]] = {}
-                for sym in rows:
-                    key = self.normalize_label(sym.label)
+                for row in rows:
+                    key = self.normalize_label(row.label)
                     if not key:
                         continue
                     buckets.setdefault(key, []).append(
                         _SymbolCatalogEntry(
-                            id=sym.id,
-                            label=sym.label,
-                            category=sym.category,
-                            image_path=sym.image_path,
-                            language=getattr(sym, "language", None),
+                            id=row.id,
+                            label=row.label,
+                            category=row.category,
+                            image_path=row.image_path,
+                            language=row.language,
                         )
                     )
                 frozen = {key: tuple(entries) for key, entries in buckets.items()}
-                _catalog_cache[bind] = frozen
-                return frozen
+
+                # Do not publish a snapshot that raced a symbol mutation.
+                # A concurrent mutation invalidates and retries this query.
+                with _catalog_lock:
+                    cached = _catalog_cache.get(bind)
+                    if cached is not None:
+                        return cached
+                    if query_generation != _catalog_generation:
+                        continue
+                    _catalog_cache[bind] = frozen
+                    return frozen
 
         if self.db is not None:
             return load(self.db)
@@ -440,45 +469,23 @@ class _PredictionContext:
                 exc,
             )
 
-    def _board_personal(self, session: Session, desc, func) -> None:
-        personal = (
-            session.query(
-                Symbol.id,
-                Symbol.label,
-                Symbol.category,
-                Symbol.image_path,
-                Symbol.language,
-                func.count(SymbolUsageLog.id).label("cnt"),
-            )
-            .join(SymbolUsageLog, SymbolUsageLog.symbol_id == Symbol.id)
-            .filter(
-                SymbolUsageLog.user_id == self.user_id,
-                Symbol.id.in_(self.allowed_symbol_ids),
-            )
-            .group_by(
-                Symbol.id,
-                Symbol.label,
-                Symbol.category,
-                Symbol.image_path,
-                Symbol.language,
-            )
-            .order_by(desc("cnt"))
-            .limit(max(self.base_limit * 2, 10))
-            .all()
-        )
-        for sid, label, cat, img, language_code, _cnt in personal:
-            self.add_symbol(
-                symbol_id=sid,
-                label=label,
-                category=cat,
-                image_path=img,
-                confidence=0.35,
-                source="board_personal",
-                symbol_language=language_code,
-            )
+    def _board_usage_symbols(
+        self,
+        session: Session,
+        desc,
+        func,
+        *,
+        user_id: int | None,
+        confidence: float,
+        source: str,
+    ) -> None:
+        """Fill suggestions from board symbols ranked by usage.
 
-    def _board_popular(self, session: Session, desc, func) -> None:
-        popular = (
+        ``user_id`` restricts to the user's own usage (personal tier);
+        ``None`` ranks by global usage (popular tier). The two tiers differ
+        only in that filter plus their confidence and source labels.
+        """
+        query = (
             session.query(
                 Symbol.id,
                 Symbol.label,
@@ -489,7 +496,11 @@ class _PredictionContext:
             )
             .join(SymbolUsageLog, SymbolUsageLog.symbol_id == Symbol.id)
             .filter(Symbol.id.in_(self.allowed_symbol_ids))
-            .group_by(
+        )
+        if user_id is not None:
+            query = query.filter(SymbolUsageLog.user_id == user_id)
+        query = (
+            query.group_by(
                 Symbol.id,
                 Symbol.label,
                 Symbol.category,
@@ -498,18 +509,37 @@ class _PredictionContext:
             )
             .order_by(desc("cnt"))
             .limit(max(self.base_limit * 2, 10))
-            .all()
         )
-        for sid, label, cat, img, language_code, _cnt in popular:
+        for sid, label, cat, img, language_code, _cnt in query.all():
             self.add_symbol(
                 symbol_id=sid,
                 label=label,
                 category=cat,
                 image_path=img,
-                confidence=0.22,
-                source="board_popular",
+                confidence=confidence,
+                source=source,
                 symbol_language=language_code,
             )
+
+    def _board_personal(self, session: Session, desc, func) -> None:
+        self._board_usage_symbols(
+            session,
+            desc,
+            func,
+            user_id=self.user_id,
+            confidence=0.35,
+            source="board_personal",
+        )
+
+    def _board_popular(self, session: Session, desc, func) -> None:
+        self._board_usage_symbols(
+            session,
+            desc,
+            func,
+            user_id=None,
+            confidence=0.22,
+            source="board_popular",
+        )
 
     def _board_layout(self, session: Session) -> None:
         placed = (

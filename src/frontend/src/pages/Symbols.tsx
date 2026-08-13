@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Search, Edit, Trash2, Image as ImageIcon, Globe, Download } from 'lucide-react';
-import api from '../lib/api';
-import { assetUrl } from '../lib/utils';
+import { Plus, Search, Trash2, Image as ImageIcon, Globe, Download } from 'lucide-react';
+import api, { extractError } from '../lib/api';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { SymbolGrid } from '../components/symbols/SymbolGrid';
 import type { Symbol as SymbolType } from '../types';
 import { useTranslation } from 'react-i18next';
 import { DEFAULT_SYMBOL_CATEGORIES } from '../lib/symbolCategories';
+import { isValidImageFile } from '../lib/download';
 
 type UsageFilter = 'all' | 'in_use' | 'unused';
 
@@ -35,6 +36,9 @@ export function Symbols() {
   const pageSize = 100;
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const formRef = useRef<HTMLDivElement>(null);
+  // Latest-request-wins guard so a slow response cannot overwrite a newer one
+  // when filters/search/sort change in quick succession.
+  const fetchSeqRef = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -68,6 +72,7 @@ export function Symbols() {
   const { t, i18n } = useTranslation('symbols');
 
   const fetchSymbols = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
     setIsLoading(true);
     setError(null);
     try {
@@ -77,12 +82,13 @@ export function Symbols() {
       if (search) params.search = search;
       if (sort !== 'default') params.sort = sort;
       const res = await api.get('/boards/symbols', { params });
+      if (seq !== fetchSeqRef.current) return;
       setSymbols(res.data);
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } };
-      setError(err?.response?.data?.detail || 'Failed to load symbols');
+      if (seq !== fetchSeqRef.current) return;
+      setError(extractError(e, 'Failed to load symbols'));
     } finally {
-      setIsLoading(false);
+      if (seq === fetchSeqRef.current) setIsLoading(false);
     }
   }, [usage, category, search, page, sort]);
 
@@ -144,8 +150,7 @@ export function Symbols() {
       resetForm();
       await fetchSymbols();
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } };
-      setError(err?.response?.data?.detail || 'Failed to update symbol');
+      setError(extractError(e, 'Failed to update symbol'));
     } finally {
       setCreating(false);
     }
@@ -174,8 +179,7 @@ export function Symbols() {
       resetForm();
       await fetchSymbols();
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } };
-      setError(err?.response?.data?.detail || 'Failed to create symbol');
+      setError(extractError(e, 'Failed to create symbol'));
     } finally {
       setCreating(false);
     }
@@ -227,15 +231,15 @@ export function Symbols() {
             await api.delete(`/boards/symbols/${id}`);
             deletedIds.push(id);
           } catch (e: unknown) {
-            const err = e as { response?: { data?: { detail?: string }, status?: number } };
-            const detail = err?.response?.data?.detail || 'Failed';
+            const err = e as { response?: { status?: number } };
+            const detail = extractError(e, 'Failed');
             if (err?.response?.status === 400 && detail.toLowerCase().includes('in use')) {
               try {
                 await api.delete(`/boards/symbols/${id}?force=true`);
                 deletedIds.push(id);
                 continue;
               } catch (err2: unknown) {
-                const errDetail = (err2 as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'force delete failed';
+                const errDetail = extractError(err2, 'force delete failed');
                 failures.push(`ID ${id}: ${errDetail}`);
                 continue;
               }
@@ -257,8 +261,8 @@ export function Symbols() {
       }
     } catch (e: unknown) {
       if (deleteState.mode === 'single') {
-        const err = e as { response?: { data?: { detail?: string }, status?: number } };
-        const detail = err?.response?.data?.detail || 'Failed to delete symbol';
+        const err = e as { response?: { status?: number } };
+        const detail = extractError(e, 'Failed to delete symbol');
         if (err?.response?.status === 400 && detail.toLowerCase().includes('in use')) {
           setDeleteState(prev => ({
             ...prev,
@@ -286,9 +290,8 @@ export function Symbols() {
       setNewPreview(null);
       return;
     }
-    const isImage = file.type.startsWith('image/');
     const maxSizeMb = 5;
-    if (!isImage || file.size > maxSizeMb * 1024 * 1024) {
+    if (!isValidImageFile(file)) {
       setError(`Invalid file. Must be an image under ${maxSizeMb}MB.`);
       setNewFile(null);
       setNewPreview(null);
@@ -564,65 +567,24 @@ export function Symbols() {
             {t('noSymbols')}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {symbols.map(sym => (
-              <div key={sym.id} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
-                    {sym.image_path ? (
-                      <img src={assetUrl(sym.image_path)} alt={sym.label} className="w-full h-full object-cover" />
-                    ) : (
-                      <ImageIcon className="w-6 h-6 text-gray-400" />
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(sym.id)}
-                      onChange={(e) => {
-                        setSelectedIds(prev => {
-                          const next = new Set(prev);
-                          if (e.target.checked) next.add(sym.id); else next.delete(sym.id);
-                          return next;
-                        });
-                      }}
-                    />
-                    <Button variant="secondary" size="sm" onClick={() => startEdit(sym)}>
-                      <Edit className="w-4 h-4 mr-1" /> Edit
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => deleteSymbol(sym.id)}>
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-                <div>
-                  <div className="font-semibold text-gray-900 dark:text-gray-100">{sym.label}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">{sym.category}</div>
-                  {sym.is_in_use && <span className="text-xs text-green-600">{t('inUse')}</span>}
-                </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2">{sym.description}</div>
-              </div>
-            ))}
-          </div>
+          <SymbolGrid
+            symbols={symbols}
+            selectedIds={selectedIds}
+            onToggleSelection={(id, selected) => {
+              setSelectedIds(prev => {
+                const next = new Set(prev);
+                if (selected) next.add(id); else next.delete(id);
+                return next;
+              });
+            }}
+            onEdit={startEdit}
+            onDelete={deleteSymbol}
+            page={page}
+            pageSize={pageSize}
+            onPreviousPage={() => setPage(p => Math.max(0, p - 1))}
+            onNextPage={() => setPage(p => p + 1)}
+          />
         )}
-
-        <div className="flex justify-center gap-2 mt-4 border-t border-gray-200 dark:border-gray-700 pt-4">
-          <Button 
-            variant="secondary" 
-            disabled={page === 0} 
-            onClick={() => setPage(p => Math.max(0, p - 1))}
-          >
-            {t('previous')}
-          </Button>
-          <span className="flex items-center px-2 text-sm text-gray-500">Page {page + 1}</span>
-          <Button 
-            variant="secondary" 
-            disabled={symbols.length < pageSize} 
-            onClick={() => setPage(p => p + 1)}
-          >
-            {t('next')}
-          </Button>
-        </div>
       </div>
       </>
       )}

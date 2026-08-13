@@ -1,7 +1,7 @@
 from contextlib import nullcontext
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 from sqlalchemy.orm import Session
 
@@ -12,7 +12,7 @@ from src.api.deps import (
     get_achievement_system,
     get_current_active_user,
     get_db,
-    get_text,
+    verify_student_access,
 )
 
 router = APIRouter()
@@ -108,6 +108,13 @@ def create_achievement(
         raise HTTPException(
             status_code=403,
             detail="Only teachers and admins can create achievements",
+        )
+
+    if data.target_user_id is not None:
+        verify_student_access(
+            data.target_user_id,
+            current_user,
+            db,
         )
 
     with nullcontext(db) as session:
@@ -298,6 +305,10 @@ def award_achievement(
         if not achievement:
             raise HTTPException(status_code=404, detail="Achievement not found")
 
+        # Only award achievements to an existing student the actor can access.
+        # This prevents teachers from targeting unrelated users or non-students.
+        verify_student_access(data.user_id, current_user, session)
+
         # Check if user already has this achievement
         existing = (
             session.query(UserAchievement)
@@ -348,12 +359,11 @@ def get_user_achievements(
     db: Session = Depends(get_db),
 ):
     """Get all achievements for a user"""
-    if user_id != current_user.id and current_user.user_type not in ["teacher", "admin"]:
-        raise HTTPException(
-            status_code=403,
-            detail=get_text(
-                user=current_user, key="errors.achievements.unauthorizedView"
-            ),
+    if user_id != current_user.id:
+        verify_student_access(
+            user_id,
+            current_user,
+            db,
         )
 
     return system.get_user_achievements(user_id, db=db)
@@ -367,16 +377,19 @@ def check_achievements(
     db: Session = Depends(get_db),
 ):
     """Check and award new achievements for a user"""
-    if user_id != current_user.id and current_user.user_type != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail=get_text(
-                user=current_user, key="errors.achievements.unauthorizedCheck"
-            ),
+    if user_id != current_user.id:
+        verify_student_access(
+            user_id,
+            current_user,
+            db,
         )
 
     # Check for new achievements first to trigger awarding
     system.check_achievements(user_id, db=db)
+    # Commit the awards before responding: the request dependency's teardown
+    # commit runs after the response is sent, and the UI typically re-reads
+    # the achievement list immediately after this check.
+    db.commit()
 
     # Return the full list of user achievements with earned_at timestamps
     return system.get_user_achievements(user_id, db=db)
@@ -390,12 +403,11 @@ def get_user_points(
     db: Session = Depends(get_db),
 ):
     """Get total points for a user"""
-    if user_id != current_user.id and current_user.user_type != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail=get_text(
-                user=current_user, key="errors.achievements.unauthorizedViewPoints"
-            ),
+    if user_id != current_user.id:
+        verify_student_access(
+            user_id,
+            current_user,
+            db,
         )
 
     return system.get_user_points(user_id, db=db)
@@ -403,7 +415,7 @@ def get_user_points(
 
 @router.get("/leaderboard", response_model=list[schemas.LeaderboardEntry])
 def get_leaderboard(
-    limit: int = 10,
+    limit: int = Query(10, ge=1, le=100),
     system: AchievementSystem = Depends(get_achievement_system),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),

@@ -14,6 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src import config  # noqa: E402
+from src.aac_app.utils.runtime import npm_command  # noqa: E402
 
 
 def ensure_configuration(project_root: Path) -> tuple[Path, str]:
@@ -34,9 +35,7 @@ def frontend_build_commands(
     ]
 
 
-def _npm_command() -> str | None:
-    """Return npm's Windows shim or its platform-neutral executable."""
-    return shutil.which("npm.cmd") or shutil.which("npm")
+_npm_command = npm_command
 
 
 def sync_python(project_root: Path, include_voice: bool) -> None:

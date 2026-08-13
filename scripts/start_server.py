@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import signal
 import socket
 import subprocess
@@ -18,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src import config
+from src.aac_app.utils.runtime import npm_command  # noqa: E402
 
 
 def is_port_available(host: str, port: int) -> bool:
@@ -28,9 +28,7 @@ def is_port_available(host: str, port: int) -> bool:
         return probe.connect_ex((probe_host, port)) != 0
 
 
-def _npm_command() -> str | None:
-    """Find the Windows npm shim or a platform-neutral npm executable."""
-    return shutil.which("npm.cmd") or shutil.which("npm")
+_npm_command = npm_command
 
 
 def ensure_frontend_build() -> Path:
@@ -73,8 +71,7 @@ def _server_command() -> list[str]:
     return [
         sys.executable,
         "-m",
-        "uvicorn",
-        "src.api.main:app",
+        "scripts.run_server",
         "--host",
         str(config.BACKEND_HOST),
         "--port",
@@ -120,12 +117,14 @@ def _wait_for_process_with_signal_handling(
     """Wait for a child while handling Ctrl+C / Ctrl+Break ourselves."""
     shutdown_requested = threading.Event()
     previous_sigint = signal.getsignal(signal.SIGINT)
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
     previous_sigbreak = signal.getsignal(signal.SIGBREAK) if hasattr(signal, "SIGBREAK") else None
 
     def _request_shutdown(signum, frame):  # type: ignore[unused-argument]
         shutdown_requested.set()
 
     signal.signal(signal.SIGINT, _request_shutdown)
+    signal.signal(signal.SIGTERM, _request_shutdown)
     if hasattr(signal, "SIGBREAK"):
         signal.signal(signal.SIGBREAK, _request_shutdown)
 
@@ -140,6 +139,7 @@ def _wait_for_process_with_signal_handling(
             time.sleep(0.1)
     finally:
         signal.signal(signal.SIGINT, previous_sigint)
+        signal.signal(signal.SIGTERM, previous_sigterm)
         if hasattr(signal, "SIGBREAK") and previous_sigbreak is not None:
             signal.signal(signal.SIGBREAK, previous_sigbreak)
 

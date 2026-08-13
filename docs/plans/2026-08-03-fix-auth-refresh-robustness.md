@@ -1,6 +1,10 @@
 # Fix Auth Refresh Robustness Implementation Plan
 
-> **For Antigravity:** REQUIRED WORKFLOW: Use `.agent/workflows/execute-plan.md` to execute this plan in single-flow mode.
+> **Document status (2026-08-12): COMPLETED / HISTORICAL.** The implementation and frontend gates described below are already integrated. Treat task steps, expected failures, and commit commands as provenance only; use the current source and README for the supported workflow.
+>
+> **Current outcome:** the implementation is in `src/frontend/src/store/authStore.ts`; its regression is `src/frontend/tests/authStore.test.ts` (not `src/frontend/tests/authStore.test.ts`). The current frontend gate is documented in `README.md`; do not execute the historical commit commands below as pending work.
+
+> **Historical workflow note:** the original plan referenced an external plan-execution workflow file, which is not part of the current repository. Do not follow that historical instruction; use the current validation commands in `README.md`.
 
 **Goal:** Preserve authenticated sessions when malformed or expired access tokens have a valid refresh token, while fully clearing persisted session state when validation fails online.
 
@@ -13,7 +17,7 @@
 ### Task 1: Add failing auth-store regression tests
 
 **Files:**
-- Create: `src/frontend/src/store/authStore.test.ts`
+- Create: `src/frontend/tests/authStore.test.ts`
 
 **Step 1: Write tests for malformed/expired refresh, full clear, logout, and offline preservation.**
 
@@ -72,7 +76,7 @@ Start backend and frontend using the mission manifest, use a fresh agent-browser
 
 **Files:**
 - `src/frontend/src/store/authStore.ts`
-- `src/frontend/src/store/authStore.test.ts`
+- `src/frontend/tests/authStore.test.ts`
 
 **Step 1: Review status and diff.**
 
@@ -80,4 +84,4 @@ Run: `git status --short` and `git diff --check`.
 
 **Step 2: Commit the feature.**
 
-Run: `git add src/frontend/src/store/authStore.ts src/frontend/src/store/authStore.test.ts && git commit -m "fix(fix-auth-refresh-robustness): refresh malformed access tokens"`
+Run: `git add src/frontend/src/store/authStore.ts src/frontend/tests/authStore.test.ts && git commit -m "fix(fix-auth-refresh-robustness): refresh malformed access tokens"`

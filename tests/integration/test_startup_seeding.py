@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.aac_app.models import Achievement, Base, User  # noqa: E402
+from src.aac_app.models import Achievement, Base, User, UserAchievement  # noqa: E402
 from src.aac_app.services.auth_service import verify_password  # noqa: E402
 
 # Use a separate test database file for this test to verify seeding logic specifically
@@ -77,6 +77,130 @@ def test_default_users_exist_and_can_login(monkeypatch):
     engine.dispose()
 
 
+def test_production_bootstrap_rejects_weak_password_before_creation(monkeypatch):
+    """A weak production bootstrap password must never create an admin."""
+    from src import config
+    from src.aac_app.seed import _ensure_bootstrap_admin
+
+    engine = create_engine(TEST_DB_URL)
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    monkeypatch.setattr(config, "ENVIRONMENT", "production")
+    monkeypatch.setenv("AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN", "true")
+    monkeypatch.setenv("AAC_BOOTSTRAP_ADMIN_USERNAME", "admin1")
+    monkeypatch.setenv("AAC_BOOTSTRAP_ADMIN_PASSWORD", "weak-password")
+
+    with pytest.raises(ValueError, match="AAC_BOOTSTRAP_ADMIN_PASSWORD"):
+        _ensure_bootstrap_admin(session)
+    assert session.query(User).count() == 0
+
+    monkeypatch.setenv("AAC_BOOTSTRAP_ADMIN_PASSWORD", "Admin123")
+    with pytest.raises(ValueError, match="development default"):
+        _ensure_bootstrap_admin(session)
+    assert session.query(User).count() == 0
+    session.close()
+    engine.dispose()
+
+
+def test_production_bootstrap_ignores_weak_password_when_admin_exists(monkeypatch):
+    """Existing installations are not blocked by an unused bootstrap setting."""
+    from src import config
+    from src.aac_app.seed import _ensure_bootstrap_admin
+    from src.aac_app.services.auth_service import get_password_hash
+
+    engine = create_engine(TEST_DB_URL)
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    session.add(
+        User(
+            username="existing-admin",
+            display_name="Existing Admin",
+            user_type="admin",
+            password_hash=get_password_hash("ExistingAdmin123"),
+        )
+    )
+    session.commit()
+    monkeypatch.setattr(config, "ENVIRONMENT", "production")
+    monkeypatch.setenv("AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN", "true")
+    monkeypatch.setenv("AAC_BOOTSTRAP_ADMIN_PASSWORD", "weak-password")
+
+    _ensure_bootstrap_admin(session)
+    assert session.query(User).count() == 1
+    session.close()
+    engine.dispose()
+
+
+def test_seed_preserves_custom_achievement_with_system_definition():
+    """System cleanup must not delete a custom matching achievement."""
+    from src.aac_app.seed import _create_sample_achievements
+
+    engine = create_engine(TEST_DB_URL)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    owner = User(
+        username="custom_achievement_owner",
+        display_name="Custom Owner",
+        user_type="teacher",
+        password_hash="test-hash",
+    )
+    session.add(owner)
+    session.flush()
+    custom = Achievement(
+        name="First Steps",
+        description="Complete your first learning session",
+        category="beginner",
+        criteria_type="sessions_completed",
+        criteria_value=1,
+        points=99,
+        icon="🌈",
+        created_by=owner.id,
+    )
+    session.add(custom)
+    session.flush()
+    earned = UserAchievement(user_id=owner.id, achievement_id=custom.id)
+    session.add(earned)
+    session.flush()
+
+    _create_sample_achievements(session)
+    session.commit()
+
+    preserved = session.get(Achievement, custom.id)
+    assert preserved is not None
+    assert preserved.created_by == owner.id
+    assert preserved.points == 99
+    assert preserved.icon == "🌈"
+    assert session.get(UserAchievement, earned.id).achievement_id == custom.id
+    assert session.query(Achievement).filter(Achievement.name == "First Steps").count() == 2
+
+    session.close()
+    engine.dispose()
+
+
+def test_ensure_bootstrap_admin_script_reports_rejection_cleanly(monkeypatch):
+    """The operator script must surface a rejected production bootstrap
+    as a clear message and a non-zero exit code, not a raw traceback."""
+    import importlib
+
+    script = importlib.import_module("scripts.ensure_bootstrap_admin")
+
+    def _raise_value_error() -> int:
+        raise ValueError("AAC_BOOTSTRAP_ADMIN_PASSWORD is not acceptable in production")
+
+    monkeypatch.setattr(script, "ensure_bootstrap_admin", _raise_value_error)
+    assert script.main() == 1
+
+
+def test_ensure_bootstrap_admin_script_propagates_disabled(monkeypatch):
+    """A successful script run exits zero."""
+    import importlib
+
+    script = importlib.import_module("scripts.ensure_bootstrap_admin")
+    monkeypatch.setattr(script, "ensure_bootstrap_admin", lambda: 0)
+    assert script.main() == 0
+
+
 def test_database_initialization_idempotency():
     """
     Verify that init_database doesn't duplicate data or fail on second run.
@@ -117,7 +241,57 @@ def test_database_initialization_idempotency():
     assert session.query(User).count() == 0
     from src.aac_app.models import Symbol
 
-    assert session.query(Symbol).count() == 5
+    assert session.query(Symbol).count() == 12
     assert session.query(Achievement).count() == 3
+    session.close()
+    engine.dispose()
+
+
+def test_seeded_demo_board_is_playable():
+    """
+    The seeded demo board must cross the 50% fill threshold so a student or
+    admin can actually open it in the Communication view instead of seeing
+    "Board Locked".
+    """
+    from src.aac_app.models import BoardSymbol, CommunicationBoard
+    from src.aac_app.seed import _create_sample_boards, _create_sample_symbols
+
+    engine = create_engine(TEST_DB_URL)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    session.add(
+        User(
+            username="admin1",
+            display_name="Admin",
+            user_type="admin",
+            password_hash="test-hash",
+        )
+    )
+    session.flush()
+    _create_sample_symbols(session)
+    _create_sample_boards(session)
+    session.commit()
+
+    board = (
+        session.query(CommunicationBoard)
+        .filter(CommunicationBoard.name == "General Communication")
+        .first()
+    )
+    assert board is not None
+    symbol_count = (
+        session.query(BoardSymbol)
+        .filter(
+            BoardSymbol.board_id == board.id,
+            BoardSymbol.is_visible.is_(True),
+        )
+        .count()
+    )
+    capacity = board.grid_rows * board.grid_cols
+    assert capacity > 0
+    assert symbol_count / capacity >= 0.5, (
+        f"demo board underfilled: {symbol_count}/{capacity}"
+    )
     session.close()
     engine.dispose()

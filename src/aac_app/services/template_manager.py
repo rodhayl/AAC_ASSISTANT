@@ -128,10 +128,6 @@ class TemplateManager:
         """Check if a template exists."""
         return name in self._cache
 
-    def get_template_names(self) -> list[str]:
-        """Get list of all template names."""
-        return list(self._cache.keys())
-
     def resolve_profile(
         self,
         template_name: str,
@@ -362,19 +358,6 @@ Key AAC principles:
             prompt_parts.append(f"\nSpecial Instructions:\n{custom}")
 
         return "\n\n".join(prompt_parts)
-
-    def reload_templates(self) -> int:
-        """
-        Reload all templates from disk.
-
-        Useful for development or when templates are updated.
-
-        Returns:
-            Number of templates loaded
-        """
-        self._cache.clear()
-        self._load_templates()
-        return len(self._cache)
 
 
 # Singleton instance

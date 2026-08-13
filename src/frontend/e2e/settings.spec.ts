@@ -105,12 +105,6 @@ test.describe('Settings', () => {
       await editBtn.click();
       await page.waitForTimeout(1000);
       
-      // Debug: Log all visible inputs for diagnosis if needed
-      // const inputs = await page.locator('input').all();
-      // for (const input of inputs) {
-      //     console.log(await input.getAttribute('id'), await input.getAttribute('name'), await input.getAttribute('type'));
-      // }
-
       // Try finding the input that actually changes.
       // If we can't reliably find the specific input, let's find the input that has the current display name?
       // But we don't know the current display name easily (it's "Student One" or "Student Fallback" or "admin1"...)
@@ -223,6 +217,16 @@ test.describe('Settings', () => {
       await modalSaveBtn.click();
       
       await expect(modal).not.toBeVisible();
+
+      // Password changes intentionally revoke the current JWT. Re-authenticate
+      // and refresh the shared admin storage state so later E2E tests do not
+      // continue with the token that the API correctly invalidated.
+      await page.goto('/login');
+      await page.locator('#username').fill(process.env.E2E_ADMIN_USERNAME || 'admin1');
+      await page.locator('#password').fill(bootstrapPassword);
+      await page.locator('button[type="submit"]').click();
+      await expect(page).toHaveURL('/');
+      await page.context().storageState({ path: 'playwright/.auth/admin.json' });
     });
   });
 });

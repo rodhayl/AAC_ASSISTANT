@@ -1,6 +1,10 @@
 # User Management Merge Implementation Plan
 
-> **For Antigravity:** REQUIRED WORKFLOW: Use `.agent/workflows/execute-plan.md` to execute this plan in single-flow mode.
+> **Document status (2026-08-12): COMPLETED / HISTORICAL.** The shared user-management page, route rewiring, tests, and validation described below are already integrated. Treat the task and commit instructions as provenance only; do not execute them as pending work.
+>
+> **Current outcome:** `src/frontend/src/pages/UserManagement.tsx` serves the parameterized teacher/admin routes; `src/frontend/src/pages/Students.tsx` remains the student-management page. The current frontend gate is documented in `README.md`; no historical commit command below is pending.
+
+> **Historical workflow note:** the original plan referenced an external plan-execution workflow file, which is not part of the current repository. Do not follow that historical instruction; use the current validation commands in `README.md`.
 
 **Goal:** Replace the duplicated teacher and admin management pages with one role-parameterized page while preserving all existing management flows and access controls.
 

@@ -22,6 +22,9 @@ interface NotificationsState {
   setItems: (items: NotificationItem[]) => void
 }
 
+let loadGeneration = 0
+let activeUserId: number | null = null
+
 export const useNotificationsStore = create<NotificationsState>((set, get) => ({
   items: [],
   loading: false,
@@ -66,8 +69,11 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
   unreadCount: () => get().items.filter(i => !i.read).length,
 
   loadFromBackend: async (userId: number) => {
-    if (get().loaded) return // Only load once
-    set({ loading: true })
+    if (activeUserId === userId && (get().loaded || get().loading)) return
+
+    const generation = ++loadGeneration
+    activeUserId = userId
+    set({ items: [], loading: true, loaded: false })
     try {
       const response = await api.get('/notifications', {
         params: { user_id: userId, limit: 50 }
@@ -84,11 +90,17 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
         type: n.type,
       }))
 
-      set({ items, loaded: true })
+      if (generation === loadGeneration && activeUserId === userId) {
+        set({ items, loaded: true })
+      }
     } catch (error) {
-      console.error('Failed to load notifications from backend:', error)
+      if (generation === loadGeneration && activeUserId === userId) {
+        console.error('Failed to load notifications from backend:', error)
+      }
     } finally {
-      set({ loading: false })
+      if (generation === loadGeneration && activeUserId === userId) {
+        set({ loading: false })
+      }
     }
   },
 
@@ -96,3 +108,13 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
     set({ items })
   },
 }))
+
+if (typeof window !== 'undefined') {
+  const resetForAuthContextChange = () => {
+    loadGeneration += 1
+    activeUserId = null
+    useNotificationsStore.setState({ items: [], loading: false, loaded: false })
+  }
+  window.addEventListener('aac:auth-logout', resetForAuthContextChange)
+  window.addEventListener('aac:auth-context-changed', resetForAuthContextChange)
+}

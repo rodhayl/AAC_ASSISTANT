@@ -31,6 +31,7 @@ from src.aac_app.utils.jwt_utils import (
     create_access_token,
     create_refresh_token,
     decode_access_token,
+    decode_refresh_token,
 )
 from src.api.deps import get_db
 from src.api.main import app
@@ -181,7 +182,7 @@ class TestTokenRefreshMechanism:
 
         # Verify refresh token is valid JWT
         refresh_token = data["refresh_token"]
-        payload = decode_access_token(refresh_token)
+        payload = decode_refresh_token(refresh_token)
         assert payload is not None
         assert payload["type"] == "refresh"
         assert payload["user_id"] == user.id
@@ -243,7 +244,55 @@ class TestTokenRefreshMechanism:
         response = client.post(f"/api/auth/refresh?refresh_token={access_token}")
 
         assert response.status_code == 401
-        assert "invalid token type" in response.json()["detail"].lower()
+        assert "invalid or expired" in response.json()["detail"].lower()
+
+    def test_refresh_token_cannot_authenticate_protected_endpoint(
+        self, client: TestClient, test_db_session: Session
+    ):
+        """Refresh tokens must not be accepted as bearer access tokens."""
+        user = User(
+            username="bearer_refresh_user",
+            display_name="Bearer Refresh User",
+            user_type="student",
+            password_hash=get_password_hash("UserPass123"),
+            is_active=True,
+        )
+        test_db_session.add(user)
+        test_db_session.commit()
+
+        refresh_token = create_refresh_token({"sub": user.username, "user_id": user.id})
+        response = client.get(
+            "/api/auth/preferences",
+            headers={"Authorization": f"Bearer {refresh_token}"},
+        )
+
+        assert response.status_code == 401
+
+    def test_unknown_token_type_cannot_authenticate_protected_endpoint(
+        self, client: TestClient, test_db_session: Session
+    ):
+        """Signed tokens with an unknown type must not become bearer tokens."""
+        user = User(
+            username="unknown_type_user",
+            display_name="Unknown Type User",
+            user_type="student",
+            password_hash=get_password_hash("UserPass123"),
+            is_active=True,
+        )
+        test_db_session.add(user)
+        test_db_session.commit()
+
+        token = create_access_token({"sub": user.username, "user_id": user.id})
+        payload = jwt.decode(token, options={"verify_signature": False})
+        payload["type"] = "session"
+        typed_token = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+        response = client.get(
+            "/api/auth/preferences",
+            headers={"Authorization": f"Bearer {typed_token}"},
+        )
+
+        assert response.status_code == 401
 
     def test_refresh_endpoint_rejects_expired_token(self, client: TestClient):
         """Refresh endpoint should reject expired refresh tokens."""
@@ -295,7 +344,6 @@ class TestTokenRefreshMechanism:
 class TestRateLimiting:
     """Tests for rate limiting on auth endpoints."""
 
-    # @pytest.mark.skip(reason="Rate limiting requires actual time delays, skip in CI")
     def test_login_rate_limiting(self, client: TestClient, test_db_session: Session):
         """Login endpoint should enforce rate limit (10/minute)."""
         # Create test user
@@ -368,7 +416,6 @@ class TestRateLimiting:
                 # Dict.pop might raise if not found, but it should be there.
                 app.exception_handlers.pop(RateLimitExceeded, None)
 
-    # @pytest.mark.skip(reason="Rate limiting requires actual time delays, skip in CI")
     def test_register_rate_limiting(self, client: TestClient):
         """Registration endpoint should enforce rate limit (5/hour)."""
 
@@ -426,7 +473,6 @@ class TestEnvironmentEnforcement:
             env == "development"
         ), "ENVIRONMENT should be 'development' in env.properties"
 
-    # @pytest.mark.skip(reason="Cannot test production enforcement without changing env.properties")
     def test_production_rejects_default_jwt_secret(self):
         """In production, using default JWT_SECRET_KEY should raise ValueError."""
 
@@ -441,20 +487,45 @@ class TestEnvironmentEnforcement:
             # Reload the module to trigger the import-time check
             import src.aac_app.utils.jwt_utils
 
-            try:
-                # This should raise ValueError
-                with pytest.raises(
-                    ValueError, match="JWT_SECRET_KEY must be set to a secure value"
-                ):
-                    importlib.reload(src.aac_app.utils.jwt_utils)
-            finally:
-                # Always restore the module to a valid state
-                # We need to ensure ENVIRONMENT is not production or Key is valid
-                # Removing the patch happens automatically by context manager,
-                # but we must reload the module to clear the 'bad' state from memory
-                pass
+            with pytest.raises(
+                ValueError, match="JWT_SECRET_KEY must be set to a secure value"
+            ):
+                importlib.reload(src.aac_app.utils.jwt_utils)
 
-        # Reload outside the patch to restore original valid state
+        # Restore a consistent module state for every other test: the
+        # autouse test-environment secret must be reflected in the module, not
+        # a value mutated by the reloads above. Importing the module from the
+        # test's own namespace keeps this decoupled from collection order.
+        from src.aac_app.utils import jwt_utils as jwt_utils_module
+
+        expected = os.environ.get(
+            "JWT_SECRET_KEY",
+            jwt_utils_module.JWT_SECRET_KEY,
+        )
+        if expected != jwt_utils_module.JWT_SECRET_KEY:
+            importlib.reload(jwt_utils_module)
+        assert os.environ["JWT_SECRET_KEY"] == jwt_utils_module.JWT_SECRET_KEY
+
+    def test_production_with_secure_secret_mints_tokens(self):
+        """A valid secret must still mint tokens when ENVIRONMENT=production."""
+        import importlib
+
+        import src.aac_app.utils.jwt_utils
+
+        with patch.dict(
+            os.environ,
+            {
+                "ENVIRONMENT": "production",
+                "JWT_SECRET_KEY": "unit_test_secret_key_32_chars_min",
+            },
+        ):
+            jwt_utils = importlib.reload(src.aac_app.utils.jwt_utils)
+            access = jwt_utils.create_access_token({"sub": "u1", "user_id": 1})
+            assert access
+            refresh = jwt_utils.create_refresh_token({"sub": "u1", "user_id": 1})
+            assert refresh
+
+        # Restore module state from the real test environment.
         importlib.reload(src.aac_app.utils.jwt_utils)
 
 

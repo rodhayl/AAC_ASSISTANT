@@ -26,8 +26,6 @@ test.describe('Edge Cases & Error Handling', () => {
       
       // Check if input is invalid
     const username = page.locator('#username');
-    // Using hardcoded locator to avoid unused var
-    // const password = page.locator('#password');
     if (await page.locator('#password').count() > 0) {
       // Just verify it exists or fill
     }

@@ -7,14 +7,10 @@ core-only/offline startup healthy even when the model cannot be downloaded.
 
 from __future__ import annotations
 
-import contextlib
-import importlib.util
-import io
 import os
 import sqlite3
-import sys
 import threading
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -23,19 +19,8 @@ from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 
 from src import config
-
-
-@contextlib.contextmanager
-def _safe_streams() -> Iterator[tuple[io.StringIO | Any, io.StringIO | Any]]:
-    """Ensure optional model libraries always see writable output streams."""
-    saved_out, saved_err = sys.stdout, sys.stderr
-    redirect_out = saved_out if saved_out is not None else io.StringIO()
-    redirect_err = saved_err if saved_err is not None else io.StringIO()
-    try:
-        with contextlib.redirect_stdout(redirect_out), contextlib.redirect_stderr(redirect_err):
-            yield redirect_out, redirect_err
-    finally:
-        sys.stdout, sys.stderr = saved_out, saved_err
+from src.aac_app.utils.module_availability import module_available
+from src.aac_app.utils.runtime import safe_streams
 
 
 def _load_text_embedding_class() -> Any:
@@ -55,19 +40,15 @@ STATE_TABLE = "symbol_embedding_state"
 DEFAULT_DISTANCE_THRESHOLD = 1.15
 
 
-def _module_available(module_name: str) -> bool:
-    """Check for an optional dependency without importing it."""
-    try:
-        return importlib.util.find_spec(module_name) is not None
-    except (ImportError, ModuleNotFoundError, ValueError):
-        return False
-
-
-FASTEMBED_AVAILABLE = _module_available("fastembed")
-SQLITE_VEC_AVAILABLE = _module_available("sqlite_vec")
+FASTEMBED_AVAILABLE = module_available("fastembed")
+SQLITE_VEC_AVAILABLE = module_available("sqlite_vec")
 TextEmbedding: Any | None = None
 sqlite_vec: Any | None = None
 _engine_listener_lock = threading.Lock()
+# Warmup and background indexing may both touch the singleton. Serialize
+# replacement/close and index operations so one thread cannot close a store
+# while another is using it.
+vector_store_operation_lock = threading.RLock()
 
 
 def _load_sqlite_vec_extension(
@@ -121,7 +102,14 @@ class LocalVectorStore:
         self.device = device
         self.engine = engine
         self.embedding_dim = embedding_dim
-        self.cache_dir = Path(cache_dir or config.get_data_path("models")).absolute()
+        if cache_dir is not None:
+            self.cache_dir = Path(cache_dir).absolute()
+            self._local_files_only = False
+        else:
+            resolved, self._local_files_only = config.resolve_model_cache_dir(
+                "models--qdrant--all-MiniLM-L6-v2-onnx"
+            )
+            self.cache_dir = Path(resolved).absolute()
         self.model: Any | None = embedder
         self.embedder = embedder
         self._embedder_factory = embedder_factory
@@ -231,8 +219,9 @@ class LocalVectorStore:
             return False
         self._load_attempted = True
         try:
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            with _safe_streams():
+            if not self._local_files_only:
+                self.cache_dir.mkdir(parents=True, exist_ok=True)
+            with safe_streams():
                 if self._embedder_factory is not None:
                     self.embedder = self._embedder_factory(
                         model_name=self.model_name,
@@ -245,6 +234,7 @@ class LocalVectorStore:
                         model_name=self.model_name,
                         cache_dir=str(self.cache_dir),
                         lazy_load=True,
+                        local_files_only=self._local_files_only,
                     )
             self.model = self.embedder
             self._model_loaded = True
@@ -511,29 +501,45 @@ class LocalVectorStore:
                         "limit": max(1, int(k)),
                     },
                 ).fetchall()
-                results: list[dict[str, Any]] = []
-                for symbol_id, distance in rows:
-                    if float(distance) > self._distance_threshold:
-                        continue
-                    metadata = connection.execute(
-                        text(
-                            f"SELECT symbol_id, type, label, text "
-                            f"FROM {METADATA_TABLE} WHERE symbol_id = :symbol_id"
-                        ),
-                        {"symbol_id": int(symbol_id)},
-                    ).mappings().first()
-                    if metadata is None:
-                        continue
-                    results.append(
-                        {
-                            "id": metadata["symbol_id"],
-                            "type": metadata["type"],
-                            "label": metadata["label"],
-                            "text": metadata["text"],
-                            "score": float(distance),
-                        }
-                    )
-                return results
+                valid_rows = [
+                    (int(symbol_id), float(distance))
+                    for symbol_id, distance in rows
+                    if float(distance) <= self._distance_threshold
+                ]
+                if not valid_rows:
+                    return []
+
+                # Fetch metadata in one bounded query instead of issuing one
+                # SQL query per nearest vector. Rebuild the result order from
+                # the sqlite-vec rows because an IN query has no ordering
+                # guarantee.
+                parameters = {
+                    f"symbol_{index}": symbol_id
+                    for index, (symbol_id, _distance) in enumerate(valid_rows)
+                }
+                placeholders = ", ".join(f":symbol_{index}" for index in range(len(parameters)))
+                metadata_rows = connection.execute(
+                    text(
+                        f"SELECT symbol_id, type, label, text "
+                        f"FROM {METADATA_TABLE} WHERE symbol_id IN ({placeholders})"
+                    ),
+                    parameters,
+                ).mappings()
+                metadata_by_id = {
+                    int(metadata["symbol_id"]): metadata for metadata in metadata_rows
+                }
+
+                return [
+                    {
+                        "id": metadata_by_id[symbol_id]["symbol_id"],
+                        "type": metadata_by_id[symbol_id]["type"],
+                        "label": metadata_by_id[symbol_id]["label"],
+                        "text": metadata_by_id[symbol_id]["text"],
+                        "score": distance,
+                    }
+                    for symbol_id, distance in valid_rows
+                    if symbol_id in metadata_by_id
+                ]
         except Exception as exc:
             logger.error("Semantic vector search failed: {}", exc)
             return []

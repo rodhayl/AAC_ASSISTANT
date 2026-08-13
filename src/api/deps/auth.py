@@ -1,5 +1,7 @@
 """Authentication and role-based access dependencies."""
 
+from datetime import UTC, datetime
+
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from loguru import logger
@@ -11,12 +13,16 @@ from src.aac_app.utils.jwt_utils import decode_access_token
 
 from .db import get_db
 
-# The relative OAuth login path is not a credential; split it to avoid a scanner false positive.
-globals()["oauth2_" + "scheme"] = OAuth2PasswordBearer(**{"".join(map(chr, (116, 111, 107, 101, 110, 85, 114, 108))): "".join(map(chr, (116, 111, 107, 101, 110))), "auto_error": False})
+# The token URL is relative to this API's auth router; it is not a credential.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 
 def validate_token(token: str, db: Session) -> User | None:
-    """Validate a JWT and return its database user, if present."""
+    """Validate a JWT and return its database user, if present.
+
+    Account activity is checked by callers that need an active session so this
+    helper can retain its existing lookup semantics for authentication flows.
+    """
     if not token:
         return None
 
@@ -35,27 +41,54 @@ def validate_token(token: str, db: Session) -> User | None:
         if not user:
             logger.warning(f"Token valid but user {user_id} not found in database")
             return None
+
+        token_security_version = payload.get("sec_ver")
+        if token_security_version is not None:
+            if token_security_version != (user.security_version or 1):
+                logger.warning("Token security version mismatch for user {}", user_id)
+                return None
+        elif user.credentials_changed_at is not None:
+            token_issued_at = payload.get("iat")
+            if token_issued_at is None:
+                logger.warning("Legacy token missing issuance time for user {}", user_id)
+                return None
+            token_issued_at_dt = datetime.fromtimestamp(token_issued_at, UTC).replace(
+                tzinfo=None
+            )
+            if token_issued_at_dt < user.credentials_changed_at:
+                logger.warning("Legacy token predates credential change for user {}", user_id)
+                return None
         return user
     except Exception as exc:
         logger.error(f"Database error while validating token: {exc}")
         return None
 
 
+def validate_active_token(token: str, db: Session) -> User | None:
+    """Validate a JWT and return only an active database user."""
+    user = validate_token(token, db)
+    if user is None or not user.is_active:
+        return None
+    return user
+
+
 def get_text(
     user: User | None = None,
     key: str = "errors.unknown",
     accept_language: str | None = None,
+    *,
+    namespace: str = "common",
     **kwargs,
 ) -> str:
-    """Translate a common message using user or request language preferences."""
+    """Translate a message using user or request language preferences."""
     service = get_translation_service()
     lang = service.resolve_language(user, accept_language)
-    return service.get(lang, "common", key, **kwargs)
+    return service.get(lang, namespace, key, **kwargs)
 
 
 def get_current_user(
     request: Request,
-    token: str | None = Depends(globals()["oauth2_" + "scheme"]),
+    token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     """Authenticate the current request and return its user."""
@@ -107,11 +140,11 @@ def get_current_admin_user(
     return current_user
 
 
-def get_current_admin_or_teacher_user(
+def get_current_staff_user(
     current_user: User = Depends(get_current_active_user),
 ) -> User:
-    """Require an active administrator or teacher account."""
-    if current_user.user_type not in ["admin", "teacher"]:
+    """Require an active teacher or administrator account."""
+    if current_user.user_type not in {"admin", "teacher"}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=get_text(user=current_user, key="errors.insufficientPrivileges"),
@@ -119,11 +152,15 @@ def get_current_admin_or_teacher_user(
     return current_user
 
 
-def verify_student_access(student_id: int, current_user: User, db: Session) -> User:
+def verify_student_access(
+    student_id: int,
+    current_user: User,
+    db: Session,
+) -> User:
     """Verify the student exists and the current user can access their profile.
 
-    Admins can access every student; teachers can access their roster (with a
-    backward-compatible mode when the teacher has no explicit roster yet).
+    Admins can access every student; teachers can access only students in their
+    explicit roster. A teacher with no roster has no student access.
     """
     student = db.query(User).filter_by(id=student_id).first()
     if not student:
@@ -142,18 +179,9 @@ def verify_student_access(student_id: int, current_user: User, db: Session) -> U
     if current_user.user_type == "admin":
         return student
 
-    # Verify teacher has access to this specific student
-    assignment_count = (
-        db.query(StudentTeacher)
-        .filter(StudentTeacher.teacher_id == current_user.id)
-        .count()
-    )
-    if assignment_count == 0:
-        # Backward-compatible mode: if the teacher has no explicit roster yet,
-        # allow access to students so profile setup can start.
-        return student
-
-    is_assigned = (
+    # Check the requested student first; this is the common authorized path and
+    # avoids counting the entire roster before doing the actual access lookup.
+    assignment = (
         db.query(StudentTeacher)
         .filter(
             StudentTeacher.teacher_id == current_user.id,
@@ -161,13 +189,35 @@ def verify_student_access(student_id: int, current_user: User, db: Session) -> U
         )
         .first()
     )
+    if assignment is not None:
+        return student
 
-    if not is_assigned:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=get_text(
-                user=current_user, key="errors.guardian.studentNotAssigned"
-            ),
-        )
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=get_text(
+            user=current_user, key="errors.guardian.studentNotAssigned"
+        ),
+    )
 
-    return student
+
+def authorize_user_access(
+    target_user: User,
+    current_user: User,
+    db: Session,
+    *,
+    forbidden_detail: str = "Not authorized",
+) -> None:
+    """Authorize access to another user's resource.
+
+    Self-access and administrators are allowed. Teachers must use the same
+    explicit student-roster policy as student-specific endpoints; all other
+    cross-user combinations are forbidden.
+    """
+    if current_user.id == target_user.id or current_user.user_type == "admin":
+        return
+
+    if current_user.user_type == "teacher" and target_user.user_type == "student":
+        verify_student_access(target_user.id, current_user, db)
+        return
+
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=forbidden_detail)

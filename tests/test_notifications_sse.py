@@ -18,22 +18,20 @@ from src.aac_app.services.notification_events import (
     unsubscribe,
 )
 from src.api.main import app
-from src.api.routers.notifications import create_notification, notifications_stream
+from src.api.routers.notifications import create_notification
 from src.api.schemas import NotificationCreate
 
 
 async def _read_stream_event(stream, publish):
-    stream = await stream
-    iterator = stream.body_iterator
     try:
-        heartbeat = await asyncio.wait_for(anext(iterator), timeout=1)
-        assert heartbeat == "data: {}\n\n"
+        heartbeat = await asyncio.wait_for(stream.next_body(), timeout=1)
+        assert heartbeat == b"data: {}\n\n"
         publish()
-        raw_event = await asyncio.wait_for(anext(iterator), timeout=1)
-        assert raw_event.startswith("data: ")
-        return json.loads(raw_event.removeprefix("data: ").strip())
+        raw_event = await asyncio.wait_for(stream.next_body(), timeout=1)
+        assert raw_event.startswith(b"data: ")
+        return json.loads(raw_event.removeprefix(b"data: ").strip())
     finally:
-        await iterator.aclose()
+        await stream.close()
 
 
 class _ASGIStream:
@@ -91,8 +89,6 @@ def test_admin_notification_is_delivered_to_subscriber(
     admin_token,
     user_token,
 ):
-    stream = notifications_stream(token=user_token, db=test_db_session)
-
     def publish():
         created = create_notification(
             notification=NotificationCreate(
@@ -107,11 +103,51 @@ def test_admin_notification_is_delivered_to_subscriber(
         )
         assert created["title"] == "New board"
 
-    event = asyncio.run(_read_stream_event(stream, publish))
+    async def exercise():
+        return await _read_stream_event(_ASGIStream(user_token), publish)
+
+    event = asyncio.run(exercise())
 
     assert event["title"] == "New board"
     assert event["type"] == "info"
     assert event["is_read"] is False
+
+
+def test_inactive_user_cannot_open_notification_stream(
+    setup_test_db,
+    test_db_session,
+):
+    inactive_user = User(
+        username="inactive_notification_user",
+        email="inactive-notification@test.com",
+        password_hash=get_password_hash("FakeNotificationPassword123"),
+        display_name="Inactive Notification User",
+        user_type="student",
+        is_active=False,
+    )
+    test_db_session.add(inactive_user)
+    test_db_session.commit()
+
+    from src.aac_app.utils.jwt_utils import create_access_token
+
+    token = create_access_token(
+        data={
+            "sub": inactive_user.username,
+            "user_id": inactive_user.id,
+            "user_type": inactive_user.user_type,
+        }
+    )
+
+    async def exercise():
+        stream = _ASGIStream(token)
+        try:
+            response_start = await asyncio.wait_for(stream.messages.get(), timeout=1)
+            assert response_start["type"] == "http.response.start"
+            assert response_start["status"] == 401
+        finally:
+            await stream.close()
+
+    asyncio.run(exercise())
 
 
 def test_notification_stream_is_isolated_per_user(
@@ -141,17 +177,12 @@ def test_notification_stream_is_isolated_per_user(
             "user_type": other_user.user_type,
         }
     )
-    stream_a = notifications_stream(token=admin_token, db=test_db_session)
-    stream_b = notifications_stream(token=other_token, db=test_db_session)
-
     async def read_isolated_events():
-        stream_a_response = await stream_a
-        stream_b_response = await stream_b
-        iterator_a = stream_a_response.body_iterator
-        iterator_b = stream_b_response.body_iterator
+        stream_a = _ASGIStream(admin_token)
+        stream_b = _ASGIStream(other_token)
         try:
-            assert await anext(iterator_a) == "data: {}\n\n"
-            assert await anext(iterator_b) == "data: {}\n\n"
+            assert await stream_a.next_body() == b"data: {}\n\n"
+            assert await stream_b.next_body() == b"data: {}\n\n"
 
             created = create_notification(
                 notification=NotificationCreate(
@@ -166,16 +197,16 @@ def test_notification_stream_is_isolated_per_user(
             )
             assert created["title"] == "Admin-only"
             admin_event = json.loads(
-                (await asyncio.wait_for(anext(iterator_a), timeout=1))
-                .removeprefix("data: ")
+                (await asyncio.wait_for(stream_a.next_body(), timeout=1))
+                .removeprefix(b"data: ")
                 .strip()
             )
             with pytest.raises(asyncio.TimeoutError):
-                await asyncio.wait_for(anext(iterator_b), timeout=0.05)
+                await asyncio.wait_for(stream_b.next_body(), timeout=0.05)
             return admin_event
         finally:
-            await iterator_a.aclose()
-            await iterator_b.aclose()
+            await stream_a.close()
+            await stream_b.close()
 
     event = asyncio.run(read_isolated_events())
 
@@ -307,8 +338,6 @@ def test_achievement_award_persists_notification_and_delivers_event(
     test_db_session.add(completed_session)
     test_db_session.commit()
 
-    stream = notifications_stream(token=user_token, db=test_db_session)
-
     def award():
         newly_earned = AchievementSystem().check_achievements(
             regular_user.id,
@@ -317,7 +346,10 @@ def test_achievement_award_persists_notification_and_delivers_event(
         assert any(achievement["name"] == "First Steps" for achievement in newly_earned)
         test_db_session.commit()
 
-    event = asyncio.run(_read_stream_event(stream, award))
+    async def exercise():
+        return await _read_stream_event(_ASGIStream(user_token), award)
+
+    event = asyncio.run(exercise())
     notification = (
         test_db_session.query(Notification)
         .filter(

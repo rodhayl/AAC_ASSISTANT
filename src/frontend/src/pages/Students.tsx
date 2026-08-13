@@ -1,19 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useAuthStore } from '../store/authStore'
-import api from '../lib/api'
+import api, { extractError } from '../lib/api'
 import type { Board, StudentBoardSummary, User } from '../types'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
+import { Toggle } from '../components/ui/Toggle'
 import { ResetPasswordModal } from '../components/common/ResetPasswordModal'
 import { GuardianProfileModal } from '../components/students/GuardianProfileModal'
 import { Sparkles, Volume2 } from 'lucide-react'
 import { LoadingState } from '../components/ui/LoadingState'
 
-import { useNavigate } from 'react-router'
 
 export function Students() {
   const user = useAuthStore((state) => state.user)
-  const navigate = useNavigate()
   const { t } = useTranslation(['students', 'settings'])
   const [students, setStudents] = useState<User[]>([])
   const [loading, setLoading] = useState(false)
@@ -25,12 +24,6 @@ export function Students() {
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [guardianModalOpen, setGuardianModalOpen] = useState(false)
   const [selectedGuardianStudent, setSelectedGuardianStudent] = useState<User | null>(null)
-
-  useEffect(() => {
-    if (user && user.user_type === 'student') {
-      navigate('/')
-    }
-  }, [user, navigate])
 
   const [newUsername, setNewUsername] = useState('')
   const [newDisplayName, setNewDisplayName] = useState('')
@@ -57,41 +50,31 @@ export function Students() {
   const [studentPreferences, setStudentPreferences] = useState<any>({ voice_mode_enabled: true })
   const [preferencesLoading, setPreferencesLoading] = useState(false)
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true)
-      setError(null)
-      try {
-        const res = await api.get('/auth/users/student-summaries', {
-          params: { limit: 100 },
-        })
-        const summaries = res.data as StudentBoardSummary[]
-        setStudents(summaries)
-        setAssignedBoards(
-          Object.fromEntries(
-            summaries.map((student) => [student.id, student.assigned_boards ?? []]),
-          ),
-        )
-      } catch (e: unknown) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const r = e as { response?: { data?: { detail?: any } } };
-        const d = r.response?.data?.detail;
-        let msg = t('errors.loadFailed');
-        if (Array.isArray(d)) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          msg = d.map((err: any) => err.msg).join(', ');
-        } else if (typeof d === 'string') {
-          msg = d;
-        } else if (d) {
-          msg = JSON.stringify(d);
-        }
-        setError(msg)
-      } finally {
-        setLoading(false)
-      }
+  const loadStudents = useCallback(async (rethrow = false) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await api.get('/auth/users/student-summaries', {
+        params: { limit: 100 },
+      })
+      const summaries = res.data as StudentBoardSummary[]
+      setStudents(summaries)
+      setAssignedBoards(
+        Object.fromEntries(
+          summaries.map((student) => [student.id, student.assigned_boards ?? []]),
+        ),
+      )
+    } catch (e: unknown) {
+      setError(extractError(e, t('errors.loadFailed')))
+      if (rethrow) throw e
+    } finally {
+      setLoading(false)
     }
-    load()
-  }, [user, t])
+  }, [t])
+
+  useEffect(() => {
+    void loadStudents()
+  }, [loadStudents, user])
 
   const loadAvailableBoards = async () => {
     try {
@@ -111,8 +94,7 @@ export function Students() {
       setStudents(prev => prev.filter(x => x.id !== s.id))
       setDeleteState({ isOpen: false, student: null })
     } catch (e: unknown) {
-      const errWithResponse = e as { response?: { data?: { detail?: string } } }
-      setError(errWithResponse?.response?.data?.detail || t('errors.deleteFailed'))
+      setError(extractError(e, t('errors.deleteFailed')))
       setDeleteState({ isOpen: false, student: null })
     }
   }
@@ -122,12 +104,24 @@ export function Students() {
     setAssignLoading(true)
     try {
       await api.post(`/boards/${boardId}/assign`, { student_id: selectedStudent.id })
-      const assignedRes = await api.get('/boards/assigned', { params: { student_id: selectedStudent.id } })
-      setAssignedBoards(prev => ({ ...prev, [selectedStudent.id]: assignedRes.data }))
+      const board = availableBoards.find((candidate) => candidate.id === boardId)
+      if (board) {
+        setAssignedBoards((prev) => {
+          const current = prev[selectedStudent.id] || []
+          if (current.some((assigned) => assigned.id === board.id)) return prev
+          return {
+            ...prev,
+            [selectedStudent.id]: [...current, board],
+          }
+        })
+      } else {
+        // The available-board list may have changed while the modal was open.
+        // Refresh the authoritative summary before closing the modal.
+        await loadStudents(true)
+      }
       setAssignModalOpen(false)
     } catch (e: unknown) {
-      const errWithResponse = e as { response?: { data?: { detail?: string } } }
-      setError(errWithResponse?.response?.data?.detail || t('errors.assignFailed'))
+      setError(extractError(e, t('errors.assignFailed')))
     } finally {
       setAssignLoading(false)
     }
@@ -136,11 +130,12 @@ export function Students() {
   const handleUnassignBoard = async (studentId: number, boardId: number) => {
     try {
       await api.delete(`/boards/${boardId}/assign/${studentId}`)
-      const assignedRes = await api.get('/boards/assigned', { params: { student_id: studentId } })
-      setAssignedBoards(prev => ({ ...prev, [studentId]: assignedRes.data }))
+      setAssignedBoards((prev) => ({
+        ...prev,
+        [studentId]: (prev[studentId] || []).filter((board) => board.id !== boardId),
+      }))
     } catch (e: unknown) {
-      const errWithResponse = e as { response?: { data?: { detail?: string } } }
-      setError(errWithResponse?.response?.data?.detail || t('errors.unassignFailed'))
+      setError(extractError(e, t('errors.unassignFailed')))
     }
   }
 
@@ -173,8 +168,7 @@ export function Students() {
       setPreferencesModalOpen(false)
       setPreferencesStudent(null)
     } catch (e: unknown) {
-      const errWithResponse = e as { response?: { data?: { detail?: string } } }
-      setError(errWithResponse?.response?.data?.detail || t('errors.updateFailed'))
+      setError(extractError(e, t('errors.updateFailed')))
     } finally {
       setPreferencesLoading(false)
     }
@@ -212,16 +206,7 @@ export function Students() {
         })
       }
 
-      const res = await api.get('/auth/users/student-summaries', {
-        params: { limit: 100 },
-      })
-      const summaries = res.data as Array<User & { assigned_boards?: Board[] }>
-      setStudents(summaries)
-      setAssignedBoards(
-        Object.fromEntries(
-          summaries.map((student) => [student.id, student.assigned_boards ?? []]),
-        ),
-      )
+      await loadStudents(true)
 
       setNewUsername('')
       setNewDisplayName('')
@@ -230,8 +215,7 @@ export function Students() {
       setConfirmPassword('')
       setCreateModalOpen(false)
     } catch (e: unknown) {
-      const errWithResponse = e as { response?: { data?: { detail?: string } } }
-      setError(errWithResponse?.response?.data?.detail || t('errors.createFailed'))
+      setError(extractError(e, t('errors.createFailed')))
     } finally {
       setCreateLoading(false)
     }
@@ -252,8 +236,7 @@ export function Students() {
       setResetPasswordStudent(null)
       // Optional: show success message
     } catch (e: unknown) {
-      const errWithResponse = e as { response?: { data?: { detail?: string } } }
-      setError(errWithResponse?.response?.data?.detail || t('errors.resetPasswordFailed', { defaultValue: 'Failed to reset password' }))
+      setError(extractError(e, t('errors.resetPasswordFailed', { defaultValue: 'Failed to reset password' })))
     } finally {
       setResetPasswordLoading(false)
     }
@@ -400,8 +383,7 @@ export function Students() {
                           setStudents(prev => prev.map(x => x.id === editId ? res.data : x))
                           setEditId(null)
                         } catch (e: unknown) {
-                          const errWithResponse = e as { response?: { data?: { detail?: string } } }
-                          setError(errWithResponse?.response?.data?.detail || t('errors.updateFailed'))
+                          setError(extractError(e, t('errors.updateFailed')))
                         }
                       }}
                       className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
@@ -608,15 +590,11 @@ export function Students() {
                         <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.voiceModeHelp', { defaultValue: 'Enable/disable voice features' })}</p>
                       </div>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="sr-only peer"
-                        checked={studentPreferences.voice_mode_enabled}
-                        onChange={(e) => setStudentPreferences({ ...studentPreferences, voice_mode_enabled: e.target.checked })}
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                    </label>
+                    <Toggle
+                      checked={studentPreferences.voice_mode_enabled}
+                      label={t('preferences.voiceMode', { defaultValue: 'Voice Mode' })}
+                      onChange={(checked) => setStudentPreferences({ ...studentPreferences, voice_mode_enabled: checked })}
+                    />
                   </div>
 
                   <div className="flex justify-end gap-3 mt-6">

@@ -93,6 +93,35 @@ class TestPrimaryAISettings:
         assert response.status_code == 400
         assert "must be 'ollama' or 'openrouter'" in response.json()["detail"]
 
+    def test_invalid_later_field_rolls_back_all_settings(self, admin_user, admin_token):
+        """A validation failure must not persist earlier fields from the same request."""
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        initial = client.put(
+            "/api/settings/ai",
+            headers=headers,
+            json={
+                "provider": "ollama",
+                "ollama_model": "stable-model",
+            },
+        )
+        assert initial.status_code == 200
+
+        failed = client.put(
+            "/api/settings/ai",
+            headers=headers,
+            json={
+                "provider": "openrouter",
+                "ollama_model": "partially-applied-model",
+                "max_tokens": "not-a-positive-integer",
+            },
+        )
+        assert failed.status_code == 400
+
+        current = client.get("/api/settings/ai", headers=headers)
+        assert current.status_code == 200
+        assert current.json()["provider"] == "ollama"
+        assert current.json()["ollama_model"] == "stable-model"
+
     def test_update_ai_settings_student_forbidden(self, regular_user, user_token):
         """Test student cannot update AI settings"""
         response = client.put(

@@ -9,7 +9,11 @@ Behavior:
 Bootstrap settings (env or env.properties via src.config):
 - AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN (default: true)
 - AAC_BOOTSTRAP_ADMIN_USERNAME (default: admin1)
-- AAC_BOOTSTRAP_ADMIN_PASSWORD (default: Admin123)
+- AAC_BOOTSTRAP_ADMIN_PASSWORD (development default generates a random one-time
+  credential stored in .env; production requires an explicit strong password)
+
+The password is never printed. A generated one-time credential is stored in
+``.env`` and must be changed after first login.
 """
 
 from __future__ import annotations
@@ -22,69 +26,57 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src import config  # noqa: E402
-from src.aac_app import schema  # noqa: E402
 from src.aac_app.db import get_session  # noqa: E402
 from src.aac_app.models import User  # noqa: E402
 from src.aac_app.seed import init_database  # noqa: E402
-from src.aac_app.services.auth_service import get_password_hash  # noqa: E402
-
-
-def _read_bool(key: str, default: bool) -> bool:
-    return config.get_bool(key, default)
-
-
-def _read_str(key: str, default: str) -> str:
-    value = config.get(key, default).strip()
-    return value if value else default
 
 
 def ensure_bootstrap_admin() -> int:
-    enabled = _read_bool("AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN", True)
+    enabled = config.get_bool("AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN", True)
     if not enabled:
         print("Bootstrap admin creation disabled by AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=false")
         return 0
 
-    username = _read_str("AAC_BOOTSTRAP_ADMIN_USERNAME", "admin1")
-    password = _read_str("AAC_BOOTSTRAP_ADMIN_PASSWORD", "Admin123")
+    username = config.get("AAC_BOOTSTRAP_ADMIN_USERNAME", "admin1").strip() or "admin1"
 
-    # Ensure DB/tables exist first.
-    schema.ensure()
-    init_database(ensure_schema=False)
+    # init_database performs the idempotent bootstrap (schema + admin creation)
+    # using the shared seed logic, so there is a single source of truth for how
+    # the first administrator is created.
+    init_database(ensure_schema=True)
 
     with get_session() as session:
-        existing_admin = session.query(User).filter(User.user_type == "admin").first()
-        if existing_admin:
-            print(f"Admin user already exists: {existing_admin.username}")
-            return 0
-
-        user = session.query(User).filter(User.username == username).first()
-        if user:
-            user.user_type = "admin"
-            user.is_active = True
-            user.password_hash = get_password_hash(password)
-            if not user.display_name:
-                user.display_name = "Administrator"
-            action = "promoted existing user to admin"
+        admin = session.query(User).filter(User.user_type == "admin").first()
+        if admin is not None:
+            print(f"Admin user already exists: {admin.username}")
         else:
-            user = User(
-                username=username,
-                display_name="Administrator",
-                user_type="admin",
-                password_hash=get_password_hash(password),
-                is_active=True,
+            print(
+                "Bootstrap admin was not created. Check the application log and "
+                "the bootstrap settings in .env."
             )
-            session.add(user)
-            action = "created new bootstrap admin"
+            return 1
 
-        session.commit()
-        print("Bootstrap admin ready.")
-        print(f"Action: {action}")
-        print(f"Username: {username}")
-        print(f"Password: {password}")
+    print("Bootstrap admin ready.")
+    print(f"Username: {username}")
+    if config.explicit_bootstrap_password() is None:
+        print(
+            f"A one-time admin password was generated and stored in {config.ENV_FILE}."
+        )
         print("IMPORTANT: Change this password immediately after first login.")
-
     return 0
 
 
+def main() -> int:
+    try:
+        return ensure_bootstrap_admin()
+    except ValueError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        print(
+            "Fix AAC_BOOTSTRAP_ADMIN_PASSWORD (or set "
+            "AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=false) and re-run.",
+            file=sys.stderr,
+        )
+        return 1
+
+
 if __name__ == "__main__":
-    raise SystemExit(ensure_bootstrap_admin())
+    raise SystemExit(main())

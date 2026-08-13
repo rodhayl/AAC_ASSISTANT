@@ -65,7 +65,7 @@ def test_import_target_module_resolves_relative_levels(audit):
     )
 
     # ``from ... import config`` binds the ``src.config`` module itself.
-    provider = audit.SRC_DIR / "aac_app" / "providers" / "model_download.py"
+    provider = audit.SRC_DIR / "aac_app" / "providers" / "local_speech_provider.py"
     node = ast.parse("from ... import config\n").body[0]
     assert audit._import_target_module(provider, node, []) == "src.config"
 

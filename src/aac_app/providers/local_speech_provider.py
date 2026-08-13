@@ -1,23 +1,27 @@
-import importlib.util
+import threading
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
 from ... import config
-
-
-def _module_available(module_name: str) -> bool:
-    """Check whether an optional module exists without importing it."""
-    try:
-        return importlib.util.find_spec(module_name) is not None
-    except (ImportError, ModuleNotFoundError, ValueError):
-        return False
-
+from ..utils.module_availability import module_available
+from ..utils.runtime import safe_streams
 
 # Keep startup checks cheap. faster-whisper and its PyAV/CTranslate2 stack are
 # imported only when the first transcription or explicit warmup is requested.
-FASTER_WHISPER_AVAILABLE = _module_available("faster_whisper")
+# Checking the native dependencies too prevents a partial installation from
+# being advertised as available before the lazy import can actually work.
+
+def is_faster_whisper_available() -> bool:
+    """Return whether the complete optional voice stack is installed."""
+    return all(
+        module_available(module_name)
+        for module_name in ("faster_whisper", "ctranslate2", "av")
+    )
+
+
+FASTER_WHISPER_AVAILABLE = is_faster_whisper_available()
 faster_whisper = None
 
 DEFAULT_STT_MODEL = "tiny"
@@ -55,12 +59,22 @@ class LocalSpeechProvider:
         self.model_size = normalize_stt_model(model_size)
         self.device = device
         self.compute_type = compute_type
-        self.model_cache_dir = Path(
-            model_cache_dir or config.get_data_path("models")
-        ).absolute()
-        self.model_cache_dir.mkdir(parents=True, exist_ok=True)
+        if model_cache_dir is not None:
+            self.model_cache_dir = Path(model_cache_dir).absolute()
+            self._local_files_only = False
+        else:
+            resolved, self._local_files_only = config.resolve_model_cache_dir(
+                f"models--Systran--faster-whisper-{self.model_size}"
+            )
+            self.model_cache_dir = Path(resolved).absolute()
+        if not self._local_files_only:
+            self.model_cache_dir.mkdir(parents=True, exist_ok=True)
         self.model: Any | None = None
         self._model_loaded = False
+        self._load_lock = threading.Lock()
+        # faster-whisper's native model is not assumed thread-safe; serializing
+        # CPU transcriptions also bounds concurrent memory use on low-end hosts.
+        self._model_use_lock = threading.Lock()
         self._load_attempted = False
 
         if not FASTER_WHISPER_AVAILABLE:
@@ -90,36 +104,52 @@ class LocalSpeechProvider:
 
     def _load_model(self) -> None:
         """Load the CTranslate2 model once, leaving startup lazy."""
-        if self._load_attempted:
-            return
-        self._load_attempted = True
+        # The attempted flag is deliberately checked while holding the same
+        # lock used by first-use loading. Without this, a second request can
+        # observe ``_load_attempted`` while the first request is still inside
+        # WhisperModel(), then incorrectly return an empty transcription.
+        with self._load_lock:
+            if self._load_attempted:
+                return
 
-        if not self._load_faster_whisper():
-            return
+            self._load_attempted = True
 
-        try:
-            logger.info(
-                "Loading faster-whisper model {} on {} ({}) from {}",
-                self.model_size,
-                self.device,
-                self.compute_type,
-                self.model_cache_dir,
-            )
-            self.model = faster_whisper.WhisperModel(
-                self.model_size,
-                device=self.device,
-                compute_type=self.compute_type,
-                download_root=str(self.model_cache_dir),
-            )
-            self._model_loaded = True
-            logger.info("faster-whisper model loaded successfully")
-        except Exception as exc:
-            self.model = None
-            logger.error("Failed to load faster-whisper model: {}", exc)
+            if not self._load_faster_whisper():
+                return
+
+            try:
+                logger.info(
+                    "Loading faster-whisper model {} on {} ({}) from {}",
+                    self.model_size,
+                    self.device,
+                    self.compute_type,
+                    self.model_cache_dir,
+                )
+                # Windowed frozen builds expose None stdio; faster-whisper's
+                # CTranslate2/huggingface_hub stack can still write progress
+                # during a lazy load. Wrap it so an on-demand download cannot
+                # crash the transcription path.
+                with safe_streams():
+                    self.model = faster_whisper.WhisperModel(
+                        self.model_size,
+                        device=self.device,
+                        compute_type=self.compute_type,
+                        download_root=str(self.model_cache_dir),
+                        local_files_only=self._local_files_only,
+                    )
+                self._model_loaded = True
+                logger.info("faster-whisper model loaded successfully")
+            except Exception as exc:
+                self.model = None
+                logger.error("Failed to load faster-whisper model: {}", exc)
+
 
     def _ensure_model_loaded(self) -> None:
         """Load the model on first use."""
-        if self.model is None and not self._load_attempted:
+        if self.model is None:
+            # _load_model() owns the attempted check and lock. Calling it even
+            # after another thread marked the attempt lets concurrent callers
+            # wait for the in-flight load instead of returning prematurely.
             self._load_model()
 
     def recognize_from_file(self, audio_path: str, language: str = "en") -> str:
@@ -128,28 +158,31 @@ class LocalSpeechProvider:
             logger.warning("Speech recognition unavailable: install the voice extra")
             return ""
 
-        self._ensure_model_loaded()
-        if self.model is None:
-            logger.error("Speech recognition unavailable: model failed to load")
-            return ""
+        # Hold the use lock through lazy loading and transcription so release()
+        # cannot detach the model between those two operations.
+        with self._model_use_lock:
+            self._ensure_model_loaded()
+            if self.model is None:
+                logger.error("Speech recognition unavailable: model failed to load")
+                return ""
 
-        try:
-            logger.info("Transcribing audio file: {}", audio_path)
-            segments, _info = self.model.transcribe(
-                audio_path,
-                language=language,
-                vad_filter=True,
-            )
-            text = " ".join(
-                segment.text.strip()
-                for segment in segments
-                if getattr(segment, "text", "").strip()
-            ).strip()
-            logger.info("Transcription result: {}", text)
-            return text
-        except Exception as exc:
-            logger.warning("Transcription failed for {}: {}", audio_path, exc)
-            return ""
+            try:
+                logger.info("Transcribing audio file: {}", audio_path)
+                segments, _info = self.model.transcribe(
+                    audio_path,
+                    language=language,
+                    vad_filter=True,
+                )
+                text = " ".join(
+                    segment.text.strip()
+                    for segment in segments
+                    if getattr(segment, "text", "").strip()
+                ).strip()
+                logger.info("Transcription result: {}", text)
+                return text
+            except Exception as exc:
+                logger.warning("Transcription failed for {}: {}", audio_path, exc)
+                return ""
 
     def transcribe(self, audio_path: str, language: str = "en") -> str:
         """Compatibility alias for callers using the provider's generic verb."""
@@ -173,16 +206,19 @@ class LocalSpeechProvider:
 
     def release(self) -> None:
         """Release the loaded model and its native memory, if supported."""
-        model = self.model
-        self.model = None
-        self._model_loaded = False
-        self._load_attempted = False
-        if model is not None:
-            for method_name in ("unload_model", "close"):
-                method = getattr(model, method_name, None)
-                if callable(method):
-                    try:
-                        method()
-                    except Exception as exc:
-                        logger.debug("Speech model release hook failed: {}", exc)
-                    break
+        # Do not close a native model while a request is using it. Settings
+        # changes can replace the singleton while an older request is active.
+        with self._model_use_lock, self._load_lock:
+            model = self.model
+            self.model = None
+            self._model_loaded = False
+            self._load_attempted = False
+            if model is not None:
+                for method_name in ("unload_model", "close"):
+                    method = getattr(model, method_name, None)
+                    if callable(method):
+                        try:
+                            method()
+                        except Exception as exc:
+                            logger.debug("Speech model release hook failed: {}", exc)
+                        break

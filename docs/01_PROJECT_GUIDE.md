@@ -46,7 +46,9 @@ For one release, an existing legacy `env.properties` is copied to `.env` when
 Important production settings:
 
 ```dotenv
-BACKEND_HOST=0.0.0.0
+# Local-first default: loopback only. Set 0.0.0.0 to deliberately expose the
+# service to the network (requires strong credentials and reviewed CORS).
+BACKEND_HOST=127.0.0.1
 BACKEND_PORT=8086
 FRONTEND_PORT=5176
 ENVIRONMENT=production
@@ -55,13 +57,24 @@ ALLOW_DB_RESET=false
 AAC_SEED_SAMPLE_DATA=false
 AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=true
 AAC_BOOTSTRAP_ADMIN_USERNAME=admin1
-AAC_BOOTSTRAP_ADMIN_PASSWORD=Admin123
+# Production requires an explicit strong password. If unset in development,
+# a random one-time credential is generated and stored in .env.
+AAC_BOOTSTRAP_ADMIN_PASSWORD=REPLACE_WITH_A_UNIQUE_PASSWORD
+DATA_DIR=data
+LOGS_DIR=logs
+UPLOADS_DIR=uploads
 ```
 
-The README contains the complete key-by-key configuration reference.
+`DATA_DIR`, `LOGS_DIR`, and `UPLOADS_DIR` must be writable. Managed or
+read-only installations should point all three settings at writable locations
+outside the application directory. The complete key-by-key configuration
+reference is in the root [README](../README.md) configuration table.
 `TESTING=1` is an operational environment variable for automated validation;
-it disables request rate limiting. `DATABASE_URL` may be supplied for isolated
-tests, but normal deployments use SQLite at `DATA_DIR/DATABASE_NAME`.
+it disables request rate limiting. `AAC_ASSISTANT_NO_BROWSER=1` is the
+headless validation/managed-launch flag and prevents the frozen launcher from
+opening a browser; normal desktop launches omit it. `DATABASE_URL` may be
+supplied for isolated tests, but normal deployments use SQLite at
+`DATA_DIR/DATABASE_NAME`.
 
 ## 3. Architecture
 
@@ -107,7 +120,9 @@ tests, but normal deployments use SQLite at `DATA_DIR/DATABASE_NAME`.
   microphone capture; server-side audio devices are not required.
 - Semantic search uses fastembed embeddings and sqlite-vec in the SQLite
   database. Runtime model caches belong under `data/models/` and are never
-  committed.
+  committed. Release builds stage the bundled fastembed and faster-whisper
+  weights in the gitignored `bundled_models/models/` directory via
+  `scripts/bundle_models.py`.
 
 ### Frontend
 
@@ -180,9 +195,58 @@ installations. `.gitignore` also excludes `data/`, `logs/`, `dist/`, `build/`,
 uploads, local caches, and dependency directories.
 
 Core enforcement paths are `src/api/deps/` and `src/api/routers/`. Keep
-`ALLOW_DB_RESET=false`, `AAC_SEED_SAMPLE_DATA=false`, and a unique
-`JWT_SECRET_KEY` for any shared or deployed instance. Change the bootstrap
-administrator password immediately after first login.
+`ALLOW_DB_RESET=false`, `AAC_SEED_SAMPLE_DATA=false`, a unique
+`JWT_SECRET_KEY`, and a unique `AAC_BOOTSTRAP_ADMIN_PASSWORD` for any shared
+or deployed instance. When bootstrap is enabled and no administrator exists,
+production rejects passwords that fail the normal password-strength policy.
+Existing installations with an administrator are not blocked by an unused
+bootstrap setting. In non-production environments, if no password is
+configured, a random one-time credential is generated and stored in `.env`;
+change it immediately after first login.
+
+### Token revocation and security-version policy
+
+Authentication issues two signed JWTs at login (`POST /api/auth/token`):
+
+- **Access token** — HS256-signed, valid 120 minutes, carries the claims
+  `sub` (username), `user_id`, `user_type`, `sec_ver`, `iat`, `exp`,
+  `iss` (`aac-assistant`), and `type` (`"access"`).
+- **Refresh token** — HS256-signed, valid 7 days, carries `sub`, `user_id`,
+  `sec_ver`, `iat`, `exp`, `iss`, and `type` (`"refresh"`).
+
+Token types are enforced when decoding: `decode_access_token` rejects
+refresh tokens, and `decode_refresh_token` rejects anything that is not a
+refresh token. Tokens issued before the `type` claim was introduced (no
+`type` present) remain accepted as access tokens for backward compatibility.
+
+Every password mutation path (`mark_credentials_changed` in
+`src/aac_app/services/credential_service.py`) increments the user's
+`security_version` column and records `credentials_changed_at`. This covers:
+
+- self-service password change (`POST /api/auth/change-password`)
+- admin/teacher password reset (`POST /api/users/reset-password`)
+- legacy-hash rehash performed during login when the password verifier
+  upgrades the stored hash
+- operator scripts (`account_admin.py`, `ensure_bootstrap_admin.py`,
+  `fix_null_passwords.py`, `migrate_passwords.py`) and seeding
+
+**Revocation semantics.** A token is rejected if its `sec_ver` claim does not
+match the user's current `security_version` — so any password change
+immediately invalidates every previously issued access and refresh token for
+that account. Clients must re-authenticate. Both the access-token validator
+(`validate_token` in `src/api/deps/auth.py`) and the refresh endpoint
+(`POST /api/auth/refresh`) enforce this check.
+
+**Legacy-token compatibility.** Tokens without a `sec_ver` claim (issued
+before security versions existed) are validated against
+`credentials_changed_at`: if the token's `iat` predates the recorded
+credential change, it is rejected. This keeps old sessions valid until the
+first password change without letting them survive one.
+
+**Related lifecycle checks.** `validate_active_token` and the refresh endpoint
+also reject accounts whose `is_active` is false. Login, refresh, and
+registration endpoints are rate limited per IP, and failed logins trigger the
+account-lockout service after repeated attempts.
 
 ## 6. Utilities and manual QA
 
@@ -208,10 +272,24 @@ The release flow is:
 3. `build_package.bat`
 
 PyInstaller creates an onedir application and Inno Setup creates the Windows
-installer. The optional speech model is downloaded after installation rather
-than bundled. Installed copies use `%APPDATA%\AACAssistant` for writable data
+installer. `build_package.bat` syncs the `voice` extra, downloads the
+fastembed semantic-search model and the `tiny` faster-whisper model into
+`bundled_models/models` (gitignored), and bundles them into the package, so the
+installed application works fully offline without first-use downloads. Installed copies use `%APPDATA%\AACAssistant` for writable data
 when the application is under Program Files; portable copies can keep runtime
-data beside the executable.
+data beside the executable. When an existing installation is detected (wizard-selected directory,
+registered previous install, or a standard default location), the wizard
+identifies the operation as an update with the window caption, welcome heading,
+and body updated accordingly in English and Spanish. The launcher receives a
+private, installation-scoped shutdown event; the installer waits up to 25
+seconds for a normal exit before using a path-filtered force fallback.
+Uninstall removes application files and disposable logs, but preserves the
+database and uploads.
+
+See [`RELEASE_READINESS.md`](RELEASE_READINESS.md) for physical SQLite
+backup, authenticated export/import recovery, versioned rollback, and beta
+readiness procedures. The installer preserves data but does not provide
+automatic cross-version rollback.
 
 Before a release, verify:
 
@@ -225,4 +303,5 @@ git ls-files
 ```
 
 No tracked file should exceed 50 MB, and no tracked path should contain a
-downloaded speech or embedding model.
+downloaded speech or embedding model (the `bundled_models/` build directory is
+gitignored and regenerated by `build_package.bat`).

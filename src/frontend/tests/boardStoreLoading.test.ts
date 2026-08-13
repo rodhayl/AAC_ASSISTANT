@@ -106,6 +106,30 @@ describe('board store loading state', () => {
     expect(useBoardStore.getState().isListLoading).toBe(false);
   });
 
+  it('caches board results for the same user but not a different user', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: [{ id: 1 }] } as never);
+
+    await useBoardStore.getState().fetchBoards(10);
+    await useBoardStore.getState().fetchBoards(10);
+    await useBoardStore.getState().fetchBoards(11);
+
+    expect(api.get).toHaveBeenCalledTimes(2);
+    expect(api.get).toHaveBeenLastCalledWith('/boards/', {
+      params: { user_id: 11, skip: 0, limit: 100 },
+    });
+  });
+
+  it('does not cache filtered, paginated, or forced board requests', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: [{ id: 1 }] } as never);
+
+    await useBoardStore.getState().fetchBoards(10);
+    await useBoardStore.getState().fetchBoards(10, 'daily');
+    await useBoardStore.getState().fetchBoards(10, undefined, false, 2);
+    await useBoardStore.getState().fetchBoards(10, undefined, true, 1);
+
+    expect(api.get).toHaveBeenCalledTimes(4);
+  });
+
   it('does not reuse assigned-board results for a different student', async () => {
     vi.mocked(api.get).mockResolvedValue({ data: [{ id: 1 }] } as never);
 

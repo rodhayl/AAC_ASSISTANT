@@ -43,13 +43,18 @@ def _log_usage_request(
     ):
         raise HTTPException(status_code=500, detail=failure_detail)
 
-    # The request dependency owns the transaction commit. Keeping that
-    # boundary in one place avoids committing unrelated pending request work.
+    # Commit before responding: the UI requests next-symbol predictions right
+    # after logging usage, and the request dependency's teardown commit runs
+    # only after the response is sent. A prediction could otherwise miss the
+    # symbols the user just selected. (The analytics service itself documents
+    # that a caller-supplied request session remains responsible for its
+    # commit.)
+    db.commit()
     return len(symbols)
 
 
 @router.post("/usage", status_code=status.HTTP_201_CREATED)
-async def log_symbol_usage(
+def log_symbol_usage(
     request: SymbolUsageRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -67,7 +72,7 @@ async def log_symbol_usage(
 
 
 @router.get("/frequent-sequences", response_model=list[dict])
-async def get_frequent_sequences(
+def get_frequent_sequences(
     limit: int = Query(10, ge=1, le=50, description="Maximum sequences to return"),
     min_occurrences: int = Query(
         2, ge=1, le=100, description="Minimum times sequence must appear"
@@ -292,8 +297,37 @@ def get_next_symbol_suggestions_post(
 
 
 
+@router.post("/log", status_code=status.HTTP_201_CREATED)
+def log_symbol_usage_legacy(
+    request: SymbolUsageRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Log symbol usage for older clients that still use ``/analytics/log``."""
+    try:
+        _log_usage_request(
+            request,
+            current_user,
+            db,
+            failure_detail=get_text(
+                user=current_user, key="errors.analytics.logSymbolFailed"
+            ),
+        )
+        return {"status": "success"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to log symbol usage: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=get_text(
+                user=current_user, key="errors.analytics.logFailed", error=str(e)
+            ),
+        )
+
+
 @router.get("/category-preferences", response_model=dict)
-async def get_category_preferences(
+def get_category_preferences(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -324,7 +358,7 @@ async def get_category_preferences(
 
 
 @router.get("/usage-stats", response_model=dict)
-async def get_usage_statistics(
+def get_usage_statistics(
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -353,37 +387,5 @@ async def get_usage_statistics(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=get_text(
                 user=current_user, key="errors.analytics.statsFailed", error=str(e)
-            ),
-        )
-
-
-@router.post("/log", status_code=status.HTTP_201_CREATED)
-async def log_symbol_usage_legacy(
-    request: SymbolUsageRequest,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Log symbol usage for analytics.
-    """
-    try:
-        _log_usage_request(
-            request,
-            current_user,
-            db,
-            failure_detail=get_text(
-                user=current_user, key="errors.analytics.logSymbolFailed"
-            ),
-        )
-        return {"status": "success"}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to log symbol usage: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=get_text(
-                user=current_user, key="errors.analytics.logFailed", error=str(e)
             ),
         )

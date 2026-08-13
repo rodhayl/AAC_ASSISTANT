@@ -12,7 +12,7 @@ from .history import append_history_entry
 
 
 class SessionLifecycleMixin:
-    async def start_learning_session(
+    def start_learning_session(
         self,
         user_id: int,
         topic: str,

@@ -2,23 +2,23 @@ import asyncio
 import json
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from src.aac_app.db import create_session_factory, ensure_tables
 from src.aac_app.models import Notification, User
 from src.aac_app.services.notification_events import (
     publish_notification,
     subscribe,
     unsubscribe,
 )
-from src.api.debug_reporting import report_debug
 from src.api.deps import (
     get_current_active_user,
     get_current_admin_user,
     get_db,
     get_text,
-    validate_token,
+    validate_active_token,
 )
 from src.api.schemas import NotificationCreate
 
@@ -26,35 +26,64 @@ router = APIRouter()
 
 
 @router.get("/api/notifications/stream")
-async def notifications_stream(token: str = None, db: Session = Depends(get_db)):
-    # Authenticate
-    user = validate_token(token, db)
-    if not user:
-        raise HTTPException(
-            status_code=401, detail=get_text(key="errors.notifications.invalidToken")
-        )
+async def notifications_stream(request: Request, token: str = None):
+    # Authenticate with a short-lived session. The response stream is
+    # intentionally unbounded, so it must not retain a request-scoped DB
+    # session or connection for the lifetime of an SSE client.
+    ensure_tables()
+    db = create_session_factory()()
+    try:
+        user = validate_active_token(token, db)
+        if not user:
+            raise HTTPException(
+                status_code=401, detail=get_text(key="errors.notifications.invalidToken")
+            )
+        user_id = user.id
+    finally:
+        db.rollback()
+        db.close()
+
 
     async def event_generator():
-        queue = subscribe(user.id)
-        # #region debug-point B:sse-subscribed
-        report_debug("B", "src/api/routers/notifications.py:event_generator:subscribe", "SSE subscriber connected", {"user_id": user.id})
-        # #endregion
+        queue = subscribe(user_id)
+        shutdown_event = getattr(request.app.state, "shutdown_event", None)
+        if not getattr(request.app.state, "lifespan_active", False):
+            shutdown_event = None
+        if shutdown_event is None:
+            # Direct ASGI callers that do not run the application lifespan still
+            # receive the normal stream behavior; production lifespan always
+            # installs the shared event.
+            shutdown_event = asyncio.Event()
         # Initial heartbeat to unblock clients. DB event delivery will be
         # connected before yielding so notifications cannot be missed.
         try:
+            if shutdown_event.is_set():
+                return
             yield "data: {}\n\n"
             while True:
+                queue_task = asyncio.create_task(queue.get())
+                shutdown_task = asyncio.create_task(shutdown_event.wait())
                 try:
-                    notification = await asyncio.wait_for(queue.get(), timeout=15)
-                except TimeoutError:
-                    yield ": keep-alive\n\n"
-                else:
-                    yield f"data: {json.dumps(notification)}\n\n"
+                    done, _ = await asyncio.wait(
+                        (queue_task, shutdown_task),
+                        timeout=15,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if not done:
+                        yield ": keep-alive\n\n"
+                    elif shutdown_task in done:
+                        return
+                    else:
+                        yield f"data: {json.dumps(queue_task.result())}\n\n"
+                finally:
+                    for task in (queue_task, shutdown_task):
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(
+                        queue_task, shutdown_task, return_exceptions=True
+                    )
         finally:
-            # #region debug-point B:sse-finally
-            report_debug("B", "src/api/routers/notifications.py:event_generator:finally", "SSE subscriber cleanup", {"user_id": user.id})
-            # #endregion
-            unsubscribe(user.id, queue)
+            unsubscribe(user_id, queue)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -62,8 +91,8 @@ async def notifications_stream(token: str = None, db: Session = Depends(get_db))
 @router.get("/api/notifications")
 def get_notifications(
     user_id: int,
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(0, ge=0, le=100_000),
+    limit: int = Query(50, ge=1, le=100),
     unread_only: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),

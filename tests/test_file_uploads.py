@@ -4,15 +4,16 @@ from pathlib import Path
 
 import pytest
 from fastapi import HTTPException, UploadFile
+from pydantic import ValidationError
 
 from src.api.file_uploads import (
     ALLOWED_AUDIO_CONTENT_TYPES,
-    read_audio_upload,
     read_image_upload,
     read_upload_bytes,
     remove_owned_upload,
     save_audio_upload,
 )
+from src.api.schemas import AISuggestionsRequest, NextSymbolRequest
 
 
 def test_read_upload_bytes_rejects_oversized_input_without_unbounded_read():
@@ -33,27 +34,6 @@ def test_read_upload_bytes_rejects_oversized_input_without_unbounded_read():
         ))
 
     assert exc.value.status_code == 413
-
-
-def test_read_audio_upload_rejects_declared_wav_with_invalid_signature():
-    upload = UploadFile(
-        filename="note.wav",
-        file=io.BytesIO(b"not a wav"),
-        headers={"content-type": "audio/wav"},
-    )
-
-    with pytest.raises(HTTPException) as exc:
-        asyncio.run(
-            read_audio_upload(
-                upload,
-                invalid_type_detail="invalid type",
-                too_large_detail="too large",
-                empty_detail="empty",
-            )
-        )
-
-    assert exc.value.status_code == 400
-    assert exc.value.detail == "invalid type"
 
 
 def test_save_audio_upload_accepts_webm_signature_and_cleans_after_caller_removes(tmp_path):
@@ -118,6 +98,15 @@ def test_image_upload_uses_decoded_format_and_rejects_fake_content():
 
     assert exc.value.status_code == 400
     assert exc.value.detail == "invalid image"
+
+
+def test_request_bounds_reject_unbounded_ai_and_prediction_work():
+    with pytest.raises(ValidationError):
+        AISuggestionsRequest(item_count=101)
+    with pytest.raises(ValidationError):
+        NextSymbolRequest(limit=51)
+    with pytest.raises(ValidationError):
+        NextSymbolRequest(offset=-1)
 
 
 def test_remove_owned_upload_does_not_delete_outside_upload_root(tmp_path: Path):

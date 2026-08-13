@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import api from '../lib/api';
+import api, { extractError } from '../lib/api';
 
 interface DashboardStats {
   boardCount: number;
@@ -41,7 +41,9 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       const [achievementsRes, pointsRes, learningHistoryRes] = await Promise.all([
         api.get(`/achievements/user/${userId}`),
         api.get(`/achievements/user/${userId}/points`),
-        api.get(`/learning/history/${userId}`, { params: { limit: 5 } })
+        // Keep the history window bounded while leaving enough rows for a
+        // meaningful streak calculation when a user has several sessions per day.
+        api.get(`/learning/history/${userId}`, { params: { limit: 100 } })
       ]);
 
       const achievements = achievementsRes.data;
@@ -72,14 +74,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
         isLoading: false
       });
     } catch (error: unknown) {
-      const detail = (() => {
-        if (typeof error === 'object' && error && 'response' in error) {
-          const r = error as { response?: { data?: { detail?: string } } };
-          return r.response?.data?.detail || 'Failed to load dashboard data';
-        }
-        return 'Failed to load dashboard data';
-      })();
-      set({ error: detail, isLoading: false });
+      set({ error: extractError(error, 'Failed to load dashboard data'), isLoading: false });
     }
   }
 }));

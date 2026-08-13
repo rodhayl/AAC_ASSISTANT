@@ -40,9 +40,10 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
   }, [text]);
 
   useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 100);
-    }
+    if (!isOpen) return;
+
+    const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 100);
+    return () => window.clearTimeout(focusTimer);
   }, [isOpen]);
 
   const handleSpeak = () => {

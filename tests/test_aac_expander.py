@@ -15,7 +15,6 @@ class TestAACExpander:
     def setup_expander(self):
         self.expander = AACExpanderService()
         yield
-        self.expander.clear_cache()
 
     def test_article_insertion_want_cookie(self):
         """Test article insertion for 'want cookie' -> 'want a cookie'."""
@@ -313,7 +312,6 @@ class TestAACExpander:
         raw_gloss_lower = "want cookie"
 
         result_upper = self.expander.expand(symbols_upper, raw_gloss_upper)
-        self.expander.clear_cache()  # Clear cache between tests
         result_lower = self.expander.expand(symbols_lower, raw_gloss_lower)
 
         # Should produce similar results (both capitalized and punctuated)

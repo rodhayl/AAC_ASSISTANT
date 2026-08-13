@@ -11,6 +11,7 @@ import { CommunicationChat } from '../components/board/CommunicationChat';
 import { SymbolSearchModal } from '../components/board/SymbolSearchModal';
 import { PartnerOverlay } from '../components/board/PartnerOverlay';
 import type { BoardSymbol } from '../types';
+import { getBoardCapacity } from '../lib/boardGrid';
 import { tts } from '../lib/tts';
 import api from '../lib/api';
 import { glossSymbolUtterance } from '../lib/gloss';
@@ -109,9 +110,7 @@ export function Communication() {
   };
 
   const isBoardPlayable = useCallback((board: BoardPlayableInfo) => {
-    const rows = board.grid_rows || 4;
-    const cols = board.grid_cols || 5;
-    const capacity = rows * cols;
+    const capacity = getBoardCapacity(board);
 
     // Use playable_symbols_count if available (from backend), otherwise count symbols array
     let symbolCount = 0;
@@ -326,26 +325,28 @@ export function Communication() {
     }
   }, [history, handleHome]);
 
-  const handleQuickResponse = useCallback((text: string) => {
+  // Cancel any pending speech and speak one message. All utterance helpers
+  // (quick responses, attention phrase, keyboard/modal speak) share this.
+  const speakText = useCallback((text: string) => {
     if (voiceEnabled) {
       tts.cancelAll();
       tts.enqueue(text);
     }
   }, [voiceEnabled]);
+
+  const handleQuickResponse = useCallback(
+    (text: string) => speakText(text),
+    [speakText],
+  );
 
   const handleAttention = useCallback(() => {
-    if (voiceEnabled) {
-      tts.cancelAll();
-      tts.enqueue(t('attentionPhrase', 'Excuse me!'));
-    }
-  }, [t, voiceEnabled]);
+    speakText(t('attentionPhrase', 'Excuse me!'));
+  }, [speakText, t]);
 
-  const handleSpeakText = useCallback((text: string) => {
-    if (voiceEnabled) {
-      tts.cancelAll();
-      tts.enqueue(text);
-    }
-  }, [voiceEnabled]);
+  const handleSpeakText = useCallback(
+    (text: string) => speakText(text),
+    [speakText],
+  );
 
   const handleReorder = useCallback((fromIndex: number, toIndex: number) => {
     setSentence(prev => {
@@ -452,7 +453,7 @@ export function Communication() {
                   ? board.playable_symbols_count
                   : (board.symbols?.filter(s => s.is_visible).length || 0);
 
-                const capacity = (board.grid_rows || 4) * (board.grid_cols || 5);
+                const capacity = getBoardCapacity(board);
                 const threshold = Math.ceil(capacity * 0.5);
                 const progress = Math.round((symbolCount / threshold) * 100);
                 const needed = Math.max(0, threshold - symbolCount);

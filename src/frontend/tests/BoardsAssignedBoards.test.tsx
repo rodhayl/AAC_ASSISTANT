@@ -1,5 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router';
 
 import { Boards } from '../src/pages/Boards';
@@ -51,6 +52,10 @@ describe('Boards assigned-board display', () => {
     symbols: [],
   };
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     useBoardStore.setState({
@@ -98,5 +103,35 @@ describe('Boards assigned-board display', () => {
       { params: { student_id: 10 } },
     ));
     expect(await screen.findByText('Assigned Board')).toBeInTheDocument();
+  });
+
+  it('does not refetch assigned boards when searching personal boards', async () => {
+    render(
+      <MemoryRouter>
+        <Boards />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith(
+      '/boards/assigned',
+      { params: { student_id: 10 } },
+    ));
+    const assignedCallsBeforeSearch = vi.mocked(api.get).mock.calls.filter(
+      ([url]) => url === '/boards/assigned',
+    ).length;
+
+    vi.useFakeTimers();
+    fireEvent.change(screen.getByRole('textbox', { name: 'searchPlaceholder' }), {
+      target: { value: 'school' },
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+    });
+
+    const assignedCallsAfterSearch = vi.mocked(api.get).mock.calls.filter(
+      ([url]) => url === '/boards/assigned',
+    ).length;
+    expect(assignedCallsAfterSearch).toBe(assignedCallsBeforeSearch);
   });
 });

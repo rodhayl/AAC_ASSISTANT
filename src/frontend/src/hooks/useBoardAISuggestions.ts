@@ -1,5 +1,7 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { getBoardCapacity } from '../lib/boardGrid';
+import { extractError } from '../lib/api';
 import type { Board, BoardSymbol } from '../types';
 import type { AISuggestion } from '../components/board/AISuggestionPanel';
 import type { BoardPosition } from './useBoardCollab';
@@ -10,7 +12,7 @@ interface UseBoardAISuggestionsOptions {
   resolvedProvider?: string;
   resolvedModel?: string;
   fetchBoard: (id: number, forceRefresh?: boolean) => Promise<void>;
-  deleteBoardSymbol: (boardId: number, symbolId: number) => Promise<void>;
+  deleteBoardSymbol: (boardId: number, symbolId: number, signal?: AbortSignal) => Promise<void>;
   setHasChanges: (hasChanges: boolean) => void;
 }
 
@@ -30,6 +32,34 @@ export function useBoardAISuggestions({
   const [applyId, setApplyId] = useState<string | null>(null);
   const [refinePrompt, setRefinePrompt] = useState('');
   const [applyAllLoading, setApplyAllLoading] = useState(false);
+  const suggestionGeneration = useRef(0);
+  const suggestionController = useRef<AbortController | null>(null);
+  const applyController = useRef<AbortController | null>(null);
+  const cancelActiveApply = useCallback(() => {
+    applyController.current?.abort();
+    applyController.current = null;
+    setApplyId(null);
+    setApplyAllLoading(false);
+  }, []);
+
+  useEffect(() => {
+    suggestionGeneration.current += 1;
+    suggestionController.current?.abort();
+    suggestionController.current = null;
+    cancelActiveApply();
+    setAiSuggestions([]);
+    setAiError(null);
+    setAiLoading(false);
+    setApplyId(null);
+    setApplyAllLoading(false);
+
+    return () => {
+      suggestionGeneration.current += 1;
+      suggestionController.current?.abort();
+      suggestionController.current = null;
+      cancelActiveApply();
+    };
+  }, [cancelActiveApply, currentBoard?.id, currentBoard?.ai_enabled, resolvedProvider, resolvedModel]);
 
   const loadAISuggestions = useCallback(async (options?: { refinePrompt?: string; regenerate?: boolean }) => {
     if (!currentBoard?.ai_enabled) return;
@@ -37,6 +67,12 @@ export function useBoardAISuggestions({
       setAiError(t('aiSettingsMissing'));
       return;
     }
+
+    const generation = ++suggestionGeneration.current;
+    suggestionController.current?.abort();
+    cancelActiveApply();
+    const controller = new AbortController();
+    suggestionController.current = controller;
     setAiLoading(true);
     setAiError(null);
     try {
@@ -44,18 +80,24 @@ export function useBoardAISuggestions({
       const body: Record<string, unknown> = {};
       if (options?.refinePrompt) body.refine_prompt = options.refinePrompt;
       if (options?.regenerate) body.regenerate = true;
-      const response = await api.post(`/boards/${currentBoard.id}/ai/suggestions`, body);
+      const response = await api.post(`/boards/${currentBoard.id}/ai/suggestions`, body, {
+        signal: controller.signal,
+      });
+      if (generation !== suggestionGeneration.current) return;
       const items: AISuggestion[] = response.data.items || [];
       setAiSuggestions(items);
       if (!items.length) setAiError(t('noSuggestions'));
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { detail?: string } } };
-      setAiError(err?.response?.data?.detail || t('failedToLoadSuggestions'));
+      if (generation !== suggestionGeneration.current || controller.signal.aborted) return;
+      setAiError(extractError(error, t('failedToLoadSuggestions')));
       setAiSuggestions([]);
     } finally {
-      setAiLoading(false);
+      if (generation === suggestionGeneration.current) {
+        setAiLoading(false);
+        if (suggestionController.current === controller) suggestionController.current = null;
+      }
     }
-  }, [currentBoard, resolvedModel, resolvedProvider, t]);
+  }, [cancelActiveApply, currentBoard, resolvedModel, resolvedProvider, t]);
 
   const handleRefine = useCallback(() => {
     const prompt = refinePrompt.trim();
@@ -73,45 +115,74 @@ export function useBoardAISuggestions({
 
   const applySuggestion = useCallback(async (item: AISuggestion, position?: BoardPosition) => {
     if (!currentBoard) return;
-    const capacity = (currentBoard.grid_rows ?? 4) * (currentBoard.grid_cols ?? 5);
+    const capacity = getBoardCapacity(currentBoard);
     const filled = Math.max(localSymbols.length, currentBoard.symbols?.length ?? 0);
     if (!position && filled >= capacity) {
       setAiError(t('boardFull'));
       return;
     }
+    const boardId = currentBoard.id;
+    const generation = suggestionGeneration.current;
+    cancelActiveApply();
+    const controller = new AbortController();
+    applyController.current = controller;
+    const isCurrentApply = () =>
+      generation === suggestionGeneration.current &&
+      applyController.current === controller &&
+      !controller.signal.aborted;
     setApplyId(item.label);
     try {
       const api = (await import('../lib/api')).default;
+      if (!isCurrentApply()) return;
       if (position) {
         const existing = currentBoard.symbols?.find(
           (symbol) => symbol.position_x === position.x && symbol.position_y === position.y,
         );
-        if (existing) await deleteBoardSymbol(currentBoard.id, existing.id);
+        if (existing) {
+          await deleteBoardSymbol(boardId, existing.id, controller.signal);
+          if (!isCurrentApply()) return;
+        }
       }
-      await api.post(`/boards/${currentBoard.id}/ai/suggestions/apply`, {
+      await api.post(`/boards/${boardId}/ai/suggestions/apply`, {
         item,
         position_x: position?.x,
         position_y: position?.y,
+      }, {
+        signal: controller.signal,
       });
-      await fetchBoard(currentBoard.id, true);
-      setHasChanges(true);
+      if (!isCurrentApply()) return;
+      await fetchBoard(boardId, true);
+      if (isCurrentApply()) setHasChanges(true);
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { detail?: string } } };
-      setAiError(err?.response?.data?.detail || t('failedToAddSuggestion'));
+      if (isCurrentApply()) {
+        setAiError(extractError(error, t('failedToAddSuggestion')));
+      }
     } finally {
-      setApplyId(null);
+      if (isCurrentApply()) {
+        applyController.current = null;
+        setApplyId(null);
+      }
     }
-  }, [currentBoard, deleteBoardSymbol, fetchBoard, localSymbols, setHasChanges, t]);
+  }, [cancelActiveApply, currentBoard, deleteBoardSymbol, fetchBoard, localSymbols, setHasChanges, t]);
 
   const applyAllSuggestions = useCallback(async () => {
     if (!currentBoard || !aiSuggestions.length) return;
-    const capacity = (currentBoard.grid_rows ?? 4) * (currentBoard.grid_cols ?? 5);
+    const capacity = getBoardCapacity(currentBoard);
     const filled = Math.max(localSymbols.length, currentBoard.symbols?.length ?? 0);
     const remaining = capacity - filled;
     if (remaining <= 0) {
       setAiError(t('boardFull'));
       return;
     }
+    const boardId = currentBoard.id;
+    const generation = suggestionGeneration.current;
+    cancelActiveApply();
+    const controller = new AbortController();
+    applyController.current = controller;
+    const isCurrentApply = () =>
+      generation === suggestionGeneration.current &&
+      applyController.current === controller &&
+      !controller.signal.aborted;
     setApplyAllLoading(true);
     setAiError(null);
     let successCount = 0;
@@ -119,34 +190,43 @@ export function useBoardAISuggestions({
     try {
       const api = (await import('../lib/api')).default;
       for (const item of aiSuggestions) {
+        if (!isCurrentApply()) return;
         if (successCount >= remaining) {
           failures.push(t('boardFullSkipped'));
           break;
         }
         try {
-          await api.post(`/boards/${currentBoard.id}/ai/suggestions/apply`, { item });
+          await api.post(`/boards/${boardId}/ai/suggestions/apply`, { item }, {
+            signal: controller.signal,
+          });
+          if (!isCurrentApply()) return;
           successCount += 1;
         } catch (error: unknown) {
-          const err = error as { response?: { data?: { detail?: string } }; message?: string };
-          failures.push(`${item.label}: ${err?.response?.data?.detail || err?.message || 'unknown error'}`);
+          if (!isCurrentApply()) return;
+          failures.push(`${item.label}: ${extractError(error, 'unknown error')}`);
         }
       }
-      await fetchBoard(currentBoard.id, true);
-      setHasChanges(true);
+      if (!isCurrentApply()) return;
+      await fetchBoard(boardId, true);
+      if (isCurrentApply()) setHasChanges(true);
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { detail?: string } } };
-      setAiError(err?.response?.data?.detail || t('failedToAddAll'));
-    } finally {
-      if (failures.length) {
-        setAiError(t('addSuggestionResult', {
-          success: successCount,
-          total: aiSuggestions.length,
-          failures: failures.join('; '),
-        }));
+      if (isCurrentApply()) {
+        setAiError(extractError(error, t('failedToAddAll')));
       }
-      setApplyAllLoading(false);
+    } finally {
+      if (isCurrentApply()) {
+        applyController.current = null;
+        if (failures.length) {
+          setAiError(t('addSuggestionResult', {
+            success: successCount,
+            total: aiSuggestions.length,
+            failures: failures.join('; '),
+          }));
+        }
+        setApplyAllLoading(false);
+      }
     }
-  }, [aiSuggestions, currentBoard, fetchBoard, localSymbols, setHasChanges, t]);
+  }, [aiSuggestions, cancelActiveApply, currentBoard, fetchBoard, localSymbols, setHasChanges, t]);
 
   return {
     aiSuggestions,

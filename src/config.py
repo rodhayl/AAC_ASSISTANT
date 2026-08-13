@@ -90,6 +90,11 @@ JWT_PLACEHOLDERS = frozenset(
         "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION",
     }
 )
+# Legacy insecure development default. It is retained only so existing
+# installations keep working; fresh first runs without an explicitly configured
+# password receive a cryptographically random one-time credential instead.
+DEFAULT_BOOTSTRAP_ADMIN_PASSWORD = "Admin123"
+_BOOTSTRAP_PASSWORD_KEY = "AAC_BOOTSTRAP_ADMIN_PASSWORD"
 
 
 class Settings(BaseSettings):
@@ -102,7 +107,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    BACKEND_HOST: str = "0.0.0.0"
+    # Local-first default: bind to loopback so the app is not reachable from
+    # the network unless the operator explicitly opts into a remote bind.
+    BACKEND_HOST: str = "127.0.0.1"
     BACKEND_PORT: int = 8086
     BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: int = 10
     FRONTEND_PORT: int = 5176
@@ -110,6 +117,7 @@ class Settings(BaseSettings):
     DATABASE_NAME: str = "aac_assistant.db"
     DATA_DIR: str = "data"
     LOGS_DIR: str = "logs"
+    UPLOADS_DIR: str = "uploads"
 
     JWT_SECRET_KEY: str = ""
 
@@ -127,8 +135,10 @@ class Settings(BaseSettings):
 
     AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN: bool = True
     AAC_BOOTSTRAP_ADMIN_USERNAME: str = "admin1"
-    AAC_BOOTSTRAP_ADMIN_PASSWORD: str = "Admin123"
-    AAC_ENABLE_SYMBOL_IMAGE_BACKFILL: bool = True
+    AAC_BOOTSTRAP_ADMIN_PASSWORD: str = DEFAULT_BOOTSTRAP_ADMIN_PASSWORD
+    # Image backfill is maintenance work; keep it opt-in so normal startup
+    # does not perform avoidable network and database work.
+    AAC_ENABLE_SYMBOL_IMAGE_BACKFILL: bool = False
     AAC_SYMBOL_IMAGE_BACKFILL_LIMIT: int = 100
 
     # Optional deterministic passwords are intentionally unset by default.
@@ -136,7 +146,6 @@ class Settings(BaseSettings):
     AAC_SEED_STUDENT1_PASSWORD: str | None = None
     AAC_SEED_TEACHER1_PASSWORD: str | None = None
     AAC_SEED_ADMIN1_PASSWORD: str | None = None
-
 
 def _find_example_file(project_root: Path) -> Path | None:
     """Find the current example config in a project or frozen bundle."""
@@ -237,20 +246,103 @@ def ensure_jwt_secret(env_path: Path | None = None) -> str:
     return secret
 
 
+def _dotenv_value(path: Path, key: str) -> str | None:
+    """Return the last non-empty assignment for ``key`` in a dotenv file."""
+    if not path.exists():
+        return None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if _env_key(line) == key:
+            value = line.partition("=")[2].strip()
+            if value:
+                return value
+    return None
+
+
+def explicit_bootstrap_password() -> str | None:
+    """Return an explicitly configured bootstrap password, or ``None``.
+
+    Only the process environment and the local dotenv files are consulted. When
+    the operator has not configured a password at all, callers generate a
+    random one-time credential instead of falling back to the insecure legacy
+    development default.
+    """
+    environment_value = os.environ.get(_BOOTSTRAP_PASSWORD_KEY, "").strip()
+    if environment_value:
+        return environment_value
+    for candidate in (ENV_FILE, LEGACY_ENV_FILE):
+        value = _dotenv_value(candidate, _BOOTSTRAP_PASSWORD_KEY)
+        if value is not None:
+            return value
+    return None
+
+
+def write_bootstrap_password(password: str) -> None:
+    """Persist a generated bootstrap password to the canonical dotenv file."""
+    path = ENV_FILE.absolute()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    updated_lines: list[str] = []
+    replaced = False
+    for line in lines:
+        if _env_key(line) == _BOOTSTRAP_PASSWORD_KEY:
+            if not replaced:
+                updated_lines.append(f"{_BOOTSTRAP_PASSWORD_KEY}={password}")
+                replaced = True
+            continue
+        updated_lines.append(line)
+    if not replaced:
+        if updated_lines and updated_lines[-1].strip():
+            updated_lines.append("")
+        updated_lines.append(f"{_BOOTSTRAP_PASSWORD_KEY}={password}")
+    path.write_text("\n".join(updated_lines).rstrip() + "\n", encoding="utf-8")
+
+
+def resolve_bootstrap_password() -> str:
+    """Return the bootstrap admin password for this run.
+
+    An explicitly configured value is used verbatim. When no password is
+    configured, a cryptographically random one-time credential is generated and
+    persisted to ``.env`` so the operator can retrieve it locally. The caller is
+    responsible for telling the operator to change it after first login.
+    """
+    explicit = explicit_bootstrap_password()
+    if explicit is not None:
+        return explicit
+    generated = secrets.token_urlsafe(18)
+    write_bootstrap_password(generated)
+    logger.warning(
+        "No AAC_BOOTSTRAP_ADMIN_PASSWORD was configured; generated a one-time "
+        "administrator password and stored it in {}.",
+        ENV_FILE,
+    )
+    return generated
+
+
 def load_settings(project_root: Path | None = None) -> Settings:
     """Prepare config files and load typed settings for a project root."""
     root = Path(project_root or RUNTIME_ROOT).absolute()
-    env_path = ensure_env_file(root)
-    ensure_jwt_secret(env_path)
+    env_path = root / ENV_FILE_NAME
     legacy_path = root / LEGACY_ENV_FILE_NAME
+    environment_secret = os.environ.get("JWT_SECRET_KEY", "")
 
-    # pydantic-settings gives later files precedence.  Explicitly put .env
-    # last so a retained legacy file cannot override migrated settings.
-    env_files: tuple[Path, ...]
-    if legacy_path.exists() and legacy_path != env_path:
-        env_files = (legacy_path, env_path)
-    else:
-        env_files = (env_path,)
+    # A managed/read-only deployment can provide all settings through the
+    # process environment. Do not create or rewrite dotenv files in that case.
+    # Existing files remain readable and environment variables still take
+    # precedence through pydantic-settings.
+    if env_path.exists():
+        if not _is_jwt_secret(environment_secret):
+            ensure_jwt_secret(env_path)
+    elif not _is_jwt_secret(environment_secret):
+        env_path = ensure_env_file(root)
+        ensure_jwt_secret(env_path)
+    elif _is_jwt_secret(environment_secret):
+        logger.info("Using JWT_SECRET_KEY from the environment without writing dotenv files")
+
+    # pydantic-settings gives later files precedence. Explicitly put .env last
+    # so a retained legacy file cannot override migrated settings.
+    env_files = tuple(
+        path for path in (legacy_path, env_path) if path.exists()
+    ) or (env_path,)
     return Settings(_env_file=env_files)
 
 
@@ -265,21 +357,21 @@ def _path_setting(value: str) -> Path:
 
 def _sync_module_settings() -> None:
     """Expose typed settings through the legacy module-level API."""
-    global DATA_DIR, DATABASE_PATH, LOGS_DIR
+    global DATA_DIR, DATABASE_PATH, LOGS_DIR, UPLOADS_DIR
     for field_name in Settings.model_fields:
-        if field_name in {"DATA_DIR", "LOGS_DIR", "DATABASE_NAME"}:
+        if field_name in {"DATA_DIR", "LOGS_DIR", "UPLOADS_DIR", "DATABASE_NAME"}:
             continue
         globals()[field_name] = getattr(settings, field_name)
     DATA_DIR = _path_setting(settings.DATA_DIR)
     DATABASE_PATH = DATA_DIR / settings.DATABASE_NAME
     LOGS_DIR = _path_setting(settings.LOGS_DIR)
+    UPLOADS_DIR = _path_setting(settings.UPLOADS_DIR)
 
 
 _sync_module_settings()
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
-UPLOADS_DIR = RUNTIME_ROOT / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -310,23 +402,6 @@ def get_bool(key: str, default: bool = False) -> bool:
     return str(value).lower() in {"true", "1", "yes", "on"}
 
 
-def reload() -> None:
-    """Reload typed settings from the canonical dotenv files."""
-    global settings
-    settings = load_settings()
-    _sync_module_settings()
-
-
-def get_api_base_url(host: str = "localhost") -> str:
-    """Get the full API base URL."""
-    return f"http://{host}:{settings.BACKEND_PORT}/api"
-
-
-def get_ws_base_url(host: str = "localhost") -> str:
-    """Get the WebSocket base URL."""
-    return f"ws://{host}:{settings.BACKEND_PORT}/api"
-
-
 def get_bundled_path(relative_path: str) -> Path:
     """
     Get the path to a bundled resource file.
@@ -342,6 +417,36 @@ def get_bundled_path(relative_path: str) -> Path:
         if candidate.exists():
             return candidate
     return candidates[0]
+
+
+def get_bundled_models_dir() -> Path | None:
+    """
+    Return the read-only bundled AI-models cache directory, or None.
+
+    Release builds ship optional model weights under ``models`` so the packaged
+    application works fully offline. Providers load from this directory with
+    ``local_files_only=True`` when it is present, and otherwise fall back to the
+    writable ``data/models`` directory with on-demand download.
+    """
+    candidate = get_bundled_path("models")
+    return candidate if candidate.is_dir() else None
+
+
+def resolve_model_cache_dir(model_dir_name: str) -> tuple[Path, bool]:
+    """
+    Resolve an optional AI model's cache directory and offline mode.
+
+    Returns ``(cache_dir, local_files_only)``. When the release bundle ships the
+    requested model (identified by its Hugging Face cache directory name, e.g.
+    ``models--Systran--faster-whisper-tiny``), the read-only bundled directory is
+    used with ``local_files_only=True`` so no network access is attempted. Any
+    other model size falls back to the writable ``data/models`` directory with
+    on-demand download.
+    """
+    bundled = get_bundled_models_dir()
+    if bundled is not None and (bundled / model_dir_name).is_dir():
+        return bundled, True
+    return get_data_path("models"), False
 
 
 def get_data_path(relative_path: str = "") -> Path:

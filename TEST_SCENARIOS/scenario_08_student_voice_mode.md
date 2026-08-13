@@ -1,15 +1,17 @@
 # Scenario 08: Student - Voice Mode Flow
 
+> **Current-state notice (2026-08-12): HISTORICAL MANUAL QA REFERENCE — DO NOT EXECUTE.** The CDP snippets below are archived and are not executable because the former CDP harness was removed. For current repeatable browser validation use `src/frontend/e2e` against a production build; use fixture credentials only in isolated test data, and set `AAC_ASSISTANT_NO_BROWSER=1` for managed launcher smoke tests. Verify every route/component name against the current source before adapting this scenario. This technical reference does not validate clinical suitability, switch/eye-gaze/screen-reader accessibility, or target audio hardware. All credentials, variables, URLs, commands and cleanup snippets below are historical and must not be copied or executed.
+
 ## Title
 Student Voice Mode Flow - Use Speech-to-Text and Text-to-Speech Features
 
 ## Description
-This end-to-end test scenario validates the complete voice mode workflow for students. It covers enabling voice mode, using speech-to-text for input, and using text-to-speech for output. All interactions are performed through the GUI using Chrome DevTools Protocol (CDP) commands.
+This historical end-to-end QA scenario recorded the complete voice mode workflow for students. It covers enabling voice mode, using speech-to-text for input, and using text-to-speech for output. The archived procedure used GUI automation; it is retained for historical provenance only and is not a supported test command.
 
 ## Prerequisites
 - Application running at `http://localhost:8086`
 - Student user credentials available (set via environment variables `AAC_STUDENT_USERNAME` and `AAC_STUDENT_PASSWORD`)
-- Chrome browser with remote debugging enabled on port 9222
+- Current validation uses the Playwright suite; do not enable Chrome remote debugging for this historical document
 - Microphone access available (for speech-to-text testing)
 - Text-to-speech provider configured (for TTS testing)
 
@@ -812,7 +814,6 @@ No explicit cleanup needed as this is a read-only usage test. However:
 - `src/api/routers/providers.py` - Provider configuration API endpoints
 - `src/api/routers/settings.py` - Settings API endpoints
 - `src/frontend/src/components/board/CommunicationToolbar.tsx` - Communication toolbar UI
-- `src/frontend/src/components/voice/VoiceMode.tsx` - Voice mode UI
+- `src/frontend/src/pages/Settings/VoiceTab.tsx` - Voice mode UI
 - `src/frontend/src/components/SettingsManager.tsx` - Settings UI
 - `src/aac_app/providers/local_speech_provider.py` - Local speech provider
-- `scripts/cdp_harness.py` - CDP harness for automation

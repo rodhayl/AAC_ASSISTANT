@@ -1,15 +1,17 @@
 # Scenario 01: Admin - User Management Flow
 
+> **Current-state notice (2026-08-12): HISTORICAL MANUAL QA REFERENCE — DO NOT EXECUTE.** The CDP snippets below are archived and are not executable because the former CDP harness was removed. For current repeatable browser validation use `src/frontend/e2e` against a production build; use fixture credentials only in isolated test data, and set `AAC_ASSISTANT_NO_BROWSER=1` for managed launcher smoke tests. Verify every route/component name against the current source before adapting this scenario. This historical document's remaining headings and code blocks are provenance only; do not execute them. This technical reference does not validate clinical suitability, switch/eye-gaze/screen-reader accessibility, or target audio hardware. All credentials, variables, URLs, commands and cleanup snippets below are historical and must not be copied or executed.
+
 ## Title
 Admin User Management Flow - Create, Edit, and Delete Users Across All Roles
 
 ## Description
-This end-to-end test scenario validates the complete user management workflow for administrators. It covers creating new users (teacher and student), editing user details, and deleting users. All interactions are performed through the GUI using Chrome DevTools Protocol (CDP) commands.
+This historical end-to-end QA scenario recorded the complete user management workflow for administrators. It covers creating new users (teacher and student), editing user details, and deleting users. The archived procedure used GUI automation; it is retained for historical provenance only and is not a supported test command.
 
 ## Prerequisites
 - Application running at `http://localhost:8086`
 - Admin user credentials available (set via environment variables `AAC_ADMIN_USERNAME` and `AAC_ADMIN_PASSWORD`)
-- Chrome browser with remote debugging enabled on port 9222
+- Current validation uses the Playwright suite; do not enable Chrome remote debugging for this historical document
 - No existing users with usernames matching the test patterns
 
 ## Test Steps
@@ -574,5 +576,4 @@ No explicit cleanup needed as the test deletes the created users. However, if th
 ## Related Files
 - `src/api/routers/users.py` - User management API endpoints
 - `src/api/routers/admin.py` - Admin-specific endpoints
-- `src/frontend/src/components/admin/UserManagement.tsx` - User management UI
-- `scripts/cdp_harness.py` - CDP harness for automation
+- `src/frontend/src/pages/UserManagement.tsx` - User management UI

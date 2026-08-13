@@ -8,12 +8,14 @@ from sqlalchemy.orm import Session
 from src import config
 from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol, SymbolUsageLog, User
 from src.aac_app.services.achievement_system import AchievementSystem
+from src.aac_app.services.local_vector_store import vector_store_operation_lock
 from src.aac_app.services.vector_utils import delete_symbol as delete_symbol_embedding
 from src.aac_app.services.vector_utils import index_symbol
 from src.api import schemas
 from src.api.deps import (
     get_board_or_404,
     get_current_active_user,
+    get_current_staff_user,
     get_db,
     get_text,
     require_board_owner_or_admin,
@@ -46,9 +48,13 @@ def _apply_symbol_search(query, search: str, db: Session):
     try:
         from src.api.deps import get_vector_store
 
-        vs = get_vector_store()
-        if vs and len(search) > 3:
-            semantic_results = vs.search(search, k=20)
+        vs = None
+        semantic_results = []
+        if len(search) > 3:
+            with vector_store_operation_lock:
+                vs = get_vector_store()
+                semantic_results = vs.search(search, k=20) if vs else []
+        if vs and semantic_results:
             semantic_ids = [
                 item["id"]
                 for item in semantic_results
@@ -91,8 +97,8 @@ def _apply_symbol_search(query, search: str, db: Session):
 
 @router.get("/symbols", response_model=list[schemas.SymbolResponse])
 def get_symbols(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0, le=100_000),
+    limit: int = Query(100, ge=1, le=1000),
     category: str = None,
     search: str = None,
     keywords: str = None,
@@ -175,7 +181,7 @@ def get_symbols(
 def create_symbol(
     symbol: schemas.SymbolCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_staff_user),
 ):
     """Create a new symbol"""
     db_symbol = Symbol(**symbol.model_dump())
@@ -190,7 +196,7 @@ def create_symbol(
 def reorder_symbols(
     updates: list[schemas.SymbolReorderUpdate],
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_staff_user),
 ):
     """
     Batch update symbol order_index for global library ordering.
@@ -234,7 +240,7 @@ async def upload_symbol(
     language: str = Form("en"),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_staff_user),
 ):
     """Upload a new symbol image"""
     uploads_dir = config.UPLOADS_DIR / "symbols"
@@ -287,7 +293,7 @@ def update_symbol(
     symbol_id: int,
     payload: schemas.SymbolUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_staff_user),
 ):
     db_symbol = db.query(Symbol).filter(Symbol.id == symbol_id).first()
     if not db_symbol:
@@ -311,7 +317,7 @@ async def update_symbol_image(
     symbol_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_staff_user),
 ):
     db_symbol = db.query(Symbol).filter(Symbol.id == symbol_id).first()
     if not db_symbol:
@@ -359,7 +365,7 @@ def delete_symbol(
     symbol_id: int,
     force: bool = False,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_staff_user),
 ):
     symbol = db.query(Symbol).filter(Symbol.id == symbol_id).first()
     if not symbol:
@@ -428,8 +434,10 @@ def add_symbol_to_board(
             user_id, "vocabulary_size", float(count), db=db
         )
         AchievementSystem().check_achievements(user_id, db=db)
-    except Exception:
-        pass
+    except Exception as exc:
+        # The symbol is already committed and returned; progress is a
+        # best-effort update that must not fail the request.
+        logger.warning("Vocabulary progress update failed: {}", exc)
     return db_board_symbol
 
 

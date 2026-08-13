@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models import User
+from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.api.main import app
 from tests.test_utils_auth import create_test_headers
@@ -53,11 +53,20 @@ def test_rbac_get_users(test_password, test_db_session):
     assert response.status_code == 200
     assert len(response.json()) >= 3
 
-    # Teacher should be able to list users
+    # A teacher without an explicit roster receives an empty, scoped list.
     response = client.get(
         "/api/auth/users", headers=get_auth_header(teacher["id"], "teacher1", "teacher")
     )
     assert response.status_code == 200
+    assert response.json() == []
+
+    filtered_response = client.get(
+        "/api/auth/users",
+        params={"user_type": "student"},
+        headers=get_auth_header(teacher["id"], "teacher1", "teacher"),
+    )
+    assert filtered_response.status_code == 200
+    assert filtered_response.json() == []
 
     # Student should NOT be able to list users
     response = client.get(
@@ -71,6 +80,8 @@ def test_rbac_get_user_details(test_password, test_db_session):
     teacher = create_user("teacher2", "teacher", test_password, test_db_session)
     student = create_user("student2", "student", test_password, test_db_session)
     student_other = create_user("student3", "student", test_password, test_db_session)
+    test_db_session.add(StudentTeacher(teacher_id=teacher["id"], student_id=student["id"]))
+    test_db_session.commit()
 
     # Admin can view anyone
     response = client.get(
@@ -106,6 +117,18 @@ def test_rbac_get_user_details(test_password, test_db_session):
         f"/api/auth/users/{admin['id']}",
         headers=get_auth_header(teacher["id"], "teacher2", "teacher"),
     )
+    assert response.status_code == 403
+
+
+def test_empty_roster_teacher_cannot_view_student_details(test_password, test_db_session):
+    teacher = create_user("teacher_empty_detail", "teacher", test_password, test_db_session)
+    student = create_user("student_empty_detail", "student", test_password, test_db_session)
+
+    response = client.get(
+        f"/api/auth/users/{student['id']}",
+        headers=get_auth_header(teacher["id"], "teacher_empty_detail", "teacher"),
+    )
+
     assert response.status_code == 403
 
 

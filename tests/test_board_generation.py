@@ -4,8 +4,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import BoardSymbol, CommunicationBoard
+from src.aac_app.models import BoardSymbol, CommunicationBoard, User
 from src.api.main import app
+from tests.test_utils_auth import create_test_headers
 
 # Setup TestClient
 client = TestClient(app)
@@ -26,13 +27,13 @@ def test_create_board_with_ai(
 
     # Mock the BoardGenerationService.generate_board_items method
     # Since we instantiate BoardGenerationService inside the route, we need to patch it
-    with patch("src.api.routers.boards.BoardGenerationService") as MockServiceClass:
+    with patch("src.api.routers.board_ai.BoardGenerationService") as MockServiceClass:
         # Configure the mock instance
         mock_instance = MockServiceClass.return_value
         mock_instance.generate_board_items = AsyncMock(return_value=mock_ai_response)
 
         # Mock the provider instantiation as well to avoid actual connections
-        with patch("src.api.routers.boards.OllamaProvider"):
+        with patch("src.api.routers.board_ai.OllamaProvider"):
 
             response = client.post(
                 f"/api/boards/?user_id={admin_user.id}",
@@ -79,6 +80,52 @@ def test_create_board_with_ai(
             mock_instance.generate_board_items.assert_called_once()
             args, _ = mock_instance.generate_board_items.call_args
             assert args[0] == "AI Test Board"  # topic/name
+
+
+def test_unrelated_teacher_cannot_use_ai_suggestions_on_student_board(
+    test_db_session: Session, setup_test_db
+):
+    """AI board mutations require an explicit teacher/student roster link."""
+    teacher = User(
+        username="unrelated_ai_teacher",
+        display_name="Unrelated AI Teacher",
+        user_type="teacher",
+        password_hash="test-hash",
+    )
+    student = User(
+        username="ai_board_student",
+        display_name="AI Board Student",
+        user_type="student",
+        password_hash="test-hash",
+    )
+    test_db_session.add_all([teacher, student])
+    test_db_session.commit()
+
+    board = CommunicationBoard(
+        user_id=student.id,
+        name="Student AI Board",
+        ai_enabled=True,
+        ai_provider="ollama",
+        ai_model="test-model",
+    )
+    test_db_session.add(board)
+    test_db_session.commit()
+
+    response = client.post(
+        f"/api/boards/{board.id}/ai/suggestions",
+        headers=create_test_headers(teacher.id, teacher.username, teacher.user_type),
+        json={"item_count": 1},
+    )
+
+    assert response.status_code == 403
+
+    apply_response = client.post(
+        f"/api/boards/{board.id}/ai/suggestions/apply",
+        headers=create_test_headers(teacher.id, teacher.username, teacher.user_type),
+        json={"item": {"label": "Unauthorized symbol"}},
+    )
+
+    assert apply_response.status_code == 403
 
 
 def test_create_board_without_ai(

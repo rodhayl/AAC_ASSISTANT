@@ -12,6 +12,13 @@ from src.aac_app.services.prediction_service import PredictionService
 from src.api.routers import board_helpers
 
 
+def _reset_translation_state() -> None:
+    runtime_translation._translate_cached.cache_clear()
+    with runtime_translation._circuit_lock:
+        runtime_translation._consecutive_failures = 0
+        runtime_translation._circuit_open_until = 0.0
+
+
 def test_prediction_service_uses_bundled_spanish_ngrams(
     test_db_session, regular_user
 ):
@@ -46,15 +53,32 @@ def test_spanish_board_translation_serializes_translated_symbol_payload(
     monkeypatch, test_db_session, regular_user
 ):
     """Board serialization translates Spanish labels while preserving its payload shape."""
-    translator = Mock()
-    translator.translate.side_effect = {
-        "Hello": "Hola",
-        "Hello there": "Hola allí",
-    }.__getitem__
-    translator_class = Mock(return_value=translator)
-    monkeypatch.setattr(runtime_translation, "_GoogleTranslator", translator_class)
-    monkeypatch.setattr(runtime_translation, "_translation_import_attempted", True)
-    runtime_translation.clear_translation_cache()
+    class FakeResponse:
+        def __init__(self, text):
+            self.text = text
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return [[[{"Hello": "Hola", "Hello there": "Hola allí"}[self.text], self.text]]]
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            self.text = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def get(self, _url, *, params):
+            return FakeResponse(params["q"])
+
+    translator_factory = Mock(side_effect=lambda **kwargs: FakeClient(**kwargs))
+    monkeypatch.setattr(runtime_translation, "_translation_client_factory", translator_factory)
+    _reset_translation_state()
 
     symbol = Symbol(
         label="Hello",
@@ -83,10 +107,9 @@ def test_spanish_board_translation_serializes_translated_symbol_payload(
     try:
         payload = board_helpers.serialize_board(board, target_lang="es")
     finally:
-        runtime_translation.clear_translation_cache()
+        _reset_translation_state()
 
-    translator_class.assert_called_once_with(source="auto", target="es")
-    assert translator.translate.call_count == 2
+    assert translator_factory.call_count == 2
     assert payload["name"] == "Greetings"
     assert payload["locale"] == "en"
     assert payload["is_language_learning"] is False
@@ -113,15 +136,32 @@ def test_board_translation_normalizes_locale_style_target_language(
     monkeypatch, test_db_session, regular_user
 ):
     """Board translation accepts locale tags like es-ES without crashing."""
-    translator = Mock()
-    translator.translate.side_effect = {
-        "Hello": "Hola",
-        "Hello there": "Hola allí",
-    }.__getitem__
-    translator_class = Mock(return_value=translator)
-    monkeypatch.setattr(runtime_translation, "_GoogleTranslator", translator_class)
-    monkeypatch.setattr(runtime_translation, "_translation_import_attempted", True)
-    runtime_translation.clear_translation_cache()
+    class FakeResponse:
+        def __init__(self, text):
+            self.text = text
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return [[[{"Hello": "Hola", "Hello there": "Hola allí"}[self.text], self.text]]]
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            self.text = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def get(self, _url, *, params):
+            return FakeResponse(params["q"])
+
+    translator_factory = Mock(side_effect=lambda **kwargs: FakeClient(**kwargs))
+    monkeypatch.setattr(runtime_translation, "_translation_client_factory", translator_factory)
+    _reset_translation_state()
 
     symbol = Symbol(
         label="Hello",
@@ -150,11 +190,124 @@ def test_board_translation_normalizes_locale_style_target_language(
     try:
         payload = board_helpers.serialize_board(board, target_lang="es-ES")
     finally:
-        runtime_translation.clear_translation_cache()
+        _reset_translation_state()
 
-    translator_class.assert_called_once_with(source="auto", target="es")
+    assert translator_factory.call_count == 2
     assert payload["symbols"][0]["custom_text"] == "Hola allí"
     assert payload["symbols"][0]["symbol"]["label"] == "Hola"
+
+
+def test_runtime_translation_uses_bounded_trusted_endpoint(monkeypatch):
+    captured = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return [[['Hola', 'Hello']]]
+
+    class Client:
+        def __init__(self, **kwargs):
+            captured['kwargs'] = kwargs
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def get(self, url, *, params):
+            captured['url'] = url
+            captured['params'] = params
+            return Response()
+
+    factory = Mock(side_effect=lambda **kwargs: Client(**kwargs))
+    monkeypatch.setattr(runtime_translation, '_translation_client_factory', factory)
+    _reset_translation_state()
+
+    assert runtime_translation.translate_text('Hello', 'es-ES') == 'Hola'
+    assert captured['url'] == 'https://translate.googleapis.com/translate_a/single'
+    assert captured['params'] == {
+        'client': 'gtx',
+        'sl': 'auto',
+        'tl': 'es',
+        'dt': 't',
+        'q': 'Hello',
+    }
+    assert captured['kwargs']['follow_redirects'] is False
+    assert captured['kwargs']['headers']['User-Agent'] == 'AAC-Assistant/2.0'
+    assert captured['kwargs']['timeout'].connect == 3.0
+    assert captured['kwargs']['timeout'].read == 3.0
+
+
+def test_runtime_translation_falls_back_on_malformed_response_and_opens_circuit(monkeypatch):
+    class MalformedResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {'unexpected': 'shape'}
+
+    class MalformedClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def get(self, *_args, **_kwargs):
+            return MalformedResponse()
+
+    factory = Mock(side_effect=lambda **kwargs: MalformedClient(**kwargs))
+    monkeypatch.setattr(runtime_translation, '_translation_client_factory', factory)
+    _reset_translation_state()
+
+    assert runtime_translation.translate_text('one', 'es') == 'one'
+    assert runtime_translation.translate_text('two', 'es') == 'two'
+    assert runtime_translation.translate_text('three', 'es') == 'three'
+    assert runtime_translation.translate_text('four', 'es') == 'four'
+    assert factory.call_count == 3
+
+
+def test_runtime_translation_times_out_and_recovers_after_cooldown(monkeypatch):
+    class HangingClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def get(self, *_args, **_kwargs):
+            import time
+
+            time.sleep(0.2)
+
+    clock = [100.0]
+    factory = Mock(side_effect=lambda **kwargs: HangingClient(**kwargs))
+    monkeypatch.setattr(runtime_translation, '_translation_client_factory', factory)
+    monkeypatch.setattr(runtime_translation, '_TRANSLATION_TIMEOUT_SECONDS', 0.01)
+    monkeypatch.setattr(runtime_translation, '_CIRCUIT_BREAK_COOLDOWN_SECONDS', 10.0)
+    monkeypatch.setattr(runtime_translation.time, 'monotonic', lambda: clock[0])
+    _reset_translation_state()
+
+    assert runtime_translation.translate_text('one', 'es') == 'one'
+    assert runtime_translation.translate_text('two', 'es') == 'two'
+    assert runtime_translation.translate_text('three', 'es') == 'three'
+    # The open circuit suppresses network work during its cooldown.
+    assert runtime_translation.translate_text('four', 'es') == 'four'
+    assert factory.call_count == 3
+
+    # Once the cooldown expires, translation attempts resume.
+    clock[0] = 111.0
+    assert runtime_translation.translate_text('four', 'es') == 'four'
+    assert factory.call_count == 4
 
 
 def test_prediction_service_localizes_history_labels_to_requested_language(

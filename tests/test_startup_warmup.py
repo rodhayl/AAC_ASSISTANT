@@ -105,6 +105,31 @@ class TestStartupServesDuringWarmup:
             health = client.get("/api/health")
             assert health.status_code == 200
 
+    def test_database_startup_failure_blocks_readiness_but_not_liveness(self, monkeypatch):
+        """A failed schema/seed step must never advertise a ready service."""
+        from src.api.main import app
+
+        monkeypatch.setattr("src.api.main.schema.ensure", lambda: None)
+        monkeypatch.setattr(
+            "src.api.main.init_database",
+            lambda ensure_schema=False: (_ for _ in ()).throw(
+                RuntimeError("database unavailable")
+            ),
+        )
+        monkeypatch.setattr("src.api.main.warmup_providers", lambda timeout_seconds=30.0: None)
+        monkeypatch.setattr(
+            "src.api.main.index_all_symbols",
+            lambda *a, **kw: (_ for _ in ()).throw(
+                AssertionError("indexing must be skipped when database initialization fails")
+            ),
+        )
+
+        with TestClient(app) as client:
+            assert client.get("/api/health").status_code == 200
+            ready = client.get("/ready")
+            assert ready.status_code == 503
+            assert ready.json()["status"] == "database_unavailable"
+
 
 # ---------------------------------------------------------------------------
 # Fix B — warmup_providers timeout and shutdown correctness
@@ -130,19 +155,90 @@ class TestLifespanShutdown:
         monkeypatch.setattr("src.api.main.schema.ensure", lambda: None)
         monkeypatch.setattr("src.api.main.init_database", lambda ensure_schema=False: None)
         monkeypatch.setattr("src.api.main.asyncio.to_thread", blocking_to_thread)
-        monkeypatch.setattr("src.api.main.report_debug", lambda *_args, **_kwargs: None)
 
         async def exercise_lifespan():
             async with lifespan(app):
                 deadline = asyncio.get_running_loop().time() + 1
-                while started_names != {"warmup_providers", "index_all_symbols"}:
+                while started_names != {"warmup_providers", "run_index"}:
                     if asyncio.get_running_loop().time() >= deadline:
                         raise AssertionError(f"Started tasks: {started_names}")
                     await asyncio.sleep(0.01)
 
         asyncio.run(exercise_lifespan())
 
-        assert set(cancelled) == {"warmup_providers", "index_all_symbols"}
+        assert set(cancelled) == {"warmup_providers", "run_index"}
+
+    def test_index_timeout_defers_vector_close_but_runs_provider_cleanup(self, monkeypatch):
+        """A stuck native index cannot suppress non-vector provider cleanup."""
+        from src.api.main import app, lifespan
+
+        index_started = threading.Event()
+        release_index = threading.Event()
+        cleanup_calls: list[dict] = []
+
+        monkeypatch.setattr("src.api.main.schema.ensure", lambda: None)
+        monkeypatch.setattr("src.api.main.init_database", lambda ensure_schema=False: None)
+        monkeypatch.setattr("src.api.main.warmup_providers", lambda timeout_seconds=30.0: None)
+        monkeypatch.setattr(
+            "src.api.main.config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS", 3
+        )
+
+        def hanging_index():
+            index_started.set()
+            release_index.wait(timeout=5)
+
+        async def fake_reset_providers_async(**kwargs):
+            cleanup_calls.append(kwargs)
+
+        monkeypatch.setattr("src.api.main.index_all_symbols", hanging_index)
+        monkeypatch.setattr("src.api.main.reset_providers_async", fake_reset_providers_async)
+
+        async def exercise_lifespan():
+            async with lifespan(app):
+                deadline = asyncio.get_running_loop().time() + 1
+                while not index_started.is_set():
+                    if asyncio.get_running_loop().time() >= deadline:
+                        raise AssertionError("index worker did not start")
+                    await asyncio.sleep(0.01)
+
+        asyncio.run(exercise_lifespan())
+        release_index.set()
+
+        assert cleanup_calls
+        assert cleanup_calls[0]["close_vector_store"] is False
+        assert cleanup_calls[0]["timeout_seconds"] > 0
+        assert cleanup_calls[0]["timeout_seconds"] < 3
+
+    @pytest.mark.parametrize("configured_timeout", [1, 2, 3])
+    def test_shutdown_budget_always_leaves_uvicorn_handoff_buffer(
+        self, monkeypatch, configured_timeout
+    ):
+        from src.api.main import app, lifespan
+
+        cleanup_calls: list[dict] = []
+        monkeypatch.setattr("src.api.main.schema.ensure", lambda: None)
+        monkeypatch.setattr("src.api.main.init_database", lambda ensure_schema=False: None)
+        monkeypatch.setattr("src.api.main.warmup_providers", lambda timeout_seconds=30.0: None)
+        monkeypatch.setattr(
+            "src.api.main.config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS",
+            configured_timeout,
+        )
+        monkeypatch.setattr("src.api.main.index_all_symbols", lambda: None)
+
+        async def fake_reset_providers_async(**kwargs):
+            cleanup_calls.append(kwargs)
+
+        monkeypatch.setattr("src.api.main.reset_providers_async", fake_reset_providers_async)
+
+        async def exercise_lifespan():
+            async with lifespan(app):
+                await asyncio.sleep(0.01)
+
+        asyncio.run(exercise_lifespan())
+
+        assert cleanup_calls
+        budget = cleanup_calls[0]["timeout_seconds"]
+        assert 0 < budget < configured_timeout
 
 
 class TestWarmupTimeoutCorrectness:
@@ -272,7 +368,10 @@ class TestIndexAllSymbolsEmptyLibrary:
         @contextmanager
         def mock_get_session():
             mock_db = Mock()
-            mock_db.query.return_value.all.return_value = []
+            query = mock_db.query.return_value
+            query.order_by.return_value = query
+            query.yield_per.return_value = []
+            query.first.return_value = None
             yield mock_db
 
         monkeypatch.setattr(vector_utils, "get_session", mock_get_session)

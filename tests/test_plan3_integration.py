@@ -20,7 +20,6 @@ class TestPlan3Integration:
         self.semantics = SymbolSemantics()
         self.analytics = SymbolAnalytics()
         yield
-        self.expander.clear_cache()
 
     def test_complete_symbol_flow_with_expansion(self):
         """Test complete flow: symbols -> semantic analysis -> expansion."""

@@ -117,7 +117,6 @@ test.describe('Boards - Student', () => {
     // Wait, the store has `duplicateBoard`, so the UI *should* have it.
     // Let's check if the card has a Copy icon.
     // Reading Boards.tsx snippet again...
-    // import { Plus, Trash2, LayoutGrid, Edit, Copy, UserPlus, Search } from 'lucide-react';
     // It imports Copy. It probably uses it.
     // I'll try to find a button with the Copy icon or title "Duplicate".
     
@@ -169,7 +168,7 @@ test.describe('Boards - Pagination & Bulk (Real)', () => {
     console.log(`[Seeding] Using User ID: ${userId}`);
     
     const apiContext = await playwright.request.newContext({
-        baseURL: 'http://localhost:8086'
+        baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:8086'
     });
 
     // Create 105 boards
@@ -308,7 +307,7 @@ test.describe('Boards - Pagination & Bulk (Real)', () => {
     const userId = tokenPayload.user_id;
 
     const apiContext = await playwright.request.newContext({
-        baseURL: 'http://localhost:8086'
+        baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:8086'
     });
     
     // Fetch all boards

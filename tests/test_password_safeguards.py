@@ -84,15 +84,16 @@ class TestPasswordValidation:
         )
 
         response = client.post(
-            "/api/auth/login",
-            json={
+            "/api/auth/token",
+            data={
                 "username": "loginuser",
                 "password": _fake_test_password(),
             },
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["username"] == "loginuser"
+        assert data["token_type"] == "bearer"
+        assert data["access_token"]
 
     def test_login_with_null_password_hash_safety(self, client, test_db_session):
         """A null password hash is rejected safely by the schema or endpoint."""
@@ -115,8 +116,8 @@ class TestPasswordValidation:
             return
 
         response = client.post(
-            "/api/auth/login",
-            json={"username": "nullpassuser", "password": _fake_test_password()},
+            "/api/auth/token",
+            data={"username": "nullpassuser", "password": _fake_test_password()},
         )
         assert response.status_code == 500
         assert "Account configuration error" in response.json()["detail"]

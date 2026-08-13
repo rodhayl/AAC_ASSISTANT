@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
 
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
@@ -16,7 +15,6 @@ interface UserManagementPageProps {
 
 export function UserManagementPage({ role }: UserManagementPageProps) {
   const user = useAuthStore((state) => state.user)
-  const navigate = useNavigate()
   const namespace = role === 'teacher' ? 'teachers' : 'admins'
   const { t } = useTranslation([namespace, 'settings'])
   const [managedUsers, setManagedUsers] = useState<User[]>([])
@@ -55,11 +53,6 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
   }, [role])
 
   useEffect(() => {
-    if (user?.user_type !== 'admin') {
-      navigate('/')
-      return
-    }
-
     let cancelled = false
     const load = async () => {
       setLoading(true)
@@ -79,7 +72,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     return () => {
       cancelled = true
     }
-  }, [loadUsers, navigate, role, t, user])
+  }, [loadUsers, role, t, user])
 
   const clearCreateForm = () => {
     setNewUsername('')

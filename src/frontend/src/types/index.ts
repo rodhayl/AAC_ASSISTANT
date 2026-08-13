@@ -105,13 +105,6 @@ export interface AchievementFull extends Achievement {
   criteria_value?: number | null;
 }
 
-export interface LeaderboardEntry {
-  username: string;
-  display_name: string;
-  points: number;
-  achievement_count: number;
-}
-
 export interface LearningSessionStart {
   topic: string;
   purpose?: string;
@@ -203,11 +196,6 @@ export interface QuestionResponse {
   message?: string;  // Generic message field
   error?: string;
   full_thinking?: string;  // Admin debug field
-}
-
-export interface AnswerSubmit {
-  answer: string;
-  is_voice: boolean;
 }
 
 export interface AnswerResponse {

@@ -1,17 +1,61 @@
 """Regression coverage for the frozen launcher error-reporting path."""
 
-import importlib.util
+from importlib.machinery import SourceFileLoader
+from importlib.util import module_from_spec, spec_from_loader
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parents[1]
 
 
 def _load_launcher():
-    spec = importlib.util.spec_from_file_location("aac_launcher", REPO_ROOT / "launcher.pyw")
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    """Load the Windows .pyw entry point consistently on every host OS."""
+    launcher_path = REPO_ROOT / "launcher.pyw"
+    loader = SourceFileLoader("aac_launcher", str(launcher_path))
+    spec = spec_from_loader(loader.name, loader)
+    assert spec is not None
+    module = module_from_spec(spec)
+    loader.exec_module(module)
     return module
+
+
+def test_shutdown_event_name_is_stable_and_install_scoped():
+    launcher = _load_launcher()
+
+    first = launcher._shutdown_event_name(
+        r"C:\\Program Files\\AAC Assistant\\AAC_Assistant.exe"
+    )
+    same = launcher._shutdown_event_name(
+        r"C:\\Program Files\\AAC Assistant\\AAC_Assistant.exe"
+    )
+    other = launcher._shutdown_event_name(
+        r"D:\\Portable\\AAC Assistant\\AAC_Assistant.exe"
+    )
+
+    assert first == same
+    assert first.startswith("Local\\AACAssistantShutdown_")
+    assert first != other
+
+
+def test_browser_auto_open_can_be_disabled_for_headless_runs(monkeypatch):
+    launcher = _load_launcher()
+
+    for value in ("1", "true", "yes", "on"):
+        monkeypatch.setenv("AAC_ASSISTANT_NO_BROWSER", value)
+        assert launcher._should_open_browser() is False
+    for value in ("0", "false", "no", "off", ""):
+        monkeypatch.setenv("AAC_ASSISTANT_NO_BROWSER", value)
+        assert launcher._should_open_browser() is True
+
+
+def test_headless_mode_never_calls_webbrowser(monkeypatch):
+    launcher = _load_launcher()
+    monkeypatch.setenv("AAC_ASSISTANT_NO_BROWSER", "1")
+    opened = []
+    monkeypatch.setattr(launcher.webbrowser, "open", opened.append)
+
+    launcher._open_browser("http://127.0.0.1:8257/")
+
+    assert opened == []
 
 
 def test_startup_error_writes_to_first_available_candidate(tmp_path):

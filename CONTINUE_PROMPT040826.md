@@ -1,28 +1,37 @@
-# CONTINUE — AAC Assistant Modernization: Final Tasks (04/08/2026)
+# ARCHIVE — AAC Assistant Modernization Handoff (04/08/2026)
 
-You are picking up a nearly-complete modernization mission. **204 of 205 contract assertions are validated and passed. One assertion (VAL-ACH-019) and the final wrap-up remain.** This file is your only briefing — read it fully before acting.
+> **ARCHIVAL NOTICE:** Every section below is a historical snapshot and task narrative from 2026-08-04. It is not an instruction to execute, and none of its branch, working-tree, “pending,” or mission-state statements describe the current repository. The authoritative current status is `CONTINUE_PROMPT080826.md`.
+
+This historical handoff described the nearly-complete modernization mission on 2026-08-04. VAL-ACH-019 was subsequently implemented, regression-tested, and included in the completed 2026-08-08 validation waves. Use `CONTINUE_PROMPT080826.md` as the current handoff; this file is retained only as historical context.
 
 ---
 
-## 1. Repository & current state
+## 1. Historical repository snapshot (not current state)
 
-- **Repo:** `D:\GitHub\AAC_ASSISTANT` (this workspace), branch `020826_improvements` (default branch: `main`).
-- **Stack:** FastAPI + SQLAlchemy 2 + pydantic-settings backend (Python 3.13, managed by **uv** with `pyproject.toml`/`uv.lock`); React 19 / Vite 7 / TypeScript / Tailwind 4 / Zustand frontend in `src/frontend`; Playwright e2e; PyInstaller 6 + Inno Setup packaging.
-- **Working tree state:** clean except one **untracked file**: `tests/test_val_ach_019_regression.py` — left by a worker session that was paused mid-feature. It looks complete and well-structured, but **it has never been run**. Treat it as unverified work-in-progress: review it, run it, fix it or the underlying code as needed, then commit it as your own work.
-- **Latest commits:**
-  - `2267fc0` fix(frozen-fastembed-logging-guard): redirect stdout/stderr when None during model init
-  - `95f202e` fix(startup): move warmup off critical path for VAL-OPS-021
-  - `6c15c31` test(packaging): repair production E2E regression
-  - `c647313` docs: refresh release documentation (README.md and docs/01_PROJECT_GUIDE.md are current — do not rewrite)
-- **Mission artifacts** (outside the repo): `C:\Users\rulfe\.factory\missions\d8487971-3f1c-4d2d-a5bd-a18385b43235` contains `validation-state.json` (204 passed, `VAL-ACH-019` pending) and `features.json` (feature `test-val-ach-019-regression` pending/in-progress in milestone `final-gate-closure`).
+The following bullets describe the 2026-04-08 snapshot only. Do not use them as current branch, working-tree, commit, test, or external mission-state information. The current branch and validation evidence are recorded in `CONTINUE_PROMPT080826.md`.
+
+- **Historical repo/branch:** `D:\GitHub\AAC_ASSISTANT`, branch `020826_improvements` (default branch: `main`).
+- **Historical stack snapshot:** FastAPI + SQLAlchemy 2 + pydantic-settings backend; React/Vite/TypeScript frontend; Playwright; PyInstaller/Inno Setup.
+- **Historical working-tree claim:** the old handoff said `tests/test_val_ach_019_regression.py` was untracked and unverified. That claim is superseded: the test is now present and passes in the repository suite.
+- **Historical mission claim:** the referenced external mission artifacts were not part of the original 2026-04-08 repository snapshot. Their old task narrative is retained only as provenance; later final verification recorded the live VAL-ACH-019 result externally.
+- **Historical commit list:** the commit identifiers below are preserved for provenance only.
+  - `2267fc0` fix(frozen-fastembed-logging-guard)
+  - `95f202e` fix(startup)
+  - `6c15c31` test(packaging)
+  - `c647313` docs(release)
+
 
 ## 2. What was done (context, one paragraph)
 
-The mission modernized the app for production: migrated to uv/pyproject/Ruff/pydantic-settings/pwdlib-Argon2; removed torch/whisper/FAISS/sentence-transformers/pyttsx3/Socket.IO/Alembic/NLTK; added faster-whisper (optional `voice` extra), fastembed+sqlite-vec semantic search, browser speech synthesis; split god files (models, routers, learning services, frontend pages); hardened auth/SSE/startup (provider warmup now runs in the background so the server binds in <1s); slimmed packaging to a 134 MB onedir / 45 MB installer; full gates green: backend pytest suite, Ruff, ESLint, 60 Vitest tests, 92/92 Playwright e2e against the production build. Every one of the 205 behavioral contract assertions has been validated end-to-end **except VAL-ACH-019**.
+The mission modernized the app for production: migrated to uv/pyproject/Ruff/pydantic-settings/pwdlib-Argon2; removed torch/whisper/FAISS/sentence-transformers/pyttsx3/Socket.IO/Alembic/NLTK; added faster-whisper (optional `voice` extra), fastembed+sqlite-vec semantic search, browser speech synthesis; split god files (models, routers, learning services, frontend pages); hardened auth/SSE/startup (provider warmup now runs in the background so the server binds in <1s); slimmed packaging to a 134 MB onedir / 45 MB installer. The VAL-ACH-019 regression is now present and passing in the repository test suite; the current 080826 handoff records the later full backend/frontend validation.
 
-## 3. Remaining tasks (in order)
+## 3. Historical task record (superseded and completed in the repository)
 
-### Task 1 — Finish the VAL-ACH-019 regression test and commit it
+The task narrative below is retained for provenance only. It is not an active checklist: the repository regression, implementation, and automated validation were completed in later work. The current authoritative status is `CONTINUE_PROMPT080826.md`. The external mission artifacts mentioned below were not modified by this repository audit.
+
+### Historical Task 1 — Finish the VAL-ACH-019 regression test and commit it
+
+**Status in the current repository: completed and passing. The steps below are preserved for historical provenance only; do not execute them as an active work plan.**
 
 The contract assertion (verbatim behavior required):
 
@@ -36,7 +45,9 @@ Steps:
 5. Run the full backend gates: `uv run pytest -q tests` and `uv run ruff check src tests` — both must exit 0.
 6. Commit following repo style (conventional commits, e.g. `test(achievements): pin VAL-ACH-019 no-LLM session end auto-award`). If you changed app code, include it in the commit.
 
-### Task 2 — Validate VAL-ACH-019 end-to-end against the live server (real behavioral validation)
+### Historical Task 2 — Validate VAL-ACH-019 end-to-end against the live server (real behavioral validation)
+
+**Status in this audit: not claimed. The repository regression passes, but this continuation did not perform the separate live curl flow or modify external mission files. The instructions below are historical provenance only.**
 
 The unit-level pytest is necessary but not sufficient — the contract requires the real API flow:
 
@@ -52,7 +63,9 @@ The unit-level pytest is necessary but not sufficient — the contract requires 
 4. If anything fails at this level but passed in pytest, the defect is environmental/real-path — root-cause and fix it (do not just mark it passed).
 5. Clean up any test data/processes you started; leave the repo working tree clean after committing.
 
-### Task 3 — Final gate + wrap-up
+### Historical Task 3 — Final gate + wrap-up
+
+**Status in the repository: automated backend/frontend/package gates are recorded in `CONTINUE_PROMPT080826.md`; branch integration remains a user decision. The instructions below are historical provenance only.**
 
 1. Re-read `validation-state.json` and confirm **all 205 assertions are `"passed"`** — this is the end-of-mission gate.
 2. Run the complete gate suite one final time and report results:
@@ -75,11 +88,6 @@ The unit-level pytest is necessary but not sufficient — the contract requires 
 - Test credentials used by the suite are fine in test files; never commit real secrets. `.env` is gitignored.
 - If you find new unrelated bugs, note them in your final report — don't fix them silently in this scope.
 
-## 5. Definition of done
+## 5. Historical closure note
 
-- [ ] `tests/test_val_ach_019_regression.py` committed and passing; any underlying defect fixed
-- [ ] VAL-ACH-019 validated live via curl flow (200 end-without-LLM, First Steps auto-awarded, points = 10)
-- [ ] `validation-state.json`: 205/205 `"passed"`; `features.json` updated
-- [ ] Full gate suite green (pytest, Ruff, ESLint, Vitest, build)
-- [ ] Working tree clean; README accurate
-- [ ] Final report to the user with evidence, plus the branch-integration question
+This document is archival and no longer carries an active unchecked definition-of-done list. Repository evidence for the completed regression, maintainability/performance waves, production-only dead-code audit, and final automated gates is maintained in `CONTINUE_PROMPT080826.md`. The live VAL-ACH-019 flow and external mission-state update were completed in a later separately recorded final verification; the instructions above remain historical provenance only.

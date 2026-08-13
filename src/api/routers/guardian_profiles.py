@@ -13,7 +13,7 @@ The guardian profile system allows teachers/admins to:
 """
 
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
@@ -49,7 +49,7 @@ def get_current_teacher_or_admin(
 
 
 @router.get("/templates", response_model=list[schemas.TemplateInfo])
-async def list_templates(current_user: User = Depends(get_current_teacher_or_admin)):
+def list_templates(current_user: User = Depends(get_current_teacher_or_admin)):
     """
     List all available personality templates.
 
@@ -62,7 +62,7 @@ async def list_templates(current_user: User = Depends(get_current_teacher_or_adm
 
 
 @router.get("/templates/{template_name}")
-async def get_template(
+def get_template(
     template_name: str, current_user: User = Depends(get_current_teacher_or_admin)
 ):
     """
@@ -90,7 +90,7 @@ async def get_template(
 @router.post(
     "/templates/{template_name}/preview", response_model=schemas.SystemPromptPreview
 )
-async def preview_template(
+def preview_template(
     template_name: str,
     overrides: dict | None = None,
     current_user: User = Depends(get_current_teacher_or_admin),
@@ -114,7 +114,7 @@ async def preview_template(
 
 
 @router.get("/students", response_model=list[schemas.StudentWithProfileInfo])
-async def list_students_with_profiles(
+def list_students_with_profiles(
     current_user: User = Depends(get_current_teacher_or_admin),
     db: Session = Depends(get_db),
 ):
@@ -140,7 +140,7 @@ async def list_students_with_profiles(
 
 
 @router.get("/students/{student_id}", response_model=schemas.GuardianProfileResponse)
-async def get_student_profile(
+def get_student_profile(
     student_id: int,
     current_user: User = Depends(get_current_teacher_or_admin),
     db: Session = Depends(get_db),
@@ -168,7 +168,7 @@ async def get_student_profile(
 
 
 @router.post("/students/{student_id}", response_model=schemas.GuardianProfileResponse)
-async def create_student_profile(
+def create_student_profile(
     student_id: int,
     profile_data: schemas.GuardianProfileCreate,
     current_user: User = Depends(get_current_teacher_or_admin),
@@ -242,6 +242,11 @@ async def create_student_profile(
         db=db,
     )
 
+    # Commit before responding: the request dependency's teardown commit runs
+    # after the response is sent, and the UI re-fetches the profile list
+    # immediately after this create.
+    db.commit()
+
     logger.info(
         f"Guardian profile created for student {student_id} by {current_user.username}"
     )
@@ -249,7 +254,7 @@ async def create_student_profile(
 
 
 @router.put("/students/{student_id}", response_model=schemas.GuardianProfileResponse)
-async def update_student_profile(
+def update_student_profile(
     student_id: int,
     profile_data: schemas.GuardianProfileUpdate,
     current_user: User = Depends(get_current_teacher_or_admin),
@@ -322,6 +327,10 @@ async def update_student_profile(
         db=db,
     )
 
+    # Commit before responding so the updated profile is durable for the
+    # immediate list/read requests that follow this save.
+    db.commit()
+
     logger.info(
         f"Guardian profile updated for student {student_id} by {current_user.username}"
     )
@@ -329,7 +338,7 @@ async def update_student_profile(
 
 
 @router.delete("/students/{student_id}")
-async def delete_student_profile(
+def delete_student_profile(
     student_id: int,
     current_user: User = Depends(get_current_teacher_or_admin),
     db: Session = Depends(get_db),
@@ -359,6 +368,10 @@ async def delete_student_profile(
             detail=get_text(user=current_user, key="errors.guardian.noProfile"),
         )
 
+    # Commit before responding so the deletion is durable for the immediate
+    # follow-up roster/profile reads in the UI.
+    db.commit()
+
     logger.info(
         f"Guardian profile deleted for student {student_id} by {current_user.username}"
     )
@@ -371,9 +384,9 @@ async def delete_student_profile(
 @router.get(
     "/students/{student_id}/history", response_model=list[schemas.ProfileHistoryEntry]
 )
-async def get_profile_history(
+def get_profile_history(
     student_id: int,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=100),
     current_user: User = Depends(get_current_teacher_or_admin),
     db: Session = Depends(get_db),
 ):
@@ -393,7 +406,7 @@ async def get_profile_history(
 
 
 @router.get("/students/{student_id}/effective-profile")
-async def get_effective_profile(
+def get_effective_profile(
     student_id: int,
     current_user: User = Depends(get_current_teacher_or_admin),
     db: Session = Depends(get_db),
@@ -415,7 +428,7 @@ async def get_effective_profile(
 @router.get(
     "/students/{student_id}/system-prompt", response_model=schemas.SystemPromptPreview
 )
-async def get_student_system_prompt(
+def get_student_system_prompt(
     student_id: int,
     current_user: User = Depends(get_current_teacher_or_admin),
     db: Session = Depends(get_db),

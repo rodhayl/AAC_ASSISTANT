@@ -1,3 +1,5 @@
+> **Document status (2026-08-12): HISTORICAL COMPLETION INDEX.** Every row below is recorded as completed. This table is an audit trail, not an active queue; current status is maintained in `CONTINUE_PROMPT080826.md` and the repository itself.
+
 | Status | Task |
 |---|---|
 | completed | Inspect auth store and add failing refresh regression tests |

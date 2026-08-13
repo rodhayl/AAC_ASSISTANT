@@ -55,7 +55,9 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
     const fetchBoards = async () => {
       try {
         setLoading(true);
-        const response = await api.get('/boards/', { params: { user_id: user.id } });
+        // The unfiltered list includes the user's boards and public boards;
+        // assigned student boards are added below as a separate scoped request.
+        const response = await api.get('/boards/');
         let allBoards = response.data as Board[];
 
         if (user.user_type === 'student') {

@@ -13,12 +13,19 @@ from src.aac_app import schema
 from src.aac_app.db import get_session
 from src.aac_app.models import (
     Achievement,
+    BoardAssignment,
     BoardSymbol,
     CommunicationBoard,
     Symbol,
     User,
     UserAchievement,
 )
+from src.aac_app.services.achievement_catalog import (
+    INITIAL_ACHIEVEMENT_KEYS,
+    PREDEFINED_ACHIEVEMENTS,
+)
+from src.aac_app.services.auth_service import password_strength_error
+from src.aac_app.services.credential_service import mark_credentials_changed
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -75,9 +82,36 @@ def _ensure_bootstrap_admin(session: Session) -> None:
         return
 
     username = config.get("AAC_BOOTSTRAP_ADMIN_USERNAME", "admin1").strip() or "admin1"
-    password = config.get("AAC_BOOTSTRAP_ADMIN_PASSWORD", "Admin123").strip() or "Admin123"
     if session.query(User).filter(User.user_type == "admin").first():
         return
+
+    explicit_password = config.explicit_bootstrap_password()
+    if config.ENVIRONMENT.strip().casefold() == "production":
+        # Production must never fall back to a generated credential or the
+        # insecure development default: a unique password is mandatory.
+        if explicit_password is None:
+            raise ValueError(
+                "AAC_BOOTSTRAP_ADMIN_PASSWORD is not acceptable in production: "
+                "a unique password must be configured"
+            )
+        password = explicit_password
+        error = password_strength_error(password)
+        if password == config.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD:
+            error = "the development default must be changed"
+        if error:
+            raise ValueError(
+                "AAC_BOOTSTRAP_ADMIN_PASSWORD is not acceptable in production: "
+                + error
+            )
+    else:
+        # Development/default: use an explicitly configured password verbatim,
+        # otherwise generate a cryptographically random one-time credential
+        # (persisted to .env so the operator can retrieve it locally).
+        password = (
+            explicit_password
+            if explicit_password is not None
+            else config.resolve_bootstrap_password()
+        )
 
     from src.aac_app.services.auth_service import get_password_hash
 
@@ -86,6 +120,7 @@ def _ensure_bootstrap_admin(session: Session) -> None:
         user.user_type = "admin"
         user.is_active = True
         user.password_hash = get_password_hash(password)
+        mark_credentials_changed(user)
         if not user.display_name:
             user.display_name = "Administrator"
     else:
@@ -102,7 +137,7 @@ def _ensure_bootstrap_admin(session: Session) -> None:
 
 
 def _create_sample_boards(session: Session) -> None:
-    """Create the demo communication board when it is missing."""
+    """Create the demo communication board and its student assignment."""
     admin = session.query(User).filter(User.username == "admin1").first()
     if not admin:
         admin = session.query(User).first()
@@ -117,35 +152,61 @@ def _create_sample_boards(session: Session) -> None:
         )
         .first()
     )
-    if board:
-        return
-
-    board = CommunicationBoard(
-        name="General Communication",
-        description="Basic vocabulary board with common symbols",
-        user_id=admin.id,
-        is_public=True,
-        is_template=True,
-        grid_rows=3,
-        grid_cols=4,
-        ai_enabled=True,
-        ai_provider="ollama",
-    )
-    session.add(board)
-    session.flush()
-
-    for index, symbol in enumerate(session.query(Symbol).order_by(Symbol.id)):
-        if index >= 12:
-            break
-        session.add(
-            BoardSymbol(
-                board_id=board.id,
-                symbol_id=symbol.id,
-                position_x=index % 4,
-                position_y=index // 4,
-                is_visible=True,
-            )
+    if board is None:
+        board = CommunicationBoard(
+            name="General Communication",
+            description="Basic vocabulary board with common symbols",
+            user_id=admin.id,
+            is_public=True,
+            is_template=True,
+            grid_rows=3,
+            grid_cols=4,
+            ai_enabled=True,
+            ai_provider="ollama",
         )
+        session.add(board)
+        session.flush()
+
+        # The demo board contains at most 12 symbols; do not scan the full
+        # catalog when a large production symbol library is present. The 12
+        # seeded sample symbols fill the 3x4 grid so the board crosses the
+        # 50% playability threshold instead of rendering as "Board Locked".
+        for index, symbol in enumerate(
+            session.query(Symbol).order_by(Symbol.id).limit(12)
+        ):
+            if index >= 12:
+                break
+            session.add(
+                BoardSymbol(
+                    board_id=board.id,
+                    symbol_id=symbol.id,
+                    position_x=index % 4,
+                    position_y=index // 4,
+                    is_visible=True,
+                )
+            )
+
+    # Students only see assigned boards in the Communication view, so assign
+    # the demo board to the demo student. Idempotent for existing installs.
+    student = session.query(User).filter(User.username == "student1").first()
+    if student is not None:
+        existing = (
+            session.query(BoardAssignment)
+            .filter(
+                BoardAssignment.board_id == board.id,
+                BoardAssignment.student_id == student.id,
+            )
+            .first()
+        )
+        if existing is None:
+            session.add(
+                BoardAssignment(
+                    board_id=board.id,
+                    student_id=student.id,
+                    assigned_by=admin.id,
+                )
+            )
+
     session.flush()
 
 
@@ -207,6 +268,48 @@ def _create_sample_symbols(session: Session) -> None:
             "category": "drinks",
             "keywords": "water, drink, liquid",
         },
+        {
+            "label": "hello",
+            "description": "A friendly greeting",
+            "category": "social",
+            "keywords": "hello, hi, greetings",
+        },
+        {
+            "label": "goodbye",
+            "description": "A parting word",
+            "category": "social",
+            "keywords": "goodbye, bye, leave",
+        },
+        {
+            "label": "yes",
+            "description": "Agreement or confirmation",
+            "category": "social",
+            "keywords": "yes, agree, correct",
+        },
+        {
+            "label": "no",
+            "description": "Disagreement or refusal",
+            "category": "social",
+            "keywords": "no, disagree, incorrect",
+        },
+        {
+            "label": "please",
+            "description": "A polite request word",
+            "category": "social",
+            "keywords": "please, polite",
+        },
+        {
+            "label": "thank you",
+            "description": "Expressing gratitude",
+            "category": "social",
+            "keywords": "thanks, gratitude, thank you",
+        },
+        {
+            "label": "help",
+            "description": "Asking for assistance",
+            "category": "social",
+            "keywords": "help, assist, support",
+        },
     ]
 
     for values in sample_symbols:
@@ -229,26 +332,18 @@ def _create_sample_achievements(session: Session) -> None:
     """Create the three system achievements without duplicating them."""
     sample_achievements = [
         {
-            "name": "First Steps",
-            "description": "Complete your first learning session",
-            "category": "beginner",
-            "criteria_type": "sessions_completed",
-            "criteria_value": 1,
-        },
-        {
-            "name": "Vocabulary Explorer",
-            "description": "Learn 10 new words",
-            "category": "vocabulary",
-            "criteria_type": "vocabulary_size",
-            "criteria_value": 10,
-        },
-        {
-            "name": "Quick Learner",
-            "description": "Answer 5 questions correctly",
-            "category": "performance",
-            "criteria_type": "correct_answers",
-            "criteria_value": 5,
-        },
+            field: PREDEFINED_ACHIEVEMENTS[key][field]
+            for field in (
+                "name",
+                "description",
+                "category",
+                "criteria_type",
+                "criteria_value",
+                "points",
+                "icon",
+            )
+        }
+        for key in INITIAL_ACHIEVEMENT_KEYS
     ]
 
     for values in sample_achievements:
@@ -264,15 +359,19 @@ def _create_sample_achievements(session: Session) -> None:
             .order_by(Achievement.id)
             .all()
         )
-        if not matches:
+        system_matches = [match for match in matches if match.created_by is None]
+        if not system_matches:
             session.add(Achievement(**values))
             continue
 
         # Older releases inserted the same system rows on every boot. Keep
-        # the first row as the stable definition and move any earned records
-        # before removing duplicate seed rows.
-        canonical = matches[0]
-        for duplicate in matches[1:]:
+        # the first system row as the stable definition and move any earned
+        # records before removing duplicate system rows. Custom achievements
+        # with the same definition are intentionally left untouched.
+        canonical = system_matches[0]
+        canonical.points = values["points"]
+        canonical.icon = values["icon"]
+        for duplicate in system_matches[1:]:
             session.query(UserAchievement).filter(
                 UserAchievement.achievement_id == duplicate.id
             ).update(

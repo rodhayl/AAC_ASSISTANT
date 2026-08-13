@@ -67,46 +67,44 @@ export function VoiceTab({ preferences, setPreferences, filteredVoices, showStat
     loadVoiceStatus();
   }, [fetchVoiceStatus, showStatus]);
 
-  const installVoiceDependencies = async () => {
+  // Both "install" flows share the same shape: flag the busy state, clear
+  // prior messages, POST to the installer, then refresh the dependency status.
+  const runInstall = async (
+    endpoint: string,
+    timeoutMs: number,
+    fallbackMessage: string,
+    fallbackError: string,
+  ) => {
     setInstallingVoiceDeps(true);
     setInstallMessage(null);
     setInstallError(null);
     try {
-      const res = await api.post(
-        '/providers/voice/install',
-        {},
-        { timeout: 10 * 60 * 1000 }
-      );
-      setInstallMessage(res.data?.message || t('ai.installComplete', 'Voice dependencies installed.'));
+      const res = await api.post(endpoint, {}, { timeout: timeoutMs });
+      setInstallMessage(res.data?.message || fallbackMessage);
       await fetchVoiceStatus();
     } catch (err) {
-      setInstallError(
-        extractError(err, t('ai.installFailed', 'Automatic voice installation failed.'))
-      );
+      setInstallError(extractError(err, fallbackError));
     } finally {
       setInstallingVoiceDeps(false);
     }
   };
 
+  const installVoiceDependencies = async () => {
+    await runInstall(
+      '/providers/voice/install',
+      10 * 60 * 1000,
+      t('ai.installComplete', 'Voice dependencies installed.'),
+      t('ai.installFailed', 'Automatic voice installation failed.'),
+    );
+  };
+
   const installTTS = async () => {
-    setInstallingVoiceDeps(true);
-    setInstallMessage(null);
-    setInstallError(null);
-    try {
-      const res = await api.post(
-        '/providers/tts/install',
-        {},
-        { timeout: 30 * 60 * 1000 }
-      );
-      setInstallMessage(res.data?.message || t('ai.installComplete', 'Local neural TTS installed.'));
-      await fetchVoiceStatus();
-    } catch (err) {
-      setInstallError(
-        extractError(err, t('ai.installFailed', 'Automatic TTS installation failed.'))
-      );
-    } finally {
-      setInstallingVoiceDeps(false);
-    }
+    await runInstall(
+      '/providers/tts/install',
+      30 * 60 * 1000,
+      t('ai.installComplete', 'Local neural TTS installed.'),
+      t('ai.installFailed', 'Automatic TTS installation failed.'),
+    );
   };
 
   const localTTSAvailable = voiceStatus?.tts_local?.available === true;
@@ -277,7 +275,7 @@ export function VoiceTab({ preferences, setPreferences, filteredVoices, showStat
                   {t('ai.sttModel', 'Speech-to-text model')}
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {t('ai.sttModelHelp', 'Whisper-tiny is the fast 39M-parameter default. The selected model downloads on first use.')}
+                  {t('ai.sttModelHelp', 'Whisper-tiny is the fast 39M-parameter default. Tiny is bundled with the installer; other sizes download on first use.')}
                 </p>
               </div>
               <select

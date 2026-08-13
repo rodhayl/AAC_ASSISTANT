@@ -92,6 +92,11 @@
     "export": {
        "unauthorizedExport": "No autorizado para exportar datos de este usuario",
        "checksumMismatch": "No coinciden las sumas de comprobación",
+       "invalidPayload": "Datos de exportación no válidos",
+       "payloadTooLarge": "Los datos de exportación son demasiado grandes",
+       "invalidAchievementTimestamp": "Marca de tiempo de logro no válida en la importación",
+       "legacyChecksumUnsupported": "Este formato de exportación antiguo ya no se acepta. Exporta los datos de nuevo desde la aplicación actual.",
+       "unsupportedSchemaVersion": "Versión de esquema de exportación no compatible",
        "unauthorizedImport": "No autorizado para importar datos de otro usuario"
     },
     "boards": {

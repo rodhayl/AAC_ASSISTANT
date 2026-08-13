@@ -1,6 +1,13 @@
 from fastapi.testclient import TestClient
 
-from src.aac_app.models import Achievement, BoardSymbol, CommunicationBoard, Symbol
+from src.aac_app.models import (
+    Achievement,
+    BoardAssignment,
+    BoardSymbol,
+    CommunicationBoard,
+    Symbol,
+    User,
+)
 from src.api.main import app
 
 
@@ -78,6 +85,71 @@ def test_board_list_includes_positioned_symbols(
     ]
 
 
+def test_delete_board_removes_assignments(
+    setup_test_db, test_db_session, admin_user, admin_token
+):
+    board = CommunicationBoard(
+        user_id=admin_user.id,
+        name="Assigned board",
+        description="Assignment deletion regression",
+    )
+    test_db_session.add(board)
+    test_db_session.flush()
+
+    student = User(
+        username="board-delete-student",
+        display_name="Board Delete Student",
+        user_type="student",
+        password_hash="unused",
+        is_active=True,
+    )
+    test_db_session.add(student)
+    test_db_session.flush()
+    assignment = BoardAssignment(board_id=board.id, student_id=student.id)
+    test_db_session.add(assignment)
+    test_db_session.commit()
+
+    client = TestClient(app)
+    response = client.delete(f"/api/boards/{board.id}", headers=_headers(admin_token))
+
+    assert response.status_code == 200
+    assert test_db_session.query(BoardAssignment).filter_by(board_id=board.id).count() == 0
+
+
+def test_delete_board_clears_incoming_links(
+    setup_test_db, test_db_session, admin_user, admin_token
+):
+    target = CommunicationBoard(
+        user_id=admin_user.id,
+        name="Linked target",
+        description="Incoming link target",
+    )
+    source = CommunicationBoard(
+        user_id=admin_user.id,
+        name="Linked source",
+        description="Incoming link source",
+    )
+    test_db_session.add_all([target, source])
+    test_db_session.flush()
+    symbol = Symbol(label="Linked symbol", category="general")
+    test_db_session.add(symbol)
+    test_db_session.flush()
+    placement = BoardSymbol(
+        board_id=source.id,
+        symbol_id=symbol.id,
+        linked_board_id=target.id,
+    )
+    test_db_session.add(placement)
+    test_db_session.commit()
+
+    client = TestClient(app)
+    response = client.delete(f"/api/boards/{target.id}", headers=_headers(admin_token))
+
+    assert response.status_code == 200
+    test_db_session.refresh(placement)
+    assert placement.linked_board_id is None
+
+
 def test_export_delete_import_round_trip_lists_restored_symbols(
     setup_test_db, test_db_session, admin_user, admin_token
 ):
@@ -108,6 +180,60 @@ def test_export_delete_import_round_trip_lists_restored_symbols(
     assert restored["symbols"][0]["position_x"] == 2
     assert restored["symbols"][0]["position_y"] == 3
     assert restored["symbols"][0]["custom_text"] == "Use this label"
+
+
+def test_import_restores_assigned_board_relationship(
+    setup_test_db, test_db_session, admin_user, admin_token
+):
+    student = User(
+        username="assigned-import-student",
+        display_name="Assigned Import Student",
+        user_type="student",
+        password_hash="unused",
+        is_active=True,
+    )
+    test_db_session.add(student)
+    test_db_session.flush()
+    board = CommunicationBoard(
+        user_id=admin_user.id,
+        name="Assigned import board",
+        description="Assignment round-trip",
+    )
+    test_db_session.add(board)
+    test_db_session.flush()
+    test_db_session.add(BoardAssignment(board_id=board.id, student_id=student.id))
+    test_db_session.commit()
+
+    client = TestClient(app)
+    payload = client.get(
+        "/api/data/export",
+        params={"username": student.username},
+        headers=_headers(admin_token),
+    )
+    assert payload.status_code == 200
+    export = payload.json()
+    assert [item["id"] for item in export["assignedBoards"]] == [board.id]
+
+    imported = client.post(
+        "/api/data/import",
+        json=export,
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert imported.status_code == 200
+    restored_board = (
+        test_db_session.query(CommunicationBoard)
+        .filter(
+            CommunicationBoard.user_id == student.id,
+            CommunicationBoard.name == board.name,
+        )
+        .one()
+    )
+    assert (
+        test_db_session.query(BoardAssignment)
+        .filter_by(board_id=restored_board.id, student_id=student.id)
+        .count()
+        == 1
+    )
 
 
 def test_achievements_list_and_create_accept_both_slash_variants(

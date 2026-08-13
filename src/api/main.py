@@ -1,10 +1,11 @@
 import asyncio
 import os
+import threading
 import time
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,7 +18,6 @@ from src.aac_app import schema
 from src.aac_app.seed import init_database
 from src.aac_app.services.symbol_image_backfill import backfill_missing_symbol_images
 from src.aac_app.services.vector_utils import index_all_symbols
-from src.api.debug_reporting import report_debug
 from src.api.deps import (
     get_startup_state,
     reset_providers_async,
@@ -31,6 +31,8 @@ from src.api.routers import (
     analytics,
     arasaac,
     auth,
+    auth_preferences,
+    auth_users,
     board_ai,
     board_assignments,
     boards,
@@ -51,8 +53,14 @@ from src.api.spa import SPAStaticFiles, resolve_frontend_directory
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize services on startup"""
+    """Initialize services on startup."""
     startup_started = time.perf_counter()
+    app.state.database_ready = False
+    app.state.database_startup_error = False
+    app.state.lifespan_active = False
+    # Long-lived SSE/WebSocket handlers use this signal to leave their receive
+    # loops before Uvicorn's graceful-shutdown deadline expires.
+    app.state.shutdown_event = asyncio.Event()
     logger.info("=" * 60)
     logger.info("Starting AAC Assistant API...")
     logger.info(f"Log file: {LOG_FILE}")
@@ -62,8 +70,10 @@ async def lifespan(app: FastAPI):
     try:
         schema.ensure()
         init_database(ensure_schema=False)
+        app.state.database_ready = True
         logger.info("Database initialized successfully")
     except Exception as e:
+        app.state.database_startup_error = True
         logger.error(f"Failed to initialize database: {e}")
         logger.exception("Database initialization traceback:")
 
@@ -74,58 +84,56 @@ async def lifespan(app: FastAPI):
     # need a provider will construct it on demand if warmup hasn't yet.
     async def warmup_in_background() -> None:
         try:
-            # #region debug-point A:warmup-start
-            report_debug("A", "src/api/main.py:warmup_in_background:start", "Warmup background task started")
-            # #endregion
             await asyncio.to_thread(warmup_providers, 30.0)
-            # #region debug-point A:warmup-finish
-            report_debug("A", "src/api/main.py:warmup_in_background:finish", "Warmup background task finished")
-            # #endregion
         except asyncio.CancelledError:
-            # #region debug-point A:warmup-cancelled
-            report_debug("A", "src/api/main.py:warmup_in_background:cancelled", "Warmup background task cancelled")
-            # #endregion
             raise
         except Exception as e:
             logger.error(f"Provider warmup failed: {e}")
             logger.exception("Warmup traceback:")
-            # #region debug-point A:warmup-error
-            report_debug("A", "src/api/main.py:warmup_in_background:error", "Warmup background task failed", {"error": str(e)})
-            # #endregion
 
     warmup_task = asyncio.create_task(warmup_in_background(), name="provider-warmup")
 
-    # Index symbols in the background.  The embedding model may need a
-    # network download on first run, so it must not block health or keyword
-    # search when the machine is offline.
+    # Index symbols in the background. The embedding model may need a network
+    # download on first run, so it must not block health or keyword search when
+    # the machine is offline. Track the real worker separately: cancelling an
+    # asyncio.to_thread wrapper does not cancel its underlying thread.
+    index_finished = threading.Event()
+    index_started = threading.Event()
+    shutdown_started = threading.Event()
+
+    def run_index() -> None:
+        index_started.set()
+        if shutdown_started.is_set() or not app.state.database_ready:
+            if not app.state.database_ready:
+                logger.warning("Skipping symbol indexing because database initialization failed")
+            index_finished.set()
+            return
+        try:
+            index_all_symbols()
+        finally:
+            index_finished.set()
+
     async def index_symbols_in_background() -> None:
         try:
-            # #region debug-point A:index-start
-            report_debug("A", "src/api/main.py:index_symbols_in_background:start", "Index background task started")
-            # #endregion
-            await asyncio.to_thread(index_all_symbols)
-            # #region debug-point A:index-finish
-            report_debug("A", "src/api/main.py:index_symbols_in_background:finish", "Index background task finished")
-            # #endregion
+            await asyncio.to_thread(run_index)
         except asyncio.CancelledError:
-            # #region debug-point A:index-cancelled
-            report_debug("A", "src/api/main.py:index_symbols_in_background:cancelled", "Index background task cancelled")
-            # #endregion
             raise
         except Exception as e:
             logger.error(f"Symbol indexing failed: {e}")
-            # #region debug-point A:index-error
-            report_debug("A", "src/api/main.py:index_symbols_in_background:error", "Index background task failed", {"error": str(e)})
-            # #endregion
 
     index_task = asyncio.create_task(index_symbols_in_background(), name="symbol-indexing")
 
     async def backfill_symbol_images_in_background() -> None:
         try:
+            if not app.state.database_ready:
+                logger.warning(
+                    "Skipping symbol image backfill because database initialization failed"
+                )
+                return
             if os.environ.get("TESTING") == "1":
                 logger.info("Skipping symbol image backfill during tests")
                 return
-            if not config.get_bool("AAC_ENABLE_SYMBOL_IMAGE_BACKFILL", True):
+            if not config.get_bool("AAC_ENABLE_SYMBOL_IMAGE_BACKFILL", False):
                 logger.info("Symbol image backfill disabled by configuration")
                 return
 
@@ -145,44 +153,6 @@ async def lifespan(app: FastAPI):
         name="symbol-image-backfill",
     )
 
-    # #region debug-point A:task-created
-    report_debug(
-        "A",
-        "src/api/main.py:lifespan:tasks-created",
-        "Background startup tasks created",
-        {
-            "tasks": [
-                warmup_task.get_name(),
-                index_task.get_name(),
-                image_backfill_task.get_name(),
-            ]
-        },
-    )
-    # #endregion
-
-    def report_background_task_done(finished_task: asyncio.Task) -> None:
-        """Report completion without raising from a done callback."""
-        exception = None
-        if not finished_task.cancelled():
-            try:
-                task_exception = finished_task.exception()
-            except asyncio.CancelledError:
-                task_exception = None
-            exception = str(task_exception) if task_exception else None
-        report_debug(
-            "A",
-            "src/api/main.py:lifespan:task-done",
-            "Background task completed",
-            {
-                "task": finished_task.get_name(),
-                "cancelled": finished_task.cancelled(),
-                "exception": exception,
-            },
-        )
-
-    for task in (warmup_task, index_task, image_backfill_task):
-        task.add_done_callback(report_background_task_done)
-
     startup_time_ms = (time.perf_counter() - startup_started) * 1000
     logger.info(f"Startup timing: initialization completed in {startup_time_ms:.0f}ms")
     display_host = (
@@ -192,18 +162,23 @@ async def lifespan(app: FastAPI):
         f"Serving URL: http://{display_host}:{config.BACKEND_PORT}"
     )
     logger.info("Server ready to accept requests")
-    # #region debug-point A:lifespan-ready
-    report_debug("A", "src/api/main.py:lifespan:ready", "Lifespan startup reached yield")
-    # #endregion
-
+    app.state.lifespan_active = True
     try:
         yield
     finally:
         logger.info("Shutting down AAC Assistant API...")
-        # #region debug-point C:lifespan-shutdown
-        report_debug("C", "src/api/main.py:lifespan:shutdown", "Lifespan shutdown entered")
-        # #endregion
-
+        app.state.shutdown_event.set()
+        shutdown_started.set()
+        # Uvicorn applies the same value as a hard lifespan timeout. Reserve a
+        # strictly positive handoff buffer so application cleanup finishes
+        # before Uvicorn force-cancels the lifespan task (especially on
+        # Windows signal exit), including low configured timeout values.
+        graceful_timeout = max(
+            float(config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS), 1.0
+        )
+        handoff_buffer = min(2.0, graceful_timeout * 0.25)
+        shutdown_budget = graceful_timeout - handoff_buffer
+        shutdown_deadline = asyncio.get_running_loop().time() + shutdown_budget
         startup_tasks = (warmup_task, index_task, image_backfill_task)
         pending_tasks = [task for task in startup_tasks if not task.done()]
         for task in pending_tasks:
@@ -212,23 +187,63 @@ async def lifespan(app: FastAPI):
             # Await task cancellation so no asyncio task survives the ASGI
             # lifespan. asyncio.to_thread workers may continue independently,
             # but their wrapper tasks are now fully drained and cannot emit
-            # unhandled exceptions during server shutdown. The timeout also
-            # keeps a non-cooperative optional task from blocking shutdown.
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*pending_tasks, return_exceptions=True),
-                    timeout=max(config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS, 1),
-                )
-            except TimeoutError:
+            # unhandled exceptions during server shutdown. Share one deadline
+            # across every shutdown phase.
+            remaining = shutdown_deadline - asyncio.get_running_loop().time()
+            if remaining > 0:
+                try:
+                    task_results = await asyncio.wait_for(
+                        asyncio.gather(*pending_tasks, return_exceptions=True),
+                        timeout=remaining,
+                    )
+                    for task, result in zip(pending_tasks, task_results, strict=True):
+                        if isinstance(result, BaseException) and not isinstance(
+                            result, asyncio.CancelledError
+                        ):
+                            logger.error(
+                                "Startup task failed during shutdown ({}): {}",
+                                task.get_name(),
+                                result,
+                            )
+                except TimeoutError:
+                    logger.warning(
+                        "Timed out waiting for startup tasks to shut down: {}",
+                        ", ".join(task.get_name() for task in pending_tasks if not task.done()),
+                    )
+
+        # If cancellation happened before the executor started the indexing
+        # callable, no worker can ever set its completion event. Mark it
+        # finished only after the wrapper has been drained; a late callable
+        # observes shutdown_started and exits without touching the store.
+        if not index_started.is_set():
+            index_finished.set()
+
+        # A cancelled to_thread wrapper can return while its synchronous index
+        # worker is still running. Wait within the same shutdown budget before
+        # closing the shared vector store; otherwise reset could close it under
+        # an active worker. If the worker does not stop in time, reset leaves
+        # that store alive until process exit instead of using it after close.
+        while not index_finished.is_set():
+            remaining = shutdown_deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
                 logger.warning(
-                    "Timed out waiting for startup tasks to shut down: {}",
-                    ", ".join(task.get_name() for task in pending_tasks if not task.done()),
+                    "Symbol indexing worker still running; deferring vector-store close"
                 )
+                break
+            await asyncio.sleep(min(remaining, 0.05))
 
         # Provider singletons own HTTP/model resources and must be released
         # after background tasks stop using them. Cleanup is idempotent and
         # deliberately outside the task wait so shutdown remains bounded.
-        await reset_providers_async()
+        remaining = max(
+            shutdown_deadline - asyncio.get_running_loop().time(),
+            0.01,
+        )
+        await reset_providers_async(
+            close_vector_store=index_finished.is_set(),
+            timeout_seconds=remaining,
+        )
+        app.state.lifespan_active = False
 
 
 # Initialize FastAPI app
@@ -246,6 +261,22 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
+@app.middleware("http")
+async def add_api_cache_control(request: Request, call_next):
+    """Prevent browsers from caching API responses.
+
+    API payloads are dynamic (lists, profiles, settings) and can change
+    between requests, e.g. immediately after a create/update. Without an
+    explicit Cache-Control policy Chromium may serve a stale response for a
+    repeated GET from its in-memory cache, hiding newly created data. Static
+    assets and /uploads are deliberately not covered.
+    """
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
+
+
 @app.get("/api/health")
 async def root():
     """Health check endpoint"""
@@ -257,13 +288,34 @@ async def readiness_check():
     """
     Readiness check endpoint.
 
-    Returns 200 if all providers are initialized and ready.
-    Returns 503 if still warming up or if there were initialization errors.
+    Returns 200 only after database and provider initialization succeed.
+    Returns 503 while warming up, when the database is unavailable, or when
+    one or more providers failed to initialize.
 
     This endpoint can be used by load balancers or the frontend to know
     when the server is fully ready to handle requests.
     """
     startup_state = get_startup_state()
+
+    if getattr(app.state, "database_startup_error", False):
+        return JSONResponse(
+            status_code=503,
+            content={
+                "ready": False,
+                "status": "database_unavailable",
+                "message": "Database initialization failed; server is not ready",
+            },
+        )
+
+    if not getattr(app.state, "database_ready", False):
+        return JSONResponse(
+            status_code=503,
+            content={
+                "ready": False,
+                "status": "database_initializing",
+                "message": "Database is still initializing",
+            },
+        )
 
     if not startup_state["initialized"]:
         return JSONResponse(
@@ -306,6 +358,8 @@ async def readiness_check():
 
 app.include_router(config_router.router)
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(auth_users.router, prefix="/api/auth", tags=["auth"])
+app.include_router(auth_preferences.router, prefix="/api/auth", tags=["auth"])
 app.include_router(symbols.router, prefix="/api/boards", tags=["boards"])
 app.include_router(board_ai.router, prefix="/api/boards", tags=["boards"])
 app.include_router(board_assignments.router, prefix="/api/boards", tags=["boards"])

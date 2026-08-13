@@ -53,38 +53,55 @@ export function Boards() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
-  // Fetch boards for current user
-  const didInitialFetchRef = useRef(false);
+  // Fetch personal boards for the current user. Search only affects this
+  // request; assigned boards are loaded separately because they have no search
+  // parameter and should not be re-requested on every query change.
+  const lastBoardRequestKeyRef = useRef<string | null>(null);
+  const lastSearchQueryRef = useRef(searchQuery);
+  const userId = user?.id;
+  const userType = user?.user_type;
   useEffect(() => {
-    if (!user) return;
-
-    // Initial load: fetch immediately so e2e tests that wait on the spinner are stable.
-    if (!didInitialFetchRef.current) {
-      didInitialFetchRef.current = true;
-      if (user.user_type === 'student') {
-        fetchBoards(user.id, searchQuery);
-        fetchAssignedBoards(user.id);
-      } else if (user.user_type === 'admin') {
-        fetchBoards(undefined, searchQuery);
-      } else {
-        fetchBoards(user.id, searchQuery);
-      }
+    if (!userId || !userType) {
+      lastBoardRequestKeyRef.current = null;
+      lastSearchQueryRef.current = searchQuery;
       return;
     }
 
-    const timer = setTimeout(() => {
-      if (user.user_type === 'student') {
-        fetchBoards(user.id, searchQuery);
-        fetchAssignedBoards(user.id);
-      } else if (user.user_type === 'admin') {
+    const userKey = `${userId}:${userType}`;
+    const userChanged = lastBoardRequestKeyRef.current !== userKey;
+    const searchChanged = lastSearchQueryRef.current !== searchQuery;
+    if (!userChanged && !searchChanged) return;
+
+    lastBoardRequestKeyRef.current = userKey;
+    lastSearchQueryRef.current = searchQuery;
+    const loadBoards = () => {
+      if (userType === 'admin') {
         fetchBoards(undefined, searchQuery);
       } else {
-        fetchBoards(user.id, searchQuery);
+        fetchBoards(userId, searchQuery);
       }
-    }, 300);
+    };
 
+    // Load immediately for a new user; debounce only search changes.
+    if (userChanged) {
+      loadBoards();
+      return;
+    }
+
+    const timer = setTimeout(loadBoards, 300);
     return () => clearTimeout(timer);
-  }, [fetchAssignedBoards, fetchBoards, user, searchQuery]);
+  }, [fetchBoards, userId, userType, searchQuery]);
+
+  const lastAssignedUserIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (user?.user_type !== 'student') {
+      lastAssignedUserIdRef.current = null;
+      return;
+    }
+    if (lastAssignedUserIdRef.current === user.id) return;
+    lastAssignedUserIdRef.current = user.id;
+    fetchAssignedBoards(user.id);
+  }, [fetchAssignedBoards, user?.id, user?.user_type]);
 
   const effectiveUserId = user?.user_type === 'admin' ? undefined : user?.id;
 
@@ -123,7 +140,7 @@ export function Boards() {
     if (!students.length) {
       setStudentsLoading(true);
       try {
-        const res = await (await import('../lib/api')).default.get('/auth/users');
+        const res = await api.get('/auth/users');
         setStudents((res.data as User[]).filter(u => u.user_type === 'student'));
       } catch {
         setAssignError(t('loadStudentsError'));
@@ -270,12 +287,13 @@ export function Boards() {
         </div>
         <div className="flex gap-4 w-full md:w-auto">
           <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              id="boards-search"
-              name="boards_search"
-              type="text"
-              placeholder={t('searchPlaceholder')}
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />              <input
+                id="boards-search"
+                name="boards_search"
+                type="text"
+                placeholder={t('searchPlaceholder')}
+                aria-label={t('searchPlaceholder')}
+
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"

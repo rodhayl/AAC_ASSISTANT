@@ -88,5 +88,8 @@ describe('SymbolSearchModal request lifecycle', () => {
     await act(() => vi.advanceTimersByTimeAsync(200));
     await act(async () => { await Promise.resolve(); });
     expect(api.get).toHaveBeenCalledTimes(1);
+    expect(api.get).toHaveBeenCalledWith('/boards/symbols', expect.objectContaining({
+      params: expect.objectContaining({ search: 'cat' }),
+    }));
   });
 });

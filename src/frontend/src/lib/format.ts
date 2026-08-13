@@ -16,7 +16,3 @@ export const formatTime = (d: Date | string | number, opts?: Intl.DateTimeFormat
   const date = d instanceof Date ? d : new Date(d)
   return new Intl.DateTimeFormat(getLocale(), opts || { hour: '2-digit', minute: '2-digit' }).format(date)
 }
-
-export const formatNumber = (n: number, opts?: Intl.NumberFormatOptions) => {
-  return new Intl.NumberFormat(getLocale(), opts).format(n)
-}

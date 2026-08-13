@@ -251,17 +251,25 @@ describe('tts queue local neural path', () => {
   }
 
   async function loadLocalTTS() {
-    const { tts, setLocalTTSEnabled } = await import('../src/lib/tts')
+    const { tts } = await import('../src/lib/tts')
     const { useTTSStore } = await import('../src/store/ttsStore')
-    setLocalTTSEnabled(true)
+    useTTSStore.getState().setUseLocalTTS(true)
     useTTSStore.getState().setLocalTTSAvailable(true)
     return tts
   }
 
   it('synthesizes with the local engine when enabled and never touches browser speech', async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      blob: async () => new Blob(['fake-wav']),
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/providers/voice-status')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ tts_local: { available: true } }),
+        })
+      }
+      return Promise.resolve({
+        ok: true,
+        blob: async () => new Blob(['fake-wav']),
+      })
     })
     const tts = await loadLocalTTS()
 
@@ -273,7 +281,7 @@ describe('tts queue local neural path', () => {
       expect.objectContaining({ method: 'POST' }),
     )
     const calls = fetchMock.mock.calls as Array<[unknown, { body: string }]>
-    expect(JSON.parse(calls[0][1].body)).toMatchObject({
+    expect(JSON.parse(calls[1][1].body)).toMatchObject({
       text: 'Hola, ¿cómo estás?',
       lang: 'es',
       voice: 'default',
@@ -293,7 +301,11 @@ describe('tts queue local neural path', () => {
   })
 
   it('falls back to browser speech when the backend answers with an error', async () => {
-    fetchMock.mockResolvedValue({ ok: false })
+    fetchMock.mockImplementation((url: string) =>
+      url.includes('/providers/voice-status')
+        ? Promise.resolve({ ok: true, json: async () => ({ tts_local: { available: true } }) })
+        : Promise.resolve({ ok: false }),
+    )
     const tts = await loadLocalTTS()
 
     tts.enqueue('Hola', { key: 'local-not-ok', lang: 'es' })
@@ -305,7 +317,11 @@ describe('tts queue local neural path', () => {
   })
 
   it('falls back to browser speech when the request fails', async () => {
-    fetchMock.mockRejectedValue(new Error('network down'))
+    fetchMock.mockImplementation((url: string) =>
+      url.includes('/providers/voice-status')
+        ? Promise.resolve({ ok: true, json: async () => ({ tts_local: { available: true } }) })
+        : Promise.reject(new Error('network down')),
+    )
     const tts = await loadLocalTTS()
 
     tts.enqueue('Adiós', { key: 'local-reject', lang: 'es' })
@@ -316,16 +332,20 @@ describe('tts queue local neural path', () => {
   })
 
   it('uses browser speech when local TTS is enabled but unavailable on the backend', async () => {
-    const { tts, setLocalTTSEnabled } = await import('../src/lib/tts')
+    const { tts } = await import('../src/lib/tts')
     const { useTTSStore } = await import('../src/store/ttsStore')
-    setLocalTTSEnabled(true)
+    useTTSStore.getState().setUseLocalTTS(true)
     // localTTSAvailable stays false: the queue must not even try to fetch.
     useTTSStore.getState().setLocalTTSAvailable(false)
 
     tts.enqueue('Hola', { key: 'local-unavailable', lang: 'es' })
     await flush()
 
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/providers/voice-status'),
+      expect.anything(),
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(speechSynthesis.speak).toHaveBeenCalledTimes(1)
     expect(utterances[0].text).toBe('Hola')
     expect(audioInstances).toHaveLength(0)

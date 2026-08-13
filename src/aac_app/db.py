@@ -106,26 +106,6 @@ def create_engine_instance() -> Engine:
         return _engine_instance
 
 
-def dispose_engine_instance() -> None:
-    """Dispose and clear the cached engine and session factory.
-
-    This is primarily useful for test isolation and controlled application
-    reconfiguration. The next database access creates a fresh engine for the
-    current ``DATABASE_URL``.
-    """
-    global _engine_instance, _session_factory, _engine_url
-    global _tables_initialized_url, _tables_initialized_engine_id
-
-    with _resource_lock:
-        if _engine_instance is not None:
-            _engine_instance.dispose()
-        _engine_instance = None
-        _session_factory = None
-        _engine_url = None
-        _tables_initialized_url = None
-        _tables_initialized_engine_id = None
-
-
 def create_session_factory() -> sessionmaker[Session]:
     """Return the cached process-wide session factory."""
     create_engine_instance()

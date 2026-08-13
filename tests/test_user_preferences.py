@@ -2,10 +2,12 @@
 Test suite for user preferences and profile endpoints
 """
 
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models import User
+from src.aac_app.models import StudentTeacher, User, UserSettings
 from src.aac_app.services.auth_service import get_password_hash
 from src.api.main import app
 from tests.test_utils_auth import create_test_headers
@@ -64,6 +66,71 @@ class TestUserPreferences:
         assert data["notifications_enabled"] is False
         assert data["dark_mode"] is True
 
+    def test_concurrent_cross_route_updates_keep_one_settings_row(self, prefs_user, test_db_session):
+        """Concurrent preference routes must not duplicate the unique settings row."""
+        user_id, username, user_type = prefs_user
+        headers = create_test_headers(user_id, username, user_type)
+
+        def update_ui():
+            return client.put(
+                "/api/settings/ui",
+                headers=headers,
+                json={"ui_language": "en"},
+            )
+
+        def update_preferences():
+            return client.put(
+                "/api/auth/preferences",
+                headers=headers,
+                json={"dark_mode": True},
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            responses = list(executor.map(lambda fn: fn(), (update_ui, update_preferences)))
+
+        assert [response.status_code for response in responses] == [200, 200]
+        settings_rows = (
+            test_db_session.query(UserSettings)
+            .filter(UserSettings.user_id == user_id)
+            .all()
+        )
+        assert len(settings_rows) == 1
+        assert settings_rows[0].ui_language == "en"
+        assert settings_rows[0].dark_mode is True
+
+        # Repeat the concurrent first-write scenario to catch intermittent
+        # regressions in the route/session boundary.
+        for language in ("es-ES", "en", "es-ES"):
+            def update_ui_for_language(language=language):
+                return client.put(
+                    "/api/settings/ui",
+                    headers=headers,
+                    json={"ui_language": language},
+                )
+
+            def update_preferences_for_language(language=language):
+                return client.put(
+                    "/api/auth/preferences",
+                    headers=headers,
+                    json={"ui_language": language, "dark_mode": language == "en"},
+                )
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                responses = list(
+                    executor.map(
+                        lambda fn: fn(),
+                        (update_ui_for_language, update_preferences_for_language),
+                    )
+                )
+            assert [response.status_code for response in responses] == [200, 200]
+
+        settings_rows = (
+            test_db_session.query(UserSettings)
+            .filter(UserSettings.user_id == user_id)
+            .all()
+        )
+        assert len(settings_rows) == 1
+
     def test_update_partial_preferences(self, prefs_user):
         """Test updating only some preferences"""
         user_id, username, user_type = prefs_user
@@ -119,6 +186,77 @@ class TestUserPreferences:
 
         response = client.put("/api/auth/preferences", json={"tts_voice": "female"})
         assert response.status_code == 401
+
+    def test_empty_roster_teacher_cannot_manage_student_preferences(
+        self, test_db_session
+    ):
+        """Teachers without a roster cannot access another student's preferences."""
+        teacher = User(
+            username="prefs_empty_roster_teacher",
+            password_hash="test-hash",
+            display_name="Empty Roster Teacher",
+            user_type="teacher",
+        )
+        student = User(
+            username="prefs_empty_roster_student",
+            password_hash="test-hash",
+            display_name="Empty Roster Student",
+            user_type="student",
+        )
+        test_db_session.add_all([teacher, student])
+        test_db_session.commit()
+        test_db_session.refresh(teacher)
+        test_db_session.refresh(student)
+        headers = create_test_headers(teacher.id, teacher.username, teacher.user_type)
+        url = f"/api/auth/users/{student.id}/preferences"
+
+        assert client.get(url, headers=headers).status_code == 403
+        response = client.put(
+            url,
+            headers=headers,
+            json={"high_contrast": True},
+        )
+        assert response.status_code == 403
+
+    def test_rostered_teacher_cannot_manage_unassigned_student_preferences(
+        self, test_db_session
+    ):
+        """Once a roster exists, preference access is limited to assigned students."""
+        teacher = User(
+            username="prefs_scoped_teacher",
+            password_hash="test-hash",
+            display_name="Scoped Teacher",
+            user_type="teacher",
+        )
+        assigned_student = User(
+            username="prefs_assigned_student",
+            password_hash="test-hash",
+            display_name="Assigned Student",
+            user_type="student",
+        )
+        unassigned_student = User(
+            username="prefs_unassigned_student",
+            password_hash="test-hash",
+            display_name="Unassigned Student",
+            user_type="student",
+        )
+        test_db_session.add_all([teacher, assigned_student, unassigned_student])
+        test_db_session.commit()
+        test_db_session.refresh(teacher)
+        test_db_session.refresh(unassigned_student)
+        test_db_session.add(
+            StudentTeacher(teacher_id=teacher.id, student_id=assigned_student.id)
+        )
+        test_db_session.commit()
+
+        headers = create_test_headers(teacher.id, teacher.username, teacher.user_type)
+        url = f"/api/auth/users/{unassigned_student.id}/preferences"
+        assert client.get(url, headers=headers).status_code == 403
+        assert client.put(
+            url,
+            headers=headers,
+            json={"high_contrast": True},
+        ).status_code == 403
 
 
 class TestUserProfile:

@@ -14,6 +14,7 @@ from src.aac_app.models import (
     BoardSymbol,
     CommunicationBoard,
     Notification,
+    StudentTeacher,
     Symbol,
     User,
 )
@@ -125,6 +126,7 @@ def test_export_endpoint(teacher_user, test_board):
     assert len(data["boards"]) >= 1
     assert data["boards"][0]["name"] == "Test Board"
     assert "checksum_sha256" in data["meta"]
+    assert data["meta"]["schema_version"] == "2"
 
 
 def test_export_deduplicates_duplicate_assignments(
@@ -252,6 +254,12 @@ def test_notifications_crud(test_db_session, teacher_user):
 
 def test_assignment_controls(test_db_session, teacher_user, test_student, test_board):
     """Test assignment controls (backend routes)"""
+    # Board assignment management requires an explicit teacher roster link.
+    test_db_session.add(
+        StudentTeacher(teacher_id=teacher_user.id, student_id=test_student.id)
+    )
+    test_db_session.commit()
+
     # Teacher assigns board to student
     teacher_headers = create_test_headers(
         teacher_user.id, teacher_user.username, teacher_user.user_type

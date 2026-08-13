@@ -1,5 +1,6 @@
 """Settings API router for admin configuration"""
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -20,6 +21,7 @@ from src.api.deps import (
     invalidate_setting,
 )
 from src.api.deps import providers as provider_deps
+from src.api.routers.auth_helpers import update_user_settings
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -40,15 +42,29 @@ def set_setting(db: Session, key: str, value: str, user_id: int):
     else:
         setting = AppSettings(setting_key=key, setting_value=value, updated_by=user_id)
         db.add(setting)
-    db.commit()
-    db.refresh(setting)
+    # Keep the whole settings request atomic: the route commits once after all
+    # validation passes. Committing here would make earlier keys durable if a
+    # later validation fails, leaving a partially applied configuration.
     invalidate_setting(key)
     return setting
 
 
+async def _close_provider(provider: Any | None) -> None:
+    """Best-effort cleanup for short-lived provider clients used by settings."""
+    if provider is None:
+        return
+    close_async = getattr(provider, "close_async", None)
+    if not callable(close_async):
+        return
+    try:
+        await close_async()
+    except Exception as exc:
+        logger.debug("Provider cleanup failed after settings request: {}", exc)
+
+
 # Endpoints
 @router.get("/ai")
-async def get_ai_settings(
+def get_ai_settings(
     current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """Get current AI provider settings (all users can view, sensitive data masked for non-admins)"""
@@ -86,7 +102,7 @@ async def get_ai_settings(
 
 
 @router.put("/ai")
-async def update_ai_settings(
+def update_ai_settings(
     settings: dict[str, Any],
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
@@ -176,6 +192,11 @@ async def update_ai_settings(
         log_settings["openrouter_api_key"] = "********"
 
     logger.info(f"Admin {current_user.username} updated AI settings: {log_settings}")
+    # Make the new values durable before the provider singletons are rebuilt:
+    # the request dependency's teardown commit runs after the response is
+    # sent, so a follow-up request that lazily constructs a provider could
+    # otherwise read the previous settings from the database.
+    db.commit()
     provider_deps.reset_llm_providers()
 
     return {"message": "Settings updated successfully", "settings": settings}
@@ -187,11 +208,12 @@ async def get_ollama_models(
     db: Session = Depends(get_db),
 ):
     """Fetch available Ollama models (admin only)"""
+    provider: OllamaProvider | None = None
     try:
         base_url = get_setting(db, "ollama_base_url") or config.OLLAMA_BASE_URL
         provider = OllamaProvider(base_url=base_url)
 
-        if not provider.is_available():
+        if not await asyncio.to_thread(provider.is_available):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=get_text(
@@ -204,7 +226,7 @@ async def get_ollama_models(
                 ),
             )
 
-        model_names = provider.list_models()
+        model_names = await asyncio.to_thread(provider.list_models)
         # Convert to format expected by frontend
         models = [{"name": name} for name in model_names]
         return {"models": models, "base_url": base_url}
@@ -222,6 +244,8 @@ async def get_ollama_models(
                 ),
             ),
         )
+    finally:
+        await _close_provider(provider)
 
 
 @router.get("/ai/models/openrouter")
@@ -230,6 +254,7 @@ async def get_openrouter_models(
     db: Session = Depends(get_db),
 ):
     """Fetch available OpenRouter models (admin only)"""
+    provider: OpenRouterProvider | None = None
     try:
         api_key = get_setting(db, "openrouter_api_key")
         if not api_key:
@@ -266,6 +291,8 @@ async def get_openrouter_models(
                 ),
             ),
         )
+    finally:
+        await _close_provider(provider)
 
 
 @router.get("/ai/models/lmstudio")
@@ -274,11 +301,12 @@ async def get_lmstudio_models(
     db: Session = Depends(get_db),
 ):
     """Fetch available LM Studio models (admin only)"""
+    provider: LMStudioProvider | None = None
     try:
         base_url = get_setting(db, "lmstudio_base_url") or "http://localhost:1234/v1"
         provider = LMStudioProvider(base_url=base_url)
 
-        if not provider.is_available():
+        if not await asyncio.to_thread(provider.is_available):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=get_text(
@@ -308,11 +336,13 @@ async def get_lmstudio_models(
                 ),
             ),
         )
+    finally:
+        await _close_provider(provider)
 
 
 # UI Language endpoints
 @router.get("/ui")
-async def get_ui_language(
+def get_ui_language(
     current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     settings = (
@@ -323,7 +353,7 @@ async def get_ui_language(
 
 
 @router.put("/ui")
-async def update_ui_language(
+def update_ui_language(
     payload: dict[str, Any],
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -339,14 +369,11 @@ async def update_ui_language(
                 ),
             ),
         )
-    settings = (
-        db.query(UserSettings).filter(UserSettings.user_id == current_user.id).first()
+    settings = update_user_settings(
+        db,
+        current_user.id,
+        {"ui_language": lang},
     )
-    if not settings:
-        settings = UserSettings(user_id=current_user.id, ui_language=lang)
-        db.add(settings)
-    else:
-        settings.ui_language = lang
     db.commit()
     db.refresh(settings)
     clear_settings_cache()

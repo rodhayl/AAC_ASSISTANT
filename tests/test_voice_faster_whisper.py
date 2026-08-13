@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import sys
+import threading
 import time
 import types
 import wave
@@ -155,6 +156,116 @@ def test_provider_lazy_loads_faster_whisper_and_joins_segments(monkeypatch, tmp_
     assert provider.model_cache_dir == tmp_path / "models"
 
 
+def test_concurrent_first_use_loads_faster_whisper_once(monkeypatch, tmp_path):
+    """Concurrent voice requests wait for one lazy model load."""
+    load_started = threading.Event()
+    release_load = threading.Event()
+    load_count = 0
+    load_wait_succeeded: list[bool] = []
+    load_count_lock = threading.Lock()
+
+    class BlockingModel:
+        def transcribe(self, _path: str, **_kwargs):
+            return iter([_FakeSegment("hello")]), object()
+
+    def create_model(*_args, **_kwargs):
+        nonlocal load_count
+        with load_count_lock:
+            load_count += 1
+        load_started.set()
+        load_wait_succeeded.append(release_load.wait(timeout=2))
+        return BlockingModel()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "faster_whisper",
+        types.SimpleNamespace(WhisperModel=create_model),
+    )
+    monkeypatch.setattr(local_speech_provider, "faster_whisper", None)
+    monkeypatch.setattr(local_speech_provider, "FASTER_WHISPER_AVAILABLE", True)
+    provider = local_speech_provider.LocalSpeechProvider(
+        lazy_load=True,
+        model_cache_dir=tmp_path / "models",
+    )
+
+    results: list[str] = []
+
+    def transcribe() -> None:
+        results.append(provider.recognize_from_file("sample.wav"))
+
+    first = threading.Thread(target=transcribe)
+    second = threading.Thread(target=transcribe)
+    first.start()
+    assert load_started.wait(timeout=2), "first request did not start model loading"
+    second.start()
+    time.sleep(0.05)
+    release_load.set()
+    first.join(timeout=2)
+    second.join(timeout=2)
+
+    assert not first.is_alive() and not second.is_alive()
+    assert load_count == 1
+    assert load_wait_succeeded == [True]
+    assert results == ["hello", "hello"]
+
+
+def test_release_waits_for_in_flight_transcription(monkeypatch, tmp_path):
+    """Replacing a provider cannot close its native model mid-transcription."""
+    transcription_started = threading.Event()
+    release_transcription = threading.Event()
+    model_closed = threading.Event()
+    release_finished = threading.Event()
+
+    class BlockingModel:
+        def transcribe(self, _path: str, **_kwargs):
+            transcription_started.set()
+            release_transcription.wait(timeout=2)
+            return iter([_FakeSegment("hello")]), object()
+
+        def close(self):
+            model_closed.set()
+
+    model = BlockingModel()
+    monkeypatch.setitem(
+        sys.modules,
+        "faster_whisper",
+        types.SimpleNamespace(WhisperModel=lambda *_args, **_kwargs: model),
+    )
+    monkeypatch.setattr(local_speech_provider, "faster_whisper", None)
+    monkeypatch.setattr(local_speech_provider, "FASTER_WHISPER_AVAILABLE", True)
+    provider = local_speech_provider.LocalSpeechProvider(
+        lazy_load=True,
+        model_cache_dir=tmp_path / "models",
+    )
+    result: list[str] = []
+    transcriber = threading.Thread(
+        target=lambda: result.append(provider.recognize_from_file("sample.wav")),
+    )
+    transcriber.start()
+    assert transcription_started.wait(timeout=2)
+
+    release_started = threading.Event()
+
+    def release_provider() -> None:
+        release_started.set()
+        provider.release()
+        release_finished.set()
+
+    releaser = threading.Thread(target=release_provider)
+    releaser.start()
+    assert release_started.wait(timeout=2)
+    assert not release_finished.is_set()
+
+    release_transcription.set()
+    transcriber.join(timeout=2)
+    releaser.join(timeout=2)
+
+    assert not transcriber.is_alive() and not releaser.is_alive()
+    assert result == ["hello"]
+    assert release_finished.is_set()
+    assert model_closed.is_set()
+
+
 def test_provider_uses_data_models_cache_by_default():
     provider = local_speech_provider.LocalSpeechProvider(lazy_load=True)
 
@@ -255,7 +366,7 @@ def test_voice_answer_is_graceful_when_provider_is_unavailable(
 def test_voice_status_reports_faster_whisper_and_browser_tts(monkeypatch, admin_token):
     from src.api.routers import providers
 
-    monkeypatch.setattr(providers, "_module_available", lambda name: name == "faster_whisper")
+    monkeypatch.setattr(providers, "is_faster_whisper_available", lambda: True)
     monkeypatch.setattr(providers, "_voice_auto_install_support", lambda: (True, None))
 
     response = client.get(
@@ -290,7 +401,7 @@ def test_voice_install_endpoint_short_circuits_when_already_installed(monkeypatc
     from src.api.routers import providers
 
     monkeypatch.setattr(providers, "_voice_auto_install_support", lambda: (True, None))
-    monkeypatch.setattr(providers, "_module_available", lambda name: name == "faster_whisper")
+    monkeypatch.setattr(providers, "is_faster_whisper_available", lambda: True)
 
     called = {"run": False}
 

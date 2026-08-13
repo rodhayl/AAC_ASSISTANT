@@ -70,6 +70,23 @@ test.describe('LLM Integration (Mocked)', () => {
         });
     });
 
+    // Mock the automatic first-question request so the input becomes
+    // interactive before answer-path tests exercise their behavior.
+    await page.route('**/ask*', async route => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                question_id: 1,
+                question_text: 'What is 10 + 10?',
+                choices: ['10', '20', '30'],
+                difficulty: 'basic',
+                provider_used: 'ollama'
+            })
+        });
+    });
+
     // Mock Answer (Text & Symbols)
     await page.route('**/answer*', async route => {
         const url = route.request().url();
@@ -186,11 +203,14 @@ test.describe('LLM Integration (Mocked)', () => {
         // Session already started, or button not present.
     }
     
-    // Wait for chat interface (and ensure session prompt is gone)
-    await expect(page.locator('input[type="text"]')).toBeVisible();
+    // Wait for chat interface and for the automatic first question to finish
+    // before exercising the answer error path.
+    const answerInput = page.locator('input[type="text"]');
+    await expect(answerInput).toBeVisible();
+    await expect(answerInput).toBeEnabled();
 
     // Send a message
-    await page.locator('input[type="text"]').fill('Hello, cause an error');
+    await answerInput.fill('Hello, cause an error');
     const answerResp = page.waitForResponse((resp) => resp.url().includes('/answer') && resp.status() >= 400);
     await page.locator('button[type="submit"]').click();
     await answerResp;
@@ -221,22 +241,14 @@ test.describe('LLM Integration (Mocked)', () => {
         }
         if (url.includes('/start')) {
                  const postData = route.request().postDataJSON();
-                 console.log('Start Session Payload:', postData);
+                 console.log('Start Session Payload:', postData);                 // This test starts the same general-conversation activity as
+                 // the UI's "New conversation" action. Keep the request contract
+                 // explicit without emitting a misleading diagnostic warning.
+                 expect(postData.topic).toBe('general conversation');
+                 expect(postData.purpose).toBe('practice');
+                 expect(postData.mode_key).toBe('default_mode');
                  
-                 // Verify that topic is "Default Mode" (name of the mode) instead of "vocabulary"
-                 if (postData.topic !== 'Default Mode' && postData.topic !== 'vocabulary') {
-                    console.warn('Unexpected topic:', postData.topic);
-                 }
-                 
-                 // Ideally we want to assert this, but we are inside the route handler.
-                 // We can fail the route if it's wrong, which causes the test to fail (network error).
-                 if (postData.purpose === 'default_mode' && postData.topic === 'vocabulary') {
-                     // This is the bug condition we want to avoid.
-                     // But wait, if the user didn't change the logic, it would be 'vocabulary'.
-                     // With our fix, it should be 'Default Mode'.
-                     // Let's NOT fail here to avoid breaking the test if the logic is different, 
-                     // but logging helps debugging.
-                 }
+
 
                  await route.fulfill({
                     status: 200,
@@ -245,6 +257,21 @@ test.describe('LLM Integration (Mocked)', () => {
                 });
                 return;
             }
+        if (url.includes('/ask')) {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    success: true,
+                    question_id: 1,
+                    question_text: 'What is 10 + 10?',
+                    choices: ['10', '20', '30'],
+                    difficulty: 'basic',
+                    provider_used: 'ollama'
+                })
+            });
+            return;
+        }
         if (url.includes('/answer')) {
             await route.fulfill({
                 status: 200,
@@ -316,7 +343,6 @@ test.describe('LLM Integration (Mocked)', () => {
 
   test('should use real LLM in Communication Board (Ask AI)', async ({ page }) => {
     // Reset and mock
-    // await page.unrouteAll({ behavior: 'ignoreErrors' });
 
     // Mock Boards
     await page.route(/\/api\/boards/, async route => {

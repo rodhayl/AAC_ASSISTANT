@@ -1,12 +1,13 @@
 
+import asyncio
 import contextlib
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import BoardAssignment, CommunicationBoard
-from src.api.deps import get_db, get_text, validate_token
+from src.aac_app.models import BoardAssignment, CommunicationBoard, StudentTeacher, User
+from src.api.deps import get_db, get_text, validate_active_token
 
 router = APIRouter(prefix="/api/collab", tags=["collab"])
 
@@ -53,7 +54,7 @@ async def board_channel(
         )
 
         # Authenticate user
-        user = validate_token(token, db)
+        user = validate_active_token(token, db)
 
         # Get language preference from headers
         accept_language = websocket.headers.get("accept-language")
@@ -95,22 +96,34 @@ async def board_channel(
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=reason)
             return
 
-        # Access rules...
-        has_access = False
-        if user.user_type == "admin" or user.user_type == "teacher" or board.user_id == user.id:
-            has_access = True
-        else:
-            # Check if assigned
-            assignment = (
+        # Access rules: owners and admins may collaborate; students need an
+        # explicit board assignment; teachers need an explicit roster
+        # relationship to the student who owns the board. Public boards remain
+        # available as read-only channels below.
+        has_access = user.user_type == "admin" or board.user_id == user.id
+        if not has_access and user.user_type == "teacher":
+            owner = db.query(User).filter(User.id == board.user_id).first()
+            if owner is not None and owner.user_type == "student":
+                has_access = (
+                    db.query(StudentTeacher)
+                    .filter(
+                        StudentTeacher.teacher_id == user.id,
+                        StudentTeacher.student_id == owner.id,
+                    )
+                    .first()
+                    is not None
+                )
+
+        if not has_access and user.user_type == "student":
+            has_access = (
                 db.query(BoardAssignment)
                 .filter(
                     BoardAssignment.board_id == board_id,
                     BoardAssignment.student_id == user.id,
                 )
                 .first()
+                is not None
             )
-            if assignment:
-                has_access = True
 
         if not has_access:
             logger.warning(f"User {user.username} denied access to board {board_id}")
@@ -129,10 +142,41 @@ async def board_channel(
                 )
                 return
 
+        # Mark the room registration before awaiting accept so cancellation in
+        # this tiny handoff window still triggers the outer cleanup path.
+        connected = True
         await manager.connect(board_id, websocket)
+        shutdown_event = getattr(websocket.app.state, "shutdown_event", None)
+        if not getattr(websocket.app.state, "lifespan_active", False):
+            shutdown_event = None
+        if shutdown_event is None:
+            # Direct ASGI callers that do not run the application lifespan still
+            # receive normal WebSocket behavior; production lifespan installs it.
+            shutdown_event = asyncio.Event()
         try:
             while True:
-                data = await websocket.receive_json()
+                receive_task = asyncio.create_task(websocket.receive_json())
+                shutdown_task = asyncio.create_task(shutdown_event.wait())
+                try:
+                    done, _ = await asyncio.wait(
+                        (receive_task, shutdown_task),
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if shutdown_task in done:
+                        with contextlib.suppress(Exception):
+                            await websocket.close(
+                                code=status.WS_1001_GOING_AWAY,
+                                reason="Server shutting down",
+                            )
+                        return
+                    data = receive_task.result()
+                finally:
+                    for task in (receive_task, shutdown_task):
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(
+                        receive_task, shutdown_task, return_exceptions=True
+                    )
 
                 if not has_access and board.is_public:
                     continue
@@ -146,11 +190,25 @@ async def board_channel(
                 }
                 await manager.broadcast(board_id, message, sender=websocket)
         except WebSocketDisconnect:
-            manager.disconnect(board_id, websocket)
+            pass
+        except asyncio.CancelledError:
+            # TestClient and ASGI servers may cancel the handler while closing
+            # a client connection. This is an expected lifecycle outcome, not
+            # an application error; the manager cleanup below still runs.
+            pass
         except Exception as e:
             logger.error(f"WebSocket error in loop: {e}")
+        finally:
             manager.disconnect(board_id, websocket)
 
+    except asyncio.CancelledError:
+        # A cancellation before the connection loop starts is also a normal
+        # teardown path and must not become an unhandled server exception.
+        # If room registration completed (or was being attempted), remove the
+        # socket even when cancellation landed before the inner finally block.
+        if "connected" in locals() and connected:
+            manager.disconnect(board_id, websocket)
+        return
     except Exception as e:
         logger.error(f"Unexpected WebSocket error: {e}")
         with contextlib.suppress(Exception):

@@ -5,7 +5,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import type { AISettings } from '../../store/settingsStore';
 import { config } from '../../config';
-import api from '../../lib/api';
+import api, { extractError } from '../../lib/api';
 import type { AiOverride, ProviderHealth } from './types';
 import { AiProviderFields } from './AiProviderFields';
 
@@ -29,35 +29,88 @@ export function AiProviderTab() {
   const [modelSearchOpen, setModelSearchOpen] = useState(false);
   const [modelSearchQuery, setModelSearchQuery] = useState('');
   const [health, setHealth] = useState<ProviderHealth | null>(null);
-  const [readOnlyAiSettings, setReadOnlyAiSettings] = useState<AISettings | null>(null);
+  const [readOnlyState, setReadOnlyState] = useState<{
+    requestKey: string;
+    settings: AISettings | null;
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
+  const userId = user?.id;
+  const userRole = user?.user_type;
+  const readOnlyRequestKey = `${userId ?? 'none'}:${userRole ?? 'none'}`;
 
   useEffect(() => {
-    if (!user) return;
-    fetchAISettings();
-  }, [user, fetchAISettings]);
+    if (!saveSuccess) return;
+    const timeoutId = setTimeout(() => setSaveSuccess(false), 3000);
+    return () => clearTimeout(timeoutId);
+  }, [saveSuccess]);
 
   useEffect(() => {
-    if (!user || isAdmin) return;
+    if (!userId) return;
+    if (isAdmin) {
+      fetchAISettings();
+      return;
+    }
+
+    // Non-admins use the read-only response directly. Avoid issuing the same
+    // request through both the store and this component.
+    let active = true;
+    const controller = new AbortController();
+
     api
-      .get('/settings/ai')
-      .then((response) => setReadOnlyAiSettings(response.data))
-      .catch(() => {
-        // The store request above still provides the normal error state.
+      .get('/settings/ai', { signal: controller.signal })
+      .then((response) => {
+        if (active) {
+          setReadOnlyState({
+            requestKey: readOnlyRequestKey,
+            settings: response.data,
+            loading: false,
+            error: null,
+          });
+        }
+      })
+      .catch((requestError: unknown) => {
+        if (active && !controller.signal.aborted) {
+          setReadOnlyState({
+            requestKey: readOnlyRequestKey,
+            settings: null,
+            loading: false,
+            error: extractError(requestError, 'Failed to load AI settings'),
+          });
+        }
       });
-  }, [user, isAdmin]);
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [userId, userRole, isAdmin, fetchAISettings, readOnlyRequestKey]);
 
   const currentAiProvider = aiOverride.provider ?? aiSettings?.provider ?? 'ollama';
   const currentOllamaModel = aiOverride.ollama_model ?? aiSettings?.ollama_model ?? '';
   const currentOpenRouterModel = aiOverride.openrouter_model ?? aiSettings?.openrouter_model ?? '';
   const currentLmStudioModel = aiOverride.lmstudio_model ?? aiSettings?.lmstudio_model ?? '';
-  const currentSelectedModel = currentAiProvider === 'ollama' ? currentOllamaModel : currentOpenRouterModel;
+  const currentSelectedModel =
+    currentAiProvider === 'ollama'
+      ? currentOllamaModel
+      : currentAiProvider === 'lmstudio'
+        ? currentLmStudioModel
+        : currentOpenRouterModel;
   const currentOpenRouterApiKey = aiOverride.openrouter_api_key ?? aiSettings?.openrouter_api_key ?? '';
   const currentOllamaBaseUrl = aiOverride.ollama_base_url ?? aiSettings?.ollama_base_url ?? config.OLLAMA_BASE_URL;
   const currentLmStudioBaseUrl =
     aiOverride.lmstudio_base_url ?? aiSettings?.lmstudio_base_url ?? 'http://localhost:1234/v1';
   const currentMaxTokens = aiOverride.max_tokens ?? aiSettings?.max_tokens ?? 1024;
   const currentTemperature = aiOverride.temperature ?? aiSettings?.temperature ?? 0.5;
-  const visibleAiSettings = aiSettings ?? readOnlyAiSettings;
+  const readOnlyForCurrentUser =
+    !isAdmin && readOnlyState?.requestKey === readOnlyRequestKey;
+  const visibleAiSettings = isAdmin
+    ? aiSettings
+    : readOnlyForCurrentUser
+      ? readOnlyState?.settings ?? null
+      : null;
+  const readOnlyLoading =
+    !isAdmin && Boolean(userId) && (!readOnlyForCurrentUser || readOnlyState?.loading === true);
+  const readOnlyError = readOnlyForCurrentUser ? readOnlyState?.error ?? null : null;
   const selectedHealth =
     currentAiProvider === 'ollama'
       ? health?.ollama
@@ -139,7 +192,6 @@ export function AiProviderTab() {
         temperature: currentTemperature,
       });
       setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
       console.error('Failed to save settings:', err);
     }
@@ -167,7 +219,15 @@ export function AiProviderTab() {
           </h3>
           <p className="text-sm text-gray-500 mt-1">Current AI settings (View only - contact admin to change)</p>
         </div>
-        {visibleAiSettings && (
+        {readOnlyLoading && (
+          <div className="p-6 text-sm text-gray-500">{t('ai.loading', 'Loading AI settings...')}</div>
+        )}
+        {readOnlyError && (
+          <div className="p-6 text-sm text-red-600" role="alert">
+            {readOnlyError}
+          </div>
+        )}
+        {visibleAiSettings && !readOnlyLoading && (
           <div className="p-6 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>

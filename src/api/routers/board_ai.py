@@ -1,3 +1,5 @@
+import random
+
 from fastapi import APIRouter, Body, Depends, HTTPException
 from loguru import logger
 from sqlalchemy import func, or_
@@ -22,28 +24,29 @@ from src.api.deps import (
 
 router = APIRouter()
 
-_DEFAULT_BOARD_GENERATION_SERVICE = BoardGenerationService
-_DEFAULT_OLLAMA_PROVIDER = OllamaProvider
 
+def get_or_create_symbol(
+    db: Session, label: str, symbol_key: str
+) -> tuple[Symbol, bool]:
+    """Return the symbol matching ``label``, creating it when absent.
 
-def _get_board_generation_service(provider):
-    """Use legacy board-module patches while keeping AI code in this router."""
-    if BoardGenerationService is not _DEFAULT_BOARD_GENERATION_SERVICE:
-        return BoardGenerationService(provider)
-
-    from src.api.routers import boards as legacy_board_router
-
-    return legacy_board_router.BoardGenerationService(provider)
-
-
-def _get_ollama_provider(*, base_url: str, model: str):
-    """Use legacy board-module patches while keeping AI code in this router."""
-    if OllamaProvider is not _DEFAULT_OLLAMA_PROVIDER:
-        return OllamaProvider(base_url=base_url, model=model)
-
-    from src.api.routers import boards as legacy_board_router
-
-    return legacy_board_router.OllamaProvider(base_url=base_url, model=model)
+    Returns ``(symbol, created)`` so callers know whether the symbol is new
+    (and therefore needs embedding indexing). Reuse by label keeps AI board
+    creation and AI suggestions from duplicating symbols.
+    """
+    symbol = db.query(Symbol).filter(Symbol.label == label).first()
+    if symbol is not None:
+        return symbol, False
+    created = Symbol(
+        label=label,
+        keywords=symbol_key,
+        image_path=f"/static/symbols/generated/{symbol_key}.png",  # placeholder
+        category="generated",
+        is_builtin=False,
+    )
+    db.add(created)
+    db.flush()
+    return created, True
 
 
 def _fallback_board_suggestions(
@@ -70,14 +73,38 @@ def _fallback_board_suggestions(
             )
         )
 
-    # SQLite-friendly randomness; good enough for a fallback.
-    candidates = query.order_by(func.random()).limit(max(item_count * 5, 25)).all()
+    # Sample from the indexed primary key instead of sorting the whole symbol
+    # table with ORDER BY RANDOM().  The cyclic second query handles sparse IDs
+    # and keeps the candidate set bounded for this development fallback.
+    def sample_candidates(candidate_query):
+        candidate_limit = max(item_count * 5, 25)
+        max_id = candidate_query.with_entities(func.max(Symbol.id)).scalar()
+        if not max_id:
+            return []
+
+        anchor = random.randint(1, max_id)
+        candidates = (
+            candidate_query.filter(Symbol.id >= anchor)
+            .order_by(Symbol.id)
+            .limit(candidate_limit)
+            .all()
+        )
+        if len(candidates) < candidate_limit:
+            candidates.extend(
+                candidate_query.filter(Symbol.id < anchor)
+                .order_by(Symbol.id)
+                .limit(candidate_limit - len(candidates))
+                .all()
+            )
+        return candidates
+
+    candidates = sample_candidates(query)
     if not candidates and apply_cat_filter:
         # Category filters can be too strict for our built-in symbol sets; retry unfiltered.
         query = db.query(Symbol).filter(Symbol.label.isnot(None))
         if existing_symbol_ids:
             query = query.filter(~Symbol.id.in_(existing_symbol_ids))
-        candidates = query.order_by(func.random()).limit(max(item_count * 5, 25)).all()
+        candidates = sample_candidates(query)
 
     seen: set[str] = set()
     items: list[dict] = []
@@ -181,21 +208,19 @@ async def create_board(
             provider = None
             if board.ai_provider == "ollama":
                 base_url = get_setting_value("ollama_base_url", config.OLLAMA_BASE_URL)
-                provider = _get_ollama_provider(
-                    base_url=base_url, model=board.ai_model
-                )
+                provider = OllamaProvider(base_url=base_url, model=board.ai_model)
             elif board.ai_provider == "openrouter":
                 api_key = get_setting_value("openrouter_api_key", "")
                 provider = OpenRouterProvider(api_key=api_key, model=board.ai_model)
 
             if provider:
                 # Create a temporary service instance
-                ai_service = _get_board_generation_service(provider)
+                ai_service = BoardGenerationService(provider)
 
                 # Calculate item count based on grid size, default to 12 if not specified
                 item_count = 12
                 if board.grid_rows and board.grid_cols:
-                    item_count = board.grid_rows * board.grid_cols
+                    item_count = min(board.grid_rows * board.grid_cols, 100)
 
                 # Pass fail_silently=False to catch errors and abort board creation
                 items = await ai_service.generate_board_items(
@@ -208,28 +233,15 @@ async def create_board(
                 logger.info(f"AI generated {len(items)} items")
 
                 for idx, item in enumerate(items):
-                    # Check if symbol exists
                     symbol_key = item["symbol_key"]
                     # Use label as fallback if symbol_key is empty
                     if not symbol_key:
                         symbol_key = item["label"].lower().replace(" ", "_")
 
-                    # Search by label since we don't have a unique key column
-                    symbol = (
-                        db.query(Symbol).filter(Symbol.label == item["label"]).first()
+                    symbol, is_new = get_or_create_symbol(
+                        db, item["label"], symbol_key
                     )
-
-                    if not symbol:
-                        # Create new symbol
-                        symbol = Symbol(
-                            label=item["label"],
-                            keywords=symbol_key,
-                            image_path=f"/static/symbols/generated/{symbol_key}.png",  # Placeholder
-                            category="generated",
-                            is_builtin=False,
-                        )
-                        db.add(symbol)
-                        db.flush()
+                    if is_new:
                         created_symbols.append(symbol)
 
                     # Add to board
@@ -270,10 +282,13 @@ async def create_board(
                 ),
             )
 
-    db.commit()
     db.refresh(db_board)
     for symbol in created_symbols:
         index_symbol(symbol)
+    # Commit before responding: the board and its symbols must be durable
+    # before the client navigates to it in a follow-up request. A single
+    # commit here also keeps the whole create atomic if indexing fails.
+    db.commit()
     return db_board
 
 
@@ -301,7 +316,7 @@ def _resolve_provider_for_board(
         return OpenRouterProvider(api_key=api_key, model=model_name)
 
     base_url = get_setting_value("ollama_base_url", config.OLLAMA_BASE_URL)
-    return _get_ollama_provider(base_url=base_url, model=model_name)
+    return OllamaProvider(base_url=base_url, model=model_name)
 
 
 @router.post("/{board_id}/ai/suggestions")
@@ -316,6 +331,7 @@ async def generate_ai_suggestions(
     require_board_staff_or_owner(
         board,
         current_user,
+        db,
         error_key="errors.boards.unauthorizedSuggestions",
     )
 
@@ -332,7 +348,7 @@ async def generate_ai_suggestions(
             detail=get_text(user=current_user, key="errors.boards.aiNotConfigured"),
         )
 
-    service = _get_board_generation_service(provider)
+    service = BoardGenerationService(provider)
 
     # Resolve language for generation
     ts = get_translation_service()
@@ -343,7 +359,7 @@ async def generate_ai_suggestions(
     if payload and payload.item_count:
         item_count = payload.item_count
     elif board.grid_rows and board.grid_cols:
-        item_count = board.grid_rows * board.grid_cols
+        item_count = min(board.grid_rows * board.grid_cols, 100)
 
     try:
         items = await service.generate_board_items(
@@ -374,7 +390,7 @@ async def generate_ai_suggestions(
 @router.post(
     "/{board_id}/ai/suggestions/apply", response_model=schemas.BoardSymbolResponse
 )
-async def apply_ai_suggestion(
+def apply_ai_suggestion(
     board_id: int,
     payload: schemas.AISuggestionApplyRequest,
     current_user: User = Depends(get_current_active_user),
@@ -384,7 +400,7 @@ async def apply_ai_suggestion(
     Apply a single AI suggestion by creating a symbol (if needed) and placing it on the board.
     """
     board = get_board_or_404(db, board_id, current_user)
-    require_board_staff_or_owner(board, current_user)
+    require_board_staff_or_owner(board, current_user, db)
 
     if not board.ai_enabled:
         raise HTTPException(
@@ -404,20 +420,9 @@ async def apply_ai_suggestion(
     symbol_key = item.symbol_key or item.label.lower().replace(" ", "_")
 
     # Try to reuse existing symbol by label to avoid duplicates
-    symbol = db.query(Symbol).filter(Symbol.label == item.label).first()
-    if not symbol:
-        symbol = Symbol(
-            label=item.label,
-            keywords=symbol_key,
-            image_path=f"/static/symbols/generated/{symbol_key}.png",  # placeholder
-            category="generated",
-            is_builtin=False,
-        )
-        db.add(symbol)
-        db.flush()
-        created_symbol = symbol
-    else:
-        created_symbol = None
+    symbol, was_created = get_or_create_symbol(db, item.label, symbol_key)
+    created_symbol = symbol if was_created else None
+    if created_symbol is None:
         # Avoid duplicate symbol entries per board
         existing_board_symbol = (
             db.query(BoardSymbol)
@@ -469,4 +474,5 @@ async def apply_ai_suggestion(
     db.refresh(board_symbol)
     if created_symbol is not None:
         index_symbol(created_symbol)
+    db.commit()
     return board_symbol

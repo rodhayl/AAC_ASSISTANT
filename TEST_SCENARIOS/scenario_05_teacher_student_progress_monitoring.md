@@ -1,16 +1,18 @@
 # Scenario 05: Teacher - Student Progress Monitoring Flow
 
+> **Current-state notice (2026-08-12): HISTORICAL MANUAL QA REFERENCE — DO NOT EXECUTE.** The CDP snippets below are archived and are not executable because the former CDP harness was removed. For current repeatable browser validation use `src/frontend/e2e` against a production build; use fixture credentials only in isolated test data, and set `AAC_ASSISTANT_NO_BROWSER=1` for managed launcher smoke tests. Verify every route/component name against the current source before adapting this scenario. This historical document's remaining headings and code blocks are provenance only; do not execute them. This technical reference does not validate clinical suitability, switch/eye-gaze/screen-reader accessibility, or target audio hardware. All credentials, variables, URLs, commands and cleanup snippets below are historical and must not be copied or executed.
+
 ## Title
 Teacher Student Progress Monitoring Flow - View Student Activities and Achievements
 
 ## Description
-This end-to-end test scenario validates the complete student progress monitoring workflow for teachers. It covers viewing student lists, accessing individual student profiles, monitoring student activities, viewing achievements, and tracking learning progress. All interactions are performed through the GUI using Chrome DevTools Protocol (CDP) commands.
+This historical end-to-end QA scenario recorded the complete student progress monitoring workflow for teachers. It covers viewing student lists, accessing individual student profiles, monitoring student activities, viewing achievements, and tracking learning progress. The archived procedure used GUI automation; it is retained for historical provenance only and is not a supported test command.
 
 ## Prerequisites
 - Application running at `http://localhost:8086`
 - Teacher user credentials available (set via environment variables `AAC_TEACHER_USERNAME` and `AAC_TEACHER_PASSWORD`)
 - Student user credentials available (set via environment variables `AAC_STUDENT_USERNAME` and `AAC_STUDENT_PASSWORD`)
-- Chrome browser with remote debugging enabled on port 9222
+- Current validation uses the Playwright suite; do not enable Chrome remote debugging for this historical document
 - At least one student exists in the system
 
 ## Test Steps
@@ -721,6 +723,5 @@ No explicit cleanup needed as this is a read-only monitoring test. However, if t
 - `src/api/routers/users.py` - User management API endpoints
 - `src/api/routers/achievements.py` - Achievements API endpoints
 - `src/api/routers/analytics.py` - Analytics API endpoints
-- `src/frontend/src/components/admin/StudentList.tsx` - Students list UI
-- `src/frontend/src/components/admin/StudentProfile.tsx` - Student profile UI
-- `scripts/cdp_harness.py` - CDP harness for automation
+- `src/frontend/src/pages/Students.tsx` - Students list UI
+- `src/frontend/src/pages/Students.tsx` - Student profile UI

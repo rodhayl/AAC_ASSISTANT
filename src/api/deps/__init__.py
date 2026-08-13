@@ -7,12 +7,14 @@ from .access import (
     require_board_staff_or_owner,
 )
 from .auth import (
+    authorize_user_access,
     get_current_active_user,
-    get_current_admin_or_teacher_user,
     get_current_admin_user,
+    get_current_staff_user,
     get_current_user,
     get_text,
     oauth2_scheme,
+    validate_active_token,
     validate_token,
     verify_student_access,
 )
@@ -42,6 +44,7 @@ from .providers import (
 from .settings import clear_settings_cache, get_setting_value, invalidate_setting
 
 __all__ = [
+    "authorize_user_access",
     "clear_settings_cache",
     "get_board_or_404",
     "get_learning_session_or_404",
@@ -52,8 +55,8 @@ __all__ = [
     "get_achievement_system",
     "get_board_generation_service",
     "get_current_active_user",
-    "get_current_admin_or_teacher_user",
     "get_current_admin_user",
+    "get_current_staff_user",
     "get_current_user",
     "require_board_owner_or_admin",
     "require_board_staff_or_owner",
@@ -75,6 +78,7 @@ __all__ = [
     "reset_providers_async",
     "reset_llm_providers",
     "reset_speech_provider",
+    "validate_active_token",
     "validate_token",
     "verify_student_access",
     "warmup_providers",

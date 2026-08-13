@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.user_service import UserService
 from src.api.deps import get_current_active_user, get_db
+from src.api.routers.auth_helpers import validate_password_strength
 from src.api.schemas import (
     ResetPasswordRequest,
     StudentAssignRequest,
@@ -31,7 +32,11 @@ def update_current_user(
     db: Session = Depends(get_db),
 ):
     """Update current user profile/settings"""
-    return user_service.update_user(db, current_user.id, user_update)
+    updated = user_service.update_user(db, current_user.id, user_update)
+    # Commit before responding so the updated profile is durable for the
+    # immediate follow-up reads in the UI.
+    db.commit()
+    return updated
 
 
 @router.get("/students", response_model=list[UserResponse])
@@ -69,11 +74,30 @@ def create_student(
     # Force user_type to student
     user.user_type = "student"
 
-    # If teacher, automatically assign
+    # Teachers always assign students to themselves. Admins may optionally
+    # provide an assignment target, but it must be an active teacher rather
+    # than an arbitrary user ID.
     if current_user.user_type == "teacher":
         user.created_by_teacher_id = current_user.id
+    elif user.created_by_teacher_id is not None:
+        teacher = (
+            db.query(User)
+            .filter(
+                User.id == user.created_by_teacher_id,
+                User.user_type == "teacher",
+                User.is_active.is_(True),
+            )
+            .first()
+        )
+        if teacher is None:
+            raise HTTPException(status_code=404, detail="Teacher not found")
 
-    return user_service.create_user(db, user)
+    created = user_service.create_user(db, user)
+    # Commit before responding: the UI re-fetches the student list right
+    # after this create, and the request dependency's teardown commit runs
+    # only after the response is sent.
+    db.commit()
+    return created
 
 
 @router.post("/assign-student")
@@ -199,6 +223,11 @@ def reset_user_password(
                 status_code=403, detail="Student is not assigned to this teacher"
             )
 
+    validate_password_strength(data.new_password)
+
     # Reset password
     user_service.reset_password(db, target_user_id, data.new_password)
+    # Commit before responding so a login with the new password (which
+    # follows this response in the UI flow) cannot read the old hash.
+    db.commit()
     return {"message": "Password reset successfully"}

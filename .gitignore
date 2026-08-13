@@ -64,6 +64,7 @@ env.properties
 
 # PyInstaller / build artifacts
 build/
+bundled_models/
 *.spec
 !AAC_Assistant.spec
 run.pid

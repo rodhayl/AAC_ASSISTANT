@@ -179,6 +179,42 @@ def test_provider_getter_and_reset_are_safe_under_concurrency(monkeypatch):
     providers.reset_providers()
 
 
+def test_reset_providers_defers_and_closes_vector_store_after_active_operation(
+    monkeypatch,
+):
+    from src.api.deps import providers
+
+    closed: list[bool] = []
+    closed_event = threading.Event()
+    store = SimpleNamespace(
+        close=lambda: (closed.append(True), closed_event.set())
+    )
+    monkeypatch.setattr(providers, "_vector_store", store)
+
+    lock_held = threading.Event()
+    release_lock = threading.Event()
+
+    def hold_vector_lock():
+        providers.vector_store_operation_lock.acquire()
+        lock_held.set()
+        release_lock.wait(timeout=1)
+        providers.vector_store_operation_lock.release()
+
+    holder = threading.Thread(target=hold_vector_lock)
+    holder.start()
+    assert lock_held.wait(timeout=1)
+    providers.reset_providers()
+    # Keep the active store attached until the operation releases the lock so
+    # nested vector calls cannot race a deferred close.
+    assert providers._vector_store is store
+    assert closed == []
+    release_lock.set()
+    holder.join(timeout=1)
+
+    assert closed_event.wait(timeout=1)
+    assert closed == [True]
+
+
 def test_reset_providers_closes_vector_store_without_disposing_shared_engine(monkeypatch):
     from src.api.deps import providers
 
@@ -190,6 +226,42 @@ def test_reset_providers_closes_vector_store_without_disposing_shared_engine(mon
 
     assert closed == [True]
     assert providers._vector_store is None
+
+
+def test_reentrant_vector_getter_does_not_create_overlap_after_reset(monkeypatch):
+    from src.api.deps import providers
+
+    closed_event = threading.Event()
+    store = SimpleNamespace(close=closed_event.set)
+    monkeypatch.setattr(providers, "_vector_store", store)
+
+    lock_held = threading.Event()
+    release_lock = threading.Event()
+    reentrant_error: list[Exception] = []
+
+    def hold_and_reenter():
+        providers.vector_store_operation_lock.acquire()
+        try:
+            lock_held.set()
+            release_lock.wait(timeout=1)
+            try:
+                providers.get_vector_store()
+            except RuntimeError as exc:
+                reentrant_error.append(exc)
+        finally:
+            providers.vector_store_operation_lock.release()
+
+    holder = threading.Thread(target=hold_and_reenter)
+    holder.start()
+    assert lock_held.wait(timeout=1)
+    providers.reset_providers()
+    release_lock.set()
+    holder.join(timeout=1)
+
+    # Nested access continues using the active store; cleanup closes it only
+    # after the operation releases the lock.
+    assert not reentrant_error
+    assert closed_event.wait(timeout=1)
 
 
 def test_reset_speech_provider_releases_discarded_instance(monkeypatch):
@@ -244,6 +316,29 @@ def test_ollama_getter_reuses_provider_when_model_setting_is_empty(monkeypatch):
     assert closed == [first]
 
 
+def test_sync_llm_close_fallback_retains_async_task(monkeypatch):
+    """Async-only third-party closes remain alive when called in a loop."""
+    from src.api.deps import providers
+
+    finished = asyncio.Event()
+
+    class AsyncOnlyProvider:
+        async def close(self):
+            await finished.wait()
+
+    async def exercise():
+        providers._close_llm_provider(AsyncOnlyProvider())
+        assert providers._pending_llm_close_tasks
+        finished.set()
+        for _ in range(20):
+            await asyncio.sleep(0)
+            if not providers._pending_llm_close_tasks:
+                break
+        assert not providers._pending_llm_close_tasks
+
+    asyncio.run(exercise())
+
+
 @pytest.mark.anyio
 async def test_async_reset_reports_and_drains_timed_out_speech_release(monkeypatch):
     from src.api.deps import providers
@@ -279,6 +374,35 @@ async def test_async_reset_reports_and_drains_timed_out_speech_release(monkeypat
         await asyncio.sleep(0.01)
     with providers._speech_release_lock:
         assert not providers._speech_release_workers
+
+
+@pytest.mark.anyio
+async def test_async_reset_keeps_vector_store_but_closes_other_providers_when_deferred(
+    monkeypatch,
+):
+    from src.api.deps import providers
+
+    closed: list[str] = []
+    vector_closed = threading.Event()
+
+    class AsyncOnlyProvider:
+        async def close(self):
+            closed.append("llm")
+
+    store = SimpleNamespace(
+        close=lambda: (closed.append("vector"), vector_closed.set())
+    )
+    monkeypatch.setattr(providers, "_ollama_provider", AsyncOnlyProvider())
+    monkeypatch.setattr(providers, "_openrouter_provider", None)
+    monkeypatch.setattr(providers, "_lmstudio_provider", None)
+    monkeypatch.setattr(providers, "_speech_provider", None)
+    monkeypatch.setattr(providers, "_vector_store", store)
+
+    await providers.reset_providers_async(close_vector_store=False, timeout_seconds=1)
+
+    assert providers._vector_store is None
+    assert vector_closed.wait(timeout=1)
+    assert set(closed) == {"llm", "vector"}
 
 
 @pytest.mark.anyio

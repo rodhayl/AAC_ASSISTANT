@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { X, Search, ArrowUp, ArrowDown, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useToastStore } from '../../store/toastStore';
-import api from '../../lib/api';
+import api, { extractError } from '../../lib/api';
 import { SymbolImage } from '../common/SymbolImage';
 import type { Symbol } from '../../types';
 import { getCategoryStyle } from '../../lib/symbolCategoryStyle';
+import { isValidImageFile } from '../../lib/download';
 
 interface SymbolPickerProps {
   isOpen: boolean;
@@ -152,8 +153,7 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
       onClose();
     } catch (e: unknown) {
       console.error('Failed to upload symbol:', e);
-      const err = e as { response?: { data?: { detail?: string } } };
-      const detail = err?.response?.data?.detail || t('symbolPicker.uploadFailed');
+      const detail = extractError(e, t('symbolPicker.uploadFailed'));
       setUploadError(detail);
     } finally {
       setIsUploading(false);
@@ -161,7 +161,7 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
   }, [uploadFile, uploadLabel, uploadCategory, onSelect, onClose, fetchSymbols, t]);
 
   const handleMultiUpload = useCallback(async (files: File[]) => {
-    const valid = files.filter(f => f.type.startsWith('image/') && f.size <= 5 * 1024 * 1024)
+    const valid = files.filter((file) => isValidImageFile(file))
     if (valid.length === 0) return
     setIsUploading(true)
     try {
@@ -283,9 +283,9 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
                 setUploadError(null)
                 setPreviewUrl(null)
                 if (f) {
-                  const isImage = f.type.startsWith('image/')
                   const maxSizeMb = 5
-                  const tooLarge = f.size > maxSizeMb * 1024 * 1024
+                  const isImage = f.type.startsWith('image/')
+                  const tooLarge = !isValidImageFile(f)
                   if (!isImage) {
                     setUploadError(t('symbolPicker.invalidFileType'))
                     setUploadFile(null)

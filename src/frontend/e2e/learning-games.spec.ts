@@ -4,12 +4,6 @@ test.describe('Learning', () => {
   test.use({ storageState: 'playwright/.auth/admin.json' });
 
   test.beforeEach(async ({ page }) => {
-    // Debug: Log all requests
-    page.on('request', request => console.log(`[Request] ${request.url()}`));
-
-    // Mock Learning Answer API to avoid real LLM dependency
-    page.on('request', request => console.log(`[Request] ${request.url()}`));
-
     // Mock auto-asked adaptive questions so the flow does not hit the LLM
     await page.route('**/api/learning/*/ask', async route => {
       await route.fulfill({
@@ -75,28 +69,16 @@ test.describe('Learning', () => {
     const input = page.getByPlaceholder(/type|escribe/i).last();
 
     // Ensure session is started via API/Store injection if button not clicked
-    await page.evaluate(async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const store = (window as any).useLearningStore;
-      if (store && !store.getState().currentSession) {
-        console.log('[Test] Forcing session start');
-        // Mock session object
-        const mockSession = {
-          id: 'test-session-123',
-          status: 'active',
-          messages: []
-        };
-        store.setState({ currentSession: mockSession });
-      }
-    });
-
-    // Check if button is visible (it shouldn't be if session is active)
-    const startBtn = page.getByRole('button', { name: /start session|comenzar sesión/i });
-    if (await startBtn.isVisible()) {
+    // Wait for the session state to settle before submitting. The input can
+    // render while the initial session request is still in flight; checking
+    // only input visibility can otherwise submit with no active session.
+    const startBtn = page.getByTestId('learning-session-start');
+    const endBtn = page.getByTestId('learning-session-active');
+    if (!(await endBtn.isVisible())) {
+      await expect(startBtn).toBeVisible({ timeout: 15000 });
       await startBtn.click();
-      await expect(startBtn).not.toBeVisible({ timeout: 10000 });
-      await page.waitForTimeout(2000);
     }
+    await expect(endBtn).toBeVisible({ timeout: 15000 });
 
     await expect(input).toBeVisible();
     await input.fill('Hello');
@@ -105,7 +87,6 @@ test.describe('Learning', () => {
     const sendBtn = page.locator('button[type="submit"]').first();
 
     // Check if button is disabled?
-    // await expect(sendBtn).toBeEnabled();
 
     // Count messages before
     // Use a more generic selector for message bubbles (bg-gray-100 or bg-indigo-100)
@@ -135,40 +116,34 @@ test.describe('Learning', () => {
       console.log('[Test] Spinners still present after timeout - continuing');
     }
 
-    // Find History Tab/Link
-    const historyTab = page.getByText(/history|historial/i).first();
+    const historyToggle = page.getByRole('button', {
+      name: /show history|hide history|mostrar historial|ocultar historial/i,
+    });
+    await expect(historyToggle).toBeVisible();
+    const historyResponsePromise = page.waitForResponse((response) =>
+      response.request().method() === 'GET' &&
+      response.url().includes('/api/learning/history/')
+    );
+    await historyToggle.click();
+    const historyResponse = await historyResponsePromise;
+    expect(historyResponse.ok()).toBe(true);
 
-    // If history tab doesn't exist, skip
-    const historyTabVisible = await historyTab.isVisible().catch(() => false);
-    if (!historyTabVisible) {
-      console.log('[Test] History tab not found - skipping');
-      test.skip();
+    const historyPanel = page.getByTestId('learning-history-panel');
+    await expect(historyPanel).toBeVisible();
+    await expect(
+      historyPanel.getByRole('heading', { name: /conversation history|historial de conversación/i }),
+    ).toBeVisible();
+    await expect(historyPanel.locator('.animate-spin')).not.toBeVisible();
+
+    const historyItems = historyPanel.getByTestId('learning-history-item');
+    if (await historyItems.count() === 0) {
+      await expect(
+        historyPanel.getByText(/no previous sessions|no hay sesiones previas/i),
+      ).toBeVisible();
       return;
     }
 
-    await historyTab.click();
-
-    // Wait for list to load
-    await page.waitForTimeout(2000);
-
-    // Check for history items
-    const historyItemSelectors = ['li', 'tr', '.history-item', '[data-testid="history-item"]'];
-    let firstItem = null;
-
-    for (const selector of historyItemSelectors) {
-      const item = page.locator(selector).first();
-      if (await item.isVisible().catch(() => false)) {
-        firstItem = item;
-        break;
-      }
-    }
-
-    if (!firstItem || !(await firstItem.isVisible().catch(() => false))) {
-      console.log('[Test] No history items found - test passes (empty history is valid)');
-      return;
-    }
-
-    await firstItem.click();
+    await historyItems.first().click();
 
     const input = page.getByPlaceholder(/type|escribe/i).last();
     await expect(input).toBeVisible({ timeout: 10000 });
@@ -184,23 +159,15 @@ test.describe('Games', () => {
     // Wait for content
     await expect(page.locator('main')).toBeVisible();
 
-    // We need to select a board first
-    // Look for "Play Now" or "Jugar" buttons
+    // The seeded demo board is playable (12 symbols), so a "Play Now" action
+    // must be present. Its absence would mean the seed/assignment regressed.
     const playBtn = page.locator('button').filter({ hasText: /play now|jugar/i }).first();
+    await expect(playBtn).toBeVisible({ timeout: 15000 });
 
-    // If no boards, we can't play. Skip or fail gracefully.
-    if (await playBtn.isVisible()) {
-      await playBtn.click();
-      // Should see target symbol instruction
-      await expect(page.getByText(/find|encuentra/i)).toBeVisible();
-      await expect(page.locator('.grid')).toBeVisible();
-    } else {
-      console.log('No playable boards found for Symbol Hunt');
-      // If we are admin/student, maybe we need to create one?
-      // But board creation is tested elsewhere.
-      // We can just assert that the "No boards" message or "Needs more symbols" is visible if empty
-      // But let's assume seed data provides at least one board.
-      // If fails, it means seed data is missing.
-    }
+    await playBtn.click();
+
+    // The game shows the target instruction and the symbol grid.
+    await expect(page.getByText(/find|encuentra/i)).toBeVisible();
+    await expect(page.locator('.grid')).toBeVisible();
   });
 });

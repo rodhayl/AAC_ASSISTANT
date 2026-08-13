@@ -57,3 +57,16 @@ def test_student_summaries_are_bulk_and_teacher_scoped(setup_test_db, test_db_se
     assert admin_response.status_code == 200
     admin_ids = {item["id"] for item in admin_response.json()}
     assert {visible.id, hidden.id}.issubset(admin_ids)
+
+
+def test_empty_roster_teacher_gets_no_student_summaries(setup_test_db, test_db_session):
+    teacher = create_user(test_db_session, "summary_empty_teacher", "teacher")
+    create_user(test_db_session, "summary_unassigned_student", "student")
+
+    response = client.get(
+        "/api/auth/users/student-summaries",
+        headers=create_test_headers(teacher.id, teacher.username, teacher.user_type),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []

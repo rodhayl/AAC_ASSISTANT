@@ -2,7 +2,7 @@
 
 from sqlalchemy import event
 
-from src.aac_app.models import Symbol
+from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol
 from src.aac_app.services import prediction_service as prediction_module
 from src.aac_app.services.prediction_service import PredictionService
 
@@ -110,6 +110,49 @@ def test_predict_next_caches_symbol_catalog_between_requests(
     assert first_count == 3
     assert statement_count == first_count + 2
     assert suggestions[0]["label"] == "cookie"
+
+
+def test_predict_next_board_scope_uses_scalar_symbol_ids(
+    test_db_session, regular_user, monkeypatch
+):
+    """Board-scoped fallbacks bind integer symbol IDs, not SQLAlchemy Row objects."""
+    service = PredictionService()
+    monkeypatch.setattr(
+        prediction_module, "translate_text", lambda text, _target_lang: text
+    )
+    board = CommunicationBoard(
+        name="Prediction board",
+        user_id=regular_user.id,
+        is_public=True,
+    )
+    symbol = Symbol(label="cookie", category="noun", language="en", is_builtin=True)
+    test_db_session.add_all([board, symbol])
+    test_db_session.commit()
+    test_db_session.add(
+        BoardSymbol(
+            board_id=board.id,
+            symbol_id=symbol.id,
+            is_visible=True,
+            position_x=0,
+            position_y=0,
+        )
+    )
+    test_db_session.commit()
+    monkeypatch.setitem(service._models, "en", {"bigrams": {}})
+
+    suggestions = service.predict_next(
+        user_id=regular_user.id,
+        current_symbols=[],
+        limit=5,
+        language="en",
+        offset=1,
+        board_id=board.id,
+        db=test_db_session,
+    )
+
+    assert any(
+        suggestion["symbol_id"] == symbol.id for suggestion in suggestions
+    )
 
 
 def test_predict_next_new_symbols_visible_after_mutation(

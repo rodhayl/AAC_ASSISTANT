@@ -54,4 +54,4 @@ def reset_database(user=Depends(get_current_admin_user)):
         error_msg = get_text(
             user=user, key="errors.admin.databaseResetFailed", error=str(e)
         )
-        return {"ok": False, "error": error_msg}
+        raise HTTPException(status_code=500, detail=error_msg) from e

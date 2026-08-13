@@ -4,10 +4,6 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
 from src.aac_app.models import BoardAssignment, BoardSymbol, CommunicationBoard, User
-
-# Compatibility exports for callers that patch the pre-split module paths.
-from src.aac_app.providers.ollama_provider import OllamaProvider  # noqa: F401
-from src.aac_app.services.board_generation_service import BoardGenerationService  # noqa: F401
 from src.aac_app.services.runtime_translation import normalize_language_code
 from src.aac_app.services.translation_service import get_translation_service
 from src.api import schemas
@@ -18,7 +14,7 @@ from src.api.deps import (
     get_text,
     require_board_owner_or_admin,
 )
-from src.api.routers.board_helpers import get_playable_count, serialize_board  # noqa: F401
+from src.api.routers.board_helpers import serialize_board
 
 router = APIRouter()
 
@@ -26,8 +22,8 @@ router = APIRouter()
 @router.get("")
 @router.get("/")
 def get_boards(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0, le=100_000),
+    limit: int = Query(100, ge=1, le=1000),
     user_id: int | None = None,
     name: str | None = None,
     current_user: User = Depends(get_current_active_user),
@@ -81,10 +77,11 @@ def get_boards(
 
         return result
     except Exception as e:
-        logger.error(f"Error fetching boards: {e}")
-        logger.exception("Traceback:")
-        # Fallback empty list to avoid UI crash; error logged by FastAPI
-        return []
+        logger.exception("Error fetching boards: {}", e)
+        raise HTTPException(
+            status_code=500,
+            detail=get_text(user=current_user, key="errors.unknown"),
+        ) from e
 
 
 @router.get("/{board_id}", response_model=schemas.BoardResponse)
@@ -184,6 +181,12 @@ def delete_board(
     # SQLAlchemy relationship cascade="all, delete" might be needed on model.
     # Let's assume manual cleanup of association table if not.
     db.query(BoardSymbol).filter(BoardSymbol.board_id == board_id).delete()
+    db.query(BoardAssignment).filter(BoardAssignment.board_id == board_id).delete()
+    # Other boards may link to this board through a symbol; clear those
+    # nullable references before deleting the target board.
+    db.query(BoardSymbol).filter(BoardSymbol.linked_board_id == board_id).update(
+        {BoardSymbol.linked_board_id: None}, synchronize_session=False
+    )
 
     db.delete(db_board)
     db.commit()

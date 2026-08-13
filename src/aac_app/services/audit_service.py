@@ -77,8 +77,12 @@ class AuditLogService:
             success=success,
         )
 
+        # Audit entries participate in the caller's transaction. Request
+        # handlers commit once through get_db; committing here could persist
+        # business changes before a later operation fails and make rollback
+        # semantics inconsistent.
         db.add(audit_entry)
-        db.commit()
+        db.flush()
         db.refresh(audit_entry)
 
         # Also log to application logger for immediate visibility
@@ -160,26 +164,6 @@ class AuditLogService:
         )
 
     @staticmethod
-    def log_privilege_escalation_attempt(
-        db: Session,
-        username: str,
-        attempted_role: str,
-        ip_address: str | None = None,
-    ):
-        """Log privilege escalation attempt."""
-        return AuditLogService.log_event(
-            db=db,
-            event_type="privilege_escalation",
-            severity="critical",
-            description=f"Privilege escalation attempt: User '{username}' tried to register as '{attempted_role}'",
-            username=username,
-            ip_address=ip_address,
-            endpoint="/api/auth/register",
-            success=False,
-            additional_data={"attempted_role": attempted_role},
-        )
-
-    @staticmethod
     def log_account_created(
         db: Session,
         new_user_id: int,
@@ -207,31 +191,6 @@ class AuditLogService:
                 "new_user_id": new_user_id,
                 "new_username": new_username,
                 "new_user_type": new_user_type,
-            },
-        )
-
-    @staticmethod
-    def log_account_deleted(
-        db: Session,
-        deleted_user_id: int,
-        deleted_username: str,
-        deleted_by_id: int,
-        deleted_by_username: str,
-        ip_address: str | None = None,
-    ):
-        """Log account deletion."""
-        return AuditLogService.log_event(
-            db=db,
-            event_type="account_deleted",
-            severity="warning",
-            description=f"Account deleted: {deleted_username} (by admin '{deleted_by_username}')",
-            user_id=deleted_by_id,
-            username=deleted_by_username,
-            ip_address=ip_address,
-            success=True,
-            additional_data={
-                "deleted_user_id": deleted_user_id,
-                "deleted_username": deleted_username,
             },
         )
 
