@@ -275,7 +275,7 @@ export function VoiceTab({ preferences, setPreferences, filteredVoices, showStat
                   {t('ai.sttModel', 'Speech-to-text model')}
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {t('ai.sttModelHelp', 'Whisper-tiny is the fast 39M-parameter default. The selected model downloads on first use.')}
+                  {t('ai.sttModelHelp', 'Whisper-tiny is the fast 39M-parameter default. Tiny is bundled with the installer; other sizes download on first use.')}
                 </p>
               </div>
               <select

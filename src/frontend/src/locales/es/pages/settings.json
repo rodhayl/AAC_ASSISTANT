@@ -119,7 +119,7 @@
     "installComplete": "Las dependencias de voz se instalaron correctamente.",
     "installFailed": "La instalación automática de voz falló.",
     "sttModel": "Modelo de voz a texto",
-    "sttModelHelp": "Whisper-tiny es el valor predeterminado rápido de 39M de parámetros. El modelo seleccionado se descarga al usarlo por primera vez.",
+    "sttModelHelp": "Whisper-tiny es el valor predeterminado rápido de 39M de parámetros. Tiny viene incluido en el instalador; los demás tamaños se descargan al usarlos por primera vez.",
     "sttModelSaved": "Modelo de voz a texto actualizado.",
     "sttModelSaveFailed": "No se pudo actualizar el modelo de voz a texto.",
     "dependencies": {

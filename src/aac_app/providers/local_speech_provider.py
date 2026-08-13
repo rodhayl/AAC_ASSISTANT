@@ -66,7 +66,8 @@ class LocalSpeechProvider:
                 f"models--Systran--faster-whisper-{self.model_size}"
             )
             self.model_cache_dir = Path(resolved).absolute()
-        self.model_cache_dir.mkdir(parents=True, exist_ok=True)
+        if not self._local_files_only:
+            self.model_cache_dir.mkdir(parents=True, exist_ok=True)
         self.model: Any | None = None
         self._model_loaded = False
         self._load_lock = threading.Lock()

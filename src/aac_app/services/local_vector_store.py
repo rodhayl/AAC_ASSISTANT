@@ -222,7 +222,8 @@ class LocalVectorStore:
             return False
         self._load_attempted = True
         try:
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            if not self._local_files_only:
+                self.cache_dir.mkdir(parents=True, exist_ok=True)
             with _safe_streams():
                 if self._embedder_factory is not None:
                     self.embedder = self._embedder_factory(

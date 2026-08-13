@@ -119,7 +119,7 @@
     "installComplete": "Voice dependencies installed.",
     "installFailed": "Automatic voice installation failed.",
     "sttModel": "Speech-to-text model",
-    "sttModelHelp": "Whisper-tiny is the fast 39M-parameter default. The selected model downloads on first use.",
+    "sttModelHelp": "Whisper-tiny is the fast 39M-parameter default. Tiny is bundled with the installer; other sizes download on first use.",
     "sttModelSaved": "Speech-to-text model updated.",
     "sttModelSaveFailed": "Could not update the speech-to-text model.",
     "dependencies": {
