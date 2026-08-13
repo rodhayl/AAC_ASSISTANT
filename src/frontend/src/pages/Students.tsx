@@ -4,6 +4,7 @@ import api, { extractError } from '../lib/api'
 import type { Board, StudentBoardSummary, User } from '../types'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
+import { Toggle } from '../components/ui/Toggle'
 import { ResetPasswordModal } from '../components/common/ResetPasswordModal'
 import { GuardianProfileModal } from '../components/students/GuardianProfileModal'
 import { Sparkles, Volume2 } from 'lucide-react'
@@ -589,15 +590,11 @@ export function Students() {
                         <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.voiceModeHelp', { defaultValue: 'Enable/disable voice features' })}</p>
                       </div>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="sr-only peer"
-                        checked={studentPreferences.voice_mode_enabled}
-                        onChange={(e) => setStudentPreferences({ ...studentPreferences, voice_mode_enabled: e.target.checked })}
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                    </label>
+                    <Toggle
+                      checked={studentPreferences.voice_mode_enabled}
+                      label={t('preferences.voiceMode', { defaultValue: 'Voice Mode' })}
+                      onChange={(checked) => setStudentPreferences({ ...studentPreferences, voice_mode_enabled: checked })}
+                    />
                   </div>
 
                   <div className="flex justify-end gap-3 mt-6">
