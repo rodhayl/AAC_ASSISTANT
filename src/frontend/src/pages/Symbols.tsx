@@ -36,6 +36,9 @@ export function Symbols() {
   const pageSize = 100;
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const formRef = useRef<HTMLDivElement>(null);
+  // Latest-request-wins guard so a slow response cannot overwrite a newer one
+  // when filters/search/sort change in quick succession.
+  const fetchSeqRef = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -69,6 +72,7 @@ export function Symbols() {
   const { t, i18n } = useTranslation('symbols');
 
   const fetchSymbols = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
     setIsLoading(true);
     setError(null);
     try {
@@ -78,11 +82,13 @@ export function Symbols() {
       if (search) params.search = search;
       if (sort !== 'default') params.sort = sort;
       const res = await api.get('/boards/symbols', { params });
+      if (seq !== fetchSeqRef.current) return;
       setSymbols(res.data);
     } catch (e: unknown) {
+      if (seq !== fetchSeqRef.current) return;
       setError(extractError(e, 'Failed to load symbols'));
     } finally {
-      setIsLoading(false);
+      if (seq === fetchSeqRef.current) setIsLoading(false);
     }
   }, [usage, category, search, page, sort]);
 

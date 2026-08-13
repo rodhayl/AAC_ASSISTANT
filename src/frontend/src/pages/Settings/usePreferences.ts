@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { useLocaleStore } from '../../store/localeStore';
 import { useThemeStore } from '../../store/themeStore';
@@ -23,7 +23,17 @@ export function usePreferences() {
   const user = useAuthStore(state => state.user);
   const { t } = useTranslation('settings');
   const addToast = useToastStore((state) => state.addToast);
-  const [preferences, setPreferences] = useState<Preferences>(() => defaultPreferences(user));
+  const [preferences, setPreferencesState] = useState<Preferences>(() => defaultPreferences(user));
+  // Once the user edits a preference, the async initial hydration must not
+  // overwrite their change (a slow GET could otherwise revert it).
+  const userEditedRef = useRef(false);
+  const setPreferences = useCallback(
+    (updater: Parameters<typeof setPreferencesState>[0]) => {
+      userEditedRef.current = true;
+      setPreferencesState(updater);
+    },
+    [],
+  );
   const [prefsLoading, setPrefsLoading] = useState(false);
   const [prefsSaveSuccess, setPrefsSaveSuccess] = useState(false);
   const [prefsSaveError, setPrefsSaveError] = useState<string | null>(null);
@@ -33,11 +43,13 @@ export function usePreferences() {
     const loadPreferences = async () => {
       try {
         const res = await api.get('/auth/preferences');
+        // Do not clobber edits made before the initial hydration resolved.
+        if (userEditedRef.current) return;
         const voice = res.data.tts_voice || 'default';
         const darkMode = res.data.dark_mode ?? false;
         const language = res.data.ui_language || 'es-ES';
 
-        setPreferences({
+        setPreferencesState({
           tts_voice: voice,
           ui_language: language,
           notifications_enabled: res.data.notifications_enabled ?? true,
