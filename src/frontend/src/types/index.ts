@@ -21,6 +21,11 @@ export interface User {
   settings?: UserPreferences;
 }
 
+export interface StudentBoardSummary extends User {
+  user_type: 'student';
+  assigned_boards: Board[];
+}
+
 export interface Symbol {
   id: number;
   label: string;
@@ -33,6 +38,14 @@ export interface Symbol {
   is_builtin: boolean;
   created_at: string;
   is_in_use?: boolean;
+}
+
+export interface LearningSymbolItem {
+  id: number;
+  label: string;
+  category: string;
+  image_path?: string;
+  keywords?: string;
 }
 
 export interface BoardSymbol {
@@ -104,6 +117,7 @@ export interface LearningSessionStart {
   purpose?: string;
   difficulty: string;
   board_id?: number;
+  mode_key?: string;
 }
 
 export interface LearningSessionResponse {

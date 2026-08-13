@@ -16,8 +16,9 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.aac_app.models.database import User, get_session  # noqa: E402
-from src.api.routers.auth import hash_password  # noqa: E402
+from src.aac_app.db import get_session  # noqa: E402
+from src.aac_app.models import User  # noqa: E402
+from src.aac_app.services.auth_service import get_password_hash  # noqa: E402
 
 
 def fix_null_password_hashes(delete_invalid=False):
@@ -52,7 +53,7 @@ def fix_null_password_hashes(delete_invalid=False):
         else:
             print("\nSetting impossible password hash for invalid users...")
             print("(These users will not be able to login until password is reset)")
-            impossible_hash = hash_password("__INVALID_USER_NO_PASSWORD__")
+            impossible_hash = get_password_hash("__INVALID_USER_NO_PASSWORD__")
             for user in invalid_users:
                 print(f"  Fixing user: {user.username}")
                 user.password_hash = impossible_hash

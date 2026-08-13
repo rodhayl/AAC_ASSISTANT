@@ -5,12 +5,11 @@ Tracks all security-relevant events for forensics and compliance.
 Created: November 30, 2025
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
 
-# Import Base from database module
-from src.aac_app.models.database import Base
+from .base import Base
 
 
 class AuditLog(Base):
@@ -30,7 +29,7 @@ class AuditLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     timestamp = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
         index=True,
     )
@@ -78,7 +77,7 @@ class FailedLoginAttempt(Base):
     ip_address = Column(String(45), nullable=True, index=True)
     timestamp = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
         index=True,
     )

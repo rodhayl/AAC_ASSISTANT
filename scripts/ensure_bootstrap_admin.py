@@ -22,7 +22,10 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src import config  # noqa: E402
-from src.aac_app.models.database import User, get_session, init_database  # noqa: E402
+from src.aac_app import schema  # noqa: E402
+from src.aac_app.db import get_session  # noqa: E402
+from src.aac_app.models import User  # noqa: E402
+from src.aac_app.seed import init_database  # noqa: E402
 from src.aac_app.services.auth_service import get_password_hash  # noqa: E402
 
 
@@ -45,7 +48,8 @@ def ensure_bootstrap_admin() -> int:
     password = _read_str("AAC_BOOTSTRAP_ADMIN_PASSWORD", "Admin123")
 
     # Ensure DB/tables exist first.
-    init_database()
+    schema.ensure()
+    init_database(ensure_schema=False)
 
     with get_session() as session:
         existing_admin = session.query(User).filter(User.user_type == "admin").first()

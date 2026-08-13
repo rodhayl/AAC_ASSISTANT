@@ -6,43 +6,61 @@ This file ensures:
 2. Proper test isolation
 3. Consistent test environment
 """
+from pathlib import Path
+from unittest.mock import AsyncMock, Mock
+
 import pytest
-from unittest.mock import Mock, AsyncMock
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool
 
-from src.aac_app.models.database import Base, User
-from src.aac_app.models.audit_log import AuditLog, FailedLoginAttempt  # Import audit models
-from src.api.main import app
-from src.api.dependencies import get_db
+from src.aac_app import db as database
+from src.aac_app.models import Base, User
 from src.aac_app.services.auth_service import get_password_hash
+from src.api.deps import clear_settings_cache, get_db
+from src.api.main import app
+
+
+@pytest.fixture(scope="session", autouse=True)
+def cleanup_process_resources():
+    """Dispose process-wide database resources after all tests finish."""
+    yield
+    database.dispose_engine_instance()
+
 
 @pytest.fixture(scope="function")
-def test_db_engine():
+def test_db_engine(tmp_path: Path, monkeypatch, reset_production_db):
     """
-    Create a fresh in-memory SQLite database for each test.
-    This ensures complete isolation between tests.
+    Create a fresh temporary file-backed SQLite database for each test.
+    This ensures complete isolation between tests while allowing cross-thread
+    access from FastAPI's test client.
     """
+    # A temporary file-backed database avoids StaticPool's single immortal
+    # sqlite3 connection while retaining cross-thread access for TestClient.
+    database_path = tmp_path / "test.sqlite3"
+    database_url = f"sqlite:///{database_path.as_posix()}"
+    monkeypatch.setenv("DATABASE_URL", database_url)
     engine = create_engine(
-        "sqlite://",
+        database_url,
         connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+        poolclass=NullPool,
     )
-    
+
     # Enable foreign key constraints for SQLite
     @event.listens_for(engine, "connect")
     def set_sqlite_pragma(dbapi_conn, connection_record):
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
-    
+
     # Create all tables
     Base.metadata.create_all(bind=engine)
-    
+
     yield engine
-    
-    # Cleanup
+
+    # This finalizer runs after dependent sessions have closed. Dispose any
+    # process-wide engine opened by API/service code before forcing collection.
+    database.dispose_engine_instance()
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
 
@@ -58,85 +76,90 @@ def test_db_session(test_db_engine):
         autoflush=False,
         bind=test_db_engine
     )
-    
+
     session = TestingSessionLocal()
-    
+
     yield session
-    
+
     session.close()
 
 
 @pytest.fixture(autouse=False)
-def setup_test_db(test_db_session):
+def setup_test_db(test_db_engine):
     """
     Configure FastAPI app to use test database.
     Use this fixture in test files that need API testing.
     """
+    TestingSessionLocal = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=test_db_engine,
+    )
+
     def override_get_db():
+        session = TestingSessionLocal()
         try:
-            yield test_db_session
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
         finally:
-            pass
-    
+            session.close()
+
     app.dependency_overrides[get_db] = override_get_db
-    
+
     # Patch get_session used by services to use the test session
-    from unittest.mock import patch
     from contextlib import contextmanager
-    
+    from unittest.mock import patch
+
     @contextmanager
     def override_get_session_cm():
-        # Yield the same test session
-        # We don't close it here because it's managed by the test_db_session fixture
-        yield test_db_session
-        
+        session = TestingSessionLocal()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
     # Patch all modules that use get_session
     patches = [
-        patch('src.aac_app.services.learning_companion_service.get_session', side_effect=override_get_session_cm),
         patch('src.aac_app.services.achievement_system.get_session', side_effect=override_get_session_cm),
         patch('src.aac_app.services.symbol_analytics.get_session', side_effect=override_get_session_cm),
         patch('src.aac_app.services.guardian_profile_service.get_session', side_effect=override_get_session_cm),
-        patch('src.api.dependencies.get_session', side_effect=override_get_session_cm)
+        patch('src.api.deps.settings.get_session', side_effect=override_get_session_cm),
     ]
-    
+
     for p in patches:
         p.start()
-        
+
     yield
-    
+
     for p in patches:
         p.stop()
-        
+
     app.dependency_overrides.clear()
 
 
 @pytest.fixture(autouse=True)
-def reset_production_db():
+def reset_production_db(monkeypatch):
     """
     Prevent tests from accidentally using the production database.
     This fixture runs automatically for all tests.
     """
-    import os
-    # Store original environment
-    original_env = os.environ.get('DATABASE_URL')
-    original_testing = os.environ.get('TESTING')
-
-    # Force test environment (disables rate limiting)
-    os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
-    os.environ['TESTING'] = '1'
+    # Force test environment (disables rate limiting) and use a strong,
+    # deterministic attack-test secret so PyJWT never warns about HS256 keys.
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    monkeypatch.setenv("TESTING", "1")
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-jwt-secret-" + ("x" * 48))
+    clear_settings_cache()
 
     yield
 
-    # Restore original environment
-    if original_env:
-        os.environ['DATABASE_URL'] = original_env
-    elif 'DATABASE_URL' in os.environ:
-        del os.environ['DATABASE_URL']
-
-    if original_testing:
-        os.environ['TESTING'] = original_testing
-    elif 'TESTING' in os.environ:
-        del os.environ['TESTING']
+    clear_settings_cache()
 
 
 @pytest.fixture(scope="function")
@@ -157,14 +180,6 @@ def mock_speech_provider():
     mock_speech = Mock()
     mock_speech.transcribe = AsyncMock(return_value="transcribed text")
     return mock_speech
-
-
-@pytest.fixture(scope="function")
-def mock_tts_provider():
-    """Create a mock TTS provider that doesn't require audio output"""
-    mock_tts = Mock()
-    mock_tts.speak = Mock()
-    return mock_tts
 
 
 @pytest.fixture(scope="session")

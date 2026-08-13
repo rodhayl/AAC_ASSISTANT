@@ -267,7 +267,7 @@ test.describe('LLM Integration (Mocked)', () => {
     // Select Learning Mode if available
     // Use a specific selector to avoid ambiguity (Language selector, Board select, etc.)
     // The mode selector has a specific class 'bg-gray-100' or is in the header
-    const modeSelect = page.locator('select.bg-gray-100');
+    const modeSelect = page.locator('#learning-mode');
     await expect(modeSelect).toBeVisible();
     
     // VERIFY BUG FIX: The combo box should have options. 

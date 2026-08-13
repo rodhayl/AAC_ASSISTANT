@@ -1,6 +1,6 @@
 import { Bell, User, BookOpen, Menu, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { useAuthStore } from '../store/authStore';
 import { useNotificationsStore } from '../store/notificationsStore';
 import { NotificationsPanel } from './NotificationsPanel';
@@ -14,7 +14,7 @@ interface NavbarProps {
 }
 
 export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
-  const { user } = useAuthStore();
+  const user = useAuthStore(state => state.user);
   const [open, setOpen] = useState(false);
   const unread = useNotificationsStore(state => state.unreadCount());
   const loadFromBackend = useNotificationsStore(state => state.loadFromBackend);

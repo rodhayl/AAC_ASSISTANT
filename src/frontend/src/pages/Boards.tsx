@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { Plus, Trash2, LayoutGrid, Edit, Copy, UserPlus, Search, Play } from 'lucide-react';
 
 import { useBoardStore } from '../store/boardStore';
@@ -14,21 +14,23 @@ import { formatDate } from '../lib/format';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
 export function Boards() {
-  const {
-    boards,
-    isLoading,
-    error,
-    fetchBoards,
-    createBoard,
-    deleteBoard,
-    duplicateBoard,
-    assignBoardToStudent,
-    hasMore,
-    page,
-  } = useBoardStore();
-  const { user } = useAuthStore();
-  const { aiSettings, fallbackAISettings, fetchAISettings, fetchFallbackAISettings } = useSettingsStore();
+  const boards = useBoardStore((state) => state.boards);
+  const assignedBoards = useBoardStore((state) => state.assignedBoards);
+  const isListLoading = useBoardStore((state) => state.isListLoading);
+  const error = useBoardStore((state) => state.error);
+  const fetchBoards = useBoardStore((state) => state.fetchBoards);
+  const fetchAssignedBoards = useBoardStore((state) => state.fetchAssignedBoards);
+  const createBoard = useBoardStore((state) => state.createBoard);
+  const deleteBoard = useBoardStore((state) => state.deleteBoard);
+  const duplicateBoard = useBoardStore((state) => state.duplicateBoard);
+  const assignBoardToStudent = useBoardStore((state) => state.assignBoardToStudent);
+  const hasMore = useBoardStore((state) => state.hasMore);
+  const page = useBoardStore((state) => state.page);
+  const user = useAuthStore((state) => state.user);
+  const aiSettings = useSettingsStore((state) => state.aiSettings);
+  const fetchAISettings = useSettingsStore((state) => state.fetchAISettings);
   const { t, i18n } = useTranslation('boards');
+  const { t: tError } = useTranslation('error');
 
   const [isCreating, setIsCreating] = useState(false);
   const [creatingBoard, setCreatingBoard] = useState(false);
@@ -37,7 +39,6 @@ export function Boards() {
   const [newBoardDescription, setNewBoardDescription] = useState('');
   const [aiEnabled, setAiEnabled] = useState(false);
   const [isLanguageLearning, setIsLanguageLearning] = useState(false);
-  const [aiSource, setAiSource] = useState<'primary' | 'fallback'>('primary');
   const [aiConfigError, setAiConfigError] = useState<string | null>(null);
 
   const [assignOpenId, setAssignOpenId] = useState<number | null>(null);
@@ -62,6 +63,7 @@ export function Boards() {
       didInitialFetchRef.current = true;
       if (user.user_type === 'student') {
         fetchBoards(user.id, searchQuery);
+        fetchAssignedBoards(user.id);
       } else if (user.user_type === 'admin') {
         fetchBoards(undefined, searchQuery);
       } else {
@@ -73,6 +75,7 @@ export function Boards() {
     const timer = setTimeout(() => {
       if (user.user_type === 'student') {
         fetchBoards(user.id, searchQuery);
+        fetchAssignedBoards(user.id);
       } else if (user.user_type === 'admin') {
         fetchBoards(undefined, searchQuery);
       } else {
@@ -81,25 +84,24 @@ export function Boards() {
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [fetchBoards, user, searchQuery]);
+  }, [fetchAssignedBoards, fetchBoards, user, searchQuery]);
 
   const effectiveUserId = user?.user_type === 'admin' ? undefined : user?.id;
 
   // Preload AI settings
   useEffect(() => {
     if (!aiSettings) fetchAISettings().catch(() => {});
-    if (!fallbackAISettings) fetchFallbackAISettings().catch(() => {});
-  }, [aiSettings, fallbackAISettings, fetchAISettings, fetchFallbackAISettings]);
+  }, [aiSettings, fetchAISettings]);
 
   const primaryProvider = aiSettings?.provider;
-  const primaryModel = primaryProvider === 'openrouter' ? aiSettings?.openrouter_model : aiSettings?.ollama_model;
-  const fallbackProvider = fallbackAISettings?.provider;
-  const fallbackModel = fallbackProvider === 'openrouter' ? fallbackAISettings?.openrouter_model : fallbackAISettings?.ollama_model;
+  const primaryModel = primaryProvider === 'openrouter'
+    ? aiSettings?.openrouter_model
+    : primaryProvider === 'lmstudio'
+      ? aiSettings?.lmstudio_model
+      : aiSettings?.ollama_model;
   const primaryReady = Boolean(primaryProvider && primaryModel);
-  const fallbackReady = Boolean(fallbackProvider && fallbackModel);
-  const selectedSettings = aiSource === 'fallback' ? fallbackAISettings : aiSettings;
-  const resolvedProvider = selectedSettings?.provider;
-  const resolvedModel = resolvedProvider === 'openrouter' ? selectedSettings?.openrouter_model : selectedSettings?.ollama_model;
+  const resolvedProvider = primaryProvider;
+  const resolvedModel = primaryModel;
 
   // AI config validation
   useEffect(() => {
@@ -111,12 +113,8 @@ export function Boards() {
       setAiConfigError('AI settings are missing a configured provider/model. Update them in Settings first.');
       return;
     }
-    if (aiSource === 'fallback' && !fallbackReady) {
-      setAiConfigError('Fallback AI is not configured. Switch back to primary or configure fallback in Settings.');
-      return;
-    }
     setAiConfigError(null);
-  }, [aiEnabled, aiSource, primaryReady, fallbackReady]);
+  }, [aiEnabled, primaryReady]);
 
   const openAssign = async (boardId: number) => {
     setAssignOpenId(boardId);
@@ -178,7 +176,6 @@ export function Boards() {
       setNewBoardDescription('');
       setAiEnabled(false);
       setIsLanguageLearning(false);
-      setAiSource('primary');
       setAiConfigError(null);
       setIsCreating(false);
     } finally {
@@ -197,7 +194,7 @@ export function Boards() {
     }
   };
 
-  const boardsToShow = useMemo(() => (boards.length > 0 ? boards : useBoardStore.getState().assignedBoards), [boards]);
+  const boardsToShow = useMemo(() => (boards.length > 0 ? boards : assignedBoards), [boards, assignedBoards]);
 
   const toggleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -236,7 +233,7 @@ export function Boards() {
     }
   };
 
-  if (isLoading && boards.length === 0) {
+  if (isListLoading && boards.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
@@ -284,7 +281,7 @@ export function Boards() {
               className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
           </div>
-          <Button data-testid="force-refresh" variant="ghost" onClick={handleForceRefresh} disabled={isLoading}>
+          <Button data-testid="force-refresh" variant="ghost" onClick={handleForceRefresh} disabled={isListLoading}>
             {t('refresh')}
           </Button>
           <Button onClick={() => setIsCreating(true)}>
@@ -314,7 +311,7 @@ export function Boards() {
             </Button>
           )}
           {hasMore && (
-            <Button variant="ghost" onClick={handleLoadMore} disabled={isLoading}>
+            <Button variant="ghost" onClick={handleLoadMore} disabled={isListLoading}>
               {t('loadMore')}
             </Button>
           )}
@@ -322,8 +319,21 @@ export function Boards() {
       </div>
 
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-4 rounded-lg">
-          {error}
+        <div
+          role="alert"
+          className="bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 p-4 rounded-lg"
+        >
+          <h2 className="font-semibold">{tError('title')}</h2>
+          <p className="text-sm mt-1">{tError('subtitle')}</p>
+          <p className="text-sm mt-2">{error}</p>
+          <button
+            type="button"
+            onClick={() => void handleForceRefresh()}
+            className="mt-3 px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+            disabled={isListLoading}
+          >
+            {tError('retry')}
+          </button>
         </div>
       )}
 
@@ -388,38 +398,13 @@ export function Boards() {
                 </label>
               </div>
               {aiEnabled && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3">
                   <label
-                    className={`relative block p-3 rounded-lg border transition-colors cursor-pointer ${aiSource === 'primary' ? 'border-indigo-500 ring-2 ring-indigo-200 dark:ring-indigo-400/40' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-500/60'} ${primaryReady ? '' : 'opacity-60 cursor-not-allowed'}`}
+                    className={`relative block p-3 rounded-lg border transition-colors ${primaryReady ? '' : 'opacity-60'}`}
                   >
-                    <input
-                      type="radio"
-                      className="sr-only"
-                      checked={aiSource === 'primary'}
-                      onChange={() => setAiSource('primary')}
-                      disabled={!primaryReady}
-                    />
                     <div className="font-semibold text-gray-900 dark:text-gray-100">{t('primaryAI')}</div>
                     <div className="text-sm text-gray-600 dark:text-gray-400 capitalize">
                       {primaryReady ? `${primaryProvider} - ${primaryModel}` : t('notConfigured')}
-                    </div>
-                  </label>
-                  <label
-                    className={`relative block p-3 rounded-lg border transition-colors cursor-pointer ${aiSource === 'fallback' ? 'border-indigo-500 ring-2 ring-indigo-200 dark:ring-indigo-400/40' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-500/60'} ${fallbackReady ? '' : 'opacity-60 cursor-not-allowed'}`}
-                  >
-                    <input
-                      type="radio"
-                      className="sr-only"
-                      checked={aiSource === 'fallback'}
-                      onChange={() => setAiSource('fallback')}
-                      disabled={!fallbackReady}
-                    />
-                    <div className="font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                      {t('fallbackAI')}
-                      {!fallbackReady && <span className="text-xs text-amber-600">({t('notConfigured')})</span>}
-                    </div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400 capitalize">
-                      {fallbackReady ? `${fallbackProvider} - ${fallbackModel}` : t('setupFallback')}
                     </div>
                   </label>
                   {aiConfigError && (

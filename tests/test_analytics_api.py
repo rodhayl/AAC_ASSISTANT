@@ -7,9 +7,10 @@ from datetime import datetime
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import sessionmaker
 
-from src.aac_app.models.database import SymbolUsageLog
-from src.api.dependencies import get_current_active_user
+from src.aac_app.models import Symbol, SymbolUsageLog, UserSettings
+from src.api.deps import get_current_active_user
 from src.api.main import app
 
 # Mark all tests to use test database
@@ -34,7 +35,7 @@ def setup_auth(regular_user):
 @pytest.fixture(scope="function")
 def sample_usage_logs(test_db_session, regular_user):
     """Create sample symbol usage logs for testing."""
-    from src.aac_app.models.database import LearningSession, Symbol
+    from src.aac_app.models import LearningSession, Symbol
 
     # Create required symbols
     symbols_data = [
@@ -159,6 +160,45 @@ def sample_usage_logs(test_db_session, regular_user):
 class TestAnalyticsAPI:
     """Test suite for Analytics API endpoints."""
 
+    def test_log_usage_endpoints_persist_rows(
+        self, test_db_engine, test_db_session, regular_user
+    ):
+        """Both legacy analytics write endpoints persist through get_db."""
+        symbols = [
+            Symbol(label="hello", category="social", language="en", is_builtin=True),
+        ]
+        test_db_session.add_all(symbols)
+        test_db_session.commit()
+
+        payload = {
+            "symbols": [
+                {"id": symbols[0].id, "label": "hello", "category": "social"},
+            ],
+            "context_topic": "greetings",
+        }
+
+        usage_response = client.post("/api/analytics/usage", json=payload)
+        assert usage_response.status_code == 201
+        log_response = client.post("/api/analytics/log", json=payload)
+        assert log_response.status_code == 201
+        # Keep both public write aliases registered while their Python handler
+        # names remain distinct for introspection and OpenAPI maintenance.
+        openapi_paths = app.openapi()["paths"]
+        assert "post" in openapi_paths["/api/analytics/usage"]
+        assert "post" in openapi_paths["/api/analytics/log"]
+
+        test_db_session.close()
+        separate_session = sessionmaker(bind=test_db_engine)()
+        try:
+            assert (
+                separate_session.query(SymbolUsageLog)
+                .filter(SymbolUsageLog.user_id == regular_user.id)
+                .count()
+                == 2
+            )
+        finally:
+            separate_session.close()
+
     def test_get_frequent_sequences_success(self, sample_usage_logs):
         """Test retrieving frequent symbol sequences."""
         response = client.get("/api/analytics/frequent-sequences")
@@ -202,10 +242,78 @@ class TestAnalyticsAPI:
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
-        
+
         # Filter out always-included punctuation for limit check
         non_punctuation = [s for s in data if s.get("category") != "punctuation"]
         assert len(non_punctuation) <= 3
+
+    def test_next_symbol_uses_static_ngram_model(self, sample_usage_logs):
+        """Static transitions provide suggestions when history has no matching sequence."""
+        response = client.post(
+            "/api/analytics/next-symbol",
+            json={"current_symbols": "the", "limit": 10},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        static_suggestions = [
+            suggestion
+            for suggestion in data
+            if suggestion.get("source") == "general_model"
+        ]
+        assert static_suggestions
+        assert static_suggestions[0]["label"] == "cookie"
+        assert {
+            "symbol_id",
+            "label",
+            "category",
+            "image_path",
+            "confidence",
+            "source",
+        } <= static_suggestions[0].keys()
+
+    def test_intent_suggestions_are_localized_for_spanish_ui(
+        self, monkeypatch, test_db_session, regular_user
+    ):
+        """Quick-word suggestions should follow the selected UI language."""
+        settings = UserSettings(user_id=regular_user.id, ui_language="es-ES")
+        test_db_session.add(settings)
+
+        test_db_session.add_all(
+            [
+                Symbol(
+                    id=101,
+                    label="I",
+                    category="pronoun",
+                    language="en",
+                    is_builtin=True,
+                ),
+                Symbol(
+                    id=102,
+                    label="you",
+                    category="pronoun",
+                    language="en",
+                    is_builtin=True,
+                ),
+            ]
+        )
+        test_db_session.commit()
+        test_db_session.refresh(regular_user)
+
+        monkeypatch.setattr(
+            "src.api.routers.analytics.translate_text",
+            lambda text, target_lang: {"I": "yo", "you": "tú"}.get(text, text),
+        )
+
+        response = client.post(
+            "/api/analytics/next-symbol",
+            json={"intent": "pronouns", "limit": 5},
+        )
+
+        assert response.status_code == 200
+        labels = [item["label"] for item in response.json()]
+        assert "yo" in labels
+        assert "I" not in labels
 
     def test_get_category_preferences(self, sample_usage_logs):
         """Test retrieving category preferences."""
@@ -259,7 +367,7 @@ class TestAnalyticsAPI:
             "/api/analytics/category-preferences",
             "/api/analytics/usage-stats",
         ]
-        
+
         post_endpoints = [
             "/api/analytics/next-symbol",
         ]
@@ -296,7 +404,7 @@ class TestAnalyticsAPI:
         response = client.post("/api/analytics/next-symbol", json={"limit": 1})
         assert response.status_code == 200
         data = response.json()
-        
+
         # Filter out always-included punctuation for limit check
         non_punctuation = [s for s in data if s.get("category") != "punctuation"]
         assert len(non_punctuation) <= 1

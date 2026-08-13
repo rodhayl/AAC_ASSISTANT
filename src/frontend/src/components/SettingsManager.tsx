@@ -5,10 +5,10 @@ import { useThemeStore } from '../store/themeStore';
 import { useTTSStore } from '../store/ttsStore';
 
 export function SettingsManager() {
-  const { user } = useAuthStore();
-  const { setLocale } = useLocaleStore();
-  const { setDarkMode } = useThemeStore();
-  const { setSelectedVoice } = useTTSStore();
+  const user = useAuthStore(state => state.user);
+  const setLocale = useLocaleStore((state) => state.setLocale);
+  const setDarkMode = useThemeStore((state) => state.setDarkMode);
+  const setSelectedVoice = useTTSStore((state) => state.setSelectedVoice);
 
   useEffect(() => {
     if (user?.settings) {

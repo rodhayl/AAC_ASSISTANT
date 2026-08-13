@@ -1,13 +1,21 @@
-from typing import Optional
+
+import contextlib
+import os
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import LearningSession, User
+from src.aac_app.models import User
 from src.aac_app.services.learning_companion_service import LearningCompanionService
 from src.aac_app.services.translation_service import get_translation_service
 from src.api import schemas
-from src.api.dependencies import get_current_active_user, get_db, get_learning_service
+from src.api.deps import (
+    get_current_active_user,
+    get_db,
+    get_learning_service,
+    get_learning_session_or_404,
+)
+from src.api.file_uploads import DEFAULT_MAX_AUDIO_BYTES, save_audio_upload
 
 router = APIRouter()
 
@@ -26,6 +34,7 @@ async def start_session(
     user_id: int,
     service: LearningCompanionService = Depends(get_learning_service),
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """Start a new learning session"""
     if user_id != current_user.id and current_user.user_type != "admin":
@@ -39,6 +48,8 @@ async def start_session(
         purpose=session_data.purpose,
         difficulty=session_data.difficulty,
         board_id=session_data.board_id,
+        mode_key=session_data.mode_key,
+        db=db,
     )
 
     if not result["success"]:
@@ -53,23 +64,22 @@ async def start_session(
 @router.post("/{session_id}/ask", response_model=schemas.QuestionResponse)
 async def ask_question(
     session_id: int,
-    difficulty: Optional[str] = None,
+    difficulty: str | None = None,
     service: LearningCompanionService = Depends(get_learning_service),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """Generate a question for the session"""
-    session = db.query(LearningSession).filter(LearningSession.id == session_id).first()
-    if not session:
-        raise HTTPException(
-            status_code=404, detail=get_text(current_user, "errors.sessionNotFound")
-        )
-    if session.user_id != current_user.id and current_user.user_type != "admin":
-        raise HTTPException(
-            status_code=403, detail=get_text(current_user, "errors.unauthorized")
-        )
+    get_learning_session_or_404(
+        db,
+        session_id,
+        current_user,
+        message=lambda key: get_text(current_user, key),
+    )
 
-    result = await service.ask_question(session_id=session_id, difficulty=difficulty)
+    result = await service.ask_question(
+        session_id=session_id, difficulty=difficulty, db=db
+    )
 
     if not result["success"]:
         raise HTTPException(
@@ -89,18 +99,18 @@ async def submit_answer(
     db: Session = Depends(get_db),
 ):
     """Submit an answer (text)"""
-    session = db.query(LearningSession).filter(LearningSession.id == session_id).first()
-    if not session:
-        raise HTTPException(
-            status_code=404, detail=get_text(current_user, "errors.sessionNotFound")
-        )
-    if session.user_id != current_user.id and current_user.user_type != "admin":
-        raise HTTPException(
-            status_code=403, detail=get_text(current_user, "errors.unauthorized")
-        )
+    get_learning_session_or_404(
+        db,
+        session_id,
+        current_user,
+        message=lambda key: get_text(current_user, key),
+    )
 
     result = await service.process_response(
-        session_id=session_id, student_response=answer_data.answer, is_voice=False
+        session_id=session_id,
+        student_response=answer_data.answer,
+        is_voice=False,
+        db=db,
     )
 
     if not result["success"]:
@@ -121,24 +131,33 @@ async def submit_voice_answer(
     db: Session = Depends(get_db),
 ):
     """Submit an answer (voice audio file)"""
-    session = db.query(LearningSession).filter(LearningSession.id == session_id).first()
-    if not session:
-        raise HTTPException(
-            status_code=404, detail=get_text(current_user, "errors.sessionNotFound")
-        )
-    if session.user_id != current_user.id and current_user.user_type != "admin":
-        raise HTTPException(
-            status_code=403, detail=get_text(current_user, "errors.unauthorized")
-        )
-
-    audio_data = await file.read()
-
-    result = await service.process_response(
-        session_id=session_id,
-        student_response="",  # Will be transcribed
-        is_voice=True,
-        audio_data=audio_data,
+    get_learning_session_or_404(
+        db,
+        session_id,
+        current_user,
+        message=lambda key: get_text(current_user, key),
     )
+
+    temp_path = None
+    try:
+        temp_path = await save_audio_upload(
+            file,
+            max_bytes=DEFAULT_MAX_AUDIO_BYTES,
+            too_large_detail=get_text(current_user, "errors.boards.fileTooLarge"),
+            invalid_type_detail=get_text(current_user, "errors.boards.invalidFileType"),
+            empty_detail=get_text(current_user, "errors.boards.invalidFileType"),
+        )
+        result = await service.process_response(
+            session_id=session_id,
+            student_response="",  # Will be transcribed
+            is_voice=True,
+            audio_path=temp_path,
+            db=db,
+        )
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            with contextlib.suppress(OSError):
+                os.remove(temp_path)
 
     if not result["success"]:
         raise HTTPException(
@@ -158,15 +177,12 @@ async def submit_symbol_answer(
     db: Session = Depends(get_db),
 ):
     """Submit an answer composed of AAC symbols (ordered list)."""
-    session = db.query(LearningSession).filter(LearningSession.id == session_id).first()
-    if not session:
-        raise HTTPException(
-            status_code=404, detail=get_text(current_user, "errors.sessionNotFound")
-        )
-    if session.user_id != current_user.id and current_user.user_type != "admin":
-        raise HTTPException(
-            status_code=403, detail=get_text(current_user, "errors.unauthorized")
-        )
+    get_learning_session_or_404(
+        db,
+        session_id,
+        current_user,
+        message=lambda key: get_text(current_user, key),
+    )
 
     if not payload.symbols or len(payload.symbols) == 0:
         raise HTTPException(
@@ -187,6 +203,7 @@ async def submit_symbol_answer(
         is_voice=False,
         audio_data=None,
         symbols=[s.model_dump() for s in payload.symbols],
+        db=db,
     )
 
     if not result["success"]:
@@ -208,17 +225,14 @@ async def end_session(
     db: Session = Depends(get_db),
 ):
     """End the learning session"""
-    session = db.query(LearningSession).filter(LearningSession.id == session_id).first()
-    if not session:
-        raise HTTPException(
-            status_code=404, detail=get_text(current_user, "errors.sessionNotFound")
-        )
-    if session.user_id != current_user.id and current_user.user_type != "admin":
-        raise HTTPException(
-            status_code=403, detail=get_text(current_user, "errors.unauthorized")
-        )
+    get_learning_session_or_404(
+        db,
+        session_id,
+        current_user,
+        message=lambda key: get_text(current_user, key),
+    )
 
-    result = await service.end_learning_session(session_id)
+    result = await service.end_learning_session(session_id, db=db)
 
     if not result["success"]:
         raise HTTPException(
@@ -238,17 +252,14 @@ def get_progress(
     db: Session = Depends(get_db),
 ):
     """Get session progress"""
-    session = db.query(LearningSession).filter(LearningSession.id == session_id).first()
-    if not session:
-        raise HTTPException(
-            status_code=404, detail=get_text(current_user, "errors.sessionNotFound")
-        )
-    if session.user_id != current_user.id and current_user.user_type != "admin":
-        raise HTTPException(
-            status_code=403, detail=get_text(current_user, "errors.unauthorized")
-        )
+    get_learning_session_or_404(
+        db,
+        session_id,
+        current_user,
+        message=lambda key: get_text(current_user, key),
+    )
 
-    result = service.get_session_progress(session_id)
+    result = service.get_session_progress(session_id, db=db)
 
     if not result["success"]:
         raise HTTPException(
@@ -265,6 +276,7 @@ def get_history(
     limit: int = 10,
     service: LearningCompanionService = Depends(get_learning_service),
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """Get user learning history"""
     if user_id != current_user.id and current_user.user_type != "admin":
@@ -272,7 +284,7 @@ def get_history(
             status_code=403, detail=get_text(current_user, "errors.unauthorized")
         )
 
-    result = service.get_user_history(user_id, limit)
+    result = service.get_user_history(user_id, limit, db=db)
 
     if not result["success"]:
         raise HTTPException(

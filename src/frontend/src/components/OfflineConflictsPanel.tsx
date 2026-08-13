@@ -4,7 +4,10 @@ import api from '../lib/api'
 import { formatTime } from '../lib/format'
 
 export function OfflineConflictsPanel() {
-  const { conflicts, removeConflict, clearConflicts, incrementRetry } = useOfflineStore()
+  const conflicts = useOfflineStore((state) => state.conflicts)
+  const removeConflict = useOfflineStore((state) => state.removeConflict)
+  const clearConflicts = useOfflineStore((state) => state.clearConflicts)
+  const incrementRetry = useOfflineStore((state) => state.incrementRetry)
 
   if (conflicts.length === 0) return null
 
@@ -37,7 +40,7 @@ export function OfflineConflictsPanel() {
             </h3>
           </div>
           <button
-            onClick={clearConflicts}
+            onClick={() => clearConflicts()}
             className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200"
             aria-label="Clear all conflicts"
             title="Dismiss all"

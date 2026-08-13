@@ -1,7 +1,11 @@
 import os
 import sqlite3
 import sys
-import bcrypt
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from src.aac_app.services.auth_service import get_password_hash
+
 
 def reset_password(username, new_password):
     db_path = os.path.join("data", "aac_assistant.db")
@@ -11,18 +15,16 @@ def reset_password(username, new_password):
 
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    
-    # Passlib might be having issues with python 3.13 / bcrypt version mismatch
-    # Let's use raw bcrypt
-    hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    
+
+    hashed = get_password_hash(new_password)
+
     cursor.execute("UPDATE users SET password_hash = ? WHERE username = ?", (hashed, username))
     if cursor.rowcount == 0:
         print(f"User {username} not found.")
     else:
         print(f"Password for {username} updated successfully.")
         conn.commit()
-    
+
     conn.close()
 
 if __name__ == "__main__":

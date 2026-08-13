@@ -55,6 +55,12 @@ export function PartnerOverlay({ isOpen, onClose }: PartnerOverlayProps) {
     recognition.onend = () => {
         if (isMounted.current) setIsListening(false);
     };
+    recognition.onerror = () => {
+      if (isMounted.current) {
+        setIsListening(false);
+        setTranscript(t('speechNotAvailable', 'Speech recognition is not available.'));
+      }
+    };
     
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onresult = (event: any) => {

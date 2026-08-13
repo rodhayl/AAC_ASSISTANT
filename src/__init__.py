@@ -1,2 +1,2 @@
 # AAC Assistant 2.0 - Local-First AAC Application
-from . import config
+from . import config as config

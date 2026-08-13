@@ -19,7 +19,7 @@ interface AchievementFormData {
 const EMOJI_OPTIONS = ['🏆', '⭐', '🎯', '🔥', '📚', '⚡', '🌟', '🎤', '📖', '💪', '🎨', '🎮', '🚀', '💎', '👑'];
 
 export function Achievements() {
-  const { user } = useAuthStore()
+  const user = useAuthStore((state) => state.user)
   const [achievements, setAchievements] = useState<Achievement[]>([])
   const [allAchievements, setAllAchievements] = useState<AchievementFull[]>([])
   const [points, setPoints] = useState<number>(0)

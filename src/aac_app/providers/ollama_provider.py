@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import Callable, Dict, List, Optional
+from collections.abc import Callable
 
 import httpx
 from loguru import logger
@@ -23,7 +23,7 @@ class OllamaProvider(BaseLLMProvider):
         self,
         base_url="http://localhost:11434",
         hardware_profile="mid_range",
-        model: Optional[str] = None,
+        model: str | None = None,
     ):
         super().__init__()
         self.base_url = base_url
@@ -36,6 +36,7 @@ class OllamaProvider(BaseLLMProvider):
             env_model = os.getenv("OLLAMA_MODEL")
         except Exception:
             env_model = None
+        self._configured_model = model or ""
         self.recommended_model = (
             model or env_model or self.HARDWARE_PROFILES[hardware_profile]
         )
@@ -47,6 +48,8 @@ class OllamaProvider(BaseLLMProvider):
         self.sync_client = httpx.Client(
             timeout=httpx.Timeout(120.0, connect=5.0, read=120.0)
         )
+        self._pending_close_task: asyncio.Task | None = None
+        self._close_started = False
         logger.info(
             f"Ollama provider initialized with profile={hardware_profile}, model={self.recommended_model}"
         )
@@ -252,7 +255,7 @@ class OllamaProvider(BaseLLMProvider):
             logger.error(f"Ollama sync request failed: {e}")
             raise ConnectionError(f"Failed to connect to Ollama at {self.base_url}")
 
-    def list_models(self) -> List[str]:
+    def list_models(self) -> list[str]:
         """List installed Ollama models"""
         try:
             logger.debug("Listing Ollama models")
@@ -268,7 +271,7 @@ class OllamaProvider(BaseLLMProvider):
             logger.error(f"Failed to list models: {e}")
             return []
 
-    def is_available(self) -> bool:  # noqa: duplicate
+    def is_available(self) -> bool:
         """Check if Ollama is running"""
         try:
             logger.debug("Checking Ollama availability")
@@ -281,7 +284,7 @@ class OllamaProvider(BaseLLMProvider):
             logger.debug(f"Ollama not available: {e}")
             return False
 
-    def get_model_info(self, model: str) -> Optional[Dict]:
+    def get_model_info(self, model: str) -> dict | None:
         """Get information about a specific model"""
         try:
             response = self.sync_client.get(
@@ -293,17 +296,59 @@ class OllamaProvider(BaseLLMProvider):
             logger.error(f"Failed to get model info for {model}: {e}")
             return None
 
-    def close(self):
-        """Close HTTP clients"""
+    def _consume_close_task(self, task: asyncio.Task) -> None:
+        """Retrieve background close failures so they are never unhandled."""
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            logger.debug("Ollama async client close failed: {}", exc)
+
+    async def close_async(self) -> None:
+        """Close both HTTP transports while an event loop is running."""
+        if self._close_started:
+            pending = self._pending_close_task
+            self._pending_close_task = None
+            try:
+                if pending is not None:
+                    await pending
+            except Exception as exc:
+                logger.debug("Ollama async client close failed: {}", exc)
+            finally:
+                try:
+                    self.sync_client.close()
+                except Exception as exc:
+                    logger.debug("Ollama sync client close failed: {}", exc)
+            return
+
+        self._close_started = True
+        try:
+            await self.client.aclose()
+        finally:
+            try:
+                self.sync_client.close()
+            except Exception as exc:
+                logger.debug("Ollama sync client close failed: {}", exc)
+
+    def close_sync(self) -> None:
+        """Close HTTP clients from synchronous cleanup paths."""
+        if self._close_started:
+            return
+        self._close_started = True
         try:
             self.sync_client.close()
+        except Exception as exc:
+            logger.debug("Ollama sync client close failed: {}", exc)
+        finally:
             try:
-                # Try to close async client if we're in an async context
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(self.client.aclose())
-            except Exception:
-                # If no loop or other error, just let it be
-                pass
-        except Exception as e:
-            logger.error(f"Error closing Ollama provider: {e}")
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                asyncio.run(self.client.aclose())
+            else:
+                self._pending_close_task = loop.create_task(self.client.aclose())
+                self._pending_close_task.add_done_callback(self._consume_close_task)
+
+    def close(self):
+        """Backward-compatible synchronous close alias."""
+        self.close_sync()

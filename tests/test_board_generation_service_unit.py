@@ -1,7 +1,10 @@
+from unittest.mock import AsyncMock
+
 import pytest
-from unittest.mock import AsyncMock, Mock
-from src.aac_app.services.board_generation_service import BoardGenerationService
+
 from src.aac_app.providers.ollama_provider import OllamaProvider
+from src.aac_app.services.board_generation_service import BoardGenerationService
+
 
 @pytest.fixture
 def mock_llm_provider():
@@ -20,10 +23,10 @@ async def test_generate_board_items_valid_json(service, mock_llm_provider):
         {"label": "No", "symbol_key": "cross_mark", "color": "#FFEBEE"}
     ]
     """
-    
+
     # Execute
     items = await service.generate_board_items(topic="Test", item_count=2, fail_silently=False)
-    
+
     # Verify
     assert len(items) == 2
     assert items[0]["label"] == "Yes"
@@ -40,10 +43,10 @@ async def test_generate_board_items_with_markdown_blocks(service, mock_llm_provi
     ]
     ```
     """
-    
+
     # Execute
     items = await service.generate_board_items(topic="Test", item_count=1, fail_silently=False)
-    
+
     # Verify
     assert len(items) == 1
     assert items[0]["label"] == "Eat"
@@ -52,7 +55,7 @@ async def test_generate_board_items_with_markdown_blocks(service, mock_llm_provi
 async def test_generate_board_items_empty_response_raises_error(service, mock_llm_provider):
     # Setup
     mock_llm_provider.generate.return_value = ""
-    
+
     # Execute & Verify
     with pytest.raises(ValueError, match="AI response was not valid JSON"):
         await service.generate_board_items(topic="Test", fail_silently=False)
@@ -61,7 +64,7 @@ async def test_generate_board_items_empty_response_raises_error(service, mock_ll
 async def test_generate_board_items_invalid_content_raises_error(service, mock_llm_provider):
     # Setup - Use input that will be stripped away by fallback parser (only special chars)
     mock_llm_provider.generate.return_value = " * - "
-    
+
     # Execute & Verify
     with pytest.raises(ValueError, match="AI response was not valid JSON"):
         await service.generate_board_items(topic="Test", fail_silently=False)
@@ -70,10 +73,10 @@ async def test_generate_board_items_invalid_content_raises_error(service, mock_l
 async def test_generate_board_items_fail_silently_returns_empty(service, mock_llm_provider):
     # Setup - Use input that will be stripped away
     mock_llm_provider.generate.return_value = " * - "
-    
+
     # Execute
     items = await service.generate_board_items(topic="Test", fail_silently=True)
-    
+
     # Verify
     assert items == []
 
@@ -81,7 +84,7 @@ async def test_generate_board_items_fail_silently_returns_empty(service, mock_ll
 async def test_generate_board_items_provider_exception(service, mock_llm_provider):
     # Setup
     mock_llm_provider.generate.side_effect = Exception("API Error")
-    
+
     # Execute & Verify
     with pytest.raises(Exception, match="API Error"):
         await service.generate_board_items(topic="Test", fail_silently=False)
@@ -90,10 +93,10 @@ async def test_generate_board_items_provider_exception(service, mock_llm_provide
 async def test_generate_board_items_provider_exception_fail_silently(service, mock_llm_provider):
     # Setup
     mock_llm_provider.generate.side_effect = Exception("API Error")
-    
+
     # Execute
     items = await service.generate_board_items(topic="Test", fail_silently=True)
-    
+
     # Verify
     assert items == []
 

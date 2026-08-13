@@ -1,44 +1,61 @@
 
 import os
-from sqlalchemy import text
-from src.aac_app.models.database import create_engine_instance, get_database_path
 
-def test_database_isolation(test_db_session):
+from sqlalchemy import text
+
+from src.aac_app.db import (
+    create_engine_instance,
+    create_session_factory,
+    dispose_engine_instance,
+)
+
+
+def test_database_isolation(test_db_session, monkeypatch, tmp_path):
     """
-    Verify that tests are running against an in-memory database
-    and not the production database file.
+    Verify that tests use an isolated temporary database and never the
+    production database file.
     """
     # 1. Verify environment variable is set by fixture
-    assert os.environ.get("DATABASE_URL") == "sqlite:///:memory:"
+    database_url = os.environ.get("DATABASE_URL", "")
+    assert database_url.startswith("sqlite:///")
+    assert database_url != "sqlite:///:memory:"
+    assert str(tmp_path).replace("\\", "/").casefold() in database_url.casefold()
     assert os.environ.get("TESTING") == "1"
 
-    # 2. Verify engine is using in-memory DB
+    # 2. Verify the process-wide engine uses the same isolated temp database.
     engine = create_engine_instance()
-    assert str(engine.url) == "sqlite:///:memory:"
+    assert str(engine.url) == database_url
 
     # 3. Verify we can write to this DB
     with engine.connect() as conn:
         conn.execute(text("CREATE TABLE IF NOT EXISTS test_isolation (id INTEGER PRIMARY KEY)"))
         conn.execute(text("INSERT INTO test_isolation (id) VALUES (1)"))
         conn.commit()
-        
+
         result = conn.execute(text("SELECT * FROM test_isolation")).fetchall()
         assert len(result) == 1
 
-    # 4. Verify production DB file is NOT touched (optional, but good sanity check)
-    # We can't easily check file modification time here reliably without race conditions,
-    # but we can ensure the code path would lead to memory.
-    
-    # 5. Verify that removing the env var falls back to file (sanity check for logic)
-    # We need to be careful not to actually create a file if we can avoid it, 
-    # or use a temp file.
-    
-    current_url = os.environ.pop("DATABASE_URL")
+    # 4. The fixture URL is under pytest's temporary directory, so production
+    # data cannot be touched by process-wide database helpers.
+
+    # 5. Switching URLs remains temporary and isolated as well.
+
+    # Switching URLs must remain within pytest's temporary directory; never
+    # remove DATABASE_URL here because that would resolve to the real app DB.
+    alternate_path = tmp_path / "alternate.sqlite3"
+    alternate_url = f"sqlite:///{alternate_path.as_posix()}"
+    monkeypatch.setenv("DATABASE_URL", alternate_url)
     try:
-        # Now it should default to file
         engine_file = create_engine_instance()
-        expected_path = get_database_path()
-        assert str(engine_file.url) == f"sqlite:///{expected_path}"
+        assert str(engine_file.url) == alternate_url
     finally:
-        os.environ["DATABASE_URL"] = current_url
+        # This test temporarily replaces the process-wide engine. Clear the
+        # replacement completely; the next database access recreates it for the
+        # restored URL and no disposed reference survives this test.
+        dispose_engine_instance()
+
+
+def test_session_factory_is_cached():
+    """Request-level session creation reuses one process-wide factory."""
+    assert create_session_factory() is create_session_factory()
 

@@ -4,7 +4,6 @@ Ensures consistent API across Ollama and OpenRouter
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
 
 
 class BaseLLMProvider(ABC):
@@ -12,8 +11,8 @@ class BaseLLMProvider(ABC):
 
     def __init__(
         self,
-    ):  # noqa: duplicate - intentional, each subclass has unique initialization
-        self._model: Optional[str] = None
+    ):
+        self._model: str | None = None
 
     @property
     def model(self) -> str:
@@ -28,20 +27,20 @@ class BaseLLMProvider(ABC):
     @abstractmethod
     def get_default_model(
         self,
-    ) -> str:  # noqa: duplicate - polymorphism, each provider has different default
+    ) -> str:
         """Return the default model for this provider"""
 
     def on_model_changed(
         self, model: str
-    ):  # noqa: duplicate - polymorphism, each provider has unique behavior
+    ):
         """Hook called when model is changed (override in subclass)"""
 
     @abstractmethod
     async def generate(
         self,
         prompt: str,
-        model: Optional[str] = None,
-        system: Optional[str] = None,
+        model: str | None = None,
+        system: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 500,
         **kwargs

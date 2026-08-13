@@ -12,17 +12,21 @@ The guardian profile system allows teachers/admins to:
 - View audit history of profile changes
 """
 
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import StudentTeacher, User
+from src.aac_app.models import User
 from src.aac_app.services.guardian_profile_service import get_guardian_profile_service
 from src.aac_app.services.template_manager import get_template_manager
 from src.api import schemas
-from src.api.dependencies import get_current_active_user, get_db, get_text
+from src.api.deps import (
+    get_current_active_user,
+    get_db,
+    get_text,
+    verify_student_access,
+)
 
 router = APIRouter(prefix="/api/guardian-profiles", tags=["guardian-profiles"])
 
@@ -41,60 +45,10 @@ def get_current_teacher_or_admin(
     return current_user
 
 
-def verify_student_access(student_id: int, current_user: User, db: Session) -> User:
-    """Verify the student exists and current user can access their profile."""
-    student = db.query(User).filter_by(id=student_id).first()
-    if not student:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=get_text(user=current_user, key="errors.guardian.studentNotFound"),
-        )
-
-    if student.user_type != "student":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=get_text(user=current_user, key="errors.guardian.onlyForStudents"),
-        )
-
-    # Admin can access all students
-    if current_user.user_type == "admin":
-        return student
-
-    # Verify teacher has access to this specific student
-    assignment_count = (
-        db.query(StudentTeacher)
-        .filter(StudentTeacher.teacher_id == current_user.id)
-        .count()
-    )
-    if assignment_count == 0:
-        # Backward-compatible mode: if the teacher has no explicit roster yet,
-        # allow access to students so profile setup can start.
-        return student
-
-    is_assigned = (
-        db.query(StudentTeacher)
-        .filter(
-            StudentTeacher.teacher_id == current_user.id,
-            StudentTeacher.student_id == student_id,
-        )
-        .first()
-    )
-
-    if not is_assigned:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=get_text(
-                user=current_user, key="errors.guardian.studentNotAssigned"
-            ),
-        )
-
-    return student
-
-
 # --- Template Endpoints ---
 
 
-@router.get("/templates", response_model=List[schemas.TemplateInfo])
+@router.get("/templates", response_model=list[schemas.TemplateInfo])
 async def list_templates(current_user: User = Depends(get_current_teacher_or_admin)):
     """
     List all available personality templates.
@@ -138,7 +92,7 @@ async def get_template(
 )
 async def preview_template(
     template_name: str,
-    overrides: Optional[dict] = None,
+    overrides: dict | None = None,
     current_user: User = Depends(get_current_teacher_or_admin),
 ):
     """
@@ -159,7 +113,7 @@ async def preview_template(
 # --- Student List Endpoints ---
 
 
-@router.get("/students", response_model=List[schemas.StudentWithProfileInfo])
+@router.get("/students", response_model=list[schemas.StudentWithProfileInfo])
 async def list_students_with_profiles(
     current_user: User = Depends(get_current_teacher_or_admin),
     db: Session = Depends(get_db),
@@ -415,7 +369,7 @@ async def delete_student_profile(
 
 
 @router.get(
-    "/students/{student_id}/history", response_model=List[schemas.ProfileHistoryEntry]
+    "/students/{student_id}/history", response_model=list[schemas.ProfileHistoryEntry]
 )
 async def get_profile_history(
     student_id: int,

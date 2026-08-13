@@ -1,18 +1,19 @@
-from typing import Dict, Optional, Set
+
+import contextlib
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import BoardAssignment, CommunicationBoard
-from src.api.dependencies import get_db, get_text, validate_token
+from src.aac_app.models import BoardAssignment, CommunicationBoard
+from src.api.deps import get_db, get_text, validate_token
 
 router = APIRouter(prefix="/api/collab", tags=["collab"])
 
 
 class ConnectionManager:
     def __init__(self):
-        self.rooms: Dict[int, Set[WebSocket]] = {}
+        self.rooms: dict[int, set[WebSocket]] = {}
 
     async def connect(self, board_id: int, websocket: WebSocket):
         await websocket.accept()
@@ -20,10 +21,8 @@ class ConnectionManager:
         logger.info(f"WS connected to board {board_id}")
 
     def disconnect(self, board_id: int, websocket: WebSocket):
-        try:
+        with contextlib.suppress(Exception):
             self.rooms.get(board_id, set()).discard(websocket)
-        except Exception:
-            pass
         logger.info(f"WS disconnected from board {board_id}")
 
     async def broadcast(
@@ -45,7 +44,7 @@ manager = ConnectionManager()
 async def board_channel(
     websocket: WebSocket,
     board_id: int,
-    token: Optional[str] = Query(None),
+    token: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     try:
@@ -98,11 +97,7 @@ async def board_channel(
 
         # Access rules...
         has_access = False
-        if user.user_type == "admin":
-            has_access = True
-        elif user.user_type == "teacher":
-            has_access = True
-        elif board.user_id == user.id:
+        if user.user_type == "admin" or user.user_type == "teacher" or board.user_id == user.id:
             has_access = True
         else:
             # Check if assigned
@@ -158,7 +153,5 @@ async def board_channel(
 
     except Exception as e:
         logger.error(f"Unexpected WebSocket error: {e}")
-        try:
+        with contextlib.suppress(Exception):
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
-        except Exception:
-            pass

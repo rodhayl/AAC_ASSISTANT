@@ -1,0 +1,64 @@
+[project]
+name = "aac-assistant"
+version = "2.0.0"
+description = "Local-first AAC Assistant"
+requires-python = ">=3.13,<3.15"
+dependencies = [
+    "fastapi==0.141.1",
+    "uvicorn==0.52.1",
+    "sqlalchemy==2.0.51",
+    "pydantic==2.13.4",
+    "pydantic-settings==2.14.2",
+    "pyjwt==2.13.0",
+    "pwdlib[argon2]",
+    "httpx==0.28.1",
+    "python-multipart",
+    "slowapi",
+    "loguru",
+    "pillow",
+    "pyyaml",
+    "email-validator",
+    "numpy",
+    "fastembed==0.8.0",
+    "sqlite-vec==0.1.9",
+    "bcrypt==5.0.0",
+    "websockets==17.0.1",
+    "deep-translator==1.11.4",
+]
+
+[project.optional-dependencies]
+voice = [
+    "faster-whisper==1.2.1",
+]
+tts = [
+    "kokoro-onnx>=0.5.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "pytest-cov",
+    "ruff==0.16.1",
+    "pyinstaller==6.21.0",
+    "requests",
+    "pip-audit",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["B008", "B904", "E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["E402", "B011"]
+"tests/**/*.py" = ["E402", "B011"]
+"src/aac_app/models/database.py" = ["SIM105"]
+"src/aac_app/providers/base_provider.py" = ["B027"]
+"src/aac_app/providers/local_speech_provider.py" = ["E402"]
+"src/api/main.py" = ["E402"]
+"src/api/routers/analytics.py" = ["E402", "F811"]
+"src/api/routers/auth.py" = ["E402"]
+"src/api/routers/boards.py" = ["F811", "SIM105"]

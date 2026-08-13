@@ -4,8 +4,9 @@ Transforms telegraphic AAC symbol sequences into grammatically rich text.
 Uses rule-based patterns for deterministic, fast expansion.
 """
 
+import json
 import re
-from typing import Dict, List, Optional, Tuple
+from collections import OrderedDict
 
 from loguru import logger
 
@@ -16,12 +17,14 @@ class AACExpanderService:
     Combines rule-based templates with pattern caching for performance.
     """
 
+    MAX_CACHE_ENTRIES = 1000
+
     def __init__(self):
         self.grammar_rules = self._load_grammar_rules()
-        self.expansion_cache: Dict[str, Dict] = {}  # Cache common patterns
+        self.expansion_cache: OrderedDict[str, dict] = OrderedDict()
         logger.info("AACExpanderService initialized with grammar rules")
 
-    def _load_grammar_rules(self) -> Dict:
+    def _load_grammar_rules(self) -> dict:
         """Load grammar expansion rules."""
         return {
             # Article insertion rules
@@ -105,10 +108,10 @@ class AACExpanderService:
 
     def expand(
         self,
-        symbols: List[Dict],
+        symbols: list[dict],
         raw_gloss: str,
-        semantic_analysis: Optional[Dict] = None,
-    ) -> Dict:
+        semantic_analysis: dict | None = None,
+    ) -> dict:
         """
         Main expansion method.
 
@@ -126,9 +129,10 @@ class AACExpanderService:
             }
         """
         # Check cache first
-        cache_key = self._make_cache_key(symbols)
+        cache_key = self._make_cache_key(symbols, raw_gloss, semantic_analysis)
         if cache_key in self.expansion_cache:
             logger.debug(f"Cache hit for: {cache_key}")
+            self.expansion_cache.move_to_end(cache_key)
             return self.expansion_cache[cache_key]
 
         # Start with raw gloss
@@ -154,7 +158,7 @@ class AACExpanderService:
                     "transformations": ["common_expansion"],
                     "method": "rules",
                 }
-                self.expansion_cache[cache_key] = result
+                self._cache_result(cache_key, result)
                 return result
 
         # Apply grammar rules in sequence
@@ -174,12 +178,12 @@ class AACExpanderService:
         }
 
         # Cache result
-        self.expansion_cache[cache_key] = result
+        self._cache_result(cache_key, result)
         logger.debug(f"Expanded '{raw_gloss}' -> '{text}' (rules: {transformations})")
 
         return result
 
-    def _apply_past_tense(self, match: re.Match) -> Optional[str]:
+    def _apply_past_tense(self, match: re.Match) -> str | None:
         """Apply past tense conjugation: 'yesterday eat' -> 'I ate yesterday'."""
         temporal = match.group(1)
         verb = match.group(2)
@@ -188,7 +192,7 @@ class AACExpanderService:
         past_verb = self._conjugate_past(verb)
         return f"I {past_verb} {temporal}"
 
-    def _apply_future_tense(self, match: re.Match) -> Optional[str]:
+    def _apply_future_tense(self, match: re.Match) -> str | None:
         """Apply future tense: 'tomorrow go' -> 'I will go tomorrow'."""
         temporal = match.group(1)
         verb = match.group(2)
@@ -247,7 +251,6 @@ class AACExpanderService:
             "begin": "began",
             "keep": "kept",
             "hold": "held",
-            "write": "wrote",
             "meet": "met",
             "cut": "cut",
             "let": "let",
@@ -298,8 +301,8 @@ class AACExpanderService:
             return verb + "ed"
 
     def _apply_grammar_rules(
-        self, text: str, symbols: List[Dict], semantic_analysis: Optional[Dict]
-    ) -> Tuple[str, List[str]]:
+        self, text: str, symbols: list[dict], semantic_analysis: dict | None
+    ) -> tuple[str, list[str]]:
         """Apply rule-based grammar transformations in priority order."""
         applied = []
 
@@ -330,21 +333,20 @@ class AACExpanderService:
 
         return text, applied
 
-    def _apply_tense_rules(self, text: str) -> Tuple[str, Optional[str]]:
+    def _apply_tense_rules(self, text: str) -> tuple[str, str | None]:
         """Apply tense marker rules."""
         for pattern, replacement_func in self.grammar_rules["tense"].get(
             "patterns", []
         ):
             match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                if callable(replacement_func):
-                    new_text = replacement_func(match)
-                    if new_text:
-                        text = text[: match.start()] + new_text + text[match.end() :]
-                        return text, "tense_conjugation"
+            if match and callable(replacement_func):
+                new_text = replacement_func(match)
+                if new_text:
+                    text = text[: match.start()] + new_text + text[match.end() :]
+                    return text, "tense_conjugation"
         return text, None
 
-    def _apply_pronoun_rules(self, text: str) -> Tuple[str, Optional[str]]:
+    def _apply_pronoun_rules(self, text: str) -> tuple[str, str | None]:
         """Apply pronoun normalization rules."""
         for pattern, replacement in self.grammar_rules["pronoun"]["patterns"]:
             if re.search(pattern, text, re.IGNORECASE):
@@ -355,19 +357,18 @@ class AACExpanderService:
                 return text, "pronoun_fix"
         return text, None
 
-    def _apply_article_rules(self, text: str) -> Tuple[str, Optional[str]]:
+    def _apply_article_rules(self, text: str) -> tuple[str, str | None]:
         """Apply article insertion rules."""
         for pattern, replacement_func in self.grammar_rules["article"]["patterns"]:
             match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                if callable(replacement_func):
-                    new_text = replacement_func(match)
-                    if new_text:
-                        text = text[: match.start()] + new_text + text[match.end() :]
-                        return text, "article_insertion"
+            if match and callable(replacement_func):
+                new_text = replacement_func(match)
+                if new_text:
+                    text = text[: match.start()] + new_text + text[match.end() :]
+                    return text, "article_insertion"
         return text, None
 
-    def _apply_verb_rules(self, text: str) -> Tuple[str, Optional[str]]:
+    def _apply_verb_rules(self, text: str) -> tuple[str, str | None]:
         """Apply verb conjugation rules."""
         for pattern, replacement in self.grammar_rules["verb"]["patterns"]:
             match = re.search(pattern, text, re.IGNORECASE)
@@ -383,8 +384,8 @@ class AACExpanderService:
         return text, None
 
     def _apply_question_rules(
-        self, text: str, semantic_analysis: Optional[Dict]
-    ) -> Tuple[str, Optional[str]]:
+        self, text: str, semantic_analysis: dict | None
+    ) -> tuple[str, str | None]:
         """Apply question formation rules."""
         if semantic_analysis and semantic_analysis.get("intent") == "question":
             # Already a question, ensure question mark at end
@@ -395,14 +396,13 @@ class AACExpanderService:
             # Check for question words
             for pattern, replacement_func in self.grammar_rules["question"]["patterns"]:
                 match = re.search(pattern, text, re.IGNORECASE)
-                if match:
-                    if callable(replacement_func):
-                        new_text = replacement_func(match)
-                        if new_text:
-                            return new_text, "question_formation"
+                if match and callable(replacement_func):
+                    new_text = replacement_func(match)
+                    if new_text:
+                        return new_text, "question_formation"
         return text, None
 
-    def _insert_article(self, match: re.Match) -> Optional[str]:
+    def _insert_article(self, match: re.Match) -> str | None:
         """Insert appropriate article (a/an) before noun."""
         verb = match.group(1)
         noun = match.group(2)
@@ -411,7 +411,7 @@ class AACExpanderService:
         article = self._get_article(noun)
         return f"{verb} {article} {noun}"
 
-    def _insert_to_the(self, match: re.Match) -> Optional[str]:
+    def _insert_to_the(self, match: re.Match) -> str | None:
         """Insert 'to the' for location verbs."""
         verb = match.group(1)
         location = match.group(2)
@@ -424,7 +424,7 @@ class AACExpanderService:
             return "an"
         return "a"
 
-    def _conjugate_third_person(self, match: re.Match) -> Optional[str]:
+    def _conjugate_third_person(self, match: re.Match) -> str | None:
         """Add -s/-es to verb for third-person singular."""
         subject = match.group(1)
         verb = match.group(2)
@@ -445,7 +445,7 @@ class AACExpanderService:
         else:
             return verb + "s"
 
-    def _form_question(self, match: re.Match) -> Optional[str]:
+    def _form_question(self, match: re.Match) -> str | None:
         """Form a proper question from question word + phrase."""
         question_word = match.group(1).capitalize()
         rest = match.group(2).strip()
@@ -476,12 +476,12 @@ class AACExpanderService:
             text = text[0].upper() + text[1:]
 
         # Ensure terminal punctuation
-        if text and not text[-1] in ".!?":
+        if text and text[-1] not in ".!?":
             text = text + "."
 
         return text
 
-    def _calculate_confidence(self, transformations: List[str]) -> float:
+    def _calculate_confidence(self, transformations: list[str]) -> float:
         """Calculate confidence based on transformations applied."""
         if not transformations:
             return 0.6  # No changes = moderate confidence (might not need expansion)
@@ -491,10 +491,30 @@ class AACExpanderService:
         bonus = min(len(transformations) * 0.05, 0.2)
         return min(base_confidence + bonus, 0.95)
 
-    def _make_cache_key(self, symbols: List[Dict]) -> str:
-        """Create cache key from symbol sequence."""
-        labels = [s.get("label", "").lower() for s in symbols]
-        return "|".join(labels)
+    def _make_cache_key(
+        self,
+        symbols: list[dict],
+        raw_gloss: str = "",
+        semantic_analysis: dict | None = None,
+    ) -> str:
+        """Create a deterministic key from every input affecting expansion."""
+        return json.dumps(
+            {
+                "symbols": symbols,
+                "raw_gloss": raw_gloss,
+                "semantic_analysis": semantic_analysis,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+
+    def _cache_result(self, cache_key: str, result: dict) -> None:
+        """Store a result while evicting the least recently used entry."""
+        self.expansion_cache[cache_key] = result
+        self.expansion_cache.move_to_end(cache_key)
+        while len(self.expansion_cache) > self.MAX_CACHE_ENTRIES:
+            self.expansion_cache.popitem(last=False)
 
     def clear_cache(self):
         """Clear the expansion cache (useful for testing)."""

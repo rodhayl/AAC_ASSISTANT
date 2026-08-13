@@ -15,21 +15,21 @@ Created: November 30, 2025
 Author: Senior Lead Developer
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import User
+from src.aac_app.models import User
 from src.aac_app.services.auth_service import get_password_hash
 from src.aac_app.utils.jwt_utils import (
     JWT_ALGORITHM,
     JWT_SECRET_KEY,
     create_access_token,
 )
-from src.api.dependencies import get_db
+from src.api.deps import get_db
 from src.api.main import app
 from tests.test_utils_auth import create_test_headers
 
@@ -110,8 +110,8 @@ class TestJWTExpiration:
                 "sub": student_user.username,
                 "user_id": student_user.id,
                 "user_type": student_user.user_type,
-                "exp": datetime.now(timezone.utc) - timedelta(hours=1),
-                "iat": datetime.now(timezone.utc) - timedelta(hours=3),
+                "exp": datetime.now(UTC) - timedelta(hours=1),
+                "iat": datetime.now(UTC) - timedelta(hours=3),
                 "iss": "aac-assistant",
             },
             JWT_SECRET_KEY,
@@ -158,11 +158,11 @@ class TestForgedTokens:
                 "sub": student_user.username,
                 "user_id": student_user.id,
                 "user_type": student_user.user_type,
-                "exp": datetime.now(timezone.utc) + timedelta(hours=2),
-                "iat": datetime.now(timezone.utc),
+                "exp": datetime.now(UTC) + timedelta(hours=2),
+                "iat": datetime.now(UTC),
                 "iss": "aac-assistant",
             },
-            "WRONG_SECRET_KEY_12345",  # Wrong secret!
+            "wrong-secret-" + ("x" * 48),  # Wrong, but HS256-length safe.
             algorithm=JWT_ALGORITHM,
         )
 
@@ -193,7 +193,9 @@ class TestForgedTokens:
         payload["user_type"] = "admin"  # Tamper!
 
         # Re-sign with wrong secret (real secret is unknown to attacker)
-        tampered_token = jwt.encode(payload, "ATTACKER_SECRET", algorithm=JWT_ALGORITHM)
+        tampered_token = jwt.encode(
+            payload, "attacker-secret-" + ("x" * 48), algorithm=JWT_ALGORITHM
+        )
 
         # Try to use tampered token on admin endpoint
         response = client.get(

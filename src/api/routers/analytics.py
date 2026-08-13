@@ -3,59 +3,77 @@ Analytics API Router
 Provides REST endpoints for symbol usage analytics and insights.
 """
 
-from typing import Dict, List, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import BoardSymbol, User, Symbol
+from src.aac_app.models import BoardSymbol, Symbol, User
+from src.aac_app.services.runtime_translation import normalize_language_code, translate_text
 from src.aac_app.services.symbol_analytics import SymbolAnalytics
-from src.api.dependencies import get_current_active_user, get_db, get_text
-from src.api.schemas import SymbolUsageRequest, NextSymbolRequest
+from src.aac_app.services.symbol_catalog import (
+    ANALYTICS_EXTRA_NOUN_CATEGORIES,
+    NOUN_CATEGORY_KEYWORDS,
+    PLACE_CATEGORY_KEYWORDS,
+    intent_articles,
+    intent_pronouns,
+)
+from src.api.deps import get_current_active_user, get_db, get_text
+from src.api.schemas import NextSymbolRequest, SymbolUsageRequest
 
 router = APIRouter()
 analytics_service = SymbolAnalytics()
+
+
+def _log_usage_request(
+    request: SymbolUsageRequest,
+    current_user: User,
+    db: Session,
+    failure_detail: str = "Failed to log usage",
+) -> int:
+    """Persist one analytics write request and return its symbol count."""
+    symbols = [symbol.model_dump() for symbol in request.symbols]
+    if not analytics_service.log_symbol_usage(
+        user_id=current_user.id,
+        symbols=symbols,
+        context_topic=request.context_topic,
+        session_id=request.session_id,
+        semantic_intent=request.semantic_intent,
+        db=db,
+    ):
+        raise HTTPException(status_code=500, detail=failure_detail)
+
+    # The request dependency owns the transaction commit. Keeping that
+    # boundary in one place avoids committing unrelated pending request work.
+    return len(symbols)
 
 
 @router.post("/usage", status_code=status.HTTP_201_CREATED)
 async def log_symbol_usage(
     request: SymbolUsageRequest,
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
-    """Log usage of symbols"""
+    """Log usage of symbols."""
     try:
-        # Convert SymbolUsageItem objects to list of dicts
-        symbols_list = [
-            {
-                "id": s.id,
-                "label": s.label,
-                "category": s.category,
-            }
-            for s in request.symbols
-        ]
-        
-        analytics_service.log_symbol_usage(
-            user_id=current_user.id,
-            symbols=symbols_list,
-            context_topic=request.context_topic,
-            session_id=request.session_id,
-        )
-        
-        logger.info(f"Logged usage for {len(symbols_list)} symbols for user {current_user.id}")
-        return {"success": True, "count": len(symbols_list)}
+        count = _log_usage_request(request, current_user, db)
+        logger.info(f"Logged usage for {count} symbols for user {current_user.id}")
+        return {"success": True, "count": count}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to log usage: {e}")
         raise HTTPException(status_code=500, detail="Failed to log usage")
 
 
-@router.get("/frequent-sequences", response_model=List[Dict])
+@router.get("/frequent-sequences", response_model=list[dict])
 async def get_frequent_sequences(
     limit: int = Query(10, ge=1, le=50, description="Maximum sequences to return"),
     min_occurrences: int = Query(
         2, ge=1, le=100, description="Minimum times sequence must appear"
     ),
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """
     Get user's most frequently used symbol sequences.
@@ -65,7 +83,10 @@ async def get_frequent_sequences(
     """
     try:
         sequences = analytics_service.get_frequent_sequences(
-            user_id=current_user.id, limit=limit, min_occurrences=min_occurrences
+            user_id=current_user.id,
+            limit=limit,
+            min_occurrences=min_occurrences,
+            db=db,
         )
 
         logger.info(
@@ -87,8 +108,9 @@ async def get_frequent_sequences(
 
 from src.aac_app.services.prediction_service import prediction_service
 
-@router.post("/next-symbol", response_model=List[Dict])
-async def get_next_symbol_suggestions_post(
+
+@router.post("/next-symbol", response_model=list[dict])
+def get_next_symbol_suggestions_post(
     request: NextSymbolRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -96,13 +118,17 @@ async def get_next_symbol_suggestions_post(
     """
     Predict next symbol using N-gram engine and usage history.
     Replaces heavy LLM calls with lightweight multilanguage prediction.
+
+    Deliberately a sync endpoint: the work is CPU/DB/translation bound and
+    must run in FastAPI's threadpool so it never blocks the event loop and
+    stalls unrelated requests (boards, SPA assets, etc.).
     """
     try:
         current_symbols = request.current_symbols
         limit = request.limit
         intent = request.intent  # general, pronouns, verbs, articles, nouns, places
         offset = request.offset
-        
+
         logger.info(f"Suggestions request: user={current_user.id}, intent={intent}, limit={limit}, offset={offset}")
 
         # Parse current symbols
@@ -117,6 +143,7 @@ async def get_next_symbol_suggestions_post(
         user_lang = "en"
         if current_user.settings and current_user.settings.ui_language:
             user_lang = current_user.settings.ui_language
+        normalized_user_lang = normalize_language_code(user_lang) or "en"
 
         # 0. Handle specific intents (Quick Words)
         if intent in ["pronouns", "verbs", "articles", "nouns", "places"]:
@@ -132,13 +159,32 @@ async def get_next_symbol_suggestions_post(
                         )
                     return q
 
+                def apply_language_filter(q, strict: bool):
+                    if not strict:
+                        return q
+                    return q.filter(
+                        or_(
+                            func.lower(Symbol.language) == normalized_user_lang,
+                            func.lower(Symbol.language).like(f"{normalized_user_lang}-%"),
+                        )
+                    )
+
+                def language_rank(sym: Symbol) -> int:
+                    sym_lang = normalize_language_code(getattr(sym, "language", None))
+                    if sym_lang == normalized_user_lang:
+                        return 0
+                    if sym_lang == "en":
+                        return 1
+                    return 2
+
+                def localized_label(sym: Symbol) -> str:
+                    if language_rank(sym) == 0:
+                        return sym.label
+                    return translate_text(sym.label, normalized_user_lang) or sym.label
+
                 def apply_intent_filter(q):
                     if intent == "pronouns":
-                        pronouns = (
-                            ["yo", "tú", "tu", "él", "ella", "nosotros", "nosotras", "ellos", "ellas", "me", "mi", "mis"]
-                            if user_lang.startswith("es")
-                            else ["I", "you", "he", "she", "it", "we", "they", "me", "my", "your", "his", "her", "our", "their"]
-                        )
+                        pronouns = intent_pronouns(user_lang)
                         return q.filter(
                             or_(
                                 Symbol.category.ilike("%pronoun%"),
@@ -147,11 +193,7 @@ async def get_next_symbol_suggestions_post(
                             )
                         )
                     if intent == "articles":
-                        articles = (
-                            ["el", "la", "los", "las", "un", "una", "unos", "unas", "es", "son", "está", "están", "en", "a", "de", "con", "para", "por"]
-                            if user_lang.startswith("es")
-                            else ["the", "a", "an", "is", "are", "am", "was", "were", "in", "on", "at", "to", "for", "of", "with"]
-                        )
+                        articles = intent_articles(user_lang)
                         return q.filter(
                             or_(
                                 Symbol.category.ilike("%article%"),
@@ -163,21 +205,8 @@ async def get_next_symbol_suggestions_post(
                         return q.filter(Symbol.category.ilike("%verb%"))
                     if intent == "nouns":
                         noun_categories = [
-                            "food",
-                            "drink",
-                            "toy",
-                            "animal",
-                            "place",
-                            "person",
-                            "body",
-                            "clothing",
-                            "vehicle",
-                            "home",
-                            "school",
-                            "nature",
-                            "object",
-                            "noun",
-                            "generated",
+                            *NOUN_CATEGORY_KEYWORDS,
+                            *ANALYTICS_EXTRA_NOUN_CATEGORIES,
                         ]
                         return q.filter(
                             and_(
@@ -189,36 +218,25 @@ async def get_next_symbol_suggestions_post(
                             )
                         )
                     if intent == "places":
-                        place_categories = [
-                            "place",
-                            "places",
-                            "location",
-                            "room",
-                            "home",
-                            "school",
-                            "city",
-                            "country",
-                            "nature",
-                            "transport",
-                            "vehicle",
-                        ]
                         return q.filter(
-                            or_(*[Symbol.category.ilike(f"%{cat}%") for cat in place_categories])
+                            or_(*[Symbol.category.ilike(f"%{cat}%") for cat in PLACE_CATEGORY_KEYWORDS])
                         )
                     return q
 
                 def format_results(rows):
+                    rows = sorted(rows, key=lambda sym: (language_rank(sym), sym.id))
                     seen = set()
                     suggestions = []
                     for sym in rows:
-                        label_norm = (sym.label or "").strip().lower()
+                        label = localized_label(sym)
+                        label_norm = (label or "").strip().lower()
                         if not label_norm or label_norm in seen:
                             continue
                         seen.add(label_norm)
                         suggestions.append(
                             {
                                 "symbol_id": sym.id,
-                                "label": sym.label,
+                                "label": label,
                                 "category": sym.category,
                                 "image_path": sym.image_path,
                                 "confidence": 1.0,
@@ -229,18 +247,22 @@ async def get_next_symbol_suggestions_post(
                             break
                     return suggestions
 
-                # Prefer board-scoped results when possible; fall back to global library.
-                for board_scoped in [request.board_id is not None, False]:
-                    query = apply_intent_filter(build_query(board_scoped))
-                    results = query.offset(offset).limit(limit * 3).all()
-                    suggestions = format_results(results)
-                    if suggestions:
-                        return suggestions
+                strict_passes = [True, False]
+                board_scopes = [request.board_id is not None, False]
+                for strict in strict_passes:
+                    for board_scoped in board_scopes:
+                        query = build_query(board_scoped)
+                        query = apply_language_filter(query, strict)
+                        query = apply_intent_filter(query)
+                        results = query.offset(offset).limit(limit * 3).all()
+                        suggestions = format_results(results)
+                        if suggestions:
+                            return suggestions
             except Exception as db_err:
                 logger.error(f"Database error in intent query: {db_err}")
                 # Fall back to general suggestion if specific intent fails
                 pass
-            
+
         # Get unified suggestions from PredictionService
         final_suggestions = prediction_service.predict_next(
             user_id=current_user.id,
@@ -270,9 +292,10 @@ async def get_next_symbol_suggestions_post(
 
 
 
-@router.get("/category-preferences", response_model=Dict)
+@router.get("/category-preferences", response_model=dict)
 async def get_category_preferences(
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """
     Analyze which symbol categories user uses most.
@@ -282,7 +305,7 @@ async def get_category_preferences(
     """
     try:
         preferences = analytics_service.get_category_preferences(
-            user_id=current_user.id
+            user_id=current_user.id, db=db
         )
 
         logger.info(f"Retrieved category preferences for user {current_user.id}")
@@ -300,10 +323,11 @@ async def get_category_preferences(
         )
 
 
-@router.get("/usage-stats", response_model=Dict)
+@router.get("/usage-stats", response_model=dict)
 async def get_usage_statistics(
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """
     Get overall usage statistics for user.
@@ -316,7 +340,9 @@ async def get_usage_statistics(
     - Average utterance length
     """
     try:
-        stats = analytics_service.get_usage_stats(user_id=current_user.id, days=days)
+        stats = analytics_service.get_usage_stats(
+            user_id=current_user.id, days=days, db=db
+        )
 
         logger.info(f"Retrieved {days}-day usage stats for user {current_user.id}")
         return stats
@@ -332,34 +358,27 @@ async def get_usage_statistics(
 
 
 @router.post("/log", status_code=status.HTTP_201_CREATED)
-async def log_symbol_usage(
-    request: SymbolUsageRequest, current_user: User = Depends(get_current_active_user)
+async def log_symbol_usage_legacy(
+    request: SymbolUsageRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """
     Log symbol usage for analytics.
     """
     try:
-        # Convert Pydantic models to dicts for the service
-        symbols_data = [s.model_dump() for s in request.symbols]
-
-        success = analytics_service.log_symbol_usage(
-            user_id=current_user.id,
-            symbols=symbols_data,
-            session_id=request.session_id,
-            semantic_intent=request.semantic_intent,
-            context_topic=request.context_topic,
+        _log_usage_request(
+            request,
+            current_user,
+            db,
+            failure_detail=get_text(
+                user=current_user, key="errors.analytics.logSymbolFailed"
+            ),
         )
-
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=get_text(
-                    user=current_user, key="errors.analytics.logSymbolFailed"
-                ),
-            )
-
         return {"status": "success"}
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to log symbol usage: {e}")
         raise HTTPException(

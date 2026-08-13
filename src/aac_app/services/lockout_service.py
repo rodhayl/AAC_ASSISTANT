@@ -5,8 +5,7 @@ Implements 5-attempt lockout with 15-minute cooldown.
 Created: November 30, 2025
 """
 
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Tuple
+from datetime import UTC, datetime, timedelta
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -24,8 +23,8 @@ class AccountLockoutService:
 
     @staticmethod
     def record_failed_attempt(
-        db: Session, username: str, ip_address: Optional[str] = None
-    ) -> Tuple[bool, Optional[datetime], int]:
+        db: Session, username: str, ip_address: str | None = None
+    ) -> tuple[bool, datetime | None, int]:
         """
         Record a failed login attempt.
 
@@ -37,7 +36,7 @@ class AccountLockoutService:
         Returns:
             Tuple of (is_locked, locked_until, attempt_count)
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         window_start = now - timedelta(
             minutes=AccountLockoutService.ATTEMPT_WINDOW_MINUTES
         )
@@ -104,7 +103,7 @@ class AccountLockoutService:
             return False, None, 1
 
     @staticmethod
-    def is_locked(db: Session, username: str) -> Tuple[bool, Optional[datetime]]:
+    def is_locked(db: Session, username: str) -> tuple[bool, datetime | None]:
         """
         Check if account is currently locked.
 
@@ -115,7 +114,7 @@ class AccountLockoutService:
         Returns:
             Tuple of (is_locked, locked_until)
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Get most recent attempt record
         attempt = (
@@ -132,7 +131,7 @@ class AccountLockoutService:
             # Ensure attempt.locked_until is timezone-aware
             locked_until = attempt.locked_until
             if locked_until.tzinfo is None:
-                locked_until = locked_until.replace(tzinfo=timezone.utc)
+                locked_until = locked_until.replace(tzinfo=UTC)
 
             if locked_until > now:
                 return True, locked_until

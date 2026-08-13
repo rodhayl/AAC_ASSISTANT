@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { useAuthStore } from '../store/authStore'
 import { User, Lock, IdCard, CheckCircle2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -8,7 +8,9 @@ export function Register() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
-  const { register, isLoading, error } = useAuthStore()
+  const register = useAuthStore((state) => state.register)
+  const isLoading = useAuthStore((state) => state.isLoading)
+  const error = useAuthStore((state) => state.error)
   const navigate = useNavigate()
   const { t } = useTranslation('register')
 

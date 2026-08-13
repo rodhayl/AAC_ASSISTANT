@@ -6,9 +6,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import LearningSession, User
+from src.aac_app.models import LearningSession, User
 from src.aac_app.services.auth_service import get_password_hash
-from src.api.dependencies import get_llm_provider, get_speech_provider, get_tts_provider
+from src.api.deps import get_llm_provider, get_speech_provider
 from src.api.main import app
 from tests.test_utils_auth import create_test_headers
 
@@ -19,27 +19,25 @@ client = TestClient(app)
 def override_providers(
     mock_llm_provider,
     mock_speech_provider,
-    mock_tts_provider,
     test_db_session,
     monkeypatch,
 ):
     """Override provider dependencies with mocked versions"""
     from contextlib import contextmanager
 
-    from src.aac_app import models
+    from src.aac_app import db
     from src.aac_app.services import achievement_system, learning_companion_service
 
     # Override providers
     app.dependency_overrides[get_llm_provider] = lambda: mock_llm_provider
     app.dependency_overrides[get_speech_provider] = lambda: mock_speech_provider
-    app.dependency_overrides[get_tts_provider] = lambda: mock_tts_provider
 
     # Patch get_session to use test database in all modules that use it
     @contextmanager
     def mock_get_session():
         yield test_db_session
 
-    monkeypatch.setattr(models.database, "get_session", mock_get_session)
+    monkeypatch.setattr(db, "get_session", mock_get_session)
     monkeypatch.setattr(learning_companion_service, "get_session", mock_get_session)
     monkeypatch.setattr(achievement_system, "get_session", mock_get_session)
 
@@ -72,7 +70,10 @@ def test_start_session_creates_persisted_record(
     assert session.user_id == regular_user.id
     assert session.topic_name == "test_topic"
     assert session.status == "active"
-    assert session.conversation_history == []  # Initially empty
+    # Session startup persists the translated welcome message so the client
+    # can reconstruct the complete conversation after a reload.
+    assert session.conversation_history
+    assert session.conversation_history[0]["type"] == "question"
 
 
 @pytest.mark.usefixtures("setup_test_db")

@@ -1,158 +1,330 @@
+"""Application configuration backed by :mod:`pydantic-settings`.
+
+``.env`` is the canonical configuration file.  A legacy ``env.properties`` is
+copied to ``.env`` on first run, rather than renamed, so existing installations
+can roll back safely.
 """
-Centralized configuration module for AAC Assistant.
-Reads configuration from env.properties file.
-"""
+
+from __future__ import annotations
 
 import os
+import secrets
+import shutil
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
-# Determine if running as frozen executable (PyInstaller)
-IS_FROZEN = getattr(sys, 'frozen', False)
+from loguru import logger
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Project root directory
+# Determine if running as frozen executable (PyInstaller).
+IS_FROZEN = getattr(sys, "frozen", False)
+
 if IS_FROZEN:
-    # For one-folder PyInstaller builds, executable is in the root folder
-    # sys._MEIPASS contains bundled data, but we use exe parent for user data
+    # The executable directory is the portable/project root. Bundled resources
+    # live in _MEIPASS and are read-only.
     PROJECT_ROOT = Path(sys.executable).parent.absolute()
-    # BUNDLE_DIR contains the extracted/bundled resources
-    BUNDLE_DIR = Path(getattr(sys, '_MEIPASS', PROJECT_ROOT)).absolute()
+    BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", PROJECT_ROOT)).absolute()
 else:
     PROJECT_ROOT = Path(__file__).parent.parent.absolute()
     BUNDLE_DIR = PROJECT_ROOT
 
-CONFIG_FILE = PROJECT_ROOT / "env.properties"
+def _is_program_files_path(path: Path) -> bool:
+    """Return whether a path is under a standard Windows Program Files folder."""
+    program_files_parts = {"program files", "program files (x86)"}
+    return any(part.casefold() in program_files_parts for part in path.parts)
 
-# For frozen mode, also check bundle dir for env.properties.example
-if IS_FROZEN and not CONFIG_FILE.exists():
-    bundle_config = BUNDLE_DIR / "env.properties"
-    if bundle_config.exists():
-        CONFIG_FILE = bundle_config
+
+def resolve_runtime_root(
+    project_root: Path,
+    *,
+    is_frozen: bool,
+    appdata_root: Path | None = None,
+) -> Path:
+    """
+    Resolve the writable runtime root for config, database, logs, and uploads.
+
+    An onedir copy outside Program Files is portable and keeps data beside its
+    executable. An installed copy under Program Files uses the per-user
+    application data directory so standard users never need write access to the
+    installation directory. ``AAC_ASSISTANT_PORTABLE=1`` explicitly forces
+    portable behavior for a frozen copy.
+    """
+    project_root = Path(project_root).absolute()
+    if not is_frozen or os.environ.get("AAC_ASSISTANT_PORTABLE", "").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return project_root
+
+    if not _is_program_files_path(project_root):
+        return project_root
+
+    appdata = Path(
+        appdata_root
+        or os.environ.get("APPDATA")
+        or (Path.home() / "AppData" / "Roaming")
+    ).absolute()
+    return appdata / "AACAssistant"
+
+
+RUNTIME_ROOT = resolve_runtime_root(PROJECT_ROOT, is_frozen=IS_FROZEN)
+
+ENV_FILE_NAME = ".env"
+LEGACY_ENV_FILE_NAME = "env.properties"
+ENV_FILE = RUNTIME_ROOT / ENV_FILE_NAME
+LEGACY_ENV_FILE = RUNTIME_ROOT / LEGACY_ENV_FILE_NAME
+# Backwards-compatible alias used by existing diagnostics and scripts.
+CONFIG_FILE = ENV_FILE
+
+DEFAULT_ALLOWED_ORIGINS = (
+    "http://localhost:5176,http://localhost:3000,http://localhost:5173,"
+    "http://127.0.0.1:5173,http://127.0.0.1:5176"
+)
+JWT_PLACEHOLDERS = frozenset(
+    {
+        "",
+        "CHANGE_ME_TO_A_SECURE_RANDOM_STRING",
+        "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION",
+    }
+)
+
+
+class Settings(BaseSettings):
+    """Typed application settings loaded from environment and dotenv files."""
+
+    model_config = SettingsConfigDict(
+        env_file=(".env", "env.properties"),
+        env_file_encoding="utf-8",
+        env_ignore_empty=True,
+        extra="ignore",
+    )
+
+    BACKEND_HOST: str = "0.0.0.0"
+    BACKEND_PORT: int = 8086
+    BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: int = 10
+    FRONTEND_PORT: int = 5176
+
+    DATABASE_NAME: str = "aac_assistant.db"
+    DATA_DIR: str = "data"
+    LOGS_DIR: str = "logs"
+
+    JWT_SECRET_KEY: str = ""
+
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OPENROUTER_API_KEY: str = ""
+
+    APP_NAME: str = "AAC Assistant"
+    APP_VERSION: str = "2.0.0"
+    ENVIRONMENT: str = "development"
+    DEFAULT_LOCALE: str = "es"
+
+    ALLOWED_ORIGINS: str = DEFAULT_ALLOWED_ORIGINS
+    ALLOW_DB_RESET: bool = False
+    AAC_SEED_SAMPLE_DATA: bool = False
+
+    AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN: bool = True
+    AAC_BOOTSTRAP_ADMIN_USERNAME: str = "admin1"
+    AAC_BOOTSTRAP_ADMIN_PASSWORD: str = "Admin123"
+    AAC_ENABLE_SYMBOL_IMAGE_BACKFILL: bool = True
+    AAC_SYMBOL_IMAGE_BACKFILL_LIMIT: int = 100
+
+    # Optional deterministic passwords are intentionally unset by default.
+    AAC_SEED_DEFAULT_PASSWORD: str | None = None
+    AAC_SEED_STUDENT1_PASSWORD: str | None = None
+    AAC_SEED_TEACHER1_PASSWORD: str | None = None
+    AAC_SEED_ADMIN1_PASSWORD: str | None = None
+
+
+def _find_example_file(project_root: Path) -> Path | None:
+    """Find the current example config in a project or frozen bundle."""
+    candidates = (
+        project_root / ".env.example",
+        BUNDLE_DIR / ".env.example",
+    )
+    return next((path for path in candidates if path.exists()), None)
+
+
+def ensure_env_file(project_root: Path | None = None) -> Path:
+    """Create the canonical ``.env`` and migrate a legacy file when needed."""
+    root = Path(project_root or RUNTIME_ROOT).absolute()
+    env_path = root / ENV_FILE_NAME
+    legacy_path = root / LEGACY_ENV_FILE_NAME
+
+    if env_path.exists():
+        return env_path
+
+    if legacy_path.exists():
+        shutil.copyfile(legacy_path, env_path)
+        logger.info(
+            "Migrated legacy configuration from {} to {} (legacy file preserved)",
+            legacy_path,
+            env_path,
+        )
     else:
-        # Copy from example if available
-        example_config = BUNDLE_DIR / "env.properties.example"
-        if example_config.exists():
-            import shutil
-            try:
-                shutil.copy(example_config, PROJECT_ROOT / "env.properties")
-                CONFIG_FILE = PROJECT_ROOT / "env.properties"
-            except Exception:
-                pass  # Will use defaults
+        example_path = _find_example_file(root)
+        if example_path is not None:
+            shutil.copyfile(example_path, env_path)
+            logger.info("Created configuration file {} from {}", env_path, example_path)
+        else:
+            env_path.touch()
+            logger.info("Created empty configuration file {}", env_path)
 
-_config_cache: dict = {}
+    return env_path
 
 
-def _load_config() -> dict:
-    """Load configuration from env.properties file."""
-    global _config_cache
-    if _config_cache:
-        return _config_cache
-
-    config = {}
-    if CONFIG_FILE.exists():
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, value = line.split("=", 1)
-                    config[key.strip()] = value.strip()
-
-    _config_cache = config
-    return config
+def _is_jwt_secret(value: str) -> bool:
+    """Return whether a value is a usable generated or user-supplied secret."""
+    return value.strip() not in JWT_PLACEHOLDERS and len(value.strip()) >= 32
 
 
-def get(key: str, default: Optional[str] = None) -> str:
-    """Get a configuration value by key."""
-    config = _load_config()
-    # Environment variables take precedence
+def _env_key(line: str) -> str | None:
+    """Return the key from a dotenv assignment, ignoring comments and blanks."""
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or "=" not in stripped:
+        return None
+    return stripped.split("=", 1)[0].strip()
+
+
+def ensure_jwt_secret(env_path: Path | None = None) -> str:
+    """Ensure a stable JWT secret and one assignment for every dotenv key."""
+    path = Path(env_path or ENV_FILE).absolute()
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+
+    original_content = path.read_text(encoding="utf-8")
+    lines = original_content.splitlines()
+    existing_values = [
+        line.partition("=")[2].strip()
+        for line in lines
+        if _env_key(line) == "JWT_SECRET_KEY"
+    ]
+    secret = next((value for value in reversed(existing_values) if _is_jwt_secret(value)), None)
+    if secret is None:
+        secret = secrets.token_hex(32)
+
+    last_occurrences: dict[str, int] = {}
+    for index, line in enumerate(lines):
+        key = _env_key(line)
+        if key is not None and key != "JWT_SECRET_KEY":
+            last_occurrences[key] = index
+
+    updated_lines: list[str] = []
+    inserted = False
+    for index, line in enumerate(lines):
+        key = _env_key(line)
+        if key == "JWT_SECRET_KEY":
+            if not inserted:
+                updated_lines.append(f"JWT_SECRET_KEY={secret}")
+                inserted = True
+            continue
+        if key is not None and last_occurrences.get(key) != index:
+            continue
+        updated_lines.append(line)
+
+    if not inserted:
+        if updated_lines and updated_lines[-1].strip():
+            updated_lines.append("")
+        updated_lines.append(f"JWT_SECRET_KEY={secret}")
+
+    updated_content = "\n".join(updated_lines).rstrip() + "\n"
+    if updated_content != original_content:
+        path.write_text(updated_content, encoding="utf-8")
+
+    return secret
+
+
+def load_settings(project_root: Path | None = None) -> Settings:
+    """Prepare config files and load typed settings for a project root."""
+    root = Path(project_root or RUNTIME_ROOT).absolute()
+    env_path = ensure_env_file(root)
+    ensure_jwt_secret(env_path)
+    legacy_path = root / LEGACY_ENV_FILE_NAME
+
+    # pydantic-settings gives later files precedence.  Explicitly put .env
+    # last so a retained legacy file cannot override migrated settings.
+    env_files: tuple[Path, ...]
+    if legacy_path.exists() and legacy_path != env_path:
+        env_files = (legacy_path, env_path)
+    else:
+        env_files = (env_path,)
+    return Settings(_env_file=env_files)
+
+
+settings = load_settings()
+
+
+def _path_setting(value: str) -> Path:
+    """Resolve a path setting relative to the project root."""
+    path = Path(value)
+    return path if path.is_absolute() else RUNTIME_ROOT / path
+
+
+def _sync_module_settings() -> None:
+    """Expose typed settings through the legacy module-level API."""
+    global DATA_DIR, DATABASE_PATH, LOGS_DIR
+    for field_name in Settings.model_fields:
+        if field_name in {"DATA_DIR", "LOGS_DIR", "DATABASE_NAME"}:
+            continue
+        globals()[field_name] = getattr(settings, field_name)
+    DATA_DIR = _path_setting(settings.DATA_DIR)
+    DATABASE_PATH = DATA_DIR / settings.DATABASE_NAME
+    LOGS_DIR = _path_setting(settings.LOGS_DIR)
+
+
+_sync_module_settings()
+
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+UPLOADS_DIR = RUNTIME_ROOT / "uploads"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def get(key: str, default: Any = None) -> Any:
+    """Get a typed setting, preserving compatibility for dynamic keys."""
     env_value = os.environ.get(key)
     if env_value is not None:
         return env_value
-    return config.get(key, default or "")
+    if key in Settings.model_fields:
+        return getattr(settings, key)
+    return default if default is not None else ""
 
 
 def get_int(key: str, default: int = 0) -> int:
-    """Get a configuration value as integer."""
-    value = get(key, str(default))
+    """Get a configuration value as an integer."""
+    value = get(key, default)
     try:
         return int(value)
-    except ValueError:
+    except (TypeError, ValueError):
         return default
 
 
 def get_bool(key: str, default: bool = False) -> bool:
-    """Get a configuration value as boolean."""
-    value = get(key, str(default)).lower()
-    return value in ("true", "1", "yes", "on")
+    """Get a configuration value as a boolean."""
+    value = get(key, default)
+    if isinstance(value, bool):
+        return value
+    return str(value).lower() in {"true", "1", "yes", "on"}
 
 
-def reload():
-    """Reload configuration from file."""
-    global _config_cache
-    _config_cache = {}
-    _load_config()
-
-
-# Server Configuration
-BACKEND_HOST = get("BACKEND_HOST", "0.0.0.0")
-BACKEND_PORT = get_int("BACKEND_PORT", 8086)
-FRONTEND_PORT = get_int("FRONTEND_PORT", 5176)
-
-# Database Configuration
-DATABASE_NAME = get("DATABASE_NAME", "aac_assistant.db")
-DATA_DIR = PROJECT_ROOT / get("DATA_DIR", "data")
-DATABASE_PATH = DATA_DIR / DATABASE_NAME
-
-# Logging Configuration
-LOGS_DIR = PROJECT_ROOT / get("LOGS_DIR", "logs")
-
-# AI Provider Configuration
-OLLAMA_BASE_URL = get("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_DEFAULT_MODEL = get("OLLAMA_DEFAULT_MODEL", "qwen:7b-q4_0")
-OPENROUTER_API_KEY = get("OPENROUTER_API_KEY", "")
-
-# Application Settings
-APP_NAME = get("APP_NAME", "AAC Assistant")
-APP_VERSION = get("APP_VERSION", "1.0.0")
-ENVIRONMENT = get("ENVIRONMENT", "development")  # development, staging, production
-DEFAULT_LOCALE = get("DEFAULT_LOCALE", "es")
-
-# Security Settings
-FORCE_HTTPS = get_bool("FORCE_HTTPS", False)  # Redirect HTTP to HTTPS in production
-SECURE_COOKIES = get_bool("SECURE_COOKIES", False)  # Set secure flag on cookies
-ALLOWED_ORIGINS = get(
-    "ALLOWED_ORIGINS",
-    "http://localhost:5176,http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1:5176",
-)  # Comma-separated CORS origins
-
-# Feature Flags
-ENABLE_AAC_EXPANSION = get_bool(
-    "ENABLE_AAC_EXPANSION", True
-)  # Enable AAC grammar expansion by default
-
-# Admin Features - Security
-ALLOW_DB_RESET = get_bool(
-    "ALLOW_DB_RESET", False
-)  # Allow database reset endpoint (disable in production!)
-
-# Ensure directories exist
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-LOGS_DIR.mkdir(parents=True, exist_ok=True)
-
-# Create uploads directory
-UPLOADS_DIR = PROJECT_ROOT / "uploads"
-UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+def reload() -> None:
+    """Reload typed settings from the canonical dotenv files."""
+    global settings
+    settings = load_settings()
+    _sync_module_settings()
 
 
 def get_api_base_url(host: str = "localhost") -> str:
     """Get the full API base URL."""
-    return f"http://{host}:{BACKEND_PORT}/api"
+    return f"http://{host}:{settings.BACKEND_PORT}/api"
 
 
 def get_ws_base_url(host: str = "localhost") -> str:
     """Get the WebSocket base URL."""
-    return f"ws://{host}:{BACKEND_PORT}/api"
+    return f"ws://{host}:{settings.BACKEND_PORT}/api"
 
 
 def get_bundled_path(relative_path: str) -> Path:
@@ -161,11 +333,15 @@ def get_bundled_path(relative_path: str) -> Path:
     In frozen mode, looks in BUNDLE_DIR first, then PROJECT_ROOT.
     In development, looks in PROJECT_ROOT.
     """
-    if IS_FROZEN:
-        bundle_path = BUNDLE_DIR / relative_path
-        if bundle_path.exists():
-            return bundle_path
-    return PROJECT_ROOT / relative_path
+    candidates = (
+        (BUNDLE_DIR / relative_path, PROJECT_ROOT / relative_path)
+        if IS_FROZEN
+        else (PROJECT_ROOT / relative_path,)
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
 
 
 def get_data_path(relative_path: str = "") -> Path:
@@ -181,10 +357,4 @@ def get_data_path(relative_path: str = "") -> Path:
 
 def get_ngrams_path() -> Path:
     """Get the path to N-gram models directory."""
-    if IS_FROZEN:
-        # In frozen mode, ngrams are bundled in src/aac_app/data/ngrams
-        bundled_ngrams = BUNDLE_DIR / "src" / "aac_app" / "data" / "ngrams"
-        if bundled_ngrams.exists():
-            return bundled_ngrams
-    # Development mode
-    return PROJECT_ROOT / "src" / "aac_app" / "data" / "ngrams"
+    return get_bundled_path("src/aac_app/data/ngrams")

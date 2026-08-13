@@ -1,4 +1,4 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { LayoutDashboard, BookOpen, Settings, LogOut, Grid, Trophy, Image as ImageIcon, Gamepad2, Users, MessageSquare, Shield } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuthStore } from '../store/authStore';
@@ -13,7 +13,8 @@ interface SidebarProps {
 export function Sidebar({ className, isOpen = true, onNavigate }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { logout, user } = useAuthStore();
+  const logout = useAuthStore(state => state.logout);
+  const user = useAuthStore(state => state.user);
   const { t } = useTranslation('sidebar');
 
   const handleLogout = () => {
@@ -78,8 +79,7 @@ export function Sidebar({ className, isOpen = true, onNavigate }: SidebarProps) 
                   else if (link.href === '/symbol-hunt') import('../pages/SymbolHunt')
                   else if (link.href === '/achievements') import('../pages/Achievements')
                   else if (link.href === '/students') import('../pages/Students')
-                  else if (link.href === '/teachers') import('../pages/Teachers')
-                  else if (link.href === '/admins') import('../pages/Admins')
+                  else if (link.href === '/teachers' || link.href === '/admins') import('../pages/UserManagement')
                   else if (link.href === '/settings') import('../pages/Settings')
                   else if (link.href === '/') import('../pages/Dashboard')
                 } catch { /* preload errors are non-critical */ }

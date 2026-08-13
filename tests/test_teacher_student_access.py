@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import StudentTeacher, User
+from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.aac_app.utils.jwt_utils import create_access_token
 from src.api.main import app

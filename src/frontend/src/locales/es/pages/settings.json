@@ -1,6 +1,15 @@
 {
   "title": "Ajustes",
   "subtitle": "Gestiona tu cuenta y preferencias de la aplicación",
+  "tabs": {
+    "profile": "Perfil",
+    "appearance": "Apariencia",
+    "security": "Seguridad",
+    "voice": "Voz",
+    "ai": "Proveedor de IA",
+    "learningModes": "Modos de aprendizaje",
+    "data": "Datos"
+  },
   "profile": {
     "edit": "Editar",
     "cancel": "Cancelar",
@@ -93,33 +102,38 @@
     "temperature": "Temperatura",
     "temperatureHelp": "Valores bajos hacen respuestas más enfocadas y predecibles.",
     "health": "Comprobar estado",
-    "ollamaStatus": "Ollama:",
-    "openrouterStatus": "OpenRouter:",
+    "statusUp": "ok",
+    "statusDown": "sin conexión",
+    "providerReady": "{{provider}} está disponible y responde correctamente.",
+    "ollamaUnavailable": "Ollama no está accesible en la URL base configurada.",
+    "lmstudioUnavailable": "LM Studio no está accesible en la URL base configurada.",
+    "openrouterApiKeyMissing": "Falta la clave API de OpenRouter.",
+    "openrouterUnavailable": "OpenRouter está configurado pero no respondió. Revisa la clave API, la cuenta o la red.",
     "voiceDeps": "Dependencias de Voz / STT",
-    "voiceDepsHelp": "Instala elementos faltantes y reinicia start.bat para habilitar el micrófono.",
+    "voiceDepsHelp": "La transcripción es opcional; la síntesis de voz del navegador siempre está disponible.",
     "installed": "Instalado",
     "notInstalled": "No instalado",
     "howToInstall": "Cómo instalar",
+    "installAutomatically": "Instalar automáticamente",
+    "installing": "Instalando...",
+    "installComplete": "Las dependencias de voz se instalaron correctamente.",
+    "installFailed": "La instalación automática de voz falló.",
+    "sttModel": "Modelo de voz a texto",
+    "sttModelHelp": "Whisper-tiny es el valor predeterminado rápido de 39M de parámetros. El modelo seleccionado se descarga al usarlo por primera vez.",
+    "sttModelSaved": "Modelo de voz a texto actualizado.",
+    "sttModelSaveFailed": "No se pudo actualizar el modelo de voz a texto.",
     "dependencies": {
       "ffmpeg": {
-        "label": "ffmpeg (requerido)",
-        "help": "Instala ffmpeg y agrega ffmpeg.exe al PATH"
+        "label": "ffmpeg (opcional)",
+        "help": "No es necesario: faster-whisper decodifica las cargas de audio del navegador"
       },
-      "whisper": {
-        "label": "openai-whisper (requerido)",
-        "help": "Instalado vía pip; reinicia start.bat tras instalar herramientas faltantes"
+      "fasterWhisper": {
+        "label": "faster-whisper (opcional)",
+        "help": "Usa el botón inferior en un checkout fuente de Windows, o ejecuta uv sync --extra voice manualmente"
       },
-      "sounddevice": {
-        "label": "sounddevice (requerido para micrófono)",
-        "help": "Requerido para grabar audio en vivo; instalar vía pip"
-      },
-      "soundfile": {
-        "label": "soundfile (requerido para micrófono)",
-        "help": "Requerido para guardar audio grabado; instalar vía pip"
-      },
-      "webrtcvad": {
-        "label": "webrtcvad (opcional)",
-        "help": "VAD opcional; requiere Microsoft C++ Build Tools si lo deseas"
+      "browserTts": {
+        "label": "Texto a voz del navegador",
+        "help": "La salida de voz usa la API SpeechSynthesis del navegador"
       }
     }
   }

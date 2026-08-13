@@ -1,0 +1,25 @@
+{
+  "bigrams": {
+    "yo": {
+      "quiero": 1.0,
+      "necesito": 0.9,
+      "puedo": 0.8
+    },
+    "tú": {
+      "quieres": 1.0,
+      "puedes": 0.9,
+      "tienes": 0.8
+    },
+    "quiero": {
+      "comer": 1.0,
+      "beber": 0.9,
+      "jugar": 0.8,
+      "más": 0.7
+    },
+    "necesito": {
+      "ayuda": 1.0,
+      "agua": 0.9,
+      "ir": 0.8
+    }
+  }
+}

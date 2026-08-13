@@ -1,271 +1,603 @@
-import json
+"""SQLite-backed semantic search for the local symbol library.
+
+The embedding model is intentionally lazy. The SQLite extension and virtual
+table are initialized only when the store is first used, which keeps a
+core-only/offline startup healthy even when the model cannot be downloaded.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import importlib.util
+import io
 import os
-from typing import Any, Dict, List
+import sqlite3
+import sys
+import threading
+from collections.abc import Callable, Iterator, Mapping
+from pathlib import Path
+from typing import Any
 
-import numpy as np
 from loguru import logger
+from sqlalchemy import event, text
+from sqlalchemy.engine import Engine
 
-try:
-    import faiss
+from src import config
 
-    FAISS_AVAILABLE = True
-except ImportError:
-    logger.warning("faiss not installed. Vector store will be disabled.")
-    FAISS_AVAILABLE = False
 
-try:
-    from sentence_transformers import SentenceTransformer
+@contextlib.contextmanager
+def _safe_streams() -> Iterator[tuple[io.StringIO | Any, io.StringIO | Any]]:
+    """Ensure optional model libraries always see writable output streams."""
+    saved_out, saved_err = sys.stdout, sys.stderr
+    redirect_out = saved_out if saved_out is not None else io.StringIO()
+    redirect_err = saved_err if saved_err is not None else io.StringIO()
+    try:
+        with contextlib.redirect_stdout(redirect_out), contextlib.redirect_stderr(redirect_err):
+            yield redirect_out, redirect_err
+    finally:
+        sys.stdout, sys.stderr = saved_out, saved_err
 
-    SENTENCE_TRANSFORMERS_AVAILABLE = True
-except ImportError:
-    logger.warning(
-        "sentence-transformers not installed. Vector store will be disabled."
-    )
-    SENTENCE_TRANSFORMERS_AVAILABLE = False
+
+def _load_text_embedding_class() -> Any:
+    """Import and cache the fastembed ``TextEmbedding`` symbol lazily."""
+    global TextEmbedding
+    from fastembed import TextEmbedding as text_embedding
+
+    TextEmbedding = text_embedding
+    return TextEmbedding
+
+
+MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_DIMENSION = 384
+VECTOR_TABLE = "symbol_embeddings"
+METADATA_TABLE = "symbol_embedding_metadata"
+STATE_TABLE = "symbol_embedding_state"
+DEFAULT_DISTANCE_THRESHOLD = 1.15
+
+
+def _module_available(module_name: str) -> bool:
+    """Check for an optional dependency without importing it."""
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
+
+
+FASTEMBED_AVAILABLE = _module_available("fastembed")
+SQLITE_VEC_AVAILABLE = _module_available("sqlite_vec")
+TextEmbedding: Any | None = None
+sqlite_vec: Any | None = None
+_engine_listener_lock = threading.Lock()
+
+
+def _load_sqlite_vec_extension(
+    dbapi_connection: sqlite3.Connection,
+    connection_record: Any | None,
+) -> bool:
+    """Load sqlite-vec once for a SQLAlchemy connection when possible."""
+    global sqlite_vec
+    if connection_record is not None and connection_record.info.get("aac_sqlite_vec_loaded"):
+        return True
+    if not SQLITE_VEC_AVAILABLE:
+        return False
+    try:
+        if sqlite_vec is None:
+            import sqlite_vec as sqlite_vec_module
+
+            sqlite_vec = sqlite_vec_module
+        dbapi_connection.enable_load_extension(True)
+        try:
+            sqlite_vec.load(dbapi_connection)
+        finally:
+            dbapi_connection.enable_load_extension(False)
+        if connection_record is not None:
+            connection_record.info["aac_sqlite_vec_loaded"] = True
+        return True
+    except (AttributeError, ImportError, OSError, sqlite3.Error) as exc:
+        logger.error("Failed to load sqlite-vec extension: {}", exc)
+        return False
 
 
 class LocalVectorStore:
-    """
-    Local vector store using FAISS and Sentence Transformers.
-    Stores embeddings for semantic search and predictions.
-    
-    Uses LAZY LOADING - model is only loaded on first actual use,
-    not during initialization. This dramatically improves startup time.
-    """
+    """Store MiniLM embeddings in a sqlite-vec ``vec0`` virtual table."""
 
     def __init__(
         self,
-        model_name: str = "all-MiniLM-L6-v2",
-        index_path: str = "data/vector_store.index",
-        metadata_path: str = "data/vector_store_metadata.json",
-        device: str = None,
+        model_name: str = MODEL_NAME,
+        index_path: str | os.PathLike[str] | None = None,
+        metadata_path: str | os.PathLike[str] | None = None,
+        device: str | None = None,
         lazy_load: bool = True,
+        *,
+        engine: Engine | None = None,
+        embedder: Any | None = None,
+        embedder_factory: Callable[..., Any] | None = None,
+        cache_dir: str | os.PathLike[str] | None = None,
+        embedding_dim: int = EMBEDDING_DIMENSION,
+        legacy_index_path: str | os.PathLike[str] | None = None,
+        legacy_metadata_path: str | os.PathLike[str] | None = None,
     ):
         self.model_name = model_name
-        self.index_path = index_path
-        self.metadata_path = metadata_path
-        self.model = None
+        self.device = device
+        self.engine = engine
+        self.embedding_dim = embedding_dim
+        self.cache_dir = Path(cache_dir or config.get_data_path("models")).absolute()
+        self.model: Any | None = embedder
+        self.embedder = embedder
+        self._embedder_factory = embedder_factory
+        self.metadata: list[dict[str, Any]] = []
         self.index = None
-        self.metadata: List[Dict[str, Any]] = []
-        self._model_loaded = False
+        self._model_loaded = embedder is not None
         self._index_loaded = False
-        self._lazy_load = lazy_load
-        
-        # Auto-detect device if not specified
-        if device is None:
+        self._schema_ready = False
+        self._load_attempted = embedder is not None
+        self._listener_engine: Engine | None = None
+        self._closed = False
+        self._distance_threshold = DEFAULT_DISTANCE_THRESHOLD
+        self._legacy_index_path = Path(
+            legacy_index_path or index_path or config.get_data_path("vector_store.index")
+        )
+        self._legacy_metadata_path = Path(
+            legacy_metadata_path
+            or metadata_path
+            or config.get_data_path("vector_store_metadata.json")
+        )
+        self.index_path = str(self._legacy_index_path)
+        self.metadata_path = str(self._legacy_metadata_path)
+        self._remove_legacy_files()
+
+        if not lazy_load:
+            self.force_load()
+
+    def _remove_legacy_files(self) -> None:
+        """Delete legacy on-disk vector artifacts during store construction."""
+        for path in (self._legacy_index_path, self._legacy_metadata_path):
             try:
-                import torch
-                self.device = "cuda" if torch.cuda.is_available() else "cpu"
-            except ImportError:
-                self.device = "cpu"
-        else:
-            self.device = device
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning("Could not remove legacy vector file {}: {}", path, exc)
 
-        if not FAISS_AVAILABLE or not SENTENCE_TRANSFORMERS_AVAILABLE:
-            logger.warning("Vector store disabled due to missing dependencies")
-        elif not lazy_load:
-            # Immediate loading (backwards compatible for warmup)
-            self._load_model()
-            self._load_index()
+    def _get_engine(self) -> Engine:
+        if self._closed:
+            raise RuntimeError("LocalVectorStore is closed")
+        if self.engine is None:
+            from src.aac_app.db import ensure_tables
 
-    def _ensure_model_loaded(self):
-        """Ensure model is loaded (lazy loading)"""
-        if self._model_loaded or not SENTENCE_TRANSFORMERS_AVAILABLE:
-            return
-        self._load_model()
-        
-    def _ensure_index_loaded(self):
-        """Ensure index is loaded (lazy loading)"""
-        if self._index_loaded or not FAISS_AVAILABLE:
-            return
-        self._load_index()
+            self.engine = ensure_tables()
+        self._install_connection_listener(self.engine)
+        return self.engine
 
-    def _load_model(self):
-        """Load Sentence Transformer model"""
-        if not SENTENCE_TRANSFORMERS_AVAILABLE or self._model_loaded:
+    def _install_connection_listener(self, engine: Engine) -> None:
+        """Install one engine-owned callback for future SQLite connections."""
+        if engine.dialect.name != "sqlite":
             return
+        with _engine_listener_lock:
+            if getattr(engine, "_aac_sqlite_vec_listener", None) is None:
+                def load_extension(
+                    dbapi_connection: sqlite3.Connection,
+                    connection_record: Any,
+                    _connection_proxy: Any,
+                ) -> None:
+                    _load_sqlite_vec_extension(dbapi_connection, connection_record)
+
+                event.listen(engine, "checkout", load_extension)
+                engine._aac_sqlite_vec_listener = load_extension
+
+        self._listener_engine = engine
+
+    def _ensure_schema(self) -> bool:
+        """Create the vec0 table, metadata, and completion marker idempotently."""
+        if not SQLITE_VEC_AVAILABLE:
+            return False
         try:
-            logger.info(f"Loading embedding model: {self.model_name} on {self.device}")
-            self.model = SentenceTransformer(self.model_name, device=self.device)
-            self._model_loaded = True
-            logger.info(f"Embedding model loaded successfully")
-        except Exception as e:
-            logger.error(f"Failed to load embedding model: {e}")
-            self.model = None
-            self._model_loaded = True  # Mark as attempted to avoid retry loops
-
-    def _load_index(self):
-        """Load FAISS index and metadata"""
-        if not FAISS_AVAILABLE or self._index_loaded:
-            return
-        if os.path.exists(self.index_path) and os.path.exists(self.metadata_path):
-            try:
-                self.index = faiss.read_index(self.index_path)
-
-                if self.metadata_path.endswith(".json"):
-                    with open(self.metadata_path, "r", encoding="utf-8") as f:
-                        self.metadata = json.load(f)
-                else:
-                    # Legacy format not supported for security reasons
-                    logger.warning(
-                        f"Metadata file {self.metadata_path} is not JSON. Starting with empty metadata."
+            engine = self._get_engine()
+            with engine.begin() as connection:
+                if not self._schema_ready:
+                    connection.exec_driver_sql(
+                        f"CREATE VIRTUAL TABLE IF NOT EXISTS {VECTOR_TABLE} "
+                        f"USING vec0(embedding float[{self.embedding_dim}])"
                     )
-                    self.metadata = []
+                    connection.exec_driver_sql(
+                        f"""
+                        CREATE TABLE IF NOT EXISTS {METADATA_TABLE} (
+                            symbol_id INTEGER PRIMARY KEY,
+                            type TEXT NOT NULL DEFAULT 'symbol',
+                            label TEXT,
+                            text TEXT NOT NULL
+                        )
+                        """
+                    )
+                    connection.exec_driver_sql(
+                        f"""
+                        CREATE TABLE IF NOT EXISTS {STATE_TABLE} (
+                            key TEXT PRIMARY KEY,
+                            value TEXT NOT NULL
+                        )
+                        """
+                    )
+            self._schema_ready = True
+            self._index_loaded = True
+            return True
+        except Exception as exc:
+            logger.error("Failed to initialize sqlite-vec schema: {}", exc)
+            return False
 
-                self._index_loaded = True
-                logger.info(f"Loaded vector store with {self.index.ntotal} items")
-            except Exception as e:
-                logger.error(f"Failed to load vector store: {e}")
-                self._create_new_index()
-        else:
-            self._create_new_index()
-        self._index_loaded = True
+    def _ensure_model_loaded(self) -> bool:
+        """Create the fastembed model lazily, without importing it at startup."""
+        global FASTEMBED_AVAILABLE, TextEmbedding
+        if self._model_loaded:
+            return self.embedder is not None
+        if self._load_attempted or not FASTEMBED_AVAILABLE:
+            return False
+        self._load_attempted = True
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            with _safe_streams():
+                if self._embedder_factory is not None:
+                    self.embedder = self._embedder_factory(
+                        model_name=self.model_name,
+                        cache_dir=str(self.cache_dir),
+                    )
+                else:
+                    if TextEmbedding is None:
+                        _load_text_embedding_class()
+                    self.embedder = TextEmbedding(
+                        model_name=self.model_name,
+                        cache_dir=str(self.cache_dir),
+                        lazy_load=True,
+                    )
+            self.model = self.embedder
+            self._model_loaded = True
+            logger.info("Fastembed model ready: {} (cache={})", self.model_name, self.cache_dir)
+            return True
+        except Exception as exc:
+            self.embedder = None
+            self.model = None
+            self._model_loaded = True
+            logger.error("Failed to initialize fastembed model: {}", exc)
+            return False
 
-    def _create_new_index(self):
-        """Create a new FAISS index"""
-        if not FAISS_AVAILABLE:
-            return
-        # Dimension for all-MiniLM-L6-v2 is 384
-        dimension = 384
-        self.index = faiss.IndexFlatL2(dimension)
-        self.metadata = []
-        # Update metadata path to use .json if it was default
-        if self.metadata_path.endswith(".pkl"):
-            self.metadata_path = self.metadata_path.replace(".pkl", ".json")
-        logger.info("Created new vector store index")
+    def _embed(self, texts: list[str]) -> list[list[float]] | None:
+        if not self._ensure_model_loaded() or self.embedder is None:
+            return None
+        try:
+            try:
+                vectors = list(self.embedder.embed(texts, batch_size=256))
+            except TypeError:
+                vectors = list(self.embedder.embed(texts))
+            normalized = [[float(value) for value in vector] for vector in vectors]
+            if any(len(vector) != self.embedding_dim for vector in normalized):
+                raise ValueError(f"Expected {self.embedding_dim}-dimensional embeddings")
+            return normalized
+        except Exception as exc:
+            logger.error("Embedding operation failed: {}", exc)
+            return None
 
-    def save(self):
-        """Save index and metadata to disk"""
-        if not self.index or not FAISS_AVAILABLE:
+    def _serialize_vector(self, vector: list[float]) -> bytes:
+        if sqlite_vec is None:
+            import sqlite_vec as sqlite_vec_module
+
+            globals()["sqlite_vec"] = sqlite_vec_module
+        return sqlite_vec.serialize_float32(vector)
+
+    def has_persisted_metadata(self) -> bool:
+        """Return whether a complete corpus indexing marker exists."""
+        if not self._ensure_schema():
+            return False
+        try:
+            with self._get_engine().connect() as connection:
+                row = connection.execute(
+                    text(f"SELECT value FROM {STATE_TABLE} WHERE key = 'complete' LIMIT 1")
+                ).fetchone()
+                if not row or row[0] != "1":
+                    return False
+                vector_count = connection.execute(
+                    text(f"SELECT COUNT(*) FROM {VECTOR_TABLE}")
+                ).scalar_one()
+                metadata_count = connection.execute(
+                    text(f"SELECT COUNT(*) FROM {METADATA_TABLE}")
+                ).scalar_one()
+                if vector_count != metadata_count:
+                    return False
+                symbols_table = connection.execute(
+                    text(
+                        "SELECT 1 FROM sqlite_master "
+                        "WHERE type = 'table' AND name = 'symbols'"
+                    )
+                ).first()
+                if symbols_table:
+                    symbol_ids = {
+                        int(row[0]) for row in connection.execute(text("SELECT id FROM symbols"))
+                    }
+                    vector_ids = {
+                        int(row[0])
+                        for row in connection.execute(text(f"SELECT rowid FROM {VECTOR_TABLE}"))
+                    }
+                    metadata_ids = {
+                        int(row[0])
+                        for row in connection.execute(
+                            text(f"SELECT symbol_id FROM {METADATA_TABLE}")
+                        )
+                    }
+                    return symbol_ids == vector_ids == metadata_ids
+                return True
+        except Exception as exc:
+            logger.warning("Could not read vector-store metadata: {}", exc)
+            return False
+
+    def get_stale_symbol_ids(self, expected_texts: Mapping[int, str]) -> set[int]:
+        """Return symbols whose vector or embedding text is missing or stale."""
+        if not expected_texts:
+            return set()
+        if not self._ensure_schema():
+            return set(expected_texts)
+        try:
+            with self._get_engine().connect() as connection:
+                vector_ids = {
+                    int(row[0])
+                    for row in connection.execute(text(f"SELECT rowid FROM {VECTOR_TABLE}"))
+                }
+                metadata = {
+                    int(row[0]): row[1]
+                    for row in connection.execute(
+                        text(
+                            f"SELECT symbol_id, text FROM {METADATA_TABLE} "
+                            "WHERE type = 'symbol'"
+                        )
+                    )
+                }
+            return {
+                symbol_id
+                for symbol_id, expected_text in expected_texts.items()
+                if symbol_id not in vector_ids or metadata.get(symbol_id) != expected_text
+            }
+        except Exception as exc:
+            logger.warning("Could not inspect stale symbol embeddings: {}", exc)
+            return set(expected_texts)
+
+    def remove_orphaned_symbols(self, symbol_ids: set[int]) -> None:
+        """Remove vector rows that no longer have a symbol record."""
+        if not self._ensure_schema():
             return
         try:
-            os.makedirs(os.path.dirname(self.index_path), exist_ok=True)
-            faiss.write_index(self.index, self.index_path)
+            with self._get_engine().begin() as connection:
+                if symbol_ids:
+                    placeholders = ", ".join(
+                        f":symbol_{index}" for index in range(len(symbol_ids))
+                    )
+                    parameters = {
+                        f"symbol_{index}": symbol_id
+                        for index, symbol_id in enumerate(sorted(symbol_ids))
+                    }
+                    connection.execute(
+                        text(
+                            f"DELETE FROM {VECTOR_TABLE} "
+                            f"WHERE rowid NOT IN ({placeholders})"
+                        ),
+                        parameters,
+                    )
+                    connection.execute(
+                        text(
+                            f"DELETE FROM {METADATA_TABLE} "
+                            f"WHERE symbol_id NOT IN ({placeholders})"
+                        ),
+                        parameters,
+                    )
+                else:
+                    connection.execute(text(f"DELETE FROM {VECTOR_TABLE}"))
+                    connection.execute(text(f"DELETE FROM {METADATA_TABLE}"))
+        except Exception as exc:
+            logger.warning("Could not remove orphaned symbol embeddings: {}", exc)
 
-            # Force using JSON for metadata
-            if self.metadata_path.endswith(".pkl"):
-                self.metadata_path = self.metadata_path.replace(".pkl", ".json")
-
-            with open(self.metadata_path, "w", encoding="utf-8") as f:
-                json.dump(self.metadata, f, ensure_ascii=False, indent=2)
-            logger.info("Saved vector store to disk")
-        except Exception as e:
-            logger.error(f"Failed to save vector store: {e}")
-
-    def add_texts(self, texts: List[str], metadatas: List[Dict[str, Any]]):
-        """Add texts and metadata to the store"""
-        # Lazy load model and index on first use
-        self._ensure_model_loaded()
-        self._ensure_index_loaded()
-        
-        if not self.model or not self.index:
-            logger.error("Vector store not initialized")
+    def mark_indexed(self) -> None:
+        """Mark the current corpus as indexed after a successful batch."""
+        if not self._ensure_schema():
             return
+        try:
+            with self._get_engine().begin() as connection:
+                connection.execute(
+                    text(
+                        f"INSERT INTO {STATE_TABLE}(key, value) VALUES ('complete', '1') "
+                        "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+                    )
+                )
+        except Exception as exc:
+            logger.error("Could not persist vector-store completion marker: {}", exc)
 
+    def load_index_if_available(self) -> None:
+        """Initialize the SQLite vector schema without loading fastembed."""
+        self._ensure_schema()
+
+    def add_texts(self, texts: list[str], metadatas: list[dict[str, Any]]) -> bool:
+        """Upsert text embeddings keyed by the symbol id in each metadata object."""
         if len(texts) != len(metadatas):
             raise ValueError("Number of texts and metadatas must match")
-
+        if not texts:
+            return True
+        if not self._ensure_schema():
+            return False
+        vectors = self._embed(texts)
+        if vectors is None:
+            return False
         try:
-            # Ensure text is stored in metadata for reconstruction/debugging
-            enriched_metadatas = []
-            for text, meta in zip(texts, metadatas):
-                meta_copy = meta.copy()
-                if "text" not in meta_copy:
-                    meta_copy["text"] = text
-                enriched_metadatas.append(meta_copy)
+            with self._get_engine().begin() as connection:
+                for vector, document, metadata in zip(vectors, texts, metadatas, strict=True):
+                    symbol_id = metadata.get("id")
+                    if symbol_id is None:
+                        raise ValueError("Vector metadata must contain an id")
+                    connection.execute(
+                        text(f"DELETE FROM {VECTOR_TABLE} WHERE rowid = :symbol_id"),
+                        {"symbol_id": int(symbol_id)},
+                    )
+                    connection.execute(
+                        text(
+                            f"INSERT INTO {VECTOR_TABLE}(rowid, embedding) "
+                            "VALUES (:symbol_id, :embedding)"
+                        ),
+                        {
+                            "symbol_id": int(symbol_id),
+                            "embedding": self._serialize_vector(vector),
+                        },
+                    )
+                    connection.execute(
+                        text(
+                            f"""
+                            INSERT INTO {METADATA_TABLE}(symbol_id, type, label, text)
+                            VALUES (:symbol_id, :type, :label, :text)
+                            ON CONFLICT(symbol_id) DO UPDATE SET
+                                type = excluded.type,
+                                label = excluded.label,
+                                text = excluded.text
+                            """
+                        ),
+                        {
+                            "symbol_id": int(symbol_id),
+                            "type": metadata.get("type", "symbol"),
+                            "label": metadata.get("label"),
+                            "text": metadata.get("text", document),
+                        },
+                    )
+            self._refresh_metadata_cache()
+            logger.info("Upserted {} symbol embeddings", len(texts))
+            return True
+        except Exception as exc:
+            logger.error("Failed to store embeddings: {}", exc)
+            return False
 
-            embeddings = self.model.encode(texts)
-            self.index.add(np.array(embeddings).astype("float32"))
-            self.metadata.extend(enriched_metadatas)
-            self.save()
-            logger.info(f"Added {len(texts)} items to vector store")
-        except Exception as e:
-            logger.error(f"Failed to add texts to vector store: {e}")
-
-    def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
-        """Search for similar texts"""
-        # Lazy load model and index on first use
-        self._ensure_model_loaded()
-        self._ensure_index_loaded()
-        
-        if not self.model or not self.index or self.index.ntotal == 0:
-            return []
-
-        try:
-            query_vector = self.model.encode([query])
-            distances, indices = self.index.search(
-                np.array(query_vector).astype("float32"), k
-            )
-
-            results = []
-            for i, idx in enumerate(indices[0]):
-                if idx != -1 and idx < len(self.metadata):
-                    item = self.metadata[idx].copy()
-                    item["score"] = float(distances[0][i])
-                    results.append(item)
-            return results
-        except Exception as e:
-            logger.error(f"Search failed: {e}")
-            return []
-
-    def delete_by_metadata(self, key: str, value: Any):
-        """Delete items matching metadata criteria (Rebuilds index)"""
-        # Lazy load on first use
-        self._ensure_model_loaded()
-        self._ensure_index_loaded()
-        
-        if not self.index:
+    def _refresh_metadata_cache(self) -> None:
+        if not self._ensure_schema():
             return
-
-        new_metadata = []
-        texts_to_reindex = []
-        deleted_count = 0
-
-        for meta in self.metadata:
-            if meta.get(key) != value:
-                new_metadata.append(meta)
-                # If we have the text, we can re-index it. 
-                # If not, we keep the metadata but we can't add it back to the vector index 
-                # without the text! This implies we MUST have text in metadata.
-                if "text" in meta:
-                    texts_to_reindex.append(meta["text"])
-                else:
-                    logger.warning(f"Skipping item in rebuild: Missing 'text' in metadata: {meta}")
-            else:
-                deleted_count += 1
-
-        if deleted_count == 0:
-            return  # Nothing to delete
-
-        logger.info(f"Deleting {deleted_count} items matching {key}={value}. Rebuilding index...")
-
-        # Rebuild index
-        self._create_new_index()
-        
-        if texts_to_reindex:
-            try:
-                embeddings = self.model.encode(texts_to_reindex)
-                self.index.add(np.array(embeddings).astype("float32"))
-                self.metadata = new_metadata
-                self.save()
-                logger.info(f"Rebuilt vector store with {len(texts_to_reindex)} items")
-            except Exception as e:
-                logger.error(f"Failed to rebuild index during deletion: {e}")
-                # We might be in a bad state here if save() fails, but metadata is in memory
-        else:
+        try:
+            with self._get_engine().connect() as connection:
+                rows = connection.execute(
+                    text(
+                        f"SELECT symbol_id, type, label, text "
+                        f"FROM {METADATA_TABLE} ORDER BY symbol_id"
+                    )
+                ).mappings()
+                self.metadata = [
+                    {
+                        "id": row["symbol_id"],
+                        "type": row["type"],
+                        "label": row["label"],
+                        "text": row["text"],
+                    }
+                    for row in rows
+                ]
+        except Exception:
             self.metadata = []
-            self.save()
-            logger.info("Vector store empty after deletion")
+
+    def search(self, query: str, k: int = 5) -> list[dict[str, Any]]:
+        """Return nearest symbol metadata, excluding low-confidence matches."""
+        if not query or not self._ensure_schema():
+            return []
+        query_vector = self._embed([query])
+        if not query_vector:
+            return []
+        try:
+            with self._get_engine().connect() as connection:
+                rows = connection.execute(
+                    text(
+                        f"""
+                        SELECT rowid, distance
+                        FROM {VECTOR_TABLE}
+                        WHERE embedding MATCH :embedding
+                          AND k = :limit
+                        ORDER BY distance
+                        """
+                    ),
+                    {
+                        "embedding": self._serialize_vector(query_vector[0]),
+                        "limit": max(1, int(k)),
+                    },
+                ).fetchall()
+                results: list[dict[str, Any]] = []
+                for symbol_id, distance in rows:
+                    if float(distance) > self._distance_threshold:
+                        continue
+                    metadata = connection.execute(
+                        text(
+                            f"SELECT symbol_id, type, label, text "
+                            f"FROM {METADATA_TABLE} WHERE symbol_id = :symbol_id"
+                        ),
+                        {"symbol_id": int(symbol_id)},
+                    ).mappings().first()
+                    if metadata is None:
+                        continue
+                    results.append(
+                        {
+                            "id": metadata["symbol_id"],
+                            "type": metadata["type"],
+                            "label": metadata["label"],
+                            "text": metadata["text"],
+                            "score": float(distance),
+                        }
+                    )
+                return results
+        except Exception as exc:
+            logger.error("Semantic vector search failed: {}", exc)
+            return []
+
+    def delete_by_metadata(self, key: str, value: Any) -> bool:
+        """Delete vectors and metadata matching a supported metadata field."""
+        if key not in {"id", "symbol_id", "type", "label", "text"}:
+            return False
+        if not self._ensure_schema():
+            return False
+        column = "symbol_id" if key in {"id", "symbol_id"} else key
+        try:
+            with self._get_engine().begin() as connection:
+                rows = connection.execute(
+                    text(
+                        f"SELECT symbol_id FROM {METADATA_TABLE} "
+                        f"WHERE {column} = :value"
+                    ),
+                    {"value": value},
+                ).fetchall()
+                for (symbol_id,) in rows:
+                    connection.execute(
+                        text(f"DELETE FROM {VECTOR_TABLE} WHERE rowid = :symbol_id"),
+                        {"symbol_id": symbol_id},
+                    )
+                    connection.execute(
+                        text(
+                            f"DELETE FROM {METADATA_TABLE} "
+                            "WHERE symbol_id = :symbol_id"
+                        ),
+                        {"symbol_id": symbol_id},
+                    )
+            self._refresh_metadata_cache()
+            return True
+        except Exception as exc:
+            logger.error("Failed to delete vector metadata {}={}: {}", key, value, exc)
+            return False
+
+    def close(self) -> None:
+        """Release store-owned state without disposing the shared database engine."""
+        if self._closed:
+            return
+        self._closed = True
+        self._listener_engine = None
+        self.metadata.clear()
+        self.model = None
+        self.embedder = None
 
     def is_available(self) -> bool:
-        """Check if vector store dependencies are available (without loading model)"""
-        return FAISS_AVAILABLE and SENTENCE_TRANSFORMERS_AVAILABLE
-    
+        """Return dependency availability without loading the embedding model."""
+        return not self._closed and SQLITE_VEC_AVAILABLE and (
+            self.embedder is not None or FASTEMBED_AVAILABLE
+        )
+
     def is_ready(self) -> bool:
-        """Check if vector store is fully initialized and ready"""
-        return self._model_loaded and self._index_loaded and self.model is not None
-    
-    def force_load(self):
-        """Force immediate loading of model and index (for warmup)"""
+        """Return whether a model and SQLite vector schema are ready."""
+        return (
+            not self._closed
+            and self._model_loaded
+            and self.embedder is not None
+            and self._schema_ready
+        )
+
+    def force_load(self) -> None:
+        """Force model/schema initialization for explicit warmup callers."""
+        self._ensure_schema()
         self._ensure_model_loaded()
-        self._ensure_index_loaded()

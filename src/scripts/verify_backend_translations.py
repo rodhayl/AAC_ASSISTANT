@@ -5,7 +5,7 @@ import re
 
 
 def load_json(path):
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -45,7 +45,7 @@ def scan_files():
     print(f"Scanning {len(files)} files in {routers_dir}...")
 
     for file_path in files:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             content = f.read()
             matches = pattern.findall(content)
             for key in matches:
@@ -64,9 +64,8 @@ def scan_files():
                         missing_en.append((os.path.basename(file_path), key))
 
                 # Check ES
-                if not get_nested(es_common, key):
-                    if key.startswith("errors."):
-                        missing_es.append((os.path.basename(file_path), key))
+                if not get_nested(es_common, key) and key.startswith("errors."):
+                    missing_es.append((os.path.basename(file_path), key))
 
     if missing_en:
         print("\nMissing keys in EN common.json:")

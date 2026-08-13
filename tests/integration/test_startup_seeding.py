@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.aac_app.models.database import Base, User  # noqa: E402
+from src.aac_app.models import Achievement, Base, User  # noqa: E402
 from src.aac_app.services.auth_service import verify_password  # noqa: E402
 
 # Use a separate test database file for this test to verify seeding logic specifically
@@ -35,6 +35,7 @@ def db_session():
 
     yield session
     session.close()
+    engine.dispose()
 
 
 def test_default_users_exist_and_can_login(monkeypatch):
@@ -56,7 +57,7 @@ def test_default_users_exist_and_can_login(monkeypatch):
         monkeypatch.setenv(f"AAC_SEED_{username.upper()}_PASSWORD", password)
 
     # Act: Run seeding logic
-    from src.aac_app.models.database import _create_sample_users
+    from src.aac_app.seed import _create_sample_users
 
     _create_sample_users(session)
     session.commit()
@@ -73,11 +74,50 @@ def test_default_users_exist_and_can_login(monkeypatch):
         ), f"Password for {username} is incorrect"
 
     session.close()
+    engine.dispose()
 
 
 def test_database_initialization_idempotency():
     """
     Verify that init_database doesn't duplicate data or fail on second run.
     """
-    # We need to patch get_database_path or use a temp file to test the full init_database function
-    # For now, we'll trust the component test above.
+    # The component-level seed functions are safe to call repeatedly.  This is
+    # the behavior used by every application restart.
+    from src.aac_app.seed import (
+        _create_sample_achievements,
+        _create_sample_symbols,
+    )
+
+    engine = create_engine(TEST_DB_URL)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    _create_sample_symbols(session)
+    _create_sample_achievements(session)
+    first_steps = (
+        session.query(Achievement)
+        .filter(Achievement.name == "First Steps")
+        .first()
+    )
+    session.add(
+        Achievement(
+            name=first_steps.name,
+            description=first_steps.description,
+            category=first_steps.category,
+            criteria_type=first_steps.criteria_type,
+            criteria_value=first_steps.criteria_value,
+        )
+    )
+    session.flush()
+    _create_sample_symbols(session)
+    _create_sample_achievements(session)
+    session.commit()
+
+    assert session.query(User).count() == 0
+    from src.aac_app.models import Symbol
+
+    assert session.query(Symbol).count() == 5
+    assert session.query(Achievement).count() == 3
+    session.close()
+    engine.dispose()

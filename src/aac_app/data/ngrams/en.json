@@ -1,0 +1,41 @@
+{
+  "bigrams": {
+    "i": {
+      "want": 1.0,
+      "need": 0.9,
+      "am": 0.8,
+      "like": 0.7
+    },
+    "you": {
+      "are": 1.0,
+      "can": 0.9,
+      "want": 0.8,
+      "have": 0.7
+    },
+    "the": {
+      "cookie": 1.0,
+      "cow": 0.95,
+      "horse": 0.9,
+      "milk": 0.85,
+      "house": 0.8,
+      "time": 0.7
+    },
+    "want": {
+      "cookie": 1.0,
+      "to": 0.8,
+      "milk": 0.7,
+      "more": 0.6
+    },
+    "need": {
+      "help": 1.0,
+      "water": 0.9,
+      "to": 0.8,
+      "go": 0.7
+    },
+    "happy": {
+      "today": 1.0,
+      "and": 0.8,
+      "play": 0.7
+    }
+  }
+}

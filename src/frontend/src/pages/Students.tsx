@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react'
 import { useAuthStore } from '../store/authStore'
 import api from '../lib/api'
-import type { User, Board } from '../types'
+import type { Board, StudentBoardSummary, User } from '../types'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
+import { ResetPasswordModal } from '../components/common/ResetPasswordModal'
 import { GuardianProfileModal } from '../components/students/GuardianProfileModal'
 import { Sparkles, Volume2 } from 'lucide-react'
+import { LoadingState } from '../components/ui/LoadingState'
 
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 
 export function Students() {
-  const { user } = useAuthStore()
+  const user = useAuthStore((state) => state.user)
   const navigate = useNavigate()
   const { t } = useTranslation(['students', 'settings'])
   const [students, setStudents] = useState<User[]>([])
@@ -60,19 +62,16 @@ export function Students() {
       setLoading(true)
       setError(null)
       try {
-        const res = await api.get('/auth/users', { params: { limit: 1000 } })
-        const list: User[] = res.data
-        const studentsList = list.filter(u => u.user_type === 'student')
-        setStudents(studentsList)
-
-        await Promise.all(studentsList.map(async (student) => {
-          try {
-            const assignedRes = await api.get('/boards/assigned', { params: { student_id: student.id } })
-            setAssignedBoards(prev => ({ ...prev, [student.id]: assignedRes.data }))
-          } catch {
-            // Ignore errors for individual students
-          }
-        }));
+        const res = await api.get('/auth/users/student-summaries', {
+          params: { limit: 100 },
+        })
+        const summaries = res.data as StudentBoardSummary[]
+        setStudents(summaries)
+        setAssignedBoards(
+          Object.fromEntries(
+            summaries.map((student) => [student.id, student.assigned_boards ?? []]),
+          ),
+        )
       } catch (e: unknown) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const r = e as { response?: { data?: { detail?: any } } };
@@ -213,9 +212,16 @@ export function Students() {
         })
       }
 
-      const res = await api.get('/auth/users', { params: { limit: 1000 } })
-      const list: User[] = res.data
-      setStudents(list.filter(u => u.user_type === 'student'))
+      const res = await api.get('/auth/users/student-summaries', {
+        params: { limit: 100 },
+      })
+      const summaries = res.data as Array<User & { assigned_boards?: Board[] }>
+      setStudents(summaries)
+      setAssignedBoards(
+        Object.fromEntries(
+          summaries.map((student) => [student.id, student.assigned_boards ?? []]),
+        ),
+      )
 
       setNewUsername('')
       setNewDisplayName('')
@@ -274,9 +280,7 @@ export function Students() {
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-        </div>
+        <LoadingState label={t('loading', { defaultValue: 'Loading students' })} />
       ) : (
         <div className="glass-panel rounded-xl overflow-hidden">
           <table className="min-w-full divide-y divide-border dark:divide-white/5">
@@ -563,59 +567,18 @@ export function Students() {
       )
       }
 
-      {
-        resetPasswordModalOpen && resetPasswordStudent && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="glass-card w-full max-w-md p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                {t('resetPasswordTitle', { name: resetPasswordStudent.display_name, defaultValue: `Reset Password for ${resetPasswordStudent.display_name}` })}
-              </h3>
-              {error && (
-                <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm mb-4">
-                  {error}
-                </div>
-              )}
-              <form onSubmit={handleResetPassword} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.newPassword', { defaultValue: 'New Password' })}</label>
-                  <input
-                    type="password"
-                    value={resetPasswordValue}
-                    onChange={(e) => setResetPasswordValue(e.target.value)}
-                    required
-                    minLength={8}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                    placeholder={t('labels.passwordHint', { defaultValue: 'Min 8 chars, 1 uppercase, 1 lowercase, 1 number' })}
-                  />
-                </div>
-
-                <div className="flex justify-end gap-3 mt-6">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setResetPasswordModalOpen(false)
-                      setResetPasswordValue('')
-                      setResetPasswordStudent(null)
-                      setError(null)
-                    }}
-                    className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
-                    disabled={resetPasswordLoading}
-                  >
-                    {t('cancel')}
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
-                    disabled={resetPasswordLoading}
-                  >
-                    {resetPasswordLoading ? t('security.saving', { ns: 'settings', defaultValue: 'Saving...' }) : t('actions.resetPassword', { defaultValue: 'Reset Password' })}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )
-      }
+      {resetPasswordModalOpen && resetPasswordStudent && (
+        <ResetPasswordModal
+          user={resetPasswordStudent}
+          value={resetPasswordValue}
+          loading={resetPasswordLoading}
+          error={error}
+          t={t}
+          onChange={setResetPasswordValue}
+          onClose={() => { setResetPasswordModalOpen(false); setResetPasswordValue(''); setResetPasswordStudent(null); setError(null) }}
+          onSubmit={handleResetPassword}
+        />
+      )}
 
       <GuardianProfileModal
         isOpen={guardianModalOpen}
@@ -632,9 +595,7 @@ export function Students() {
               </h3>
 
               {preferencesLoading ? (
-                <div className="flex justify-center p-4">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
-                </div>
+                <LoadingState size="sm" label={t('loading', { defaultValue: 'Loading preferences' })} className="h-auto p-4" />
               ) : (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">

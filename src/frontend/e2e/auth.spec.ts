@@ -48,7 +48,10 @@ test.describe('Authentication - Student', () => {
 
   test('should allow logout', async ({ page }) => {
     await page.goto('/');
-    await page.getByRole('button', { name: /sign out|cerrar/i }).click();
-    await expect(page).toHaveURL('/login');
+    await expect(page).toHaveURL(/\/$/);
+    const signOut = page.getByRole('button', { name: /sign out|cerrar/i });
+    await expect(signOut).toBeVisible();
+    await signOut.click();
+    await expect(page).toHaveURL(/\/login(?:[/?#]|$)/);
   });
 });

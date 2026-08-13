@@ -19,7 +19,8 @@ sys.path.insert(0, str(project_root))
 
 def validate_user_passwords() -> bool:
     """Ensure all users have password hashes."""
-    from src.aac_app.models.database import User, get_session
+    from src.aac_app.db import get_session
+    from src.aac_app.models import User
 
     print("Validating user passwords...")
 
@@ -41,7 +42,8 @@ def validate_user_passwords() -> bool:
 
 def validate_default_users() -> bool:
     """Warn if sample default users are missing."""
-    from src.aac_app.models.database import User, get_session
+    from src.aac_app.db import get_session
+    from src.aac_app.models import User
 
     print("Validating default users...")
     expected_users = ["student1", "teacher1", "admin1"]
@@ -64,7 +66,7 @@ def validate_database_schema() -> bool:
     """Validate that core DB schema exists."""
     from sqlalchemy import inspect
 
-    from src.aac_app.models.database import create_engine_instance
+    from src.aac_app.db import create_engine_instance
 
     print("Validating database schema...")
 
@@ -75,7 +77,7 @@ def validate_database_schema() -> bool:
         if "users" not in inspector.get_table_names():
             print("[ERROR] 'users' table not found")
             print(
-                "Fix: Run 'python -c \"from src.aac_app.models.database import init_database; init_database()\"'"
+                "Fix: Run 'python -c \"from src.aac_app.schema import ensure; ensure()\"'"
             )
             return False
 

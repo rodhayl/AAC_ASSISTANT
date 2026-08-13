@@ -16,7 +16,7 @@ interface SymbolPickerProps {
 
 export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPickerProps) {
   const { t } = useTranslation('boards');
-  const { addToast } = useToastStore();
+  const addToast = useToastStore((state) => state.addToast);
   const [symbols, setSymbols] = useState<Symbol[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -32,15 +32,24 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
   const [reorderedSymbols, setReorderedSymbols] = useState<Symbol[]>([]);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
 
+  useEffect(() => {
+    if (!isOpen && (previewUrl || uploadFile)) {
+      setPreviewUrl(null);
+      setUploadFile(null);
+    }
+  }, [isOpen, previewUrl, uploadFile]);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
   // Fetch categories once on open
   useEffect(() => {
     if (isOpen) {
-      // Fetch enough symbols to likely cover all categories
-      api.get('/boards/symbols', { params: { limit: 1000 } }).then(res => {
-        const uniqueCats = Array.from(new Set(res.data.map((s: Symbol) => s.category))).sort();
-        // Ensure 'core' is present if it exists in DB, or just rely on the fetch
-        // We also want 'core' to be near the top if possible, but alphabetical is fine for now
-        setCategories(['all', ...uniqueCats] as string[]);
+      api.get<string[]>('/boards/symbols/categories').then(res => {
+        setCategories(['all', ...res.data]);
       }).catch(err => console.error("Failed to fetch categories", err));
     }
   }, [isOpen]);

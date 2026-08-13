@@ -12,10 +12,10 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models.database import LearningSession, User
+from src.aac_app.models import LearningSession, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.aac_app.services.learning_companion_service import LearningCompanionService
-from src.api import dependencies as deps
+from src.api import deps
 from src.api.main import app
 from tests.test_utils_auth import create_test_headers
 
@@ -45,13 +45,6 @@ class DummyOllama(deps.OllamaProvider):
 
     def __init__(self):  # pragma: no cover - trivial test helper
         # Do not call super().__init__ to avoid HTTP client construction
-        pass
-
-
-class DummyOpenRouter(deps.OpenRouterProvider):
-    """Lightweight OpenRouter subclass that skips HTTP setup for config tests."""
-
-    def __init__(self):  # pragma: no cover - trivial test helper
         pass
 
 
@@ -93,39 +86,40 @@ def test_primary_behavior_settings_exposed_and_persisted(admin_username):
     assert pytest.approx(data["temperature"], rel=1e-6) == 0.6
 
 
-def test_fallback_behavior_settings_exposed_and_persisted(admin_username):
-    """Fallback AI settings include behavior fields and round-trip correctly."""
-    user_id, username, user_type = admin_username
-    headers = create_test_headers(user_id, username, user_type)
 
-    resp = client.get(
-        "/api/settings/ai/fallback",
-        headers=headers,
-    )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["max_tokens"] == 1024
-    assert pytest.approx(data["temperature"], rel=1e-6) == 0.5
+def test_provider_type_labeling_distinguishes_lmstudio():
+    """
+    LM Studio sessions must be labeled 'lmstudio', not 'openrouter'.
 
-    update = client.put(
-        "/api/settings/ai/fallback",
-        headers=headers,
-        json={
-            "provider": "openrouter",
-            "openrouter_model": "openai/gpt-4",
-            "max_tokens": 512,
-            "temperature": 0.4,
-        },
-    )
-    assert update.status_code == 200
+    Regression: LMStudioProvider subclasses OpenRouterProvider (OpenAI-
+    compatible API), so the old isinstance-only check mislabeled every LM
+    Studio session as OpenRouter in the UI badge and provider_used field.
+    """
+    from src.aac_app.providers.lmstudio_provider import LMStudioProvider
+    from src.aac_app.providers.openrouter_provider import OpenRouterProvider
 
-    verify = client.get(
-        "/api/settings/ai/fallback",
-        headers=headers,
+    speech = Mock()
+
+    lmstudio = LMStudioProvider(
+        base_url="http://localhost:1234/v1", model="gemma-4-12b-it-qat"
     )
-    data = verify.json()
-    assert data["max_tokens"] == 512
-    assert pytest.approx(data["temperature"], rel=1e-6) == 0.4
+    service = LearningCompanionService(
+        llm_provider=lmstudio, speech_provider=speech
+    )
+    assert service.provider_type == "lmstudio"
+
+    openrouter = OpenRouterProvider(api_key="test-key", model="openrouter/free")
+    service_or = LearningCompanionService(
+        llm_provider=openrouter, speech_provider=speech
+    )
+    assert service_or.provider_type == "openrouter"
+
+    # The else branch still resolves to 'ollama' for plain Ollama providers.
+    ollama = DummyOllama()
+    service_ollama = LearningCompanionService(
+        llm_provider=ollama, speech_provider=speech
+    )
+    assert service_ollama.provider_type == "ollama"
 
 
 def test_get_learning_service_uses_primary_behavior_settings(monkeypatch):
@@ -136,7 +130,6 @@ def test_get_learning_service_uses_primary_behavior_settings(monkeypatch):
             "ai_provider": "ollama",
             "ai_max_tokens": "2048",
             "ai_temperature": "0.6",
-            # No fallback overrides
         }
         return mapping.get(key, default)
 
@@ -144,42 +137,12 @@ def test_get_learning_service_uses_primary_behavior_settings(monkeypatch):
 
     llm = DummyOllama()
     speech = Mock()
-    tts = Mock()
 
-    service = deps.get_learning_service(llm=llm, speech=speech, tts=tts)
+    service = deps.get_learning_service(llm=llm, speech=speech)
     assert isinstance(service, LearningCompanionService)
     assert service.default_max_tokens == 2048
     assert pytest.approx(service.default_temperature, rel=1e-6) == 0.6
 
-
-def test_get_learning_service_uses_fallback_behavior_for_openrouter(monkeypatch):
-    """
-    When the active provider is OpenRouter and fallback settings are defined
-    for openrouter, get_learning_service should use the fallback behavior values.
-    """
-
-    def fake_get_setting(key: str, default: str = "") -> str:
-        mapping = {
-            "ai_provider": "ollama",
-            "ai_max_tokens": "1024",
-            "ai_temperature": "0.5",
-            "fallback_ai_provider": "openrouter",
-            "fallback_ai_max_tokens": "256",
-            "fallback_ai_temperature": "0.3",
-        }
-        return mapping.get(key, default)
-
-    monkeypatch.setattr(deps, "get_setting_value", fake_get_setting)
-
-    llm = DummyOpenRouter()
-    speech = Mock()
-    tts = Mock()
-
-    service = deps.get_learning_service(llm=llm, speech=speech, tts=tts)
-    assert isinstance(service, LearningCompanionService)
-    # Should pick fallback values, not primary
-    assert service.default_max_tokens == 256
-    assert pytest.approx(service.default_temperature, rel=1e-6) == 0.3
 
 
 @pytest.mark.anyio
@@ -220,13 +183,11 @@ async def test_learning_service_passes_defaults_to_llm_generate_in_conversation(
     llm.generate = AsyncMock(return_value="Tutor reply.")
 
     speech = Mock()
-    tts = Mock()
 
     # Configure explicit defaults so the test is deterministic
     service = LearningCompanionService(
         llm_provider=llm,
         speech_provider=speech,
-        tts_provider=tts,
         default_max_tokens=512,
         default_temperature=0.4,
     )
@@ -236,6 +197,7 @@ async def test_learning_service_passes_defaults_to_llm_generate_in_conversation(
         session_id=session.id,
         student_response="What can you tell me about AAC?",
         is_voice=False,
+        db=test_db_session,
     )
 
     # The last call to llm.generate should use our defaults

@@ -5,6 +5,9 @@
   "hideHistory": "Ocultar historial",
   "textChat": "Chat de texto",
   "symbolFirst": "Símbolos",
+  "modeLabel": "Modo",
+  "difficultyLabel": "Dificultad",
+  "difficultyHelp": "Elige un nivel fijo o deja que la IA se adapte",
   "voiceOn": "Voz activada",
   "boardsTopics": "Tableros y Temas",
   "startStudy": "Comenzar estudio",
@@ -102,5 +105,24 @@
   "fallbackConversation": {
     "goodMessage": "¡Buen mensaje! ¡Sigamos adelante juntos!",
     "interesting": "¡Eso es interesante! Cuéntame más."
+  },
+  "fallbackSummary": "¡Buen trabajo al completar tu sesión sobre {{topic}}! Respondiste {{questions}} preguntas y acertaste {{correct}}.",
+  "endSession": "Finalizar sesión",
+  "endSessionConfirmTitle": "¿Finalizar esta sesión?",
+  "endSessionConfirm": "Tu progreso se guardará y aparecerá un resumen.",
+  "cancel": "Cancelar",
+  "summaryTitle": "Resumen de la sesión",
+  "summarySubtitle": "¡Buen trabajo! Así lo hiciste.",
+  "questionsAnswered": "Respondidas",
+  "correctAnswers": "Correctas",
+  "level": "Nivel",
+  "correctAnswer": "¡Correcto!",
+  "notQuite": "Casi — la respuesta correcta es \"{{answer}}\"",
+  "answerReceived": "Respuesta recibida",
+  "close": "Cerrar",
+  "difficulty": {
+    "basic": "Básico",
+    "intermediate": "Intermedio",
+    "advanced": "Avanzado"
   }
 }

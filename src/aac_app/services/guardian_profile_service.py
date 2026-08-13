@@ -7,17 +7,18 @@ These profiles are only visible to teachers and admins, never to students.
 
 import json
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from loguru import logger
+from sqlalchemy import and_, exists
 from sqlalchemy.orm import Session
 
-from ..models.database import (
+from ..db import get_session
+from ..models import (
     GuardianProfile,
     GuardianProfileHistory,
     StudentTeacher,
     User,
-    get_session,
 )
 from .template_manager import get_template_manager
 
@@ -41,8 +42,8 @@ class GuardianProfileService:
         self.template_manager = get_template_manager()
 
     def get_profile(
-        self, student_id: int, db: Optional[Session] = None
-    ) -> Optional[Dict]:
+        self, student_id: int, db: Session | None = None
+    ) -> dict | None:
         """
         Get a student's guardian profile.
 
@@ -54,7 +55,7 @@ class GuardianProfileService:
             Profile dict or None if not found
         """
 
-        def _get(session: Session) -> Optional[Dict]:
+        def _get(session: Session) -> dict | None:
             profile = (
                 session.query(GuardianProfile)
                 .filter_by(user_id=student_id, is_active=True)
@@ -73,8 +74,8 @@ class GuardianProfileService:
             return _get(session)
 
     def get_or_create_profile(
-        self, student_id: int, created_by: int, db: Optional[Session] = None
-    ) -> Dict:
+        self, student_id: int, created_by: int, db: Session | None = None
+    ) -> dict:
         """
         Get a student's profile, creating a default one if it doesn't exist.
 
@@ -87,7 +88,7 @@ class GuardianProfileService:
             Profile dict
         """
 
-        def _get_or_create(session: Session) -> Dict:
+        def _get_or_create(session: Session) -> dict:
             profile = (
                 session.query(GuardianProfile).filter_by(user_id=student_id).first()
             )
@@ -114,10 +115,10 @@ class GuardianProfileService:
         self,
         student_id: int,
         updated_by: int,
-        changes: Dict[str, Any],
-        change_reason: Optional[str] = None,
-        db: Optional[Session] = None,
-    ) -> Dict:
+        changes: dict[str, Any],
+        change_reason: str | None = None,
+        db: Session | None = None,
+    ) -> dict:
         """
         Update a student's guardian profile.
 
@@ -132,7 +133,7 @@ class GuardianProfileService:
             Updated profile dict
         """
 
-        def _update(session: Session) -> Dict:
+        def _update(session: Session) -> dict:
             profile = (
                 session.query(GuardianProfile).filter_by(user_id=student_id).first()
             )
@@ -186,7 +187,7 @@ class GuardianProfileService:
             return _update(session)
 
     def delete_profile(
-        self, student_id: int, deleted_by: int, db: Optional[Session] = None
+        self, student_id: int, deleted_by: int, db: Session | None = None
     ) -> bool:
         """
         Soft-delete a student's guardian profile.
@@ -235,8 +236,8 @@ class GuardianProfileService:
             return _delete(session)
 
     def get_profile_history(
-        self, student_id: int, limit: int = 50, db: Optional[Session] = None
-    ) -> List[Dict]:
+        self, student_id: int, limit: int = 50, db: Session | None = None
+    ) -> list[dict]:
         """
         Get the change history for a student's profile.
 
@@ -249,7 +250,7 @@ class GuardianProfileService:
             List of history entries
         """
 
-        def _get_history(session: Session) -> List[Dict]:
+        def _get_history(session: Session) -> list[dict]:
             profile = (
                 session.query(GuardianProfile).filter_by(user_id=student_id).first()
             )
@@ -257,17 +258,20 @@ class GuardianProfileService:
             if not profile:
                 return []
 
+            # Resolve changers in the same bounded query as the history rows;
+            # the previous session.get() inside this loop caused one query per
+            # audit entry (up to the public limit).
             entries = (
-                session.query(GuardianProfileHistory)
-                .filter_by(profile_id=profile.id)
+                session.query(GuardianProfileHistory, User)
+                .outerjoin(User, User.id == GuardianProfileHistory.changed_by)
+                .filter(GuardianProfileHistory.profile_id == profile.id)
                 .order_by(GuardianProfileHistory.changed_at.desc())
                 .limit(limit)
                 .all()
             )
 
             result = []
-            for entry in entries:
-                changer = session.get(User, entry.changed_by)
+            for entry, changer in entries:
                 result.append(
                     {
                         "id": entry.id,
@@ -300,8 +304,8 @@ class GuardianProfileService:
             return _get_history(session)
 
     def resolve_effective_profile(
-        self, student_id: int, db: Optional[Session] = None
-    ) -> Dict:
+        self, student_id: int, db: Session | None = None
+    ) -> dict:
         """
         Resolve the complete effective profile for a student.
 
@@ -316,7 +320,7 @@ class GuardianProfileService:
             Complete resolved profile dict
         """
 
-        def _resolve(session: Session) -> Dict:
+        def _resolve(session: Session) -> dict:
             profile = (
                 session.query(GuardianProfile)
                 .filter_by(user_id=student_id, is_active=True)
@@ -353,7 +357,7 @@ class GuardianProfileService:
         with get_session() as session:
             return _resolve(session)
 
-    def build_system_prompt(self, student_id: int, db: Optional[Session] = None) -> str:
+    def build_system_prompt(self, student_id: int, db: Session | None = None) -> str:
         """
         Build the complete LLM system prompt for a student.
 
@@ -371,8 +375,8 @@ class GuardianProfileService:
         return self.template_manager.build_system_prompt(profile)
 
     def list_students_with_profiles(
-        self, teacher_id: Optional[int] = None, db: Optional[Session] = None
-    ) -> List[Dict]:
+        self, teacher_id: int | None = None, db: Session | None = None
+    ) -> list[dict]:
         """
         List all students that have guardian profiles.
 
@@ -384,32 +388,44 @@ class GuardianProfileService:
             List of student info with profile status
         """
 
-        def _list(session: Session) -> List[Dict]:
-            # Get students
-            query = session.query(User).filter_by(user_type="student", is_active=True)
+        def _list(session: Session) -> list[dict]:
+            # Load the active profile status in the same query as each student.
+            # GuardianProfile.user_id is unique, so this outer join preserves
+            # one result per student while avoiding an N+1 profile lookup loop.
+            query = (
+                session.query(User, GuardianProfile)
+                .outerjoin(
+                    GuardianProfile,
+                    and_(
+                        GuardianProfile.user_id == User.id,
+                        GuardianProfile.is_active.is_(True),
+                    ),
+                )
+                .filter(User.user_type == "student", User.is_active.is_(True))
+            )
 
             if teacher_id:
-                assignment_count = (
-                    session.query(StudentTeacher)
+                has_assignments = (
+                    session.query(StudentTeacher.id)
                     .filter(StudentTeacher.teacher_id == teacher_id)
-                    .count()
-                )
-                if assignment_count > 0:
-                    # Filter students assigned to this teacher
-                    query = query.join(
-                        StudentTeacher, User.id == StudentTeacher.student_id
-                    ).filter(StudentTeacher.teacher_id == teacher_id)
-
-            students = query.all()
-
-            result = []
-            for student in students:
-                profile = (
-                    session.query(GuardianProfile)
-                    .filter_by(user_id=student.id, is_active=True)
                     .first()
+                    is not None
                 )
+                if has_assignments:
+                    # Use EXISTS instead of a join so duplicate legacy
+                    # assignment rows cannot duplicate students in the roster.
+                    query = query.filter(
+                        exists().where(
+                            and_(
+                                StudentTeacher.teacher_id == teacher_id,
+                                StudentTeacher.student_id == User.id,
+                            )
+                        )
+                    )
 
+            query = query.order_by(User.id)
+            result = []
+            for student, profile in query.all():
                 result.append(
                     {
                         "id": student.id,
@@ -431,7 +447,7 @@ class GuardianProfileService:
         with get_session() as session:
             return _list(session)
 
-    def _profile_to_dict(self, profile: GuardianProfile) -> Dict:
+    def _profile_to_dict(self, profile: GuardianProfile) -> dict:
         """Convert a GuardianProfile model to a dictionary."""
         return {
             "id": profile.id,
@@ -459,7 +475,7 @@ class GuardianProfileService:
     def preview_system_prompt(
         self,
         template_name: str,
-        overrides: Optional[Dict[str, Any]] = None,
+        overrides: dict[str, Any] | None = None,
     ) -> str:
         """
         Preview what a system prompt would look like with given settings.
@@ -482,7 +498,7 @@ class GuardianProfileService:
 
 
 # Singleton instance
-_guardian_service: Optional[GuardianProfileService] = None
+_guardian_service: GuardianProfileService | None = None
 
 
 def get_guardian_profile_service() -> GuardianProfileService:

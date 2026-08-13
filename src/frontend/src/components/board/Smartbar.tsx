@@ -27,7 +27,7 @@ type IntentType = 'general' | 'pronouns' | 'verbs' | 'articles' | 'nouns' | 'pla
 
 export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarProps) {
   const { t } = useTranslation('boards');
-  const { messages } = useLearningStore();
+  const messages = useLearningStore((state) => state.messages);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [activeIntent, setActiveIntent] = useState<IntentType>('general');
   const [offset, setOffset] = useState(0);
@@ -48,6 +48,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
 
   useEffect(() => {
     let active = true; // Flag to prevent stale updates
+    const controller = new AbortController();
 
     const mergeSuggestions = (prev: Suggestion[], incoming: Suggestion[]) => {
       const merged: Suggestion[] = [...prev];
@@ -101,7 +102,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
           intent: activeIntent,
           offset: offset,
           board_id: boardId ?? undefined,
-        });
+        }, { signal: controller.signal });
 
         if (active) {
           // If offset > 0, append; otherwise replace
@@ -112,7 +113,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
           }
         }
       } catch (error) {
-        if (active) {
+        if (active && (error as { code?: string })?.code !== 'ERR_CANCELED') {
           console.error('Failed to fetch suggestions:', error);
           if (offset === 0) setSuggestions([]);
         }
@@ -125,6 +126,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
 
     return () => {
       active = false;
+      controller.abort();
     };
   }, [currentSentence, messages, activeIntent, offset, boardId]); // Re-fetch when sentence OR chat updates
 
@@ -227,14 +229,14 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
         </div>
       ) : suggestions.length > 0 ? (
         <div className="flex gap-2 overflow-x-auto pb-2 px-1 scrollbar-hide">
-          {suggestions.map((suggestion) => {
+          {suggestions.map((suggestion, suggestionIndex) => {
             const isAI = suggestion.source === 'ai';
             const isPunctuation = suggestion.category === 'punctuation';
             const categoryStyle = getCategoryStyle(suggestion.category);
 
             return (
               <div
-                key={suggestion.symbol_id}
+                key={`${suggestion.symbol_id}-${suggestionIndex}`}
                 className="relative shrink-0"
               >
                 <button

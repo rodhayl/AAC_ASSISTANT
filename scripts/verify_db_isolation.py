@@ -1,20 +1,19 @@
 
-import os
-import sys
-import time
 import subprocess
+import sys
 from pathlib import Path
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src import config
+from src import config  # noqa: E402
+
 
 def verify_isolation():
     db_path = config.DATABASE_PATH
     print(f"Database path: {db_path}")
-    
+
     if not db_path.exists():
         print("Database does not exist! Creating it via validate_database...")
         # Create it by running validate (which might check schema) or init
@@ -36,17 +35,17 @@ def verify_isolation():
         capture_output=True,
         text=True
     )
-    
+
     print("Test output:")
     print(result.stdout)
     if result.stderr:
         print("Test errors:")
         print(result.stderr)
-        
+
     if result.returncode != 0:
         print("Tests failed!")
         # We continue to check isolation anyway
-    
+
     print("\nChecking database file...")
     if not db_path.exists():
         if initial_stat:

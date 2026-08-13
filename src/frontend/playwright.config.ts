@@ -2,14 +2,14 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
+  globalSetup: './e2e/global-setup.ts',
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : 1,
   reporter: 'list',
   use: {
-    baseURL: 'http://localhost:5178',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:8086',
     trace: 'on-first-retry',
     video: 'retain-on-failure',
     screenshot: 'only-on-failure',
@@ -33,10 +33,4 @@ export default defineConfig({
       dependencies: ['setup'],
     },
   ],
-  webServer: {
-    command: 'npm run dev -- --port 5178 --strictPort',
-    url: 'http://localhost:5178',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000,
-  },
 });

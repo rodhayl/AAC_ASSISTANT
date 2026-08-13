@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router';
 import api from '../lib/api';
 import { useBoardStore } from '../store/boardStore';
 import type { BoardSymbol } from '../types';
@@ -15,7 +15,10 @@ export function BoardPlayer() {
   const params = useParams();
   const boardId = useMemo(() => Number(params.id), [params.id]);
 
-  const { currentBoard, fetchBoard, isLoading, error } = useBoardStore();
+  const currentBoard = useBoardStore((state) => state.currentBoard);
+  const fetchBoard = useBoardStore((state) => state.fetchBoard);
+  const isBoardLoading = useBoardStore((state) => state.isBoardLoading);
+  const error = useBoardStore((state) => state.error);
   const [sentence, setSentence] = useState<BoardSymbol[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
 
@@ -47,7 +50,7 @@ export function BoardPlayer() {
 
   const symbols = currentBoard?.symbols ?? [];
 
-  if (isLoading) return <div>Loading…</div>;
+  if (isBoardLoading && !currentBoard) return <div>Loading…</div>;
   if (error) return <div>Error</div>;
   if (!currentBoard) return <div>No board</div>;
 

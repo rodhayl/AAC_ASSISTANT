@@ -47,15 +47,14 @@ def test_collab_board_ws_broadcast(test_password):
     # Note: TestClient.websocket_connect takes a URL. We append the token query param.
     url = f"/api/collab/boards/{board_id}?token={token}"
 
-    with client.websocket_connect(url) as ws1:
-        with client.websocket_connect(url) as ws2:
-            # Send a move operation
-            ws1.send_json(
-                {"op": "move", "symbol_id": 123, "position": {"x": 1, "y": 2}}
-            )
+    with client.websocket_connect(url) as ws1, client.websocket_connect(url) as ws2:
+        # Send a move operation
+        ws1.send_json(
+            {"op": "move", "symbol_id": 123, "position": {"x": 1, "y": 2}}
+        )
 
-            # Receive on the other connection
-            recv = ws2.receive_json()
-            assert recv["type"] == "board_change"
-            assert recv["payload"]["op"] == "move"
-            assert recv["payload"]["symbol_id"] == 123
+        # Receive on the other connection
+        recv = ws2.receive_json()
+        assert recv["type"] == "board_change"
+        assert recv["payload"]["op"] == "move"
+        assert recv["payload"]["symbol_id"] == 123

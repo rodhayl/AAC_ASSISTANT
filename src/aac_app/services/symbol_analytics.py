@@ -3,14 +3,44 @@ Symbol Analytics Service
 Tracks and analyzes symbol usage patterns for personalization and insights.
 """
 
+from contextlib import contextmanager
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
 
 from loguru import logger
-from sqlalchemy import desc, func
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, desc, func, or_
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, aliased
 
-from ..models.database import Symbol, SymbolUsageLog, get_session
+from ..db import get_session, session_scope
+from ..models import LearningSession, Symbol, SymbolUsageLog, User
+
+# Upper bound on distinct sequences tracked per get_frequent_sequences call.
+# Frequent-sequence output only ever returns ``limit`` rows (default 10), so
+# once this budget is exhausted only already-tracked sequences keep counting;
+# brand-new distinct sequences are ignored. This keeps memory bounded on very
+# long usage histories while preserving exact results below the cap.
+MAX_TRACKED_SEQUENCES = 10_000
+
+
+def _record_sequence(
+    sequences: dict,
+    seq_key: tuple,
+    labels: list[str],
+    categories: list[str | None],
+    timestamp,
+) -> None:
+    """Increment an observed utterance sequence under the tracking budget."""
+    if seq_key not in sequences:
+        if len(sequences) >= MAX_TRACKED_SEQUENCES:
+            return
+        sequences[seq_key] = {
+            "labels": labels,
+            "categories": categories,
+            "count": 0,
+            "last_used": None,
+        }
+    sequences[seq_key]["count"] += 1
+    sequences[seq_key]["last_used"] = timestamp
 
 
 class SymbolAnalytics:
@@ -19,14 +49,21 @@ class SymbolAnalytics:
     Provides insights for personalization and usage statistics.
     """
 
+    @staticmethod
+    @contextmanager
+    def _session_scope(db: Session | None):
+        """Keep the historical module-level get_session patch seam."""
+        with session_scope(db, session_factory=get_session) as session:
+            yield session
+
     def log_symbol_usage(
         self,
         user_id: int,
-        symbols: List[Dict],
-        session_id: Optional[int] = None,
-        semantic_intent: Optional[str] = None,
-        context_topic: Optional[str] = None,
-        db: Optional[Session] = None,
+        symbols: list[dict],
+        session_id: int | None = None,
+        semantic_intent: str | None = None,
+        context_topic: str | None = None,
+        db: Session | None = None,
     ) -> bool:
         """
         Log symbol usage for analytics.
@@ -43,49 +80,98 @@ class SymbolAnalytics:
             True if logging successful
         """
         try:
-            close_session = False
-            if db is None:
-                # get_session() is a context manager, we need to enter it
-                ctx = get_session()
-                db = ctx.__enter__()
-                close_session = True
-                self._ctx = ctx  # Store to exit later
+            with self._session_scope(db) as session:
+                # SQLite may otherwise treat a first savepoint as the whole
+                # transaction. Start an explicit caller-owned transaction so
+                # the caller can still commit or roll back the batch.
+                if db is not None and (session.new or session.dirty or session.deleted):
+                    # Never let optional analytics flush unrelated caller work.
+                    # The primary request remains responsible for that work.
+                    logger.debug("Skipping analytics while caller session has pending changes")
+                    return True
+                if db is not None and not session.in_transaction():
+                    if session.bind is not None and session.bind.dialect.name == "sqlite":
+                        # SQLite needs a raw outer BEGIN for SAVEPOINT rollback
+                        # to remain durable until the caller commits/rolls back.
+                        session.connection().exec_driver_sql("BEGIN")
+                    else:
+                        session.begin()
+                with session.no_autoflush:
+                    utterance_length = len(symbols)
+                    symbol_ids = {
+                        symbol.get("id")
+                        for symbol in symbols
+                        if isinstance(symbol.get("id"), int)
+                    }
+                    valid_symbol_ids = (
+                        {
+                            symbol_id
+                            for (symbol_id,) in session.query(Symbol.id)
+                            .filter(Symbol.id.in_(symbol_ids))
+                            .all()
+                        }
+                        if symbol_ids
+                        else set()
+                    )
+                    # Never create orphaned analytics rows when a stale
+                    # caller supplies an unknown user. Treat this optional
+                    # telemetry as successfully skipped.
+                    if session.query(User.id).filter(User.id == user_id).first() is None:
+                        logger.debug("Skipping analytics for unknown user {}", user_id)
+                        return True
 
-            utterance_length = len(symbols)
+                    valid_session = (
+                        session.query(LearningSession.id)
+                        .filter(LearningSession.id == session_id)
+                        .first()
+                        if session_id is not None
+                        else None
+                    )
+                    safe_session_id = session_id if session_id is None or valid_session else None
 
-            for idx, symbol in enumerate(symbols):
-                usage_log = SymbolUsageLog(
-                    user_id=user_id,
-                    session_id=session_id,
-                    symbol_id=symbol.get("id"),
-                    symbol_label=symbol.get("label", ""),
-                    symbol_category=symbol.get("category"),
-                    position_in_utterance=idx,
-                    utterance_length=utterance_length,
-                    semantic_intent=semantic_intent,
-                    context_topic=context_topic,
-                )
-                db.add(usage_log)
+                    for idx, symbol in enumerate(symbols):
+                        symbol_id = symbol.get("id")
+                        usage_log = SymbolUsageLog(
+                            user_id=user_id,
+                            session_id=safe_session_id,
+                            symbol_id=(
+                                symbol_id if symbol_id in valid_symbol_ids else None
+                            ),
+                            symbol_label=symbol.get("label", ""),
+                            symbol_category=symbol.get("category"),
+                            position_in_utterance=idx,
+                            utterance_length=utterance_length,
+                            semantic_intent=semantic_intent,
+                            context_topic=context_topic,
+                        )
+                        try:
+                            # Analytics is best-effort. A stale FK must not
+                            # poison the caller's main learning transaction.
+                            with session.begin_nested():
+                                session.add(usage_log)
+                                session.flush()
+                        except IntegrityError:
+                            logger.warning(
+                                "Skipping invalid symbol analytics row for user {}",
+                                user_id,
+                            )
 
-            db.commit()
+                # The shared scope commits only sessions it created. A caller
+                # supplied request session remains responsible for its commit.
             logger.debug(f"Logged {len(symbols)} symbols for user {user_id}")
-
-            if close_session and hasattr(self, '_ctx'):
-                self._ctx.__exit__(None, None, None)
-
             return True
 
         except Exception as e:
             logger.error(f"Failed to log symbol usage: {e}")
-            if db is not None:
-                db.rollback()
-            if db and close_session and hasattr(self, '_ctx'):
-                self._ctx.__exit__(type(e), e, e.__traceback__)
             return False
 
     def get_frequent_sequences(
-        self, user_id: int, limit: int = 10, min_occurrences: int = 2
-    ) -> List[Dict]:
+        self,
+        user_id: int,
+        limit: int = 10,
+        min_occurrences: int = 2,
+        db: Session | None = None,
+    ) -> list[dict]:
         """
         Find user's most common symbol sequences.
 
@@ -97,9 +183,9 @@ class SymbolAnalytics:
         Returns:
             List of dicts with sequence info
         """
-        with get_session() as db:
+        with self._session_scope(db) as db:
             # Get all usage logs for user, ordered by session and position
-            logs = (
+            logs_query = (
                 db.query(SymbolUsageLog)
                 .filter(SymbolUsageLog.user_id == user_id)
                 .order_by(
@@ -107,8 +193,12 @@ class SymbolAnalytics:
                     SymbolUsageLog.timestamp,
                     SymbolUsageLog.position_in_utterance,
                 )
-                .all()
             )
+
+            # Stream the ordered history in batches. This preserves the exact
+            # sequence semantics while avoiding a second in-memory copy of a
+            # user's entire usage history.
+            logs = logs_query.yield_per(1000)
 
             # Build sequences from consecutive utterances
             sequences = {}
@@ -123,16 +213,13 @@ class SymbolAnalytics:
                     and (log.timestamp - current_timestamp).seconds > 300
                 ):
                     if len(current_sequence) >= 2:
-                        seq_key = tuple([s["label"] for s in current_sequence])
-                        if seq_key not in sequences:
-                            sequences[seq_key] = {
-                                "labels": [s["label"] for s in current_sequence],
-                                "categories": [s["category"] for s in current_sequence],
-                                "count": 0,
-                                "last_used": None,
-                            }
-                        sequences[seq_key]["count"] += 1
-                        sequences[seq_key]["last_used"] = current_timestamp
+                        _record_sequence(
+                            sequences,
+                            tuple(s["label"] for s in current_sequence),
+                            [s["label"] for s in current_sequence],
+                            [s["category"] for s in current_sequence],
+                            current_timestamp,
+                        )
 
                     current_sequence = []
 
@@ -148,16 +235,13 @@ class SymbolAnalytics:
 
             # Add final sequence
             if len(current_sequence) >= 2:
-                seq_key = tuple([s["label"] for s in current_sequence])
-                if seq_key not in sequences:
-                    sequences[seq_key] = {
-                        "labels": [s["label"] for s in current_sequence],
-                        "categories": [s["category"] for s in current_sequence],
-                        "count": 0,
-                        "last_used": None,
-                    }
-                sequences[seq_key]["count"] += 1
-                sequences[seq_key]["last_used"] = current_timestamp
+                _record_sequence(
+                    sequences,
+                    tuple(s["label"] for s in current_sequence),
+                    [s["label"] for s in current_sequence],
+                    [s["category"] for s in current_sequence],
+                    current_timestamp,
+                )
 
             # Filter by minimum occurrences and sort by frequency
             frequent = [
@@ -169,7 +253,9 @@ class SymbolAnalytics:
             frequent.sort(key=lambda x: x["count"], reverse=True)
             return frequent[:limit]
 
-    def get_category_preferences(self, user_id: int) -> Dict:
+    def get_category_preferences(
+        self, user_id: int, db: Session | None = None
+    ) -> dict:
         """
         Analyze which symbol categories user uses most.
 
@@ -179,7 +265,7 @@ class SymbolAnalytics:
         Returns:
             Dict with category usage statistics
         """
-        with get_session() as db:
+        with self._session_scope(db) as db:
             # Count usage by category
             category_counts = (
                 db.query(
@@ -214,7 +300,9 @@ class SymbolAnalytics:
                 "unique_categories": len(categories),
             }
 
-    def get_usage_stats(self, user_id: int, days: int = 30) -> Dict:
+    def get_usage_stats(
+        self, user_id: int, days: int = 30, db: Session | None = None
+    ) -> dict:
         """
         Get overall usage statistics for user.
 
@@ -225,7 +313,7 @@ class SymbolAnalytics:
         Returns:
             Dict with usage statistics
         """
-        with get_session() as db:
+        with self._session_scope(db) as db:
             cutoff_date = datetime.now() - timedelta(days=days)
 
             # Total symbols used
@@ -313,8 +401,12 @@ class SymbolAnalytics:
             }
 
     def suggest_next_symbol(
-        self, user_id: int, symbols: List[Dict], limit: int = 5
-    ) -> List[Dict]:
+        self,
+        user_id: int,
+        symbols: list[dict],
+        limit: int = 5,
+        db: Session | None = None,
+    ) -> list[dict]:
         """
         Predict next symbol based on usage history.
 
@@ -328,13 +420,14 @@ class SymbolAnalytics:
         """
         if not symbols:
             # Return most frequently used symbols
-            with get_session() as db:
+            with self._session_scope(db) as db:
                 most_used = (
                     db.query(
                         SymbolUsageLog.symbol_id,
                         SymbolUsageLog.symbol_label,
                         SymbolUsageLog.symbol_category,
                         Symbol.image_path,
+                        Symbol.language,
                         func.count(SymbolUsageLog.id).label("count"),
                     )
                     .join(Symbol, Symbol.id == SymbolUsageLog.symbol_id)
@@ -347,6 +440,7 @@ class SymbolAnalytics:
                         SymbolUsageLog.symbol_label,
                         SymbolUsageLog.symbol_category,
                         Symbol.image_path,
+                        Symbol.language,
                     )
                     .order_by(desc("count"))
                     .limit(limit)
@@ -359,75 +453,99 @@ class SymbolAnalytics:
                         "label": label,
                         "category": category,
                         "image_path": image_path,
+                        "language": language_code,
                         "confidence": 0.5,  # Default confidence for frequency-based
                     }
-                    for symbol_id, label, category, image_path, _ in most_used
+                    for symbol_id, label, category, image_path, language_code, _ in most_used
                 ]
 
         # Find patterns where current sequence appears
         current_labels = [s.get("label") for s in symbols]
 
-        with get_session() as db:
-            # Look for usage logs that match the current sequence
-            # This is a simplified implementation - could be enhanced with n-grams
+        with self._session_scope(db) as db:
+            # Find transitions in one self-join instead of querying once per
+            # matching log. The explicit NULL branch preserves the historical
+            # Python behavior where two missing session IDs match each other.
             last_label = current_labels[-1]
-
-            # Find all logs where the last label was used
-            matching_logs = (
-                db.query(SymbolUsageLog)
+            current_log = aliased(SymbolUsageLog)
+            next_log = aliased(SymbolUsageLog)
+            candidate_log = aliased(SymbolUsageLog)
+            candidate_same_session = or_(
+                current_log.session_id == candidate_log.session_id,
+                and_(
+                    current_log.session_id.is_(None),
+                    candidate_log.session_id.is_(None),
+                ),
+            )
+            first_next_id = (
+                db.query(func.min(candidate_log.id))
                 .filter(
-                    SymbolUsageLog.user_id == user_id,
-                    SymbolUsageLog.symbol_label == last_label,
+                    candidate_log.user_id == current_log.user_id,
+                    candidate_same_session,
+                    candidate_log.position_in_utterance
+                    == current_log.position_in_utterance + 1,
                 )
+                .correlate(current_log)
+                .scalar_subquery()
+            )
+            transition_counts = (
+                db.query(
+                    next_log.symbol_id,
+                    next_log.symbol_label,
+                    next_log.symbol_category,
+                    func.count(current_log.id).label("count"),
+                    func.min(current_log.id).label("first_current_id"),
+                )
+                .select_from(current_log)
+                .join(next_log, next_log.id == first_next_id)
+                .filter(
+                    current_log.user_id == user_id,
+                    current_log.symbol_label == last_label,
+                    next_log.symbol_label.isnot(None),
+                    next_log.symbol_label != "",
+                )
+                .group_by(
+                    next_log.symbol_id,
+                    next_log.symbol_label,
+                    next_log.symbol_category,
+                )
+                # The old Python accumulator was stable for ties because it
+                # encountered current logs in database order. Use the first
+                # current-log ID as an explicit deterministic tie-breaker.
+                .order_by(desc("count"), "first_current_id")
+                .limit(limit)
                 .all()
             )
 
-            # For each matching log, find the next symbol in the same utterance
-            next_symbol_counts = {}
-            for log in matching_logs:
-                # Query for the next symbol (same session_id, position + 1)
-                next_log = (
-                    db.query(SymbolUsageLog)
-                    .filter(
-                        SymbolUsageLog.user_id == user_id,
-                        SymbolUsageLog.session_id == log.session_id,
-                        SymbolUsageLog.position_in_utterance
-                        == log.position_in_utterance + 1,
-                    )
-                    .first()
-                )
-
-                if next_log and next_log.symbol_label:
-                    key = (
-                        next_log.symbol_id,
-                        next_log.symbol_label,
-                        next_log.symbol_category,
-                    )
-                    next_symbol_counts[key] = next_symbol_counts.get(key, 0) + 1
-
-            # Sort by count and take top N
-            sorted_symbols = sorted(
-                next_symbol_counts.items(), key=lambda x: x[1], reverse=True
-            )[:limit]
+            # SQL performs both first-next selection and counting, so Python
+            # only handles the small result set needed for response shaping.
+            sorted_symbols = [
+                ((symbol_id, label, category), count)
+                for symbol_id, label, category, count, _ in transition_counts
+            ]
             total_count = sum(count for _, count in sorted_symbols)
 
             # Fetch image paths for these symbols
             symbol_ids = [sid for (sid, _, _), _ in sorted_symbols]
-            images = {}
+            symbol_details = {}
             if symbol_ids:
                 symbols_db = (
-                    db.query(Symbol.id, Symbol.image_path)
+                    db.query(Symbol.id, Symbol.image_path, Symbol.language)
                     .filter(Symbol.id.in_(symbol_ids))
                     .all()
                 )
-                images = {s.id: s.image_path for s in symbols_db}
+                symbol_details = {
+                    s.id: {"image_path": s.image_path, "language": s.language}
+                    for s in symbols_db
+                }
 
             return [
                 {
                     "symbol_id": symbol_id,
                     "label": label,
                     "category": category,
-                    "image_path": images.get(symbol_id),
+                    "image_path": symbol_details.get(symbol_id, {}).get("image_path"),
+                    "language": symbol_details.get(symbol_id, {}).get("language"),
                     "confidence": (
                         round(count / total_count, 2) if total_count > 0 else 0.5
                     ),

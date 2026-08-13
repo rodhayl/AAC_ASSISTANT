@@ -6,8 +6,8 @@ Created: November 30, 2025
 """
 
 import json
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -24,14 +24,14 @@ class AuditLogService:
         event_type: str,
         severity: str,
         description: str,
-        user_id: Optional[int] = None,
-        username: Optional[str] = None,
-        user_type: Optional[str] = None,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        endpoint: Optional[str] = None,
+        user_id: int | None = None,
+        username: str | None = None,
+        user_type: str | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        endpoint: str | None = None,
         success: bool = True,
-        additional_data: Optional[Dict[str, Any]] = None,
+        additional_data: dict[str, Any] | None = None,
     ) -> AuditLog:
         """
         Log a security event to the audit log.
@@ -63,7 +63,7 @@ class AuditLogService:
 
         # Create audit log entry
         audit_entry = AuditLog(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             event_type=event_type,
             severity=severity,
             user_id=user_id,
@@ -97,7 +97,7 @@ class AuditLogService:
     def log_login_failed(
         db: Session,
         username: str,
-        ip_address: Optional[str] = None,
+        ip_address: str | None = None,
         reason: str = "Invalid credentials",
     ):
         """Log failed login attempt."""
@@ -118,7 +118,7 @@ class AuditLogService:
         user_id: int,
         username: str,
         user_type: str,
-        ip_address: Optional[str] = None,
+        ip_address: str | None = None,
     ):
         """Log successful login."""
         return AuditLogService.log_event(
@@ -140,7 +140,7 @@ class AuditLogService:
         user_id: int,
         username: str,
         changed_by_admin: bool = False,
-        ip_address: Optional[str] = None,
+        ip_address: str | None = None,
     ):
         """Log password change."""
         description = f"Password changed for user '{username}'"
@@ -164,7 +164,7 @@ class AuditLogService:
         db: Session,
         username: str,
         attempted_role: str,
-        ip_address: Optional[str] = None,
+        ip_address: str | None = None,
     ):
         """Log privilege escalation attempt."""
         return AuditLogService.log_event(
@@ -185,9 +185,9 @@ class AuditLogService:
         new_user_id: int,
         new_username: str,
         new_user_type: str,
-        created_by_id: Optional[int] = None,
-        created_by_username: Optional[str] = None,
-        ip_address: Optional[str] = None,
+        created_by_id: int | None = None,
+        created_by_username: str | None = None,
+        ip_address: str | None = None,
     ):
         """Log account creation."""
         description = f"Account created: {new_username} (type: {new_user_type})"
@@ -217,7 +217,7 @@ class AuditLogService:
         deleted_username: str,
         deleted_by_id: int,
         deleted_by_username: str,
-        ip_address: Optional[str] = None,
+        ip_address: str | None = None,
     ):
         """Log account deletion."""
         return AuditLogService.log_event(
@@ -242,8 +242,8 @@ class AuditLogService:
         admin_username: str,
         action: str,
         description: str,
-        ip_address: Optional[str] = None,
-        endpoint: Optional[str] = None,
+        ip_address: str | None = None,
+        endpoint: str | None = None,
     ):
         """Log admin action."""
         return AuditLogService.log_event(

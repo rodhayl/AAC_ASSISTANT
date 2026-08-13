@@ -1,6 +1,5 @@
-import sys
-import os
 import logging
+import sys
 from pathlib import Path
 
 # Setup logging
@@ -15,11 +14,11 @@ def prepare_db(target_dir):
     """Initialize a test database in the target directory"""
     target_path = Path(target_dir)
     target_path.mkdir(parents=True, exist_ok=True)
-    
+
     db_path = target_path / "aac_assistant.db"
-    
+
     logger.info(f"Preparing test database at {db_path}")
-    
+
     # Remove existing database to ensure clean slate
     if db_path.exists():
         logger.info("Removing existing database")
@@ -32,21 +31,19 @@ def prepare_db(target_dir):
     # Import and configure
     try:
         import src.config
-        
+
         # Override config values to point to the new location
         src.config.DATA_DIR = target_path
         src.config.DATABASE_PATH = db_path
-        
-        # Import database module (after config is patched)
-        from src.aac_app.models import database
-        
-        # Monkey patch get_database_path just in case
-        original_get_db_path = database.get_database_path
-        database.get_database_path = lambda: str(db_path)
-        
-        # Run initialization (creates tables and seed data)
-        database.init_database()
-        
+
+        # Import schema and seed modules after config is patched.
+        from src.aac_app import schema
+        from src.aac_app.seed import init_database
+
+        # Run initialization (creates tables and seed data).
+        schema.ensure()
+        init_database(ensure_schema=False)
+
         # Verify creation
         if db_path.exists():
             size = db_path.stat().st_size
@@ -54,7 +51,7 @@ def prepare_db(target_dir):
         else:
             logger.error("Failed to create database file")
             sys.exit(1)
-            
+
     except ImportError as e:
         logger.error(f"Failed to import dependencies: {e}")
         logger.error("Ensure you are running this script in an environment with project dependencies installed (sqlalchemy, loguru, etc).")
@@ -71,5 +68,5 @@ if __name__ == "__main__":
     else:
         # Default to dist data dir relative to script location
         target_dir = str(PROJECT_ROOT / "dist" / "AAC_Assistant_Package" / "data")
-        
+
     prepare_db(target_dir)

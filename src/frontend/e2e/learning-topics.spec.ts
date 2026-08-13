@@ -58,6 +58,21 @@ test.describe('Learning Page - Boards and Topics', () => {
         await page.route('**/api/learning/start*', async route => {
              await route.fulfill({ status: 200, body: JSON.stringify({ session_id: 123 }) });
         });
+
+        // Mock auto-asked adaptive questions so the flow does not hit the LLM
+        await page.route('**/api/learning/*/ask', async route => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    success: true,
+                    question_id: 1,
+                    question_text: 'Mock question',
+                    choices: ['Choice A', 'Choice B', 'Choice C'],
+                    correct_answer_index: 0
+                })
+            });
+        });
     });
 
     test('should allow selecting board and topic', async ({ page }) => {
@@ -79,8 +94,8 @@ test.describe('Learning Page - Boards and Topics', () => {
         // --- Test 1: Select Existing Board + Common Topic ---
         
         // Locate selects by ID
-        const boardSelect = page.locator('#board-select');
-        const topicSelect = page.locator('#topic-select');
+        const boardSelect = page.locator('#comp-board-select');
+        const topicSelect = page.locator('#comp-topic-select');
 
         await expect(boardSelect).toBeVisible();
         await boardSelect.selectOption({ label: 'Test Board 1' });

@@ -1,3 +1,4 @@
+import base64
 import io
 import os
 
@@ -27,10 +28,8 @@ def test_symbol_crud_with_usage_and_board_flow(tmp_path):
     headers = create_test_headers(user_id, "symboltester", "teacher")
 
     # 2) Upload a small valid PNG symbol
-    png_bytes = (
-        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x08\x00\x00\x00\x08\x08\x06"
-        b"\x00\x00\x00\xc4\x0f\xbe\x8b\x00\x00\x00\x0bIDAT\x08\xd7c\xf8\xff\xff?\x03"
-        b"\x05\x00\t\xfb\x02\xfe\x8a\xd0\xb7V\x00\x00\x00\x00IEND\xaeB`\x82"
+    png_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
     )
     files = {"file": ("tiny.png", io.BytesIO(png_bytes), "image/png")}
     data = {

@@ -1,14 +1,19 @@
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import Notification, User
-from src.aac_app.services.notification_service import get_notification_service
-from src.api.dependencies import (
+from src.aac_app.models import Notification, User
+from src.aac_app.services.notification_events import (
+    publish_notification,
+    subscribe,
+    unsubscribe,
+)
+from src.api.debug_reporting import report_debug
+from src.api.deps import (
     get_current_active_user,
     get_current_admin_user,
     get_db,
@@ -29,38 +34,27 @@ async def notifications_stream(token: str = None, db: Session = Depends(get_db))
             status_code=401, detail=get_text(key="errors.notifications.invalidToken")
         )
 
-    svc = get_notification_service()
-    queue = asyncio.Queue()
-
-    def on_show(n):
-        # Only show notifications for this user
-        if n.user_id == user.id:
-            try:
-                payload = {
-                    "title": n.title,
-                    "message": n.message,
-                    "type": n.notification_type.value,
-                    "priority": n.priority.value,
-                    "timestamp": n.timestamp.isoformat(),
-                }
-                queue.put_nowait(f"data: {json.dumps(payload)}\n\n")
-            except Exception:
-                pass
-
-    svc.add_callback("notification_shown", on_show)
-
     async def event_generator():
+        queue = subscribe(user.id)
+        # #region debug-point B:sse-subscribed
+        report_debug("B", "src/api/routers/notifications.py:event_generator:subscribe", "SSE subscriber connected", {"user_id": user.id})
+        # #endregion
+        # Initial heartbeat to unblock clients. DB event delivery will be
+        # connected before yielding so notifications cannot be missed.
         try:
-            # Initial heartbeat to unblock clients
             yield "data: {}\n\n"
             while True:
-                data = await queue.get()
-                yield data
+                try:
+                    notification = await asyncio.wait_for(queue.get(), timeout=15)
+                except TimeoutError:
+                    yield ": keep-alive\n\n"
+                else:
+                    yield f"data: {json.dumps(notification)}\n\n"
         finally:
-            try:
-                svc.remove_callback("notification_shown", on_show)
-            except Exception:
-                pass
+            # #region debug-point B:sse-finally
+            report_debug("B", "src/api/routers/notifications.py:event_generator:finally", "SSE subscriber cleanup", {"user_id": user.id})
+            # #endregion
+            unsubscribe(user.id, queue)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -144,6 +138,7 @@ def create_notification(
     db.add(new_notification)
     db.commit()
     db.refresh(new_notification)
+    publish_notification(new_notification)
 
     return {
         "id": new_notification.id,
@@ -183,7 +178,7 @@ def mark_notification_read(
         )
 
     notification.is_read = True
-    notification.read_at = datetime.now(timezone.utc)
+    notification.read_at = datetime.now(UTC)
     db.commit()
 
     return {"ok": True}
@@ -207,7 +202,7 @@ def mark_all_notifications_read(
     count = (
         db.query(Notification)
         .filter(Notification.user_id == current_user.id, Notification.is_read.is_(False))
-        .update({"is_read": True, "read_at": datetime.now(timezone.utc)})
+        .update({"is_read": True, "read_at": datetime.now(UTC)})
     )
     db.commit()
 

@@ -1,17 +1,19 @@
 import sys
-import os
 from pathlib import Path
 
 # Add project root to path
 project_root = str(Path(__file__).parent.parent)
 sys.path.append(project_root)
 
-from src.aac_app.models.database import get_session, Symbol
-from loguru import logger
+from loguru import logger  # noqa: E402
+
+from src.aac_app.db import get_session  # noqa: E402
+from src.aac_app.models import Symbol  # noqa: E402
+
 
 def seed_core_vocabulary():
     """Seed the database with core vocabulary (pronouns, verbs, articles, etc.)"""
-    
+
     core_vocab = [
         # Pronouns
         {"label": "I", "category": "pronouns", "keywords": "i, me, self"},
@@ -23,7 +25,7 @@ def seed_core_vocabulary():
         {"label": "they", "category": "pronouns", "keywords": "they, them, their"},
         {"label": "me", "category": "pronouns", "keywords": "me, my"},
         {"label": "my", "category": "pronouns", "keywords": "my, mine"},
-        
+
         # Verbs
         {"label": "want", "category": "verbs", "keywords": "want, desire, need"},
         {"label": "go", "category": "verbs", "keywords": "go, move, travel"},
@@ -41,7 +43,7 @@ def seed_core_vocabulary():
         {"label": "am", "category": "verbs", "keywords": "am, be"},
         {"label": "was", "category": "verbs", "keywords": "was, be"},
         {"label": "were", "category": "verbs", "keywords": "were, be"},
-        
+
         # Articles & Prepositions
         {"label": "the", "category": "articles", "keywords": "the"},
         {"label": "a", "category": "articles", "keywords": "a, an"},
@@ -53,7 +55,7 @@ def seed_core_vocabulary():
         {"label": "for", "category": "prepositions", "keywords": "for, purpose"},
         {"label": "of", "category": "prepositions", "keywords": "of, belonging"},
         {"label": "with", "category": "prepositions", "keywords": "with, together"},
-        
+
         # Social
         {"label": "yes", "category": "social", "keywords": "yes, agree, correct"},
         {"label": "no", "category": "social", "keywords": "no, disagree, incorrect"},
@@ -79,7 +81,7 @@ def seed_core_vocabulary():
                 session.add(new_symbol)
                 count += 1
                 logger.info(f"Added symbol: {item['label']}")
-        
+
         session.commit()
         logger.success(f"Successfully added {count} core vocabulary symbols")
 

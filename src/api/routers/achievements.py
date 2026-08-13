@@ -1,15 +1,17 @@
+from contextlib import nullcontext
 from datetime import datetime
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
+from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import Achievement, User, UserAchievement, get_session
+from src.aac_app.models import Achievement, User, UserAchievement
 from src.aac_app.services.achievement_system import AchievementSystem
 from src.api import schemas
-from src.api.dependencies import (
+from src.api.deps import (
     get_achievement_system,
     get_current_active_user,
+    get_db,
     get_text,
 )
 
@@ -18,7 +20,7 @@ router = APIRouter()
 
 # ============== Categories Endpoint ==============
 
-@router.get("/categories", response_model=List[str])
+@router.get("/categories", response_model=list[str])
 def get_categories(
     system: AchievementSystem = Depends(get_achievement_system),
     current_user: User = Depends(get_current_active_user),
@@ -32,7 +34,7 @@ def get_categories(
     return system.get_categories()
 
 
-@router.get("/criteria-types", response_model=List[str])
+@router.get("/criteria-types", response_model=list[str])
 def get_criteria_types(
     current_user: User = Depends(get_current_active_user),
 ):
@@ -55,9 +57,11 @@ def get_criteria_types(
 
 # ============== CRUD Endpoints for Achievement Management ==============
 
-@router.get("/", response_model=List[schemas.AchievementFullResponse])
+@router.get("", response_model=list[schemas.AchievementFullResponse])
+@router.get("/", response_model=list[schemas.AchievementFullResponse])
 def list_all_achievements(
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """List all achievements (system + custom). Teachers/admins only."""
     if current_user.user_type not in ["teacher", "admin"]:
@@ -66,10 +70,10 @@ def list_all_achievements(
             detail="Only teachers and admins can manage achievements",
         )
 
-    with get_session() as session:
+    with nullcontext(db) as session:
         achievements = (
             session.query(Achievement)
-            .filter(Achievement.is_active == True)
+            .filter(Achievement.is_active)
             .all()
         )
         return [
@@ -92,10 +96,12 @@ def list_all_achievements(
         ]
 
 
+@router.post("", response_model=schemas.AchievementFullResponse, status_code=201)
 @router.post("/", response_model=schemas.AchievementFullResponse, status_code=201)
 def create_achievement(
     data: schemas.AchievementCreate,
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """Create a custom achievement. Teachers/admins only."""
     if current_user.user_type not in ["teacher", "admin"]:
@@ -104,10 +110,12 @@ def create_achievement(
             detail="Only teachers and admins can create achievements",
         )
 
-    with get_session() as session:
+    with nullcontext(db) as session:
         # If criteria is provided, it's not manual. If no criteria, it's manual.
-        has_criteria = bool(data.criteria_type and data.criteria_value)
-        
+        has_criteria = (
+            data.criteria_type is not None and data.criteria_value is not None
+        )
+
         achievement = Achievement(
             name=data.name,
             description=data.description,
@@ -149,6 +157,7 @@ def update_achievement(
     achievement_id: int,
     data: schemas.AchievementUpdate,
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """Update an achievement. Only the creator or admin can update."""
     if current_user.user_type not in ["teacher", "admin"]:
@@ -157,7 +166,7 @@ def update_achievement(
             detail="Only teachers and admins can update achievements",
         )
 
-    with get_session() as session:
+    with nullcontext(db) as session:
         achievement = session.get(Achievement, achievement_id)
         if not achievement:
             raise HTTPException(status_code=404, detail="Achievement not found")
@@ -189,15 +198,18 @@ def update_achievement(
             achievement.icon = data.icon
         if data.is_active is not None:
             achievement.is_active = data.is_active
-        
+
         # Update criteria if provided
         if data.criteria_type is not None:
             achievement.criteria_type = data.criteria_type
         if data.criteria_value is not None:
             achievement.criteria_value = data.criteria_value
-            
+
         # Recalculate is_manual based on presence of criteria
-        has_criteria = bool(achievement.criteria_type and achievement.criteria_value)
+        has_criteria = (
+            achievement.criteria_type is not None
+            and achievement.criteria_value is not None
+        )
         achievement.is_manual = not has_criteria
 
         session.commit()
@@ -226,6 +238,7 @@ def update_achievement(
 def delete_achievement(
     achievement_id: int,
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """Delete a custom achievement. Only the creator or admin can delete."""
     if current_user.user_type not in ["teacher", "admin"]:
@@ -234,7 +247,7 @@ def delete_achievement(
             detail="Only teachers and admins can delete achievements",
         )
 
-    with get_session() as session:
+    with nullcontext(db) as session:
         achievement = session.get(Achievement, achievement_id)
         if not achievement:
             raise HTTPException(status_code=404, detail="Achievement not found")
@@ -271,6 +284,7 @@ def award_achievement(
     achievement_id: int,
     data: schemas.AchievementAward,
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """Manually award an achievement to a user. Teachers/admins only."""
     if current_user.user_type not in ["teacher", "admin"]:
@@ -279,7 +293,7 @@ def award_achievement(
             detail="Only teachers and admins can award achievements",
         )
 
-    with get_session() as session:
+    with nullcontext(db) as session:
         achievement = session.get(Achievement, achievement_id)
         if not achievement:
             raise HTTPException(status_code=404, detail="Achievement not found")
@@ -326,11 +340,12 @@ def award_achievement(
 
 # ============== Existing User Achievement Endpoints ==============
 
-@router.get("/user/{user_id}", response_model=List[schemas.AchievementResponse])
+@router.get("/user/{user_id}", response_model=list[schemas.AchievementResponse])
 def get_user_achievements(
     user_id: int,
     system: AchievementSystem = Depends(get_achievement_system),
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """Get all achievements for a user"""
     if user_id != current_user.id and current_user.user_type not in ["teacher", "admin"]:
@@ -341,14 +356,15 @@ def get_user_achievements(
             ),
         )
 
-    return system.get_user_achievements(user_id)
+    return system.get_user_achievements(user_id, db=db)
 
 
-@router.post("/user/{user_id}/check", response_model=List[schemas.AchievementResponse])
+@router.post("/user/{user_id}/check", response_model=list[schemas.AchievementResponse])
 def check_achievements(
     user_id: int,
     system: AchievementSystem = Depends(get_achievement_system),
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """Check and award new achievements for a user"""
     if user_id != current_user.id and current_user.user_type != "admin":
@@ -360,10 +376,10 @@ def check_achievements(
         )
 
     # Check for new achievements first to trigger awarding
-    system.check_achievements(user_id)
+    system.check_achievements(user_id, db=db)
 
     # Return the full list of user achievements with earned_at timestamps
-    return system.get_user_achievements(user_id)
+    return system.get_user_achievements(user_id, db=db)
 
 
 @router.get("/user/{user_id}/points", response_model=int)
@@ -371,6 +387,7 @@ def get_user_points(
     user_id: int,
     system: AchievementSystem = Depends(get_achievement_system),
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """Get total points for a user"""
     if user_id != current_user.id and current_user.user_type != "admin":
@@ -381,16 +398,17 @@ def get_user_points(
             ),
         )
 
-    return system.get_user_points(user_id)
+    return system.get_user_points(user_id, db=db)
 
 
-@router.get("/leaderboard", response_model=List[schemas.LeaderboardEntry])
+@router.get("/leaderboard", response_model=list[schemas.LeaderboardEntry])
 def get_leaderboard(
     limit: int = 10,
     system: AchievementSystem = Depends(get_achievement_system),
     current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """Get leaderboard"""
     # Leaderboard is generally public for authenticated users
-    return system.get_leaderboard(limit)
+    return system.get_leaderboard(limit, db=db)
 

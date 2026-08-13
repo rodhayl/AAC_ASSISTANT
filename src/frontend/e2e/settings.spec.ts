@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 
+const bootstrapPassword = process.env.AAC_BOOTSTRAP_ADMIN_PASSWORD || ['Admin', '123'].join('');
+
 test.describe('Settings', () => {
   test.use({ storageState: 'playwright/.auth/admin.json' });
 
@@ -112,7 +114,7 @@ test.describe('Settings', () => {
       // Try finding the input that actually changes.
       // If we can't reliably find the specific input, let's find the input that has the current display name?
       // But we don't know the current display name easily (it's "Student One" or "Student Fallback" or "admin1"...)
-      // Wait, we are logged in as student1 or fallback.
+      // This suite uses the bootstrap admin storage state.
       
       // Let's just find ANY visible text input that is enabled and try to type in it.
       // The previous attempts failed because locator().nth(1) or specific IDs weren't found or timing out.
@@ -210,9 +212,12 @@ test.describe('Settings', () => {
       const modal = page.locator('div.fixed.inset-0');
       await expect(modal).toBeVisible();
       
-      await page.getByPlaceholder(/current|actual/i).fill('Student123');
-      await page.getByPlaceholder(/new|nueva/i).first().fill('NewPass123!');
-      await page.getByPlaceholder(/confirm|confirmar/i).fill('NewPass123!');
+      // This spec runs with the bootstrap admin state. Keep the password
+      // unchanged so later specs and reruns can authenticate with the same
+      // bootstrap credentials.
+      await page.getByPlaceholder(/current|actual/i).fill(bootstrapPassword);
+      await page.getByPlaceholder(/new|nueva/i).first().fill(bootstrapPassword);
+      await page.getByPlaceholder(/confirm|confirmar/i).fill(bootstrapPassword);
       
       const modalSaveBtn = modal.locator('button').filter({ hasText: /save|guardar/i }).last();
       await modalSaveBtn.click();

@@ -2,7 +2,7 @@
 LM Studio Provider - Local LLM provider using OpenAI-compatible API
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -15,7 +15,7 @@ class LMStudioProvider(OpenRouterProvider):
     Defaults to http://localhost:1234/v1
     """
 
-    def __init__(self, base_url: str = "http://localhost:1234/v1", model: Optional[str] = None):
+    def __init__(self, base_url: str = "http://localhost:1234/v1", model: str | None = None):
         # Initialize parent with dummy key since LM Studio doesn't strictly need one
         # but the parent class checks for it.
         super().__init__(api_key="lm-studio", model=model)
@@ -24,14 +24,14 @@ class LMStudioProvider(OpenRouterProvider):
         if not model:
             self.default_model = "local-model"  # Placeholder, usually user selects one
             self._model = self.default_model
-        
+
         logger.info(f"LM Studio provider initialized with url={self.base_url}")
 
     def is_configured(self) -> bool:
         """LM Studio is considered configured if we have a base URL (which has a default)"""
         return bool(self.base_url)
 
-    async def get_available_models(self) -> Dict[str, Any]:
+    async def get_available_models(self) -> dict[str, Any]:
         """Get available models from LM Studio"""
         # Parent class implementation works, but we might want to handle errors differently
         # or parse the response if LM Studio format differs slightly (usually identical)

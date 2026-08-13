@@ -2,6 +2,10 @@ import { test as setup, expect } from '@playwright/test';
 
 const adminFile = 'playwright/.auth/admin.json';
 const studentFile = 'playwright/.auth/student.json';
+const adminUsername = process.env.E2E_ADMIN_USERNAME || 'admin1';
+const adminPassword = process.env.E2E_ADMIN_PASSWORD || 'Admin123';
+const studentUsername = process.env.E2E_STUDENT_USERNAME || 'student1';
+const studentPassword = process.env.E2E_STUDENT_PASSWORD || 'Student123';
 
 setup('authenticate as admin', async ({ page }) => {
   page.on('console', msg => console.log(`[Browser] ${msg.text()}`));
@@ -13,8 +17,8 @@ setup('authenticate as admin', async ({ page }) => {
   await page.reload();
   
   await page.waitForLoadState('networkidle');
-  await page.locator('#username').fill('admin1');
-  await page.locator('#password').fill('Admin123');
+  await page.locator('#username').fill(adminUsername);
+  await page.locator('#password').fill(adminPassword);
   await page.locator('button[type="submit"]').click();
   
   try {
@@ -55,8 +59,8 @@ setup('authenticate as admin', async ({ page }) => {
     
     await expect(page.locator('button[type="submit"]')).toBeVisible();
 
-    await page.locator('#username').fill('student1');
-    await page.locator('#password').fill('Student123');
+    await page.locator('#username').fill(studentUsername);
+    await page.locator('#password').fill(studentPassword);
     await page.locator('button[type="submit"]').click();
     
     try {
@@ -66,52 +70,22 @@ setup('authenticate as admin', async ({ page }) => {
        const error = await page.locator('.bg-red-50').textContent().catch(() => null);
        console.log('Login error:', error);
        
-       // Fallback if error detected OR if we are still on login page
-       if (error || page.url().includes('/login')) {
-          console.log('Login failed with default password, trying NewPass123!...');
-          await page.locator('#password').fill('NewPass123!');
-          await page.locator('button[type="submit"]').click();
-          
-          try {
-              await page.waitForURL('/', { timeout: 10000 });
-          } catch {
-              console.log('Login failed with NewPass123! too. Registering fallback student...');
-              await page.goto('/register');
-              const fallbackUser = `student_fallback_${Date.now()}`;
-              await page.locator('#username').fill(fallbackUser);
-              await page.locator('#displayName').fill('Student Fallback');
-              await page.locator('#password').fill('Student123');
-              // Role student is default
-              await page.locator('button[type="submit"]').click();
-              
-              // Registration successful -> redirects to / -> redirects to /login
-              // So we must login manually
-              await page.waitForTimeout(1000);
-              await page.goto('/login');
-              await page.locator('#username').fill(fallbackUser);
-              await page.locator('#password').fill('Student123');
-              await page.locator('button[type="submit"]').click();
-              
-              await page.waitForURL('/', { timeout: 15000 });
-              console.log(`Registered and logged in as ${fallbackUser}`);
-          }
-       } else {
-            throw new Error(`Student login failed: ${error || 'Unknown error'}`);
-         }
+       // A test setup must fail clearly when its seeded fixture is unavailable.
+       // Creating a random user here masks broken database seeding and makes
+       // subsequent authenticated tests nondeterministic.
+       throw new Error(
+         `Student login failed for seeded fixture ${studentUsername}: ${error || 'Unknown error'}`,
+       );
       }
       
-      // Wait for app to settle - use a reliable element on dashboard
-      await page.waitForTimeout(2000);
-  
+      // Save state only after the authenticated shell is actually rendered.
+      // This avoids persisting a token that redirects immediately back to login.
+      await expect(page).toHaveURL(/\/$/, { timeout: 20000 });
+      await expect(
+        page.getByRole('button', { name: /sign out|cerrar/i }),
+      ).toBeVisible({ timeout: 20000 });
+      await expect(page).not.toHaveURL(/\/login(?:[/?#]|$)/);
+
       console.log(`Current URL: ${page.url()}`);
-      // Check for dashboard element
-      await expect(page.locator('h1, h2, .dashboard-content, .grid').first()).toBeVisible({ timeout: 20000 });
-      
-      // Ensure we are not still on login - wait for login button to disappear
-      // Wait longer and ensure we are really on dashboard
-      await expect(page.getByRole('button', { name: /login/i })).not.toBeVisible({ timeout: 15000 });
-      await expect(page).not.toHaveURL(/login/);
-      
-      // Save state
       await page.context().storageState({ path: studentFile });
     });

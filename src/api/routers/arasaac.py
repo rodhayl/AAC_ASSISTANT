@@ -1,16 +1,16 @@
-import os
 import uuid
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import Symbol, User, UserSettings
+from src import config
+from src.aac_app.models import Symbol, User, UserSettings
 from src.aac_app.services.arasaac import ArasaacService
+from src.aac_app.services.vector_utils import index_symbol
 from src.api import schemas
-from src.api.dependencies import get_current_active_user, get_db, get_text
+from src.api.deps import get_current_active_user, get_db, get_text
 
 router = APIRouter()
 
@@ -18,20 +18,20 @@ router = APIRouter()
 class ArasaacSymbol(BaseModel):
     id: int
     label: str
-    description: Optional[str] = None
-    keywords: Optional[str] = None
+    description: str | None = None
+    keywords: str | None = None
     image_url: str
 
 
 class ImportArasaacRequest(BaseModel):
     arasaac_id: int
     label: str
-    description: Optional[str] = None
+    description: str | None = None
     category: str = "general"
-    keywords: Optional[str] = None
+    keywords: str | None = None
 
 
-@router.get("/search", response_model=List[ArasaacSymbol])
+@router.get("/search", response_model=list[ArasaacSymbol])
 async def search_arasaac(
     q: str, locale: str = "es", current_user: User = Depends(get_current_active_user)
 ):
@@ -79,16 +79,13 @@ async def import_arasaac_symbol(
             )
 
         # Save image locally
-        base_dir = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", "..", "..")
-        )
-        uploads_dir = os.path.join(base_dir, "uploads", "symbols")
-        os.makedirs(uploads_dir, exist_ok=True)
+        uploads_dir = config.UPLOADS_DIR / "symbols"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
 
         filename = f"arasaac_{payload.arasaac_id}_{uuid.uuid4().hex[:8]}.png"
-        file_path = os.path.join(uploads_dir, filename)
+        file_path = uploads_dir / filename
 
-        with open(file_path, "wb") as f:
+        with file_path.open("wb") as f:
             f.write(image_content)
 
         public_path = f"/uploads/symbols/{filename}"
@@ -118,6 +115,7 @@ async def import_arasaac_symbol(
         db.add(db_symbol)
         db.commit()
         db.refresh(db_symbol)
+        index_symbol(db_symbol)
 
         return db_symbol
 

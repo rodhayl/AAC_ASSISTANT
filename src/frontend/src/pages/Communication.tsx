@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 import { useBoardStore } from '../store/boardStore';
 import { useLearningStore } from '../store/learningStore';
-import { SymbolCard } from '../components/board/SymbolCard';
+import { CommunicationGrid } from '../components/board/CommunicationGrid';
 import { SentenceStrip } from '../components/board/SentenceStrip';
 import { Smartbar } from '../components/board/Smartbar';
 import { CommunicationToolbar } from '../components/board/CommunicationToolbar';
@@ -28,34 +28,31 @@ import { useAuthStore } from '../store/authStore';
 import { useToastStore } from '../store/toastStore';
 import { BoardsAndTopicsSidebar } from '../components/learning/BoardsAndTopicsSidebar';
 
+const EMPTY_BOARD_SYMBOLS: BoardSymbol[] = [];
+
 export function Communication() {
   const { t } = useTranslation('boards');
   const [searchParams, setSearchParams] = useSearchParams();
-  const {
-    boards,
-    currentBoard,
-    fetchBoard,
-    fetchBoards,
-    fetchAssignedBoards,
-    isLoading,
-    assignedBoards,
-    hasMore,
-    page
-  } = useBoardStore();
-  const { user } = useAuthStore();
-  const {
-    submitSymbolAnswer,
-    startSession,
-    currentSession,
-    isLoading: isChatLoading
-  } = useLearningStore();
+  const boards = useBoardStore((state) => state.boards);
+  const currentBoard = useBoardStore((state) => state.currentBoard);
+  const fetchBoard = useBoardStore((state) => state.fetchBoard);
+  const fetchBoards = useBoardStore((state) => state.fetchBoards);
+  const fetchAssignedBoards = useBoardStore((state) => state.fetchAssignedBoards);
+  const isListLoading = useBoardStore((state) => state.isListLoading);
+  const isBoardLoading = useBoardStore((state) => state.isBoardLoading);
+  const assignedBoards = useBoardStore((state) => state.assignedBoards);
+  const hasMore = useBoardStore((state) => state.hasMore);
+  const page = useBoardStore((state) => state.page);
+  const user = useAuthStore((state) => state.user);
+  const submitSymbolAnswer = useLearningStore((state) => state.submitSymbolAnswer);
+  const startSession = useLearningStore((state) => state.startSession);
+  const currentSession = useLearningStore((state) => state.currentSession);
+  const isChatLoading = useLearningStore((state) => state.isLoading);
 
   const [activeBoardId, setActiveBoardId] = useState<number | null>(() => {
     const id = searchParams.get('boardId');
     return id ? parseInt(id) : null;
   });
-  // const [currentFolderId, setCurrentFolderId] = useState<number | null>(null); // Unused state
-  // const [viewMode, setViewMode] = useState<'grid' | 'folder'>('grid'); // Unused state
   const [sentence, setSentence] = useState<BoardSymbol[]>([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -67,7 +64,7 @@ export function Communication() {
   const [voiceEnabled, setVoiceEnabled] = useState(user?.settings?.voice_mode_enabled ?? true);
   const [isBoardsOpen, setIsBoardsOpen] = useState(false);
   const [history, setHistory] = useState<number[]>([]);
-  const { addToast } = useToastStore();
+  const addToast = useToastStore((state) => state.addToast);
   const [isStartingSession, setIsStartingSession] = useState(false);
   const lastClickRef = useRef<{ id: number; time: number } | null>(null);
 
@@ -141,19 +138,19 @@ export function Communication() {
       if (user.user_type === 'student') {
         await fetchAssignedBoards(user.id, true);
       } else if (user.user_type === 'admin') {
-        await fetchBoards(undefined, searchQuery, false, 1);
+        await fetchBoards(undefined, undefined, false, 1);
       } else {
-        await fetchBoards(user.id, searchQuery, false, 1);
+        await fetchBoards(user.id, undefined, false, 1);
       }
     };
 
     loadBoards();
-  }, [user, fetchBoards, fetchAssignedBoards, searchQuery]);
+  }, [user, fetchBoards, fetchAssignedBoards]);
 
   const loadMore = () => {
-    if (!isLoading && hasMore && user && user.user_type !== 'student') {
+    if (!isListLoading && hasMore && user && user.user_type !== 'student') {
       // Pagination currently only for fetchBoards, not fetchAssignedBoards
-      fetchBoards(user.user_type === 'admin' ? undefined : user.id, searchQuery, false, page + 1);
+      fetchBoards(user.user_type === 'admin' ? undefined : user.id, undefined, false, page + 1);
     }
   };
 
@@ -359,6 +356,26 @@ export function Communication() {
     });
   }, []);
 
+  const handleRemoveSentenceItem = useCallback((index: number) => {
+    setSentence(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const handleClearSentence = useCallback(() => {
+    setSentence([]);
+  }, []);
+
+  const handleBackspaceSentence = useCallback(() => {
+    setSentence(prev => prev.slice(0, -1));
+  }, []);
+
+  const handleSelectSymbol = useCallback((symbol: BoardSymbol) => {
+    setSentence(prev => [...prev, symbol]);
+    if (voiceEnabled) {
+      const text = symbol.custom_text || symbol.symbol.label;
+      tts.enqueue(text, { key: symbol.id });
+    }
+  }, [voiceEnabled]);
+
   const availableBoards = useMemo(() => {
     return boards.length > 0 ? boards : assignedBoards;
   }, [boards, assignedBoards]);
@@ -372,6 +389,7 @@ export function Communication() {
       return name.includes(q) || desc.includes(q);
     });
   }, [availableBoards, searchQuery]);
+  const hasActiveSearch = searchQuery.trim().length > 0;
 
   // RENDER: Board Selection View
   if (!activeBoardId) {
@@ -402,11 +420,18 @@ export function Communication() {
             </div>
           </div>
 
-          {isLoading && availableBoards.length === 0 ? (
+          {isListLoading && availableBoards.length === 0 && !hasActiveSearch ? (
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
             </div>
-          ) : availableBoards.length === 0 ? (
+          ) : hasActiveSearch && filteredBoards.length === 0 ? (
+            <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+              <LayoutGrid className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
+                {t('noBoardsMatchSearch', 'No boards match your search')}
+              </h3>
+            </div>
+          ) : !hasActiveSearch && availableBoards.length === 0 ? (
             <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
               <LayoutGrid className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
@@ -417,13 +442,6 @@ export function Communication() {
                   ? t('askTeacherForBoards', 'Ask your teacher to assign you a board.')
                   : t('createBoardFirst', 'Create a board in the Boards section first.')}
               </p>
-            </div>
-          ) : filteredBoards.length === 0 ? (
-            <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-              <LayoutGrid className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
-                {t('noBoardsMatchSearch', 'No boards match your search')}
-              </h3>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -505,7 +523,7 @@ export function Communication() {
               })}
 
               {/* Load More Button */}
-              {hasMore && !isLoading && user?.user_type !== 'student' && (
+              {hasMore && !isListLoading && user?.user_type !== 'student' && (
                 <div className="col-span-full flex justify-center py-6">
                   <button
                     onClick={loadMore}
@@ -515,7 +533,7 @@ export function Communication() {
                   </button>
                 </div>
               )}
-              {isLoading && (
+              {isListLoading && (
                 <div className="col-span-full flex justify-center py-6">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
                 </div>
@@ -528,7 +546,7 @@ export function Communication() {
   }
 
   // RENDER: Active Board View (Communication Mode)
-  if (isLoading || !currentBoard) {
+  if (isBoardLoading || !currentBoard) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
@@ -564,9 +582,9 @@ export function Communication() {
         <div className="shrink-0 z-20">
           <SentenceStrip
             symbols={sentence}
-            onRemove={(idx) => setSentence(prev => prev.filter((_, i) => i !== idx))}
-            onClear={() => setSentence([])}
-            onBackspace={() => setSentence(prev => prev.slice(0, -1))}
+            onRemove={handleRemoveSentenceItem}
+            onClear={handleClearSentence}
+            onBackspace={handleBackspaceSentence}
             onSpeak={handleSpeakSentence}
             onSpeakItem={handleSpeakText}
             onReorder={handleReorder}
@@ -578,44 +596,18 @@ export function Communication() {
         {/* Smartbar (Suggestions) */}
         <Smartbar
           currentSentence={sentence}
-          onSelectSymbol={(symbol) => {
-            setSentence(prev => [...prev, symbol]);
-            if (voiceEnabled) {
-              const text = symbol.custom_text || symbol.symbol.label;
-              tts.enqueue(text, { key: symbol.id });
-            }
-          }}
+          onSelectSymbol={handleSelectSymbol}
           boardId={currentBoard?.id}
         />
 
         {/* Grid Area */}
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-2 custom-scrollbar relative min-h-0 w-full">
-          <div
-            className="grid gap-2 mx-auto max-w-7xl pb-2"
-            style={{
-              gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-              gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
-              minHeight: '100%'
-            }}
-          >
-            {Array.from({ length: rows }).map((_, row) => (
-              Array.from({ length: cols }).map((_, col) => {
-                const symbol = currentBoard.symbols?.find(s => s.position_x === col && s.position_y === row);
-                return (
-                  <div key={`${col}-${row}`} className="w-full h-full min-h-[60px] sm:min-h-[70px] aspect-[1/0.8]">
-                    {symbol ? (
-                      <SymbolCard
-                        boardSymbol={symbol}
-                        onClick={handleSymbolClick}
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-gray-200/10 dark:bg-gray-800/10 rounded-xl border border-dashed border-gray-300/20 dark:border-gray-700/20" />
-                    )}
-                  </div>
-                );
-              })
-            ))}
-          </div>
+          <CommunicationGrid
+            rows={rows}
+            cols={cols}
+            symbols={currentBoard.symbols ?? EMPTY_BOARD_SYMBOLS}
+            onSymbolClick={handleSymbolClick}
+          />
         </main>
 
         {/* Communication Toolbar (Bottom) */}
@@ -675,13 +667,7 @@ export function Communication() {
       <SymbolSearchModal
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
-        onSelectSymbol={(symbol) => {
-          setSentence(prev => [...prev, symbol]);
-          if (voiceEnabled) {
-            const text = symbol.custom_text || symbol.symbol.label;
-            tts.enqueue(text, { key: symbol.id });
-          }
-        }}
+        onSelectSymbol={handleSelectSymbol}
       />
     </div>
   );

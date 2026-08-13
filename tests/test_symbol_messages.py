@@ -2,15 +2,16 @@
 End-to-end tests for symbol-first (AAC symbol) submissions.
 """
 
-import pytest
-from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, Mock
 
-from src.api.main import app
-from src.api.dependencies import get_learning_service
-from src.aac_app.services.learning_companion_service import LearningCompanionService
-from src.aac_app.models.database import LearningSession
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import sessionmaker
 
+from src.aac_app.models import LearningSession, SymbolUsageLog
+from src.aac_app.services.learning_companion_service import LearningCompanionService
+from src.api.deps import get_learning_service
+from src.api.main import app
 
 client = TestClient(app)
 
@@ -26,12 +27,10 @@ def override_learning_service():
     llm = Mock()
     llm.generate = AsyncMock(return_value="Mock tutor reply.")
     speech = Mock()
-    tts = Mock()
 
     service = LearningCompanionService(
         llm_provider=llm,
         speech_provider=speech,
-        tts_provider=tts,
         default_max_tokens=256,
         default_temperature=0.4,
     )
@@ -44,7 +43,9 @@ def override_learning_service():
     app.dependency_overrides.pop(get_learning_service, None)
 
 
-def test_symbol_answer_stores_metadata_and_marks_mode(test_db_session, admin_user, admin_token, override_learning_service):
+def test_symbol_answer_stores_metadata_and_marks_mode(
+    test_db_engine, test_db_session, admin_user, admin_token, override_learning_service
+):
     """Posting symbols should succeed and persist mode='symbol' with symbol metadata."""
     # Start a session
     start = client.post(
@@ -82,3 +83,14 @@ def test_symbol_answer_stores_metadata_and_marks_mode(test_db_session, admin_use
         entry.get("mode") == "symbol" and len(entry.get("symbols") or []) == 3
         for entry in history
     )
+
+    separate_session = sessionmaker(bind=test_db_engine)()
+    try:
+        assert (
+            separate_session.query(SymbolUsageLog)
+            .filter(SymbolUsageLog.session_id == session_id)
+            .count()
+            == 3
+        )
+    finally:
+        separate_session.close()

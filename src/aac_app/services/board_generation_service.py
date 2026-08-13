@@ -1,7 +1,6 @@
 import ast
 import json
 import re
-from typing import Dict, List, Union
 
 from loguru import logger
 
@@ -13,9 +12,9 @@ def _normalize_label(value: str) -> str:
     return " ".join((value or "").strip().lower().split())
 
 
-def _dedupe_items_by_label(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
+def _dedupe_items_by_label(items: list[dict[str, str]]) -> list[dict[str, str]]:
     seen: set[str] = set()
-    deduped: List[Dict[str, str]] = []
+    deduped: list[dict[str, str]] = []
     for item in items:
         label = _normalize_label(str(item.get("label", "")))
         if not label or label in seen:
@@ -63,7 +62,7 @@ def _extract_first_json_array(text: str) -> str | None:
 class BoardGenerationService:
     """Service for generating communication board content using AI"""
 
-    def __init__(self, llm_provider: Union[OllamaProvider, OpenRouterProvider]):
+    def __init__(self, llm_provider: OllamaProvider | OpenRouterProvider):
         self.llm = llm_provider
         self.provider_type = (
             "openrouter" if isinstance(llm_provider, OpenRouterProvider) else "ollama"
@@ -82,7 +81,7 @@ class BoardGenerationService:
         regenerate: bool = False,
         language: str = "en",
         recursion_depth: int = 0,
-    ) -> List[Dict[str, str]]:
+    ) -> list[dict[str, str]]:
         """
         Generate items for a communication board based on topic and description.
         Returns a list of dictionaries with 'label', 'symbol_key', and 'color'.
@@ -172,7 +171,7 @@ class BoardGenerationService:
                 # Accept partial responses: avoid extra LLM calls during board creation.
                 # The caller can request regeneration if they need more items.
                 pass
-            
+
             if not valid_items:
                 logger.warning(f"AI response contained no valid items (fail_silently={fail_silently})")
                 if fail_silently:
@@ -186,130 +185,144 @@ class BoardGenerationService:
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse AI response as JSON: {e}")
             logger.debug(f"Raw response: {response}")
-
-            extracted = _extract_first_json_array(clean_response)
-            if extracted:
-                try:
-                    parsed = json.loads(extracted)
-                    if isinstance(parsed, dict):
-                        parsed = [parsed]
-                    if isinstance(parsed, list):
-                        parsed_valid: List[Dict[str, str]] = []
-                        for item in parsed:
-                            if isinstance(item, dict) and "label" in item:
-                                if "symbol_key" not in item:
-                                    item["symbol_key"] = item["label"].lower().replace(" ", "_")
-                                if "color" not in item:
-                                    item["color"] = "#FFFFFF"
-                                parsed_valid.append(item)
-                        parsed_valid = _dedupe_items_by_label(parsed_valid)
-                        if parsed_valid:
-                            logger.warning("Recovered valid JSON array from partial AI response.")
-                            return parsed_valid[:item_count]
-                except Exception:
-                    pass
-
-            # Fallback 1: try more permissive parsing (single quotes / Python-style)
-            fallback_items: List[Dict[str, str]] = []
-            try:
-                fallback_items = ast.literal_eval(clean_response)
-                if isinstance(fallback_items, dict):
-                    fallback_items = [fallback_items]
-            except Exception:
-                fallback_items = []
-
-            # Fallback 1b: try trimming incomplete JSON (missing closing ])
-            if not fallback_items:
-
-                def _try_load(txt: str):
-                    try:
-                        data = json.loads(txt)
-                        if isinstance(data, dict):
-                            return [data]
-                        return data
-                    except Exception:
-                        return None
-
-                candidate_texts = []
-                if clean_response.startswith(
-                    "["
-                ) and not clean_response.rstrip().endswith("]"):
-                    candidate_texts.append(clean_response.rstrip() + "]")
-                # Trim to last complete object
-                if "{" in clean_response and "}" in clean_response:
-                    first = clean_response.find("[")
-                    last = clean_response.rfind("}")
-                    if first != -1 and last != -1 and last > first:
-                        trimmed = clean_response[first : last + 1]
-                        if not trimmed.endswith("]"):
-                            trimmed = trimmed + "]"
-                        candidate_texts.append(trimmed)
-
-                for cand in candidate_texts:
-                    loaded = _try_load(cand)
-                    if loaded:
-                        fallback_items = (
-                            loaded if isinstance(loaded, list) else [loaded]
-                        )
-                        break
-
-            # Fallback 1c: extract any object-like snippets and parse individually
-            if not fallback_items:
-                object_strings = re.findall(r"\{[^{}]*\}", clean_response)
-                parsed_objects = []
-                for obj_str in object_strings:
-                    try:
-                        parsed = json.loads(obj_str)
-                        if isinstance(parsed, dict):
-                            parsed_objects.append(parsed)
-                    except Exception:
-                        continue
-                if parsed_objects:
-                    fallback_items = parsed_objects
-
-            # Fallback 2: extract bullet-like lines into label/color/key guesses
-            if not fallback_items:
-                fallback_items = []
-                for line in clean_response.splitlines():
-                    stripped = line.strip(" -*\t")
-                    if not stripped:
-                        continue
-                    # Accept patterns like "Label - keyword" or "1. Label"
-                    parts = stripped.split(" - ", 1)
-                    label = parts[0]
-                    symbol_key = (
-                        parts[1] if len(parts) > 1 else label.lower().replace(" ", "_")
-                    )
-                    if label:
-                        fallback_items.append(
-                            {
-                                "label": label.strip(),
-                                "symbol_key": symbol_key.strip(),
-                                "color": "#E8F5E9",
-                            }
-                        )
-
-            valid_items = []
-            for item in fallback_items:
-                if isinstance(item, dict) and "label" in item:
-                    if "symbol_key" not in item:
-                        item["symbol_key"] = item["label"].lower().replace(" ", "_")
-                    if "color" not in item:
-                        item["color"] = "#FFFFFF"
-                    valid_items.append(item)
-
-            if valid_items:
-                logger.warning("Used fallback parsing for AI response (non-JSON).")
-                valid_items = _dedupe_items_by_label(valid_items)
-                return valid_items[:item_count]
-
-            if fail_silently:
-                return []
-            raise ValueError(
-                "AI response was not valid JSON and no fallback could be parsed."
+            return self._recover_items_from_response(
+                clean_response, item_count, fail_silently
             )
         except Exception as e:
             logger.error(f"Error generating board items: {e}")
             if fail_silently:
                 return []
             raise
+
+    def _recover_items_from_response(
+        self,
+        clean_response: str,
+        item_count: int,
+        fail_silently: bool,
+    ) -> list[dict[str, str]]:
+        """Salvage board items from a non-JSON LLM response.
+
+        Tries progressively more permissive fallbacks: an embedded JSON
+        array, Python-style literals, trimmed/incomplete JSON, individual
+        object snippets, and finally bullet-like lines. Returns the parsed
+        items, an empty list when ``fail_silently`` and nothing matched, or
+        raises ``ValueError`` when recovery is impossible.
+        """
+        # Try a JSON array embedded in the response text
+        extracted = _extract_first_json_array(clean_response)
+        if extracted:
+            try:
+                parsed = json.loads(extracted)
+                if isinstance(parsed, dict):
+                    parsed = [parsed]
+                if isinstance(parsed, list):
+                    parsed_valid: list[dict[str, str]] = []
+                    for item in parsed:
+                        if isinstance(item, dict) and "label" in item:
+                            if "symbol_key" not in item:
+                                item["symbol_key"] = item["label"].lower().replace(" ", "_")
+                            if "color" not in item:
+                                item["color"] = "#FFFFFF"
+                            parsed_valid.append(item)
+                    parsed_valid = _dedupe_items_by_label(parsed_valid)
+                    if parsed_valid:
+                        logger.warning("Recovered valid JSON array from partial AI response.")
+                        return parsed_valid[:item_count]
+            except Exception:
+                pass
+
+        # Fallback 1: try more permissive parsing (single quotes / Python-style)
+        fallback_items: list[dict[str, str]] = []
+        try:
+            fallback_items = ast.literal_eval(clean_response)
+            if isinstance(fallback_items, dict):
+                fallback_items = [fallback_items]
+        except Exception:
+            fallback_items = []
+
+        # Fallback 1b: try trimming incomplete JSON (missing closing ])
+        if not fallback_items:
+
+            def _try_load(txt: str):
+                try:
+                    data = json.loads(txt)
+                    if isinstance(data, dict):
+                        return [data]
+                    return data
+                except Exception:
+                    return None
+
+            candidate_texts = []
+            if clean_response.startswith(
+                "["
+            ) and not clean_response.rstrip().endswith("]"):
+                candidate_texts.append(clean_response.rstrip() + "]")
+            # Trim to last complete object
+            if "{" in clean_response and "}" in clean_response:
+                first = clean_response.find("[")
+                last = clean_response.rfind("}")
+                if first != -1 and last != -1 and last > first:
+                    trimmed = clean_response[first : last + 1]
+                    if not trimmed.endswith("]"):
+                        trimmed = trimmed + "]"
+                    candidate_texts.append(trimmed)
+
+            for cand in candidate_texts:
+                loaded = _try_load(cand)
+                if loaded:
+                    fallback_items = loaded if isinstance(loaded, list) else [loaded]
+                    break
+
+        # Fallback 1c: extract any object-like snippets and parse individually
+        if not fallback_items:
+            object_strings = re.findall(r"\{[^{}]*\}", clean_response)
+            parsed_objects = []
+            for obj_str in object_strings:
+                try:
+                    parsed = json.loads(obj_str)
+                    if isinstance(parsed, dict):
+                        parsed_objects.append(parsed)
+                except Exception:
+                    continue
+            if parsed_objects:
+                fallback_items = parsed_objects
+
+        # Fallback 2: extract bullet-like lines into label/color/key guesses
+        if not fallback_items:
+            fallback_items = []
+            for line in clean_response.splitlines():
+                stripped = line.strip(" -*\t")
+                if not stripped:
+                    continue
+                # Accept patterns like "Label - keyword" or "1. Label"
+                parts = stripped.split(" - ", 1)
+                label = parts[0]
+                symbol_key = parts[1] if len(parts) > 1 else label.lower().replace(" ", "_")
+                if label:
+                    fallback_items.append(
+                        {
+                            "label": label.strip(),
+                            "symbol_key": symbol_key.strip(),
+                            "color": "#E8F5E9",
+                        }
+                    )
+
+        valid_items = []
+        for item in fallback_items:
+            if isinstance(item, dict) and "label" in item:
+                if "symbol_key" not in item:
+                    item["symbol_key"] = item["label"].lower().replace(" ", "_")
+                if "color" not in item:
+                    item["color"] = "#FFFFFF"
+                valid_items.append(item)
+
+        if valid_items:
+            logger.warning("Used fallback parsing for AI response (non-JSON).")
+            valid_items = _dedupe_items_by_label(valid_items)
+            return valid_items[:item_count]
+
+        if fail_silently:
+            return []
+        raise ValueError(
+            "AI response was not valid JSON and no fallback could be parsed."
+        )

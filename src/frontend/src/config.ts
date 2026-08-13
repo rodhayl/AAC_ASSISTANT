@@ -3,14 +3,14 @@
  * Values are loaded from the backend /api/config endpoint or use defaults.
  */
 
-// Default configuration (should match env.properties)
+// Default configuration (should match .env.example and backend release metadata)
 const defaults = {
-  BACKEND_PORT: Number(import.meta.env.VITE_BACKEND_PORT) || 8090,
+  BACKEND_PORT: Number(import.meta.env.VITE_BACKEND_PORT) || 8086,
   FRONTEND_PORT: Number(import.meta.env.VITE_FRONTEND_PORT) || 5176,
   API_BASE_URL: import.meta.env.VITE_API_BASE_URL || '',
   OLLAMA_BASE_URL: import.meta.env.VITE_OLLAMA_BASE_URL || 'http://localhost:11434',
   APP_NAME: import.meta.env.VITE_APP_NAME || 'AAC Assistant',
-  APP_VERSION: import.meta.env.VITE_APP_VERSION || '1.0.0',
+  APP_VERSION: import.meta.env.VITE_APP_VERSION || '2.0.0',
 };
 
 function getDefaultApiBaseUrl() {
@@ -52,27 +52,17 @@ export const config = {
   },
   
   get BACKEND_URL() {
+    if (typeof window === 'undefined') {
+      return `http://127.0.0.1:${defaults.BACKEND_PORT}`;
+    }
+
+    // Vite does not proxy /docs, so point the navbar link at the backend in
+    // development. Production serves the SPA and docs from the same origin.
+    if (window.location.port === String(defaults.FRONTEND_PORT)) {
+      return `${window.location.protocol}//${window.location.hostname}:${defaults.BACKEND_PORT}`;
+    }
     return '';
   },
 };
-
-// Load configuration from backend (call this on app init if needed)
-export async function loadConfig(): Promise<void> {
-  try {
-    const configUrl = `${(defaults.API_BASE_URL || '/api').replace(/\/$/, '')}/config`;
-    const response = await fetch(configUrl);
-    if (response.ok) {
-      const data = await response.json();
-      if (data.backend_port) config.BACKEND_PORT = data.backend_port;
-      if (data.frontend_port) config.FRONTEND_PORT = data.frontend_port;
-      if (data.ollama_base_url) config.OLLAMA_BASE_URL = data.ollama_base_url;
-      if (data.app_name) config.APP_NAME = data.app_name;
-      if (data.app_version) config.APP_VERSION = data.app_version;
-      if (data.default_locale) config.DEFAULT_LOCALE = data.default_locale;
-    }
-  } catch {
-    // Use defaults if config endpoint unavailable
-  }
-}
 
 export default config;

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Edit, Check, X } from 'lucide-react';
 import { assetUrl } from '../lib/utils';
+import { glossSymbolUtterance } from '../lib/gloss';
+import { getCategoryStyle } from '../lib/symbolCategoryStyle';
 
 interface SymbolItem {
   id: number;
@@ -26,32 +28,12 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
   };
 
   const glossSymbols = (): string => {
-    if (editedSymbols.length === 0) return '';
-    
-    // Use same glossing logic as main Learning.tsx
-    const joined = editedSymbols.map(s => s.label).join(' ');
-    if (!joined) return '';
-    
-    const capped = joined.charAt(0).toUpperCase() + joined.slice(1);
-    const needsPeriod = !/[.!?]$/.test(capped);
-    return needsPeriod ? `${capped}.` : capped;
+    return glossSymbolUtterance(editedSymbols);
   };
 
   const handleSave = () => {
     const glossedText = glossSymbols();
     onUpdate(editedSymbols, glossedText);
-  };
-
-  const getCategoryColor = (category?: string): string => {
-    const colors: Record<string, string> = {
-      'action': 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-700',
-      'object': 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-700',
-      'person': 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-700',
-      'feeling': 'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 border-pink-200 dark:border-pink-700',
-      'place': 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 border-yellow-200 dark:border-yellow-700',
-      'question': 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-700',
-    };
-    return colors[category || ''] || 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border-indigo-100 dark:border-indigo-700';
   };
 
   return (
@@ -71,7 +53,9 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
             {editedSymbols.map((sym, idx) => (
               <div
                 key={`edit-${sym.id}-${idx}`}
-                className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs border ${getCategoryColor(sym.category)}`}
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs border ${
+                  getCategoryStyle(sym.category).badgeBg
+                } ${getCategoryStyle(sym.category).badgeText} ${getCategoryStyle(sym.category).border}`}
               >
                 {sym.image_path && (
                   <img

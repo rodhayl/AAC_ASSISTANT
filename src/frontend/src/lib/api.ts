@@ -4,10 +4,74 @@ import { useAuthStore } from '../store/authStore';
 import { config } from '../config';
 import { useOfflineStore } from '../store/offlineStore';
 
+type ApiError = {
+  message?: unknown;
+  response?: {
+    data?: {
+      detail?: unknown;
+      error?: unknown;
+      message?: unknown;
+    };
+  };
+};
+
+export function extractError(error: unknown, fallback: string): string {
+  const apiError = error as ApiError;
+  const detail = apiError?.response?.data?.detail;
+
+  if (typeof detail === 'string') return detail;
+
+  if (Array.isArray(detail)) {
+    return detail
+      .map((entry: unknown) => {
+        if (
+          entry &&
+          typeof entry === 'object' &&
+          'msg' in entry &&
+          typeof (entry as { msg?: unknown }).msg === 'string'
+        ) {
+          return (entry as { msg: string }).msg;
+        }
+        return String(entry);
+      })
+      .join(', ');
+  }
+
+  if (typeof detail === 'object' && detail !== null) {
+    return JSON.stringify(detail);
+  }
+
+  const responseError = apiError?.response?.data?.error;
+  if (typeof responseError === 'string' && responseError) return responseError;
+
+  const responseMessage = apiError?.response?.data?.message;
+  if (typeof responseMessage === 'string' && responseMessage) return responseMessage;
+
+  return typeof apiError?.message === 'string' && apiError.message ? apiError.message : fallback;
+}
+
 const api = axios.create({
   baseURL: config.API_BASE_URL,
   timeout: 30000, // 30 seconds timeout
 });
+
+const AUTH_FLOW_ENDPOINTS = new Set([
+  '/auth/token',
+  '/auth/refresh',
+  '/auth/change-password',
+]);
+
+export function isAuthFlowEndpoint(url?: string): boolean {
+  if (!url) return false;
+
+  try {
+    const pathname = new URL(url, 'http://localhost').pathname
+      .replace(/^\/api(?=\/)/, '');
+    return AUTH_FLOW_ENDPOINTS.has(pathname);
+  } catch {
+    return false;
+  }
+}
 
 let offline = typeof navigator !== 'undefined' ? !navigator.onLine : false
 const queue: Array<AxiosRequestConfig> = []
@@ -59,7 +123,7 @@ api.interceptors.response.use(
     }
 
     const status = error?.response?.status;
-    if (status === 401) {
+    if (status === 401 && !isAuthFlowEndpoint(error.config?.url)) {
       try {
         const { logout } = useAuthStore.getState();
         logout();

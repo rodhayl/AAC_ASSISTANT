@@ -1,13 +1,18 @@
-from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from src.aac_app.models.database import StudentTeacher, User
+from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.user_service import UserService
-from src.api.dependencies import get_current_active_user, get_db
-from src.api.schemas import ResetPasswordRequest, StudentAssignRequest, UserCreate, UserResponse, UserUpdate
+from src.api.deps import get_current_active_user, get_db
+from src.api.schemas import (
+    ResetPasswordRequest,
+    StudentAssignRequest,
+    UserCreate,
+    UserResponse,
+    UserUpdate,
+)
 
 router = APIRouter()
 user_service = UserService()
@@ -29,15 +34,20 @@ def update_current_user(
     return user_service.update_user(db, current_user.id, user_update)
 
 
-@router.get("/students", response_model=List[UserResponse])
+@router.get("/students", response_model=list[UserResponse])
 def get_students(
-    current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)
+    skip: int = Query(0, ge=0),
+    limit: int = Query(500, ge=1, le=500),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
-    """Get all students (or assigned students for teachers)"""
+    """Get students (or assigned students for teachers), paginated."""
     if current_user.user_type == "admin":
-        return user_service.get_all_students(db)
+        return user_service.get_all_students(db, skip=skip, limit=limit)
     elif current_user.user_type == "teacher":
-        return user_service.get_assigned_students(db, current_user.id)
+        return user_service.get_assigned_students(
+            db, current_user.id, skip=skip, limit=limit
+        )
     else:
         # Students can only see themselves? Or no access?
         # For now, return self if student

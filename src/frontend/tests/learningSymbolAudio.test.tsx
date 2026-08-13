@@ -11,11 +11,19 @@ vi.mock('../src/store/learningStore', () => {
   const mockStore = {
     messages: [],
     isLoading: false,
+    error: null,
     currentSession: null,
+    currentQuestion: null,
+    lastAnswer: null,
+    revealedAnswer: null,
+    progressStats: null,
+    lastSessionSummary: null,
     sessionHistory: [],
     isLoadingHistory: false,
     providerInUse: undefined,
     providerHistory: [],
+    showAdminReasoning: false,
+    setShowAdminReasoning: vi.fn(),
     startSession,
     submitAnswer,
     submitSymbolAnswer: submitAnswer,
@@ -23,11 +31,18 @@ vi.mock('../src/store/learningStore', () => {
     fetchSessionHistory: vi.fn(),
     loadSession: vi.fn(),
     askQuestion: vi.fn(),
+    askNextQuestion: vi.fn(),
     endSession: vi.fn(),
     clearError: vi.fn(),
+    clearSessionSummary: vi.fn(),
+    autoAskEnabled: true,
+    setAutoAskEnabled: vi.fn(),
+    difficultyOverride: 'adaptive',
+    setDifficultyOverride: vi.fn(),
   };
   return {
-    useLearningStore: () => mockStore,
+    useLearningStore: (selector?: (state: typeof mockStore) => unknown) =>
+      selector ? selector(mockStore) : mockStore,
     glossSymbolUtterance: (symbols: { label: string }[]) => symbols.map(s => s.label).join(' '),
     __startSession: startSession,
     __submitAnswer: submitAnswer,
@@ -36,9 +51,12 @@ vi.mock('../src/store/learningStore', () => {
   };
 });
 
-vi.mock('../src/store/authStore', () => ({
-  useAuthStore: () => ({ user: { id: 1, user_type: 'teacher', display_name: 'Teacher' } }),
-}));
+vi.mock('../src/store/authStore', () => {
+  const state = { user: { id: 1, user_type: 'teacher', display_name: 'Teacher' } };
+  const useAuthStore = (selector?: (value: typeof state) => unknown) =>
+    selector ? selector(state) : state;
+  return { useAuthStore };
+});
 
 vi.mock('../src/lib/api', () => {
   return {
@@ -51,6 +69,16 @@ vi.mock('../src/lib/api', () => {
     },
   };
 });
+
+const { mockTtsEnqueue, mockLanguage } = vi.hoisted(() => ({
+  mockTtsEnqueue: vi.fn(),
+  mockLanguage: { value: 'en' },
+}));
+vi.mock('../src/lib/tts', () => ({
+  tts: {
+    enqueue: mockTtsEnqueue,
+  },
+}));
 
 // Helper to access the mocked api module
 const getMockedApi = async () =>
@@ -78,7 +106,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
     i18n: {
-      language: 'en',
+      language: mockLanguage.value,
       changeLanguage: () => new Promise(() => {}),
     },
   }),
@@ -115,6 +143,8 @@ describe('Learning symbol-first and audio-first flows', () => {
     api.post?.mockResolvedValue({ data: [] });
     __startSession.mockReset();
     __submitAnswer.mockReset();
+    mockTtsEnqueue.mockReset();
+    mockLanguage.value = 'en';
     
     // Reset store state
     const store = (await import('../src/store/learningStore')).__mockStore;
@@ -183,6 +213,46 @@ describe('Learning symbol-first and audio-first flows', () => {
 
     // reset
     store.currentSession = null;
+  });
+
+  it('symbol-first: Speak only uses the shared TTS queue with the active locale', async () => {
+    render(<Learning />);
+    await act(async () => {
+      fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+    });
+    await waitFor(() => expect(screen.getByText('Hello')).toBeInTheDocument());
+    await act(async () => {
+      fireEvent.click(screen.getByText('Hello'));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByText('speakOnly'));
+    });
+
+    expect(mockTtsEnqueue).toHaveBeenCalledWith('Hello.', {
+      rate: 0.9,
+      lang: 'en-US',
+    });
+  });
+
+  it('symbol-first: Speak only passes the Spanish locale to the shared TTS queue', async () => {
+    mockLanguage.value = 'es';
+    render(<Learning />);
+    await act(async () => {
+      fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+    });
+    await waitFor(() => expect(screen.getByText('Hello')).toBeInTheDocument());
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Hello'));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByText('speakOnly'));
+    });
+
+    expect(mockTtsEnqueue).toHaveBeenCalledWith('Hello.', {
+      rate: 0.9,
+      lang: 'es-ES',
+    });
   });
 
   it('audio-first: clicking mic starts default session when none active', async () => {

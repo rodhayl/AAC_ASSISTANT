@@ -11,8 +11,9 @@ interface ContextModalProps {
 
 export function ContextModal({ isOpen, onClose }: ContextModalProps) {
   const { t } = useTranslation('boards');
-  const { startSession, isLoading } = useLearningStore();
-  const { user } = useAuthStore();
+  const startSession = useLearningStore((state) => state.startSession);
+  const isLoading = useLearningStore((state) => state.isLoading);
+  const user = useAuthStore((state) => state.user);
   
   const [topic, setTopic] = useState('');
   const [purpose, setPurpose] = useState('');

@@ -4,12 +4,15 @@ import os
 import re
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any
 
 import requests
 
 sys.path.insert(0, os.path.dirname(__file__))
+import contextlib
+
 from cdp_harness import CDP, get_page_target  # noqa: E402
 
 
@@ -58,7 +61,7 @@ def _api_token(acc: Account) -> str:
     return data["access_token"]
 
 
-def _api_get(path: str, *, token: str, params: Optional[dict[str, Any]] = None) -> Any:
+def _api_get(path: str, *, token: str, params: dict[str, Any] | None = None) -> Any:
     r = requests.get(
         f"{API_BASE}{path}",
         params=params,
@@ -73,8 +76,8 @@ def _api_post(
     path: str,
     *,
     token: str,
-    params: Optional[dict[str, Any]] = None,
-    json_body: Optional[dict[str, Any]] = None,
+    params: dict[str, Any] | None = None,
+    json_body: dict[str, Any] | None = None,
 ) -> Any:
     r = requests.post(
         f"{API_BASE}{path}",
@@ -91,8 +94,8 @@ def _api_put(
     path: str,
     *,
     token: str,
-    params: Optional[dict[str, Any]] = None,
-    json_body: Optional[dict[str, Any]] = None,
+    params: dict[str, Any] | None = None,
+    json_body: dict[str, Any] | None = None,
 ) -> Any:
     r = requests.put(
         f"{API_BASE}{path}",
@@ -134,10 +137,8 @@ async def ensure_ai_settings_configured() -> None:
 def _ensure_dir_empty(path: str) -> None:
     os.makedirs(path, exist_ok=True)
     for name in os.listdir(path):
-        try:
+        with contextlib.suppress(OSError):
             os.remove(os.path.join(path, name))
-        except OSError:
-            pass
 
 
 async def assert_path(cdp: CDP, pattern: str, timeout_s: float = 15):
@@ -304,16 +305,14 @@ async def ensure_student1_setup() -> dict[str, Any]:
     teacher_id = int(teacher["id"])
 
     # Ensure teacher1 can see/manage student1 in GUI flows.
-    try:
+    with contextlib.suppress(Exception):
+        # OK if already assigned or endpoint isn't critical for student flows.
         await asyncio.to_thread(
             _api_post,
             "/users/assign-student",
             token=token,
             json_body={"student_id": student_id, "teacher_id": teacher_id},
         )
-    except Exception:
-        # OK if already assigned or endpoint isn't critical for student flows.
-        pass
 
     symbols = await asyncio.to_thread(_api_get, "/boards/symbols", token=token, params={"limit": 50})
     sym_ids = [int(s["id"]) for s in symbols if "id" in s]
@@ -843,10 +842,8 @@ async def scenario_admins_management(cdp: CDP):
         await_promise=False,
     )
     await asyncio.sleep(0.5)
-    try:
+    with contextlib.suppress(Exception):
         await cdp.click_text(r"Confirm|Delete|Eliminar|Confirmar", tag="button")
-    except Exception:
-        pass
     await asyncio.sleep(1)
 
     await logout(cdp)
@@ -865,7 +862,7 @@ async def scenario_settings_export_import_and_modes(cdp: CDP):
     await cdp.click_text(r"Export My Data|Exportar", tag="button")
 
     start = time.time()
-    exported_file: Optional[str] = None
+    exported_file: str | None = None
     while time.time() - start < 20:
         files = [f for f in os.listdir(download_dir) if f.endswith(".json") and "aac-data" in f]
         if files:
@@ -962,10 +959,8 @@ async def scenario_offline_conflicts(cdp: CDP):
     if not ok:
         raise StepFailed("Could not click delete on the target board card while offline")
     await asyncio.sleep(0.5)
-    try:
+    with contextlib.suppress(Exception):
         await cdp.click_text(r"Delete|Eliminar", tag="button")
-    except Exception:
-        pass
 
     await asyncio.to_thread(_api_delete, f"/boards/{board_id}", token=token)
 

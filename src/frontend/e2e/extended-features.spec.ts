@@ -51,29 +51,6 @@ test.describe('Extended Features', () => {
     });
   });
 
-  test.describe('Settings Extended', () => {
-    test.use({ storageState: 'playwright/.auth/admin.json' });
-
-    test('should toggle fallback AI configuration', async ({ page }) => {
-      await page.goto('/settings');
-      
-      // Verify fallback UI is present
-       await expect(page.getByText(/fallback ai configuration|configuración de respaldo/i)).toBeVisible();
-       
-       // Check if the toggle/setup section exists (might be text "Setup Fallback" or similar)
-       // Don't rely on specific button text "enable fallback" if it varies
-       const fallbackSection = page.locator('div, label').filter({ hasText: /fallback provider|proveedor de respaldo/i }).first();
-       await expect(fallbackSection).toBeVisible();
-      
-      // If the section is collapsible, toggle it
-      // Just verify inputs exist
-      const fallbackProviderSelect = page.locator('div').filter({ hasText: /fallback provider/i }).locator('button, select').first();
-      if (await fallbackProviderSelect.isVisible()) {
-          await expect(fallbackProviderSelect).toBeVisible();
-      }
-    });
-  });
-
   test.describe('Learning History', () => {
     test.use({ storageState: 'playwright/.auth/student.json' });
 

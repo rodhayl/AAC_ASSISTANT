@@ -6,11 +6,12 @@ Templates define default configurations that can be customized per-student.
 """
 
 import copy
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 from loguru import logger
+
+from src import config
 
 
 class TemplateManager:
@@ -26,23 +27,23 @@ class TemplateManager:
     - high_energy: Enthusiastic, motivating
     """
 
-    # Path to templates directory
-    TEMPLATE_DIR = Path(__file__).parent.parent / "config" / "companion_templates"
-
     def __init__(self):
-        self._cache: Dict[str, Dict] = {}
+        self._cache: dict[str, dict] = {}
+        self.template_dir = config.get_bundled_path(
+            "src/aac_app/config/companion_templates"
+        )
         self._load_templates()
 
     def _load_templates(self) -> None:
         """Load all YAML templates from the templates directory."""
-        if not self.TEMPLATE_DIR.exists():
-            logger.warning(f"Template directory not found: {self.TEMPLATE_DIR}")
+        if not self.template_dir.exists():
+            logger.warning(f"Template directory not found: {self.template_dir}")
             self._cache = {"default": self._get_hardcoded_default()}
             return
 
-        for yaml_file in self.TEMPLATE_DIR.glob("*.yaml"):
+        for yaml_file in self.template_dir.glob("*.yaml"):
             try:
-                with open(yaml_file, "r", encoding="utf-8") as f:
+                with open(yaml_file, encoding="utf-8") as f:
                     template = yaml.safe_load(f)
                     if template:
                         template_name = yaml_file.stem
@@ -58,7 +59,7 @@ class TemplateManager:
 
         logger.info(f"TemplateManager initialized with {len(self._cache)} templates")
 
-    def _get_hardcoded_default(self) -> Dict:
+    def _get_hardcoded_default(self) -> dict:
         """Fallback default template if YAML files are missing."""
         return {
             "name": "Default Companion",
@@ -86,7 +87,7 @@ class TemplateManager:
             "custom_instructions": "Be warm, patient, and encouraging.",
         }
 
-    def list_templates(self) -> List[Dict[str, str]]:
+    def list_templates(self) -> list[dict[str, str]]:
         """
         List all available templates with their metadata.
 
@@ -107,7 +108,7 @@ class TemplateManager:
             )
         return sorted(templates, key=lambda x: x["name"])
 
-    def get_template(self, name: str) -> Dict:
+    def get_template(self, name: str) -> dict:
         """
         Get a template by name.
 
@@ -127,21 +128,21 @@ class TemplateManager:
         """Check if a template exists."""
         return name in self._cache
 
-    def get_template_names(self) -> List[str]:
+    def get_template_names(self) -> list[str]:
         """Get list of all template names."""
         return list(self._cache.keys())
 
     def resolve_profile(
         self,
         template_name: str,
-        overrides: Optional[Dict[str, Any]] = None,
-        demographics: Optional[Dict[str, Any]] = None,
-        medical_context: Optional[Dict[str, Any]] = None,
-        communication_style: Optional[Dict[str, Any]] = None,
-        safety_constraints: Optional[Dict[str, Any]] = None,
-        companion_persona: Optional[Dict[str, Any]] = None,
-        custom_instructions: Optional[str] = None,
-    ) -> Dict:
+        overrides: dict[str, Any] | None = None,
+        demographics: dict[str, Any] | None = None,
+        medical_context: dict[str, Any] | None = None,
+        communication_style: dict[str, Any] | None = None,
+        safety_constraints: dict[str, Any] | None = None,
+        companion_persona: dict[str, Any] | None = None,
+        custom_instructions: str | None = None,
+    ) -> dict:
         """
         Resolve a complete profile by merging template with overrides.
 
@@ -201,7 +202,7 @@ class TemplateManager:
 
         return profile
 
-    def _deep_merge(self, base: Dict, override: Dict) -> Dict:
+    def _deep_merge(self, base: dict, override: dict) -> dict:
         """
         Deep merge two dicts, with override taking precedence.
 
@@ -233,7 +234,7 @@ class TemplateManager:
                 result[key] = value
         return result
 
-    def _apply_dot_overrides(self, profile: Dict, overrides: Dict[str, Any]) -> None:
+    def _apply_dot_overrides(self, profile: dict, overrides: dict[str, Any]) -> None:
         """
         Apply dot-notation overrides to a profile.
 
@@ -252,7 +253,7 @@ class TemplateManager:
                 target = target[part]
             target[parts[-1]] = value
 
-    def build_system_prompt(self, profile: Dict) -> str:
+    def build_system_prompt(self, profile: dict) -> str:
         """
         Build an LLM system prompt from a resolved profile.
 
@@ -377,7 +378,7 @@ Key AAC principles:
 
 
 # Singleton instance
-_template_manager: Optional[TemplateManager] = None
+_template_manager: TemplateManager | None = None
 
 
 def get_template_manager() -> TemplateManager:

@@ -1,40 +1,21 @@
-import os
 import sys
 
 import requests
 
-# Configuration
-BASE_URL = os.environ.get("AAC_BASE_URL", "http://localhost:8086/api").rstrip("/")
-USERNAME = os.environ.get("AAC_VERIFY_USERNAME", "").strip()
-PASSWORD = os.environ.get("AAC_VERIFY_PASSWORD", "").strip()
+try:
+    from .verify_common import BASE_URL, auth_headers, ensure_ok, login
+except ImportError:  # Direct ``python scripts/verify_fix.py`` execution.
+    from verify_common import BASE_URL, auth_headers, ensure_ok, login
+
 BOARD_ID = 8
 SYMBOL_LABEL = "horse"
 LINKED_BOARD_ID = 9  # Collab Board
 
-if not USERNAME or not PASSWORD:
-    raise SystemExit(
-        "Set AAC_VERIFY_USERNAME and AAC_VERIFY_PASSWORD before running this script."
-    )
-
-
-def login():
-    response = requests.post(
-        f"{BASE_URL}/auth/token", data={"username": USERNAME, "password": PASSWORD}
-    )
-    if response.status_code != 200:
-        print(f"Login failed: {response.text}")
-        sys.exit(1)
-    return response.json()["access_token"]
-
 
 def get_board_symbol_id(token, board_id, label):
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = auth_headers(token)
     response = requests.get(f"{BASE_URL}/boards/{board_id}", headers=headers)
-    if response.status_code != 200:
-        print(f"Get board failed: {response.text}")
-        sys.exit(1)
-
-    board = response.json()
+    board = ensure_ok(response, "Get board")
     for s in board["symbols"]:
         if s["symbol"]["label"] == label:
             return s["id"]  # This is the BoardSymbol ID
@@ -44,7 +25,7 @@ def get_board_symbol_id(token, board_id, label):
 
 
 def update_symbol(token, board_id, symbol_id, linked_board_id):
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = auth_headers(token)
     payload = {"linked_board_id": linked_board_id}
     print(f"Sending payload: {payload}")
     response = requests.put(
@@ -53,12 +34,9 @@ def update_symbol(token, board_id, symbol_id, linked_board_id):
         json=payload,
     )
 
-    if response.status_code != 200:
-        print(f"Update failed: {response.status_code} {response.text}")
-        sys.exit(1)
-
+    result = ensure_ok(response, "Update")
     print("Update successful")
-    return response.json()
+    return result
 
 
 def main():
