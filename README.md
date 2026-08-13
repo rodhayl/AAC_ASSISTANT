@@ -1,122 +1,119 @@
 # AAC Assistant
 
-Privacy-focused AAC software for communication boards, symbol search, learning
-sessions, and browser-based speech. The application is a FastAPI backend and a
-React 19/Vite frontend. In production, one backend process serves both the API
-and the built single-page application.
+**A local-first, privacy-focused communication platform for people with speech
+and communication disabilities.**
 
-## What is included
+AAC Assistant provides communication boards, symbol search, sentence building,
+learning sessions, and browser-based speech — all running on the operator's own
+machine so sensitive communication stays under local control.
 
-- FastAPI API and SQLite data layer for AAC workflows
-- React/Vite interface for communication, boards, symbols, learning, and
-  administration
-- Local speech-to-text (faster-whisper, bundled in the packaged installer; an
-  optional `voice` uv extra for source checkouts)
-- Learning sessions with adaptive LLM questions: auto-ask questions (can be
-  toggled per learning mode for conversational modes), a manual "New question"
-  button, correct-answer highlighting, live progress chips, and an end-of-session
-  summary modal
-- Automated Python and frontend test suites
-- Windows scripts for installation, running, testing, and packaging
+## The problem
 
-## Prerequisites
+Augmentative and alternative communication (AAC) software helps people who
+cannot rely on speech to express themselves. Many AAC tools depend on cloud
+services, which can put highly personal communication data outside the user's
+control. AAC Assistant is built local-first: after installation it works fully
+offline, and no account, analytics, or telemetry is required.
 
-For a source checkout, install:
+## Who it is for
 
-- Windows 10 or newer
+- **People who use AAC** — to build sentences from symbol boards and learn new
+  vocabulary.
+- **Caregivers, teachers, and therapists** — to create boards, assign them to
+  students, run learning sessions, and review progress.
+- **Administrators** — to manage users, roles, and settings on a local install.
+
+## Key features
+
+- Communication boards with a symbol library and sentence strip.
+- Symbol search and board editing (drag-and-drop, custom uploads).
+- Learning sessions with adaptive questions and achievements.
+- Local speech-to-text (faster-whisper) bundled in the Windows installer;
+  browser-based text-to-speech works everywhere.
+- Role-based accounts (student / teacher / admin) with per-endpoint
+  authorization.
+- Optional LLM learning questions via local services (Ollama, LM Studio) or an
+  operator-configured OpenRouter key. The core AAC experience never depends on
+  any cloud service.
+
+## Local-first and privacy
+
+- Data (accounts, boards, learning, uploads) is stored in local files.
+- The backend binds to `127.0.0.1` by default and is not reachable from the
+  network unless the operator explicitly opts in.
+- No telemetry, analytics, or crash upload.
+- See [docs/PRIVACY_AND_DATA.md](docs/PRIVACY_AND_DATA.md).
+
+## Current status
+
+Actively maintained. The codebase has an automated backend test suite, a
+frontend unit/component suite, and a Playwright end-to-end suite that exercises
+core flows against the real backend. See
+[docs/PROJECT_METRICS.md](docs/PROJECT_METRICS.md) for a dated, verifiable
+snapshot.
+
+## Supported platforms
+
+- **Windows 10/11** — packaged portable/installer build.
+- **Source checkout** — any OS with Python 3.13+ and Node.js 20+.
+
+## Prerequisites (source checkout)
+
+- Windows 10+ (for the packaged build) or Linux/macOS (source only)
 - Python 3.13+
 - [uv](https://docs.astral.sh/uv/)
-- Node.js 20+ and npm 10+ (needed to build or run the frontend)
+- Node.js 20+ and npm 10+ (to build or run the frontend)
 
-The packaged Windows application does not require a separate Python or Node.js
-installation. Node.js is only needed for source-checkout frontend development
-and builds.
+The packaged Windows application requires neither Python nor Node.js.
 
-## Quick start
+## Installation and first run
 
-From the repository root, the recommended Windows setup is:
+### Packaged Windows application
+
+Download the latest installer from the
+[releases](https://github.com/rodhayl/AAC_ASSISTANT/releases) page and run it.
+The installer is an update-aware wizard; uninstalling preserves your data.
+
+### Source checkout (Windows)
 
 ```bat
 install_dependencies.bat
 ```
 
-On Windows source checkouts this now attempts to bootstrap `uv` automatically
-when it is missing, then runs `uv sync`, creates or migrates `.env`, repairs
-the JWT secret, and installs/builds the frontend. To include optional
-speech-to-text support:
+This bootstraps `uv` if missing, syncs dependencies, creates/migrates `.env`,
+repairs the JWT secret, and builds the frontend. Add `voice` for optional
+speech-to-text:
 
 ```bat
 install_dependencies.bat voice
 ```
 
-The equivalent core Python setup is:
-
-```powershell
-uv sync
-npm --prefix src/frontend ci
-npm --prefix src/frontend run build
-```
-
-For development and validation tools, sync the dev group:
-
-```powershell
-uv sync --group dev
-```
-
-Configuration is read from `.env`. The safe template is `.env.example`; do not
-commit your local `.env`.
-
-## Run the application
-
-### Linux source checkout
-
-The Linux launcher is separate from the Windows scripts and does not change the
-Windows startup or packaging flow. From the repository root:
-
-```bash
-uv sync
-npm --prefix src/frontend ci
-npm --prefix src/frontend run build
-chmod +x start.sh
-./start.sh
-```
-
-Use `./start.sh --dev` for the backend plus Vite development mode. The launcher
-uses `.venv/bin/python` when available and otherwise delegates to `uv run`.
-
-### Production mode, one process
+Then run:
 
 ```bat
 start.bat
 ```
 
-The default launcher runs one uvicorn process on `http://127.0.0.1:8086` and
-serves the API, built React application, uploads, and API docs from that port.
-If `uv` is missing on Windows, `start.bat` tries to install it automatically
-before launching. If the frontend build is missing and Node.js is available,
-the launcher builds it automatically. On first run in the default development configuration, the bootstrap
-administrator is:
+and open `http://127.0.0.1:8086/`.
 
-- Username: `admin1`
-- Password: `Admin123`
+### First-run administrator
 
-Change this password after first login. When bootstrap is enabled and no
-administrator exists, production rejects passwords that fail the normal
-password-strength policy; set a unique `AAC_BOOTSTRAP_ADMIN_PASSWORD` in
-`.env` before first run. The bootstrap values can be changed in `.env` before
-first run.
+On first run, the application creates an administrator only if none exists
+(`AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN`, default `true`). If you did not configure
+`AAC_BOOTSTRAP_ADMIN_PASSWORD` in `.env`, a **cryptographically random one-time
+password** is generated and stored in `.env`; read it there and change it
+immediately after first login. In production, bootstrap refuses to start
+without an explicit, strong password.
 
-### Development mode, uvicorn plus Vite
+## Development setup
 
-```bat
-start.bat --dev
+```powershell
+uv sync --group dev
+npm --prefix src/frontend ci
+npm --prefix src/frontend run build
 ```
 
-This starts the backend on port `8086` and the Vite development server on port
-`5176`. Open `http://127.0.0.1:5176` for the frontend during development.
-The backend remains available at `http://127.0.0.1:8086`.
-
-The equivalent manual commands, in two terminals, are:
+Run the backend and Vite development server:
 
 ```powershell
 uv run python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8086
@@ -126,151 +123,81 @@ npm --prefix src/frontend run dev -- --host 127.0.0.1 --port 5176
 Useful endpoints:
 
 - Application: `http://127.0.0.1:8086/`
-- Frontend development server: `http://127.0.0.1:5176/`
 - Swagger: `http://127.0.0.1:8086/docs`
-- ReDoc: `http://127.0.0.1:8086/redoc`
 - Health check: `http://127.0.0.1:8086/api/health`
 
-## Configuration
-
-Server-side data exports use an authenticated schema-2 checksum tied to the
-configured `JWT_SECRET_KEY`. This prevents clients from forging imported
-achievements or learning records, but means an export must be created again
-after rotating that secret; schema-2 exports are not portable between server
-instances with different secrets. Board placements also retain database symbol
-IDs, so imports require a compatible symbol catalog; cross-board links
-(`linked_board_id`) are not restored because source board IDs are not remapped;
-older unsigned schema-1 exports are rejected.
-
-Copy `.env.example` to `.env` only when setting up manually. The table below
-lists every key in the template. Values supplied as process environment
-variables take precedence over the file.
-
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `BACKEND_HOST` | `0.0.0.0` | Address uvicorn binds to. Use `127.0.0.1` for local-only service access. |
-| `BACKEND_PORT` | `8086` | Port for the API and production-served frontend. |
-| `FRONTEND_PORT` | `5176` | Vite port used by `start.bat --dev`. |
-| `DATABASE_NAME` | `aac_assistant.db` | SQLite filename inside `DATA_DIR`. |
-| `DATA_DIR` | `data` | Writable directory for the SQLite database, vector table, and model cache. |
-| `JWT_SECRET_KEY` | `CHANGE_ME_TO_A_SECURE_RANDOM_STRING` in the template | Secret used to sign access and refresh tokens. The placeholder is replaced in place with a stable random value on first run. |
-| `ALLOWED_ORIGINS` | `http://localhost:5176,http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1:5176` | Comma-separated browser origins permitted by CORS. |
-| `LOGS_DIR` | `logs` | Writable directory for application logs. |
-| `UPLOADS_DIR` | `uploads` | Writable directory for uploaded symbol images. Set this explicitly in managed/read-only deployments. |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Base URL for the optional Ollama provider. |
-| `OPENROUTER_API_KEY` | Empty | Optional API key for OpenRouter. Leave empty when unused. |
-| `APP_NAME` | `AAC Assistant` | Display/application name used by the backend. |
-| `APP_VERSION` | `2.0.0` | Application version reported by the backend and aligned with the Windows installer release. |
-| `ENVIRONMENT` | `development` | Runtime mode. Use `production` for a deployed instance. |
-| `DEFAULT_LOCALE` | `es` | Default locale for seeded and newly created application content. |
-| `ALLOW_DB_RESET` | `false` | Enables the administrative database reset endpoint. Keep false outside disposable local development. |
-| `AAC_SEED_SAMPLE_DATA` | `false` | Seeds demo users and boards when true. Keep false for a fresh production database. |
-| `AAC_ENABLE_SYMBOL_IMAGE_BACKFILL` | `false` | Opt-in maintenance task that looks up and downloads missing symbol images during startup. Keep false for normal low-resource operation. |
-| `AAC_SYMBOL_IMAGE_BACKFILL_LIMIT` | `100` | Maximum missing symbol images processed when backfill is enabled. Set to `0` to skip it. |
-| `AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN` | `true` | Creates the bootstrap administrator when no administrator exists. |
-| `AAC_BOOTSTRAP_ADMIN_USERNAME` | `admin1` | Username created by the first-run bootstrap. |
-| `AAC_BOOTSTRAP_ADMIN_PASSWORD` | `Admin123` (development only) | Password created by the first-run bootstrap. Production requires a unique value; change it before deployment and immediately after local first login. |
-
-The application also accepts these operational environment variables, which
-are intentionally not in the distributable template:
-
-- `DATABASE_URL`: optional SQLAlchemy URL for tests or an explicitly managed
-  database; otherwise SQLite uses `DATA_DIR/DATABASE_NAME`.
-- `DATA_DIR`, `LOGS_DIR`, and `UPLOADS_DIR` may point to writable locations
-  outside a read-only installation directory.
-- `TESTING=1`: disables rate limiting for automated validation.
-- `AAC_ASSISTANT_PORTABLE=1`: in a frozen onedir build, keeps `data/`, `logs/`,
-  and `uploads/` beside the executable instead of using `%APPDATA%`.
-- `AAC_ASSISTANT_NO_BROWSER=1`: headless validation/managed-launch mode; keeps
-  the launcher from opening the local URL automatically. Desktop launches omit
-  this flag so normal browser-opening behavior remains unchanged.
-
-## Optional voice setup
-
-Voice input is optional. Browser speech synthesis remains available without
-the extra; the extra supplies local speech-to-text through faster-whisper.
-
-Install the extra in a source checkout:
+## Test and validation
 
 ```powershell
-uv sync --extra voice
-```
-
-Windows administrators can also install the missing `faster-whisper` extra from
-the in-app Settings -> Voice panel with one click when running from a source
-checkout.
-
-For development and tests, use both groups:
-
-```powershell
-uv sync --group dev --extra voice
-```
-
-In a source checkout, the first transcription downloads the `tiny` faster-whisper model (about 39M parameters / 75 MB; the compatible CTranslate2 conversion of OpenAI's Whisper-tiny) by default. Administrators can choose `tiny`, `base`, `small`, `medium`, or `large-v3` in Settings → Voice. The selected model is cached in `data/models/`. Download it ahead of time with:
-
-```powershell
-uv run python -m src.aac_app.providers.model_download
-```
-
-The model cache is local runtime data and is ignored by Git. See
-[`docs/voice.md`](docs/voice.md) for the browser recording and cache details.
-
-The packaged installer bundles the `tiny` faster-whisper model and the
-fastembed semantic-search model, so a fresh installation works fully offline:
-no model download is needed on first voice or semantic-search use. Selecting a
-different voice model size in Settings -> Voice falls back to on-demand download
-into `data/models/` (only for that non-bundled size).
-
-## Test and lint
-
-Install the development dependencies first:
-
-```powershell
-uv sync --group dev
-npm --prefix src/frontend ci
-```
-
-Run the backend suite and Ruff:
-
-```powershell
-uv run pytest -q tests
-uv run ruff check src tests
-```
-
-Run the frontend lint, Vitest suite, and production build:
-
-```powershell
+uv run ruff check src tests scripts
+uv run python -m compileall -q src scripts
+uv run pytest -q
+npm --prefix src/frontend run typecheck
 npm --prefix src/frontend run lint
-npm --prefix src/frontend test -- --run
+npm --prefix src/frontend run test -- --run
 npm --prefix src/frontend run build
 ```
 
-The Windows convenience runner executes the backend tests, Ruff, and frontend
-tests:
+The Playwright suite runs against a real production server; see
+`src/frontend/e2e/`.
 
-```bat
-run_tests.bat
+## Configuration
+
+Configuration is read from `.env` (copy `.env.example` as a starting point).
+Process environment variables take precedence over the file. Key settings:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `BACKEND_HOST` | `127.0.0.1` | Address the backend binds to. `0.0.0.0` opts into network exposure. |
+| `BACKEND_PORT` | `8086` | API and production SPA port. |
+| `JWT_SECRET_KEY` | generated | JWT signing secret; a stable random value is created on first run. |
+| `ALLOWED_ORIGINS` | localhost allowlist | CORS origins (explicit; `*` is rejected). |
+| `ENVIRONMENT` | `development` | `production` enables stricter bootstrap/security checks. |
+| `ALLOW_DB_RESET` | `false` | Enables the admin DB-reset endpoint (keep false). |
+| `AAC_SEED_SAMPLE_DATA` | `false` | Seeds demo users/boards (keep false in production). |
+| `AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN` | `true` | Creates an admin if none exists. |
+| `AAC_BOOTSTRAP_ADMIN_USERNAME` | `admin1` | Username for the first-run admin. |
+| `AAC_BOOTSTRAP_ADMIN_PASSWORD` | generated | If unset, a random one-time password is generated into `.env`. |
+
+See `docs/01_PROJECT_GUIDE.md` for the full reference.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Browser["React/Vite SPA"] -->|HTTP| API["FastAPI backend"]
+    API --> SQLite[("SQLite")]
+    API --> Uploads[("uploads/")]
+    API -.->|optional, local| Ollama["Ollama / LM Studio"]
+    API -.->|optional, configured| OpenRouter["OpenRouter / ARASAAC"]
 ```
 
-The Playwright regression suite requires a running production server and the
-seeded E2E users. Override their credentials when validating a differently
-configured database:
+One FastAPI process serves the API and the built SPA. Domain logic lives in
+`src/aac_app/` (models, services, providers); HTTP routing in `src/api/`; the
+React application in `src/frontend/`. See
+[docs/01_PROJECT_GUIDE.md](docs/01_PROJECT_GUIDE.md).
 
-```powershell
-$env:E2E_ADMIN_USERNAME = "admin1"
-$env:E2E_ADMIN_PASSWORD = "Admin123"
-$env:E2E_STUDENT_USERNAME = "student1"
-$env:E2E_STUDENT_PASSWORD = "Student123"
-npm --prefix src/frontend exec playwright test
-```
+## Security
 
-Setup fails clearly if those fixtures cannot authenticate; it does not create
-random fallback users.
+- Local-first: loopback bind by default, no telemetry.
+- Argon2 password hashing, JWT sessions with revocation on password change,
+  login rate limiting and account lockout.
+- Role checks on every protected backend endpoint; validated user updates.
+- Hardened uploads (size, MIME, signature, and path-traversal checks).
 
-## Build a Windows package
+Read [SECURITY.md](SECURITY.md) for supported versions and how to report a
+vulnerability privately, [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) for the
+threat model, and [docs/SECURITY_ARCHITECTURE.md](docs/SECURITY_ARCHITECTURE.md)
+for the implementation detail.
 
-Packaging requires the dev group, Node.js/npm, Inno Setup 6.7.3, and network
-access the first time it downloads the bundled models:
+## Accessibility
+
+Accessibility is core to this project. See
+[docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) for what is tested, known
+limitations, and future work. We do not currently claim formal WCAG
+conformance.
+
+## Packaging and releases
 
 ```powershell
 uv sync --group dev
@@ -278,129 +205,17 @@ npm --prefix src/frontend ci
 build_package.bat
 ```
 
-The build script reads the installer version directly from `installer.iss`,
-then discovers Inno Setup from the standard per-user/system locations or
-`PATH`. For a custom installation, set `INNO_SETUP_PATH` to the full path of
-`ISCC.exe` before running the script (quoted environment values are accepted).
+Outputs: `dist\AAC_Assistant\AAC_Assistant.exe` and
+`dist\AAC_Assistant_Setup_<version>.exe`. See
+[docs/RELEASE_READINESS.md](docs/RELEASE_READINESS.md) and
+[CHANGELOG.md](CHANGELOG.md).
 
-`build_package.bat` syncs the `voice` extra, downloads the fastembed
-semantic-search model and the `tiny` faster-whisper model into the gitignored
-`bundled_models/models` directory, builds the frontend, creates the PyInstaller
-onedir output, and compiles the Inno Setup installer. Outputs are:
+## Contributing
 
-- `dist\AAC_Assistant\AAC_Assistant.exe`
-- `dist\AAC_Assistant_Setup_<version>.exe` (currently `2.0.0`)
-
-The installer uses `%APPDATA%\AACAssistant` for writable data when installed
-under Program Files. A portable onedir copy can keep `data/`, `logs/`, and
-`uploads/` beside the executable. Uninstall removes application files and
-disposable logs, but preserves the database and uploads.
-
-When an existing installation is detected (wizard-selected directory,
-registered previous install, or a standard default location), the wizard runs
-as an update instead of a fresh install: the window caption, welcome heading,
-and body explicitly say "Update/Actualizar AAC Assistant to version 2.0.0" in
-English and Spanish. The running copy receives a private, installation-scoped
-graceful-shutdown signal; the installer waits up to 25 seconds before using a
-path-filtered force fallback, and aborts if the matching process still cannot
-be closed.
-
-Backup, export/import recovery, versioned rollback, and beta-release gates are
-documented in [`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md). The
-installer preserves user data during replacement but does not perform automatic
-cross-version rollback; retain two independently versioned installers and a
-physical SQLite backup for operator recovery.
-
-## Repository layout
-
-- `src/api/main.py`: FastAPI application and lifespan setup
-- `src/api/routers/`: domain routers for authentication, boards, symbols,
-  learning, settings, administration, and related APIs
-- `src/api/deps/`: request dependencies for database sessions, auth,
-  providers, and cached application settings
-- `src/config.py`: typed `.env` settings and legacy configuration migration
-- `src/aac_app/db.py`: process-wide SQLAlchemy engine and session factory
-- `src/aac_app/schema.py`: idempotent SQLite schema creation and additive
-  upgrades, which are the local app's migration strategy
-- `src/aac_app/models/`: one SQLAlchemy model module per domain entity
-- `src/aac_app/services/`: domain services
-- `src/aac_app/services/learning/`: focused learning session, question,
-  response, and summary modules
-- `src/aac_app/providers/`: optional speech and HTTP AI providers
-- `src/frontend/`: React/Vite application
-- `scripts/`: database, setup, diagnostic, server, and model-bundling utilities
-- `tests/`: automated backend tests
-- `TEST_SCENARIOS/`: retained manual QA references; the automated suites are
-  authoritative for repeatable validation
-
-The detailed technical guide is
-[`docs/01_PROJECT_GUIDE.md`](docs/01_PROJECT_GUIDE.md). Release recovery and
-beta-readiness procedures are in [`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md).
-
-## Troubleshooting
-
-### Port 8086 or 5176 is already in use
-
-The launcher fails fast instead of taking over another process. Inspect the
-listener in PowerShell:
-
-```powershell
-Get-NetTCPConnection -LocalPort 8086 -State Listen
-Get-NetTCPConnection -LocalPort 5176 -State Listen
-```
-
-Stop only a process you started, or change `BACKEND_PORT` and
-`FRONTEND_PORT` in `.env` before launching. Keep the Vite port aligned with
-`ALLOWED_ORIGINS` when using a browser development server.
-
-### Migrating a legacy `env.properties`
-
-`.env` is the canonical configuration file. If `.env` does not exist but a
-legacy `env.properties` is present, the first run copies it to `.env` and
-preserves the legacy file for rollback during this release. Review the new
-file, then use `.env.example` as the reference for future installations.
-The JWT secret is repaired in place, so existing tokens may need to be
-refreshed after migration.
-
-### Frontend assets are missing
-
-Run:
-
-```powershell
-npm --prefix src/frontend ci
-npm --prefix src/frontend run build
-```
-
-Then run `start.bat` again. A source checkout can also let the production
-launcher build the frontend automatically when Node.js is available.
-
-### Voice model download fails
-
-Confirm the optional dependency is installed with `uv sync --extra voice` and
-retry the model command. Ensure `data/models/` is writable and that the
-machine can reach Hugging Face. The core keyboard, symbol, and browser speech
-features work without the local transcription model.
-
-### Bootstrap login does not work
-
-Check `AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN`, username, and password in `.env`.
-Bootstrap only creates an administrator when no administrator exists. For a
-fresh disposable database, remove the database under `DATA_DIR` and start
-again; never remove a production database to recover an account.
-
-## Security
-
-- Never commit `.env`, database files, logs, uploads, model caches, or
-  Playwright authentication state.
-- Use a unique `JWT_SECRET_KEY` and rotate credentials if a secret is exposed.
-- Keep `ALLOW_DB_RESET=false` and `AAC_SEED_SAMPLE_DATA=false` for deployed
-  instances.
-- Change the bootstrap administrator password immediately after first login; production enforces the normal password-strength policy when creating the first administrator.
-- The frontend uses the published React Router `8.3.0` package and its v8
-  import split (`react-router` plus `react-router/dom`). The current production
-  dependency audit reports zero vulnerabilities. Re-run `npm audit
-  --omit=dev` after dependency changes.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[Code of Conduct](CODE_OF_CONDUCT.md). Questions belong in
+[SUPPORT.md](SUPPORT.md); the [ROADMAP.md](ROADMAP.md) lists planned work.
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+MIT. See [LICENSE](LICENSE).

@@ -46,7 +46,9 @@ For one release, an existing legacy `env.properties` is copied to `.env` when
 Important production settings:
 
 ```dotenv
-BACKEND_HOST=0.0.0.0
+# Local-first default: loopback only. Set 0.0.0.0 to deliberately expose the
+# service to the network (requires strong credentials and reviewed CORS).
+BACKEND_HOST=127.0.0.1
 BACKEND_PORT=8086
 FRONTEND_PORT=5176
 ENVIRONMENT=production
@@ -55,7 +57,8 @@ ALLOW_DB_RESET=false
 AAC_SEED_SAMPLE_DATA=false
 AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=true
 AAC_BOOTSTRAP_ADMIN_USERNAME=admin1
-# Use a unique value in production; Admin123 is development-only.
+# Production requires an explicit strong password. If unset in development,
+# a random one-time credential is generated and stored in .env.
 AAC_BOOTSTRAP_ADMIN_PASSWORD=REPLACE_WITH_A_UNIQUE_PASSWORD
 DATA_DIR=data
 LOGS_DIR=logs
@@ -64,8 +67,8 @@ UPLOADS_DIR=uploads
 
 `DATA_DIR`, `LOGS_DIR`, and `UPLOADS_DIR` must be writable. Managed or
 read-only installations should point all three settings at writable locations
-outside the application directory. The README contains the complete
-key-by-key configuration reference.
+outside the application directory. The complete key-by-key configuration
+reference is in the root [README](../README.md) configuration table.
 `TESTING=1` is an operational environment variable for automated validation;
 it disables request rate limiting. `AAC_ASSISTANT_NO_BROWSER=1` is the
 headless validation/managed-launch flag and prevents the frozen launcher from
@@ -197,8 +200,9 @@ Core enforcement paths are `src/api/deps/` and `src/api/routers/`. Keep
 or deployed instance. When bootstrap is enabled and no administrator exists,
 production rejects passwords that fail the normal password-strength policy.
 Existing installations with an administrator are not blocked by an unused
-bootstrap setting. Change the bootstrap administrator password immediately
-after first login.
+bootstrap setting. In non-production environments, if no password is
+configured, a random one-time credential is generated and stored in `.env`;
+change it immediately after first login.
 
 ### Token revocation and security-version policy
 
