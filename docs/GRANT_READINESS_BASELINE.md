@@ -39,6 +39,13 @@ A secret scan over the reachable git history found no real secrets — only test
 placeholders and documented development defaults. No API keys, tokens, private
 emails, or certificates are committed.
 
+## Readiness artifacts (created 2026-08-13)
+
+- Preparation branch: `chore/codex-oss-readiness`
+- Readiness pull request: `#2` → `main`
+- Draft release: `v2.0.0` (draft, not published)
+- Repository description and topics set via the GitHub API.
+
 ## Form fields (read from the current form)
 
 Field names, limits, and conditions are recorded in
