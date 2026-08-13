@@ -4,7 +4,30 @@ on:
   push:
   pull_request:
 
+# Least-privilege default: jobs only read repository contents unless a job
+# explicitly needs more (CodeQL requests security-events write).
+permissions:
+  contents: read
+
+# One run per ref; superseded runs are cancelled to conserve CI resources.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
+        with:
+          fetch-depth: 0
+      # Lightweight secret scan over full history. Known development/test
+      # credential literals are allowlisted in .gitleaks.toml so this only
+      # flags real secrets.
+      - uses: gitleaks/gitleaks-action@bcfb9cce635345aac9996cedc19b2de8e01b894f # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   backend:
     runs-on: ubuntu-latest
     env:
@@ -13,16 +36,18 @@ jobs:
       JWT_SECRET_KEY: ci-test-secret-key-with-at-least-32-characters
       TESTING: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
+      - uses: astral-sh/setup-uv@ae3b92d1bdb308a10adfe7b8f408e5cc8c30f3f6 # v6
         with:
           version: latest
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@8549b9f8f590ad24eab7482f36f6e1e24d34597b # v5
         with:
           python-version: "3.13"
       - run: uv sync --locked --group dev
       - run: uv run ruff check src tests scripts
       - run: uv run python scripts/audit_codebase.py
+      - run: uv run python -m compileall -q src scripts
+      - run: uv pip check
       - run: uv run pytest -q
 
   frontend:
@@ -31,8 +56,8 @@ jobs:
       run:
         working-directory: src/frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
+      - uses: actions/setup-node@12b7ff3796cabd9e0da05c556468eec2f565d246 # v4
         with:
           node-version: "20"
           cache: npm
@@ -74,14 +99,14 @@ jobs:
       run:
         working-directory: src/frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
+      - uses: astral-sh/setup-uv@ae3b92d1bdb308a10adfe7b8f408e5cc8c30f3f6 # v6
         with:
           version: latest
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@8549b9f8f590ad24eab7482f36f6e1e24d34597b # v5
         with:
           python-version: "3.13"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@12b7ff3796cabd9e0da05c556468eec2f565d246 # v4
         with:
           node-version: "20"
           cache: npm
@@ -132,14 +157,14 @@ jobs:
       AAC_BOOTSTRAP_ADMIN_USERNAME: admin1
       AAC_BOOTSTRAP_ADMIN_PASSWORD: Admin123
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
+      - uses: astral-sh/setup-uv@ae3b92d1bdb308a10adfe7b8f408e5cc8c30f3f6 # v6
         with:
           version: latest
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@8549b9f8f590ad24eab7482f36f6e1e24d34597b # v5
         with:
           python-version: "3.13"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@12b7ff3796cabd9e0da05c556468eec2f565d246 # v4
         with:
           node-version: "20"
           cache: npm
@@ -201,9 +226,32 @@ jobs:
           if ($uninstall.ExitCode -ne 0) { throw "Uninstaller failed with exit code $($uninstall.ExitCode)" }
           if (-not (Test-Path (Join-Path $installDir 'data\release-smoke.marker'))) { throw 'Uninstall removed preserved data' }
           if (-not (Test-Path (Join-Path $installDir 'uploads\release-smoke.marker'))) { throw 'Uninstall removed preserved uploads' }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
         with:
           name: AAC_Assistant-windows-release
           path: |
             dist/AAC_Assistant_Setup_2.0.0.exe
             dist/AAC_Assistant/AAC_Assistant.exe
+
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, python]
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
+      - uses: github/codeql-action/init@be7a3dbb8147b82cd6d27e0707105b36aa190fc1 # v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+      - uses: github/codeql-action/analyze@be7a3dbb8147b82cd6d27e0707105b36aa190fc1 # v3
+
+  dependency-review:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
+      - uses: actions/dependency-review-action@1e966ba708e4b64bb0c9bfb7abb5a232840be16a # v4
