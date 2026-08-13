@@ -22,9 +22,6 @@ from src import config
 from src.aac_app.utils.module_availability import module_available
 from src.aac_app.utils.runtime import safe_streams
 
-# Keep the historical private name as a compatibility seam for callers/tests.
-_safe_streams = safe_streams
-
 
 def _load_text_embedding_class() -> Any:
     """Import and cache the fastembed ``TextEmbedding`` symbol lazily."""
@@ -224,7 +221,7 @@ class LocalVectorStore:
         try:
             if not self._local_files_only:
                 self.cache_dir.mkdir(parents=True, exist_ok=True)
-            with _safe_streams():
+            with safe_streams():
                 if self._embedder_factory is not None:
                     self.embedder = self._embedder_factory(
                         model_name=self.model_name,

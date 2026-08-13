@@ -104,7 +104,7 @@ def test_index_all_symbols_survives_none_streams(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "stderr", None)
 
     # Real init path uses an embedder_factory that writes to stdout during
-    # init; with None streams this must succeed because _safe_streams wraps
+    # init; with None streams this must succeed because safe_streams wraps
     # the call.  No network access is performed by PrintToStdoutEmbedder.
     store = local_vector_store.LocalVectorStore(
         index_path=str(tmp_path / "store.index"),
@@ -115,12 +115,12 @@ def test_index_all_symbols_survives_none_streams(tmp_path, monkeypatch):
     assert store._ensure_model_loaded() is True
 
 
-def test_model_download_survives_none_streams(tmp_path, monkeypatch):
-    """The faster-whisper model download path is guarded against None stdio."""
+def test_speech_provider_load_survives_none_streams(tmp_path, monkeypatch):
+    """The live faster-whisper load path is guarded against None stdio."""
     import importlib.util
     import types
 
-    from src.aac_app.providers import model_download
+    from src.aac_app.providers import local_speech_provider
 
     monkeypatch.setattr(sys, "stdout", None)
     monkeypatch.setattr(sys, "stderr", None)
@@ -131,28 +131,30 @@ def test_model_download_survives_none_streams(tmp_path, monkeypatch):
             sys.stdout.write("download progress\n")
             sys.stderr.write("decoding progress\n")
 
-    # Build a fake faster_whisper module with a proper __spec__ so
-    # importlib.util.find_spec finds it.
+    # Inject a fake faster_whisper module so the lazy import inside the
+    # provider resolves without loading the real optional dependency. The
+    # module-level ``faster_whisper`` cache is also restored so later tests
+    # that transcribe real audio do not observe the fake.
     fake = types.ModuleType("faster_whisper")
     fake.WhisperModel = FakeWhisperModel
     fake.__spec__ = importlib.util.spec_from_loader("faster_whisper", loader=None)
     monkeypatch.setitem(sys.modules, "faster_whisper", fake)
+    monkeypatch.setattr(local_speech_provider, "faster_whisper", None)
 
-    cache_dir = tmp_path / "models"
-    assert model_download.download_speech_model(
-        "tiny", model_cache_dir=cache_dir
-    ) is True
+    provider = local_speech_provider.LocalSpeechProvider(
+        model_size="tiny", model_cache_dir=str(tmp_path / "models")
+    )
+    provider._load_model()
+    assert provider._model_loaded is True
+    assert isinstance(provider.model, FakeWhisperModel)
 
 
-def test_model_download_safe_streams_preserves_outer_state():
-    """Exiting the safe-streams context restores the original stdout/stderr."""
-    from src.aac_app.providers import model_download
+def test_safe_streams_restores_outer_state():
+    """The shared safe_streams helper must restore the original streams."""
+    from src.aac_app.utils.runtime import safe_streams
 
     real_out, real_err = sys.stdout, sys.stderr
-    # In the normal (non-frozen) case the wrapper is a no-op as far as the
-    # caller's identity is concerned — the same stream must be active
-    # before, inside, and after.
-    with model_download._safe_streams():
+    with safe_streams():
         assert sys.stdout is real_out
         assert sys.stderr is real_err
     assert sys.stdout is real_out
@@ -162,33 +164,7 @@ def test_model_download_safe_streams_preserves_outer_state():
     monkey.setattr(sys, "stdout", None)
     monkey.setattr(sys, "stderr", None)
     try:
-        with model_download._safe_streams():
-            # Inside the wrapper, a working stream is now available.
-            assert sys.stdout is not None
-            assert sys.stderr is not None
-        # And the originals (None) must be restored afterwards.
-        assert sys.stdout is None
-        assert sys.stderr is None
-    finally:
-        monkey.undo()
-
-
-def test_vector_store_safe_streams_restores_outer_state():
-    """Vector store's _safe_streams must restore the original streams."""
-    from src.aac_app.services import local_vector_store
-
-    real_out, real_err = sys.stdout, sys.stderr
-    with local_vector_store._safe_streams():
-        assert sys.stdout is real_out
-        assert sys.stderr is real_err
-    assert sys.stdout is real_out
-    assert sys.stderr is real_err
-
-    monkey = pytest.MonkeyPatch()
-    monkey.setattr(sys, "stdout", None)
-    monkey.setattr(sys, "stderr", None)
-    try:
-        with local_vector_store._safe_streams():
+        with safe_streams():
             assert sys.stdout is not None
             assert sys.stderr is not None
         assert sys.stdout is None

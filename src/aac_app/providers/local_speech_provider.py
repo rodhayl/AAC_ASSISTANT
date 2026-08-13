@@ -6,6 +6,7 @@ from loguru import logger
 
 from ... import config
 from ..utils.module_availability import module_available
+from ..utils.runtime import safe_streams
 
 # Keep startup checks cheap. faster-whisper and its PyAV/CTranslate2 stack are
 # imported only when the first transcription or explicit warmup is requested.
@@ -124,13 +125,18 @@ class LocalSpeechProvider:
                     self.compute_type,
                     self.model_cache_dir,
                 )
-                self.model = faster_whisper.WhisperModel(
-                    self.model_size,
-                    device=self.device,
-                    compute_type=self.compute_type,
-                    download_root=str(self.model_cache_dir),
-                    local_files_only=self._local_files_only,
-                )
+                # Windowed frozen builds expose None stdio; faster-whisper's
+                # CTranslate2/huggingface_hub stack can still write progress
+                # during a lazy load. Wrap it so an on-demand download cannot
+                # crash the transcription path.
+                with safe_streams():
+                    self.model = faster_whisper.WhisperModel(
+                        self.model_size,
+                        device=self.device,
+                        compute_type=self.compute_type,
+                        download_root=str(self.model_cache_dir),
+                        local_files_only=self._local_files_only,
+                    )
                 self._model_loaded = True
                 logger.info("faster-whisper model loaded successfully")
             except Exception as exc:
