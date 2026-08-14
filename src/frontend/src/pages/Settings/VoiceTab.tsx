@@ -324,7 +324,7 @@ export function VoiceTab({ preferences, setPreferences, filteredVoices, showStat
                       <div className="text-xs text-gray-500 dark:text-gray-400">
                         {ok ? t('ai.installed') : t('ai.notInstalled')} {item.extra ? `(${item.extra})` : ''}
                       </div>
-                      {!ok && <div className="text-xs text-amber-600 dark:text-amber-400">{item.help}</div>}
+                      {!ok && <div className="text-xs text-amber-800 dark:text-amber-300 font-medium">{item.help}</div>}
                       {!ok && item.key === 'stt' && voiceStatus?.actions?.install_voice?.reason && (
                         <div className="text-xs text-gray-500 dark:text-gray-400">
                           {voiceStatus.actions.install_voice.reason}

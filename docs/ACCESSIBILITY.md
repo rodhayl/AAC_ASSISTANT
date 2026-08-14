@@ -9,45 +9,41 @@ claim.
 
 ### Automated checks (CI)
 
-- `npm run lint` — ESLint with React accessibility rules (`jsx-a11y`).
-- `npm run build` — type-safe component props.
-- Playwright end-to-end suite includes a visual/contrast smoke test that renders
-  the application in light, dark, and high-contrast modes at desktop and mobile
-  viewports, plus a keyboard-operation spec (`e2e/accessibility.spec.ts`) that
-  verifies the skip link, symbol activation via Enter, and keyboard-operable
-  sentence controls.
-- `useAccessibleInteraction` unit tests cover dwell-time selection and
-  repeat-click debouncing for board symbols.
+- **Axe Core automated scans (`e2e/axe-accessibility.spec.ts`)** — Automated accessibility testing integrated via `@axe-core/playwright` across critical pages:
+  - First-run setup (`/setup`)
+  - Login (`/login`)
+  - Communication board (`/communication`)
+  - Active learning mode (`/learning`)
+  - Settings & Accessibility panel (`/settings`)
+  Enforces zero serious or critical accessibility violations on WCAG 2.0/2.1 Level A/AA rulesets.
+- **Keyboard navigation & focus traps (`e2e/accessibility.spec.ts`)** — Verifies skip-to-content links, tab order, modal focus entrapment, and Enter/Space activation for all communication board symbols and sentence controls.
+- **CSS `prefers-reduced-motion` compliance** — Global CSS media query clamps animation and transition durations to 0.01ms for users with vestibular sensitivity (`src/frontend/tests/reducedMotion.test.ts`).
+- **ESLint accessibility rules (`jsx-a11y`)** — Enforces accessible labels, image alt text, and semantic HTML elements during build.
+- **`useAccessibleInteraction` unit tests** — Validates dwell-time press-and-hold selection and repeat-click debouncing.
 
 ### Manual checks performed to date
 
-- Keyboard focus is visible and reachable on primary navigation.
-- Communication board symbols are large touch/click targets.
-- Toggles and form controls expose accessible names (`aria-label`) via the
-  shared `Toggle` component.
-- High-contrast and dark modes are selectable in Settings.
-- Text size is not fixed; the interface scales with browser zoom.
+- Keyboard focus visibility and reachability on primary navigation routes.
+- Communication board symbols formatted as large touch and click targets.
+- Toggles and form controls expose explicit accessible names (`aria-label`) via the shared `Toggle` component.
+- High-contrast mode and dark mode theme switching in Settings.
+- Viewport scaling and zoom compatibility up to 200%.
 
-## 2. Known limitations
+## 2. Untested assistive technologies
+
+The following assistive technologies have not yet undergone structured manual auditing by clinical specialists or native assistive-device users:
+- Dedicated screen-reader verification with NVDA (Windows), JAWS (Windows), or VoiceOver (macOS / iOS).
+- Physical single-switch and dual-switch hardware scanning devices.
+- Eye-tracking and head-mouse hardware integrations.
+
+## 3. Known limitations
 
 These are honest, current limitations; they are not exhaustive:
 
-- **No formal WCAG 2.x audit.** Automated checks do not guarantee conformance.
-- **No dedicated screen-reader test pass** has been recorded. We have not
-  verified every flow with NVDA/JAWS/VoiceOver.
-- **Symbol alt text** is present for seeded symbols, but operator-uploaded
-  symbols depend on the label the operator provides.
-- **Reduced-motion preference** is honored for CSS animations and transitions
-  via a global `prefers-reduced-motion` rule (durations collapse to 0.01ms);
-  JavaScript-driven smooth scrolling (e.g., section `scrollIntoView`) is not yet
-  covered.
-- **Dwell-time selection** works on board symbols: press-and-hold for the
-  configured `dwell_time` selects the symbol (`useAccessibleInteraction`, unit
-  tested). Automatic **switch/scanning input** (a highlight that cycles between
-  targets) is not yet implemented.
-- **Color-independent communication** is partially supported (labels always
-  accompany symbols); we have not audited every chart/status indicator for
-  color-only encoding.
+- **No formal WCAG 2.x conformance claim.** Automated Axe scans check technical accessibility rules but do not replace human evaluator testing.
+- **No clinical or specialist certification.** AAC Assistant has not undergone formal clinical trials.
+- **Symbol alt text** is provided for seeded core vocabulary; custom operator-uploaded symbols depend on the label assigned by the operator.
+- **Switch-access / scanning input** (cycling highlight across rows/columns for single-switch users) is planned on the roadmap (Issue #6) and is not yet implemented.
 
 ## 3. Tested environments
 

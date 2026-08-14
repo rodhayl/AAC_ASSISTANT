@@ -30,4 +30,6 @@ Backend changes: `uv run ruff check src tests scripts`, `uv run python -m compil
 
 Frontend changes: from `src/frontend`, run `npm run typecheck`, `npm run lint`, `npm test -- --run`, and `npm run build` as appropriate.
 
+Full local PR gate: `uv run python scripts/verify_pr.py` executes the consolidated backend, frontend, coverage, and documentation checks. See `docs/MAINTAINER_GUIDE.md` for release runbooks.
+
 Always run `git diff --check` and inspect production references separately from tests. Never claim browser or live-server validation unless it was actually run.

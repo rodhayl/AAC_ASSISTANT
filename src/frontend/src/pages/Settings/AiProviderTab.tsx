@@ -287,42 +287,42 @@ export function AiProviderTab() {
               onClick={() => setAiOverride((prev) => ({ ...prev, provider: 'ollama' }))}
               className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${
                 currentAiProvider === 'ollama'
-                  ? 'border-indigo-600 bg-indigo-50'
-                  : 'border-gray-200 hover:border-gray-300'
+                  ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/30'
+                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
               }`}
             >
               <Cpu className="w-6 h-6 text-indigo-600" />
               <div className="text-left">
-                <div className="font-medium text-gray-900">{t('ai.ollama')}</div>
-                <div className="text-xs text-gray-500">{t('ai.ollamaDesc')}</div>
+                <div className="font-medium text-gray-900 dark:text-gray-100">{t('ai.ollama')}</div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">{t('ai.ollamaDesc')}</div>
               </div>
             </button>
             <button
               onClick={() => setAiOverride((prev) => ({ ...prev, provider: 'openrouter' }))}
               className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${
                 currentAiProvider === 'openrouter'
-                  ? 'border-indigo-600 bg-indigo-50'
-                  : 'border-gray-200 hover:border-gray-300'
+                  ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/30'
+                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
               }`}
             >
               <Cloud className="w-6 h-6 text-indigo-600" />
               <div className="text-left">
-                <div className="font-medium text-gray-900">{t('ai.openrouter')}</div>
-                <div className="text-xs text-gray-500">{t('ai.openrouterDesc')}</div>
+                <div className="font-medium text-gray-900 dark:text-gray-100">{t('ai.openrouter')}</div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">{t('ai.openrouterDesc')}</div>
               </div>
             </button>
             <button
               onClick={() => setAiOverride((prev) => ({ ...prev, provider: 'lmstudio' }))}
               className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${
                 currentAiProvider === 'lmstudio'
-                  ? 'border-indigo-600 bg-indigo-50'
-                  : 'border-gray-200 hover:border-gray-300'
+                  ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/30'
+                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
               }`}
             >
               <Cpu className="w-6 h-6 text-indigo-600" />
               <div className="text-left">
-                <div className="font-medium text-gray-900">{t('ai.lmstudio', 'LM Studio')}</div>
-                <div className="text-xs text-gray-500">{t('ai.localOpenAIAPI', 'Local OpenAI-API')}</div>
+                <div className="font-medium text-gray-900 dark:text-gray-100">{t('ai.lmstudio', 'LM Studio')}</div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">{t('ai.localOpenAIAPI', 'Local OpenAI-API')}</div>
               </div>
             </button>
           </div>

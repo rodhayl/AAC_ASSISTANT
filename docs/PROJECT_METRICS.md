@@ -30,13 +30,15 @@ Snapshot date: **2026-08-14**
 | Metric | Value |
 | ------ | ----- |
 | Backend tests (pytest) | 653 passed, 2 skipped (reproduced 2026-08-14) |
-| Frontend unit/component tests (Vitest) | 226 passed (47 files, reproduced 2026-08-14) |
-| End-to-end tests (Playwright, real backend) | 108 passed |
+| Backend test coverage (pytest-cov) | 77% (statement + branch coverage) |
+| Frontend unit/component tests (Vitest) | 227 passed (48 files, reproduced 2026-08-14) |
+| Frontend test coverage (Vitest v8) | 70.49% statements, 60.28% branches, 64.54% functions, 72.95% lines |
+| End-to-end tests (Playwright, real backend) | 113 passed (including Axe Core accessibility scans) |
+| Automated accessibility scans (Axe Core) | clean (0 serious or critical violations across 5 critical pages) |
 | Python lint (`ruff`) | clean |
 | Frontend lint / typecheck / build | clean; JS bundle 344.5 kB ≤ 450 kB budget, CSS 96.9 kB ≤ 150 kB budget |
 
-> Test counts are reproduced from actual runs, not copied from documentation.
-> The E2E total varies slightly with which optional specs are enabled.
+> Test counts and coverage percentages are reproduced from actual runs, not copied from documentation.
 
 ## Supported platforms
 
@@ -46,21 +48,21 @@ Snapshot date: **2026-08-14**
 ## Known downstream use
 
 **No verifiable evidence of external users, clinics, schools, pilots, or
-deployments.** This project does not claim any adoption. A pilot guide is not
-yet published; if the maintainer chooses to run a pilot, adoption would then be
-documented here with evidence.
+deployments.** This project does not claim any adoption. A standardized evaluation
+protocol is published in [`docs/PILOT_GUIDE.md`](PILOT_GUIDE.md); if the maintainer
+conducts or verifies a real-world evaluation, evidence will be documented here.
 
 ## CI status
 
-CI runs backend tests, frontend tests, lint, build, production E2E, and Windows
-packaging on GitHub Actions. See `.github/workflows/ci.yml`.
+CI runs backend tests with coverage, frontend tests with coverage, lint, build, production E2E,
+Axe accessibility scans, and Windows packaging on GitHub Actions. See `.github/workflows/ci.yml`.
 
 ## Unavailable information
 
-- Coverage percentage (not currently measured).
 - Historical package download telemetry (downloads are tracked exclusively via GitHub Releases asset metrics).
 
 ## Future goals
 
-These are goals, not facts: a documented pilot program with clinical/specialist feedback;
-expanded accessibility testing with physical switches and assistive devices.
+These are goals, not facts: real-world pilot evaluations following `docs/PILOT_GUIDE.md`;
+manual screen-reader testing with assistive technology specialists (Issue #5);
+switch/scanning access implementation (Issue #6).
