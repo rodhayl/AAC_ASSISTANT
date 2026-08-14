@@ -4,6 +4,19 @@ import { test, expect } from '@playwright/test';
 // the primary input paths work without a pointer, which is a hard requirement
 // for users with motor impairments. They do not claim WCAG conformance.
 
+function parseCssDurationsToMs(durationStr: string): number[] {
+  return durationStr.split(',').map((part) => {
+    const trimmed = part.trim();
+    if (trimmed.endsWith('ms')) {
+      return parseFloat(trimmed);
+    }
+    if (trimmed.endsWith('s')) {
+      return parseFloat(trimmed) * 1000;
+    }
+    return parseFloat(trimmed) || 0;
+  });
+}
+
 test.describe('Accessibility: keyboard operation', () => {
   test.use({ storageState: 'playwright/.auth/student.json' });
 
@@ -70,22 +83,37 @@ test.describe('Accessibility: keyboard operation', () => {
   });
 
   test('respects prefers-reduced-motion media query on visual elements in the browser', async ({ page }) => {
-    await page.emulateMedia({ reducedMotion: 'reduce' });
+    // 1. Emulate normal motion preference as baseline
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
     await page.goto('/communication');
     await expect(page.locator('main#main-content')).toBeVisible();
 
-    const computed = await page.evaluate(() => {
-      const el = document.querySelector('main#main-content') || document.body;
-      const style = window.getComputedStyle(el);
-      return {
-        animationDuration: style.animationDuration,
-        transitionDuration: style.transitionDuration,
-      };
-    });
+    const baselineMatches = await page.evaluate(
+      () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
+    expect(baselineMatches).toBe(false);
 
-    const animSeconds = parseFloat(computed.animationDuration) || 0;
-    const transSeconds = parseFloat(computed.transitionDuration) || 0;
-    expect(animSeconds).toBeLessThanOrEqual(0.01);
-    expect(transSeconds).toBeLessThanOrEqual(0.01);
+    // 2. Measure baseline body transition duration (application default: 0.3s)
+    const baselineDurationsRaw = await page.evaluate(
+      () => window.getComputedStyle(document.body).transitionDuration
+    );
+    const baselineDurationsMs = parseCssDurationsToMs(baselineDurationsRaw);
+    expect(baselineDurationsMs.length).toBeGreaterThan(0);
+    expect(baselineDurationsMs.some((ms) => ms > 0.01)).toBe(true);
+
+    // 3. Switch to reduced motion preference
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const reducedMatches = await page.evaluate(
+      () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
+    expect(reducedMatches).toBe(true);
+
+    // 4. Measure body transition duration under reduced motion (restricted to <= 0.01ms)
+    const reducedDurationsRaw = await page.evaluate(
+      () => window.getComputedStyle(document.body).transitionDuration
+    );
+    const reducedDurationsMs = parseCssDurationsToMs(reducedDurationsRaw);
+    expect(reducedDurationsMs.length).toBeGreaterThan(0);
+    expect(reducedDurationsMs.every((ms) => ms <= 0.01)).toBe(true);
   });
 });
