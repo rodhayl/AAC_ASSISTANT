@@ -33,5 +33,6 @@
   "inUse": "In use",
   "previous": "Previous",
   "next": "Next",
-  "page": "Page {{n}}"
+  "page": "Page {{n}}",
+  "edit": "Edit"
 }

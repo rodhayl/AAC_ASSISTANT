@@ -145,5 +145,11 @@
   "openBoard": "Abrir tablero",
   "backToSelection": "Volver a la selección",
   "unsavedChangesWarning": "Tienes cambios sin guardar. ¿Estás seguro de que quieres salir?",
-  "boards": "Tableros"
+  "boards": "Tableros",
+  "ai": "IA",
+  "grid2x2": "2x2",
+  "grid3x3": "3x3",
+  "grid4x4": "4x4",
+  "grid2x6": "2x6",
+  "grid4x5": "4x5"
 }

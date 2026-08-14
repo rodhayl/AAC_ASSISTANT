@@ -5,6 +5,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import type { AISettings } from '../../store/settingsStore';
 import { config } from '../../config';
+import { useAutoHide } from '../../hooks/useAutoHide';
 import api, { extractError } from '../../lib/api';
 import type { AiOverride, ProviderHealth } from './types';
 import { AiProviderFields } from './AiProviderFields';
@@ -39,11 +40,7 @@ export function AiProviderTab() {
   const userRole = user?.user_type;
   const readOnlyRequestKey = `${userId ?? 'none'}:${userRole ?? 'none'}`;
 
-  useEffect(() => {
-    if (!saveSuccess) return;
-    const timeoutId = setTimeout(() => setSaveSuccess(false), 3000);
-    return () => clearTimeout(timeoutId);
-  }, [saveSuccess]);
+  useAutoHide(saveSuccess, () => setSaveSuccess(false));
 
   useEffect(() => {
     if (!userId) return;
@@ -215,9 +212,9 @@ export function AiProviderTab() {
       >
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
           <h3 id="settings-ai-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            AI Configuration
+            {t('ai.readOnlyTitle', 'AI Configuration')}
           </h3>
-          <p className="text-sm text-gray-500 mt-1">Current AI settings (View only - contact admin to change)</p>
+          <p className="text-sm text-gray-500 mt-1">{t('ai.viewOnly', 'Current AI settings (View only - contact admin to change)')}</p>
         </div>
         {readOnlyLoading && (
           <div className="p-6 text-sm text-gray-500">{t('ai.loading', 'Loading AI settings...')}</div>
@@ -231,7 +228,7 @@ export function AiProviderTab() {
           <div className="p-6 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <p className="block text-sm font-medium text-gray-700 mb-1">Primary Provider</p>
+                <p className="block text-sm font-medium text-gray-700 mb-1">{t('ai.primaryProvider', 'Primary Provider')}</p>
                 <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg capitalize flex items-center">
                   {visibleAiSettings.provider === 'ollama' ? (
                     <Cpu className="w-4 h-4 mr-2 text-indigo-600" />
@@ -242,7 +239,7 @@ export function AiProviderTab() {
                 </div>
               </div>
               <div>
-                <p className="block text-sm font-medium text-gray-700 mb-1">Primary Model</p>
+                <p className="block text-sm font-medium text-gray-700 mb-1">{t('ai.primaryModel', 'Primary Model')}</p>
                 <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
                   {(visibleAiSettings.provider === 'ollama'
                     ? visibleAiSettings.ollama_model
@@ -324,8 +321,8 @@ export function AiProviderTab() {
             >
               <Cpu className="w-6 h-6 text-indigo-600" />
               <div className="text-left">
-                <div className="font-medium text-gray-900">LM Studio</div>
-                <div className="text-xs text-gray-500">Local OpenAI-API</div>
+                <div className="font-medium text-gray-900">{t('ai.lmstudio', 'LM Studio')}</div>
+                <div className="text-xs text-gray-500">{t('ai.localOpenAIAPI', 'Local OpenAI-API')}</div>
               </div>
             </button>
           </div>

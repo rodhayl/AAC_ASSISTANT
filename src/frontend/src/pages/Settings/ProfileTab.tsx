@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, Check, Edit2, Save, User } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
+import { useAutoHide } from '../../hooks/useAutoHide';
 import api, { extractError } from '../../lib/api';
 
 export function ProfileTab() {
@@ -22,17 +23,19 @@ export function ProfileTab() {
     }
   }, [user, editingProfile]);
 
-  useEffect(() => {
-    if (!profileSuccess) return;
-    const timeoutId = setTimeout(() => setProfileSuccess(false), 3000);
-    return () => clearTimeout(timeoutId);
-  }, [profileSuccess]);
+  useAutoHide(profileSuccess, () => setProfileSuccess(false));
 
   const handleSaveProfile = async () => {
     setProfileSaving(true);
     setProfileError(null);
     try {
-      const res = await api.put('/auth/profile', profileForm);
+      // A blank email must be sent as null, not an empty string: the backend
+      // schema types email as EmailStr | None, so '' fails validation and
+      // blocks saving even when the user only changed their display name.
+      const res = await api.put('/auth/profile', {
+        display_name: profileForm.display_name,
+        email: profileForm.email.trim() === '' ? null : profileForm.email.trim(),
+      });
       useAuthStore.setState((state) => {
         const newUser = { ...res.data };
         if (newUser.settings === null || newUser.settings === undefined) {

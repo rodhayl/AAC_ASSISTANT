@@ -13,7 +13,11 @@ claim.
 - `npm run build` — type-safe component props.
 - Playwright end-to-end suite includes a visual/contrast smoke test that renders
   the application in light, dark, and high-contrast modes at desktop and mobile
-  viewports.
+  viewports, plus a keyboard-operation spec (`e2e/accessibility.spec.ts`) that
+  verifies the skip link, symbol activation via Enter, and keyboard-operable
+  sentence controls.
+- `useAccessibleInteraction` unit tests cover dwell-time selection and
+  repeat-click debouncing for board symbols.
 
 ### Manual checks performed to date
 
@@ -33,11 +37,14 @@ These are honest, current limitations; they are not exhaustive:
   verified every flow with NVDA/JAWS/VoiceOver.
 - **Symbol alt text** is present for seeded symbols, but operator-uploaded
   symbols depend on the label the operator provides.
-- **Reduced-motion preference** is not yet systematically honored across all
-  animations.
-- **Dwell-time and switch-access support** (common AAC input methods) is
-  partial; `dwell_time` is stored as a preference but is not yet wired to a
-  scanning input mode.
+- **Reduced-motion preference** is honored for CSS animations and transitions
+  via a global `prefers-reduced-motion` rule (durations collapse to 0.01ms);
+  JavaScript-driven smooth scrolling (e.g., section `scrollIntoView`) is not yet
+  covered.
+- **Dwell-time selection** works on board symbols: press-and-hold for the
+  configured `dwell_time` selects the symbol (`useAccessibleInteraction`, unit
+  tested). Automatic **switch/scanning input** (a highlight that cycles between
+  targets) is not yet implemented.
 - **Color-independent communication** is partially supported (labels always
   accompany symbols); we have not audited every chart/status indicator for
   color-only encoding.
@@ -59,7 +66,8 @@ Please open an issue with:
 ## 5. Future work
 
 - Add a dedicated screen-reader test pass.
-- Implement switch-access / scanning input driven by `dwell_time`.
-- Honor `prefers-reduced-motion`.
+- Implement automatic switch-access / scanning input (a focus/selection
+  highlight that cycles between targets) as a complement to dwell-click.
+- Cover JavaScript-driven smooth scrolling under `prefers-reduced-motion`.
 - Audit color-only indicators and add non-color affordances.
 - Move toward a documented WCAG 2.2 AA target with an external audit.

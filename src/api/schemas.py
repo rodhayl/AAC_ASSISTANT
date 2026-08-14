@@ -552,32 +552,29 @@ class CompanionPersonaSchema(BaseModel):
     sign_off_style: str | None = None
 
 
-class GuardianProfileCreate(BaseModel):
+class GuardianProfileFields(BaseModel):
+    """Shared editable fields for guardian profile create and update."""
+
+    age: int | None = Field(None, ge=1, le=100, description="Student age (1-100)")
+    gender: str | None = None
+    medical_context: MedicalContextSchema | None = None
+    communication_style: CommunicationStyleSchema | None = None
+    safety_constraints: SafetyConstraintsSchema | None = None
+    companion_persona: CompanionPersonaSchema | None = None
+    custom_instructions: str | None = None
+    private_notes: str | None = None
+
+
+class GuardianProfileCreate(GuardianProfileFields):
     """Create a new guardian profile for a student"""
 
     template_name: str = "default"
-    age: int | None = Field(None, ge=1, le=100, description="Student age (1-100)")
-    gender: str | None = None
-    medical_context: MedicalContextSchema | None = None
-    communication_style: CommunicationStyleSchema | None = None
-    safety_constraints: SafetyConstraintsSchema | None = None
-    companion_persona: CompanionPersonaSchema | None = None
-    custom_instructions: str | None = None
-    private_notes: str | None = None
 
 
-class GuardianProfileUpdate(BaseModel):
+class GuardianProfileUpdate(GuardianProfileFields):
     """Update an existing guardian profile"""
 
     template_name: str | None = None
-    age: int | None = Field(None, ge=1, le=100, description="Student age (1-100)")
-    gender: str | None = None
-    medical_context: MedicalContextSchema | None = None
-    communication_style: CommunicationStyleSchema | None = None
-    safety_constraints: SafetyConstraintsSchema | None = None
-    companion_persona: CompanionPersonaSchema | None = None
-    custom_instructions: str | None = None
-    private_notes: str | None = None
     change_reason: str | None = None  # For audit trail
 
 

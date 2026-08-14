@@ -14,7 +14,7 @@ from slowapi.util import get_remote_address
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import UserSettings
+from src.aac_app.models import User, UserSettings
 from src.aac_app.services.auth_service import password_strength_error
 from src.api import schemas
 
@@ -53,6 +53,21 @@ def validate_password_strength(password: str) -> None:
     error = password_strength_error(password)
     if error:
         raise HTTPException(status_code=400, detail=error)
+
+
+def ensure_username_email_available(
+    db: Session,
+    username: str,
+    email: str | None,
+) -> None:
+    """Reject registration when the username or a provided email is taken."""
+    existing_user = db.query(User).filter(User.username == username).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username already registered")
+    if email:
+        existing_email = db.query(User).filter(User.email == email).first()
+        if existing_email:
+            raise HTTPException(status_code=400, detail="Email already registered")
 
 
 def validate_preference_updates(updates: dict) -> None:

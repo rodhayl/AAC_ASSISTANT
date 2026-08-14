@@ -120,6 +120,10 @@
   "notQuite": "Not quite — the correct answer is \"{{answer}}\"",
   "answerReceived": "Answer received",
   "close": "Close",
+  "aiAssistant": "AI Assistant",
+  "conversationPartner": "Conversation Partner",
+  "panelSubtitle": "Practice questions, explanations, and conversational support",
+  "voiceOff": "Voice Off",
   "difficulty": {
     "basic": "Basic",
     "intermediate": "Intermediate",

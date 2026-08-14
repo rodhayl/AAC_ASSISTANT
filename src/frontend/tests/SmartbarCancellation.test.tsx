@@ -7,10 +7,13 @@ vi.mock('../src/lib/api', () => ({
   default: { post: vi.fn() },
 }));
 
-vi.mock('../src/store/learningStore', () => ({
-  useLearningStore: (selector?: (state: { messages: never[] }) => unknown) =>
-    selector ? selector({ messages: [] }) : { messages: [] },
-}));
+vi.mock('../src/store/learningStore', () => {
+  const state = { messages: [] };
+  return {
+    useLearningStore: (selector?: (s: typeof state) => unknown) =>
+      selector ? selector(state) : state,
+  };
+});
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (_key: string, fallback: string) => fallback }),

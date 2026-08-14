@@ -16,6 +16,22 @@ from src.api.routers.auth_helpers import (
 router = APIRouter()
 
 
+def _get_authorized_preferences_user(
+    db: Session, user_id: int, current_user: User
+) -> User:
+    """Fetch a preferences target user and enforce access authorization."""
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    authorize_user_access(
+        target_user=target,
+        current_user=current_user,
+        db=db,
+        forbidden_detail="Not authorized to access preferences",
+    )
+    return target
+
+
 @router.get("/preferences", response_model=schemas.UserPreferencesResponse)
 def get_preferences(
     current_user: User = Depends(get_current_active_user),
@@ -56,16 +72,7 @@ def get_user_preferences(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    target = db.query(User).filter(User.id == user_id).first()
-    if not target:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    authorize_user_access(
-        target_user=target,
-        current_user=current_user,
-        db=db,
-        forbidden_detail="Not authorized to access preferences",
-    )
+    target = _get_authorized_preferences_user(db, user_id, current_user)
     settings = db.query(UserSettings).filter(UserSettings.user_id == target.id).first()
     return build_preferences_response(settings)
 
@@ -80,15 +87,7 @@ def update_user_preferences(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    target = db.query(User).filter(User.id == user_id).first()
-    if not target:
-        raise HTTPException(status_code=404, detail="User not found")
-    authorize_user_access(
-        target_user=target,
-        current_user=current_user,
-        db=db,
-        forbidden_detail="Not authorized to access preferences",
-    )
+    target = _get_authorized_preferences_user(db, user_id, current_user)
     updates = prefs.model_dump(exclude_unset=True)
     validate_preference_updates(updates)
     settings = update_user_settings(db, target.id, updates)

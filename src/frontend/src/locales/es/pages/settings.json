@@ -135,6 +135,45 @@
         "label": "Texto a voz del navegador",
         "help": "La salida de voz usa la API SpeechSynthesis del navegador"
       }
-    }
+    },
+    "keysUrl": "openrouter.ai/keys",
+    "lmstudioUrl": "URL base de LM Studio",
+    "lmstudioDefault": "Predeterminada: http://localhost:1234/v1",
+    "selectModel": "Seleccionar modelo",
+    "selectModelPlaceholder": "Selecciona un modelo...",
+    "localModelDefault": "local-model (Predeterminado)",
+    "readOnlyTitle": "Configuración de IA",
+    "viewOnly": "Ajustes de IA actuales (solo lectura - contacta al administrador para cambiarlos)",
+    "primaryProvider": "Proveedor principal",
+    "primaryModel": "Modelo principal",
+    "lmstudio": "LM Studio",
+    "localOpenAIAPI": "API de OpenAI local"
+  },
+  "learningModes": {
+    "subtitle": "Configura modos de aprendizaje inteligentes y prompts",
+    "systemDefault": "Predeterminado del sistema",
+    "addNew": "Añadir nuevo modo de aprendizaje",
+    "name": "Nombre",
+    "key": "Clave (ID interno)",
+    "keyHelp": "Identificador único para este modo.",
+    "description": "Descripción",
+    "promptInstruction": "Instrucción del prompt del sistema",
+    "previewSystemPrompt": "Vista previa del prompt del sistema",
+    "promptHelp": "Este texto se añade al prompt del sistema de la IA. No es visible para el estudiante.",
+    "autoAsk": "Preguntar automáticamente",
+    "cancel": "Cancelar",
+    "saveMode": "Guardar modo",
+    "student": "Estudiante",
+    "noStudent": "Sin estudiante (prompt predeterminado)",
+    "previewWithSample": "Vista previa con pregunta de ejemplo",
+    "sampleHelp": "Muestra la solicitud LLM exacta (prompt del sistema + mensaje del usuario) para una pregunta realista de estudiante.",
+    "sampleQuestion": "Pregunta de estudiante de ejemplo",
+    "run": "Ejecutar",
+    "template": "Plantilla:",
+    "buildingPrompt": "Construyendo prompt...",
+    "fullRequest": "Solicitud LLM completa",
+    "systemPrompt": "Prompt del sistema",
+    "userMessage": "Mensaje del usuario",
+    "userMessageHelp": "(en lo que se convierte la pregunta del estudiante)"
   }
 }

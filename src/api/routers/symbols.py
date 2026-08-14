@@ -25,6 +25,59 @@ from src.api.file_uploads import read_image_upload, remove_owned_upload
 router = APIRouter()
 
 
+def _get_symbol_or_404(db: Session, symbol_id: int, current_user: User) -> Symbol:
+    """Fetch a symbol by id or raise a translated 404."""
+    symbol = db.query(Symbol).filter(Symbol.id == symbol_id).first()
+    if not symbol:
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.boards.symbolNotFound"),
+        )
+    return symbol
+
+
+def _get_board_symbol_or_404(
+    db: Session, board_id: int, symbol_id: int, current_user: User
+) -> BoardSymbol:
+    """Fetch a board's symbol association after ownership check, or 404."""
+    board = get_board_or_404(db, board_id, current_user)
+    require_board_owner_or_admin(board, current_user)
+    db_board_symbol = (
+        db.query(BoardSymbol)
+        .filter(BoardSymbol.board_id == board_id, BoardSymbol.id == symbol_id)
+        .first()
+    )
+    if not db_board_symbol:
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(
+                user=current_user, key="errors.boards.symbolNotFoundOnBoard"
+            ),
+        )
+    return db_board_symbol
+
+
+async def _save_symbol_image(file: UploadFile, current_user: User) -> str:
+    """Persist an uploaded symbol image and return its public URL path."""
+    uploads_dir = config.UPLOADS_DIR / "symbols"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    content, ext = await read_image_upload(
+        file,
+        invalid_type_detail=get_text(user=current_user, key="errors.boards.invalidFileType"),
+        too_large_detail=get_text(user=current_user, key="errors.boards.fileTooLarge"),
+        empty_detail=get_text(user=current_user, key="errors.boards.invalidFileType"),
+    )
+    name = f"{uuid.uuid4().hex}{ext}"
+    path = uploads_dir / name
+    try:
+        with path.open("wb") as f:
+            f.write(content)
+    except OSError:
+        remove_owned_upload(f"/uploads/symbols/{name}", uploads_dir)
+        raise
+    return f"/uploads/symbols/{name}"
+
+
 @router.get("/symbols/categories", response_model=list[str])
 def get_symbol_categories(
     db: Session = Depends(get_db),
@@ -243,23 +296,8 @@ async def upload_symbol(
     current_user: User = Depends(get_current_staff_user),
 ):
     """Upload a new symbol image"""
+    public_path = await _save_symbol_image(file, current_user)
     uploads_dir = config.UPLOADS_DIR / "symbols"
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-    content, ext = await read_image_upload(
-        file,
-        invalid_type_detail=get_text(user=current_user, key="errors.boards.invalidFileType"),
-        too_large_detail=get_text(user=current_user, key="errors.boards.fileTooLarge"),
-        empty_detail=get_text(user=current_user, key="errors.boards.invalidFileType"),
-    )
-    name = f"{uuid.uuid4().hex}{ext}"
-    path = uploads_dir / name
-    try:
-        with path.open("wb") as f:
-            f.write(content)
-    except OSError:
-        remove_owned_upload(f"/uploads/symbols/{name}", uploads_dir)
-        raise
-    public_path = f"/uploads/symbols/{name}"
     db_symbol = Symbol(
         label=label,
         description=description,
@@ -295,12 +333,7 @@ def update_symbol(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_staff_user),
 ):
-    db_symbol = db.query(Symbol).filter(Symbol.id == symbol_id).first()
-    if not db_symbol:
-        raise HTTPException(
-            status_code=404,
-            detail=get_text(user=current_user, key="errors.boards.symbolNotFound"),
-        )
+    db_symbol = _get_symbol_or_404(db, symbol_id, current_user)
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(db_symbol, key, value)
     db.commit()
@@ -319,29 +352,9 @@ async def update_symbol_image(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_staff_user),
 ):
-    db_symbol = db.query(Symbol).filter(Symbol.id == symbol_id).first()
-    if not db_symbol:
-        raise HTTPException(
-            status_code=404,
-            detail=get_text(user=current_user, key="errors.boards.symbolNotFound"),
-        )
+    db_symbol = _get_symbol_or_404(db, symbol_id, current_user)
+    public_path = await _save_symbol_image(file, current_user)
     uploads_dir = config.UPLOADS_DIR / "symbols"
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-    content, ext = await read_image_upload(
-        file,
-        invalid_type_detail=get_text(user=current_user, key="errors.boards.invalidFileType"),
-        too_large_detail=get_text(user=current_user, key="errors.boards.fileTooLarge"),
-        empty_detail=get_text(user=current_user, key="errors.boards.invalidFileType"),
-    )
-    name = f"{uuid.uuid4().hex}{ext}"
-    path = uploads_dir / name
-    try:
-        with path.open("wb") as f:
-            f.write(content)
-    except OSError:
-        remove_owned_upload(f"/uploads/symbols/{name}", uploads_dir)
-        raise
-    public_path = f"/uploads/symbols/{name}"
     old_image_path = db_symbol.image_path
     db_symbol.image_path = public_path
     try:
@@ -367,12 +380,7 @@ def delete_symbol(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_staff_user),
 ):
-    symbol = db.query(Symbol).filter(Symbol.id == symbol_id).first()
-    if not symbol:
-        raise HTTPException(
-            status_code=404,
-            detail=get_text(user=current_user, key="errors.boards.symbolNotFound"),
-        )
+    symbol = _get_symbol_or_404(db, symbol_id, current_user)
     in_use = (
         db.query(BoardSymbol).filter(BoardSymbol.symbol_id == symbol_id).count() > 0
     )
@@ -402,13 +410,8 @@ def add_symbol_to_board(
     board = get_board_or_404(db, board_id, current_user)
     require_board_owner_or_admin(board, current_user)
 
-    # Check symbol
-    symbol = db.query(Symbol).filter(Symbol.id == symbol_data.symbol_id).first()
-    if not symbol:
-        raise HTTPException(
-            status_code=404,
-            detail=get_text(user=current_user, key="errors.boards.symbolNotFound"),
-        )
+    # Check symbol exists (raises a translated 404 otherwise).
+    _get_symbol_or_404(db, symbol_data.symbol_id, current_user)
 
     db_board_symbol = BoardSymbol(board_id=board_id, **symbol_data.model_dump())
     db.add(db_board_symbol)
@@ -506,23 +509,7 @@ def update_board_symbol(
     current_user: User = Depends(get_current_active_user),
 ):
     """Update a symbol's position or properties on a board"""
-    # Check board ownership before querying the board-symbol association.
-    board = get_board_or_404(db, board_id, current_user)
-    require_board_owner_or_admin(board, current_user)
-
-    db_board_symbol = (
-        db.query(BoardSymbol)
-        .filter(BoardSymbol.board_id == board_id, BoardSymbol.id == symbol_id)
-        .first()
-    )
-
-    if not db_board_symbol:
-        raise HTTPException(
-            status_code=404,
-            detail=get_text(
-                user=current_user, key="errors.boards.symbolNotFoundOnBoard"
-            ),
-        )
+    db_board_symbol = _get_board_symbol_or_404(db, board_id, symbol_id, current_user)
 
     for key, value in symbol_data.model_dump(exclude_unset=True).items():
         setattr(db_board_symbol, key, value)
@@ -540,22 +527,7 @@ def remove_symbol_from_board(
     current_user: User = Depends(get_current_active_user),
 ):
     """Remove a symbol from a board"""
-    board = get_board_or_404(db, board_id, current_user)
-    require_board_owner_or_admin(board, current_user)
-
-    db_board_symbol = (
-        db.query(BoardSymbol)
-        .filter(BoardSymbol.board_id == board_id, BoardSymbol.id == symbol_id)
-        .first()
-    )
-
-    if not db_board_symbol:
-        raise HTTPException(
-            status_code=404,
-            detail=get_text(
-                user=current_user, key="errors.boards.symbolNotFoundOnBoard"
-            ),
-        )
+    db_board_symbol = _get_board_symbol_or_404(db, board_id, symbol_id, current_user)
 
     db.delete(db_board_symbol)
     db.commit()

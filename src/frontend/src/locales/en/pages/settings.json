@@ -135,6 +135,45 @@
         "label": "Browser text-to-speech",
         "help": "Speech output uses the browser SpeechSynthesis API"
       }
-    }
+    },
+    "keysUrl": "openrouter.ai/keys",
+    "lmstudioUrl": "LM Studio Base URL",
+    "lmstudioDefault": "Default: http://localhost:1234/v1",
+    "selectModel": "Select Model",
+    "selectModelPlaceholder": "Select a model...",
+    "localModelDefault": "local-model (Default)",
+    "readOnlyTitle": "AI Configuration",
+    "viewOnly": "Current AI settings (View only - contact admin to change)",
+    "primaryProvider": "Primary Provider",
+    "primaryModel": "Primary Model",
+    "lmstudio": "LM Studio",
+    "localOpenAIAPI": "Local OpenAI-API"
+  },
+  "learningModes": {
+    "subtitle": "Configure smart learning modes and prompts",
+    "systemDefault": "System Default",
+    "addNew": "Add New Learning Mode",
+    "name": "Name",
+    "key": "Key (Internal ID)",
+    "keyHelp": "Unique identifier for this mode.",
+    "description": "Description",
+    "promptInstruction": "System Prompt Instruction",
+    "previewSystemPrompt": "Preview System Prompt",
+    "promptHelp": "This text is appended to the AI system prompt. It is not visible to the student.",
+    "autoAsk": "Auto-ask questions",
+    "cancel": "Cancel",
+    "saveMode": "Save Mode",
+    "student": "Student",
+    "noStudent": "No student (default prompt)",
+    "previewWithSample": "Preview with sample question",
+    "sampleHelp": "Show the exact LLM request (system prompt + user message) for a realistic student question.",
+    "sampleQuestion": "Sample student question",
+    "run": "Run",
+    "template": "Template:",
+    "buildingPrompt": "Building prompt...",
+    "fullRequest": "Full LLM request",
+    "systemPrompt": "System prompt",
+    "userMessage": "User message",
+    "userMessageHelp": "(what the student's question becomes)"
   }
 }
