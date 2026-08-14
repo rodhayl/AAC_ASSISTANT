@@ -16,8 +16,10 @@ machine so sensitive communication stays under local control.
 Augmentative and alternative communication (AAC) software helps people who
 cannot rely on speech to express themselves. Many AAC tools depend on cloud
 services, which can put highly personal communication data outside the user's
-control. AAC Assistant is built local-first: after installation it works fully
-offline, and no cloud account, analytics, or telemetry is required.
+control. AAC Assistant is built local-first: core AAC communication works offline
+after installation, and no cloud account, analytics, or telemetry is required.
+Optional integrations may access external services only when explicitly enabled
+by the operator.
 
 ## Who it is for
 
@@ -28,6 +30,8 @@ offline, and no cloud account, analytics, or telemetry is required.
 - **Administrators** — to manage users, roles, and settings on a local install.
 
 ## Product tour
+
+*Screenshots use fictional demonstration data.*
 
 ### 1. Communication board & sentence strip
 Grid-based symbol navigation with real-time sentence construction, symbol library management, and instant speech output.

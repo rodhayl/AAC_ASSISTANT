@@ -1,0 +1,75 @@
+name: Accessibility Report
+description: Report an accessibility barrier, contrast issue, keyboard navigation flaw, or assistive technology problem.
+title: "[Accessibility]: "
+labels: ["accessibility"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping make AAC Assistant more accessible.
+
+        > **Privacy Warning:** Do not include medical records, clinical diagnoses, private student communication content, or personally identifiable information.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected Area / Feature
+      description: Which part of the application is affected?
+      options:
+        - Communication Board & Symbol Grid
+        - Sentence Strip & Controls
+        - Vocabulary Search & Board Editor
+        - Adaptive Learning Sessions
+        - User Settings & Appearance (Themes/Contrast)
+        - First-run Administrator Setup (/setup)
+        - Navigation, Focus Traps & Modals
+        - Speech Synthesis (TTS) / Voice Recording
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Operating System and Browser
+      description: E.g., Windows 11 / Chrome 122, or macOS 14 / Firefox 124.
+      placeholder: "e.g., Windows 11 - Edge 122"
+    validations:
+      required: true
+
+  - type: input
+    id: assistive_tech
+    attributes:
+      label: Assistive Technology or Input Method
+      description: Which assistive hardware or software was in use?
+      placeholder: "e.g., NVDA 2024.1, VoiceOver, Keyboard-only, Single switch with dwell time, Touchscreen"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description of the Accessibility Barrier
+      description: What happened and how does it prevent or impede accessible communication?
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should have happened according to accessibility standards (e.g. WCAG 2.1 AA)?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Provide clear, step-by-step instructions.
+      placeholder: |
+        1. Navigate to '...'
+        2. Press Tab until '...'
+        3. Observe that focus is lost / no announcement occurs.
+    validations:
+      required: true

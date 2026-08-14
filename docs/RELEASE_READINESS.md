@@ -4,10 +4,10 @@ This runbook is for a local or managed AAC Assistant installation. It is an
 operational safety checklist, not a substitute for clinical or user-acceptance
 validation.
 
-## Current working-tree validation (2026-08-14)
+## Baseline and post-release validation (2026-08-14)
 
-The `main` default branch (commit `7c197c42050ccf53fbad20a846e854ea834dc893`, release `v2.0.0`)
-is committed and clean. The complete automated validation gates pass: backend Ruff, compileall, and pytest
+The initial public release `v2.0.0` was validated on commit `7c197c42050ccf53fbad20a846e854ea834dc893`.
+Subsequent post-release maintenance commits on `main` maintain the complete automated validation gates: backend Ruff, compileall, and pytest
 (**653 passed, 0 failed, 2 skipped**); frontend typecheck,
 ESLint, **47 Vitest files / 226 tests**, production build, and bundle budgets
 (344.5 kB JS / 450 kB and 96.9 kB CSS / 150 kB). `uv lock --check`, production

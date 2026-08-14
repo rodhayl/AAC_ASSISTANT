@@ -48,7 +48,7 @@ jobs:
       - run: uv run python scripts/audit_codebase.py
       - run: uv run python -m compileall -q src scripts
       - run: uv pip check
-      - run: uv run pytest -q
+      - run: uv run pytest --cov=src --cov-report=term-missing:skip-covered --cov-branch -q
 
   frontend:
     runs-on: ubuntu-latest
@@ -65,7 +65,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint -- --max-warnings=0
-      - run: npm run test -- --run
+      - run: npm run test -- --run --coverage --coverage.reporter=text-summary
       - run: npm run i18n:audit
       - run: npm run build
       # Production-build guard: fails if dist/ is stale, exceeds the documented
