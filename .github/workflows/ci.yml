@@ -171,7 +171,13 @@ jobs:
           cache-dependency-path: src/frontend/package-lock.json
       - name: Install Inno Setup
         shell: powershell
-        run: choco install innosetup --yes --no-progress
+        run: |
+          choco install innosetup --yes --no-progress
+          $innoDir = "${env:ProgramFiles(x86)}\Inno Setup 6"
+          if (Test-Path "$innoDir\ISCC.exe") {
+            echo "$innoDir" >> $env:GITHUB_PATH
+            echo "INNO_SETUP_PATH=$innoDir\ISCC.exe" >> $env:GITHUB_ENV
+          }
       - run: uv sync --locked --group dev
       - run: npm ci
         working-directory: src/frontend
