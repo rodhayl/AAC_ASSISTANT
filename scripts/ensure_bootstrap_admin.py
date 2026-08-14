@@ -59,9 +59,9 @@ def ensure_bootstrap_admin() -> int:
     print(f"Username: {username}")
     if config.explicit_bootstrap_password() is None:
         print(
-            f"A one-time admin password was generated and stored in {config.ENV_FILE}."
+            f"Default development password '{config.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD}' was used."
         )
-        print("IMPORTANT: Change this password immediately after first login.")
+        print("IMPORTANT: Set AAC_BOOTSTRAP_ADMIN_PASSWORD in .env or change it immediately after first login.")
     return 0
 
 
