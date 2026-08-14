@@ -181,7 +181,9 @@ describe('VoiceTab', () => {
     );
 
     const select = await screen.findByRole('combobox', { name: 'Local neural voice' });
-    expect(select).toBeEnabled();
+    await waitFor(() => {
+      expect(select).toBeEnabled();
+    });
     // The Spanish voices are offered alongside the English ones.
     expect(await screen.findByRole('option', { name: /ef_dora/ })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /em_santa/ })).toBeInTheDocument();

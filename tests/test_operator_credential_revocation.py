@@ -15,8 +15,6 @@ assert that both ``security_version`` is incremented and
 ``credentials_changed_at`` is recorded.
 """
 
-import hashlib
-
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -133,8 +131,7 @@ def _make_user(factory, username: str, password_hash: str):
         session.close()
 
 
-def _sha256_hash(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+LEGACY_SHA256_HASH = "a" * 64
 
 
 def _assert_revoked(session, user_id: int, previous_version: int) -> None:
@@ -148,13 +145,13 @@ def _assert_revoked(session, user_id: int, previous_version: int) -> None:
 def test_account_admin_reset_password_marks_credentials_changed(op_db):
     """The admin CLI password reset revokes existing sessions."""
     factory, _ = op_db
-    user = _make_user(factory, "cli_user", _sha256_hash("OldPass123"))
+    user = _make_user(factory, "cli_user", "initial_test_hash")
     session = factory()
     try:
         assert reset_password(session, user.username, "NewPass123") is True
         session.expire_all()
         refreshed = session.query(User).filter(User.id == user.id).first()
-        assert refreshed.password_hash != _sha256_hash("OldPass123")
+        assert refreshed.password_hash != "initial_test_hash"
         _assert_revoked(session, user.id, previous_version=1)
     finally:
         session.close()
@@ -176,7 +173,7 @@ def test_migrate_passwords_marks_credentials_changed_for_sha256_users(
 ):
     """The SHA-256 -> bcrypt migration revokes sessions of migrated users."""
     factory, get_session = op_db
-    sha_user = _make_user(factory, "legacy_sha", _sha256_hash("OldPass123"))
+    sha_user = _make_user(factory, "legacy_sha", LEGACY_SHA256_HASH)
     bcrypt_user = _make_user(factory, "modern_bcrypt", "$2b$12$abcdefghijklmnopqrstuv")
     monkeypatch.setattr("scripts.migrate_passwords.get_session", get_session)
 
@@ -190,7 +187,7 @@ def test_migrate_passwords_marks_credentials_changed_for_sha256_users(
     try:
         migrated = session.query(User).filter(User.id == sha_user.id).first()
         assert migrated.password_hash.startswith("$2b$")
-        assert migrated.password_hash != _sha256_hash("OldPass123")
+        assert migrated.password_hash != LEGACY_SHA256_HASH
         _assert_revoked(session, sha_user.id, previous_version=1)
 
         # Users already on bcrypt are left untouched: no hash change, no
