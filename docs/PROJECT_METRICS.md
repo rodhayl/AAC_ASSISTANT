@@ -6,7 +6,7 @@ the stated date. Nothing here is invented or estimated from memory.
 
 Snapshot date: **2026-08-14**
 
-## Repository (pre-PR dated snapshot)
+## Repository
 
 | Metric | Value | Source |
 | ------ | ----- | ------ |
@@ -17,7 +17,7 @@ Snapshot date: **2026-08-14**
 | Stars | 0 | GitHub API (measured) |
 | Forks | 0 | GitHub API (measured) |
 | Open issues | 0 | GitHub API (measured) |
-| Open pull requests | 0 (prior to PR creation) | GitHub API (measured) |
+| Open pull requests | 1 ([#4](https://github.com/rodhayl/AAC_ASSISTANT/pull/4)) | GitHub API (measured) |
 | Published releases | none | GitHub API (measured) |
 | Contributors (GitHub) | 1 (`rodhayl`) | GitHub API (measured) |
 | Watchers | 0 | GitHub API (measured) |
@@ -25,7 +25,7 @@ Snapshot date: **2026-08-14**
 
 > The cleanup and readiness branch `chore/repository-cleanup-and-pr` contains
 > the latest coherent and tested product state, consolidating all security,
-> accessibility, CI, packaging, and structural improvements.
+> accessibility, CI, packaging, and structural improvements in Pull Request [#4](https://github.com/rodhayl/AAC_ASSISTANT/pull/4).
 
 ## Code and tests (measured locally)
 
