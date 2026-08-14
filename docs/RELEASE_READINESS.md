@@ -4,14 +4,14 @@ This runbook is for a local or managed AAC Assistant installation. It is an
 operational safety checklist, not a substitute for clinical or user-acceptance
 validation.
 
-## Current working-tree validation (2026-08-13)
+## Current working-tree validation (2026-08-14)
 
-The current branch (`080826_continuation`) is committed and clean. The
+The current branch (`chore/codex-oss-readiness`) is committed and clean. The
 complete current gates pass: backend Ruff, compileall, and pytest
-(**642 passed, 0 failed, 0 skipped** — the optional `faster-whisper` extra is
+(**647 passed, 0 failed, 0 skipped** — the optional `faster-whisper` extra is
 now installed, so its two historical skips are gone); frontend typecheck,
-ESLint, **42 Vitest files / 212 tests**, production build, and bundle budgets
-(338.8 kB JS / 450 kB and 96.7 kB CSS / 150 kB). `uv lock --check`, production
+ESLint, **46 Vitest files / 222 tests**, production build, and bundle budgets
+(341.6 kB JS / 450 kB and 96.5 kB CSS / 150 kB). `uv lock --check`, production
 `npm audit` (0 vulnerabilities), `bash -n start.sh`, and `git diff --check`
 also passed.
 
@@ -22,7 +22,7 @@ forged-token flow. The fix uses the cycle-free `src/frontend/src/lib/authState.t
 reader bridge. Post-fix focused API/auth tests passed **33/33**, typecheck and
 ESLint passed, the production build passed, and `maintenance.spec.ts` passed
 **5/5** against an isolated server with all four providers ready and no page
-errors. A fresh production build and isolated backend then passed **107/107
+errors. A fresh production build and isolated backend then passed **108/108
 Playwright E2E tests**, with 0 skips/failures and no unexpected page/server
 errors. The server reached readiness with all four providers and shut down
 cleanly. Interactive browser automation was not repeated separately because

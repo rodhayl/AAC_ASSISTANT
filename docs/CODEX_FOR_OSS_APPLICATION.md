@@ -74,8 +74,8 @@ explicitly preserves local-first design.
 **Character count: 428 / 500**
 
 > The project is early-stage with no verified external users or pilots, and I
-> state that honestly. I have reproduced 647 backend tests, 214 frontend tests,
-> and a Playwright suite against a real backend. The codebase is actively
+> state that honestly. I have reproduced 647 backend tests, 222 frontend tests,
+> and a Playwright suite (108 tests) against a real backend. The codebase is actively
 > developed and hardened this cycle (loopback default, random bootstrap
 > credentials, documented threat model). Codex would reduce the solo-maintainer
 > burden of review, triage, documentation, and releases.
