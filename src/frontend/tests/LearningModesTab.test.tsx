@@ -105,13 +105,14 @@ describe('LearningModesTab preview', () => {
 
     // Open the preview modal
     fireEvent.click(screen.getByRole('button', { name: /Preview System Prompt/i }));
+    const dialog = await screen.findByRole('dialog');
 
     // Select a student with a guardian profile; the preview re-runs with it
     const studentSelect = await screen.findByLabelText('Student');
     fireEvent.change(studentSelect, { target: { value: '5' } });
 
     await waitFor(() => {
-      expect(post).toHaveBeenCalledWith(
+      expect(post).toHaveBeenLastCalledWith(
         '/learning-modes/preview',
         expect.objectContaining({
           prompt_instruction: INSTRUCTION,
@@ -119,9 +120,6 @@ describe('LearningModesTab preview', () => {
         }),
       );
     });
-
-    // The rendered prompt shows the guardian profile + mode instruction
-    const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/BASE GUARDIAN PROMPT/)).toBeInTheDocument();
     expect(within(dialog).getByText(new RegExp(INSTRUCTION))).toBeInTheDocument();
     expect(within(dialog).getByText(/Guardian profile included/)).toBeInTheDocument();

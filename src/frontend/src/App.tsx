@@ -22,6 +22,7 @@ const Achievements = lazyWithRetry(() => import('./pages/Achievements').then(m =
 const Students = lazyWithRetry(() => import('./pages/Students').then(m => ({ default: m.Students })), 'students');
 const UserManagementPage = lazyWithRetry(() => import('./pages/UserManagement').then(m => ({ default: m.UserManagementPage })), 'user-management');
 const Register = lazyWithRetry(() => import('./pages/Register').then(m => ({ default: m.Register })), 'register');
+const Setup = lazyWithRetry(() => import('./pages/Setup').then(m => ({ default: m.Setup })), 'setup');
 const Symbols = lazyWithRetry(() => import('./pages/Symbols').then(m => ({ default: m.Symbols })), 'symbols');
 const SymbolHunt = lazyWithRetry(() => import('./pages/SymbolHunt').then(m => ({ default: m.SymbolHunt })), 'symbol-hunt');
 const NotFound = lazyWithRetry(() => import('./pages/NotFound').then(m => ({ default: m.NotFound })), 'not-found');
@@ -91,6 +92,7 @@ const router = createBrowserRouter(
     <Route element={<RootLayout />}>
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Suspense fallback={<LoadingSpinner />}><Register /></Suspense>} />
+      <Route path="/setup" element={<Suspense fallback={<LoadingSpinner />}><Setup /></Suspense>} />
       <Route
         path="/play/:id"
         element={

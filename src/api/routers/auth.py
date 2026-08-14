@@ -1,3 +1,4 @@
+import ipaddress
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -5,6 +6,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from loguru import logger
 from sqlalchemy.orm import Session
 
+from src import config
 from src.aac_app.models import User
 from src.aac_app.services.audit_service import audit_service
 from src.aac_app.services.auth_service import (
@@ -28,6 +30,124 @@ from src.api.routers.auth_helpers import (
 )
 
 router = APIRouter()
+
+
+def _is_loopback_client(host: str | None) -> bool:
+    """Return True if the client host is a local loopback address or test runner."""
+    if not host:
+        return False
+    if host in {"localhost", "testclient"}:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+@router.get("/setup-status", response_model=schemas.SetupStatusResponse)
+def get_setup_status(db: Session = Depends(get_db)):
+    """Check whether the initial administrator setup is required."""
+    has_admin = db.query(User).filter(User.user_type == "admin").first() is not None
+    return schemas.SetupStatusResponse(
+        setup_required=not has_admin,
+        has_admin=has_admin,
+        app_name=config.APP_NAME,
+        app_version=config.APP_VERSION,
+    )
+
+
+@router.post("/setup", response_model=schemas.SetupResponse)
+@conditional_limiter("5/minute")
+def initial_admin_setup(
+    request: Request,
+    payload: schemas.InitialAdminSetupRequest,
+    db: Session = Depends(get_db),
+):
+    """Create the initial administrator account on first run."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not _is_loopback_client(client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Initial administrator setup is only permitted from local loopback (127.0.0.1 / ::1).",
+        )
+
+    existing_admin = db.query(User).filter(User.user_type == "admin").first()
+    if existing_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Initial administrator setup has already been completed.",
+        )
+
+    if payload.password != payload.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Passwords do not match.",
+        )
+
+    if payload.password.strip().lower() == config.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD.lower():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The development default password is not permitted for administrator setup.",
+        )
+
+    validate_password_strength(payload.password)
+
+    username = payload.username.strip() or "admin1"
+    display_name = payload.display_name.strip() or "Administrator"
+
+    if payload.email:
+        validate_email_format(payload.email)
+
+    ensure_username_email_available(db, username, payload.email)
+
+    admin = User(
+        username=username,
+        display_name=display_name,
+        email=payload.email,
+        user_type="admin",
+        password_hash=get_password_hash(payload.password),
+        is_active=True,
+    )
+    db.add(admin)
+    db.flush()
+    db.refresh(admin)
+
+    client_ip = request.client.host if request.client else "unknown"
+    audit_service.log_account_created(
+        db=db,
+        new_user_id=admin.id,
+        new_username=admin.username,
+        new_user_type="admin",
+        created_by_username="initial-setup",
+        ip_address=client_ip,
+    )
+    db.commit()
+
+    access_token = create_access_token(
+        data={
+            "sub": admin.username,
+            "user_id": admin.id,
+            "user_type": admin.user_type,
+            "sec_ver": admin.security_version or 1,
+        }
+    )
+    refresh_token = create_refresh_token(
+        data={
+            "sub": admin.username,
+            "user_id": admin.id,
+            "sec_ver": admin.security_version or 1,
+        }
+    )
+
+    logger.info("Initial administrator setup completed for username '{}'", admin.username)
+    return schemas.SetupResponse(
+        message="Administrator account created successfully",
+        user=schemas.UserResponse.model_validate(admin),
+        access_token=access_token,
+        token_type="bearer",
+        refresh_token=refresh_token,
+    )
+
 
 @router.post("/token")
 @conditional_limiter("10/minute")  # Max 10 login attempts per minute per IP

@@ -70,9 +70,13 @@ The packaged Windows application requires neither Python nor Node.js.
 
 ### Packaged Windows application
 
-Download the latest installer from the
-[releases](https://github.com/rodhayl/AAC_ASSISTANT/releases) page and run it.
-The installer is an update-aware wizard; uninstalling preserves your data.
+Download the latest installer (`AAC_Assistant_Setup_2.0.0.exe`) from the [GitHub Releases](https://github.com/rodhayl/AAC_ASSISTANT/releases/latest) page and run the setup wizard.
+
+Alternatively, to build the installer locally from source on Windows:
+```bat
+build_package.bat
+```
+This produces `dist\AAC_Assistant_Setup_2.0.0.exe`. The installer is an update-aware wizard; uninstalling preserves your database and uploads.
 
 ### Source checkout (Windows)
 
@@ -96,14 +100,29 @@ start.bat
 
 and open `http://127.0.0.1:8086/`.
 
-### First-run administrator
+### Source checkout (Linux / macOS)
 
-On first run, the application creates an administrator only if none exists
-(`AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN`, default `true`). If you did not configure
-`AAC_BOOTSTRAP_ADMIN_PASSWORD` in `.env`, a **cryptographically random one-time
-password** is generated and stored in `.env`; read it there and change it
-immediately after first login. In production, bootstrap refuses to start
-without an explicit, strong password.
+```bash
+uv sync --group dev
+npm --prefix src/frontend ci
+npm --prefix src/frontend run build
+uv run python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8086
+```
+
+and open `http://127.0.0.1:8086/`.
+
+### First-run administrator setup
+
+On first run, when no administrator account exists, opening the web interface at
+`http://127.0.0.1:8086/` automatically redirects to the initial setup screen (`/setup`)
+where you choose your administrator username and a strong password. Initial setup
+is strictly restricted to local loopback (`127.0.0.1` / `::1`) to prevent remote
+takeover on fresh installations.
+
+Alternatively, operators can configure `AAC_BOOTSTRAP_ADMIN_PASSWORD` in `.env` or the
+process environment before starting the server. In production (`ENVIRONMENT=production`),
+bootstrap refuses to initialize without an explicit, strong password. Deterministic test
+credentials (`Admin123`) operate only in explicit test environments (`TESTING=1`).
 
 ## Development setup
 
@@ -157,7 +176,7 @@ Process environment variables take precedence over the file. Key settings:
 | `AAC_SEED_SAMPLE_DATA` | `false` | Seeds demo users/boards (keep false in production). |
 | `AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN` | `true` | Creates an admin if none exists. |
 | `AAC_BOOTSTRAP_ADMIN_USERNAME` | `admin1` | Username for the first-run admin. |
-| `AAC_BOOTSTRAP_ADMIN_PASSWORD` | generated | If unset, a random one-time password is generated into `.env`. |
+| `AAC_BOOTSTRAP_ADMIN_PASSWORD` | unset | Unset by default; operators set a strong password via `/setup` (loopback only). Production requires an explicit password. |
 
 See `docs/01_PROJECT_GUIDE.md` for the full reference.
 
@@ -185,7 +204,7 @@ React application in `src/frontend/`. See
 - Role checks on every protected backend endpoint; validated user updates.
 - Hardened uploads (size, MIME, signature, and path-traversal checks).
 
-Read [SECURITY.md](SECURITY.md) for supported versions and how to report a
+Read [.github/SECURITY.md](.github/SECURITY.md) for supported versions and how to report a
 vulnerability privately, [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) for the
 threat model, and [docs/SECURITY_ARCHITECTURE.md](docs/SECURITY_ARCHITECTURE.md)
 for the implementation detail.
@@ -196,6 +215,11 @@ Accessibility is core to this project. See
 [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) for what is tested, known
 limitations, and future work. We do not currently claim formal WCAG
 conformance.
+
+## Documentation
+
+For an overview of all architecture, security, testing, and operations
+guides, see the [Documentation Index](docs/README.md).
 
 ## Packaging and releases
 
@@ -212,9 +236,9 @@ Outputs: `dist\AAC_Assistant\AAC_Assistant.exe` and
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and the
-[Code of Conduct](CODE_OF_CONDUCT.md). Questions belong in
-[SUPPORT.md](SUPPORT.md); the [ROADMAP.md](ROADMAP.md) lists planned work.
+Contributions are welcome. See [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) and the
+[Code of Conduct](.github/CODE_OF_CONDUCT.md). Questions belong in
+[.github/SUPPORT.md](.github/SUPPORT.md); the [ROADMAP.md](docs/ROADMAP.md) lists planned work.
 
 ## License
 

@@ -6,12 +6,11 @@ validation.
 
 ## Current working-tree validation (2026-08-14)
 
-The current branch (`chore/codex-oss-readiness`) is committed and clean. The
+The current branch (`chore/repository-cleanup-and-pr`) is committed and clean. The
 complete current gates pass: backend Ruff, compileall, and pytest
-(**647 passed, 0 failed, 0 skipped** — the optional `faster-whisper` extra is
-now installed, so its two historical skips are gone); frontend typecheck,
-ESLint, **46 Vitest files / 222 tests**, production build, and bundle budgets
-(341.6 kB JS / 450 kB and 96.5 kB CSS / 150 kB). `uv lock --check`, production
+(**653 passed, 0 failed, 2 skipped**); frontend typecheck,
+ESLint, **47 Vitest files / 226 tests**, production build, and bundle budgets
+(344.5 kB JS / 450 kB and 96.9 kB CSS / 150 kB). `uv lock --check`, production
 `npm audit` (0 vulnerabilities), `bash -n start.sh`, and `git diff --check`
 also passed.
 

@@ -94,6 +94,13 @@ jobs:
       AAC_SEED_ADMIN1_PASSWORD: Admin123
       AAC_SEED_STUDENT1_PASSWORD: Student123
       AAC_SEED_TEACHER1_PASSWORD: Teacher123
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:8086
+      E2E_ADMIN_USERNAME: admin1
+      E2E_ADMIN_PASSWORD: Admin123
+      E2E_STUDENT_USERNAME: student1
+      E2E_STUDENT_PASSWORD: Student123
+      E2E_TEACHER_USERNAME: teacher1
+      E2E_TEACHER_PASSWORD: Teacher123
       AAC_ENABLE_SYMBOL_IMAGE_BACKFILL: "false"
     defaults:
       run:
@@ -121,12 +128,14 @@ jobs:
         run: |
           rm -rf .ci-e2e-data
           mkdir -p .ci-e2e-data
-          uv run uvicorn src.api.main:app --host 127.0.0.1 --port 8086 > /tmp/aac-e2e-server.log 2>&1 &
-          echo $! > /tmp/aac-e2e-server.pid
+          nohup uv run python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8086 > /tmp/aac-e2e-server.log 2>&1 &
+          SERVER_PID=$!
+          echo $SERVER_PID > /tmp/aac-e2e-server.pid
+          disown $SERVER_PID 2>/dev/null || true
           for attempt in $(seq 1 60); do
             if curl --fail --silent http://127.0.0.1:8086/api/health > /tmp/aac-e2e-health.json; then
               cat /tmp/aac-e2e-health.json
-              test "$(python -c 'import json; print(json.load(open("/tmp/aac-e2e-health.json"))["version"])')" = "2.0.0"
+              test "$(python3 -c 'import json; print(json.load(open("/tmp/aac-e2e-health.json"))["version"])')" = "2.0.0"
               exit 0
             fi
             sleep 1
@@ -143,8 +152,9 @@ jobs:
         if: always()
         run: |
           if [ -f /tmp/aac-e2e-server.pid ]; then
-            kill "$(cat /tmp/aac-e2e-server.pid)" || true
+            kill -9 "$(cat /tmp/aac-e2e-server.pid)" 2>/dev/null || true
           fi
+          pkill -f "uvicorn src.api.main:app" 2>/dev/null || true
         working-directory: .
 
   packaging-windows:
@@ -265,6 +275,9 @@ jobs:
   dependency-review:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
       - uses: actions/dependency-review-action@1e966ba708e4b64bb0c9bfb7abb5a232840be16a # v4

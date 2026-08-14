@@ -4,24 +4,24 @@ All notable changes to this project are documented here. The project follows
 [Keep a Changelog](https://keepachangelog.com/) formatting. Versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.0.0] - 2026-08-14
 
 ### Security
 
 - Bind the backend to `127.0.0.1` by default instead of `0.0.0.0`, so the
   application is not reachable from the network unless the operator explicitly
   opts in.
-- Replace the predictable `admin1`/`Admin123` development bootstrap credential
-  with a cryptographically random one-time password generated on first run and
-  stored in `.env`. Production refuses to bootstrap without an explicit strong
-  password.
-- Stop printing the bootstrap admin password to the console.
+- Replace predictable default bootstrap credentials with an interactive
+  first-run administrator web setup flow (`/setup`), ensuring packaged and
+  development installations require strong operator-chosen credentials.
+- Eliminate plaintext password storage in `.env` and stop printing bootstrap
+  credentials to the console.
 
 ### Added
 
-- `SECURITY.md`, `docs/THREAT_MODEL.md`, `docs/SECURITY_ARCHITECTURE.md`,
-  `docs/PRIVACY_AND_DATA.md`, `docs/ACCESSIBILITY.md`, `CONTRIBUTING.md`,
-  `CODE_OF_CONDUCT.md`, `SUPPORT.md`, `ROADMAP.md`, issue/PR templates.
+- `.github/SECURITY.md`, `docs/THREAT_MODEL.md`, `docs/SECURITY_ARCHITECTURE.md`,
+  `docs/PRIVACY_AND_DATA.md`, `docs/ACCESSIBILITY.md`, `.github/CONTRIBUTING.md`,
+  `.github/CODE_OF_CONDUCT.md`, `.github/SUPPORT.md`, `docs/ROADMAP.md`, `docs/README.md`, issue/PR templates.
 
 ### Fixed
 

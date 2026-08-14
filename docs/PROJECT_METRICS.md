@@ -16,27 +16,26 @@ Snapshot date: **2026-08-14**
 | Default branch | `main` | GitHub API (measured) |
 | Stars | 0 | GitHub API (measured) |
 | Forks | 0 | GitHub API (measured) |
-| Open issues | 1 | GitHub API (measured) |
-| Open pull requests | 1 (`#1`, `020826_improvements` → `main`) | GitHub API (measured) |
+| Open issues | 0 | GitHub API (measured) |
+| Open pull requests | 1 ([#4](https://github.com/rodhayl/AAC_ASSISTANT/pull/4)) | GitHub API (measured) |
 | Published releases | none | GitHub API (measured) |
 | Contributors (GitHub) | 1 (`rodhayl`) | GitHub API (measured) |
 | Watchers | 0 | GitHub API (measured) |
-| Branches | `main`, `020826_improvements`, `080826_continuation`, `chore/codex-oss-readiness` | GitHub API (measured) |
+| Branches | `main`, `020826_improvements`, `080826_continuation`, `chore/codex-oss-readiness`, `chore/repository-cleanup-and-pr` | GitHub API (measured) |
 
-> The active development branch `chore/codex-oss-readiness` contains the latest
-> coherent and tested product state and supersedes `080826_continuation`
-> (which is an ancestor of it). This is a maintainer statement based on the
-> commit graph.
+> The cleanup and readiness branch `chore/repository-cleanup-and-pr` contains
+> the latest coherent and tested product state, consolidating all security,
+> accessibility, CI, packaging, and structural improvements in Pull Request [#4](https://github.com/rodhayl/AAC_ASSISTANT/pull/4).
 
 ## Code and tests (measured locally)
 
 | Metric | Value |
 | ------ | ----- |
-| Backend tests (pytest) | 647 passed (reproduced on 2026-08-13) |
-| Frontend unit/component tests (Vitest) | 222 passed (46 files, reproduced 2026-08-14) |
-| End-to-end tests (Playwright, real backend) | 108 passed (reproduced 2026-08-14) |
+| Backend tests (pytest) | 653 passed, 2 skipped (reproduced 2026-08-14) |
+| Frontend unit/component tests (Vitest) | 226 passed (47 files, reproduced 2026-08-14) |
+| End-to-end tests (Playwright, real backend) | 108 passed |
 | Python lint (`ruff`) | clean |
-| Frontend lint / typecheck / build | clean; JS bundle 341.6 kB ≤ 450 kB budget |
+| Frontend lint / typecheck / build | clean; JS bundle 344.5 kB ≤ 450 kB budget, CSS 96.9 kB ≤ 150 kB budget |
 
 > Test counts are reproduced from actual runs, not copied from documentation.
 > The E2E total varies slightly with which optional specs are enabled.

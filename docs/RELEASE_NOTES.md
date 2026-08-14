@@ -1,6 +1,6 @@
 # Release notes
 
-## v2.0.0 (draft — not yet published)
+## v2.0.0 (2026-08-14)
 
 The repository has carried version `2.0.0` throughout its configuration,
 installer, and API. This release marks the first public, packaged release.
@@ -11,14 +11,15 @@ installer, and API. This release marks the first public, packaged release.
   learning sessions, achievements, and browser speech.
 - **Offline voice and search** — the Windows installer bundles the `tiny`
   faster-whisper model and the fastembed semantic-search model.
-- **Security hardening** — loopback-only network binding by default, random
-  one-time bootstrap credentials, and validated user updates.
+- **Security hardening** — loopback-only network binding by default, secure
+  first-run administrator web setup flow, and validated user updates.
 
 ### Security
 
 - Bind to `127.0.0.1` by default instead of `0.0.0.0`.
-- First run generates a random one-time administrator password when none is
-  configured; production requires an explicit strong password.
+- First run provides an interactive web setup screen (`/setup`) to configure a strong
+  administrator password; predictable default credentials are eliminated across
+  packaged and production installations.
 - `PUT /api/auth/users/{user_id}` validates role, email, and active flag.
 
 ### Known issues
@@ -26,7 +27,7 @@ installer, and API. This release marks the first public, packaged release.
 - LLM-dependent learning questions require a locally running Ollama/LM Studio
   or a configured OpenRouter key; they are the only features that need external
   services.
-- See [docs/ACCESSIBILITY.md](ACCESSIBILITY.md) for known accessibility
+- See [Accessibility Guide](ACCESSIBILITY.md) for known accessibility
   limitations.
 
 ### Installation and upgrade
@@ -48,4 +49,4 @@ updated in place; the uninstaller preserves the database and uploads.
 
 The installer preserves user data but does not perform automatic cross-version
 rollback. Keep a physical SQLite backup and the previous installer to roll
-back manually. See [docs/RELEASE_READINESS.md](RELEASE_READINESS.md).
+back manually. See [Release Readiness Runbook](RELEASE_READINESS.md).

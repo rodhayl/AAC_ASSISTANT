@@ -21,6 +21,7 @@ import esError from '../locales/es/pages/error.json'
 import esGames from '../locales/es/pages/games.json'
 import esTeachers from '../locales/es/pages/teachers.json'
 import esAdmins from '../locales/es/pages/admins.json'
+import esSetup from '../locales/es/pages/setup.json'
 
 const ES_NAMESPACES = [
   'common',
@@ -39,6 +40,7 @@ const ES_NAMESPACES = [
   'games',
   'teachers',
   'admins',
+  'setup',
 ]
 
 const resources = {
@@ -59,6 +61,7 @@ const resources = {
     games: esGames,
     teachers: esTeachers,
     admins: esAdmins,
+    setup: esSetup,
   },
 }
 
@@ -120,6 +123,7 @@ const EN_BUNDLES: ReadonlyArray<
   ['games', () => import('../locales/en/pages/games.json')],
   ['teachers', () => import('../locales/en/pages/teachers.json')],
   ['admins', () => import('../locales/en/pages/admins.json')],
+  ['setup', () => import('../locales/en/pages/setup.json')],
 ]
 
 let enLoaded: Promise<void> | null = null

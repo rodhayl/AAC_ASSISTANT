@@ -2,18 +2,18 @@
 Ensure a bootstrap admin account exists for first-run local usage.
 
 Behavior:
-- Initializes DB schema if needed.
+- Initializes DB schema and seed symbols/achievements.
 - If an admin user already exists, does nothing.
-- If no admin user exists, creates one using bootstrap settings.
+- If an explicit AAC_BOOTSTRAP_ADMIN_PASSWORD is set, creates the administrator.
+- If no admin exists and no password is set, reports that initial setup can be
+  completed via the web interface (/setup) or configured in .env.
 
 Bootstrap settings (env or env.properties via src.config):
 - AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN (default: true)
 - AAC_BOOTSTRAP_ADMIN_USERNAME (default: admin1)
-- AAC_BOOTSTRAP_ADMIN_PASSWORD (development default generates a random one-time
-  credential stored in .env; production requires an explicit strong password)
+- AAC_BOOTSTRAP_ADMIN_PASSWORD (default: unset; initial setup screen creates admin)
 
-The password is never printed. A generated one-time credential is stored in
-``.env`` and must be changed after first login.
+No password is ever printed to stdout/stderr or stored in plaintext.
 """
 
 from __future__ import annotations
@@ -39,27 +39,23 @@ def ensure_bootstrap_admin() -> int:
 
     username = config.get("AAC_BOOTSTRAP_ADMIN_USERNAME", "admin1").strip() or "admin1"
 
-    # init_database performs the idempotent bootstrap (schema + admin creation)
-    # using the shared seed logic, so there is a single source of truth for how
-    # the first administrator is created.
+    # init_database performs the idempotent bootstrap (schema + optional admin creation)
     init_database(ensure_schema=True)
 
     with get_session() as session:
         admin = session.query(User).filter(User.user_type == "admin").first()
         if admin is not None:
             print(f"Admin user already exists: {admin.username}")
-        else:
-            print(
-                "Bootstrap admin was not created. Check the application log and "
-                "the bootstrap settings in .env."
-            )
-            return 1
+            return 0
+
+    if config.explicit_bootstrap_password() is None and not config._is_test_environment():
+        print("No administrator account exists and no AAC_BOOTSTRAP_ADMIN_PASSWORD is set.")
+        print("Complete initial setup via the web interface at http://127.0.0.1:8086/setup")
+        print("or configure AAC_BOOTSTRAP_ADMIN_PASSWORD in .env.")
+        return 0
 
     print("Bootstrap admin ready.")
     print(f"Username: {username}")
-    if config.explicit_bootstrap_password() is None:
-        print("Default development credentials were used.")
-        print("IMPORTANT: Set AAC_BOOTSTRAP_ADMIN_PASSWORD in .env or change it immediately after first login.")
     return 0
 
 

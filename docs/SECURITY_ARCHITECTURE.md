@@ -2,7 +2,7 @@
 
 This document describes how AAC Assistant implements authentication,
 authorization, and data protection. It complements
-[docs/THREAT_MODEL.md](THREAT_MODEL.md).
+[Threat Model](THREAT_MODEL.md).
 
 ## 1. Authentication
 
@@ -23,15 +23,29 @@ authorization, and data protection. It complements
   (`slowapi`), and accounts lock after 5 consecutive failures
   (`lockout_service`).
 
-## 2. First-run bootstrap
+## 2. First-run setup and bootstrap
 
-- On first run, `AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN` (default `true`) creates an
-  administrator only if none exists.
-- If no `AAC_BOOTSTRAP_ADMIN_PASSWORD` is configured in non-production, the default
-  development credential is used (`resolve_bootstrap_password`).
-- In `ENVIRONMENT=production`, bootstrap refuses to run without an explicit
-  strong password; the legacy development default is rejected.
-- Passwords are never stored in clear text in persistent storage files.
+- **Setup screen (`/setup`)** — On first run, when no administrator exists, the web
+  application provides an initial setup flow (`POST /api/auth/setup` and
+  `GET /api/auth/setup-status`) that requires the operator to choose a unique, strong
+  password. To prevent remote first-admin takeover when the host is exposed to a
+  network, `POST /api/auth/setup` is strictly restricted to local loopback clients
+  (`127.0.0.1` / `::1`). Remote deployments must configure the initial administrator
+  via deployment configuration (`AAC_BOOTSTRAP_ADMIN_PASSWORD`). The endpoint is
+  permanently locked (`403 Forbidden`) once an administrator account exists.
+- **Environment bootstrap** — Operators can optionally supply
+  `AAC_BOOTSTRAP_ADMIN_PASSWORD` in `.env` or the process environment before
+  starting the server. If configured, the bootstrap worker creates the administrator
+  during database initialization.
+- **No predictable defaults in production/packaged installs** — The packaged
+  application and normal runtime never create an account with a default password.
+  Predictable test credentials (`Admin123`) operate strictly in explicit test
+  environments (`TESTING=1` or `ENVIRONMENT=test`).
+- **Production enforcement** — In `ENVIRONMENT=production`, bootstrap refuses to
+  run without an explicit, unique strong password; default credentials are
+  rejected immediately at startup.
+- **Credential security** — Passwords are hashed with Argon2id and are never
+  stored in clear text in persistent storage or printed in logs.
 
 ## 3. Authorization
 

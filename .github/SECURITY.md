@@ -61,5 +61,5 @@ project, so response times depend on maintainer availability.
 AAC Assistant is a **local-first** desktop application. It binds to
 `127.0.0.1` by default, stores data in local files, and does not require a
 cloud service for core communication. See
-[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) and
-[docs/SECURITY_ARCHITECTURE.md](docs/SECURITY_ARCHITECTURE.md) for details.
+[docs/THREAT_MODEL.md](../docs/THREAT_MODEL.md) and
+[docs/SECURITY_ARCHITECTURE.md](../docs/SECURITY_ARCHITECTURE.md) for details.

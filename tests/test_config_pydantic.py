@@ -115,8 +115,9 @@ def test_explicit_bootstrap_password_reads_environment_then_dotenv(tmp_path, mon
     assert config_module.explicit_bootstrap_password() == "ProcessSecret123"
 
 
-def test_resolve_bootstrap_password_returns_default_when_unset(tmp_path, monkeypatch):
+def test_resolve_bootstrap_password_returns_default_in_test_mode(tmp_path, monkeypatch):
     monkeypatch.delenv("AAC_BOOTSTRAP_ADMIN_PASSWORD", raising=False)
+    monkeypatch.setenv("TESTING", "1")
     import src.config as config_module
 
     env_file = tmp_path / ".env"
@@ -126,6 +127,22 @@ def test_resolve_bootstrap_password_returns_default_when_unset(tmp_path, monkeyp
 
     resolved = config_module.resolve_bootstrap_password()
     assert resolved == config_module.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD
+    assert not env_file.exists()
+
+
+def test_resolve_bootstrap_password_returns_none_in_standard_runtime(tmp_path, monkeypatch):
+    monkeypatch.delenv("AAC_BOOTSTRAP_ADMIN_PASSWORD", raising=False)
+    monkeypatch.delenv("TESTING", raising=False)
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    import src.config as config_module
+
+    env_file = tmp_path / ".env"
+    legacy_file = tmp_path / "env.properties"
+    monkeypatch.setattr(config_module, "ENV_FILE", env_file)
+    monkeypatch.setattr(config_module, "LEGACY_ENV_FILE", legacy_file)
+
+    resolved = config_module.resolve_bootstrap_password()
+    assert resolved is None
     assert not env_file.exists()
 
 

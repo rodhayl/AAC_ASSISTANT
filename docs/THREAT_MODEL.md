@@ -69,7 +69,8 @@ flowchart LR
 | Abuse case | Mitigation |
 | ---------- | ---------- |
 | Brute-force login | 10/min IP rate limit + 5-failure account lockout |
-| Predictable bootstrap credential | Random one-time password generated on first run; production refuses the legacy default |
+| Predictable bootstrap credential | Interactive `/setup` flow (loopback-only) requires a strong password; production refuses unconfigured startup bootstrap; legacy defaults rejected |
+| Remote first-run takeover | `POST /api/auth/setup` is restricted to local loopback clients (`127.0.0.1` / `::1`); remote deployments must configure credentials via deployment configuration |
 | Privilege escalation via role change | Admin-only endpoints; `user_type` validated against a fixed allowlist |
 | Mass-assignment via raw dict bodies | Typed/validated request models; `update_user` validates role, email, active flag |
 | Path traversal / oversized uploads | Bounded chunked reads, MIME/signature checks, pixel limits, path containment in `file_uploads.py` |
@@ -107,5 +108,5 @@ flowchart LR
 | `ALLOW_DB_RESET` | `false` |
 | `AAC_SEED_SAMPLE_DATA` | `false` |
 | `ALLOWED_ORIGINS` | explicit localhost allowlist |
-| `AAC_BOOTSTRAP_ADMIN_PASSWORD` | unset → random one-time credential generated |
+| `AAC_BOOTSTRAP_ADMIN_PASSWORD` | unset → no admin seeded; operator configures strong password via `/setup` (loopback only) |
 | `JWT_SECRET_KEY` | unset → random 64-hex secret generated |

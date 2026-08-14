@@ -57,8 +57,8 @@ ALLOW_DB_RESET=false
 AAC_SEED_SAMPLE_DATA=false
 AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=true
 AAC_BOOTSTRAP_ADMIN_USERNAME=admin1
-# Production requires an explicit strong password. If unset in development,
-# a random one-time credential is generated and stored in .env.
+# Production requires an explicit strong password. In development / packaged runtime,
+# if unset, no default account is created and the operator completes setup via /setup.
 AAC_BOOTSTRAP_ADMIN_PASSWORD=REPLACE_WITH_A_UNIQUE_PASSWORD
 DATA_DIR=data
 LOGS_DIR=logs
@@ -200,9 +200,10 @@ Core enforcement paths are `src/api/deps/` and `src/api/routers/`. Keep
 or deployed instance. When bootstrap is enabled and no administrator exists,
 production rejects passwords that fail the normal password-strength policy.
 Existing installations with an administrator are not blocked by an unused
-bootstrap setting. In non-production environments, if no password is
-configured, a random one-time credential is generated and stored in `.env`;
-change it immediately after first login.
+bootstrap setting. In non-production and packaged runtime environments with no
+bootstrap password configured, no administrator account is seeded; operators
+complete the interactive `/setup` flow (restricted to local loopback) to choose
+a strong password on first run.
 
 ### Token revocation and security-version policy
 
@@ -258,7 +259,7 @@ Run a utility's help command with:
 uv run python scripts/<script>.py --help
 ```
 
-`TEST_SCENARIOS/` is intentionally retained as a manual QA reference for
+`docs/test_scenarios/` is intentionally retained as a manual QA reference for
 role-oriented walkthroughs. It is not part of the automated test collection;
 the pytest, Vitest, and Playwright suites are the repeatable validation
 sources.

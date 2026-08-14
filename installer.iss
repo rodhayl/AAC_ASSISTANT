@@ -6,7 +6,7 @@
 #define MyAppVersion "2.0.0"
 #define MyAppId "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
 #define MyAppPublisher "AAC Assistant Team"
-#define MyAppURL "https://github.com/your-repo/aac-assistant"
+#define MyAppURL "https://github.com/rodhayl/AAC_ASSISTANT"
 #define MyAppExeName "AAC_Assistant.exe"
 #define MyAppProcessName "AAC_Assistant"
 

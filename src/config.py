@@ -90,9 +90,10 @@ JWT_PLACEHOLDERS = frozenset(
         "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION",
     }
 )
-# Legacy insecure development default. It is retained only so existing
-# installations keep working; fresh first runs without an explicitly configured
-# password receive a cryptographically random one-time credential instead.
+# Deterministic fallback credential retained strictly for automated test suites.
+# Packaged, development, and production installations never create an account
+# with a default password: operators configure a password explicitly or complete
+# the first-run web setup screen (/setup).
 DEFAULT_BOOTSTRAP_ADMIN_PASSWORD = "Admin123"
 _BOOTSTRAP_PASSWORD_KEY = "AAC_BOOTSTRAP_ADMIN_PASSWORD"
 
@@ -135,7 +136,7 @@ class Settings(BaseSettings):
 
     AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN: bool = True
     AAC_BOOTSTRAP_ADMIN_USERNAME: str = "admin1"
-    AAC_BOOTSTRAP_ADMIN_PASSWORD: str = DEFAULT_BOOTSTRAP_ADMIN_PASSWORD
+    AAC_BOOTSTRAP_ADMIN_PASSWORD: str | None = None
     # Image backfill is maintenance work; keep it opt-in so normal startup
     # does not perform avoidable network and database work.
     AAC_ENABLE_SYMBOL_IMAGE_BACKFILL: bool = False
@@ -258,12 +259,19 @@ def _dotenv_value(path: Path, key: str) -> str | None:
     return None
 
 
+def _is_test_environment() -> bool:
+    """Return True if running inside an explicit automated test suite."""
+    if os.environ.get("TESTING", "").strip().lower() in {"1", "true", "yes"}:
+        return True
+    return os.environ.get("ENVIRONMENT", "").strip().casefold() in {"test", "testing"}
+
+
 def explicit_bootstrap_password() -> str | None:
     """Return an explicitly configured bootstrap password, or ``None``.
 
     Only the process environment and the local dotenv files are consulted. When
     the operator has not configured a password at all, callers fall back to the
-    development default or require explicit configuration in production.
+    initial web setup screen or require explicit configuration in production.
     """
     environment_value = os.environ.get(_BOOTSTRAP_PASSWORD_KEY, "").strip()
     if environment_value:
@@ -275,18 +283,21 @@ def explicit_bootstrap_password() -> str | None:
     return None
 
 
-def resolve_bootstrap_password() -> str:
-    """Return the bootstrap admin password for this run.
+def resolve_bootstrap_password() -> str | None:
+    """Return the bootstrap admin password if explicitly configured or in test mode.
 
-    An explicitly configured value is used verbatim. When no password is
-    configured, the development default is returned in non-production
-    environments. The caller is responsible for telling the operator to change
-    it after first login.
+    In packaged, development, and production runtime, when no password is
+    configured in the environment or dotenv file, this returns ``None`` to
+    signal that the operator must choose a password via the initial web setup
+    screen (/setup). Deterministic credentials remain only in explicit test
+    environments.
     """
     explicit = explicit_bootstrap_password()
     if explicit is not None:
         return explicit
-    return DEFAULT_BOOTSTRAP_ADMIN_PASSWORD
+    if _is_test_environment():
+        return DEFAULT_BOOTSTRAP_ADMIN_PASSWORD
+    return None
 
 
 def load_settings(project_root: Path | None = None) -> Settings:

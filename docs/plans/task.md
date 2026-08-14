@@ -1,4 +1,4 @@
-> **Document status (2026-08-12): HISTORICAL COMPLETION INDEX.** Every row below is recorded as completed. This table is an audit trail, not an active queue; current status is maintained in `CONTINUE_PROMPT080826.md` and the repository itself.
+> **Document status (2026-08-12): HISTORICAL COMPLETION INDEX.** Every row below is recorded as completed. This table is an audit trail, not an active queue; current status is maintained in the repository and git log.
 
 | Status | Task |
 |---|---|

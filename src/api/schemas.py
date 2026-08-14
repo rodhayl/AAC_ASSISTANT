@@ -84,6 +84,29 @@ class UserResponse(UserBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SetupStatusResponse(BaseModel):
+    setup_required: bool
+    has_admin: bool
+    app_name: str
+    app_version: str
+
+
+class InitialAdminSetupRequest(BaseModel):
+    username: str = "admin1"
+    display_name: str = "Administrator"
+    email: EmailStr | None = None
+    password: str
+    confirm_password: str
+
+
+class SetupResponse(BaseModel):
+    message: str
+    user: UserResponse
+    access_token: str
+    token_type: str = "bearer"
+    refresh_token: str
+
+
 class BoardSummaryResponse(BaseModel):
     """Lightweight board data used in student-management summaries."""
 

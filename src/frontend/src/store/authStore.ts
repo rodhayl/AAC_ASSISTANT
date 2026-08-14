@@ -17,6 +17,8 @@ interface AuthState {
   
   login: (username: string, password: string) => Promise<void>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setupAdmin: (setupData: any) => Promise<void>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   register: (userData: any) => Promise<void>;
   updateProfile: (data: Partial<User>) => Promise<void>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -148,6 +150,32 @@ export const useAuthStore = create<AuthState>()(
           });
         } catch (e: unknown) {
           set({ error: extractError(e, 'Login failed'), isLoading: false });
+          throw e;
+        }
+      },
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setupAdmin: async (setupData: any) => {
+        set({ isLoading: true, error: null });
+        try {
+          const response = await api.post('/auth/setup', setupData);
+          const token = response.data.access_token;
+          const refreshToken = response.data.refresh_token;
+          const user = response.data.user;
+          const payload = decodeJwtPayload(token);
+          const expiresAt = payload?.exp ? payload.exp * 1000 : Date.now() + 2 * 60 * 60 * 1000;
+          syncUserPreferences(user);
+          set({
+            user,
+            token,
+            refreshToken,
+            isAuthenticated: true,
+            isLoading: false,
+            sessionExpiresAt: expiresAt,
+            error: null,
+          });
+        } catch (e: unknown) {
+          set({ error: extractError(e, 'Initial setup failed'), isLoading: false });
           throw e;
         }
       },

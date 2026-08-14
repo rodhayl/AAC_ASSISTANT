@@ -66,4 +66,4 @@ Core communication never depends on these services.
 
 ## 7. Reporting
 
-For security or privacy concerns, see [SECURITY.md](../SECURITY.md).
+For security or privacy concerns, see [SECURITY.md](../.github/SECURITY.md).
