@@ -1,20 +1,33 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import type { AxeResults } from 'axe-core';
+
+function summarizeAxeResults(results: AxeResults, name: string) {
+  const critical = results.violations.filter((v) => v.impact === 'critical');
+  const serious = results.violations.filter((v) => v.impact === 'serious');
+  const moderate = results.violations.filter((v) => v.impact === 'moderate');
+  const minor = results.violations.filter((v) => v.impact === 'minor');
+  const incomplete = results.incomplete;
+
+  console.log(
+    `[Axe: ${name}] critical: ${critical.length}, serious: ${serious.length}, ` +
+    `moderate: ${moderate.length}, minor: ${minor.length}, incomplete: ${incomplete.length}`
+  );
+  return { critical, serious, moderate, minor, incomplete };
+}
 
 test.describe('Automated Accessibility Scans (Axe Core)', () => {
   test('First-run setup page has no serious/critical accessibility violations', async ({ page }) => {
     await page.goto('/setup');
     await expect(page.locator('main#main-content, form')).toBeVisible({ timeout: 10000 });
     await expect(page.locator('#setup-admin-form, input#username, button[type="submit"]').first()).toBeVisible({ timeout: 10000 });
-    
+
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze();
 
-    const criticalViolations = results.violations.filter(
-      (v) => v.impact === 'serious' || v.impact === 'critical'
-    );
-    expect(criticalViolations).toEqual([]);
+    const { critical, serious } = summarizeAxeResults(results, 'Setup Page');
+    expect([...critical, ...serious]).toEqual([]);
   });
 
   test('Login page has no serious/critical accessibility violations', async ({ page }) => {
@@ -27,10 +40,8 @@ test.describe('Automated Accessibility Scans (Axe Core)', () => {
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze();
 
-    const criticalViolations = results.violations.filter(
-      (v) => v.impact === 'serious' || v.impact === 'critical'
-    );
-    expect(criticalViolations).toEqual([]);
+    const { critical, serious } = summarizeAxeResults(results, 'Login Page');
+    expect([...critical, ...serious]).toEqual([]);
   });
 
   test.describe('Authenticated Student Views', () => {
@@ -52,28 +63,31 @@ test.describe('Automated Accessibility Scans (Axe Core)', () => {
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
         .analyze();
 
-      const criticalViolations = results.violations.filter(
-        (v) => v.impact === 'serious' || v.impact === 'critical'
-      );
-      expect(criticalViolations).toEqual([]);
+      const { critical, serious } = summarizeAxeResults(results, 'Communication Board');
+      expect([...critical, ...serious]).toEqual([]);
     });
 
-    test('Learning Mode has no serious/critical accessibility violations', async ({ page }) => {
+    test('Learning landing and session controls have no serious/critical accessibility violations', async ({ page }) => {
       await page.goto('/learning');
       await expect(page.locator('main#main-content')).toBeVisible({ timeout: 10000 });
 
-      // Confirm learning interactive controls are rendered
-      const startOrQuestionBtn = page.locator('button:has-text("Start"), button:has-text("Iniciar"), button:has-text("Ask"), button:has-text("Preguntar")').first();
-      await expect(startOrQuestionBtn).toBeVisible({ timeout: 10000 });
+      // Start session if button is present to test active exercise controls
+      const startBtn = page.locator('button:has-text("Start"), button:has-text("Iniciar")').first();
+      if (await startBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await startBtn.click();
+        await page.waitForTimeout(500);
+      }
+
+      // Confirm learning interactive controls / prompt are rendered
+      const interactiveControl = page.locator('button:has-text("Ask"), button:has-text("Preguntar"), button:has-text("Start"), button:has-text("Iniciar"), [role="region"]').first();
+      await expect(interactiveControl).toBeVisible({ timeout: 10000 });
 
       const results = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
         .analyze();
 
-      const criticalViolations = results.violations.filter(
-        (v) => v.impact === 'serious' || v.impact === 'critical'
-      );
-      expect(criticalViolations).toEqual([]);
+      const { critical, serious } = summarizeAxeResults(results, 'Learning View');
+      expect([...critical, ...serious]).toEqual([]);
     });
   });
 
@@ -91,10 +105,8 @@ test.describe('Automated Accessibility Scans (Axe Core)', () => {
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
         .analyze();
 
-      const criticalViolations = results.violations.filter(
-        (v) => v.impact === 'serious' || v.impact === 'critical'
-      );
-      expect(criticalViolations).toEqual([]);
+      const { critical, serious } = summarizeAxeResults(results, 'Settings View');
+      expect([...critical, ...serious]).toEqual([]);
     });
   });
 });

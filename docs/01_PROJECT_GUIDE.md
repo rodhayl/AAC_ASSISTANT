@@ -6,7 +6,7 @@ path, see the root [`README.md`](../README.md).
 
 ## 1. Prerequisites and commands
 
-Use Python 3.13+, [uv](https://docs.astral.sh/uv/), Node.js 20+, and npm 10+.
+Use Python 3.13 or 3.14, [uv](https://docs.astral.sh/uv/), Node.js 22.22+, and npm 10+.
 The root scripts are the supported Windows entry points:
 
 ```bat

@@ -85,14 +85,14 @@ snapshot.
 ## Supported platforms
 
 - **Windows 10/11** — packaged portable/installer build.
-- **Source checkout** — any OS with Python 3.13+ and Node.js 20+.
+- **Source checkout** — any OS with Python 3.13 or 3.14 and Node.js 22.22+.
 
 ## Prerequisites (source checkout)
 
 - Windows 10+ (for the packaged build) or Linux/macOS (source only)
-- Python 3.13+
+- Python 3.13 or 3.14
 - [uv](https://docs.astral.sh/uv/)
-- Node.js 20+ and npm 10+ (to build or run the frontend)
+- Node.js 22.22+ and npm 10+ (to build or run the frontend)
 
 The packaged Windows application requires neither Python nor Node.js.
 

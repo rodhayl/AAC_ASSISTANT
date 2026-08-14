@@ -53,6 +53,37 @@ def check_markdown_links(root: Path) -> bool:
     return True
 
 
+def check_requirements_consistency(root: Path) -> bool:
+    print("\n[RUNNING] Checking requirements.txt consistency with uv.lock...")
+    req_file = root / "requirements.txt"
+    if not req_file.exists():
+        print("[FAILED] requirements.txt does not exist.")
+        return False
+
+    res = subprocess.run(
+        ["uv", "export", "--format", "requirements-txt", "--no-dev", "--quiet"],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+    )
+    if res.returncode != 0:
+        print(f"[FAILED] uv export failed: {res.stderr}")
+        return False
+
+    def normalize(text: str) -> list[str]:
+        return [line.strip() for line in text.splitlines() if line.strip() and not line.strip().startswith("#")]
+
+    expected = normalize(res.stdout)
+    actual = normalize(req_file.read_text(encoding="utf-8"))
+    if expected != actual:
+        print("[FAILED] requirements.txt is out of sync with uv.lock.")
+        print("Run: uv export --format requirements-txt --no-dev --output-file requirements.txt")
+        return False
+
+    print("[PASSED] requirements.txt is consistent with uv.lock.")
+    return True
+
+
 def main() -> int:
     root = Path(__file__).resolve().parent.parent
     frontend_dir = root / "src" / "frontend"
@@ -70,6 +101,9 @@ def main() -> int:
     for name, cmd, cwd in steps:
         if not run_step(name, cmd, cwd):
             return 1
+
+    if not check_requirements_consistency(root):
+        return 1
 
     if not check_markdown_links(root):
         return 1
