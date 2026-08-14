@@ -2,7 +2,7 @@
 
 This document describes how AAC Assistant implements authentication,
 authorization, and data protection. It complements
-[docs/THREAT_MODEL.md](THREAT_MODEL.md).
+[Threat Model](THREAT_MODEL.md).
 
 ## 1. Authentication
 

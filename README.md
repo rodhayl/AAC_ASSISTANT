@@ -185,7 +185,7 @@ React application in `src/frontend/`. See
 - Role checks on every protected backend endpoint; validated user updates.
 - Hardened uploads (size, MIME, signature, and path-traversal checks).
 
-Read [SECURITY.md](SECURITY.md) for supported versions and how to report a
+Read [.github/SECURITY.md](.github/SECURITY.md) for supported versions and how to report a
 vulnerability privately, [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) for the
 threat model, and [docs/SECURITY_ARCHITECTURE.md](docs/SECURITY_ARCHITECTURE.md)
 for the implementation detail.
@@ -196,6 +196,11 @@ Accessibility is core to this project. See
 [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) for what is tested, known
 limitations, and future work. We do not currently claim formal WCAG
 conformance.
+
+## Documentation
+
+For an overview of all architecture, security, testing, and operations
+guides, see the [Documentation Index](docs/README.md).
 
 ## Packaging and releases
 
@@ -212,9 +217,9 @@ Outputs: `dist\AAC_Assistant\AAC_Assistant.exe` and
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and the
-[Code of Conduct](CODE_OF_CONDUCT.md). Questions belong in
-[SUPPORT.md](SUPPORT.md); the [ROADMAP.md](ROADMAP.md) lists planned work.
+Contributions are welcome. See [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) and the
+[Code of Conduct](.github/CODE_OF_CONDUCT.md). Questions belong in
+[.github/SUPPORT.md](.github/SUPPORT.md); the [ROADMAP.md](docs/ROADMAP.md) lists planned work.
 
 ## License
 

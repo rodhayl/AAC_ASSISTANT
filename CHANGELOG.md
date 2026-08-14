@@ -19,9 +19,9 @@ All notable changes to this project are documented here. The project follows
 
 ### Added
 
-- `SECURITY.md`, `docs/THREAT_MODEL.md`, `docs/SECURITY_ARCHITECTURE.md`,
-  `docs/PRIVACY_AND_DATA.md`, `docs/ACCESSIBILITY.md`, `CONTRIBUTING.md`,
-  `CODE_OF_CONDUCT.md`, `SUPPORT.md`, `ROADMAP.md`, issue/PR templates.
+- `.github/SECURITY.md`, `docs/THREAT_MODEL.md`, `docs/SECURITY_ARCHITECTURE.md`,
+  `docs/PRIVACY_AND_DATA.md`, `docs/ACCESSIBILITY.md`, `.github/CONTRIBUTING.md`,
+  `.github/CODE_OF_CONDUCT.md`, `.github/SUPPORT.md`, `docs/ROADMAP.md`, `docs/README.md`, issue/PR templates.
 
 ### Fixed
 

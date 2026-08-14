@@ -258,7 +258,7 @@ Run a utility's help command with:
 uv run python scripts/<script>.py --help
 ```
 
-`TEST_SCENARIOS/` is intentionally retained as a manual QA reference for
+`docs/test_scenarios/` is intentionally retained as a manual QA reference for
 role-oriented walkthroughs. It is not part of the automated test collection;
 the pytest, Vitest, and Playwright suites are the repeatable validation
 sources.

@@ -26,7 +26,7 @@ installer, and API. This release marks the first public, packaged release.
 - LLM-dependent learning questions require a locally running Ollama/LM Studio
   or a configured OpenRouter key; they are the only features that need external
   services.
-- See [docs/ACCESSIBILITY.md](ACCESSIBILITY.md) for known accessibility
+- See [Accessibility Guide](ACCESSIBILITY.md) for known accessibility
   limitations.
 
 ### Installation and upgrade
@@ -48,4 +48,4 @@ updated in place; the uninstaller preserves the database and uploads.
 
 The installer preserves user data but does not perform automatic cross-version
 rollback. Keep a physical SQLite backup and the previous installer to roll
-back manually. See [docs/RELEASE_READINESS.md](RELEASE_READINESS.md).
+back manually. See [Release Readiness Runbook](RELEASE_READINESS.md).
