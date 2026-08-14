@@ -21,9 +21,9 @@ Snapshot date: **2026-08-14**
 | Published releases | 1 ([`v2.0.0`](https://github.com/rodhayl/AAC_ASSISTANT/releases/tag/v2.0.0)) | GitHub API (measured) |
 | Contributors (GitHub) | 1 (`rodhayl`) | GitHub API (measured) |
 | Watchers | 0 | GitHub API (measured) |
-| Branches | `main`, `020826_improvements`, `080826_continuation`, `chore/codex-oss-readiness` | GitHub API (measured) |
+| Branches | `main` | GitHub API (measured) |
 
-> `main` contains the latest coherent and tested product state following the merge of Pull Request [#4](https://github.com/rodhayl/AAC_ASSISTANT/pull/4) and publication of release [`v2.0.0`](https://github.com/rodhayl/AAC_ASSISTANT/releases/tag/v2.0.0).
+> `main` contains the latest coherent and tested product state following the merge of Pull Requests [#4](https://github.com/rodhayl/AAC_ASSISTANT/pull/4) and [#10](https://github.com/rodhayl/AAC_ASSISTANT/pull/10), and publication of release [`v2.0.0`](https://github.com/rodhayl/AAC_ASSISTANT/releases/tag/v2.0.0).
 
 ## Code and tests (measured locally)
 
