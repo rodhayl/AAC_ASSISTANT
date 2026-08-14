@@ -2,7 +2,7 @@
 REM AAC Assistant - reproducible PyInstaller + Inno Setup release build.
 REM Requires uv, npm, and Inno Setup 6.7.3 (per-user install is supported).
 
-setlocal EnableDelayedExpansion
+setlocal
 cd /d "%~dp0"
 
 for /f "tokens=3" %%V in ('findstr /r /b /c:"#define MyAppVersion " installer.iss') do set "VERSION=%%~V"
@@ -16,7 +16,7 @@ set "ISCC_EXE="
 if defined INNO_SETUP_PATH set "ISCC_EXE=%INNO_SETUP_PATH:"=%"
 if not defined ISCC_EXE if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
 if not defined ISCC_EXE if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%ProgramFiles%\Inno Setup 6\ISCC.exe"
-if not defined ISCC_EXE if exist "!ProgramFiles(x86)!\Inno Setup 6\ISCC.exe" set "ISCC_EXE=!ProgramFiles(x86)!\Inno Setup 6\ISCC.exe"
+if not defined ISCC_EXE if exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
 if not defined ISCC_EXE (
     where ISCC.exe >nul 2>&1
     if not errorlevel 1 set "ISCC_EXE=ISCC.exe"
