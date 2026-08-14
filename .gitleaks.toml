@@ -1,20 +1,28 @@
 # Gitleaks configuration for the CI secret-scan job.
 #
 # The repository documents deterministic development/test credentials
-# (Admin123, Student123, Teacher123) in fixtures, E2E specs, CI environment
-# blocks, and docs. These are not real secrets; they are allowlisted here so the
-# scan only fails on genuine credentials.
+# (Admin123, Student123, Teacher123) in specific test fixtures, E2E specs,
+# and CI workflows.
+#
+# To avoid suppressing genuine secrets, allowlists use condition = "AND"
+# matching only known test credential regexes within specific files.
 
 [allowlist]
   description = "Documented development and test credential literals"
+  condition = "AND"
   regexes = [
     '''(?i)\b(admin123|student123|teacher123)\b''',
   ]
   paths = [
-    '''\.github/''',
-    '''tests/''',
-    '''src/frontend/e2e/''',
-    '''src/frontend/tests/''',
-    '''docs/''',
-    '''README\.md''',
+    '''^\.github/workflows/ci\.yml$''',
+    '''^\.env\.example$''',
+    '''^env\.properties\.example$''',
+    '''^src/frontend/e2e/auth\.setup\.ts$''',
+    '''^src/frontend/e2e/settings\.spec\.ts$''',
+    '''^src/frontend/tests/.*\.test\.(ts|tsx)$''',
+    '''^tests/.*\.py$''',
+    '''^docs/test_scenarios/.*\.md$''',
+    '''^docs/01_PROJECT_GUIDE\.md$''',
+    '''^docs/RELEASE_READINESS\.md$''',
+    '''^README\.md$''',
   ]

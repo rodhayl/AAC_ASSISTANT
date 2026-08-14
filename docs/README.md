@@ -40,9 +40,7 @@ For high-level project overview and quick-start instructions, see the root [READ
 - **[Security Policy](../.github/SECURITY.md)** — Supported versions and private vulnerability reporting instructions.
 - **[Support Guide](../.github/SUPPORT.md)** — Support resources, issue reporting, and discussion channels.
 
-### 6. Grant Readiness & Metrics
+### 6. Project Status & Metrics
 
-- **[Codex for Open Source Application](CODEX_FOR_OSS_APPLICATION.md)** — OpenAI Codex for Open Source grant application draft.
-- **[Grant Readiness Baseline](GRANT_READINESS_BASELINE.md)** — Verification baseline and grant evaluation readiness.
 - **[Project Metrics](PROJECT_METRICS.md)** — Date-stamped, verifiable repository and codebase metrics snapshot.
 - **[Plans & ADRs](plans/)** — Historical architectural plans, refactoring notes, and task records.
