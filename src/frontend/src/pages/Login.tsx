@@ -21,6 +21,7 @@ export function Login() {
       .then(res => {
         if (isMounted && res.data.setup_required) {
           setSetupRequired(true);
+          navigate('/setup', { replace: true });
         }
       })
       .catch(() => {
@@ -29,7 +30,7 @@ export function Login() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

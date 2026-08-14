@@ -31,8 +31,8 @@ Snapshot date: **2026-08-14**
 
 | Metric | Value |
 | ------ | ----- |
-| Backend tests (pytest) | 651 passed (reproduced 2026-08-14) |
-| Frontend unit/component tests (Vitest) | 224 passed (47 files, reproduced 2026-08-14) |
+| Backend tests (pytest) | 653 passed, 2 skipped (reproduced 2026-08-14) |
+| Frontend unit/component tests (Vitest) | 226 passed (47 files, reproduced 2026-08-14) |
 | End-to-end tests (Playwright, real backend) | 108 passed |
 | Python lint (`ruff`) | clean |
 | Frontend lint / typecheck / build | clean; JS bundle 344.5 kB ≤ 450 kB budget, CSS 96.9 kB ≤ 150 kB budget |

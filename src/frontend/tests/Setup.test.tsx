@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { Setup } from '../src/pages/Setup';
+import { Login } from '../src/pages/Login';
 import api from '../src/lib/api';
 import { useAuthStore } from '../src/store/authStore';
 
@@ -112,6 +113,44 @@ describe('Setup Page', () => {
       });
       expect(useAuthStore.getState().isAuthenticated).toBe(true);
       expect(useAuthStore.getState().user?.username).toBe('admin1');
+    });
+  });
+
+  it('redirects to /login when setup is not required', async () => {
+    vi.mocked(api.get).mockResolvedValue({
+      data: { setup_required: false, has_admin: true, app_name: 'AAC Assistant', app_version: '2.0.0' },
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/setup']}>
+        <Routes>
+          <Route path="/setup" element={<Setup />} />
+          <Route path="/login" element={<div>Login Page Target</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Login Page Target')).toBeInTheDocument();
+    });
+  });
+
+  it('automatically redirects Login to /setup when setup is required', async () => {
+    vi.mocked(api.get).mockResolvedValue({
+      data: { setup_required: true, has_admin: false, app_name: 'AAC Assistant', app_version: '2.0.0' },
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/login']}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/setup" element={<div>Setup Page Target</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Setup Page Target')).toBeInTheDocument();
     });
   });
 });

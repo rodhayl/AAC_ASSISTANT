@@ -114,13 +114,15 @@ and open `http://127.0.0.1:8086/`.
 ### First-run administrator setup
 
 On first run, when no administrator account exists, opening the web interface at
-`http://127.0.0.1:8086/` redirects to the initial setup screen (`/setup`) where you
-choose your administrator username and a strong password.
+`http://127.0.0.1:8086/` automatically redirects to the initial setup screen (`/setup`)
+where you choose your administrator username and a strong password. Initial setup
+is strictly restricted to local loopback (`127.0.0.1` / `::1`) to prevent remote
+takeover on fresh installations.
 
-Alternatively, operators can set `AAC_BOOTSTRAP_ADMIN_PASSWORD` in `.env` or the
-process environment before starting the server. In production, bootstrap refuses
-to initialize without an explicit, strong password. Deterministic test credentials
-(`Admin123`) operate only in explicit test environments.
+Alternatively, operators can configure `AAC_BOOTSTRAP_ADMIN_PASSWORD` in `.env` or the
+process environment before starting the server. In production (`ENVIRONMENT=production`),
+bootstrap refuses to initialize without an explicit, strong password. Deterministic test
+credentials (`Admin123`) operate only in explicit test environments (`TESTING=1`).
 
 ## Development setup
 
@@ -174,7 +176,7 @@ Process environment variables take precedence over the file. Key settings:
 | `AAC_SEED_SAMPLE_DATA` | `false` | Seeds demo users/boards (keep false in production). |
 | `AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN` | `true` | Creates an admin if none exists. |
 | `AAC_BOOTSTRAP_ADMIN_USERNAME` | `admin1` | Username for the first-run admin. |
-| `AAC_BOOTSTRAP_ADMIN_PASSWORD` | generated | If unset, a random one-time password is generated into `.env`. |
+| `AAC_BOOTSTRAP_ADMIN_PASSWORD` | unset | Unset by default; operators set a strong password via `/setup` (loopback only). Production requires an explicit password. |
 
 See `docs/01_PROJECT_GUIDE.md` for the full reference.
 

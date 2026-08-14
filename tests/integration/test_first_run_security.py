@@ -142,18 +142,19 @@ def test_initial_setup_endpoint_lifecycle(fresh_db, monkeypatch):
         assert mismatch_res.status_code == 400
         assert "Passwords do not match" in mismatch_res.json()["detail"]
 
-        # Step 3: Attempt setup with insecure default password - must fail 400
-        default_pw_res = client.post(
-            "/api/auth/setup",
-            json={
-                "username": "admin1",
-                "display_name": "System Admin",
-                "password": "Admin123",
-                "confirm_password": "Admin123",
-            },
-        )
-        assert default_pw_res.status_code == 400
-        assert "development default" in default_pw_res.json()["detail"]
+        # Step 3: Attempt setup with insecure default password (case-insensitive variants) - must fail 400
+        for bad_pw in ["Admin123", "admin123", "AdMiN123", "ADMIN123"]:
+            default_pw_res = client.post(
+                "/api/auth/setup",
+                json={
+                    "username": "admin1",
+                    "display_name": "System Admin",
+                    "password": bad_pw,
+                    "confirm_password": bad_pw,
+                },
+            )
+            assert default_pw_res.status_code == 400
+            assert "development default" in default_pw_res.json()["detail"]
 
         # Step 4: Attempt setup with weak password (< 8 chars) - must fail 400
         weak_res = client.post(
@@ -167,7 +168,21 @@ def test_initial_setup_endpoint_lifecycle(fresh_db, monkeypatch):
         )
         assert weak_res.status_code == 400
 
-        # Step 5: Successful setup with strong password
+        # Step 5: Attempt setup from non-loopback remote client - must be rejected with 403 Forbidden
+        remote_client = TestClient(app, client=("192.168.1.105", 54321))
+        remote_res = remote_client.post(
+            "/api/auth/setup",
+            json={
+                "username": "remote_attacker",
+                "display_name": "Remote Attacker",
+                "password": "StrongPassword123!",
+                "confirm_password": "StrongPassword123!",
+            },
+        )
+        assert remote_res.status_code == 403
+        assert "local loopback" in remote_res.json()["detail"]
+
+        # Step 6: Successful setup with strong password from loopback client
         setup_res = client.post(
             "/api/auth/setup",
             json={
@@ -185,13 +200,13 @@ def test_initial_setup_endpoint_lifecycle(fresh_db, monkeypatch):
         assert "access_token" in data
         assert "refresh_token" in data
 
-        # Step 6: Setup status must now report setup_required = False
+        # Step 7: Setup status must now report setup_required = False
         status_res2 = client.get("/api/auth/setup-status")
         assert status_res2.status_code == 200
         assert status_res2.json()["setup_required"] is False
         assert status_res2.json()["has_admin"] is True
 
-        # Step 7: Subsequent setup attempt must be locked with 403 Forbidden
+        # Step 8: Subsequent setup attempt must be locked with 403 Forbidden even from loopback
         repeat_res = client.post(
             "/api/auth/setup",
             json={
@@ -206,6 +221,71 @@ def test_initial_setup_endpoint_lifecycle(fresh_db, monkeypatch):
 
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+def test_production_environment_requires_explicit_bootstrap_password(fresh_db, monkeypatch):
+    """Production environment refuses to bootstrap an admin when AAC_BOOTSTRAP_ADMIN_PASSWORD is unset."""
+    engine, session_factory = fresh_db
+    monkeypatch.delenv("TESTING", raising=False)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.delenv("AAC_BOOTSTRAP_ADMIN_PASSWORD", raising=False)
+    monkeypatch.setattr(config, "ENVIRONMENT", "production")
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _override_session():
+        session = session_factory()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    monkeypatch.setattr("src.aac_app.seed.get_session", _override_session)
+
+    with pytest.raises(ValueError, match="AAC_BOOTSTRAP_ADMIN_PASSWORD is not acceptable in production"):
+        init_database(ensure_schema=False)
+
+    with _override_session() as session:
+        admin = session.query(User).filter(User.user_type == "admin").first()
+        assert admin is None, "Production without configured bootstrap password must not seed an admin."
+
+
+def test_production_environment_with_explicit_password_bootstraps_admin(fresh_db, monkeypatch):
+    """Production environment creates admin when explicit strong password is provided."""
+    engine, session_factory = fresh_db
+    monkeypatch.delenv("TESTING", raising=False)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("AAC_BOOTSTRAP_ADMIN_PASSWORD", "ProductionSuperSecret999!")
+    monkeypatch.setattr(config, "ENVIRONMENT", "production")
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _override_session():
+        session = session_factory()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    monkeypatch.setattr("src.aac_app.seed.get_session", _override_session)
+
+    init_database(ensure_schema=False)
+
+    with _override_session() as session:
+        admin = session.query(User).filter(User.user_type == "admin").first()
+        assert admin is not None
+        assert admin.username == "admin1"
+        assert verify_password("ProductionSuperSecret999!", admin.password_hash)
 
 
 def test_ensure_bootstrap_admin_script_no_plaintext_persistence(tmp_path: Path, monkeypatch, capsys):

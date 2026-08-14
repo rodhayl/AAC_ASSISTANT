@@ -28,8 +28,11 @@ authorization, and data protection. It complements
 - **Setup screen (`/setup`)** — On first run, when no administrator exists, the web
   application provides an initial setup flow (`POST /api/auth/setup` and
   `GET /api/auth/setup-status`) that requires the operator to choose a unique, strong
-  password. The endpoint is permanently locked (`403 Forbidden`) once an
-  administrator account exists.
+  password. To prevent remote first-admin takeover when the host is exposed to a
+  network, `POST /api/auth/setup` is strictly restricted to local loopback clients
+  (`127.0.0.1` / `::1`). Remote deployments must configure the initial administrator
+  via deployment configuration (`AAC_BOOTSTRAP_ADMIN_PASSWORD`). The endpoint is
+  permanently locked (`403 Forbidden`) once an administrator account exists.
 - **Environment bootstrap** — Operators can optionally supply
   `AAC_BOOTSTRAP_ADMIN_PASSWORD` in `.env` or the process environment before
   starting the server. If configured, the bootstrap worker creates the administrator

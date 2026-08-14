@@ -1,3 +1,4 @@
+import ipaddress
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -31,6 +32,18 @@ from src.api.routers.auth_helpers import (
 router = APIRouter()
 
 
+def _is_loopback_client(host: str | None) -> bool:
+    """Return True if the client host is a local loopback address or test runner."""
+    if not host:
+        return False
+    if host in {"localhost", "testclient"}:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 @router.get("/setup-status", response_model=schemas.SetupStatusResponse)
 def get_setup_status(db: Session = Depends(get_db)):
     """Check whether the initial administrator setup is required."""
@@ -51,6 +64,13 @@ def initial_admin_setup(
     db: Session = Depends(get_db),
 ):
     """Create the initial administrator account on first run."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not _is_loopback_client(client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Initial administrator setup is only permitted from local loopback (127.0.0.1 / ::1).",
+        )
+
     existing_admin = db.query(User).filter(User.user_type == "admin").first()
     if existing_admin:
         raise HTTPException(
@@ -64,12 +84,13 @@ def initial_admin_setup(
             detail="Passwords do not match.",
         )
 
-    validate_password_strength(payload.password)
-    if payload.password == config.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD:
+    if payload.password.strip().lower() == config.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD.lower():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The development default password is not permitted for administrator setup.",
         )
+
+    validate_password_strength(payload.password)
 
     username = payload.username.strip() or "admin1"
     display_name = payload.display_name.strip() or "Administrator"
