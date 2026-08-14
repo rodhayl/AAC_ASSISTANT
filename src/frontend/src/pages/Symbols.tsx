@@ -41,12 +41,6 @@ export function Symbols() {
   // when filters/search/sort change in quick succession.
   const fetchSeqRef = useRef(0);
 
-  useEffect(() => {
-    return () => {
-      if (newPreview) URL.revokeObjectURL(newPreview);
-    };
-  }, [newPreview]);
-
   const [deleteState, setDeleteState] = useState<{
     isOpen: boolean;
     mode: 'single' | 'batch';
@@ -300,8 +294,13 @@ export function Symbols() {
     }
     setError(null);
     setNewFile(file);
-    const objUrl = URL.createObjectURL(file);
-    setNewPreview(objUrl.startsWith('blob:') ? objUrl : null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string' && reader.result.startsWith('data:image/')) {
+        setNewPreview(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const searchArasaac = async (e?: React.FormEvent) => {
@@ -488,7 +487,7 @@ export function Symbols() {
               />
               <ImageIcon className="w-4 h-4" /> {newFile ? newFile.name : t('upload')}
             </label>
-          {newPreview && (newPreview.startsWith('blob:') || newPreview.startsWith('data:image/')) && (
+          {newPreview && newPreview.startsWith('data:image/') && (
             <img src={newPreview} alt="preview" className="w-12 h-12 rounded object-cover border" />
           )}
           <div className="flex gap-2">
