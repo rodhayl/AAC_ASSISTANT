@@ -276,25 +276,30 @@ def explicit_bootstrap_password() -> str | None:
     return None
 
 
-def write_bootstrap_password(value: str) -> None:
-    """Persist a generated bootstrap password to the canonical dotenv file."""
-    path = ENV_FILE.absolute()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+def _set_dotenv_value(path: Path, key: str, value: str) -> None:
+    """Set or replace an assignment in a dotenv file."""
+    target = path.absolute()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    lines = target.read_text(encoding="utf-8").splitlines() if target.exists() else []
     updated_lines: list[str] = []
     replaced = False
     for line in lines:
-        if _env_key(line) == _BOOTSTRAP_PASSWORD_KEY:
+        if _env_key(line) == key:
             if not replaced:
-                updated_lines.append(f"{_BOOTSTRAP_PASSWORD_KEY}={value}")
+                updated_lines.append(f"{key}={value}")
                 replaced = True
             continue
         updated_lines.append(line)
     if not replaced:
         if updated_lines and updated_lines[-1].strip():
             updated_lines.append("")
-        updated_lines.append(f"{_BOOTSTRAP_PASSWORD_KEY}={value}")
-    path.write_text("\n".join(updated_lines).rstrip() + "\n", encoding="utf-8")
+        updated_lines.append(f"{key}={value}")
+    target.write_text("\n".join(updated_lines).rstrip() + "\n", encoding="utf-8")
+
+
+def write_bootstrap_password(value: str) -> None:
+    """Persist a generated bootstrap credential to the canonical dotenv file."""
+    _set_dotenv_value(ENV_FILE, _BOOTSTRAP_PASSWORD_KEY, value)
 
 
 def resolve_bootstrap_password() -> str:
