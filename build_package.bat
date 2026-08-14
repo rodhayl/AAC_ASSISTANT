@@ -42,10 +42,12 @@ if not defined ISCC_EXE (
     echo Install Inno Setup 6.7.3 or set INNO_SETUP_PATH to ISCC.exe.
     exit /b 1
 )
-if /i not "%ISCC_EXE%"=="ISCC.exe" if not exist "%ISCC_EXE%" (
-    echo ERROR: Configured Inno Setup compiler does not exist: %ISCC_EXE%
-    exit /b 1
-)
+if /i "%ISCC_EXE%"=="ISCC.exe" goto :iscc_validated
+if exist "%ISCC_EXE%" goto :iscc_validated
+echo ERROR: Configured Inno Setup compiler does not exist: %ISCC_EXE%
+exit /b 1
+
+:iscc_validated
 
 echo [1/5] Syncing Python dependencies (including the voice extra)...
 call uv sync --extra voice
