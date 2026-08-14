@@ -61,5 +61,20 @@
     "resetPassword": "Res. Contra.",
     "resetPasswordAria": "Restablecer contraseña para {{student}}",
     "resetPasswordTitle": "Restablecer Contraseña"
-  }
+  },
+  "loading": "Cargando...",
+  "template": "Plantilla",
+  "age": "Edad",
+  "gender": "Género",
+  "select": "Seleccionar...",
+  "male": "Masculino",
+  "female": "Femenino",
+  "nonBinary": "No binario",
+  "companionName": "Nombre del compañero",
+  "role": "Rol",
+  "contentFilterLevel": "Nivel de filtro de contenido",
+  "strict": "Estricto",
+  "standard": "Estándar",
+  "relaxed": "Relajado",
+  "ai": "IA"
 }

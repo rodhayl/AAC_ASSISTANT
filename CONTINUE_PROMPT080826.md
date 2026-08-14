@@ -6,9 +6,9 @@ Continue work on the `080826_continuation` branch of AAC Assistant.
 
 - Current branch: `080826_continuation`
 - Current release baseline: `b2bd6e4 fix(release): make installer upgrades report and close safely`
-- Handoff status last reconciled in: `d7c9b69`/`808432f` (offline model bundling + regression coverage)
+- Handoff status last reconciled in: `d7c9b69`/`808432f`/`9469190` (offline model bundling, regression coverage, and documentation reconciliation)
 - Remote branch: `origin/080826_continuation`
-- HEAD is `808432f` (`test(models): cover bundled-model cache resolution and skip writable mkdir offline`) and the branch is two commits ahead of `origin/080826_continuation`.
+- HEAD is `9469190` (`docs(release): reflect offline model bundling and current validation state`) and the branch is three commits ahead of `origin/080826_continuation`.
 - The working tree is clean and release-ready; the offline bundling and installer update-wizard changes are committed.
 - The configured upstream is `origin/080826_continuation`; use that explicit branch when publishing reviewed commits.
 
@@ -48,14 +48,14 @@ Continue work on the `080826_continuation` branch of AAC Assistant.
 
 Measured while excluding tests, E2E files, generated files, dependencies, and test-only files:
 
-- Total: **40,776 lines** (current working tree, 2026-08-12)
-- `src/frontend/src`: 18,799
-- `src/api`: 10,036
-- `src/aac_app`: 10,539
-- `scripts`: 1,312
+- Total: **40,937 lines** (current working tree, 2026-08-13)
+- `src/frontend/src`: 18,803
+- `src/api`: 10,025
+- `src/aac_app`: 10,587
+- `scripts`: 1,432
 - `src/scripts`: 90
 
-This replaces the earlier 40,328-line estimate; remeasure after any future production edits. The count includes the current untracked production launcher/server helpers and the cycle-free frontend auth bridge, and excludes tests, E2E files, generated files, dependencies, and `__pycache__`. Every later section carrying an earlier date is historical evidence from that checkpoint; the current footprint, pending status, and latest validation in this opening section and the dated current-verification section below are authoritative.
+This replaces the earlier 40,776-line estimate; remeasure after any future production edits. The count includes the cycle-free frontend auth bridge and the offline model-bundling script (`scripts/bundle_models.py`), and excludes tests, E2E files, generated files, dependencies, and `__pycache__`. Every later section carrying an earlier date is historical evidence from that checkpoint; the current footprint, pending status, and latest validation in this opening section and the dated current-verification section below are authoritative.
 
 Largest remaining files:
 

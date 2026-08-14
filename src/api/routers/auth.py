@@ -22,6 +22,7 @@ from src.api import schemas
 from src.api.deps import get_db
 from src.api.routers.auth_helpers import (
     conditional_limiter,
+    ensure_username_email_available,
     validate_email_format,
     validate_password_strength,
 )
@@ -289,16 +290,7 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
     # Validate email format if provided
     validate_email_format(user.email)
 
-    # Check if username exists
-    existing_user = db.query(User).filter(User.username == user.username).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Username already registered")
-
-    # Check if email exists (if provided)
-    if user.email:
-        existing_email = db.query(User).filter(User.email == user.email).first()
-        if existing_email:
-            raise HTTPException(status_code=400, detail="Email already registered")
+    ensure_username_email_available(db, user.username, user.email)
 
     # SECURITY: Force user_type to 'student' for public registration
     # Only admins can create teacher/admin accounts via /auth/admin/create-user

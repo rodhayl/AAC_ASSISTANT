@@ -133,10 +133,10 @@ export function LearningChatPanel({
           </div>
           <div>
             <div className="font-semibold text-gray-900 dark:text-gray-100 text-sm">
-              Learning Companion
+              {t('title', 'Learning Companion')}
             </div>
             <div className="text-xs text-gray-500 dark:text-gray-400">
-              Practice questions, explanations, and conversational support
+              {t('panelSubtitle', 'Practice questions, explanations, and conversational support')}
             </div>
           </div>
         </div>
@@ -170,7 +170,7 @@ export function LearningChatPanel({
                 checked={showAdminReasoning}
                 onChange={(event) => onShowAdminReasoningChange(event.target.checked)}
               />
-              <span>Show thinking</span>
+              <span>{t('showThinking', 'Show thinking')}</span>
             </label>
           )}
           {currentSession && (

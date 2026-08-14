@@ -208,7 +208,8 @@ class TestEnvPropertiesCleanup:
         # Should be able to read key configuration values
         assert config.BACKEND_PORT > 0
         assert config.FRONTEND_PORT > 0
-        assert config.ENVIRONMENT in ["development", "staging", "production"]
+        # "test" is the CI environment; any non-production value is valid here.
+        assert config.ENVIRONMENT in ["development", "staging", "production", "test"]
 
     def test_allow_db_reset_defaults_false(self):
         """Test that ALLOW_DB_RESET defaults to False for safety."""

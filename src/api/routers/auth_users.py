@@ -21,6 +21,7 @@ from src.api.deps import (
 )
 from src.api.routers.auth_helpers import (
     conditional_limiter,
+    ensure_username_email_available,
     validate_email_format,
     validate_password_strength,
 )
@@ -69,16 +70,7 @@ def admin_create_user(
             detail=f"Invalid user_type. Must be one of: {', '.join(valid_types)}"
         )
 
-    # Check if username exists
-    existing_user = db.query(User).filter(User.username == user.username).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Username already registered")
-
-    # Check if email exists (if provided)
-    if user.email:
-        existing_email = db.query(User).filter(User.email == user.email).first()
-        if existing_email:
-            raise HTTPException(status_code=400, detail="Email already registered")
+    ensure_username_email_available(db, user.username, user.email)
 
     # Create new user with admin-specified role
     new_user = User(

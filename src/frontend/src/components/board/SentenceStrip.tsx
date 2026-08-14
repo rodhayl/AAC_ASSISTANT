@@ -137,7 +137,7 @@ export const SentenceStrip = memo(function SentenceStrip({
           {/* Sentence Display Area */}
           <div className="flex-1 min-h-[5rem] bg-gray-50 dark:bg-white/5 rounded-xl border border-border dark:border-white/5 p-2 flex items-center gap-2 overflow-x-auto hide-scrollbar touch-pan-x">
             {symbols.length === 0 ? (
-              <span className="text-gray-400 dark:text-gray-500 px-2 italic select-none">
+              <span data-testid="sentence-empty" className="text-gray-400 dark:text-gray-500 px-2 italic select-none">
                 {t('tapSymbolsToSpeak', 'Tap symbols to create a sentence...')}
               </span>
             ) : (
@@ -196,6 +196,7 @@ export const SentenceStrip = memo(function SentenceStrip({
               <button
                 onClick={onBackspace}
                 disabled={symbols.length === 0}
+                data-testid="sentence-backspace"
                 className="p-3 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 aria-label={t('backspace', 'Backspace')}
               >
@@ -206,6 +207,7 @@ export const SentenceStrip = memo(function SentenceStrip({
             <button
               onClick={onClear}
               disabled={symbols.length === 0}
+              data-testid="sentence-clear"
               className="p-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               aria-label={t('clearSentence', 'Clear sentence')}
             >
@@ -215,6 +217,7 @@ export const SentenceStrip = memo(function SentenceStrip({
             <button
               onClick={onSpeak}
               disabled={symbols.length === 0 || isSpeaking}
+              data-testid="sentence-speak"
               className={`
                 p-3 rounded-xl text-white shadow-sm transition-all transform active:scale-95
                 ${isSpeaking
@@ -236,6 +239,7 @@ export const SentenceStrip = memo(function SentenceStrip({
               <button
                 onClick={onAskAI}
                 disabled={symbols.length === 0}
+                data-testid="sentence-ask-ai"
                 className="p-3 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 title={t('askAI', 'Ask AI')}
               >
@@ -247,7 +251,7 @@ export const SentenceStrip = memo(function SentenceStrip({
 
         {/* Text Preview (for accessibility/clarity) */}
         {symbols.length > 0 && (
-          <div className="mt-1 px-1 text-sm text-gray-500 dark:text-gray-400 truncate">
+          <div data-testid="sentence-preview" className="mt-1 px-1 text-sm text-gray-500 dark:text-gray-400 truncate">
             {sentenceText}
           </div>
         )}

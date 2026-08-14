@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Edit, Check, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { assetUrl } from '../lib/utils';
 import { glossSymbolUtterance } from '../lib/gloss';
 import { getCategoryStyle } from '../lib/symbolCategoryStyle';
@@ -21,6 +22,7 @@ interface SymbolMessageEditorProps {
 }
 
 export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessageEditorProps) {
+  const { t } = useTranslation('common');
   const [editedSymbols, setEditedSymbols] = useState<SymbolItem[]>(message.symbolImages || []);
 
   const removeSymbol = (index: number) => {
@@ -40,12 +42,12 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
     <div className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3 my-2">
       <div className="flex items-center gap-2 mb-2 text-sm text-gray-600 dark:text-gray-400">
         <Edit className="w-4 h-4" />
-        <span>Editing symbol message</span>
+        <span>{t('symbolEditor.title', 'Editing symbol message')}</span>
       </div>
 
       {editedSymbols.length === 0 ? (
         <div className="text-sm text-gray-500 dark:text-gray-400 italic mb-3 p-2">
-          No symbols remaining. Add symbols or cancel to restore original.
+          {t('symbolEditor.emptyHint', 'No symbols remaining. Add symbols or cancel to restore original.')}
         </div>
       ) : (
         <>
@@ -78,8 +80,8 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
           </div>
 
           <div className="text-sm text-gray-700 dark:text-gray-300 mb-3 p-2 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
-            <span className="text-xs text-gray-500 dark:text-gray-400 mr-2">Preview:</span>
-            {glossSymbols() || <span className="italic text-gray-400">Empty message</span>}
+            <span className="text-xs text-gray-500 dark:text-gray-400 mr-2">{t('symbolEditor.preview', 'Preview:')}</span>
+            {glossSymbols() || <span className="italic text-gray-400">{t('symbolEditor.emptyMessage', 'Empty message')}</span>}
           </div>
         </>
       )}
@@ -92,14 +94,14 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
           title="Save and resend message"
         >
           <Check className="w-4 h-4" />
-          Save & Resend
+          {t('symbolEditor.saveResend', 'Save & Resend')}
         </button>
         <button
           onClick={onCancel}
           className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
           title="Cancel editing"
         >
-          Cancel
+          {t('symbolEditor.cancel', 'Cancel')}
         </button>
       </div>
     </div>

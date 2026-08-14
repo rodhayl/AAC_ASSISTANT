@@ -313,7 +313,7 @@ export function Students() {
                         aria-label={t('guardianProfile', { defaultValue: 'Guardian Profile' })}
                       >
                         <Sparkles className="w-4 h-4" />
-                        <span className="hidden sm:inline">AI</span>
+                        <span className="hidden sm:inline">{t('ai', 'AI')}</span>
                       </button>
                       <button
                         onClick={() => openPreferencesModal(s)}

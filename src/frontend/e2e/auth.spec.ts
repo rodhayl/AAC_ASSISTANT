@@ -53,6 +53,19 @@ test.describe('Authentication', () => {
   });
 });
 
+test.describe('Authentication - form validation', () => {
+  test('blocks an empty login submission with native validation', async ({ page }) => {
+    await page.goto('/login');
+
+    // Both fields are `required`, so submitting empty never fires a request.
+    await page.locator('button[type="submit"]').click();
+    await expect(page.locator('#username:invalid')).toBeVisible();
+    await expect(page).toHaveURL(/\/login(?:[/?#]|$)/);
+    // No backend error surface appears because the request never fired.
+    await expect(page.locator('.bg-red-50')).toHaveCount(0);
+  });
+});
+
 test.describe('Authentication - Student', () => {
   test.use({ storageState: 'playwright/.auth/student.json' });
 
