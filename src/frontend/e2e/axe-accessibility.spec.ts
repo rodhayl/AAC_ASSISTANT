@@ -67,20 +67,15 @@ test.describe('Automated Accessibility Scans (Axe Core)', () => {
       expect([...critical, ...serious]).toEqual([]);
     });
 
-    test('Learning landing and session controls have no serious/critical accessibility violations', async ({ page }) => {
+    test('Learning session active view has no serious/critical accessibility violations', async ({ page }) => {
       await page.goto('/learning');
       await expect(page.locator('main#main-content')).toBeVisible({ timeout: 10000 });
 
-      // Start session if button is present to test active exercise controls
-      const startBtn = page.locator('button:has-text("Start"), button:has-text("Iniciar")').first();
+      const startBtn = page.getByTestId('learning-session-start');
       if (await startBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
         await startBtn.click();
-        await page.waitForTimeout(500);
+        await expect(page.getByTestId('learning-session-active')).toBeVisible({ timeout: 10000 });
       }
-
-      // Confirm learning interactive controls / prompt are rendered
-      const interactiveControl = page.locator('button:has-text("Ask"), button:has-text("Preguntar"), button:has-text("Start"), button:has-text("Iniciar"), [role="region"]').first();
-      await expect(interactiveControl).toBeVisible({ timeout: 10000 });
 
       const results = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
