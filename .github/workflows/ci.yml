@@ -57,7 +57,7 @@ jobs:
         working-directory: src/frontend
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
-      - uses: actions/setup-node@12b7ff3796cabd9e0da05c556468eec2f565d246 # v4
+      - uses: actions/setup-node@3d7870f6218881292d183093179901ae8dc2ef85 # v4
         with:
           node-version: "22"
           cache: npm
@@ -113,7 +113,7 @@ jobs:
       - uses: actions/setup-python@8549b9f8f590ad24eab7482f36f6e1e24d34597b # v5
         with:
           python-version: "3.13"
-      - uses: actions/setup-node@12b7ff3796cabd9e0da05c556468eec2f565d246 # v4
+      - uses: actions/setup-node@3d7870f6218881292d183093179901ae8dc2ef85 # v4
         with:
           node-version: "22"
           cache: npm
@@ -174,7 +174,7 @@ jobs:
       - uses: actions/setup-python@8549b9f8f590ad24eab7482f36f6e1e24d34597b # v5
         with:
           python-version: "3.13"
-      - uses: actions/setup-node@12b7ff3796cabd9e0da05c556468eec2f565d246 # v4
+      - uses: actions/setup-node@3d7870f6218881292d183093179901ae8dc2ef85 # v4
         with:
           node-version: "22"
           cache: npm
