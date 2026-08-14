@@ -33,3 +33,7 @@ Frontend changes: from `src/frontend`, run `npm run typecheck`, `npm run lint`, 
 Full local PR gate: `uv run python scripts/verify_pr.py` executes the consolidated backend, frontend, coverage, and documentation checks. See `docs/MAINTAINER_GUIDE.md` for release runbooks.
 
 Always run `git diff --check` and inspect production references separately from tests. Never claim browser or live-server validation unless it was actually run.
+
+## Task and process lifecycle
+
+Never leave background tasks, orphaned servers, subagents, or dangling test runners running when completing a turn or validation pass. Always audit active tasks (`manage_task` list) and kill unneeded background processes immediately.
