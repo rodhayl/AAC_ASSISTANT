@@ -30,15 +30,15 @@ Snapshot date: **2026-08-14**
 | Metric | Value |
 | ------ | ----- |
 | Backend tests (pytest) | 653 passed, 2 skipped (reproduced 2026-08-14) |
-| Backend test coverage (pytest-cov) | 77% (statement + branch coverage) |
+| Backend test coverage (Coverage.py) | 80.92% statements (7,117/8,795), 64.75% branches (1,743/2,692), 77.13% combined total |
 | Frontend unit/component tests (Vitest) | 227 passed (48 files, reproduced 2026-08-14) |
-| Frontend test coverage (Vitest v8) | 70.49% statements, 60.28% branches, 64.54% functions, 72.95% lines |
-| End-to-end tests (Playwright, real backend) | 113 passed (including Axe Core accessibility scans) |
-| Automated accessibility scans (Axe Core) | clean (0 serious or critical violations across 5 critical pages) |
+| Frontend test coverage (Vitest v8) | 70.49% statements (3,023/4,288), 60.28% branches (1,791/2,971), 64.54% functions (701/1,086), 72.95% lines (2,751/3,771) |
+| End-to-end tests (Playwright, real backend) | 113 passed (3 auth setup + 105 functional specs + 5 automated Axe analyses) |
+| Automated accessibility scans (Axe Core) | 5 automated Axe analyses across 5 critical routes (/setup, /login, /communication, /learning, /settings) with 0 serious or critical violations |
 | Python lint (`ruff`) | clean |
-| Frontend lint / typecheck / build | clean; JS bundle 344.5 kB ≤ 450 kB budget, CSS 96.9 kB ≤ 150 kB budget |
+| Frontend lint / typecheck / build | clean; JS bundle 344.5 kB ≤ 450 kB budget, CSS 97.6 kB ≤ 150 kB budget |
 
-> Test counts and coverage percentages are reproduced from actual runs, not copied from documentation.
+> Test counts and coverage percentages are reproduced directly from machine-readable test outputs (`coverage.json`, Vitest summary, Playwright reporter).
 
 ## Supported platforms
 
