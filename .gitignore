@@ -46,12 +46,17 @@ dist/
 dist*/
 .trae/
 .gemini/
+playwright-report/
+blob-report/
+.ci-e2e-data/
 src/frontend/test-results/
 src/frontend/coverage/
 results-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
 
 # DB files
 *.db
+*.sqlite
+*.sqlite3
 
 # Environment variables and local secrets
 .env
@@ -70,6 +75,8 @@ bundled_models/
 run.pid
 *.log
 *.exe
+sbom*.json
+checksums*.txt
 
 # Export staging
 _export/

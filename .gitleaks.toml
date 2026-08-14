@@ -13,10 +13,8 @@
   paths = [
     '''\.github/''',
     '''tests/''',
-    '''TEST_SCENARIOS/''',
     '''src/frontend/e2e/''',
     '''src/frontend/tests/''',
     '''docs/''',
     '''README\.md''',
-    '''CONTINUE_PROMPT.*\.md''',
   ]
