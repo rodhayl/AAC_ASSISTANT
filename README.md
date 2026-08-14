@@ -29,11 +29,25 @@ offline, and no cloud account, analytics, or telemetry is required.
 
 ## Product tour
 
-![AAC Assistant Interface](docs/assets/splash.png)
+### 1. Communication board & sentence strip
+Grid-based symbol navigation with real-time sentence construction, symbol library management, and instant speech output.
 
-1. **Communication Boards & Sentence Strip** — Visual symbol navigation with real-time sentence construction and multi-voice speech output.
-2. **Adaptive Learning Sessions** — Structured vocabulary and symbol identification exercises with student progress tracking.
-3. **Local Administration & Accessibility** — User role management, personalized board assignment, high-contrast themes, and offline settings.
+![Communication board view with symbol grid and sentence strip](docs/assets/screenshots/communication_board.png)
+
+### 2. Adaptive learning sessions
+Structured symbol identification and vocabulary exercises with instant multi-modal feedback and student progress tracking.
+
+![Adaptive learning session interface with multiple choice symbol practice](docs/assets/screenshots/learning_session.png)
+
+### 3. Local administration & accessibility
+Manage users and roles, assign personalized boards, customize high-contrast themes, configure speech voices, and manage offline AI providers.
+
+![Administration and accessibility settings panel](docs/assets/screenshots/settings_view.png)
+
+### 4. Interactive first-run setup
+One-time onboarding flow restricted to local loopback (`127.0.0.1`) requiring operator-chosen strong credentials before initial administrator creation.
+
+![Interactive first-run administrator onboarding screen](docs/assets/screenshots/first_run_setup.png)
 
 ## Key features
 

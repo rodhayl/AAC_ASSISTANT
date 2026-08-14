@@ -21,7 +21,7 @@ exploit details or personal data.
 
 **Private reporting channel:** use GitHub's
 [private vulnerability reporting](https://github.com/rodhayl/AAC_ASSISTANT/security/advisories/new)
-(if enabled on the repository), or email the maintainer directly. Do not post
+(enabled on this repository), or email the maintainer directly. Do not post
 exploits, proofs of concept, database files, tokens, or personally identifiable
 information in public issues, pull requests, or discussions.
 
