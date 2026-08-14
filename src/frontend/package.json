@@ -22,7 +22,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "axios": "^1.19.0",
     "clsx": "^2.1.1",
-    "i18next": "^24.0.0",
+    "i18next": "^26.3.6",
     "i18next-browser-languagedetector": "^7.1.0",
     "lucide-react": "^0.554.0",
     "react": "19.2.7",
