@@ -33,5 +33,5 @@ All notable changes to this project are documented here. The project follows
 
 ## Earlier history
 
-Earlier development history is recorded in the git log and the repository
-documentation. No tagged releases have been published yet.
+Earlier development history leading up to the initial `v2.0.0` public release is
+recorded in the git commit log.

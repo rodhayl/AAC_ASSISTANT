@@ -1,5 +1,9 @@
 # AAC Assistant
 
+[![CI](https://github.com/rodhayl/AAC_ASSISTANT/actions/workflows/ci.yml/badge.svg)](https://github.com/rodhayl/AAC_ASSISTANT/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/rodhayl/AAC_ASSISTANT)](https://github.com/rodhayl/AAC_ASSISTANT/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 **A local-first, privacy-focused communication platform for people with speech
 and communication disabilities.**
 
@@ -13,7 +17,7 @@ Augmentative and alternative communication (AAC) software helps people who
 cannot rely on speech to express themselves. Many AAC tools depend on cloud
 services, which can put highly personal communication data outside the user's
 control. AAC Assistant is built local-first: after installation it works fully
-offline, and no account, analytics, or telemetry is required.
+offline, and no cloud account, analytics, or telemetry is required.
 
 ## Who it is for
 
@@ -22,6 +26,14 @@ offline, and no account, analytics, or telemetry is required.
 - **Caregivers, teachers, and therapists** — to create boards, assign them to
   students, run learning sessions, and review progress.
 - **Administrators** — to manage users, roles, and settings on a local install.
+
+## Product tour
+
+![AAC Assistant Interface](docs/assets/splash.png)
+
+1. **Communication Boards & Sentence Strip** — Visual symbol navigation with real-time sentence construction and multi-voice speech output.
+2. **Adaptive Learning Sessions** — Structured vocabulary and symbol identification exercises with student progress tracking.
+3. **Local Administration & Accessibility** — User role management, personalized board assignment, high-contrast themes, and offline settings.
 
 ## Key features
 
@@ -174,7 +186,7 @@ Process environment variables take precedence over the file. Key settings:
 | `ENVIRONMENT` | `development` | `production` enables stricter bootstrap/security checks. |
 | `ALLOW_DB_RESET` | `false` | Enables the admin DB-reset endpoint (keep false). |
 | `AAC_SEED_SAMPLE_DATA` | `false` | Seeds demo users/boards (keep false in production). |
-| `AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN` | `true` | Creates an admin if none exists. |
+| `AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN` | `true` | Enables interactive setup (/setup) or automatic bootstrap when no admin exists. |
 | `AAC_BOOTSTRAP_ADMIN_USERNAME` | `admin1` | Username for the first-run admin. |
 | `AAC_BOOTSTRAP_ADMIN_PASSWORD` | unset | Unset by default; operators set a strong password via `/setup` (loopback only). Production requires an explicit password. |
 

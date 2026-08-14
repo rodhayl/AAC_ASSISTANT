@@ -5,7 +5,7 @@ dependency graphs and writes:
 
 - ``dist/SBOM.json`` — a minimal CycloneDX 1.4 JSON document listing the
   application component and its dependencies with pinned versions.
-- ``dist/SHA256SUMS`` — SHA-256 checksums for every release artifact found in
+- ``dist/SHA256SUMS.txt`` — SHA-256 checksums for every release artifact found in
   ``dist/``.
 
 Run after ``build_package.bat``:
@@ -110,7 +110,7 @@ def main() -> int:
         and path.suffix.casefold() in {".exe", ".zip", ".tar", ".gz", ".whl"}
     )
     checksum_lines = [f"{_sha256(path)}  {path.name}" for path in artifacts]
-    checksum_path = dist_dir / "SHA256SUMS"
+    checksum_path = dist_dir / "SHA256SUMS.txt"
     checksum_path.write_text("\n".join(checksum_lines) + "\n", encoding="utf-8")
     print(f"Wrote {checksum_path} ({len(artifacts)} artifacts)")
     return 0

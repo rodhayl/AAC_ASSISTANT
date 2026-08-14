@@ -5,18 +5,14 @@ security reports seriously. Thank you for helping keep users safe.
 
 ## Supported versions
 
-We support the most recent release on the default branch and the active
-development branch that will become the next release. Older releases and
-development snapshots receive fixes only when a maintainer backports them.
+We support the most recent release (`v2.0.0`) and the tip of the `main` default
+branch. Older releases receive fixes only when a maintainer backports them.
 
 | Version | Supported |
 | ------- | --------- |
-| Latest release (see [releases](https://github.com/rodhayl/AAC_ASSISTANT/releases)) | :white_check_mark: |
-| Active development branch | :white_check_mark: (best-effort) |
-| Older releases / feature branches | :x: |
-
-The project does not currently publish semantic-versioned releases. Until a
-release is published, "supported" means the tip of the default branch.
+| `v2.0.0` (latest release, see [releases](https://github.com/rodhayl/AAC_ASSISTANT/releases)) | :white_check_mark: |
+| `main` (default branch) | :white_check_mark: |
+| Older releases / unmerged branches | :x: |
 
 ## Reporting a vulnerability
 
