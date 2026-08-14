@@ -70,13 +70,13 @@ The packaged Windows application requires neither Python nor Node.js.
 
 ### Packaged Windows application
 
-> **Note**: Official release binaries are not yet published on GitHub Releases (first release upcoming). In the meantime, you can build the packaged installer locally from source using `build_package.bat`, or run directly from a source checkout as described below.
+Download the latest installer (`AAC_Assistant_Setup_2.0.0.exe`) from the [GitHub Releases](https://github.com/rodhayl/AAC_ASSISTANT/releases/latest) page and run the setup wizard.
 
-To build the installer locally on Windows:
+Alternatively, to build the installer locally from source on Windows:
 ```bat
 build_package.bat
 ```
-This produces `dist\AAC_Assistant_Setup_2.0.0.exe`. The installer is an update-aware wizard; uninstalling preserves your data.
+This produces `dist\AAC_Assistant_Setup_2.0.0.exe`. The installer is an update-aware wizard; uninstalling preserves your database and uploads.
 
 ### Source checkout (Windows)
 

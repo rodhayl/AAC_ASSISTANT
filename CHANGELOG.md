@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The project follows
 [Keep a Changelog](https://keepachangelog.com/) formatting. Versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.0.0] - 2026-08-14
 
 ### Security
 

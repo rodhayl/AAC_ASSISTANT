@@ -1,6 +1,6 @@
 # Release notes
 
-## v2.0.0 (draft — not yet published)
+## v2.0.0 (2026-08-14)
 
 The repository has carried version `2.0.0` throughout its configuration,
 installer, and API. This release marks the first public, packaged release.
