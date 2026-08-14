@@ -49,7 +49,7 @@ export function SymbolGrid({
                   onChange={(e) => onToggleSelection(sym.id, e.target.checked)}
                 />
                 <Button variant="secondary" size="sm" onClick={() => onEdit(sym)}>
-                  <Edit className="w-4 h-4 mr-1" /> Edit
+                  <Edit className="w-4 h-4 mr-1" /> {t('edit', 'Edit')}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => onDelete(sym.id)}>
                   <Trash2 className="w-4 h-4" />

@@ -125,12 +125,12 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                         ))}
                     </div>
 
-                    {loading && <div className="text-center py-8">Loading...</div>}
+                    {loading && <div className="text-center py-8">{t('loading', 'Loading...')}</div>}
 
                     {!loading && activeTab === 'general' && (
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium mb-1">Template</label>
+                                <label className="block text-sm font-medium mb-1">{t('template', 'Template')}</label>
                                 <select
                                     value={selectedTemplate}
                                     onChange={(e) => setSelectedTemplate(e.target.value)}
@@ -147,7 +147,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label htmlFor="age" className="block text-sm font-medium mb-1">Age</label>
+                                    <label htmlFor="age" className="block text-sm font-medium mb-1">{t('age', 'Age')}</label>
                                     <input
                                         id="age"
                                         type="number"
@@ -157,17 +157,17 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                                     />
                                 </div>
                                 <div>
-                                    <label htmlFor="gender" className="block text-sm font-medium mb-1">Gender</label>
+                                    <label htmlFor="gender" className="block text-sm font-medium mb-1">{t('gender', 'Gender')}</label>
                                     <select
                                         id="gender"
                                         value={profile.gender || ''}
                                         onChange={e => setProfile({ ...profile, gender: e.target.value })}
                                         className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
                                     >
-                                        <option value="">Select...</option>
-                                        <option value="male">Male</option>
-                                        <option value="female">Female</option>
-                                        <option value="non-binary">Non-binary</option>
+                                        <option value="">{t('select', 'Select...')}</option>
+                                        <option value="male">{t('male', 'Male')}</option>
+                                        <option value="female">{t('female', 'Female')}</option>
+                                        <option value="non-binary">{t('nonBinary', 'Non-binary')}</option>
                                     </select>
                                 </div>
                             </div>
@@ -177,7 +177,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                     {!loading && activeTab === 'persona' && (
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium mb-1">Companion Name</label>
+                                <label className="block text-sm font-medium mb-1">{t('companionName', 'Companion Name')}</label>
                                 <input
                                     type="text"
                                     value={profile.companion_persona?.name || ''}
@@ -190,7 +190,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium mb-1">Role</label>
+                                <label className="block text-sm font-medium mb-1">{t('role', 'Role')}</label>
                                 <input
                                     type="text"
                                     value={profile.companion_persona?.role || ''}
@@ -208,7 +208,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                     {!loading && activeTab === 'safety' && (
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium mb-1">Content Filter Level</label>
+                                <label className="block text-sm font-medium mb-1">{t('contentFilterLevel', 'Content Filter Level')}</label>
                                 <select
                                     value={profile.safety_constraints?.content_filter_level || 'standard'}
                                     onChange={e => setProfile({
@@ -217,9 +217,9 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                                     })}
                                     className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
                                 >
-                                    <option value="strict">Strict</option>
-                                    <option value="standard">Standard</option>
-                                    <option value="relaxed">Relaxed</option>
+                                    <option value="strict">{t('strict', 'Strict')}</option>
+                                    <option value="standard">{t('standard', 'Standard')}</option>
+                                    <option value="relaxed">{t('relaxed', 'Relaxed')}</option>
                                 </select>
                             </div>
                         </div>

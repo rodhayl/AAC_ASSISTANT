@@ -4,13 +4,13 @@ Continue work on the `080826_continuation` branch of AAC Assistant.
 
 ## Current repository state
 
-- Current branch: `080826_continuation`
-- Current release baseline: `b2bd6e4 fix(release): make installer upgrades report and close safely`
-- Handoff status last reconciled in: `d7c9b69`/`808432f` (offline model bundling + regression coverage)
-- Remote branch: `origin/080826_continuation`
-- HEAD is `808432f` (`test(models): cover bundled-model cache resolution and skip writable mkdir offline`) and the branch is two commits ahead of `origin/080826_continuation`.
-- The working tree is clean and release-ready; the offline bundling and installer update-wizard changes are committed.
-- The configured upstream is `origin/080826_continuation`; use that explicit branch when publishing reviewed commits.
+- Current branch: `chore/codex-oss-readiness` (continues the `080826_continuation` work; that branch remains an ancestor)
+- Current release baseline: `2.0.0` (draft, not yet published)
+- Handoff status last reconciled in: `d3aade3`/`699b788` (accessibility/dwell input + i18n + route dedup, and GUI e2e for data import/restore and board assignment)
+- Remote branch: `origin/chore/codex-oss-readiness`
+- HEAD is `699b788` (`test(e2e): cover data import/restore and board assignment in the GUI`) and the branch is two commits ahead of `origin/chore/codex-oss-readiness`.
+- The working tree is clean; the accessibility/dedup and e2e-coverage changes are committed and validated (647 backend / 222 frontend / 108 Playwright tests).
+- The configured upstream is `origin/chore/codex-oss-readiness`; use that explicit branch when publishing reviewed commits.
 
 ## User's standing requirements
 
@@ -23,6 +23,16 @@ Continue work on the `080826_continuation` branch of AAC Assistant.
 - Move quickly, keep changes small, and stop when risk becomes larger than the reduction.
 
 ## What has already been completed
+
+### Latest wave (2026-08-14)
+
+- Added accessibility/dwell input (`useAccessibleInteraction`), a shared transient-message timer (`useAutoHide`), Smartbar prediction debounce, and a broad i18n string extraction across Settings/board/learning components (`d3aade3`).
+- Deduplicated backend auth/symbol route logic (shared username/email availability check, symbol/board-symbol 404 helpers, image-upload helper, preferences authorization helper, and a shared guardian profile fields schema).
+- Fixed profile save sending an empty-string email (now null) so display-name-only edits validate.
+- Added GUI e2e coverage for the two previously backend-only flows: data export→import round trip and board assign/unassign (`699b788`).
+- Validation at this point: backend **647 passed**, frontend **46 Vitest files / 222 tests**, **108/108 Playwright** tests, bundle budgets green (341.6 kB JS / 96.5 kB CSS).
+
+### Earlier waves
 
 - Removed the historical Chrome/CDP/manual test tooling cluster and other dead verification helpers.
 - Added and preserved Linux startup support through `start.sh`.
@@ -48,14 +58,14 @@ Continue work on the `080826_continuation` branch of AAC Assistant.
 
 Measured while excluding tests, E2E files, generated files, dependencies, and test-only files:
 
-- Total: **40,776 lines** (current working tree, 2026-08-12)
-- `src/frontend/src`: 18,799
-- `src/api`: 10,036
-- `src/aac_app`: 10,539
-- `scripts`: 1,312
+- Total: **40,937 lines** (current working tree, 2026-08-13)
+- `src/frontend/src`: 18,803
+- `src/api`: 10,025
+- `src/aac_app`: 10,587
+- `scripts`: 1,432
 - `src/scripts`: 90
 
-This replaces the earlier 40,328-line estimate; remeasure after any future production edits. The count includes the current untracked production launcher/server helpers and the cycle-free frontend auth bridge, and excludes tests, E2E files, generated files, dependencies, and `__pycache__`. Every later section carrying an earlier date is historical evidence from that checkpoint; the current footprint, pending status, and latest validation in this opening section and the dated current-verification section below are authoritative.
+This replaces the earlier 40,776-line estimate; remeasure after any future production edits. The count includes the cycle-free frontend auth bridge and the offline model-bundling script (`scripts/bundle_models.py`), and excludes tests, E2E files, generated files, dependencies, and `__pycache__`. Every later section carrying an earlier date is historical evidence from that checkpoint; the current footprint, pending status, and latest validation in this opening section and the dated current-verification section below are authoritative.
 
 Largest remaining files:
 

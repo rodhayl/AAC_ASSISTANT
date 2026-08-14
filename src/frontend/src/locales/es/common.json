@@ -143,5 +143,16 @@
        "policyViolation": "Violación de política de conexión",
        "accessDenied": "Acceso denegado a este tablero"
     }
+  },
+  "symbolEditor": {
+    "title": "Editando mensaje con símbolos",
+    "emptyHint": "No quedan símbolos. Añade símbolos o cancela para restaurar el original.",
+    "preview": "Vista previa:",
+    "emptyMessage": "Mensaje vacío",
+    "saveResend": "Guardar y reenviar",
+    "cancel": "Cancelar"
+  },
+  "offline": {
+    "conflictsHint": "Estas solicitudes fallaron al volver a estar en línea. Puedes reintentarlas o descartarlas."
   }
 }

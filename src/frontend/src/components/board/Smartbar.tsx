@@ -25,6 +25,11 @@ interface Suggestion {
 
 type IntentType = 'general' | 'pronouns' | 'verbs' | 'articles' | 'nouns' | 'places';
 
+// Delay before fetching predictions after the sentence changes. Typing a word
+// fires many rapid `currentSentence` updates; debouncing collapses them into a
+// single request without delaying explicit intent/pagination changes.
+const SMARTBAR_DEBOUNCE_MS = 300;
+
 export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarProps) {
   const { t } = useTranslation('boards');
   const messages = useLearningStore((state) => state.messages);
@@ -32,6 +37,13 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
   const [activeIntent, setActiveIntent] = useState<IntentType>('general');
   const [offset, setOffset] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [debouncedSentence, setDebouncedSentence] = useState(currentSentence);
+
+  // Collapse rapid sentence updates into one prediction fetch.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSentence(currentSentence), SMARTBAR_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [currentSentence]);
 
   // Helper to switch intent cleanly
   const handleIntentChange = (intent: IntentType) => {
@@ -84,7 +96,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
     const fetchSuggestions = async () => {
       setIsLoading(true);
       try {
-        const labels = currentSentence
+        const labels = debouncedSentence
           .map(s => s.custom_text || s.symbol.label)
           .join(',');
 
@@ -128,7 +140,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
       active = false;
       controller.abort();
     };
-  }, [currentSentence, messages, activeIntent, offset, boardId]); // Re-fetch when sentence OR chat updates
+  }, [debouncedSentence, messages, activeIntent, offset, boardId]); // Re-fetch when sentence OR chat updates
 
   const handleMore = () => {
     setOffset(prev => prev + 20);
@@ -155,7 +167,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
               }`}
           >
             <Brain className="w-3 h-3" />
-            <span className="hidden sm:inline">AI</span>
+            <span className="hidden sm:inline">{t('ai', 'AI')}</span>
           </button>
           <button
             onClick={() => handleIntentChange('pronouns')}

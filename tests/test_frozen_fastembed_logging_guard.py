@@ -140,6 +140,11 @@ def test_speech_provider_load_survives_none_streams(tmp_path, monkeypatch):
     fake.__spec__ = importlib.util.spec_from_loader("faster_whisper", loader=None)
     monkeypatch.setitem(sys.modules, "faster_whisper", fake)
     monkeypatch.setattr(local_speech_provider, "faster_whisper", None)
+    # The CI environment does not install the optional voice extra, so the
+    # module-level availability flag is False at import time. Force the live
+    # load path so the test exercises the None-stdio guard regardless of
+    # whether the real faster-whisper stack is present.
+    monkeypatch.setattr(local_speech_provider, "FASTER_WHISPER_AVAILABLE", True)
 
     provider = local_speech_provider.LocalSpeechProvider(
         model_size="tiny", model_cache_dir=str(tmp_path / "models")

@@ -33,5 +33,6 @@
   "inUse": "En uso",
   "previous": "Anterior",
   "next": "Siguiente",
-  "page": "Página {{n}}"
+  "page": "Página {{n}}",
+  "edit": "Editar"
 }

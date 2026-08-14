@@ -16,7 +16,7 @@ set "ISCC_EXE="
 if defined INNO_SETUP_PATH set "ISCC_EXE=%INNO_SETUP_PATH:"=%"
 if not defined ISCC_EXE if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
 if not defined ISCC_EXE if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%ProgramFiles%\Inno Setup 6\ISCC.exe"
-if not defined ISCC_EXE if exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
+if not defined ISCC_EXE if exist "%SystemDrive%\Program Files (x86)\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%SystemDrive%\Program Files (x86)\Inno Setup 6\ISCC.exe"
 if not defined ISCC_EXE (
     where ISCC.exe >nul 2>&1
     if not errorlevel 1 set "ISCC_EXE=ISCC.exe"
@@ -42,10 +42,12 @@ if not defined ISCC_EXE (
     echo Install Inno Setup 6.7.3 or set INNO_SETUP_PATH to ISCC.exe.
     exit /b 1
 )
-if /i not "%ISCC_EXE%"=="ISCC.exe" if not exist "%ISCC_EXE%" (
-    echo ERROR: Configured Inno Setup compiler does not exist: %ISCC_EXE%
-    exit /b 1
-)
+if /i "%ISCC_EXE%"=="ISCC.exe" goto :iscc_validated
+if exist "%ISCC_EXE%" goto :iscc_validated
+echo ERROR: Configured Inno Setup compiler does not exist: %ISCC_EXE%
+exit /b 1
+
+:iscc_validated
 
 echo [1/5] Syncing Python dependencies (including the voice extra)...
 call uv sync --extra voice
@@ -123,7 +125,7 @@ if not exist "%INSTALLER%" (
 
 for %%F in ("%INSTALLER%") do echo       Installer bytes: %%~zF
 
-echo [4/4] Package build complete.
+echo [5/5] Package build complete.
 echo       App: %APP_DIR%
 echo       Installer: %INSTALLER%
 exit /b 0

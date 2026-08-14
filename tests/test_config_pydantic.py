@@ -115,7 +115,7 @@ def test_explicit_bootstrap_password_reads_environment_then_dotenv(tmp_path, mon
     assert config_module.explicit_bootstrap_password() == "ProcessSecret123"
 
 
-def test_resolve_bootstrap_password_generates_and_persists_when_unset(tmp_path, monkeypatch):
+def test_resolve_bootstrap_password_returns_default_when_unset(tmp_path, monkeypatch):
     monkeypatch.delenv("AAC_BOOTSTRAP_ADMIN_PASSWORD", raising=False)
     import src.config as config_module
 
@@ -124,14 +124,9 @@ def test_resolve_bootstrap_password_generates_and_persists_when_unset(tmp_path, 
     monkeypatch.setattr(config_module, "ENV_FILE", env_file)
     monkeypatch.setattr(config_module, "LEGACY_ENV_FILE", legacy_file)
 
-    generated = config_module.resolve_bootstrap_password()
-    assert generated
-    assert generated != config_module.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD
-    assert generated == config_module.explicit_bootstrap_password()
-    # Persisted so the operator can retrieve it locally and it stays stable.
-    assert env_file.read_text(encoding="utf-8").count(
-        "AAC_BOOTSTRAP_ADMIN_PASSWORD="
-    ) == 1
+    resolved = config_module.resolve_bootstrap_password()
+    assert resolved == config_module.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD
+    assert not env_file.exists()
 
 
 def test_resolve_bootstrap_password_returns_explicit_value_verbatim(tmp_path, monkeypatch):
@@ -139,20 +134,6 @@ def test_resolve_bootstrap_password_returns_explicit_value_verbatim(tmp_path, mo
     import src.config as config_module
 
     assert config_module.resolve_bootstrap_password() == "ConfiguredSecret123"
-
-
-def test_write_bootstrap_password_replaces_existing_line(tmp_path, monkeypatch):
-    import src.config as config_module
-
-    env_file = tmp_path / ".env"
-    monkeypatch.setattr(config_module, "ENV_FILE", env_file)
-    env_file.write_text(
-        "AAC_BOOTSTRAP_ADMIN_PASSWORD=OldValue123\nOTHER=1\n",
-        encoding="utf-8",
-    )
-    config_module.write_bootstrap_password("NewValue123")
-    lines = env_file.read_text(encoding="utf-8").splitlines()
-    assert lines == ["AAC_BOOTSTRAP_ADMIN_PASSWORD=NewValue123", "OTHER=1"]
 
 
 def test_first_run_creates_env_and_reuses_one_jwt_secret(tmp_path: Path):

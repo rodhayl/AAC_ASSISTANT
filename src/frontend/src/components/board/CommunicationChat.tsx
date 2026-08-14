@@ -114,9 +114,9 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle }: Communication
             <Bot className="w-4 h-4" />
           </div>
           <div>
-            <div className="font-semibold text-gray-900 dark:text-gray-100 text-sm">AI Assistant</div>
+            <div className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{t('aiAssistant', 'AI Assistant')}</div>
             <div className="text-xs text-gray-500 dark:text-gray-400">
-              Conversation Partner
+              {t('conversationPartner', 'Conversation Partner')}
             </div>
           </div>
         </div>

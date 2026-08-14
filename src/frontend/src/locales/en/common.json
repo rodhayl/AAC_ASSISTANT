@@ -143,5 +143,16 @@
        "policyViolation": "Connection policy violation",
        "accessDenied": "Access denied to this board"
     }
+  },
+  "symbolEditor": {
+    "title": "Editing symbol message",
+    "emptyHint": "No symbols remaining. Add symbols or cancel to restore original.",
+    "preview": "Preview:",
+    "emptyMessage": "Empty message",
+    "saveResend": "Save & Resend",
+    "cancel": "Cancel"
+  },
+  "offline": {
+    "conflictsHint": "These requests failed after coming back online. You can retry or dismiss them."
   }
 }

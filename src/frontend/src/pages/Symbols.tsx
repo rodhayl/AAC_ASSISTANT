@@ -8,6 +8,7 @@ import type { Symbol as SymbolType } from '../types';
 import { useTranslation } from 'react-i18next';
 import { DEFAULT_SYMBOL_CATEGORIES } from '../lib/symbolCategories';
 import { isValidImageFile } from '../lib/download';
+import { safeImageUrl } from '../lib/utils';
 
 type UsageFilter = 'all' | 'in_use' | 'unused';
 
@@ -39,12 +40,6 @@ export function Symbols() {
   // Latest-request-wins guard so a slow response cannot overwrite a newer one
   // when filters/search/sort change in quick succession.
   const fetchSeqRef = useRef(0);
-
-  useEffect(() => {
-    return () => {
-      if (newPreview) URL.revokeObjectURL(newPreview);
-    };
-  }, [newPreview]);
 
   const [deleteState, setDeleteState] = useState<{
     isOpen: boolean;
@@ -299,7 +294,13 @@ export function Symbols() {
     }
     setError(null);
     setNewFile(file);
-    setNewPreview(URL.createObjectURL(file));
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string' && reader.result.startsWith('data:image/')) {
+        setNewPreview(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const searchArasaac = async (e?: React.FormEvent) => {
@@ -409,7 +410,7 @@ export function Symbols() {
             {arasaacResults.map((item) => (
               <div key={item.id} className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 flex flex-col gap-2 items-center text-center hover:border-indigo-500 transition-colors">
                 <div className="w-24 h-24 bg-white rounded-lg p-2 flex items-center justify-center">
-                  <img src={item.image_url} alt={item.label} className="max-w-full max-h-full object-contain" />
+                  <img src={safeImageUrl(item.image_url) || ''} alt={item.label} className="max-w-full max-h-full object-contain" />
                 </div>
                 <div className="w-full">
                   <div className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate" title={item.label}>{item.label}</div>
@@ -486,7 +487,9 @@ export function Symbols() {
               />
               <ImageIcon className="w-4 h-4" /> {newFile ? newFile.name : t('upload')}
             </label>
-          {newPreview && <img src={newPreview} alt="preview" className="w-12 h-12 rounded object-cover border" />}
+          {newPreview && newPreview.startsWith('data:image/') && (
+            <img src={newPreview} alt="preview" className="w-12 h-12 rounded object-cover border" />
+          )}
           <div className="flex gap-2">
             <Button
               variant="primary"

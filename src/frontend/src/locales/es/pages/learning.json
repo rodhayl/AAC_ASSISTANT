@@ -120,6 +120,10 @@
   "notQuite": "Casi — la respuesta correcta es \"{{answer}}\"",
   "answerReceived": "Respuesta recibida",
   "close": "Cerrar",
+  "aiAssistant": "Asistente de IA",
+  "conversationPartner": "Compañero de conversación",
+  "panelSubtitle": "Preguntas de práctica, explicaciones y apoyo conversacional",
+  "voiceOff": "Voz apagada",
   "difficulty": {
     "basic": "Básico",
     "intermediate": "Intermedio",

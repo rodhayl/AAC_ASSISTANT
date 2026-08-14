@@ -1,9 +1,11 @@
 import { AlertTriangle, RefreshCw, X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useOfflineStore } from '../store/offlineStore'
 import api from '../lib/api'
 import { formatTime } from '../lib/format'
 
 export function OfflineConflictsPanel() {
+  const { t } = useTranslation('common');
   const conflicts = useOfflineStore((state) => state.conflicts)
   const removeConflict = useOfflineStore((state) => state.removeConflict)
   const clearConflicts = useOfflineStore((state) => state.clearConflicts)
@@ -97,7 +99,7 @@ export function OfflineConflictsPanel() {
         </div>
 
         <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 text-xs text-gray-600 dark:text-gray-400">
-          These requests failed after coming back online. You can retry or dismiss them.
+          {t('offline.conflictsHint', 'These requests failed after coming back online. You can retry or dismiss them.')}
         </div>
       </div>
     </div>

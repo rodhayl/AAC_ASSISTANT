@@ -145,5 +145,11 @@
   "openBoard": "Open Board",
   "backToSelection": "Back to selection",
   "unsavedChangesWarning": "You have unsaved changes. Are you sure you want to leave?",
-  "boards": "Boards"
+  "boards": "Boards",
+  "ai": "AI",
+  "grid2x2": "2x2",
+  "grid3x3": "3x3",
+  "grid4x4": "4x4",
+  "grid2x6": "2x6",
+  "grid4x5": "4x5"
 }

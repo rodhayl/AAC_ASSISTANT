@@ -297,7 +297,13 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
                     return
                   }
                   setUploadFile(f)
-                  setPreviewUrl(URL.createObjectURL(f))
+                  const reader = new FileReader()
+                  reader.onload = () => {
+                    if (typeof reader.result === 'string' && reader.result.startsWith('data:image/')) {
+                      setPreviewUrl(reader.result)
+                    }
+                  }
+                  reader.readAsDataURL(f)
                   if (files.length > 1) {
                     handleMultiUpload(files)
                   }
@@ -326,7 +332,7 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
                 <option value={uploadCategory}>{uploadCategory}</option>
               )}
             </select>
-            {previewUrl && (
+            {previewUrl && previewUrl.startsWith('data:image/') && (
               <div className="md:col-span-3 mt-2 flex items-center gap-3">
                 <img src={previewUrl} alt="Preview" className="w-16 h-16 object-cover rounded" />
                 <span className="text-xs text-gray-500 dark:text-gray-400">{t('symbolPicker.preview')}</span>

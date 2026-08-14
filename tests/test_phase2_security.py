@@ -465,13 +465,18 @@ class TestEnvironmentEnforcement:
         assert test_secret == jwt_utils.JWT_SECRET_KEY
 
     def test_environment_variable_set_to_development(self):
-        """ENVIRONMENT should be set to 'development' in env.properties."""
+        """ENVIRONMENT should default to 'development' in the committed example config."""
         from src import config
 
-        env = config.get("ENVIRONMENT", "development")
-        assert (
-            env == "development"
-        ), "ENVIRONMENT should be 'development' in env.properties"
+        # The committed example config defines the local-first default. The live
+        # value is intentionally overridable (CI sets ENVIRONMENT=test), so assert
+        # against the committed file rather than the process environment.
+        example = config.PROJECT_ROOT / ".env.example"
+        assert example.exists(), ".env.example is missing from the repository"
+        content = example.read_text(encoding="utf-8")
+        assert "ENVIRONMENT=development" in content, (
+            "ENVIRONMENT should default to 'development' in .env.example"
+        )
 
     def test_production_rejects_default_jwt_secret(self):
         """In production, using default JWT_SECRET_KEY should raise ValueError."""

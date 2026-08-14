@@ -61,5 +61,20 @@
     "resetPassword": "Reset Pwd",
     "resetPasswordAria": "Reset password for {{student}}",
     "resetPasswordTitle": "Reset Password"
-  }
+  },
+  "loading": "Loading...",
+  "template": "Template",
+  "age": "Age",
+  "gender": "Gender",
+  "select": "Select...",
+  "male": "Male",
+  "female": "Female",
+  "nonBinary": "Non-binary",
+  "companionName": "Companion Name",
+  "role": "Role",
+  "contentFilterLevel": "Content Filter Level",
+  "strict": "Strict",
+  "standard": "Standard",
+  "relaxed": "Relaxed",
+  "ai": "AI"
 }
