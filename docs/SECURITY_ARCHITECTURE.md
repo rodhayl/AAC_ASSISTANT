@@ -27,12 +27,11 @@ authorization, and data protection. It complements
 
 - On first run, `AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN` (default `true`) creates an
   administrator only if none exists.
-- If no `AAC_BOOTSTRAP_ADMIN_PASSWORD` is configured, a cryptographically
-  random one-time credential is generated and stored in `.env`
-  (`resolve_bootstrap_password`). The operator must change it after first login.
+- If no `AAC_BOOTSTRAP_ADMIN_PASSWORD` is configured in non-production, the default
+  development credential is used (`resolve_bootstrap_password`).
 - In `ENVIRONMENT=production`, bootstrap refuses to run without an explicit
   strong password; the legacy development default is rejected.
-- The password is never printed to logs or stdout.
+- Passwords are never stored in clear text in persistent storage files.
 
 ## 3. Authorization
 

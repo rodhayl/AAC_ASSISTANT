@@ -262,9 +262,8 @@ def explicit_bootstrap_password() -> str | None:
     """Return an explicitly configured bootstrap password, or ``None``.
 
     Only the process environment and the local dotenv files are consulted. When
-    the operator has not configured a password at all, callers generate a
-    random one-time credential instead of falling back to the insecure legacy
-    development default.
+    the operator has not configured a password at all, callers fall back to the
+    development default or require explicit configuration in production.
     """
     environment_value = os.environ.get(_BOOTSTRAP_PASSWORD_KEY, "").strip()
     if environment_value:
@@ -276,51 +275,18 @@ def explicit_bootstrap_password() -> str | None:
     return None
 
 
-def _set_dotenv_value(path: Path, key: str, value: str) -> None:
-    """Set or replace an assignment in a dotenv file."""
-    target = path.absolute()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    lines = target.read_text(encoding="utf-8").splitlines() if target.exists() else []
-    updated_lines: list[str] = []
-    replaced = False
-    for line in lines:
-        if _env_key(line) == key:
-            if not replaced:
-                updated_lines.append(f"{key}={value}")
-                replaced = True
-            continue
-        updated_lines.append(line)
-    if not replaced:
-        if updated_lines and updated_lines[-1].strip():
-            updated_lines.append("")
-        updated_lines.append(f"{key}={value}")
-    target.write_text("\n".join(updated_lines).rstrip() + "\n", encoding="utf-8")
-
-
-def write_bootstrap_password(value: str) -> None:
-    """Persist a generated bootstrap credential to the canonical dotenv file."""
-    _set_dotenv_value(ENV_FILE, _BOOTSTRAP_PASSWORD_KEY, value)
-
-
 def resolve_bootstrap_password() -> str:
     """Return the bootstrap admin password for this run.
 
     An explicitly configured value is used verbatim. When no password is
-    configured, a cryptographically random one-time credential is generated and
-    persisted to ``.env`` so the operator can retrieve it locally. The caller is
-    responsible for telling the operator to change it after first login.
+    configured, the development default is returned in non-production
+    environments. The caller is responsible for telling the operator to change
+    it after first login.
     """
     explicit = explicit_bootstrap_password()
     if explicit is not None:
         return explicit
-    generated = secrets.token_urlsafe(18)
-    write_bootstrap_password(generated)
-    logger.warning(
-        "No AAC_BOOTSTRAP_ADMIN_PASSWORD was configured; generated a one-time "
-        "administrator password and stored it in {}.",
-        ENV_FILE,
-    )
-    return generated
+    return DEFAULT_BOOTSTRAP_ADMIN_PASSWORD
 
 
 def load_settings(project_root: Path | None = None) -> Settings:
