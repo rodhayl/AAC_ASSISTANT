@@ -4,7 +4,8 @@ import AxeBuilder from '@axe-core/playwright';
 test.describe('Automated Accessibility Scans (Axe Core)', () => {
   test('First-run setup page has no serious/critical accessibility violations', async ({ page }) => {
     await page.goto('/setup');
-    await page.waitForSelector('#setup-admin-form, main#main-content', { state: 'visible', timeout: 5000 }).catch(() => {});
+    await expect(page.locator('main#main-content, form')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('#setup-admin-form, input#username, button[type="submit"]').first()).toBeVisible({ timeout: 10000 });
     
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -18,7 +19,9 @@ test.describe('Automated Accessibility Scans (Axe Core)', () => {
 
   test('Login page has no serious/critical accessibility violations', async ({ page }) => {
     await page.goto('/login');
-    await page.waitForSelector('form, main#main-content', { state: 'visible', timeout: 5000 }).catch(() => {});
+    await expect(page.locator('#username')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('#password')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('button[type="submit"]')).toBeVisible({ timeout: 10000 });
 
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -35,7 +38,15 @@ test.describe('Automated Accessibility Scans (Axe Core)', () => {
 
     test('Communication Board has no serious/critical accessibility violations', async ({ page }) => {
       await page.goto('/communication');
-      await page.waitForSelector('main#main-content', { state: 'visible' });
+      await expect(page.locator('main#main-content')).toBeVisible({ timeout: 10000 });
+
+      // If on board picker, open the default board so actual board grid and sentence controls are scanned
+      const boardPickerItem = page.getByRole('button', { name: /General Communication/ }).first();
+      if (await boardPickerItem.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await boardPickerItem.click();
+      }
+
+      await expect(page.locator('.grid button, [role=grid] button').first()).toBeVisible({ timeout: 10000 });
 
       const results = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -49,7 +60,11 @@ test.describe('Automated Accessibility Scans (Axe Core)', () => {
 
     test('Learning Mode has no serious/critical accessibility violations', async ({ page }) => {
       await page.goto('/learning');
-      await page.waitForSelector('main#main-content', { state: 'visible' });
+      await expect(page.locator('main#main-content')).toBeVisible({ timeout: 10000 });
+
+      // Confirm learning interactive controls are rendered
+      const startOrQuestionBtn = page.locator('button:has-text("Start"), button:has-text("Iniciar"), button:has-text("Ask"), button:has-text("Preguntar")').first();
+      await expect(startOrQuestionBtn).toBeVisible({ timeout: 10000 });
 
       const results = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -67,7 +82,10 @@ test.describe('Automated Accessibility Scans (Axe Core)', () => {
 
     test('Settings & Accessibility panel has no serious/critical accessibility violations', async ({ page }) => {
       await page.goto('/settings');
-      await page.waitForSelector('main#main-content', { state: 'visible' });
+      await expect(page.locator('main#main-content')).toBeVisible({ timeout: 10000 });
+
+      // Confirm settings panel is rendered
+      await expect(page.locator('#settings-appearance-heading, #pref-dark-mode, [role="tablist"]').first()).toBeVisible({ timeout: 10000 });
 
       const results = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

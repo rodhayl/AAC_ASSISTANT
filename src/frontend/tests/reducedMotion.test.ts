@@ -9,6 +9,7 @@ describe('Reduced motion accessibility styling', () => {
 
     expect(cssContent).toContain('@media (prefers-reduced-motion: reduce)');
     expect(cssContent).toContain('animation-duration: 0.01ms !important;');
+    expect(cssContent).toContain('animation-iteration-count: 1 !important;');
     expect(cssContent).toContain('transition-duration: 0.01ms !important;');
     expect(cssContent).toContain('scroll-behavior: auto !important;');
   });
