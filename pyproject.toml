@@ -6,9 +6,9 @@ requires-python = ">=3.13,<3.15"
 dependencies = [
     "fastapi==0.141.1",
     "uvicorn==0.52.1",
-    "sqlalchemy==2.0.51",
+    "sqlalchemy==2.0.52",
     "pydantic==2.13.4",
-    "pydantic-settings==2.14.2",
+    "pydantic-settings==2.15.0",
     "pyjwt==2.13.0",
     "pwdlib[argon2]",
     "httpx==0.28.1",
@@ -37,8 +37,8 @@ tts = [
 dev = [
     "pytest==9.1.1",
     "pytest-cov",
-    "ruff==0.16.1",
-    "pyinstaller==6.21.0",
+    "ruff==0.16.2",
+    "pyinstaller==6.22.0",
     "pip-audit",
 ]
 
