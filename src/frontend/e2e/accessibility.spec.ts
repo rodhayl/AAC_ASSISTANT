@@ -68,4 +68,24 @@ test.describe('Accessibility: keyboard operation', () => {
     await page.keyboard.press('Enter');
     await expect(page.getByTestId('sentence-empty')).toBeVisible();
   });
+
+  test('respects prefers-reduced-motion media query on visual elements in the browser', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto('/communication');
+    await expect(page.locator('main#main-content')).toBeVisible();
+
+    const computed = await page.evaluate(() => {
+      const el = document.querySelector('main#main-content') || document.body;
+      const style = window.getComputedStyle(el);
+      return {
+        animationDuration: style.animationDuration,
+        transitionDuration: style.transitionDuration,
+      };
+    });
+
+    const animSeconds = parseFloat(computed.animationDuration) || 0;
+    const transSeconds = parseFloat(computed.transitionDuration) || 0;
+    expect(animSeconds).toBeLessThanOrEqual(0.01);
+    expect(transSeconds).toBeLessThanOrEqual(0.01);
+  });
 });

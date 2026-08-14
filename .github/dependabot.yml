@@ -22,6 +22,18 @@ updates:
       npm-dependencies:
         patterns:
           - "*"
+        exclude-patterns:
+          - "eslint*"
+          - "@eslint*"
+          - "typescript*"
+        update-types:
+          - "minor"
+          - "patch"
+      frontend-tooling:
+        patterns:
+          - "eslint*"
+          - "@eslint*"
+          - "typescript*"
         update-types:
           - "minor"
           - "patch"

@@ -59,7 +59,7 @@ jobs:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
       - uses: actions/setup-node@12b7ff3796cabd9e0da05c556468eec2f565d246 # v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: src/frontend/package-lock.json
       - run: npm ci
@@ -115,7 +115,7 @@ jobs:
           python-version: "3.13"
       - uses: actions/setup-node@12b7ff3796cabd9e0da05c556468eec2f565d246 # v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: src/frontend/package-lock.json
       - run: uv sync --locked --group dev
@@ -176,7 +176,7 @@ jobs:
           python-version: "3.13"
       - uses: actions/setup-node@12b7ff3796cabd9e0da05c556468eec2f565d246 # v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: src/frontend/package-lock.json
       - name: Install Inno Setup

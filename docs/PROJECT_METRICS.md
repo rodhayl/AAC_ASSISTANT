@@ -4,7 +4,7 @@ A date-stamped snapshot of only verifiable facts. Figures below marked
 "measured" were read directly from the repository or the GitHub public API on
 the stated date. Nothing here is invented or estimated from memory.
 
-Snapshot date: **2026-08-14**
+Snapshot date: **2026-08-15**
 
 ## Repository
 
@@ -16,24 +16,23 @@ Snapshot date: **2026-08-14**
 | Default branch | `main` | GitHub API (measured) |
 | Stars | 0 | GitHub API (measured) |
 | Forks | 0 | GitHub API (measured) |
-| Open issues | 5 | GitHub API (measured) |
-| Open pull requests | 0 | GitHub API (measured) |
+| Open roadmap issues | 3 ([#5](https://github.com/rodhayl/AAC_ASSISTANT/issues/5), [#6](https://github.com/rodhayl/AAC_ASSISTANT/issues/6), [#9](https://github.com/rodhayl/AAC_ASSISTANT/issues/9) in milestone `v2.1.0`) | GitHub API (measured) |
+| Closed roadmap issues | 2 ([#7](https://github.com/rodhayl/AAC_ASSISTANT/issues/7), [#8](https://github.com/rodhayl/AAC_ASSISTANT/issues/8) in milestone `v2.1.0`) | GitHub API (measured) |
 | Published releases | 1 ([`v2.0.0`](https://github.com/rodhayl/AAC_ASSISTANT/releases/tag/v2.0.0)) | GitHub API (measured) |
 | Contributors (GitHub) | 1 (`rodhayl`) | GitHub API (measured) |
 | Watchers | 0 | GitHub API (measured) |
-| Branches | `main` | GitHub API (measured) |
 
-> `main` contains the latest coherent and tested product state following the merge of Pull Requests [#4](https://github.com/rodhayl/AAC_ASSISTANT/pull/4) and [#10](https://github.com/rodhayl/AAC_ASSISTANT/pull/10), and publication of release [`v2.0.0`](https://github.com/rodhayl/AAC_ASSISTANT/releases/tag/v2.0.0).
+> Default branch: `main`. Dependabot may create temporary maintenance branches and pull requests.
 
 ## Code and tests (measured locally)
 
 | Metric | Value |
 | ------ | ----- |
-| Backend tests (pytest) | 653 passed, 2 skipped (reproduced 2026-08-14) |
+| Backend tests (pytest) | 653 passed, 2 skipped (reproduced 2026-08-15) |
 | Backend test coverage (Coverage.py) | 80.92% statements (7,117/8,795), 64.75% branches (1,743/2,692), 77.13% combined total |
-| Frontend unit/component tests (Vitest) | 227 passed (48 files, reproduced 2026-08-14) |
+| Frontend unit/component tests (Vitest) | 227 passed (48 files, reproduced 2026-08-15) |
 | Frontend test coverage (Vitest v8) | 70.49% statements (3,023/4,288), 60.28% branches (1,791/2,971), 64.54% functions (701/1,086), 72.95% lines (2,751/3,771) |
-| End-to-end tests (Playwright, real backend) | 113 passed (3 auth setup + 105 functional specs + 5 automated Axe analyses) |
+| End-to-end tests (Playwright, real backend) | 114 passed (3 auth setup + 105 functional specs + 6 automated accessibility/Axe analyses) |
 | Automated accessibility scans (Axe Core) | 5 automated Axe analyses across 5 critical routes (/setup, /login, /communication, /learning, /settings) with 0 serious or critical violations |
 | Python lint (`ruff`) | clean |
 | Frontend lint / typecheck / build | clean; JS bundle 344.5 kB ≤ 450 kB budget, CSS 97.6 kB ≤ 150 kB budget |
@@ -43,7 +42,7 @@ Snapshot date: **2026-08-14**
 ## Supported platforms
 
 - Windows 10/11 (packaged installer + portable onedir).
-- Source checkout on any OS with Python 3.13+ and Node.js 20+.
+- Source checkout on any OS with Python 3.13 or 3.14 and Node.js 22.22+.
 
 ## Known downstream use
 
