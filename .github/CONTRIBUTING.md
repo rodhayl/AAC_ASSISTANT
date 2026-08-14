@@ -26,7 +26,7 @@ All participants must follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Development workflow
 
-1. Create a branch from the active development branch.
+1. Create a feature or fix branch from `main`.
 2. Make small, focused, reviewable changes.
 3. Run the checks before opening a pull request:
 

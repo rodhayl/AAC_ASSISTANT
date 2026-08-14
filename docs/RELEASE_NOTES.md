@@ -22,13 +22,12 @@ installer, and API. This release marks the first public, packaged release.
   packaged and production installations.
 - `PUT /api/auth/users/{user_id}` validates role, email, and active flag.
 
-### Known issues
+### Known issues and external services
 
-- LLM-dependent learning questions require a locally running Ollama/LM Studio
-  or a configured OpenRouter key; they are the only features that need external
-  services.
-- See [Accessibility Guide](ACCESSIBILITY.md) for known accessibility
-  limitations.
+- Core AAC communication, symbols, boards, speech, and learning operate fully offline.
+- Optional LLM-dependent learning questions require an operator-configured local service (Ollama / LM Studio) or an optional OpenRouter API key.
+- Optional ARASAAC symbol backfill (`AAC_ENABLE_SYMBOL_IMAGE_BACKFILL=true`) makes external HTTP lookups to the ARASAAC public API when explicitly enabled (disabled by default).
+- See [Accessibility Guide](ACCESSIBILITY.md) for known accessibility limitations.
 
 ### Installation and upgrade
 
@@ -42,7 +41,7 @@ updated in place; the uninstaller preserves the database and uploads.
 
 ### Checksums and SBOM
 
-- `SHA256SUMS` — SHA-256 checksums for release artifacts.
+- `SHA256SUMS.txt` — SHA-256 checksums for release artifacts.
 - `SBOM.json` — CycloneDX 1.4 bill of materials generated from lockfiles.
 
 ### Rollback

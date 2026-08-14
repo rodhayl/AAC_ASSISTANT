@@ -6,13 +6,13 @@ validation.
 
 ## Current working-tree validation (2026-08-14)
 
-The current branch (`chore/repository-cleanup-and-pr`) is committed and clean. The
-complete current gates pass: backend Ruff, compileall, and pytest
+The `main` default branch (commit `7c197c42050ccf53fbad20a846e854ea834dc893`, release `v2.0.0`)
+is committed and clean. The complete automated validation gates pass: backend Ruff, compileall, and pytest
 (**653 passed, 0 failed, 2 skipped**); frontend typecheck,
 ESLint, **47 Vitest files / 226 tests**, production build, and bundle budgets
 (344.5 kB JS / 450 kB and 96.9 kB CSS / 150 kB). `uv lock --check`, production
 `npm audit` (0 vulnerabilities), `bash -n start.sh`, and `git diff --check`
-also passed.
+also passed. Note: this represents technical and automated validation; real-world AAC pilot and specialist validation remain future work.
 
 After that baseline, a production-build regression exposed and fixed a static
 `api.ts` ↔ `authStore.ts` import cycle that emitted four browser

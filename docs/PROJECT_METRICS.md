@@ -16,16 +16,14 @@ Snapshot date: **2026-08-14**
 | Default branch | `main` | GitHub API (measured) |
 | Stars | 0 | GitHub API (measured) |
 | Forks | 0 | GitHub API (measured) |
-| Open issues | 0 | GitHub API (measured) |
-| Open pull requests | 1 ([#4](https://github.com/rodhayl/AAC_ASSISTANT/pull/4)) | GitHub API (measured) |
-| Published releases | none | GitHub API (measured) |
+| Open issues | 5 | GitHub API (measured) |
+| Open pull requests | 0 | GitHub API (measured) |
+| Published releases | 1 ([`v2.0.0`](https://github.com/rodhayl/AAC_ASSISTANT/releases/tag/v2.0.0)) | GitHub API (measured) |
 | Contributors (GitHub) | 1 (`rodhayl`) | GitHub API (measured) |
 | Watchers | 0 | GitHub API (measured) |
-| Branches | `main`, `020826_improvements`, `080826_continuation`, `chore/codex-oss-readiness`, `chore/repository-cleanup-and-pr` | GitHub API (measured) |
+| Branches | `main`, `020826_improvements`, `080826_continuation`, `chore/codex-oss-readiness` | GitHub API (measured) |
 
-> The cleanup and readiness branch `chore/repository-cleanup-and-pr` contains
-> the latest coherent and tested product state, consolidating all security,
-> accessibility, CI, packaging, and structural improvements in Pull Request [#4](https://github.com/rodhayl/AAC_ASSISTANT/pull/4).
+> `main` contains the latest coherent and tested product state following the merge of Pull Request [#4](https://github.com/rodhayl/AAC_ASSISTANT/pull/4) and publication of release [`v2.0.0`](https://github.com/rodhayl/AAC_ASSISTANT/releases/tag/v2.0.0).
 
 ## Code and tests (measured locally)
 
@@ -60,9 +58,9 @@ packaging on GitHub Actions. See `.github/workflows/ci.yml`.
 ## Unavailable information
 
 - Coverage percentage (not currently measured).
-- Package download counts (no published releases).
+- Historical package download telemetry (downloads are tracked exclusively via GitHub Releases asset metrics).
 
 ## Future goals
 
-These are goals, not facts: first published release with checksums and SBOM;
-a documented pilot program; expanded accessibility testing.
+These are goals, not facts: a documented pilot program with clinical/specialist feedback;
+expanded accessibility testing with physical switches and assistive devices.

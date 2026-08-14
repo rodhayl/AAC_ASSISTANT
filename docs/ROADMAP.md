@@ -11,21 +11,18 @@ commitments, and may change as the project evolves.
 - Local speech-to-text (faster-whisper, bundled in the Windows installer).
 - Offline semantic-search and voice model bundling.
 - Windows installer with safe upgrade/close behavior.
+- Interactive first-run administrator onboarding flow (`/setup`) with loopback restriction.
+- Security and documentation hardening (threat modeling, privacy guidelines, zero default credentials).
 - Production E2E suite exercising core flows against the real backend.
-
-## In progress
-
-- Security and documentation hardening for maintainability and review.
-- Expanding real-backend end-to-end coverage and removing test mocks where the
-  backend can be exercised directly.
+- Initial public release (`v2.0.0`) with Windows installer, portable package, SHA-256 checksums, and SBOM.
 
 ## Planned
 
 - Switch-access and scanning input driven by dwell-time preferences.
-- `prefers-reduced-motion` support across animations.
-- A documented screen-reader test pass and WCAG 2.2 AA target.
-- Formal semantic versioning with published releases and checksums.
-- Optional multi-user network deployment guidance (explicit opt-in only).
+- Comprehensive `prefers-reduced-motion` support across all UI animations.
+- Documented screen-reader validation pass and formal accessibility testing.
+- Documented pilot / user-validation guide for clinical and specialist trials.
+- Hardened remote deployment security guidance (for operators opting into network binding).
 
 ## Not planned
 
