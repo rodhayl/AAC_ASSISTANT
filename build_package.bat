@@ -16,7 +16,7 @@ set "ISCC_EXE="
 if defined INNO_SETUP_PATH set "ISCC_EXE=%INNO_SETUP_PATH:"=%"
 if not defined ISCC_EXE if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
 if not defined ISCC_EXE if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%ProgramFiles%\Inno Setup 6\ISCC.exe"
-if not defined ISCC_EXE if defined ProgramFiles(x86) if exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
+if not defined ISCC_EXE if exist "%SystemDrive%\Program Files (x86)\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%SystemDrive%\Program Files (x86)\Inno Setup 6\ISCC.exe"
 if not defined ISCC_EXE (
     where ISCC.exe >nul 2>&1
     if not errorlevel 1 set "ISCC_EXE=ISCC.exe"
