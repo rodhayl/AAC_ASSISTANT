@@ -52,7 +52,7 @@
     "globby": "^14.0.0",
     "jsdom": "^24.0.0",
     "tailwindcss": "^4.1.18",
-    "typescript": "~5.9.3",
+    "typescript": "~7.0.2",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.3.6",
     "vitest": "^4.1.10"
