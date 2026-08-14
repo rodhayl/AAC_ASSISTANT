@@ -11,14 +11,15 @@ installer, and API. This release marks the first public, packaged release.
   learning sessions, achievements, and browser speech.
 - **Offline voice and search** — the Windows installer bundles the `tiny`
   faster-whisper model and the fastembed semantic-search model.
-- **Security hardening** — loopback-only network binding by default, random
-  one-time bootstrap credentials, and validated user updates.
+- **Security hardening** — loopback-only network binding by default, secure
+  first-run administrator web setup flow, and validated user updates.
 
 ### Security
 
 - Bind to `127.0.0.1` by default instead of `0.0.0.0`.
-- First run generates a random one-time administrator password when none is
-  configured; production requires an explicit strong password.
+- First run provides an interactive web setup screen (`/setup`) to configure a strong
+  administrator password; predictable default credentials are eliminated across
+  packaged and production installations.
 - `PUT /api/auth/users/{user_id}` validates role, email, and active flag.
 
 ### Known issues

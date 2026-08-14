@@ -1,0 +1,30 @@
+{
+  "title": "Configuración Inicial",
+  "subtitle": "Crea tu cuenta de administrador para configurar AAC Assistant",
+  "username": "Nombre de usuario del administrador",
+  "displayName": "Nombre visible",
+  "email": "Correo electrónico (Opcional)",
+  "password": "Contraseña",
+  "confirmPassword": "Confirmar contraseña",
+  "placeholderUser": "ej. admin1",
+  "placeholderDisplay": "ej. Administrador",
+  "placeholderEmail": "admin@ejemplo.com",
+  "placeholderPass": "Introduce una contraseña segura",
+  "placeholderConfirm": "Repite la contraseña",
+  "requirements": {
+    "title": "Requisitos de contraseña:",
+    "minChars": "Al menos 8 caracteres",
+    "upperLower": "Letras mayúsculas y minúsculas",
+    "number": "Al menos un número",
+    "notDefault": "No se pueden usar credenciales predeterminadas"
+  },
+  "submit": "Crear Cuenta de Administrador",
+  "submitting": "Creando cuenta...",
+  "loginLink": "¿Ya tienes una cuenta? Iniciar sesión",
+  "errors": {
+    "passwordMismatch": "Las contraseñas no coinciden",
+    "passwordTooShort": "La contraseña debe tener al menos 8 caracteres",
+    "setupFailed": "Error en la configuración inicial: ",
+    "setupCompleted": "La configuración ya se ha completado. Inicia sesión."
+  }
+}

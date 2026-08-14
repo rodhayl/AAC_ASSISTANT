@@ -2,8 +2,8 @@
 
 ## Getting help
 
-- **Documentation:** start with the [README](README.md) and
-  [docs/01_PROJECT_GUIDE.md](docs/01_PROJECT_GUIDE.md).
+- **Documentation:** start with the [README](../README.md) and
+  [docs/01_PROJECT_GUIDE.md](../docs/01_PROJECT_GUIDE.md).
 - **Questions and bug reports:** open a
   [GitHub issue](https://github.com/rodhayl/AAC_ASSISTANT/issues). Use the bug
   report template and include steps to reproduce, your OS, and relevant logs.

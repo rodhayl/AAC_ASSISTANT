@@ -6,6 +6,8 @@
   "placeholderUser": "Ingresa tu usuario",
   "placeholderPass": "Ingresa tu contraseña",
   "login": "Iniciar sesión",
+  "setupNotice": "Configuración inicial requerida: Crea la cuenta de administrador.",
+  "setupButton": "Configurar Admin",
   "defaults": {
     "title": "Configuración inicial:",
     "student": "Crea una cuenta para empezar a usar la aplicación.",

@@ -1,0 +1,30 @@
+{
+  "title": "Initial Setup",
+  "subtitle": "Create your administrator account to configure AAC Assistant",
+  "username": "Administrator Username",
+  "displayName": "Display Name",
+  "email": "Email (Optional)",
+  "password": "Password",
+  "confirmPassword": "Confirm Password",
+  "placeholderUser": "e.g. admin1",
+  "placeholderDisplay": "e.g. Administrator",
+  "placeholderEmail": "admin@example.com",
+  "placeholderPass": "Enter a strong password",
+  "placeholderConfirm": "Re-enter password",
+  "requirements": {
+    "title": "Password requirements:",
+    "minChars": "At least 8 characters",
+    "upperLower": "Uppercase and lowercase letters",
+    "number": "At least one number",
+    "notDefault": "Cannot use development default credentials"
+  },
+  "submit": "Create Administrator Account",
+  "submitting": "Creating account...",
+  "loginLink": "Already have an account? Sign in",
+  "errors": {
+    "passwordMismatch": "Passwords do not match",
+    "passwordTooShort": "Password must be at least 8 characters",
+    "setupFailed": "Initial setup failed: ",
+    "setupCompleted": "Setup is already completed. Please sign in."
+  }
+}

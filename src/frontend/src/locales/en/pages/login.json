@@ -6,6 +6,8 @@
   "placeholderUser": "Enter your username",
   "placeholderPass": "Enter your password",
   "login": "Login",
+  "setupNotice": "First-time setup required: Create the administrator account.",
+  "setupButton": "Setup Admin",
   "defaults": {
     "title": "First-time setup:",
     "student": "Create an account to start using the app.",

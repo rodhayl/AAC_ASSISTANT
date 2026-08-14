@@ -104,14 +104,13 @@ def _ensure_bootstrap_admin(session: Session) -> None:
                 + error
             )
     else:
-        # Development/default: use an explicitly configured password verbatim,
-        # otherwise generate a cryptographically random one-time credential
-        # (persisted to .env so the operator can retrieve it locally).
-        password = (
-            explicit_password
-            if explicit_password is not None
-            else config.resolve_bootstrap_password()
-        )
+        password = config.resolve_bootstrap_password()
+        if password is None:
+            logger.info(
+                "No administrator account configured. Complete initial setup via "
+                "the web setup screen (/setup) or configure AAC_BOOTSTRAP_ADMIN_PASSWORD."
+            )
+            return
 
     from src.aac_app.services.auth_service import get_password_hash
 

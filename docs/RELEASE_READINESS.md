@@ -6,7 +6,7 @@ validation.
 
 ## Current working-tree validation (2026-08-14)
 
-The current branch (`chore/codex-oss-readiness`) is committed and clean. The
+The current branch (`chore/repository-cleanup-and-pr`) is committed and clean. The
 complete current gates pass: backend Ruff, compileall, and pytest
 (**647 passed, 0 failed, 0 skipped** — the optional `faster-whisper` extra is
 now installed, so its two historical skips are gone); frontend typecheck,

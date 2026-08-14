@@ -70,9 +70,13 @@ The packaged Windows application requires neither Python nor Node.js.
 
 ### Packaged Windows application
 
-Download the latest installer from the
-[releases](https://github.com/rodhayl/AAC_ASSISTANT/releases) page and run it.
-The installer is an update-aware wizard; uninstalling preserves your data.
+> **Note**: Official release binaries are not yet published on GitHub Releases (first release upcoming). In the meantime, you can build the packaged installer locally from source using `build_package.bat`, or run directly from a source checkout as described below.
+
+To build the installer locally on Windows:
+```bat
+build_package.bat
+```
+This produces `dist\AAC_Assistant_Setup_2.0.0.exe`. The installer is an update-aware wizard; uninstalling preserves your data.
 
 ### Source checkout (Windows)
 
@@ -96,14 +100,27 @@ start.bat
 
 and open `http://127.0.0.1:8086/`.
 
-### First-run administrator
+### Source checkout (Linux / macOS)
 
-On first run, the application creates an administrator only if none exists
-(`AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN`, default `true`). If you did not configure
-`AAC_BOOTSTRAP_ADMIN_PASSWORD` in `.env`, a **cryptographically random one-time
-password** is generated and stored in `.env`; read it there and change it
-immediately after first login. In production, bootstrap refuses to start
-without an explicit, strong password.
+```bash
+uv sync --group dev
+npm --prefix src/frontend ci
+npm --prefix src/frontend run build
+uv run python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8086
+```
+
+and open `http://127.0.0.1:8086/`.
+
+### First-run administrator setup
+
+On first run, when no administrator account exists, opening the web interface at
+`http://127.0.0.1:8086/` redirects to the initial setup screen (`/setup`) where you
+choose your administrator username and a strong password.
+
+Alternatively, operators can set `AAC_BOOTSTRAP_ADMIN_PASSWORD` in `.env` or the
+process environment before starting the server. In production, bootstrap refuses
+to initialize without an explicit, strong password. Deterministic test credentials
+(`Admin123`) operate only in explicit test environments.
 
 ## Development setup
 

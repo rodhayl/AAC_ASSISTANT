@@ -10,7 +10,7 @@ All participants must follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Getting started
 
-1. Read the [README](README.md) and the [project guide](docs/01_PROJECT_GUIDE.md).
+1. Read the [README](../README.md) and the [project guide](../docs/01_PROJECT_GUIDE.md).
 2. Set up the development environment:
 
    ```powershell

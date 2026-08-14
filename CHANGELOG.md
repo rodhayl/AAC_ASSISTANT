@@ -11,11 +11,11 @@ All notable changes to this project are documented here. The project follows
 - Bind the backend to `127.0.0.1` by default instead of `0.0.0.0`, so the
   application is not reachable from the network unless the operator explicitly
   opts in.
-- Replace the predictable `admin1`/`Admin123` development bootstrap credential
-  with a cryptographically random one-time password generated on first run and
-  stored in `.env`. Production refuses to bootstrap without an explicit strong
-  password.
-- Stop printing the bootstrap admin password to the console.
+- Replace predictable default bootstrap credentials with an interactive
+  first-run administrator web setup flow (`/setup`), ensuring packaged and
+  development installations require strong operator-chosen credentials.
+- Eliminate plaintext password storage in `.env` and stop printing bootstrap
+  credentials to the console.
 
 ### Added
 

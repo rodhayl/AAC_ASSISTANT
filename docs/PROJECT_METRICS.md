@@ -6,7 +6,7 @@ the stated date. Nothing here is invented or estimated from memory.
 
 Snapshot date: **2026-08-14**
 
-## Repository
+## Repository (pre-PR dated snapshot)
 
 | Metric | Value | Source |
 | ------ | ----- | ------ |
@@ -17,7 +17,7 @@ Snapshot date: **2026-08-14**
 | Stars | 0 | GitHub API (measured) |
 | Forks | 0 | GitHub API (measured) |
 | Open issues | 0 | GitHub API (measured) |
-| Open pull requests | 0 | GitHub API (measured) |
+| Open pull requests | 0 (prior to PR creation) | GitHub API (measured) |
 | Published releases | none | GitHub API (measured) |
 | Contributors (GitHub) | 1 (`rodhayl`) | GitHub API (measured) |
 | Watchers | 0 | GitHub API (measured) |
@@ -31,11 +31,11 @@ Snapshot date: **2026-08-14**
 
 | Metric | Value |
 | ------ | ----- |
-| Backend tests (pytest) | 647 passed (reproduced 2026-08-14) |
-| Frontend unit/component tests (Vitest) | 222 passed (46 files, reproduced 2026-08-14) |
+| Backend tests (pytest) | 651 passed (reproduced 2026-08-14) |
+| Frontend unit/component tests (Vitest) | 224 passed (47 files, reproduced 2026-08-14) |
 | End-to-end tests (Playwright, real backend) | 108 passed |
 | Python lint (`ruff`) | clean |
-| Frontend lint / typecheck / build | clean; JS bundle 341.8 kB ≤ 450 kB budget, CSS 96.5 kB ≤ 150 kB budget |
+| Frontend lint / typecheck / build | clean; JS bundle 344.5 kB ≤ 450 kB budget, CSS 96.9 kB ≤ 150 kB budget |
 
 > Test counts are reproduced from actual runs, not copied from documentation.
 > The E2E total varies slightly with which optional specs are enabled.
