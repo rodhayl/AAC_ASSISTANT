@@ -12,8 +12,9 @@
 | Dato | Valor |
 | ---- | ----- |
 | Repositorio | `https://github.com/rodhayl/AAC_ASSISTANT` |
-| HEAD probado (local) | `acd9677ff1c3957d68f67eda45517f9503d22c6b` |
-| `origin/main` | `75d940fdcb147108d656ff05ee949c3a88b801fb` |
+| HEAD probado (local) | `acd9677ff1c3957d68f67eda45517f9503d22c6b` (inicio) |
+| `origin/main` (inicio) | `75d940fdcb147108d656ff05ee949c3a88b801fb` |
+| **SHA final de `main` (post-merge)** | **`5b3983a` — `Merge pull request #29 from rodhayl/fix/qa-corrections`** |
 | Último commit local | `acd9677 fix: close QA security, accessibility, and learning feedback gaps` |
 | Versión de aplicación | `2.0.0` (confirmado por `/api/health`) |
 | Modo de prueba | Código fuente (no empaquetado) |
@@ -25,9 +26,11 @@
 | Backend | FastAPI/Uvicorn real (`scripts/run_server.py`), no mocks |
 | Frontend | Build de producción Vite (`dist/`), no dev server |
 
-> El árbol de trabajo contiene los cambios acumulados de todas las iteraciones
-> de corrección, deliberadamente sin commit y sin rama de PR hasta decisión del
-> mantenedor. No se modificaron datos reales ni se tocó código fuera del repo.
+> El PR #29 (`fix/qa-corrections`) se fusionó en `main` con CI completo verde
+> (backend, frontend, e2e-production, packaging-windows, CodeQL,
+> dependency-review, secret-scan) y se ejecutó el smoke post-merge y la suite
+> E2E completa contra el `main` final `5b3983a` (ver §27). No se modificaron
+> datos reales ni se tocó código fuera del repo.
 
 ---
 
@@ -499,3 +502,27 @@ lectores de pantalla y el audio/hardware físico, que deben completarse en el
 equipo del piloto siguiendo `docs/windows-assistive-validation.md` y
 `docs/PILOT_GUIDE.md` antes de iniciar la evaluación. **Esta conclusión no es
 una validación clínica ni una certificación WCAG.**
+
+---
+
+## 27. Validación post-merge (main final `5b3983a`)
+
+Después de la fusión del PR #29 se revalidó el `main` final desde cero, con
+servidor FastAPI real, SQLite temporal limpia y datos sembrados
+(`AAC_SEED_SAMPLE_DATA=true`):
+
+| Validación | Resultado |
+| ---------- | --------- |
+| CI del PR #29 (pre-merge) | 12 checks PASS: backend ×2, frontend ×2, e2e-production ×2, packaging-windows ×2, CodeQL JS/TS ×2, CodeQL Python ×2, secret-scan ×2, dependency-review — PR MERGEABLE |
+| Smoke post-merge (auth + pilot-gate + communication) | **21/21 PASS** (31.6 s) |
+| Suite E2E Chromium completa sobre `main` final | **126/126 PASS** (4.0 min) |
+| Procesos / árbol | Sin servidores ni navegadores activos; árbol limpio; `git diff --check` OK |
+
+Cobertura del smoke post-merge: setup no reutilizable, login Admin/Teacher/
+Student, Student compone frase AAC completa, AAC core offline simulado, Teacher
+accede a su estudiante, Student denegado en rutas/APIs Admin-Teacher (401/403
+server-side), logout con invalidación real de tokens, sin errores de consola ni
+backend inesperados.
+
+El ciclo queda cerrado: QA independiente → correcciones → regresión → informe
+→ PR con CI verde → merge (`5b3983a`) → smoke y E2E completos post-merge PASS.
