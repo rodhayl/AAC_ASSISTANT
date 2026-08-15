@@ -320,6 +320,17 @@ def test_voice_answer_gate_uses_availability_before_lazy_model_load(
         assert response.status_code == 200, response.text
         assert response.json()["transcription"] == "hello animals"
         speech.recognize_from_file.assert_called_once()
+
+        invalid_upload = client.post(
+            f"/api/learning/{started.json()['session_id']}/answer/voice",
+            files={"file": ("voice.txt", b"not audio", "text/plain")},
+            headers=headers,
+        )
+        assert invalid_upload.status_code == 400
+        invalid_detail = invalid_upload.json()["detail"]
+        assert not invalid_detail.startswith("errors.")
+        assert "audio" in invalid_detail.lower()
+        assert "image" not in invalid_detail.lower()
     finally:
         app.dependency_overrides.clear()
 

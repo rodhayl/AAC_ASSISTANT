@@ -19,11 +19,13 @@ For high-level project overview and quick-start instructions, see the root [READ
 
 - **[Privacy and Data Handling](PRIVACY_AND_DATA.md)** — Local-first design, data persistence in SQLite/uploads, zero-telemetry policy, and operator controls.
 - **[Accessibility Guide](ACCESSIBILITY.md)** — Accessibility features, switch/keyboard navigation, dwell selection, screen reader support, and known limitations.
+- **[Windows and Assistive Validation](windows-assistive-validation.md)** — Manual checklist for the Windows package, physical TTS, NVDA, Narrator, zoom, dwell, and pilot-gate evidence.
 
 ### 3. Testing & Quality Assurance
 
 - **[Test Scenarios Overview](test_scenarios/execute_all_scenarios.md)** — Role-oriented QA validation guide and scenario overview.
 - **[Test Scenarios Collection](test_scenarios/)** — 10 detailed role-based scenarios covering Admin, Teacher, and Student user workflows.
+- **[Playwright Pilot Gate](../src/frontend/e2e/pilot-gate.spec.ts)** — Automated smoke cases for setup reuse, session revocation, role boundaries, AAC, offline interaction, and unauthenticated API denial.
 - **[Frontend npm Audit](frontend-npm-audit.md)** — Production dependency vulnerability audit record.
 
 ### 4. Packaging & Releases

@@ -197,6 +197,37 @@ def test_learning_mode_auto_ask_enabled_flag_roundtrip(
 
 
 @pytest.mark.usefixtures("setup_test_db")
+def test_learning_mode_duplicate_error_is_localized(admin_token, client):
+    """Duplicate mode errors must not leak a raw English-only implementation string."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    existing_key = "duplicate_localized_mode"
+    created = client.post(
+        "/api/learning-modes/",
+        json={
+            "name": "Original",
+            "key": existing_key,
+            "prompt_instruction": "Be encouraging.",
+        },
+        headers=headers,
+    )
+    assert created.status_code == 200, created.text
+
+    response = client.post(
+        "/api/learning-modes/",
+        json={
+            "name": "Duplicate",
+            "key": existing_key,
+            "prompt_instruction": "Be concise.",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] != f"Mode with key '{existing_key}' already exists"
+    assert response.json()["detail"] != "errors.learningModes.duplicate"
+
+
+@pytest.mark.usefixtures("setup_test_db")
 def test_learning_chat_with_custom_mode_regression(
     admin_user, admin_token, test_db_session: Session, client
 ):

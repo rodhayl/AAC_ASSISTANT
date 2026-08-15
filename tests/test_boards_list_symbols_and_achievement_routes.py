@@ -150,6 +150,131 @@ def test_delete_board_clears_incoming_links(
     assert placement.linked_board_id is None
 
 
+def test_board_links_reject_self_and_missing_targets(
+    setup_test_db, test_db_session, admin_user, admin_token
+):
+    board = _create_board_with_symbol(test_db_session, admin_user)
+    client = TestClient(app)
+    headers = _headers(admin_token)
+    symbol_id = board.symbols[0].symbol_id
+
+    self_link = client.post(
+        f"/api/boards/{board.id}/symbols",
+        json={"symbol_id": symbol_id, "linked_board_id": board.id},
+        headers=headers,
+    )
+    assert self_link.status_code == 400
+
+    existing_symbol_id = board.symbols[0].id
+    missing_target = client.put(
+        f"/api/boards/{board.id}/symbols/{existing_symbol_id}",
+        json={"linked_board_id": 999999999},
+        headers=headers,
+    )
+    assert missing_target.status_code == 404
+
+    unchanged = test_db_session.get(BoardSymbol, existing_symbol_id)
+    assert unchanged is not None
+    assert unchanged.linked_board_id is None
+
+
+def test_board_mutations_reject_invalid_grid_positions_and_preserve_layout(
+    setup_test_db, test_db_session, admin_user, admin_token
+):
+    board = _create_board_with_symbol(test_db_session, admin_user)
+    client = TestClient(app)
+    headers = _headers(admin_token)
+
+    out_of_bounds = client.post(
+        f"/api/boards/{board.id}/symbols",
+        headers=headers,
+        json={
+            "symbol_id": board.symbols[0].symbol_id,
+            "position_x": 5,
+            "position_y": 0,
+        },
+    )
+    assert out_of_bounds.status_code == 400
+    assert "position" in out_of_bounds.json()["detail"].lower()
+
+    shrink = client.put(
+        f"/api/boards/{board.id}",
+        headers=headers,
+        json={"grid_rows": 2, "grid_cols": 2},
+    )
+    assert shrink.status_code == 400
+    test_db_session.expire_all()
+    persisted = test_db_session.get(CommunicationBoard, board.id)
+    assert (persisted.grid_rows, persisted.grid_cols) == (4, 5)
+
+
+def test_board_create_rejects_invalid_manual_symbols_atomically(
+    setup_test_db, test_db_session, admin_user, admin_token
+):
+    symbol = Symbol(label="Valid manual symbol", category="general")
+    test_db_session.add(symbol)
+    test_db_session.commit()
+    client = TestClient(app)
+    headers = _headers(admin_token)
+
+    invalid_symbol = client.post(
+        "/api/boards/",
+        params={"user_id": admin_user.id},
+        headers=headers,
+        json={
+            "name": "Invalid symbol board",
+            "symbols": [{"symbol_id": 999999999, "position_x": 0, "position_y": 0}],
+        },
+    )
+    assert invalid_symbol.status_code == 404
+    assert test_db_session.query(CommunicationBoard).filter_by(name="Invalid symbol board").count() == 0
+
+    invalid_link = client.post(
+        "/api/boards/",
+        params={"user_id": admin_user.id},
+        headers=headers,
+        json={
+            "name": "Invalid link board",
+            "symbols": [{"symbol_id": symbol.id, "linked_board_id": 999999999}],
+        },
+    )
+    assert invalid_link.status_code == 404
+    assert test_db_session.query(CommunicationBoard).filter_by(name="Invalid link board").count() == 0
+
+
+def test_ai_suggestion_on_full_board_returns_localized_error(
+    setup_test_db, test_db_session, admin_user, admin_token
+):
+    board = CommunicationBoard(
+        user_id=admin_user.id,
+        name="Full AI board",
+        description="A one-cell board for error handling",
+        grid_rows=1,
+        grid_cols=1,
+        ai_enabled=True,
+        ai_provider="ollama",
+        ai_model="test-model",
+    )
+    symbol = Symbol(label="Existing cell", category="general")
+    test_db_session.add_all([board, symbol])
+    test_db_session.flush()
+    test_db_session.add(
+        BoardSymbol(board_id=board.id, symbol_id=symbol.id, position_x=0, position_y=0)
+    )
+    test_db_session.commit()
+
+    client = TestClient(app)
+    response = client.post(
+        f"/api/boards/{board.id}/ai/suggestions/apply",
+        headers=_headers(admin_token),
+        json={"item": {"label": "Another cell", "symbol_key": "another_cell"}},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] != "errors.boards.boardFull"
+    assert "board" in response.json()["detail"].lower()
+
+
 def test_export_delete_import_round_trip_lists_restored_symbols(
     setup_test_db, test_db_session, admin_user, admin_token
 ):

@@ -52,6 +52,7 @@ export function Boards() {
   const [selectedBoardIds, setSelectedBoardIds] = useState<Set<number>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
 
   // Fetch personal boards for the current user. Search only affects this
   // request; assigned boards are loaded separately because they have no search
@@ -211,7 +212,17 @@ export function Boards() {
     }
   };
 
-  const boardsToShow = useMemo(() => (boards.length > 0 ? boards : assignedBoards), [boards, assignedBoards]);
+  const boardsToShow = useMemo(() => {
+    const uniqueBoards = new Map<number, typeof boards[number]>();
+    const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
+    const visibleAssignedBoards = normalizedSearch
+      ? assignedBoards.filter((board) => board.name.toLocaleLowerCase().includes(normalizedSearch))
+      : assignedBoards;
+    for (const board of [...boards, ...visibleAssignedBoards]) {
+      uniqueBoards.set(board.id, board);
+    }
+    return Array.from(uniqueBoards.values());
+  }, [assignedBoards, boards, searchQuery]);
 
   const toggleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -236,14 +247,22 @@ export function Boards() {
     if (ids.length === 0) return;
 
     setBulkDeleting(true);
+    setBulkDeleteError(null);
     try {
       const batchSize = 10;
+      const failedIds: number[] = [];
       for (let i = 0; i < ids.length; i += batchSize) {
         const batch = ids.slice(i, i + batchSize);
-        await Promise.allSettled(batch.map(id => api.delete(`/boards/${id}`)));
+        const results = await Promise.allSettled(batch.map(id => api.delete(`/boards/${id}`)));
+        results.forEach((result, index) => {
+          if (result.status === 'rejected') failedIds.push(batch[index]);
+        });
       }
       await fetchBoards(effectiveUserId, searchQuery, true, 1);
-      setSelectedBoardIds(new Set());
+      setSelectedBoardIds(new Set(failedIds));
+      if (failedIds.length > 0) {
+        setBulkDeleteError(t('bulkDeleteFailed', 'Some boards could not be deleted. The failed boards remain selected.'));
+      }
     } finally {
       setBulkDeleting(false);
       setBulkDeleteOpen(false);
@@ -335,6 +354,12 @@ export function Boards() {
           )}
         </div>
       </div>
+
+      {bulkDeleteError && (
+        <div role="alert" className="bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 p-4 rounded-lg">
+          {bulkDeleteError}
+        </div>
+      )}
 
       {error && (
         <div
@@ -457,13 +482,15 @@ export function Boards() {
                     </div>
                   </Link>
                   <div className="flex space-x-2">
-                    <button
-                      onClick={() => handleDeleteBoard(board.id)}
-                      className="p-2 text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-                      aria-label="Delete board"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {(user?.user_type === 'admin' || board.user_id === user?.id) && (
+                      <button
+                        onClick={() => handleDeleteBoard(board.id)}
+                        className="p-2 text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                        aria-label={t('delete')}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                     {user && (
                       <button
                         onClick={() => duplicateBoard(board.id, user.id)}
@@ -473,7 +500,7 @@ export function Boards() {
                         <Copy className="w-4 h-4" />
                       </button>
                     )}
-                    {user && (user.user_type === 'teacher' || user.user_type === 'admin') && (
+                    {user && (user.user_type === 'admin' || board.user_id === user.id) && (
                       <button
                         onClick={() => openAssign(board.id)}
                         className="p-2 text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
@@ -502,13 +529,15 @@ export function Boards() {
                     <Play className="w-4 h-4 mr-1 fill-current" />
                     {t('speakMode')}
                   </Link>
-                  <Link
-                    to={`/boards/${board.id}`}
-                    className="flex items-center text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium"
-                  >
-                    <Edit className="w-4 h-4 mr-1" />
-                    {t('editBoard')}
-                  </Link>
+                  {(user?.user_type === 'admin' || board.user_id === user?.id) && (
+                    <Link
+                      to={`/boards/${board.id}`}
+                      className="flex items-center text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium"
+                    >
+                      <Edit className="w-4 h-4 mr-1" />
+                      {t('editBoard')}
+                    </Link>
+                  )}
                 </div>
               </div>
               {assignOpenId === board.id && (

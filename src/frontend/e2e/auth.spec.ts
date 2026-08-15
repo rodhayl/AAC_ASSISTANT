@@ -54,10 +54,22 @@ test.describe('Authentication', () => {
 });
 
 test.describe('Authentication - form validation', () => {
-  test('blocks an empty login submission with native validation', async ({ page }) => {
-    await page.goto('/login');
+  test('handles an empty login attempt without bypassing first-run setup', async ({ page }) => {
+    const setupStatus = await page.request.get('/api/auth/setup-status');
+    expect(setupStatus.ok()).toBeTruthy();
+    const { setup_required: setupRequired } = await setupStatus.json() as { setup_required: boolean };
 
-    // Both fields are `required`, so submitting empty never fires a request.
+    // A clean database must go through setup before login validation is
+    // reachable. This branch keeps the test valid for both fixture states.
+    if (setupRequired) {
+      await page.goto('/setup');
+      await expect(page.locator('form')).toBeVisible();
+      await expect(page.locator('button[type="submit"]')).toBeDisabled();
+      return;
+    }
+
+    await page.goto('/login');
+    // Both login fields are required, so an empty submission never fires a request.
     await page.locator('button[type="submit"]').click();
     await expect(page.locator('#username:invalid')).toBeVisible();
     await expect(page).toHaveURL(/\/login(?:[/?#]|$)/);

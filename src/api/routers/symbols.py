@@ -19,6 +19,8 @@ from src.api.deps import (
     get_db,
     get_text,
     require_board_owner_or_admin,
+    validate_board_position,
+    validate_linked_board,
 )
 from src.api.file_uploads import read_image_upload, remove_owned_upload
 
@@ -412,6 +414,15 @@ def add_symbol_to_board(
 
     # Check symbol exists (raises a translated 404 otherwise).
     _get_symbol_or_404(db, symbol_data.symbol_id, current_user)
+    validate_board_position(
+        board,
+        symbol_data.position_x,
+        symbol_data.position_y,
+        current_user,
+    )
+    validate_linked_board(
+        db, board_id, symbol_data.linked_board_id, current_user
+    )
 
     db_board_symbol = BoardSymbol(board_id=board_id, **symbol_data.model_dump())
     db.add(db_board_symbol)
@@ -444,8 +455,14 @@ def add_symbol_to_board(
     return db_board_symbol
 
 
-def _update_single_symbol(db_board_symbol: BoardSymbol, update: dict) -> bool:
-    """Apply updates to a single board symbol."""
+def _update_single_symbol(
+    db_board_symbol: BoardSymbol,
+    update: dict,
+    *,
+    db: Session,
+    current_user: User,
+) -> bool:
+    """Apply updates to a single board symbol after validating link targets."""
     changed = False
     if "position_x" in update:
         db_board_symbol.position_x = update["position_x"]
@@ -463,8 +480,24 @@ def _update_single_symbol(db_board_symbol: BoardSymbol, update: dict) -> bool:
         db_board_symbol.custom_text = update["custom_text"]
         changed = True
     if "linked_board_id" in update:
+        validate_linked_board(
+            db,
+            db_board_symbol.board_id,
+            update["linked_board_id"],
+            current_user,
+        )
         db_board_symbol.linked_board_id = update["linked_board_id"]
         changed = True
+
+    board = db.get(CommunicationBoard, db_board_symbol.board_id)
+    if board is not None and changed:
+        validate_board_position(
+            board,
+            db_board_symbol.position_x or 0,
+            db_board_symbol.position_y or 0,
+            current_user,
+        )
+
     return changed
 
 
@@ -491,7 +524,12 @@ def batch_update_board_symbols(
             .first()
         )
 
-        if db_board_symbol and _update_single_symbol(db_board_symbol, update):
+        if db_board_symbol and _update_single_symbol(
+            db_board_symbol,
+            update,
+            db=db,
+            current_user=current_user,
+        ):
             updated_count += 1
 
     db.commit()
@@ -510,6 +548,17 @@ def update_board_symbol(
 ):
     """Update a symbol's position or properties on a board"""
     db_board_symbol = _get_board_symbol_or_404(db, board_id, symbol_id, current_user)
+    board = db.get(CommunicationBoard, board_id)
+    if board is not None:
+        validate_board_position(
+            board,
+            symbol_data.position_x if symbol_data.position_x is not None else db_board_symbol.position_x or 0,
+            symbol_data.position_y if symbol_data.position_y is not None else db_board_symbol.position_y or 0,
+            current_user,
+        )
+    validate_linked_board(
+        db, board_id, symbol_data.linked_board_id, current_user
+    )
 
     for key, value in symbol_data.model_dump(exclude_unset=True).items():
         setattr(db_board_symbol, key, value)

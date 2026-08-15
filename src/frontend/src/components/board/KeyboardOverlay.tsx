@@ -75,16 +75,23 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-2xl bg-surface rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom-10 duration-300 h-[80vh] sm:h-auto" data-mobile-dialog="true">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200" role="presentation">
+      <div
+        className="w-full max-w-2xl bg-surface rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom-10 duration-300 h-[80vh] sm:h-auto"
+        data-mobile-dialog="true"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="keyboard-overlay-title"
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <h3 className="text-lg font-bold text-primary flex items-center gap-2">
+          <h3 id="keyboard-overlay-title" className="text-lg font-bold text-primary flex items-center gap-2">
             {t('typeToSpeak', 'Type to Speak')}
           </h3>
           <button 
             onClick={onClose}
             className="modal-close p-2 rounded-lg text-secondary hover:bg-surface-hover transition-colors"
+            aria-label={t('close', 'Close')}
             data-touch-target="true"
           >
             <X className="w-6 h-6" />
@@ -95,6 +102,7 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
         <div className="p-4 flex-1 flex flex-col min-h-0">
           <textarea
             ref={inputRef}
+            aria-label={t('typeHere', 'Type something here...')}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}

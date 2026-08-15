@@ -111,6 +111,7 @@ describe('UserManagementPage', () => {
     expect(screen.getByText('Teacher One')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /\+ Create Teacher/ }));
+    expect(screen.getByRole('dialog', { name: 'Create New Teacher' })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Username *'), { target: { value: 'teacher2' } });
     fireEvent.change(screen.getByLabelText('Display Name *'), { target: { value: 'Teacher Two' } });
     fireEvent.change(screen.getByLabelText('Password *'), { target: { value: 'Password1' } });

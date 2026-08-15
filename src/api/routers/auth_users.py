@@ -1,12 +1,28 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from loguru import logger
+from sqlalchemy import delete, update
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import (
+    Achievement,
+    AppSettings,
     BoardAssignment,
+    BoardSymbol,
+    CollaborationSession,
     CommunicationBoard,
+    GuardianProfile,
+    GuardianProfileHistory,
+    LearningMode,
+    LearningPlan,
+    LearningSession,
+    LearningTask,
+    Notification,
     StudentTeacher,
+    SymbolUsageLog,
     User,
+    UserAchievement,
+    UserProgress,
+    UserSettings,
 )
 from src.aac_app.services.audit_service import audit_service
 from src.aac_app.services.auth_service import get_password_hash, verify_password
@@ -18,6 +34,7 @@ from src.api.deps import (
     get_current_active_user,
     get_current_admin_user,
     get_db,
+    get_text,
 )
 from src.api.routers.auth_helpers import (
     conditional_limiter,
@@ -43,23 +60,41 @@ def admin_create_user(
     """
     logger.info(f"Admin '{current_user.username}' creating user '{user.username}' with type '{user.user_type}'")
 
+    accept_language = request.headers.get("accept-language")
+
     # Validate password strength using shared validation function
-    validate_password_strength(user.password)
+    validate_password_strength(
+        user.password,
+        accept_language=accept_language,
+        user=current_user,
+    )
 
     # Validate email format if provided
-    validate_email_format(user.email)
+    validate_email_format(
+        user.email,
+        accept_language=accept_language,
+        user=current_user,
+    )
 
     # Validate password confirmation for admin-created users
     if not user.confirm_password:
         raise HTTPException(
             status_code=400,
-            detail="Password confirmation is required"
+            detail=get_text(
+                user=current_user,
+                accept_language=accept_language,
+                key="errors.auth.passwordConfirmationRequired",
+            ),
         )
 
     if user.password != user.confirm_password:
         raise HTTPException(
             status_code=400,
-            detail="Passwords do not match"
+            detail=get_text(
+                user=current_user,
+                accept_language=accept_language,
+                key="errors.auth.passwordsDoNotMatch",
+            ),
         )
 
     # Validate user_type
@@ -67,10 +102,21 @@ def admin_create_user(
     if user.user_type not in valid_types:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid user_type. Must be one of: {', '.join(valid_types)}"
+            detail=get_text(
+                user=current_user,
+                accept_language=accept_language,
+                key="errors.auth.invalidUserType",
+                types=", ".join(valid_types),
+            ),
         )
 
-    ensure_username_email_available(db, user.username, user.email)
+    ensure_username_email_available(
+        db,
+        user.username,
+        user.email,
+        accept_language=accept_language,
+        user=current_user,
+    )
 
     # Create new user with admin-specified role
     new_user = User(
@@ -140,7 +186,12 @@ def get_users(
 ):
     """List all users (Admin/Teacher only)"""
     if current_user.user_type == 'student':
-        raise HTTPException(status_code=403, detail="Not authorized to view user list")
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(
+                user=current_user, key="errors.auth.unauthorizedUserList"
+            ),
+        )
 
     allowed_types = {"student", "teacher", "admin"}
     if user_type is not None and user_type not in allowed_types:
@@ -178,7 +229,12 @@ def get_student_summaries(
 ):
     """Return visible students and assigned boards without per-student requests."""
     if current_user.user_type not in {"admin", "teacher"}:
-        raise HTTPException(status_code=403, detail="Not authorized to view user list")
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(
+                user=current_user, key="errors.auth.unauthorizedUserList"
+            ),
+        )
 
     query = db.query(User).filter(User.user_type == "student")
     if current_user.user_type == "teacher":
@@ -269,13 +325,18 @@ def get_user(
     """Get user by ID"""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.userNotFound"),
+        )
 
     authorize_user_access(
         target_user=user,
         current_user=current_user,
         db=db,
-        forbidden_detail="Not authorized to view this user",
+        forbidden_detail=get_text(
+            user=current_user, key="errors.auth.unauthorizedUserView"
+        ),
     )
 
     return user
@@ -294,20 +355,47 @@ def change_password(
     Rate limited to 10 attempts per hour per IP.
     """
 
+    accept_language = request.headers.get("accept-language")
+
     # If it's the user themselves
     if current_user.username == payload.username:
         if not verify_password(payload.current_password, current_user.password_hash):
-            raise HTTPException(status_code=401, detail="Current password incorrect")
+            raise HTTPException(
+                status_code=401,
+                detail=get_text(
+                    user=current_user,
+                    accept_language=accept_language,
+                    key="errors.auth.currentPasswordIncorrect",
+                ),
+            )
     else:
         # This endpoint changes only the authenticated user's password. Admins
         # and teachers use the separately authorized reset-password route.
-        raise HTTPException(status_code=403, detail="Cannot change another user's password via this endpoint")
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(
+                user=current_user,
+                accept_language=accept_language,
+                key="errors.auth.cannotChangeOtherUserPassword",
+            ),
+        )
 
     # Validate new password strength using shared validation function
-    validate_password_strength(payload.new_password)
+    validate_password_strength(
+        payload.new_password,
+        accept_language=accept_language,
+        user=current_user,
+    )
 
     if payload.new_password != payload.confirm_password:
-        raise HTTPException(status_code=400, detail="Passwords do not match")
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=current_user,
+                accept_language=accept_language,
+                key="errors.auth.passwordsDoNotMatch",
+            ),
+        )
 
     # Use the authenticated identity rather than re-querying by client input.
     user = current_user
@@ -334,6 +422,7 @@ def change_password(
 
 @router.put("/users/{user_id}", response_model=schemas.UserResponse)
 def update_user(
+    request: Request,
     user_id: int,
     payload: dict,
     current_user: User = Depends(get_current_admin_user),
@@ -344,7 +433,10 @@ def update_user(
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.userNotFound"),
+        )
 
     # The admin edit contract accepts a raw dict, so validate the fields that
     # affect role checks and uniqueness before mutating the row. This keeps the
@@ -354,14 +446,30 @@ def update_user(
     if 'user_type' in payload and payload.get('user_type') not in valid_types:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid user_type. Must be one of: {', '.join(valid_types)}",
+            detail=get_text(
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+                key="errors.auth.invalidUserType",
+                types=", ".join(valid_types),
+            ),
         )
 
     new_email = payload.get('email')
     if new_email is not None and new_email != user.email:
-        validate_email_format(new_email)
+        validate_email_format(
+            new_email,
+            user=current_user,
+            accept_language=request.headers.get("accept-language"),
+        )
         if db.query(User).filter(User.email == new_email, User.id != user.id).first():
-            raise HTTPException(status_code=400, detail="Email already registered")
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(
+                    user=current_user,
+                    accept_language=request.headers.get("accept-language"),
+                    key="errors.auth.emailTaken",
+                ),
+            )
 
     if 'is_active' in payload and not isinstance(payload['is_active'], bool):
         raise HTTPException(status_code=400, detail="is_active must be a boolean")
@@ -379,17 +487,184 @@ def update_user(
 @router.delete("/users/{user_id}")
 def delete_user(
     user_id: int,
+    request: Request,
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Delete user (admin only)"""
+    """Delete a user and all data owned by that account (admin only)."""
     if current_user.id == user_id:
-        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+                key="errors.auth.cannotDeleteOwnAccount",
+            ),
+        )
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    db.delete(user)
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.userNotFound"),
+        )
+
+    # Delete dependent rows explicitly instead of relying on ORM relationship
+    # synchronization. Several legacy relationships have non-null foreign
+    # keys, so ``db.delete(user)`` would otherwise try to set them to NULL and
+    # fail before the account is removed.
+    owned_board_ids = [
+        board_id
+        for (board_id,) in db.query(CommunicationBoard.id)
+        .filter(CommunicationBoard.user_id == user_id)
+        .all()
+    ]
+    if owned_board_ids:
+        db.execute(
+            delete(BoardAssignment).where(
+                BoardAssignment.board_id.in_(owned_board_ids)
+            )
+        )
+        db.execute(
+            update(BoardSymbol)
+            .where(BoardSymbol.linked_board_id.in_(owned_board_ids))
+            .values(linked_board_id=None)
+        )
+        db.execute(
+            delete(BoardSymbol).where(BoardSymbol.board_id.in_(owned_board_ids))
+        )
+        db.execute(
+            delete(CommunicationBoard).where(
+                CommunicationBoard.id.in_(owned_board_ids)
+            )
+        )
+
+    # Remove user relationships and clear nullable attribution fields on
+    # records that remain visible to other users.
+    db.execute(
+        delete(BoardAssignment).where(BoardAssignment.student_id == user_id)
+    )
+    db.execute(
+        update(BoardAssignment)
+        .where(BoardAssignment.assigned_by == user_id)
+        .values(assigned_by=None)
+    )
+    db.execute(
+        delete(StudentTeacher).where(
+            (StudentTeacher.student_id == user_id)
+            | (StudentTeacher.teacher_id == user_id)
+        )
+    )
+
+    profile_ids = [
+        profile_id
+        for (profile_id,) in db.query(GuardianProfile.id)
+        .filter(GuardianProfile.user_id == user_id)
+        .all()
+    ]
+    if profile_ids:
+        db.execute(
+            delete(GuardianProfileHistory).where(
+                GuardianProfileHistory.profile_id.in_(profile_ids)
+            )
+        )
+        db.execute(
+            delete(GuardianProfile).where(GuardianProfile.id.in_(profile_ids))
+        )
+    db.execute(
+        update(GuardianProfile)
+        .where(GuardianProfile.created_by == user_id)
+        .values(created_by=current_user.id)
+    )
+    db.execute(
+        update(GuardianProfile)
+        .where(GuardianProfile.updated_by == user_id)
+        .values(updated_by=None)
+    )
+    db.execute(
+        update(GuardianProfileHistory)
+        .where(GuardianProfileHistory.changed_by == user_id)
+        .values(changed_by=current_user.id)
+    )
+
+    learning_session_ids = [
+        session_id
+        for (session_id,) in db.query(LearningSession.id)
+        .filter(LearningSession.user_id == user_id)
+        .all()
+    ]
+    if learning_session_ids:
+        db.execute(
+            delete(SymbolUsageLog).where(
+                SymbolUsageLog.session_id.in_(learning_session_ids)
+            )
+        )
+        db.execute(
+            delete(LearningSession).where(
+                LearningSession.id.in_(learning_session_ids)
+            )
+        )
+    db.execute(delete(SymbolUsageLog).where(SymbolUsageLog.user_id == user_id))
+
+    learning_plan_ids = [
+        plan_id
+        for (plan_id,) in db.query(LearningPlan.id)
+        .filter(LearningPlan.user_id == user_id)
+        .all()
+    ]
+    if learning_plan_ids:
+        db.execute(
+            delete(LearningTask).where(LearningTask.plan_id.in_(learning_plan_ids))
+        )
+        db.execute(delete(LearningPlan).where(LearningPlan.id.in_(learning_plan_ids)))
+
+    db.execute(delete(UserAchievement).where(UserAchievement.user_id == user_id))
+    db.execute(delete(UserProgress).where(UserProgress.user_id == user_id))
+    db.execute(delete(Notification).where(Notification.user_id == user_id))
+    db.execute(delete(UserSettings).where(UserSettings.user_id == user_id))
+
+    # These records can remain useful after their author is removed, so clear
+    # nullable attribution or target fields rather than deleting shared data.
+    db.execute(
+        update(LearningMode)
+        .where(LearningMode.created_by == user_id)
+        .values(created_by=None)
+    )
+    db.execute(
+        update(Achievement)
+        .where(Achievement.created_by == user_id)
+        .values(created_by=None)
+    )
+    db.execute(
+        update(Achievement)
+        .where(Achievement.target_user_id == user_id)
+        .values(target_user_id=None)
+    )
+    db.execute(
+        update(AppSettings)
+        .where(AppSettings.updated_by == user_id)
+        .values(updated_by=None)
+    )
+    db.execute(
+        delete(CollaborationSession).where(
+            CollaborationSession.host_user_id == user_id
+        )
+    )
+
+    # Use a Core DELETE after dependents are handled so SQLAlchemy does not
+    # synchronize already-loaded relationship collections by nulling required
+    # foreign keys.
+    db.execute(delete(User).where(User.id == user_id))
+    client_ip = request.client.host if request.client else "unknown"
+    audit_service.log_admin_action(
+        db=db,
+        admin_id=current_user.id,
+        admin_username=current_user.username,
+        action="delete_user",
+        description=f"Deleted {user.user_type} account '{user.username}' (id={user_id})",
+        ip_address=client_ip,
+        endpoint=f"/api/auth/users/{user_id}",
+    )
     db.commit()
     return {"ok": True}
 
@@ -408,7 +683,10 @@ def admin_unlock_account(
     # Verify user exists
     target_user = db.query(User).filter(User.username == username).first()
     if not target_user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.userNotFound"),
+        )
 
     # Unlock the account
     lockout_service.unlock_account(db, username, current_user.username)
@@ -441,7 +719,10 @@ def update_profile(
         # Check email uniqueness
         existing = db.query(User).filter(User.email == profile.email, User.id != current_user.id).first()
         if existing:
-            raise HTTPException(status_code=400, detail="Email already in use")
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(user=current_user, key="errors.auth.emailInUse"),
+            )
         current_user.email = profile.email
 
     db.flush()

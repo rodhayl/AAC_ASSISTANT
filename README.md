@@ -59,7 +59,9 @@ One-time onboarding flow restricted to local loopback (`127.0.0.1`) requiring op
 - Symbol search and board editing (drag-and-drop, custom uploads).
 - Learning sessions with adaptive questions and achievements.
 - Local speech-to-text (faster-whisper) bundled in the Windows installer;
-  browser-based text-to-speech works everywhere.
+  browser-based text-to-speech works everywhere. Optional local neural TTS
+  (Kokoro) is supported on Python 3.13; Python 3.14 uses the browser fallback
+  because the current Kokoro release does not support Python 3.14.
 - Role-based accounts (student / teacher / admin) with per-endpoint
   authorization.
 - Optional LLM learning questions via local services (Ollama, LM Studio) or an

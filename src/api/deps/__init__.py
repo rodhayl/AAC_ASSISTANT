@@ -5,6 +5,9 @@ from .access import (
     get_learning_session_or_404,
     require_board_owner_or_admin,
     require_board_staff_or_owner,
+    validate_board_position,
+    validate_grid_resize,
+    validate_linked_board,
 )
 from .auth import (
     authorize_user_access,
@@ -60,6 +63,9 @@ __all__ = [
     "get_current_user",
     "require_board_owner_or_admin",
     "require_board_staff_or_owner",
+    "validate_board_position",
+    "validate_grid_resize",
+    "validate_linked_board",
     "get_db",
     "get_learning_service",
     "get_llm_provider",

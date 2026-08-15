@@ -37,5 +37,24 @@ test.describe('Board Editor', () => {
     await symbolCard.hover();
     await symbolCard.getByRole('button', { name: 'Remove symbol' }).click();
     await expect(page.locator('.grid').getByText('cow', { exact: true })).not.toBeVisible({ timeout: 10000 });
+
+    // Clearing a board is destructive: it must ask for confirmation and
+    // cancelling must preserve the symbol.
+    await page.getByRole('button', { name: 'Add symbol' }).first().click();
+    await page.locator('#symbol-picker-search').fill('cow');
+    await page.getByRole('button', { name: /cow/i }).first().click();
+    await expect(page.locator('.grid').getByText('cow', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Clear Board' }).click();
+    const clearDialog = page.getByRole('dialog', { name: 'Remove all symbols from this board' });
+    await expect(clearDialog).toBeVisible();
+    await clearDialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(clearDialog).not.toBeVisible();
+    await expect(page.locator('.grid').getByText('cow', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Clear Board' }).click();
+    await page.getByRole('dialog', { name: 'Remove all symbols from this board' })
+      .getByRole('button', { name: 'Clear Board' }).click();
+    await expect(page.locator('.grid').getByText('cow', { exact: true })).not.toBeVisible({ timeout: 10000 });
   });
 });

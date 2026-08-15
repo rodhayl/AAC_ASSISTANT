@@ -1,7 +1,7 @@
 from contextlib import nullcontext
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from loguru import logger
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from src.api.deps import (
     get_achievement_system,
     get_current_active_user,
     get_db,
+    get_text,
     verify_student_access,
 )
 
@@ -22,6 +23,7 @@ router = APIRouter()
 
 @router.get("/categories", response_model=list[str])
 def get_categories(
+    request: Request,
     system: AchievementSystem = Depends(get_achievement_system),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -29,20 +31,29 @@ def get_categories(
     if current_user.user_type not in ["teacher", "admin"]:
         raise HTTPException(
             status_code=403,
-            detail="Only teachers and admins can view categories",
+            detail=get_text(
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+                key="errors.achievements.viewCategories",
+            ),
         )
     return system.get_categories()
 
 
 @router.get("/criteria-types", response_model=list[str])
 def get_criteria_types(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
 ):
     """Get all available criteria types for achievements. Teachers/admins only."""
     if current_user.user_type not in ["teacher", "admin"]:
         raise HTTPException(
             status_code=403,
-            detail="Only teachers and admins can view criteria types",
+            detail=get_text(
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+                key="errors.achievements.viewCriteriaTypes",
+            ),
         )
     return [
         "sessions_completed",
@@ -60,6 +71,7 @@ def get_criteria_types(
 @router.get("", response_model=list[schemas.AchievementFullResponse])
 @router.get("/", response_model=list[schemas.AchievementFullResponse])
 def list_all_achievements(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -67,7 +79,11 @@ def list_all_achievements(
     if current_user.user_type not in ["teacher", "admin"]:
         raise HTTPException(
             status_code=403,
-            detail="Only teachers and admins can manage achievements",
+            detail=get_text(
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+                key="errors.achievements.manage",
+            ),
         )
 
     with nullcontext(db) as session:
@@ -99,6 +115,7 @@ def list_all_achievements(
 @router.post("", response_model=schemas.AchievementFullResponse, status_code=201)
 @router.post("/", response_model=schemas.AchievementFullResponse, status_code=201)
 def create_achievement(
+    request: Request,
     data: schemas.AchievementCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -107,7 +124,11 @@ def create_achievement(
     if current_user.user_type not in ["teacher", "admin"]:
         raise HTTPException(
             status_code=403,
-            detail="Only teachers and admins can create achievements",
+            detail=get_text(
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+                key="errors.achievements.create",
+            ),
         )
 
     if data.target_user_id is not None:
@@ -161,6 +182,7 @@ def create_achievement(
 
 @router.put("/{achievement_id}", response_model=schemas.AchievementFullResponse)
 def update_achievement(
+    request: Request,
     achievement_id: int,
     data: schemas.AchievementUpdate,
     current_user: User = Depends(get_current_active_user),
@@ -170,7 +192,11 @@ def update_achievement(
     if current_user.user_type not in ["teacher", "admin"]:
         raise HTTPException(
             status_code=403,
-            detail="Only teachers and admins can update achievements",
+            detail=get_text(
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+                key="errors.achievements.update",
+            ),
         )
 
     with nullcontext(db) as session:
@@ -182,14 +208,22 @@ def update_achievement(
         if achievement.created_by != current_user.id and current_user.user_type != "admin":
             raise HTTPException(
                 status_code=403,
-                detail="You can only update achievements you created",
+                detail=get_text(
+                    user=current_user,
+                    accept_language=request.headers.get("accept-language"),
+                    key="errors.achievements.updateOwnOnly",
+                ),
             )
 
         # System achievements (created_by=None) can only be updated by admin
         if achievement.created_by is None and current_user.user_type != "admin":
             raise HTTPException(
                 status_code=403,
-                detail="Only admins can update system achievements",
+                detail=get_text(
+                    user=current_user,
+                    accept_language=request.headers.get("accept-language"),
+                    key="errors.achievements.updateSystem",
+                ),
             )
 
         # Update fields
@@ -243,6 +277,7 @@ def update_achievement(
 
 @router.delete("/{achievement_id}", status_code=204)
 def delete_achievement(
+    request: Request,
     achievement_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -251,7 +286,11 @@ def delete_achievement(
     if current_user.user_type not in ["teacher", "admin"]:
         raise HTTPException(
             status_code=403,
-            detail="Only teachers and admins can delete achievements",
+            detail=get_text(
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+                key="errors.achievements.delete",
+            ),
         )
 
     with nullcontext(db) as session:
@@ -263,14 +302,22 @@ def delete_achievement(
         if achievement.created_by is None:
             raise HTTPException(
                 status_code=403,
-                detail="System achievements cannot be deleted",
+                detail=get_text(
+                    user=current_user,
+                    accept_language=request.headers.get("accept-language"),
+                    key="errors.achievements.cannotDeleteSystem",
+                ),
             )
 
         # Only creator or admin can delete
         if achievement.created_by != current_user.id and current_user.user_type != "admin":
             raise HTTPException(
                 status_code=403,
-                detail="You can only delete achievements you created",
+                detail=get_text(
+                    user=current_user,
+                    accept_language=request.headers.get("accept-language"),
+                    key="errors.achievements.deleteOwnOnly",
+                ),
             )
 
         # Delete associated user achievements first
@@ -288,6 +335,7 @@ def delete_achievement(
 
 @router.post("/{achievement_id}/award", response_model=schemas.AchievementResponse)
 def award_achievement(
+    request: Request,
     achievement_id: int,
     data: schemas.AchievementAward,
     current_user: User = Depends(get_current_active_user),
@@ -297,7 +345,11 @@ def award_achievement(
     if current_user.user_type not in ["teacher", "admin"]:
         raise HTTPException(
             status_code=403,
-            detail="Only teachers and admins can award achievements",
+            detail=get_text(
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+                key="errors.achievements.award",
+            ),
         )
 
     with nullcontext(db) as session:
@@ -321,7 +373,11 @@ def award_achievement(
         if existing:
             raise HTTPException(
                 status_code=400,
-                detail="User already has this achievement",
+                detail=get_text(
+                    user=current_user,
+                    accept_language=request.headers.get("accept-language"),
+                    key="errors.achievements.alreadyAwarded",
+                ),
             )
 
         # Award the achievement

@@ -96,15 +96,20 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="glass-card w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" role="presentation">
+            <div
+                className="glass-card w-full max-w-md p-6 max-h-[90vh] overflow-y-auto"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="guardian-profile-title"
+            >
                 {/* Header */}
                 <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-                    <h2 className="text-xl font-bold flex items-center gap-2">
+                    <h2 id="guardian-profile-title" className="text-xl font-bold flex items-center gap-2">
                         <Sparkles className="w-5 h-5 text-indigo-500" />
                         {t('guardianProfile', 'Guardian Profile')}: {student?.display_name}
                     </h2>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full"><X className="w-6 h-6" /></button>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full" aria-label={t('close', 'Close')}><X className="w-6 h-6" /></button>
                 </div>
 
                 {/* Content */}

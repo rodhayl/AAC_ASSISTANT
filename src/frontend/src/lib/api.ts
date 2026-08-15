@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosHeaders } from 'axios';
 import type { AxiosRequestConfig } from 'axios';
 import { getAuthState } from './authState';
 import { config } from '../config';
@@ -279,6 +279,14 @@ if (typeof window !== 'undefined') {
   window.addEventListener('aac:auth-context-changed', clearSessionMutations);
 }
 
+function currentUILanguage(): string {
+  try {
+    return localStorage.getItem('aac_assistant_locale') || 'es';
+  } catch {
+    return 'es';
+  }
+}
+
 api.interceptors.request.use((config) => {
   const { token } = getAuthState();
   const headers = config.headers;
@@ -291,6 +299,13 @@ api.interceptors.request.use((config) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     config.headers = { ...config.headers, Authorization: `Bearer ${bearer}` } as any;
   }
+  // Send the UI language to the backend so unauthenticated requests (login,
+  // setup, register) and any error that precedes user-preference resolution
+  // are answered in the user's language instead of the API default.
+  if (!(config.headers instanceof AxiosHeaders)) {
+    config.headers = AxiosHeaders.from(config.headers ?? {});
+  }
+  config.headers.set('Accept-Language', currentUILanguage());
   // If offline and non-GET, queue the request for retry. Authentication and
   // registration requests are never retained in browser storage or replayed.
   if (

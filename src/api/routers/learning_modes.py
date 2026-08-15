@@ -10,6 +10,7 @@ from src.api.deps import (
     get_current_active_user,
     get_db,
     get_learning_service,
+    get_text,
     verify_student_access,
 )
 from src.api.schemas import (
@@ -67,7 +68,7 @@ def preview_learning_mode_system_prompt(
     if current_user.user_type not in ("admin", "teacher"):
         raise HTTPException(
             status_code=403,
-            detail="Only admins and teachers can preview modes",
+            detail=get_text(user=current_user, key="errors.learningModes.staffOnly"),
         )
 
     # Preview against a specific student's guardian profile when selected,
@@ -137,7 +138,10 @@ def create_learning_mode(
 ):
     """Create a custom learning mode"""
     if current_user.user_type not in ["admin", "teacher"]:
-        raise HTTPException(status_code=403, detail="Only admins and teachers can create modes")
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(user=current_user, key="errors.learningModes.staffOnly"),
+        )
 
     # Check for duplicate key for this user
     existing = db.query(LearningMode).filter(
@@ -146,7 +150,10 @@ def create_learning_mode(
     ).first()
 
     if existing:
-        raise HTTPException(status_code=400, detail=f"Mode with key '{mode.key}' already exists")
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(user=current_user, key="errors.learningModes.duplicate"),
+        )
 
     db_mode = LearningMode(
         name=mode.name,
@@ -172,16 +179,28 @@ def update_learning_mode(
     """Update a learning mode"""
     db_mode = db.get(LearningMode, mode_id)
     if not db_mode:
-        raise HTTPException(status_code=404, detail="Mode not found")
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.learningModes.notFound"),
+        )
 
     # Permission check
     if db_mode.created_by != current_user.id:
         # If it's a system mode (created_by=None), only admin can edit
         if db_mode.created_by is None:
             if current_user.user_type != "admin":
-                raise HTTPException(status_code=403, detail="Only admins can edit system modes")
+                raise HTTPException(
+                    status_code=403,
+                    detail=get_text(
+                        user=current_user,
+                        key="errors.learningModes.systemEditAdminOnly",
+                    ),
+                )
         else:
-            raise HTTPException(status_code=403, detail="Not authorized to edit this mode")
+            raise HTTPException(
+                status_code=403,
+                detail=get_text(user=current_user, key="errors.learningModes.editForbidden"),
+            )
 
     if mode_update.name is not None:
         db_mode.name = mode_update.name
@@ -205,14 +224,26 @@ def delete_learning_mode(
     """Delete a learning mode"""
     db_mode = db.get(LearningMode, mode_id)
     if not db_mode:
-        raise HTTPException(status_code=404, detail="Mode not found")
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.learningModes.notFound"),
+        )
 
     if db_mode.created_by != current_user.id:
         if db_mode.created_by is None:
             if current_user.user_type != "admin":
-                 raise HTTPException(status_code=403, detail="Only admins can delete system modes")
+                raise HTTPException(
+                    status_code=403,
+                    detail=get_text(
+                        user=current_user,
+                        key="errors.learningModes.systemDeleteAdminOnly",
+                    ),
+                )
         else:
-            raise HTTPException(status_code=403, detail="Not authorized to delete this mode")
+            raise HTTPException(
+                status_code=403,
+                detail=get_text(user=current_user, key="errors.learningModes.deleteForbidden"),
+            )
 
     db.delete(db_mode)
     db.commit()

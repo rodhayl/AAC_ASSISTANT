@@ -1,12 +1,16 @@
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.user_service import UserService
-from src.api.deps import get_current_active_user, get_db
-from src.api.routers.auth_helpers import validate_password_strength
+from src.api.deps import get_current_active_user, get_db, get_text
+from src.api.routers.auth_helpers import (
+    ensure_username_email_available,
+    validate_email_format,
+    validate_password_strength,
+)
 from src.api.schemas import (
     ResetPasswordRequest,
     StudentAssignRequest,
@@ -63,16 +67,28 @@ def get_students(
 
 @router.post("/students", response_model=UserResponse)
 def create_student(
+    request: Request,
     user: UserCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """Create a new student"""
     if current_user.user_type not in ["admin", "teacher"]:
-        raise HTTPException(status_code=403, detail="Not authorized to create students")
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+                key="errors.users.unauthorizedCreateStudents",
+            ),
+        )
 
     # Force user_type to student
     user.user_type = "student"
+
+    validate_password_strength(user.password, user=current_user)
+    validate_email_format(user.email, user=current_user)
+    ensure_username_email_available(db, user.username, user.email, user=current_user)
 
     # Teachers always assign students to themselves. Admins may optionally
     # provide an assignment target, but it must be an active teacher rather
@@ -90,7 +106,10 @@ def create_student(
             .first()
         )
         if teacher is None:
-            raise HTTPException(status_code=404, detail="Teacher not found")
+            raise HTTPException(
+                status_code=404,
+                detail=get_text(user=current_user, key="errors.users.teacherNotFound"),
+            )
 
     created = user_service.create_user(db, user)
     # Commit before responding: the UI re-fetches the student list right
@@ -102,6 +121,7 @@ def create_student(
 
 @router.post("/assign-student")
 def assign_student(
+    request: Request,
     data: StudentAssignRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -115,18 +135,29 @@ def assign_student(
 
     if current_user.user_type == "teacher" and target_teacher_id != current_user.id:
         raise HTTPException(
-            status_code=403, detail="Teachers can only assign students to themselves"
+            status_code=403,
+            detail=get_text(
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+                key="errors.users.assignOnlySelf",
+            ),
         )
 
     # Check if student exists
     student = db.query(User).filter_by(id=data.student_id, user_type="student").first()
     if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.users.studentNotFound"),
+        )
 
     # Check if teacher exists
     teacher = db.query(User).filter_by(id=target_teacher_id, user_type="teacher").first()
     if not teacher:
-        raise HTTPException(status_code=404, detail="Teacher not found")
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.users.teacherNotFound"),
+        )
 
     # Check if assignment exists
     exists = (
@@ -149,6 +180,7 @@ def assign_student(
 
 @router.delete("/assign-student/{student_id}/{teacher_id}")
 def unassign_student(
+    request: Request,
     student_id: int,
     teacher_id: int,
     current_user: User = Depends(get_current_active_user),
@@ -160,7 +192,12 @@ def unassign_student(
 
     if current_user.user_type == "teacher" and teacher_id != current_user.id:
         raise HTTPException(
-            status_code=403, detail="Teachers can only unassign students from themselves"
+            status_code=403,
+            detail=get_text(
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+                key="errors.users.unassignOnlySelf",
+            ),
         )
 
     # Check if assignment exists
@@ -170,7 +207,12 @@ def unassign_student(
         .first()
     )
     if not assignment:
-        raise HTTPException(status_code=404, detail="Assignment not found")
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(
+                user=current_user, key="errors.users.assignmentNotFound"
+            ),
+        )
 
     db.delete(assignment)
     db.commit()
@@ -179,6 +221,7 @@ def unassign_student(
 
 @router.post("/reset-password")
 def reset_user_password(
+    request: Request,
     data: ResetPasswordRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -191,12 +234,22 @@ def reset_user_password(
     target_user_id = data.user_id if data.user_id is not None else data.student_id
 
     if target_user_id is None:
-        raise HTTPException(status_code=400, detail="user_id or student_id is required")
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+                key="errors.users.studentIdRequired",
+            ),
+        )
 
     # Fetch user
     user = db.query(User).filter(User.id == target_user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.userNotFound"),
+        )
 
     # Permission check
     if current_user.user_type == "admin":
@@ -206,7 +259,12 @@ def reset_user_password(
         # Teacher can only reset assigned students
         if user.user_type != "student":
             raise HTTPException(
-                status_code=403, detail="Teachers can only reset student passwords"
+                status_code=403,
+                detail=get_text(
+                    user=current_user,
+                    accept_language=request.headers.get("accept-language"),
+                    key="errors.users.resetOnlyStudents",
+                ),
             )
 
         # Check assignment
@@ -220,10 +278,15 @@ def reset_user_password(
         )
         if not assignment:
             raise HTTPException(
-                status_code=403, detail="Student is not assigned to this teacher"
+                status_code=403,
+                detail=get_text(
+                    user=current_user,
+                    accept_language=request.headers.get("accept-language"),
+                    key="errors.users.notAssignedToTeacher",
+                ),
             )
 
-    validate_password_strength(data.new_password)
+    validate_password_strength(data.new_password, user=current_user)
 
     # Reset password
     user_service.reset_password(db, target_user_id, data.new_password)

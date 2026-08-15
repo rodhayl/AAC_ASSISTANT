@@ -11,20 +11,37 @@ _PASSWORD_HASHER = PasswordHash.recommended()
 _BCRYPT_PREFIXES = ("$2a$", "$2b$", "$2y$")
 
 
-def password_strength_error(password: str) -> str | None:
-    """Return a user-facing password validation error, if one exists."""
+_PASSWORD_ERROR_MESSAGES = {
+    "errors.passwordRequired": "Password is required",
+    "errors.passwordLength": "Password must be at least 8 characters long",
+    "errors.passwordUppercase": "Password must contain at least one uppercase letter",
+    "errors.passwordLowercase": "Password must contain at least one lowercase letter",
+    "errors.passwordNumber": "Password must contain at least one number",
+}
+
+
+def password_strength_error_key(password: str) -> str | None:
+    """Return the i18n error key for a password validation failure, if any."""
     if not password or len(password.strip()) == 0:
-        return "Password is required"
+        return "errors.passwordRequired"
     if len(password) < 8:
-        return "Password must be at least 8 characters long"
-    for pattern, message in (
-        (r"[A-Z]", "Password must contain at least one uppercase letter"),
-        (r"[a-z]", "Password must contain at least one lowercase letter"),
-        (r"[0-9]", "Password must contain at least one number"),
+        return "errors.passwordLength"
+    for pattern, key in (
+        (r"[A-Z]", "errors.passwordUppercase"),
+        (r"[a-z]", "errors.passwordLowercase"),
+        (r"[0-9]", "errors.passwordNumber"),
     ):
         if not re.search(pattern, password):
-            return message
+            return key
     return None
+
+
+def password_strength_error(password: str) -> str | None:
+    """Return a user-facing English password validation error, if one exists."""
+    key = password_strength_error_key(password)
+    if key is None:
+        return None
+    return _PASSWORD_ERROR_MESSAGES[key]
 
 
 def get_password_hash(password: str) -> str:

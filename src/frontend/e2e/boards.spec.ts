@@ -120,7 +120,10 @@ test.describe('Boards - Student', () => {
     // It imports Copy. It probably uses it.
     // I'll try to find a button with the Copy icon or title "Duplicate".
     
-    const boardCard = page.locator('.relative').filter({ hasText: boardName }).first();
+    // Scope the action to the exact board heading. A copied board also contains
+    // the source name as a substring, so a broad text filter can match two cards.
+    const boardHeading = page.getByRole('heading', { name: boardName, exact: true });
+    const boardCard = boardHeading.locator('xpath=../../..');
     await expect(boardCard).toBeVisible();
 
     // Use aria-label to find the duplicate button

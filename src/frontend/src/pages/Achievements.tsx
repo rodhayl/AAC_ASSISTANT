@@ -381,13 +381,18 @@ export function Achievements() {
 
       {/* Create/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation">
+          <div
+            className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-md mx-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="achievement-editor-title"
+          >
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              <h3 id="achievement-editor-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                 {editingAchievement ? t('editTitle', 'Edit Achievement') : t('createTitle', 'Create Achievement')}
               </h3>
-              <button onClick={() => { setShowModal(false); setEditingAchievement(null); resetForm(); }} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => { setShowModal(false); setEditingAchievement(null); resetForm(); }} className="text-gray-400 hover:text-gray-600" aria-label={t('close', 'Close')}>
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -502,11 +507,16 @@ export function Achievements() {
 
       {/* Award Modal */}
       {showAwardModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation">
+          <div
+            className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-sm mx-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="achievement-award-title"
+          >
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('awardTitle', 'Award Achievement')}</h3>
-              <button onClick={() => { setShowAwardModal(false); setAwardingAchievementId(null); }} className="text-gray-400 hover:text-gray-600">
+              <h3 id="achievement-award-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('awardTitle', 'Award Achievement')}</h3>
+              <button onClick={() => { setShowAwardModal(false); setAwardingAchievementId(null); }} className="text-gray-400 hover:text-gray-600" aria-label={t('close', 'Close')}>
                 <X className="w-5 h-5" />
               </button>
             </div>

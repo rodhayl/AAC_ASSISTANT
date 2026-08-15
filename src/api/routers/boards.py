@@ -13,6 +13,7 @@ from src.api.deps import (
     get_db,
     get_text,
     require_board_owner_or_admin,
+    validate_grid_resize,
 )
 from src.api.routers.board_helpers import serialize_board
 
@@ -156,8 +157,17 @@ def update_board(
     db_board = get_board_or_404(db, board_id, current_user)
     require_board_owner_or_admin(db_board, current_user)
 
-    # Update fields
+    # A smaller grid must not strand existing symbols outside the rendered
+    # editor. Reject the resize atomically so users do not lose access to
+    # placements by changing layout settings.
     update_data = board_update.model_dump(exclude_unset=True)
+    if "grid_rows" in update_data or "grid_cols" in update_data:
+        validate_grid_resize(
+            db_board,
+            update_data.get("grid_rows", db_board.grid_rows or 4),
+            update_data.get("grid_cols", db_board.grid_cols or 5),
+            current_user,
+        )
     for key, value in update_data.items():
         setattr(db_board, key, value)
 

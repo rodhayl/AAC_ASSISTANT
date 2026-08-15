@@ -341,9 +341,11 @@ class TTSQueue {
       audio.onerror = () => {
         cleanupAudio()
         if (localAbandoned || !this.isActiveUtterance(utteranceId)) return
-        this.clearLocalStartWatchdog(localStartWatchdog)
-        this.finishCurrentUtterance(false)
-        Promise.resolve().then(() => this.processNext())
+        // A successful synthesis can still fail at the device/playback layer
+        // (missing output device, autoplay policy, invalid decoder, etc.).
+        // Preserve communication by using the same browser fallback as an
+        // HTTP/synthesis failure instead of silently dropping the utterance.
+        fallback()
       }
 
       await audio.play()

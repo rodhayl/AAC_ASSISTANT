@@ -25,7 +25,7 @@
     "displayName": "Nombre para mostrar *",
     "email": "Correo (opcional)",
     "password": "Contraseña *",
-    "passwordHint": "Mínimo 6 caracteres",
+    "passwordHint": "Mínimo 8 caracteres, con mayúscula, minúscula y número",
     "newPassword": "Nueva Contraseña"
   },
   "cancel": "Cancelar",

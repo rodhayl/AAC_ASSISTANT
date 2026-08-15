@@ -146,10 +146,10 @@ class StudentBoardSummaryResponse(BaseModel):
 
 # --- Learning Mode Schemas ---
 class LearningModeBase(BaseModel):
-    name: str
-    key: str
-    description: str | None = None
-    prompt_instruction: str
+    name: str = Field(..., min_length=1, max_length=100)
+    key: str = Field(..., min_length=1, max_length=50, pattern=r"^[A-Za-z0-9_-]+$")
+    description: str | None = Field(None, max_length=10_000)
+    prompt_instruction: str = Field(..., min_length=1, max_length=10_000)
     # Auto-ask adaptive questions in sessions using this mode (default on).
     auto_ask_enabled: bool = True
 
@@ -157,9 +157,9 @@ class LearningModeCreate(LearningModeBase):
     pass
 
 class LearningModeUpdate(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    prompt_instruction: str | None = None
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=10_000)
+    prompt_instruction: str | None = Field(None, min_length=1, max_length=10_000)
     auto_ask_enabled: bool | None = None
 
 class LearningModeResponse(LearningModeBase):
@@ -246,13 +246,13 @@ class SymbolReorderUpdate(BaseModel):
 
 class BoardSymbolBase(BaseModel):
     symbol_id: int
-    position_x: int = 0
-    position_y: int = 0
-    size: int = 1
+    position_x: int = Field(0, ge=0)
+    position_y: int = Field(0, ge=0)
+    size: int = Field(1, ge=1, le=100)
     is_visible: bool = True
     custom_text: str | None = None
     color: str | None = None
-    linked_board_id: int | None = None
+    linked_board_id: int | None = Field(None, ge=1)
 
 
 class BoardSymbolCreate(BoardSymbolBase):
@@ -261,13 +261,13 @@ class BoardSymbolCreate(BoardSymbolBase):
 
 class BoardSymbolUpdate(BaseModel):
     symbol_id: int | None = None
-    position_x: int | None = None
-    position_y: int | None = None
-    size: int | None = None
+    position_x: int | None = Field(None, ge=0)
+    position_y: int | None = Field(None, ge=0)
+    size: int | None = Field(None, ge=1, le=100)
     is_visible: bool | None = None
     custom_text: str | None = None
     color: str | None = None
-    linked_board_id: int | None = None
+    linked_board_id: int | None = Field(None, ge=1)
 
 
 class BoardSymbolResponse(BoardSymbolBase):
@@ -278,13 +278,13 @@ class BoardSymbolResponse(BoardSymbolBase):
 
 
 class BoardBase(BaseModel):
-    name: str
-    description: str | None = None
-    category: str = "general"
+    name: str = Field(..., min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=10_000)
+    category: str = Field("general", max_length=50)
     is_public: bool = False
     is_template: bool = False
-    grid_rows: int | None = 4
-    grid_cols: int | None = 5
+    grid_rows: int | None = Field(4, ge=1, le=100)
+    grid_cols: int | None = Field(5, ge=1, le=100)
     ai_enabled: bool = False
     ai_provider: str | None = None
     ai_model: str | None = None
@@ -297,13 +297,13 @@ class BoardCreate(BoardBase):
 
 
 class BoardUpdate(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    category: str | None = None
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=10_000)
+    category: str | None = Field(None, max_length=50)
     is_public: bool | None = None
     is_template: bool | None = None
-    grid_rows: int | None = None
-    grid_cols: int | None = None
+    grid_rows: int | None = Field(None, ge=1, le=100)
+    grid_cols: int | None = Field(None, ge=1, le=100)
     ai_enabled: bool | None = None
     ai_provider: str | None = None
     ai_model: str | None = None
@@ -323,10 +323,10 @@ class BoardResponse(BoardBase):
 
 
 class AISuggestion(BaseModel):
-    label: str
-    symbol_key: str | None = None
-    color: str | None = None
-    linked_board_id: int | None = None
+    label: str = Field(..., min_length=1, max_length=100)
+    symbol_key: str | None = Field(None, max_length=100)
+    color: str | None = Field(None, max_length=20)
+    linked_board_id: int | None = Field(None, ge=1)
     description: str | None = None
 
 
@@ -338,8 +338,8 @@ class AISuggestionsRequest(BaseModel):
 
 class AISuggestionApplyRequest(BaseModel):
     item: AISuggestion
-    position_x: int | None = None
-    position_y: int | None = None
+    position_x: int | None = Field(None, ge=0)
+    position_y: int | None = Field(None, ge=0)
 
 
 # --- Notification Schemas ---

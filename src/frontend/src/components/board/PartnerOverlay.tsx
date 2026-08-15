@@ -88,11 +88,17 @@ export function PartnerOverlay({ isOpen, onClose }: PartnerOverlayProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl p-6 flex flex-col items-center text-center relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" role="presentation">
+      <div
+        className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl p-6 flex flex-col items-center text-center relative"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="partner-overlay-title"
+      >
         <button 
             onClick={onClose}
             className="absolute top-4 right-4 p-2 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600"
+            aria-label={t('close', 'Close')}
         >
             <X className="w-6 h-6" />
         </button>
@@ -101,7 +107,7 @@ export function PartnerOverlay({ isOpen, onClose }: PartnerOverlayProps) {
             <div className={`p-4 rounded-full inline-flex items-center justify-center ${isListening ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-gray-100 text-gray-500'}`}>
                 <Mic className="w-12 h-12" />
             </div>
-            <h2 className="mt-4 text-xl font-semibold text-gray-900 dark:text-gray-100">
+            <h2 id="partner-overlay-title" className="mt-4 text-xl font-semibold text-gray-900 dark:text-gray-100">
                 {isListening ? t('listening', 'Listening to partner...') : t('paused', 'Paused')}
             </h2>
         </div>

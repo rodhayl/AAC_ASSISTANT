@@ -21,7 +21,7 @@ from src.aac_app.utils.jwt_utils import (
     decode_refresh_token,
 )
 from src.api import schemas
-from src.api.deps import get_current_active_user, get_db
+from src.api.deps import get_current_active_user, get_db, get_text
 from src.api.routers.auth_helpers import (
     conditional_limiter,
     ensure_username_email_available,
@@ -81,7 +81,10 @@ def initial_admin_setup(
     if payload.password != payload.confirm_password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Passwords do not match.",
+            detail=get_text(
+                accept_language=request.headers.get("accept-language"),
+                key="errors.auth.passwordsDoNotMatch",
+            ),
         )
 
     if payload.password.strip().lower() == config.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD.lower():
@@ -90,15 +93,21 @@ def initial_admin_setup(
             detail="The development default password is not permitted for administrator setup.",
         )
 
-    validate_password_strength(payload.password)
+    validate_password_strength(
+        payload.password, accept_language=request.headers.get("accept-language")
+    )
 
     username = payload.username.strip() or "admin1"
     display_name = payload.display_name.strip() or "Administrator"
 
     if payload.email:
-        validate_email_format(payload.email)
+        validate_email_format(
+            payload.email, accept_language=request.headers.get("accept-language")
+        )
 
-    ensure_username_email_available(db, username, payload.email)
+    ensure_username_email_available(
+        db, username, payload.email, accept_language=request.headers.get("accept-language")
+    )
 
     admin = User(
         username=username,
@@ -183,7 +192,11 @@ def login_for_access_token(
 
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Account is temporarily locked due to multiple failed login attempts. Try again after {locked_until.strftime('%Y-%m-%d %H:%M:%S UTC')}.",
+            detail=get_text(
+                accept_language=request.headers.get("accept-language"),
+                key="errors.accountLocked",
+                time=locked_until.strftime("%Y-%m-%d %H:%M:%S UTC"),
+            ),
         )
 
     user = db.query(User).filter(User.username == form_data.username).first()
@@ -200,7 +213,10 @@ def login_for_access_token(
 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail=get_text(
+                accept_language=request.headers.get("accept-language"),
+                key="errors.incorrectCredentials",
+            ),
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -216,12 +232,21 @@ def login_for_access_token(
 
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is inactive. Please contact an administrator.",
+            detail=get_text(
+                accept_language=request.headers.get("accept-language"),
+                key="errors.auth.accountInactive",
+            ),
         )
 
     if not user.password_hash:
         logger.error(f"Token request failed: User '{form_data.username}' has no password hash")
-        raise HTTPException(status_code=500, detail="Account configuration error")
+        raise HTTPException(
+            status_code=500,
+            detail=get_text(
+                accept_language=request.headers.get("accept-language"),
+                key="errors.accountConfigurationError",
+            ),
+        )
 
     password_valid, updated_password_hash = verify_password_and_update(
         form_data.password, user.password_hash
@@ -247,12 +272,19 @@ def login_for_access_token(
         if is_locked:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Account locked due to multiple failed login attempts. Locked until {locked_until.strftime('%Y-%m-%d %H:%M:%S UTC')}.",
+                detail=get_text(
+                    accept_language=request.headers.get("accept-language"),
+                    key="errors.accountLocked",
+                    time=locked_until.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                ),
             )
 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail=get_text(
+                accept_language=request.headers.get("accept-language"),
+                key="errors.incorrectCredentials",
+            ),
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -331,13 +363,17 @@ def refresh_access_token(
 
     Rate limited to 30 attempts per minute per IP.
     """
+    accept_language = request.headers.get("accept-language")
+
     # Decode and validate refresh token
     payload = decode_refresh_token(refresh_token)
     if not payload:
         logger.warning("Refresh token validation failed: Invalid or expired token")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token",
+            detail=get_text(
+                accept_language=accept_language, key="errors.invalidRefreshToken"
+            ),
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -347,7 +383,9 @@ def refresh_access_token(
         logger.warning("Refresh token missing user_id claim")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token claims",
+            detail=get_text(
+                accept_language=accept_language, key="errors.invalidTokenClaims"
+            ),
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -357,7 +395,9 @@ def refresh_access_token(
         logger.warning(f"Refresh token valid but user {user_id} not found")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
+            detail=get_text(
+                accept_language=accept_language, key="errors.userNotFound"
+            ),
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -377,7 +417,10 @@ def refresh_access_token(
         logger.warning("Refresh token security state mismatch for user {}", user_id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token",
+            detail=get_text(
+                accept_language=request.headers.get("accept-language"),
+                key="errors.invalidRefreshToken",
+            ),
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -386,7 +429,10 @@ def refresh_access_token(
         logger.warning(f"Refresh attempt for inactive user '{user.username}'")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is inactive. Please contact an administrator.",
+            detail=get_text(
+                accept_language=request.headers.get("accept-language"),
+                key="errors.auth.accountInactive",
+            ),
         )
 
     # Issue new access token
@@ -417,12 +463,18 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
     Rate limited to 5 registrations per hour per IP to prevent spam.
     """
     # Validate password strength using shared validation function
-    validate_password_strength(user.password)
+    validate_password_strength(
+        user.password, accept_language=request.headers.get("accept-language")
+    )
 
     # Validate email format if provided
-    validate_email_format(user.email)
+    validate_email_format(
+        user.email, accept_language=request.headers.get("accept-language")
+    )
 
-    ensure_username_email_available(db, user.username, user.email)
+    ensure_username_email_available(
+        db, user.username, user.email, accept_language=request.headers.get("accept-language")
+    )
 
     # SECURITY: Force user_type to 'student' for public registration
     # Only admins can create teacher/admin accounts via /auth/admin/create-user
@@ -469,27 +521,41 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
     response_model=schemas.UserResponse,
     deprecated=True,
 )
-def login(credentials: schemas.LoginRequest, db: Session = Depends(get_db)):
+def login(
+    request: Request,
+    credentials: schemas.LoginRequest,
+    db: Session = Depends(get_db),
+):
     """Deprecated JSON login endpoint; use ``/auth/token`` for JWT login."""
     logger.info(f"Login attempt for username: {credentials.username}")
+    accept_language = request.headers.get("accept-language")
 
     user = db.query(User).filter(User.username == credentials.username).first()
     if not user:
         logger.warning(f"Login failed: User '{credentials.username}' not found")
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(
+            status_code=401,
+            detail=get_text(
+                accept_language=accept_language, key="errors.auth.invalidCredentials"
+            ),
+        )
 
     if not user.is_active:
         logger.warning(f"Login failed: User '{credentials.username}' is inactive")
         raise HTTPException(
             status_code=403,
-            detail="Account is inactive. Please contact an administrator.",
+            detail=get_text(
+                accept_language=accept_language, key="errors.auth.accountInactive"
+            ),
         )
 
     if not user.password_hash:
         logger.error(f"Login failed: User '{credentials.username}' has no password hash")
         raise HTTPException(
             status_code=500,
-            detail="Account configuration error. Please contact administrator.",
+            detail=get_text(
+                accept_language=accept_language, key="errors.auth.configError"
+            ),
         )
 
     password_valid, updated_password_hash = verify_password_and_update(
@@ -497,7 +563,12 @@ def login(credentials: schemas.LoginRequest, db: Session = Depends(get_db)):
     )
     if not password_valid:
         logger.warning(f"Login failed: Invalid password for user '{credentials.username}'")
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(
+            status_code=401,
+            detail=get_text(
+                accept_language=accept_language, key="errors.auth.invalidCredentials"
+            ),
+        )
 
     if updated_password_hash:
         user.password_hash = updated_password_hash

@@ -19,6 +19,7 @@ import { useBoardCollab } from '../hooks/useBoardCollab';
 import { useBoardEditorSymbols } from '../hooks/useBoardEditorSymbols';
 import { getBoardPlayabilityStatus } from './boardEditorUtils';
 import { LoadingState } from '../components/ui/LoadingState';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
 export function BoardEditor() {
   const { t } = useTranslation('boards');
@@ -48,6 +49,7 @@ export function BoardEditor() {
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiConfigError, setAiConfigError] = useState<string | null>(null);  const [saveSuccess, setSaveSuccess] = useState(false)
   const [clearLoading, setClearLoading] = useState(false)
+  const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const saveSettingsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 ;
 
@@ -215,16 +217,17 @@ export function BoardEditor() {
   }, [currentBoard, hasChanges, localSymbols, batchUpdateSymbols, clearOverrides, setHasChanges, t, addToast]);
 
   const handleGridChange = useCallback(async (preset: string) => {
-    setGridPreset(preset)
     const [r, c] = preset.split('x').map(Number)
-    if (currentBoard) {
-      try {
-        await updateBoard(currentBoard.id, { grid_rows: r, grid_cols: c })
-      } catch (e) {
-        console.error('Failed to update grid layout', e)
-      }
+    if (!currentBoard) return
+    try {
+      await updateBoard(currentBoard.id, { grid_rows: r, grid_cols: c })
+      setGridPreset(preset)
+    } catch (e) {
+      console.error('Failed to update grid layout', e)
+      setGridPreset(`${currentBoard.grid_rows ?? 4}x${currentBoard.grid_cols ?? 5}`)
+      addToast(t('settingsSaveFailed'), 'error')
     }
-  }, [currentBoard, updateBoard]);
+  }, [addToast, currentBoard, t, updateBoard]);
 
   const handleSaveSettings = async () => {
     if (!currentBoard) return;
@@ -282,12 +285,17 @@ export function BoardEditor() {
       }
       await fetchBoard(currentBoard.id, true);
       setHasChanges(true);
+      setClearDialogOpen(false);
     } catch (e: unknown) {
       setAiError(extractError(e, t('failedToClearBoard')));
     } finally {
       setClearLoading(false);
     }
   }, [currentBoard, deleteBoardSymbol, fetchBoard, setAiError, setHasChanges, t]);
+
+  const requestClearBoard = useCallback(() => {
+    setClearDialogOpen(true);
+  }, []);
 
   if (isBoardLoading && !currentBoard) {
     return (
@@ -329,7 +337,19 @@ export function BoardEditor() {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onGridChange={handleGridChange}
         onSave={handleSave}
-        onClear={clearBoard}
+        onClear={requestClearBoard}
+      />
+
+      <ConfirmDialog
+        isOpen={clearDialogOpen}
+        onClose={() => setClearDialogOpen(false)}
+        onConfirm={() => void clearBoard()}
+        title={t('clearBoardTitle')}
+        description={t('clearBoardConfirm')}
+        confirmText={t('clearBoard')}
+        cancelText={t('cancel')}
+        variant="danger"
+        isLoading={clearLoading}
       />
 
       {currentBoard.ai_enabled && (aiSuggestions.length > 0 || aiError) && (
@@ -378,6 +398,7 @@ export function BoardEditor() {
         onClose={() => setEditingSymbol(null)}
         onSave={handleUpdateSymbol}
         symbol={editingSymbol}
+        currentBoardId={currentBoard.id}
       />
 
       <BoardSettingsDialog

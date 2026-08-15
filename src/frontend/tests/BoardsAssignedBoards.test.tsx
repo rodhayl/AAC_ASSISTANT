@@ -105,6 +105,24 @@ describe('Boards assigned-board display', () => {
     expect(await screen.findByText('Assigned Board')).toBeInTheDocument();
   });
 
+  it('shows assigned boards alongside personal boards', async () => {
+    const personalBoard = { ...assignedBoard, id: 7, name: 'Personal Board', user_id: 10 };
+    vi.mocked(api.get).mockImplementation((url) => {
+      if (url === '/boards/assigned') return Promise.resolve({ data: [assignedBoard] });
+      if (url === '/boards/') return Promise.resolve({ data: [personalBoard] });
+      return Promise.resolve({ data: {} });
+    });
+
+    render(
+      <MemoryRouter>
+        <Boards />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Personal Board')).toBeInTheDocument();
+    expect(await screen.findByText('Assigned Board')).toBeInTheDocument();
+  });
+
   it('does not refetch assigned boards when searching personal boards', async () => {
     render(
       <MemoryRouter>
@@ -133,5 +151,6 @@ describe('Boards assigned-board display', () => {
       ([url]) => url === '/boards/assigned',
     ).length;
     expect(assignedCallsAfterSearch).toBe(assignedCallsBeforeSearch);
+    expect(screen.queryByText('Assigned Board')).not.toBeInTheDocument();
   });
 });
