@@ -117,7 +117,10 @@ supplied for isolated tests, but normal deployments use SQLite at
   `LearningCompanionService` as the public service facade.
 - `src/aac_app/providers/` contains optional HTTP AI providers and the lazy
   faster-whisper speech provider. The browser handles speech synthesis and
-  microphone capture; server-side audio devices are not required.
+  microphone capture; server-side audio devices are not required. The optional
+  Kokoro neural TTS extra is available on Python 3.13; Python 3.14 uses the
+  browser TTS fallback because the current Kokoro release declares Python
+  `<3.14` support.
 - Semantic search uses fastembed embeddings and sqlite-vec in the SQLite
   database. Runtime model caches belong under `data/models/` and are never
   committed. Release builds stage the bundled fastembed and faster-whisper

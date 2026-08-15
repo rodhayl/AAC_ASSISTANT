@@ -42,9 +42,8 @@ test.describe.serial('Admin Management', () => {
     await page.getByRole('button', { name: /create teacher|crear/i }).click();
     
     // Wait for modal
-    await expect(page.locator('div[role="dialog"]')).toBeVisible();
-    
-    const modal = page.locator('div[role="dialog"]');
+    const modal = page.getByRole('dialog', { name: /create new teacher|crear nuevo profesor/i });
+    await expect(modal).toBeVisible();
     await modal.getByLabel(/username|usuario/i).fill(teacherName);
     await modal.getByLabel(/display name|nombre/i).fill('Teacher Name');
     // Use name attribute or exact label match to distinguish from Confirm Password
@@ -78,10 +77,22 @@ test.describe.serial('Admin Management', () => {
     
     await expect(page.locator('.animate-spin')).not.toBeVisible({ timeout: 20000 });
     
-    // Smoke test: verify create button exists
-    await expect(page.getByRole('button', { name: /create student|crear/i }).first()).toBeVisible();
-    
-    // Note: Modal interaction is flaky in this environment, skipping deep interaction
+    const createButton = page.getByRole('button', { name: /create student|crear/i }).first();
+    await expect(createButton).toBeVisible();
+
+    const username = `e2e_admin_student_${Date.now()}`;
+    await createButton.click();
+    const dialog = page.getByRole('dialog', { name: /create new student|crear nuevo estudiante/i });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel(/username|usuario/i)).toBeVisible();
+    await expect(dialog.getByLabel(/display name|nombre/i)).toBeVisible();
+    await dialog.getByLabel(/username|usuario/i).fill(username);
+    await dialog.getByLabel(/display name|nombre/i).fill('E2E Admin Student');
+    await dialog.getByLabel(/^password/i).fill('AdminCreated123!');
+    await dialog.getByLabel(/confirm password|confirmar contraseña/i).fill('AdminCreated123!');
+    await dialog.getByRole('button', { name: /create student|crear estudiante/i }).click();
+    await expect(dialog).not.toBeVisible({ timeout: 30000 });
+    await expect(page.getByText(username)).toBeVisible({ timeout: 30000 });
   });
 
   test('should manage students and guardian profile', async ({ page }) => {

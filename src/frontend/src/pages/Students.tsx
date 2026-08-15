@@ -196,13 +196,16 @@ export function Students() {
           user_type: 'student'
         })
       } else {
-        await api.post('/auth/register', {
+        // This staff route creates the student and atomically adds the
+        // authenticated teacher to the student's roster. Public registration
+        // intentionally creates an unassigned account, so using it here made
+        // newly created students disappear from the teacher's list.
+        await api.post('/users/students', {
           username: newUsername,
           password: newPassword,
           display_name: newDisplayName,
           email: newEmail || undefined,
           user_type: 'student',
-          created_by_teacher_id: user?.id
         })
       }
 
@@ -322,12 +325,14 @@ export function Students() {
                       >
                         <Volume2 className="w-4 h-4" />
                       </button>
-                      <button
-                        onClick={() => { setEditId(s.id); setEditDisplayName(s.display_name); setEditUserType(s.user_type); setError(null); }}
-                        className="px-3 py-1 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded"
-                        aria-label={t('actions.editAria', { student: s.username })}
-                        title={t('actions.editTitle')}
-                      >{t('edit')}</button>
+                      {user?.user_type === 'admin' && (
+                        <button
+                          onClick={() => { setEditId(s.id); setEditDisplayName(s.display_name); setEditUserType(s.user_type); setError(null); }}
+                          className="px-3 py-1 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded"
+                          aria-label={t('actions.editAria', { student: s.username })}
+                          title={t('actions.editTitle')}
+                        >{t('edit')}</button>
+                      )}
                       <button
                         onClick={() => {
                           setResetPasswordStudent(s);
@@ -339,12 +344,14 @@ export function Students() {
                         aria-label={t('actions.resetPasswordAria', { student: s.username, defaultValue: `Reset password for ${s.username}` })}
                         title={t('actions.resetPasswordTitle', { defaultValue: 'Reset Password' })}
                       >{t('actions.resetPassword', { defaultValue: 'Reset Pwd' })}</button>
-                      <button
-                        onClick={() => setDeleteState({ isOpen: true, student: s })}
-                        className="px-3 py-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
-                        aria-label={t('actions.deleteAria', { student: s.username })}
-                        title={t('actions.deleteTitle')}
-                      >{t('delete')}</button>
+                      {user?.user_type === 'admin' && (
+                        <button
+                          onClick={() => setDeleteState({ isOpen: true, student: s })}
+                          className="px-3 py-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
+                          aria-label={t('actions.deleteAria', { student: s.username })}
+                          title={t('actions.deleteTitle')}
+                        >{t('delete')}</button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -358,17 +365,28 @@ export function Students() {
           }
           {
             editId != null && (
-              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" role="dialog" aria-modal="true">
+              <div
+                className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="edit-student-title"
+              >
                 <div className="glass-card w-full max-w-md p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">{t('edit')}</h3>
+                  <h3 id="edit-student-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">{t('edit')}</h3>
                   {error && (
                     <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm mb-4">
                       {error}
                     </div>
                   )}
                   <div className="space-y-3">
-                    <input type="text" value={editDisplayName} onChange={(e) => setEditDisplayName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
-                    <select value={editUserType} onChange={(e) => setEditUserType(e.target.value as 'student' | 'teacher' | 'admin')} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+                    <label htmlFor="edit-student-display-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {t('labels.displayName')}
+                    </label>
+                    <input id="edit-student-display-name" type="text" value={editDisplayName} onChange={(e) => setEditDisplayName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
+                    <label htmlFor="edit-student-role" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {t('role', { defaultValue: 'Role' })}
+                    </label>
+                    <select id="edit-student-role" value={editUserType} onChange={(e) => setEditUserType(e.target.value as 'student' | 'teacher' | 'admin')} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
                       <option value="student">{t('roles.student')}</option>
                       <option value="teacher">{t('roles.teacher')}</option>
                       <option value="admin">{t('roles.admin')}</option>
@@ -396,9 +414,14 @@ export function Students() {
 
           {
             assignModalOpen && selectedStudent && (
-              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" role="dialog" aria-modal="true">
+              <div
+                className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="assign-student-title"
+              >
                 <div className="glass-card w-full max-w-md p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+                  <h3 id="assign-student-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
                     {t('assignTitle', { name: selectedStudent.display_name })}
                   </h3>
                   <div className="space-y-2 max-h-96 overflow-y-auto">
@@ -442,9 +465,14 @@ export function Students() {
 
           {
             createModalOpen && (
-              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+              <div
+                className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="create-student-title"
+              >
                 <div className="glass-card w-full max-w-md p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+                  <h3 id="create-student-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
                     {t('createTitle')}
                   </h3>
                   {error && (
@@ -454,8 +482,9 @@ export function Students() {
                   )}
                   <form onSubmit={handleCreateStudent} className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.username')}</label>
+                      <label htmlFor="create-student-username" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.username')}</label>
                       <input
+                        id="create-student-username"
                         type="text"
                         value={newUsername}
                         onChange={(e) => setNewUsername(e.target.value)}
@@ -466,8 +495,9 @@ export function Students() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.displayName')}</label>
+                      <label htmlFor="create-student-display-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.displayName')}</label>
                       <input
+                        id="create-student-display-name"
                         type="text"
                         value={newDisplayName}
                         onChange={(e) => setNewDisplayName(e.target.value)}
@@ -478,8 +508,9 @@ export function Students() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.email')}</label>
+                      <label htmlFor="create-student-email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.email')}</label>
                       <input
+                        id="create-student-email"
                         type="email"
                         value={newEmail}
                         onChange={(e) => setNewEmail(e.target.value)}
@@ -489,13 +520,14 @@ export function Students() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.password')}</label>
+                      <label htmlFor="create-student-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.password')}</label>
                       <input
+                        id="create-student-password"
                         type="password"
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
                         required
-                        minLength={6}
+                        minLength={8}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                         placeholder={t('labels.passwordHint')}
                       />
@@ -503,13 +535,14 @@ export function Students() {
 
                     {user?.user_type === 'admin' && (
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.confirmPassword', { defaultValue: 'Confirm Password' })}</label>
+                        <label htmlFor="create-student-confirm-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.confirmPassword', { defaultValue: 'Confirm Password' })}</label>
                         <input
+                          id="create-student-confirm-password"
                           type="password"
                           value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value)}
                           required
-                          minLength={6}
+                          minLength={8}
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                         />
                       </div>
@@ -570,9 +603,14 @@ export function Students() {
 
       {
         preferencesModalOpen && preferencesStudent && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="student-preferences-title"
+          >
             <div className="glass-card w-full max-w-md p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+              <h3 id="student-preferences-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
                 {t('preferencesTitle', { defaultValue: 'Preferences for' })} {preferencesStudent.display_name}
               </h3>
 

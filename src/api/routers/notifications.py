@@ -2,7 +2,7 @@ import asyncio
 import json
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -26,7 +26,19 @@ router = APIRouter()
 
 
 @router.get("/api/notifications/stream")
-async def notifications_stream(request: Request, token: str = None):
+async def notifications_stream(
+    request: Request,
+    authorization: str | None = Header(default=None),
+):
+    # Authenticate with the bearer header rather than a query parameter. Query
+    # strings are routinely copied into access logs, browser history, and
+    # reverse-proxy telemetry, so a JWT must never be placed there.
+    token = None
+    if authorization:
+        scheme, _, credentials = authorization.partition(" ")
+        if scheme.casefold() == "bearer" and credentials.strip():
+            token = credentials.strip()
+
     # Authenticate with a short-lived session. The response stream is
     # intentionally unbounded, so it must not retain a request-scoped DB
     # session or connection for the lifetime of an SSE client.

@@ -137,7 +137,7 @@ export const SentenceStrip = memo(function SentenceStrip({
           {/* Sentence Display Area */}
           <div className="flex-1 min-h-[5rem] bg-gray-50 dark:bg-white/5 rounded-xl border border-border dark:border-white/5 p-2 flex items-center gap-2 overflow-x-auto hide-scrollbar touch-pan-x">
             {symbols.length === 0 ? (
-              <span data-testid="sentence-empty" className="text-gray-400 dark:text-gray-500 px-2 italic select-none">
+              <span data-testid="sentence-empty" className="text-gray-600 dark:text-gray-400 px-2 italic select-none">
                 {t('tapSymbolsToSpeak', 'Tap symbols to create a sentence...')}
               </span>
             ) : (

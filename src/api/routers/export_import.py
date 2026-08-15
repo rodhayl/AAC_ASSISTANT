@@ -563,7 +563,9 @@ def _import_learning_history(
             # row from this import.
             raise HTTPException(
                 status_code=400,
-                detail="Invalid learning history record in import",
+                detail=get_text(
+                    user=user, key="errors.export.invalidLearningRecord"
+                ),
             ) from exc
 
 

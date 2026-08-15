@@ -34,7 +34,7 @@ export function useBoardCollab({
   useEffect(() => {
     if (!boardId || !token) return;
 
-    const url = `${config.WS_BASE_URL}/collab/boards/${boardId}?token=${encodeURIComponent(token)}`;
+    const url = `${config.WS_BASE_URL}/collab/boards/${boardId}`;
     const client = createWSClient(url, {
       onMessage: (message) => {
         const wsMessage = message as BoardChangeMessage | null;
@@ -48,7 +48,7 @@ export function useBoardCollab({
           remoteMoveRef.current?.(payload.symbol_id, payload.position);
         }
       },
-    });
+    }, ['aac-auth', token]);
     clientRef.current = client;
 
     return () => {

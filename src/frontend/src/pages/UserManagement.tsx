@@ -248,9 +248,14 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       )}
 
       {editId != null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" role="dialog" aria-modal="true">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-managed-user-title"
+        >
           <div className="glass-card w-full max-w-md p-6">
-            <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">{t('edit')}</h3>
+            <h3 id="edit-managed-user-title" className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">{t('edit')}</h3>
             <div className="space-y-3">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                 {t('labels.displayName')}
@@ -270,9 +275,14 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       )}
 
       {createModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" role="dialog" aria-modal="true">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-managed-user-title"
+        >
           <div className="glass-card w-full max-w-md p-6">
-            <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">{t('createTitle')}</h3>
+            <h3 id="create-managed-user-title" className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">{t('createTitle')}</h3>
             {error && <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/30 dark:text-red-400">{error}</div>}
             <form onSubmit={handleCreate} className="space-y-4">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">

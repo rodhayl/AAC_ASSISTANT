@@ -70,6 +70,93 @@ def require_board_owner_or_admin(
     return board
 
 
+def validate_board_position(
+    board: CommunicationBoard,
+    position_x: int,
+    position_y: int,
+    current_user: User,
+) -> None:
+    """Reject placements outside the board's persisted grid."""
+    rows = max(int(board.grid_rows or 4), 1)
+    cols = max(int(board.grid_cols or 5), 1)
+    if not (0 <= position_x < cols and 0 <= position_y < rows):
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=current_user,
+                key="errors.boards.invalidPosition",
+                x=position_x,
+                y=position_y,
+                rows=rows,
+                cols=cols,
+            ),
+        )
+
+
+def validate_grid_resize(
+    board: CommunicationBoard,
+    rows: int,
+    cols: int,
+    current_user: User,
+) -> None:
+    """Prevent a grid resize from hiding existing symbol placements."""
+    for board_symbol in board.symbols or []:
+        if not (
+            0 <= (board_symbol.position_x or 0) < cols
+            and 0 <= (board_symbol.position_y or 0) < rows
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(
+                    user=current_user,
+                    key="errors.boards.gridTooSmall",
+                    rows=rows,
+                    cols=cols,
+                ),
+            )
+
+
+def validate_linked_board(
+    db: Session,
+    board_id: int,
+    linked_board_id: int | None,
+    current_user: User,
+) -> None:
+    """Validate a board link before persisting it.
+
+    A board cannot link to itself because that creates an AAC navigation loop.
+    Non-admin users may link only to their own boards or public boards, which
+    matches the boards visible to them in the editor.
+    """
+    if linked_board_id is None:
+        return
+    if linked_board_id == board_id:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(user=current_user, key="errors.boards.selfLinkedBoard"),
+        )
+
+    linked_board = (
+        db.query(CommunicationBoard)
+        .filter(CommunicationBoard.id == linked_board_id)
+        .first()
+    )
+    if linked_board is None:
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.boards.boardNotFound"),
+        )
+    if (
+        current_user.user_type != "admin"
+        and linked_board.user_id != current_user.id
+        and not linked_board.is_public
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(user=current_user, key="errors.boards.unauthorizedViewBoard"),
+        )
+
+
 def require_board_staff_or_owner(
     board: CommunicationBoard,
     current_user: User,

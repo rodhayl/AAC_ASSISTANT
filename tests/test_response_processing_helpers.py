@@ -63,12 +63,15 @@ def _translation_service() -> Mock:
 
 
 def test_exact_match_analysis_correct_case_insensitive() -> None:
-    analysis = _Harness()._exact_match_analysis(
-        "  blue ", _last_question(), _translation_service(), "en"
-    )
+    service = _translation_service()
+    service.get.return_value = "Correct!"
+
+    analysis = _Harness()._exact_match_analysis("  blue ", _last_question(), service, "en")
+
     assert analysis["is_correct"] is True
     assert analysis["confidence"] == 1.0
-    assert analysis["encouraging_feedback"] == "Good try!"
+    assert analysis["encouraging_feedback"] == "Correct!"
+    service.get.assert_called_once_with("en", "pages/learning", "correctAnswer")
 
 
 def test_exact_match_analysis_incorrect_uses_default_miss_confidence() -> None:
@@ -91,7 +94,7 @@ def test_exact_match_analysis_incorrect_honors_custom_miss_confidence() -> None:
     assert analysis["confidence"] == 0.0
 
 
-def test_exact_match_analysis_uses_translation_for_feedback() -> None:
+def test_exact_match_analysis_uses_translation_for_incorrect_feedback() -> None:
     service = _translation_service()
     _Harness()._exact_match_analysis("green", _last_question(), service, "es")
     service.get.assert_called_once_with("es", "pages/learning", "feedback.goodTry")

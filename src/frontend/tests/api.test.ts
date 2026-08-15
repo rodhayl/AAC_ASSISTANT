@@ -50,6 +50,7 @@ describe('auth response handling', () => {
 
   it('recognizes auth endpoints whose 401 responses belong to the active flow', () => {
     expect(isAuthFlowEndpoint('/auth/token')).toBe(true);
+    expect(isAuthFlowEndpoint('/auth/logout')).toBe(true);
     expect(isAuthFlowEndpoint('/api/auth/refresh?refresh_token=token')).toBe(true);
     expect(isAuthFlowEndpoint('https://localhost/api/auth/change-password')).toBe(true);
     expect(isAuthFlowEndpoint('/auth/tokenize')).toBe(false);

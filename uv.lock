@@ -34,7 +34,7 @@ dependencies = [
 
 [package.optional-dependencies]
 tts = [
-    { name = "kokoro-onnx" },
+    { name = "kokoro-onnx", marker = "python_full_version < '3.14'" },
 ]
 voice = [
     { name = "faster-whisper" },
@@ -57,7 +57,7 @@ requires-dist = [
     { name = "fastembed", specifier = "==0.8.0" },
     { name = "faster-whisper", marker = "extra == 'voice'", specifier = "==1.2.1" },
     { name = "httpx", specifier = "==0.28.1" },
-    { name = "kokoro-onnx", marker = "extra == 'tts'", specifier = ">=0.5.0" },
+    { name = "kokoro-onnx", marker = "python_full_version < '3.14' and extra == 'tts'", specifier = ">=0.5.0" },
     { name = "loguru" },
     { name = "numpy" },
     { name = "pillow" },

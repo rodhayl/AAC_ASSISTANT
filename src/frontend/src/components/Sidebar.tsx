@@ -17,8 +17,8 @@ export function Sidebar({ className, isOpen = true, onNavigate }: SidebarProps) 
   const user = useAuthStore(state => state.user);
   const { t } = useTranslation('sidebar');
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     onNavigate?.();
     navigate('/login');
   };

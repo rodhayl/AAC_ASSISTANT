@@ -20,6 +20,8 @@ from src.api.deps import (
     get_setting_value,
     get_text,
     require_board_staff_or_owner,
+    validate_board_position,
+    validate_linked_board,
 )
 
 router = APIRouter()
@@ -183,16 +185,31 @@ async def create_board(
     # Flush to get an ID but don't commit yet
     db.flush()
 
-    # Add manual symbols if provided
+    # Add manual symbols only after validating their foreign keys, positions,
+    # and linked-board visibility. Invalid entries must abort the whole board
+    # creation instead of being logged and silently dropped.
     if symbols_data:
         logger.info(f"Adding {len(symbols_data)} manual symbols to board {db_board.id}")
         for s_data in symbols_data:
-            # s_data is a dict from BoardSymbolCreate
-            try:
-                bs = BoardSymbol(board_id=db_board.id, **s_data)
-                db.add(bs)
-            except Exception as e:
-                logger.error(f"Failed to add symbol: {e}")
+            symbol = db.query(Symbol).filter(Symbol.id == s_data["symbol_id"]).first()
+            if symbol is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=get_text(user=current_user, key="errors.boards.symbolNotFound"),
+                )
+            validate_board_position(
+                db_board,
+                s_data["position_x"],
+                s_data["position_y"],
+                current_user,
+            )
+            validate_linked_board(
+                db,
+                db_board.id,
+                s_data.get("linked_board_id"),
+                current_user,
+            )
+            db.add(BoardSymbol(board_id=db_board.id, **s_data))
     else:
         logger.info("No manual symbols provided in payload")
 
@@ -246,12 +263,22 @@ async def create_board(
 
                     # Add to board
                     cols = db_board.grid_cols or 4
+                    linked_board_id = item.get("linked_board_id")
+                    validate_board_position(
+                        db_board,
+                        idx % cols,
+                        idx // cols,
+                        current_user,
+                    )
+                    validate_linked_board(
+                        db, db_board.id, linked_board_id, current_user
+                    )
                     board_symbol = BoardSymbol(
                         board_id=db_board.id,
                         symbol_id=symbol.id,
                         custom_text=item["label"],
                         color=item.get("color"),
-                        linked_board_id=item.get("linked_board_id"),
+                        linked_board_id=linked_board_id,
                         position_x=idx % cols,
                         position_y=idx // cols,
                         size=1,
@@ -458,6 +485,10 @@ def apply_ai_suggestion(
                 detail=get_text(user=current_user, key="errors.boards.boardFull"),
             )
 
+    validate_board_position(board, target_x, target_y, current_user)
+    validate_linked_board(
+        db, board.id, item.linked_board_id, current_user
+    )
     board_symbol = BoardSymbol(
         board_id=board.id,
         symbol_id=symbol.id,

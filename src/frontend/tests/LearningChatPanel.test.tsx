@@ -54,6 +54,15 @@ describe('LearningChatPanel End Session confirmation', () => {
     vi.clearAllMocks();
   });
 
+  it('makes the scrollable conversation history keyboard-focusable', () => {
+    render(<LearningChatPanel {...baseProps} />);
+
+    const conversation = screen.getByRole('log', { name: /Conversation history/i });
+    expect(conversation).toHaveAttribute('tabindex', '0');
+    conversation.focus();
+    expect(conversation).toHaveFocus();
+  });
+
   it('opens an inline confirmation popover instead of calling immediately', () => {
     render(<LearningChatPanel {...baseProps} />);
 

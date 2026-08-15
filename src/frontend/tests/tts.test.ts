@@ -331,6 +331,27 @@ describe('tts queue local neural path', () => {
     expect(utterances[0].text).toBe('Adiós')
   })
 
+  it('falls back to browser speech when synthesized audio cannot play', async () => {
+    fetchMock.mockImplementation((url: string) =>
+      url.includes('/providers/voice-status')
+        ? Promise.resolve({ ok: true, json: async () => ({ tts_local: { available: true } }) })
+        : Promise.resolve({ ok: true, blob: async () => new Blob(['fake-wav']) }),
+    )
+    const tts = await loadLocalTTS()
+
+    tts.enqueue('Salida de audio', { key: 'local-playback-error', lang: 'es' })
+    await flush()
+    expect(audioInstances).toHaveLength(1)
+    expect(speechSynthesis.speak).not.toHaveBeenCalled()
+
+    audioInstances[0].onerror?.()
+    await flush()
+
+    expect(speechSynthesis.speak).toHaveBeenCalledTimes(1)
+    expect(utterances[0].text).toBe('Salida de audio')
+    expect(tts.getStatus()).toBe('speaking')
+  })
+
   it('uses browser speech when local TTS is enabled but unavailable on the backend', async () => {
     const { tts } = await import('../src/lib/tts')
     const { useTTSStore } = await import('../src/store/ttsStore')

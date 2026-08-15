@@ -235,7 +235,12 @@ export function LearningChatPanel({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div
+        className="flex-1 overflow-y-auto p-4 space-y-4"
+        role="log"
+        aria-label={t('conversationHistory', 'Conversation history')}
+        tabIndex={0}
+      >
         {isStartingSession && (
           <div className="flex justify-center items-center p-6 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
             <div className="text-center">

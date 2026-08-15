@@ -142,9 +142,21 @@ async def submit_voice_answer(
         temp_path = await save_audio_upload(
             file,
             max_bytes=DEFAULT_MAX_AUDIO_BYTES,
-            too_large_detail=get_text(current_user, "errors.boards.fileTooLarge"),
-            invalid_type_detail=get_text(current_user, "errors.boards.invalidFileType"),
-            empty_detail=get_text(current_user, "errors.boards.invalidFileType"),
+            too_large_detail=get_shared_text(
+                user=current_user,
+                key="errors.boards.audioFileTooLarge",
+                namespace="common",
+            ),
+            invalid_type_detail=get_shared_text(
+                user=current_user,
+                key="errors.boards.invalidAudioType",
+                namespace="common",
+            ),
+            empty_detail=get_shared_text(
+                user=current_user,
+                key="errors.boards.invalidAudioType",
+                namespace="common",
+            ),
         )
         result = await service.process_response(
             session_id=session_id,

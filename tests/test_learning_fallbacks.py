@@ -80,8 +80,12 @@ def test_fallback_question_and_feedback_are_localized(
     assert not _is_raw_translation_key(answer_data["feedback_message"])
 
 
-def test_fallback_question_grading_is_deterministic(fallback_providers, regular_user, user_token):
+def test_fallback_question_grading_is_deterministic(
+    fallback_providers, regular_user, user_token, test_db_session
+):
     """The fallback choice is graded exactly, and progress uses a running average."""
+    test_db_session.add(UserSettings(user_id=regular_user.id, ui_language="en"))
+    test_db_session.commit()
     headers, session_id = _start_session(regular_user.id, user_token)
 
     first_question = client.post(f"/api/learning/{session_id}/ask", headers=headers).json()
@@ -94,6 +98,7 @@ def test_fallback_question_grading_is_deterministic(fallback_providers, regular_
 
     assert correct.status_code == 200, correct.text
     assert correct.json()["is_correct"] is True
+    assert correct.json()["feedback_message"] == "Correct!"
     progress_after_correct = client.get(
         f"/api/learning/{session_id}/progress", headers=headers
     ).json()
@@ -114,6 +119,7 @@ def test_fallback_question_grading_is_deterministic(fallback_providers, regular_
 
     assert wrong.status_code == 200, wrong.text
     assert wrong.json()["is_correct"] is False
+    assert wrong.json()["feedback_message"] == "Good try! Keep practicing and you will improve."
     progress_after_wrong = client.get(
         f"/api/learning/{session_id}/progress", headers=headers
     ).json()
@@ -157,6 +163,35 @@ def test_missing_encouraging_feedback_uses_localized_fallback(
 
     assert answer.status_code == 200, answer.text
     assert answer.json()["feedback_message"] == expected_feedback
+
+
+def test_missing_correct_feedback_uses_localized_correct_message(
+    fallback_providers,
+    mock_llm_provider,
+    regular_user,
+    user_token,
+    test_db_session,
+):
+    """A correct result without provider feedback must not use the miss message."""
+    test_db_session.add(UserSettings(user_id=regular_user.id, ui_language="es"))
+    test_db_session.commit()
+    headers, session_id = _start_session(regular_user.id, user_token)
+
+    question = client.post(f"/api/learning/{session_id}/ask", headers=headers)
+    assert question.status_code == 200, question.text
+    correct_answer = question.json()["choices"][0]
+
+    mock_llm_provider.generate.side_effect = None
+    mock_llm_provider.generate.return_value = '{"is_correct": true, "confidence": 1.0}'
+    answer = client.post(
+        f"/api/learning/{session_id}/answer",
+        json={"answer": correct_answer, "is_voice": False},
+        headers=headers,
+    )
+
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["is_correct"] is True
+    assert answer.json()["feedback_message"] == "¡Correcto!"
 
 
 def test_fenced_json_question_uses_llm_output_not_fallback(

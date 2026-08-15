@@ -42,6 +42,8 @@ def test_unassigned_teacher_cannot_access_student_with_empty_roster(
     )
 
     assert response.status_code == 403
+    assert response.json()["detail"] != "errors.guardian.studentNotAssigned"
+    assert "student" in response.json()["detail"].lower()
 
 
 def test_teacher_student_access(test_db_session: Session, setup_test_db):

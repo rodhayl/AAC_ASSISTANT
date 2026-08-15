@@ -9,6 +9,7 @@ interface SymbolEditorDialogProps {
   onClose: () => void;
   onSave: (updates: Partial<BoardSymbol>) => void;
   symbol: BoardSymbol | null;
+  currentBoardId: number;
 }
 
 const COLORS = [
@@ -23,7 +24,13 @@ const COLORS = [
   { name: 'Gray', value: '#f3f4f6', class: 'bg-gray-100' },
 ];
 
-export function SymbolEditorDialog({ isOpen, onClose, onSave, symbol }: SymbolEditorDialogProps) {
+export function SymbolEditorDialog({
+  isOpen,
+  onClose,
+  onSave,
+  symbol,
+  currentBoardId,
+}: SymbolEditorDialogProps) {
   const { t } = useTranslation('boards');
   const boards = useBoardStore((state) => state.boards);
   const fetchBoards = useBoardStore((state) => state.fetchBoards);
@@ -50,11 +57,20 @@ export function SymbolEditorDialog({ isOpen, onClose, onSave, symbol }: SymbolEd
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-gray-800">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="presentation">
+      <div
+        className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-gray-800"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="symbol-editor-title"
+      >
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">{t('editSymbol')}</h2>
-          <button onClick={onClose} className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-700">
+          <h2 id="symbol-editor-title" className="text-xl font-bold text-gray-900 dark:text-white">{t('editSymbol')}</h2>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+            aria-label={t('close', 'Close')}
+          >
             <X className="h-5 w-5 text-gray-500" />
           </button>
         </div>
@@ -62,10 +78,11 @@ export function SymbolEditorDialog({ isOpen, onClose, onSave, symbol }: SymbolEd
         <div className="space-y-4">
           {/* Custom Text */}
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+            <label htmlFor="symbol-editor-custom-text" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
               {t('customLabel')}
             </label>
             <input
+              id="symbol-editor-custom-text"
               type="text"
               value={customText}
               onChange={(e) => setCustomText(e.target.value)}
@@ -90,6 +107,7 @@ export function SymbolEditorDialog({ isOpen, onClose, onSave, symbol }: SymbolEd
                       ? 'border-indigo-600 ring-2 ring-indigo-600 ring-offset-2 dark:ring-offset-gray-800'
                       : 'border-gray-200 dark:border-gray-600'
                   }`}
+                  aria-label={c.name}
                   title={c.name}
                 />
               ))}
@@ -98,17 +116,18 @@ export function SymbolEditorDialog({ isOpen, onClose, onSave, symbol }: SymbolEd
 
           {/* Linked Board */}
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+            <label htmlFor="symbol-editor-linked-board" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
               {t('linkToBoard')}
             </label>
             <select
+              id="symbol-editor-linked-board"
               value={linkedBoardId || ''}
               onChange={(e) => setLinkedBoardId(e.target.value ? Number(e.target.value) : null)}
               className="w-full rounded-lg border border-gray-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
             >
               <option value="">{t('none')}</option>
               {boards
-                .filter((b) => b.id !== symbol.id) // Prevent self-linking loop (basic check)
+                .filter((b) => b.id !== currentBoardId)
                 .map((board) => (
                   <option key={board.id} value={board.id}>
                     {board.name}

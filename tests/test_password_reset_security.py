@@ -18,6 +18,48 @@ client = TestClient(app)
 
 
 @pytest.mark.usefixtures("setup_test_db")
+def test_logout_revokes_existing_access_and_refresh_tokens(test_db_session):
+    student = User(
+        username="logout_token_target",
+        display_name="Logout Token Target",
+        user_type="student",
+        password_hash=get_password_hash("OldPass123"),
+        is_active=True,
+    )
+    test_db_session.add(student)
+    test_db_session.commit()
+    test_db_session.refresh(student)
+
+    access_token = create_access_token(
+        {
+            "sub": student.username,
+            "user_id": student.id,
+            "user_type": student.user_type,
+            "sec_ver": student.security_version,
+        }
+    )
+    refresh_token = create_refresh_token(
+        {
+            "sub": student.username,
+            "user_id": student.id,
+            "sec_ver": student.security_version,
+        }
+    )
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    response = client.post("/api/auth/logout", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    test_db_session.refresh(student)
+    assert student.security_version == 2
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+    assert client.post(
+        f"/api/auth/refresh?refresh_token={refresh_token}"
+    ).status_code == 401
+
+
+@pytest.mark.usefixtures("setup_test_db")
 def test_admin_password_reset_rejects_weak_password(test_db_session, admin_user):
     student = User(
         username="reset_target",

@@ -15,8 +15,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import User, UserSettings
-from src.aac_app.services.auth_service import password_strength_error
+from src.aac_app.services.auth_service import password_strength_error_key
 from src.api import schemas
+from src.api.deps import get_text
 
 _F = TypeVar("_F", bound=Callable[..., Any])
 _limiter_instance = Limiter(key_func=get_remote_address)
@@ -42,40 +43,84 @@ def conditional_limiter(rate: str) -> Callable[[_F], _F]:
 _EMAIL_PATTERN = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 
-def validate_email_format(email: str | None) -> None:
+def validate_email_format(
+    email: str | None,
+    *,
+    accept_language: str | None = None,
+    user: User | None = None,
+) -> None:
     """Reject a non-empty email that does not match the API's email contract."""
     if email and not _EMAIL_PATTERN.match(email):
-        raise HTTPException(status_code=400, detail="Invalid email format")
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=user, accept_language=accept_language, key="errors.auth.emailInvalid"
+            ),
+        )
 
 
-def validate_password_strength(password: str) -> None:
+def validate_password_strength(
+    password: str,
+    *,
+    accept_language: str | None = None,
+    user: User | None = None,
+) -> None:
     """Require a non-empty password with length and character diversity."""
-    error = password_strength_error(password)
-    if error:
-        raise HTTPException(status_code=400, detail=error)
+    key = password_strength_error_key(password)
+    if key:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(user=user, accept_language=accept_language, key=key),
+        )
 
 
 def ensure_username_email_available(
     db: Session,
     username: str,
     email: str | None,
+    *,
+    accept_language: str | None = None,
+    user: User | None = None,
 ) -> None:
     """Reject registration when the username or a provided email is taken."""
     existing_user = db.query(User).filter(User.username == username).first()
     if existing_user:
-        raise HTTPException(status_code=400, detail="Username already registered")
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=user, accept_language=accept_language, key="errors.auth.usernameTaken"
+            ),
+        )
     if email:
         existing_email = db.query(User).filter(User.email == email).first()
         if existing_email:
-            raise HTTPException(status_code=400, detail="Email already registered")
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(
+                    user=user, accept_language=accept_language, key="errors.auth.emailTaken"
+                ),
+            )
 
 
-def validate_preference_updates(updates: dict) -> None:
+def validate_preference_updates(
+    updates: dict,
+    *,
+    accept_language: str | None = None,
+    user: User | None = None,
+) -> None:
     """Reject negative timing preferences consistently across preference routes."""
     for key in ("dwell_time", "ignore_repeats"):
         value = updates.get(key)
         if value is not None and int(value) < 0:
-            raise HTTPException(status_code=400, detail=f"{key} must be >= 0")
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(
+                    user=user,
+                    accept_language=accept_language,
+                    key="errors.preferences.mustBeNonNegative",
+                    field=key,
+                ),
+            )
 
 
 def update_user_settings(

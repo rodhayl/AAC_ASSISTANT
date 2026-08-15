@@ -48,8 +48,13 @@ These are honest, current limitations; they are not exhaustive:
 ## 3. Tested environments
 
 - Chromium (Playwright) headless, desktop and mobile viewports.
-- Windows 10/11 (packaged application smoke).
 - Light, dark, and high-contrast themes.
+
+Windows 10/11 packaged execution, physical audio, and native assistive
+technology are **not manually validated by the Linux/source regression pass**.
+Use [`windows-assistive-validation.md`](windows-assistive-validation.md) and
+record the exact Windows artifact and evidence before marking those areas
+passed.
 
 ## 4. Reporting accessibility issues
 

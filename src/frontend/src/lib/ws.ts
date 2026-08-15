@@ -4,7 +4,11 @@ export type WSHandlers = {
   onClose?: () => void
 }
 
-export function createWSClient(url: string, handlers: WSHandlers = {}) {
+export function createWSClient(
+  url: string,
+  handlers: WSHandlers = {},
+  protocols?: string | string[],
+) {
   let socket: WebSocket | null = null
   const queue: unknown[] = []
   let retries = 0
@@ -23,7 +27,7 @@ export function createWSClient(url: string, handlers: WSHandlers = {}) {
   function connect() {
     if (closed) return
     try {
-      const nextSocket = new WebSocket(url)
+      const nextSocket = new WebSocket(url, protocols)
       socket = nextSocket
       nextSocket.onopen = () => {
         if (socket !== nextSocket || closed) return

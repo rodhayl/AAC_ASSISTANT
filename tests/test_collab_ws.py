@@ -75,13 +75,13 @@ def test_collab_board_ws_broadcast(test_password, collab_client):
     assert board_response.status_code == 200
     board_id = board_response.json()["id"]
 
-    # 3. Connect to WebSocket with token
-    # Note: TestClient.websocket_connect takes a URL. We append the token query param.
-    url = f"/api/collab/boards/{board_id}?token={token}"
+    # 3. Connect to WebSocket with the bearer token in the negotiated
+    # subprotocol rather than exposing it in the URL.
+    url = f"/api/collab/boards/{board_id}"
 
     with (
-        client.websocket_connect(url) as ws1,
-        client.websocket_connect(url) as ws2,
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as ws1,
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as ws2,
         finish_collab_connections(client, ws1, ws2),
     ):
         # Send a move operation
@@ -126,7 +126,8 @@ def test_rostered_teacher_can_join_private_student_board(
 
     with (
         client.websocket_connect(
-            f"/api/collab/boards/{board.id}?token={token}"
+            f"/api/collab/boards/{board.id}",
+            subprotocols=["aac-auth", token],
         ) as websocket,
         finish_collab_connections(client, websocket),
     ):
@@ -164,7 +165,8 @@ def test_assigned_student_can_join_private_board(
 
     with (
         client.websocket_connect(
-            f"/api/collab/boards/{board.id}?token={token}"
+            f"/api/collab/boards/{board.id}",
+            subprotocols=["aac-auth", token],
         ) as websocket,
         finish_collab_connections(client, websocket),
     ):
@@ -194,7 +196,8 @@ def test_inactive_user_cannot_join_collaboration_board(
     client = collab_client
 
     with client.websocket_connect(
-        f"/api/collab/boards/{board.id}?token={token}"
+        f"/api/collab/boards/{board.id}",
+        subprotocols=["aac-auth", token],
     ) as websocket, pytest.raises(WebSocketDisconnect) as exc_info:
         websocket.receive_json()
 
@@ -232,7 +235,8 @@ def test_unrelated_teacher_cannot_join_private_student_board(
     client = collab_client
 
     with client.websocket_connect(
-        f"/api/collab/boards/{board.id}?token={token}"
+        f"/api/collab/boards/{board.id}",
+        subprotocols=["aac-auth", token],
     ) as websocket, pytest.raises(WebSocketDisconnect) as exc_info:
         websocket.receive_json()
 

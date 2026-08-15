@@ -2,7 +2,7 @@
 import asyncio
 import contextlib
 
-from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
@@ -16,8 +16,13 @@ class ConnectionManager:
     def __init__(self):
         self.rooms: dict[int, set[WebSocket]] = {}
 
-    async def connect(self, board_id: int, websocket: WebSocket):
-        await websocket.accept()
+    async def connect(
+        self,
+        board_id: int,
+        websocket: WebSocket,
+        subprotocol: str | None = None,
+    ):
+        await websocket.accept(subprotocol=subprotocol)
         self.rooms.setdefault(board_id, set()).add(websocket)
         logger.info(f"WS connected to board {board_id}")
 
@@ -45,30 +50,39 @@ manager = ConnectionManager()
 async def board_channel(
     websocket: WebSocket,
     board_id: int,
-    token: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     try:
+        # Browser WebSocket clients cannot set arbitrary Authorization headers.
+        # Negotiate a harmless fixed subprotocol and carry the bearer token in
+        # the second offered protocol so it is not exposed in the URL/logs.
+        offered_protocols = [
+            value.strip()
+            for value in websocket.headers.get("sec-websocket-protocol", "").split(",")
+            if value.strip()
+        ]
+        auth_subprotocol = "aac-auth" if offered_protocols[:1] == ["aac-auth"] else None
+        auth_token = offered_protocols[1] if auth_subprotocol and len(offered_protocols) > 1 else None
         logger.info(
-            f"WS Connection attempt for board {board_id}. Token present: {bool(token)}"
+            f"WS Connection attempt for board {board_id}. Token present: {bool(auth_token)}"
         )
 
         # Authenticate user
-        user = validate_active_token(token, db)
+        user = validate_active_token(auth_token, db)
 
         # Get language preference from headers
         accept_language = websocket.headers.get("accept-language")
 
         if not user:
             logger.warning(
-                f"WebSocket authentication failed for board {board_id}. Token provided: {bool(token)}"
+                f"WebSocket authentication failed for board {board_id}. Token provided: {bool(auth_token)}"
             )
             # Must accept to send a custom close code/reason in some cases,
             # but standard practice for rejection is just close.
             # However, to be polite and give a reason, we can accept then close.
             # But for security, maybe just close.
             # Let's try accepting first to ensure the client gets the message.
-            await websocket.accept()
+            await websocket.accept(subprotocol=auth_subprotocol)
             reason = get_text(
                 accept_language=accept_language, key="errors.collab.policyViolation"
             )
@@ -87,7 +101,7 @@ async def board_channel(
         )
         if not board:
             logger.warning(f"Board {board_id} not found")
-            await websocket.accept()
+            await websocket.accept(subprotocol=auth_subprotocol)
             reason = get_text(
                 user=user,
                 accept_language=accept_language,
@@ -131,7 +145,7 @@ async def board_channel(
                 # Allow read-only for public boards?
                 pass
             else:
-                await websocket.accept()
+                await websocket.accept(subprotocol=auth_subprotocol)
                 reason = get_text(
                     user=user,
                     accept_language=accept_language,
@@ -145,7 +159,7 @@ async def board_channel(
         # Mark the room registration before awaiting accept so cancellation in
         # this tiny handoff window still triggers the outer cleanup path.
         connected = True
-        await manager.connect(board_id, websocket)
+        await manager.connect(board_id, websocket, subprotocol=auth_subprotocol)
         shutdown_event = getattr(websocket.app.state, "shutdown_event", None)
         if not getattr(websocket.app.state, "lifespan_active", False):
             shutdown_event = None
