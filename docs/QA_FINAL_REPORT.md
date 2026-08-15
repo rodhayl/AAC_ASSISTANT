@@ -476,9 +476,7 @@ pantalla real ni hardware, por lo que no se otorgan 10/10.
 - Audio realmente escuchado por una persona; micrófono físico y captura WebM
   real.
 - Pantalla táctil, switches, scanning, eye tracking, head mouse.
-- Voces nativas de Windows y TTS de sistema operativo.
-- Firefox y WebKit (ejecutables Playwright no instalados; el Firefox del sistema
-  no es compatible con el runtime de Playwright).
+- Voces nativas de Windows y TTS de sistema operativo.- Firefox y WebKit (Playwright 1.62.1 no distribuye binarios para este SO: `ubuntu26.04-x64`; `playwright install firefox|webkit` falla con `Playwright does not support firefox/webkit on ubuntu26.04-x64`. Limitación de plataforma verificada, no un defecto del producto).
 - Llamadas reales a proveedores externos (OpenRouter, LM Studio, Ollama con
   modelos disponibles) y ARASAAC por red.
 - Offline desde instalación completamente vacía sin assets locales.
