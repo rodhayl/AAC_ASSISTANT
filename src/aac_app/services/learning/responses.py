@@ -343,8 +343,13 @@ class ResponseProcessingMixin:
                         session.correct_answers / session.questions_answered
                     )
 
+                default_feedback_key = (
+                    "correctAnswer"
+                    if analysis_data.get("is_correct") is True
+                    else "feedback.goodTry"
+                )
                 feedback_message = analysis_data.get("encouraging_feedback") or (
-                    translation_service.get(user_lang, "pages/learning", "feedback.goodTry")
+                    translation_service.get(user_lang, "pages/learning", default_feedback_key)
                 )
 
                 # Store response
@@ -477,11 +482,12 @@ class ResponseProcessingMixin:
             student_response.lower().strip()
             == last_question["choices"][last_question["correct"]].lower().strip()
         )
+        feedback_key = "correctAnswer" if is_correct else "feedback.goodTry"
         return {
             "is_correct": is_correct,
             "confidence": 1.0 if is_correct else miss_confidence,
             "encouraging_feedback": translation_service.get(
-                user_lang, "pages/learning", "feedback.goodTry"
+                user_lang, "pages/learning", feedback_key
             ),
         }
 

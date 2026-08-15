@@ -3,7 +3,6 @@ import json
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import patch
-from urllib.parse import urlencode
 
 import pytest
 
@@ -61,8 +60,11 @@ class _ASGIStream:
             "scheme": "http",
             "path": "/api/notifications/stream",
             "raw_path": b"/api/notifications/stream",
-            "query_string": urlencode({"token": token}).encode(),
-            "headers": [(b"host", b"testserver")],
+            "query_string": b"",
+            "headers": [
+                (b"host", b"testserver"),
+                (b"authorization", f"Bearer {token}".encode()),
+            ],
             "client": ("testclient", 50000),
             "server": ("testserver", 80),
             "root_path": "",

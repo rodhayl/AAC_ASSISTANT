@@ -67,12 +67,14 @@ const AUTH_FLOW_ENDPOINTS = new Set([
   '/auth/token',
   '/auth/refresh',
   '/auth/change-password',
+  '/auth/logout',
 ]);
 
 const OFFLINE_EXCLUDED_ENDPOINTS = new Set([
   ...AUTH_FLOW_ENDPOINTS,
   '/auth/register',
   '/auth/login',
+  '/auth/logout',
 ]);
 
 export function isAuthFlowEndpoint(url?: string): boolean {

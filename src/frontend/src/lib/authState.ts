@@ -1,7 +1,7 @@
 export type AuthStateSnapshot = {
   token?: string | null;
   user?: { id?: number; user_type?: string } | null;
-  logout?: () => void;
+  logout?: () => void | Promise<void>;
 };
 
 type AuthStateReader = () => AuthStateSnapshot;

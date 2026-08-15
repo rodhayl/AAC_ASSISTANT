@@ -21,7 +21,7 @@ from src.aac_app.utils.jwt_utils import (
     decode_refresh_token,
 )
 from src.api import schemas
-from src.api.deps import get_db
+from src.api.deps import get_current_active_user, get_db
 from src.api.routers.auth_helpers import (
     conditional_limiter,
     ensure_username_email_available,
@@ -302,6 +302,18 @@ def login_for_access_token(
         "token_type": "bearer",
         "refresh_token": refresh_token
     }
+
+
+@router.post("/logout")
+def logout(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Revoke every token issued for the current account."""
+    mark_credentials_changed(current_user)
+    db.add(current_user)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/refresh")

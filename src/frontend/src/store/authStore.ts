@@ -23,7 +23,7 @@ interface AuthState {
   updateProfile: (data: Partial<User>) => Promise<void>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   updatePreferences: (preferences: any) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
   refreshAccessToken: () => Promise<boolean>;
 }
@@ -221,9 +221,19 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: () => {
+        const token = get().token;
+        const revokeRequest = token
+          ? api.post('/auth/logout', null, {
+              headers: { Authorization: `Bearer ${token}` },
+            }).catch(() => undefined)
+          : Promise.resolve();
+
+        // Clear local state immediately so the UI cannot keep using the
+        // session while the server revocation request completes. The caller
+        // may await the returned promise before navigating away.
         clearSession();
-        // Clear any manual token overrides if they exist
         localStorage.removeItem('token');
+        return revokeRequest.then(() => undefined);
       },
 
       checkAuth: async () => {

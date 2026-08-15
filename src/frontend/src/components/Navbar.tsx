@@ -28,32 +28,59 @@ export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
   }, [user?.id, loadFromBackend]);
 
   useEffect(() => {
-    // Only connect when authenticated; pass token for validation
-    if (!user?.id || !useAuthStore.getState().token) return;
+    // Authenticate the stream with a bearer header. EventSource cannot set
+    // headers, so use fetch and consume the SSE body instead of putting the
+    // JWT in a query string where access logs and browser history can retain it.
     const token = useAuthStore.getState().token;
-    let es: EventSource | null = null;
-    try {
-      es = new EventSource(`${config.API_BASE_URL}/notifications/stream?token=${encodeURIComponent(token || '')}`);
-      es.onmessage = (ev) => {
-        try {
-          const data = JSON.parse(ev.data || '{}');
-          if (data?.title && data?.message) {
-            useNotificationsStore.getState().add({ title: data.title, message: data.message, type: data.type || 'info' });
-          }
-        } catch {
-          /* ignore parse errors */
-        }
-      };
-    } catch {
-      /* ignore SSE connection errors */
-    }
-    return () => {
+    if (!user?.id || !token) return;
+
+    const controller = new AbortController();
+    const consumeStream = async () => {
       try {
-        es?.close();
-      } catch {
-        /* ignore */
+        const response = await fetch(`${config.API_BASE_URL}/notifications/stream`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        });
+        if (!response.ok || !response.body) return;
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (!controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const events = buffer.split(/\r?\n\r?\n/);
+          buffer = events.pop() || '';
+          for (const event of events) {
+            const dataLine = event
+              .split(/\r?\n/)
+              .find((line) => line.startsWith('data:'));
+            if (!dataLine) continue;
+            try {
+              const data = JSON.parse(dataLine.slice(5).trim() || '{}');
+              if (data?.title && data?.message) {
+                useNotificationsStore.getState().add({
+                  title: data.title,
+                  message: data.message,
+                  type: data.type || 'info',
+                });
+              }
+            } catch {
+              /* Ignore malformed individual events. */
+            }
+          }
+        }
+      } catch (error) {
+        if ((error as { name?: string })?.name !== 'AbortError') {
+          // Notification delivery is optional and must not disrupt the AAC UI.
+          console.debug('Notification stream unavailable');
+        }
       }
     };
+
+    void consumeStream();
+    return () => controller.abort();
   }, [user?.id])
 
   return (

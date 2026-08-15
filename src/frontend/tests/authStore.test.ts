@@ -213,9 +213,14 @@ describe('auth session refresh robustness', () => {
     });
   });
 
-  it('fully clears every persisted session field on logout', () => {
-    useAuthStore.getState().logout();
+  it('revokes the server session and clears every persisted session field on logout', async () => {
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ data: { ok: true } } as never);
 
+    await useAuthStore.getState().logout();
+
+    expect(post).toHaveBeenCalledWith('/auth/logout', null, {
+      headers: { Authorization: expect.stringContaining('Bearer ') },
+    });
     expect(useAuthStore.getState()).toMatchObject({
       user: null,
       token: null,

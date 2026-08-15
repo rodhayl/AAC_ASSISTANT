@@ -19,14 +19,16 @@ class MockWebSocket {
   static readonly OPEN = 1;
   static readonly instances: MockWebSocket[] = [];
   readonly url: string;
+  readonly protocols: string | string[] | undefined;
   readonly send = vi.fn();
   readyState = 0;
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
   onclose: (() => void) | null = null;
 
-  constructor(url: string) {
+  constructor(url: string, protocols?: string | string[]) {
     this.url = url;
+    this.protocols = protocols;
     MockWebSocket.instances.push(this);
   }
 
@@ -125,7 +127,9 @@ describe('BoardEditor structure', () => {
     );
     const socket = MockWebSocket.instances[0];
 
-    expect(socket.url).toContain('/collab/boards/42?token=token%20with%20spaces');
+    expect(socket.url).toContain('/collab/boards/42');
+    expect(socket.url).not.toContain('token=');
+    expect(socket.protocols).toEqual(['aac-auth', 'token with spaces']);
     socket.open();
 
     act(() => {
