@@ -61,14 +61,26 @@ def log_symbol_usage(
 ):
     """Log usage of symbols."""
     try:
-        count = _log_usage_request(request, current_user, db)
+        count = _log_usage_request(
+            request,
+            current_user,
+            db,
+            failure_detail=get_text(
+                user=current_user, key="errors.analytics.logSymbolFailed"
+            ),
+        )
         logger.info(f"Logged usage for {count} symbols for user {current_user.id}")
         return {"success": True, "count": count}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to log usage: {e}")
-        raise HTTPException(status_code=500, detail="Failed to log usage")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=get_text(
+                user=current_user, key="errors.analytics.logFailed", error=str(e)
+            ),
+        )
 
 
 @router.get("/frequent-sequences", response_model=list[dict])
@@ -295,35 +307,6 @@ def get_next_symbol_suggestions_post(
             ),
         )
 
-
-
-@router.post("/log", status_code=status.HTTP_201_CREATED)
-def log_symbol_usage_legacy(
-    request: SymbolUsageRequest,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db),
-):
-    """Log symbol usage for older clients that still use ``/analytics/log``."""
-    try:
-        _log_usage_request(
-            request,
-            current_user,
-            db,
-            failure_detail=get_text(
-                user=current_user, key="errors.analytics.logSymbolFailed"
-            ),
-        )
-        return {"status": "success"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to log symbol usage: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=get_text(
-                user=current_user, key="errors.analytics.logFailed", error=str(e)
-            ),
-        )
 
 
 @router.get("/category-preferences", response_model=dict)

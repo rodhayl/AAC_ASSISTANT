@@ -16,6 +16,10 @@ npm run build
 PLAYWRIGHT_BASE_URL=http://127.0.0.1:8086 npm run test:e2e -- pilot-gate.spec.ts --project=chromium
 ```
 
+La suite E2E completa (127 tests) se ejecuta en CI sobre Chromium, Firefox y
+WebKit (`--project=chromium --project=firefox --project=webkit`); el comando de
+arriba es solo un ejemplo enfocado.
+
 El entorno debe tener las cuentas de demostración que utiliza
 `e2e/auth.setup.ts` o proporcionar `E2E_ADMIN_*`, `E2E_TEACHER_*` y
 `E2E_STUDENT_*`. El guard de producción debe permanecer activo; no usar

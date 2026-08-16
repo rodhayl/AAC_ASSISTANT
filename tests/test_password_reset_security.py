@@ -60,6 +60,51 @@ def test_logout_revokes_existing_access_and_refresh_tokens(test_db_session):
 
 
 @pytest.mark.usefixtures("setup_test_db")
+def test_logout_revokes_every_session_issued_before_logout(test_db_session):
+    """Logging out revokes every session, not only the token used to log out."""
+    student = User(
+        username="logout_all_sessions_target",
+        display_name="Logout All Sessions Target",
+        user_type="student",
+        password_hash=get_password_hash("OldPass123"),
+        is_active=True,
+    )
+    test_db_session.add(student)
+    test_db_session.commit()
+    test_db_session.refresh(student)
+
+    def make_access_token() -> str:
+        return create_access_token(
+            {
+                "sub": student.username,
+                "user_id": student.id,
+                "user_type": student.user_type,
+                "sec_ver": student.security_version,
+            }
+        )
+
+    first_token = make_access_token()
+    second_token = make_access_token()
+
+    # Both independently issued sessions are valid before logout.
+    for token in (first_token, second_token):
+        assert client.get(
+            "/api/auth/me", headers={"Authorization": f"Bearer {token}"}
+        ).status_code == 200
+
+    # Logging out with one session revokes every issued session.
+    response = client.post(
+        "/api/auth/logout", headers={"Authorization": f"Bearer {first_token}"}
+    )
+    assert response.status_code == 200
+
+    for token in (first_token, second_token):
+        assert client.get(
+            "/api/auth/me", headers={"Authorization": f"Bearer {token}"}
+        ).status_code == 401
+
+
+@pytest.mark.usefixtures("setup_test_db")
 def test_admin_password_reset_rejects_weak_password(test_db_session, admin_user):
     student = User(
         username="reset_target",

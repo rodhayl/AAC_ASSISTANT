@@ -3,6 +3,7 @@ import { Award, CheckCircle2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { SessionSummary } from '../../store/learningStore';
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
+import { Portal } from '../ui/Portal';
 
 interface SessionSummaryModalProps {
   summary: SessionSummary;
@@ -30,6 +31,7 @@ export function SessionSummaryModal({ summary, onClose }: SessionSummaryModalPro
   const correct = summary.correct_answers ?? summary.statistics?.correct_answers ?? 0;
 
   return (
+    <Portal>
     <div
       className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
       onClick={close}
@@ -77,6 +79,15 @@ export function SessionSummaryModal({ summary, onClose }: SessionSummaryModalPro
           </p>
         )}
 
+        {summary.source === 'fallback' && (
+          <p
+            role="status"
+            className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-lg px-3 py-2 mb-4"
+          >
+            {t('fallbackSummaryNote', 'This summary was generated locally because the AI assistant is unavailable.')}
+          </p>
+        )}
+
         <div className="grid grid-cols-3 gap-3 mb-5">
           <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 p-3 text-center">
             <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">
@@ -116,5 +127,6 @@ export function SessionSummaryModal({ summary, onClose }: SessionSummaryModalPro
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

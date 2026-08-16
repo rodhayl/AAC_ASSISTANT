@@ -160,9 +160,7 @@ class LearningCompanionService(
         the Settings preview can show exactly what the LLM receives for a
         student's question without drifting from the real code path.
         """
-        lang_instruction = (
-            "Respond in Spanish." if lang.startswith("es") else "Respond in English."
-        )
+        lang_instruction = self._lang_instruction(lang)
         return (
             "Previous conversation:\n"
             f"    {context}\n"

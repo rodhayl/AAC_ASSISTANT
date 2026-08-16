@@ -43,6 +43,12 @@ dev = [
     "pip-audit",
 ]
 
+[tool.coverage.report]
+# Fail coverage runs when total line coverage drops below this floor. Current
+# line coverage is ~82% (combined line+branch ~78%); 75 is a safe regression
+# gate with headroom for locally-optional network/voice paths.
+fail_under = 75
+
 [tool.ruff]
 line-length = 100
 target-version = "py313"

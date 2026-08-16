@@ -422,16 +422,23 @@ def test_symbol_query_orders_semantic_results_and_keeps_keyword_fallback(monkeyp
                 ][:k]
 
         monkeypatch.setattr(deps, "get_vector_store", lambda: SemanticStore())
-        results = _apply_symbol_search(session.query(Symbol), "farm animal", session).all()
-        assert [symbol.id for symbol in results] == [2, 1]
+        query, status = _apply_symbol_search(session.query(Symbol), "farm animal", session)
+        assert status == "enabled"
+        assert [symbol.id for symbol in query.all()] == [2, 1]
 
         class OfflineStore:
             def search(self, _query, k=20):
                 raise OSError("network unavailable")
 
         monkeypatch.setattr(deps, "get_vector_store", lambda: OfflineStore())
-        results = _apply_symbol_search(session.query(Symbol), "farm animal", session).all()
-        assert [symbol.id for symbol in results] == [1, 2]
+        query, status = _apply_symbol_search(session.query(Symbol), "farm animal", session)
+        assert status == "degraded"
+        assert [symbol.id for symbol in query.all()] == [1, 2]
+
+        # Short queries skip semantic embedding and stay keyword-only.
+        query, status = _apply_symbol_search(session.query(Symbol), "cow", session)
+        assert status == "keyword"
+        assert [symbol.id for symbol in query.all()] == [1]
     finally:
         session.close()
         engine.dispose()

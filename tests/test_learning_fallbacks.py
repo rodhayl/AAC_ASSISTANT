@@ -64,6 +64,7 @@ def test_fallback_question_and_feedback_are_localized(
     assert " " in question_data["question_text"]
     assert len(question_data["choices"]) >= 3
     assert question_data["correct_answer_index"] == 0
+    assert question_data["source"] == "fallback"
     assert not _is_raw_translation_key(question_data["question_text"])
     assert all(" " in choice for choice in question_data["choices"])
 
@@ -78,6 +79,23 @@ def test_fallback_question_and_feedback_are_localized(
     assert answer_data["success"] is True
     assert " " in answer_data["feedback_message"]
     assert not _is_raw_translation_key(answer_data["feedback_message"])
+    assert answer_data["source"] == "fallback"
+
+    # The fallback source is persisted in the conversation history so the
+    # reconstructed chat shows the badge after a reload too.
+    progress = client.get(f"/api/learning/{session_id}/progress", headers=headers).json()
+    # The welcome greeting is a static translated message without a source;
+    # the real generated question carries one.
+    question_entry = next(
+        entry
+        for entry in progress["conversation_history"]
+        if entry["type"] == "question" and entry.get("source")
+    )
+    response_entry = next(
+        entry for entry in progress["conversation_history"] if entry["type"] == "response"
+    )
+    assert question_entry["source"] == "fallback"
+    assert response_entry["source"] == "fallback"
 
 
 def test_fallback_question_grading_is_deterministic(
@@ -99,6 +117,7 @@ def test_fallback_question_grading_is_deterministic(
     assert correct.status_code == 200, correct.text
     assert correct.json()["is_correct"] is True
     assert correct.json()["feedback_message"] == "Correct!"
+    assert correct.json()["source"] == "fallback"
     progress_after_correct = client.get(
         f"/api/learning/{session_id}/progress", headers=headers
     ).json()
@@ -120,6 +139,7 @@ def test_fallback_question_grading_is_deterministic(
     assert wrong.status_code == 200, wrong.text
     assert wrong.json()["is_correct"] is False
     assert wrong.json()["feedback_message"] == "Good try! Keep practicing and you will improve."
+    assert wrong.json()["source"] == "fallback"
     progress_after_wrong = client.get(
         f"/api/learning/{session_id}/progress", headers=headers
     ).json()
@@ -163,6 +183,7 @@ def test_missing_encouraging_feedback_uses_localized_fallback(
 
     assert answer.status_code == 200, answer.text
     assert answer.json()["feedback_message"] == expected_feedback
+    assert answer.json()["source"] == "fallback"
 
 
 def test_missing_correct_feedback_uses_localized_correct_message(
@@ -192,6 +213,42 @@ def test_missing_correct_feedback_uses_localized_correct_message(
     assert answer.status_code == 200, answer.text
     assert answer.json()["is_correct"] is True
     assert answer.json()["feedback_message"] == "¡Correcto!"
+    assert answer.json()["source"] == "fallback"
+
+
+def test_llm_answer_feedback_is_marked_as_llm(
+    fallback_providers, mock_llm_provider, regular_user, user_token
+):
+    """A working LLM analysis with feedback is labeled as LLM, not fallback."""
+    headers, session_id = _start_session(regular_user.id, user_token)
+
+    question = client.post(f"/api/learning/{session_id}/ask", headers=headers)
+    assert question.status_code == 200, question.text
+    correct_answer = question.json()["choices"][0]
+
+    mock_llm_provider.generate.side_effect = None
+    mock_llm_provider.generate.return_value = (
+        '{"is_correct": true, "confidence": 1.0,'
+        ' "encouraging_feedback": "Great job, keep it up!"}'
+    )
+    answer = client.post(
+        f"/api/learning/{session_id}/answer",
+        json={"answer": correct_answer, "is_voice": False},
+        headers=headers,
+    )
+
+    assert answer.status_code == 200, answer.text
+    answer_data = answer.json()
+    assert answer_data["is_correct"] is True
+    assert answer_data["feedback_message"] == "Great job, keep it up!"
+    assert answer_data["source"] == "llm"
+
+    # The LLM source is persisted for the chat-history badge on reload.
+    progress = client.get(f"/api/learning/{session_id}/progress", headers=headers).json()
+    response_entry = next(
+        entry for entry in progress["conversation_history"] if entry["type"] == "response"
+    )
+    assert response_entry["source"] == "llm"
 
 
 def test_fenced_json_question_uses_llm_output_not_fallback(
@@ -213,6 +270,7 @@ def test_fenced_json_question_uses_llm_output_not_fallback(
     assert data["question_text"] == "What does a cow say?"
     assert data["choices"] == ["Moo", "Meow", "Woof"]
     assert data["correct_answer_index"] == 0
+    assert data["source"] == "llm"
 
 
 def test_question_retries_with_strict_json_when_first_response_invalid(
@@ -293,6 +351,7 @@ def test_end_without_llm_returns_summary_and_awards_first_steps(
         headers=headers,
     )
     assert answer.status_code == 200, answer.text
+    assert answer.json()["source"] == "fallback"
 
     ended = client.post(f"/api/learning/{session_id}/end", headers=headers)
 
@@ -300,6 +359,7 @@ def test_end_without_llm_returns_summary_and_awards_first_steps(
     ended_data = ended.json()
     assert ended_data["success"] is True
     assert ended_data["summary"]
+    assert ended_data["source"] == "fallback"
     assert ended_data["statistics"]["questions_answered"] == 0
     assert ended_data["statistics"]["correct_answers"] == 0
 

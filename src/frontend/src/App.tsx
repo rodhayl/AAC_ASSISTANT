@@ -6,6 +6,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Login } from './pages/Login';
 import { useAuthStore } from './store/authStore';
 import { apiOffline } from './lib/api';
+import { initLocalTTS } from './lib/tts';
 import { ToastContainer } from './components/ui/ToastContainer';
 import { SettingsManager } from './components/SettingsManager';
 import { lazyWithRetry } from './lib/lazyWithRetry';
@@ -36,7 +37,7 @@ type UserRole = User['user_type'];
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const sessionExpiresAt = useAuthStore((state) => state.sessionExpiresAt);
-  const logout = useAuthStore((state) => state.logout);
+  const clearSession = useAuthStore((state) => state.clearSession);
   const [isExpired, setIsExpired] = useState(false);
 
   useEffect(() => {
@@ -45,14 +46,16 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const checkExpiration = () => {
       if (Date.now() > sessionExpiresAt) {
         setIsExpired(true);
-        logout();
+        // The token is already expired client-side; clear local state without
+        // a revocation round-trip (the server rejects it on its own).
+        clearSession();
       }
     };
 
     checkExpiration();
     const interval = setInterval(checkExpiration, 60000);
     return () => clearInterval(interval);
-  }, [sessionExpiresAt, logout]);
+  }, [sessionExpiresAt, clearSession]);
 
   if (!isAuthenticated || isExpired) return <Navigate to="/login" />;
   return <>{children}</>;
@@ -140,15 +143,20 @@ function App() {
 
     // Keep the persisted session available while the app is offline. The
     // auth store deliberately preserves it on offline refresh failures.
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      initLocalTTS();
+      return;
+    }
 
     void checkAuth().then(
       () => {
         apiOffline.resumeQueue();
+        initLocalTTS();
         setAuthReady(true);
       },
       () => {
         apiOffline.resumeQueue();
+        initLocalTTS();
         setAuthReady(true);
       },
     );

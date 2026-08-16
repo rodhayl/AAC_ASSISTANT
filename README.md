@@ -134,6 +134,15 @@ and open `http://127.0.0.1:8086/`.
 
 ### Source checkout (Linux / macOS)
 
+Recommended launcher (builds the frontend if needed, starts the server, and
+opens the default browser automatically):
+
+```bash
+./start.sh
+```
+
+Or run the pieces manually:
+
 ```bash
 uv sync --group dev
 npm --prefix src/frontend ci
@@ -141,7 +150,10 @@ npm --prefix src/frontend run build
 uv run python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8086
 ```
 
-and open `http://127.0.0.1:8086/`.
+and open `http://127.0.0.1:8086/`. A desktop entry (`aac-assistant.desktop`) is
+included for GNOME/KDE application menus; install it with
+`cp aac-assistant.desktop ~/.local/share/applications/`. Set
+`AAC_ASSISTANT_NO_BROWSER=1` to suppress the automatic browser launch.
 
 ### First-run administrator setup
 
@@ -189,8 +201,8 @@ npm --prefix src/frontend run test -- --run
 npm --prefix src/frontend run build
 ```
 
-The Playwright suite runs against a real production server; see
-`src/frontend/e2e/`.
+The Playwright suite runs against a real production server in Chromium,
+Firefox, and WebKit; see `src/frontend/e2e/`.
 
 ## Configuration
 

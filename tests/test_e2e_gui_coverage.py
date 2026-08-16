@@ -114,19 +114,21 @@ class TestGUICoverage:
             # Verify we got results
             assert len(data) > 0
             assert any(s["label"] == "feline" for s in data)
+            assert response.headers.get("x-semantic-search") == "enabled"
 
             # Verify fallback: Search for something not in vector store
             mock_vs.search.return_value = []
             response = client.get("/api/boards/symbols?search=unknown_term", headers=headers)
             assert response.status_code == 200
             assert len(response.json()) == 0
+            assert response.headers.get("x-semantic-search") == "keyword"
 
     def test_voice_answer_upload(self, auth_headers, test_db_session):
         """Test voice answer upload flow used in Learning Mode"""
         headers, user_id = auth_headers
 
         # 1. Start a session
-        with patch("src.aac_app.services.learning_companion_service.LearningCompanionService.start_learning_session") as mock_start:
+        with patch("src.aac_app.services.learning.LearningCompanionService.start_learning_session") as mock_start:
             mock_start.return_value = {"success": True, "session_id": 999}
 
             start_res = client.post(
@@ -146,7 +148,7 @@ class TestGUICoverage:
         wav_file = create_dummy_wav()
         files = {"file": ("answer.wav", wav_file, "audio/wav")}
 
-        with patch("src.aac_app.services.learning_companion_service.LearningCompanionService.process_response") as mock_process:
+        with patch("src.aac_app.services.learning.LearningCompanionService.process_response") as mock_process:
             mock_process.return_value = {
                 "success": True,
                 "feedback": "Good job",

@@ -1,6 +1,6 @@
 # Frontend npm audit
 
-Audit date: 2026-08-12 (re-verified 2026-08-13: still 0 vulnerabilities)
+Audit date: 2026-08-16 (re-verified: still 0 vulnerabilities)
 
 > This is the current production-dependency audit record. Re-run the commands below after any dependency change; build/test counts belong to the current validation run, not to this audit record unless explicitly dated.
 
@@ -16,8 +16,8 @@ npm audit --omit=dev
 The current runtime dependencies include:
 
 - `axios` `^1.19.0`
-- `react` `19.2.7`
-- `react-dom` `19.2.7`
+- `react` `19.2.8`
+- `react-dom` `19.2.8`
 - `react-router` `8.3.0`
 
 The application is a client-only Vite SPA. It does not use React Server

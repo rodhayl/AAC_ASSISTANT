@@ -38,7 +38,7 @@ function DraggableSymbolInner({ boardSymbol, isOverlay, onRemove, onEdit }: Drag
 
     try {
       const api = (await import('../../lib/api')).default;
-      await api.post('/analytics/log', {
+      await api.post('/analytics/usage', {
         symbols: [{
           id: boardSymbol.symbol.id,
           label: boardSymbol.symbol.label,

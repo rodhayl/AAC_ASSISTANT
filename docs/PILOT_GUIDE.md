@@ -91,5 +91,5 @@ Evaluators may use the following categories to record qualitative and quantitati
 When completing or concluding a pilot evaluation:
 1. **Export Configurations:** If custom boards or symbols were created, export them via Settings > Data Management.
 2. **Local Data Removal:**
-   - To completely reset local data, delete the application data directory (`%LOCALAPPDATA%\AAC_Assistant` on Windows) or uninstall via Windows Add/Remove Programs with the clean-data option.
+   - To completely reset local data, delete the application data directory (`%APPDATA%\AACAssistant` on Windows for installed copies) or uninstall via Windows Add/Remove Programs with the clean-data option.
    - For source installations, delete the local `data/` and `uploads/` directories.

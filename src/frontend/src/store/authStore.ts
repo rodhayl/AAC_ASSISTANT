@@ -24,6 +24,7 @@ interface AuthState {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   updatePreferences: (preferences: any) => Promise<void>;
   logout: () => Promise<void>;
+  clearSession: () => void;
   checkAuth: () => Promise<void>;
   refreshAccessToken: () => Promise<boolean>;
 }
@@ -96,6 +97,8 @@ export const useAuthStore = create<AuthState>()(
         isLoading: false,
         error: null,
         sessionExpiresAt: null,
+
+      clearSession,
 
       login: async (username: string, password: string) => {
         set({ isLoading: true, error: null });
@@ -220,20 +223,26 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      logout: () => {
+      logout: async () => {
         const token = get().token;
-        const revokeRequest = token
-          ? api.post('/auth/logout', null, {
+        if (token) {
+          try {
+            // Await server-side revocation before clearing local state so the
+            // UI only reports "signed out" once the issued tokens are actually
+            // rejected. The protected-route guard navigates to /login as soon
+            // as the session clears, so revoking first prevents a captured
+            // token from remaining valid after the user sees the login screen.
+            await api.post('/auth/logout', null, {
               headers: { Authorization: `Bearer ${token}` },
-            }).catch(() => undefined)
-          : Promise.resolve();
+            });
+          } catch {
+            // Best-effort revocation: if the server is unreachable the local
+            // session must still be cleared so the user is never trapped.
+          }
+        }
 
-        // Clear local state immediately so the UI cannot keep using the
-        // session while the server revocation request completes. The caller
-        // may await the returned promise before navigating away.
         clearSession();
         localStorage.removeItem('token');
-        return revokeRequest.then(() => undefined);
       },
 
       checkAuth: async () => {

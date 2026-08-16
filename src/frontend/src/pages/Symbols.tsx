@@ -25,6 +25,10 @@ export function Symbols() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  // True while the server reports the semantic vector index degraded, so the
+  // library search visibly falls back to keyword-only matching (same signal
+  // the board search modal surfaces via the X-Semantic-Search header).
+  const [semanticDegraded, setSemanticDegraded] = useState(false);
   const [usage, setUsage] = useState<UsageFilter>('all');
   const [sort, setSort] = useState('default');
   const [category, setCategory] = useState('all');
@@ -79,6 +83,7 @@ export function Symbols() {
       const res = await api.get('/boards/symbols', { params });
       if (seq !== fetchSeqRef.current) return;
       setSymbols(res.data);
+      setSemanticDegraded(res.headers?.['x-semantic-search'] === 'degraded');
     } catch (e: unknown) {
       if (seq !== fetchSeqRef.current) return;
       setError(extractError(e, 'Failed to load symbols'));
@@ -560,6 +565,16 @@ export function Symbols() {
             <Trash2 className="w-4 h-4 mr-1" /> {t('deleteSelected')}
           </Button>
         </div>
+
+        {semanticDegraded && (
+          <p
+            role="status"
+            data-testid="semantic-search-status"
+            className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-lg px-3 py-2"
+          >
+            {t('semanticSearchUnavailable', 'Smart search is temporarily unavailable; showing keyword matches only.')}
+          </p>
+        )}
 
         {isLoading ? (
           <div className="flex items-center justify-center h-64">

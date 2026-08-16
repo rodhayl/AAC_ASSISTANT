@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { act } from 'react';
 import '@testing-library/jest-dom';
 import { CommunicationToolbar } from '../src/components/board/CommunicationToolbar';
 import { SentenceStrip } from '../src/components/board/SentenceStrip';
@@ -283,9 +282,19 @@ describe('SentenceStrip', () => {
 });
 
 describe('PartnerOverlay', () => {
-  it('renders recognition errors instead of leaving listening silently stopped', () => {
+  it('renders recognition errors instead of leaving listening silently stopped', async () => {
     const recognitions: Array<{ onerror: ((event: unknown) => void) | null }> = [];
     const originalSpeechRecognition = Object.getOwnPropertyDescriptor(window, 'SpeechRecognition');
+
+    // The local STT probe reports unavailable, so the browser SpeechRecognition
+    // fallback is exercised.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ stt: { available: false } }),
+      })),
+    );
 
     class FakeSpeechRecognition {
       onerror: ((event: unknown) => void) | null = null;
@@ -305,7 +314,12 @@ describe('PartnerOverlay', () => {
 
     render(<PartnerOverlay isOpen={true} onClose={vi.fn()} />);
 
+    // Flush the local-STT probe and the resulting browser fallback start.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
     expect(recognitions).toHaveLength(1);
+
     act(() => {
       recognitions[0].onerror?.({ error: 'not-allowed' });
     });
@@ -313,6 +327,7 @@ describe('PartnerOverlay', () => {
     expect(screen.getByText(/Speech recognition is not available\./)).toBeInTheDocument();
     expect(screen.getByText('Paused')).toBeInTheDocument();
 
+    vi.unstubAllGlobals();
     if (originalSpeechRecognition) {
       Object.defineProperty(window, 'SpeechRecognition', originalSpeechRecognition);
     } else {

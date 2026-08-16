@@ -35,6 +35,20 @@ def _canonical_export_bytes(payload: dict[str, Any]) -> bytes:
     ).encode("utf-8")
 
 
+def _canonical_score(value: Any) -> Any:
+    """Normalize a whole-number float to int before signing.
+
+    The signed export checksum is recomputed after the payload round-trips
+    through the browser's JSON.parse/JSON.stringify, where JS serializes
+    ``1.0`` as ``1`` while Python writes ``1.0``. Normalizing whole-number
+    floats keeps both serializations identical so a re-imported export does
+    not fail its checksum.
+    """
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
+
+
 def _export_integrity_key() -> bytes:
     """Return the server-only key used to authenticate export payloads."""
     secret = str(config.get("JWT_SECRET_KEY", "")).strip()
@@ -666,7 +680,7 @@ def export_data(
                 "topic": session.topic_name,  # Alias for compatibility
                 "purpose": session.purpose,
                 "status": session.status,
-                "comprehension_score": session.comprehension_score,
+                "comprehension_score": _canonical_score(session.comprehension_score),
                 "questions_asked": session.questions_asked,
                 "questions_answered": session.questions_answered,
                 "correct_answers": session.correct_answers,

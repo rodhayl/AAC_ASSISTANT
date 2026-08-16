@@ -107,6 +107,9 @@
     "interesting": "That's interesting! Tell me more."
   },
   "fallbackSummary": "Great work completing your {{topic}} session! You answered {{questions}} questions and got {{correct}} correct.",
+  "fallbackQuestionNote": "Showing a practice question because the AI assistant is unavailable.",
+  "fallbackSummaryNote": "This summary was generated locally because the AI assistant is unavailable.",
+  "fallbackChatNote": "This message was generated locally because the AI assistant is unavailable.",
   "endSession": "End Session",
   "endSessionConfirmTitle": "End this session?",
   "endSessionConfirm": "Your progress will be saved and a summary will appear.",

@@ -108,7 +108,13 @@ async function refreshLocalTTSCapability() {
     store.setLocalTTSAvailable(available)
   }
   if (typeof store.setUseLocalTTS === 'function') {
-    store.setUseLocalTTS(available)
+    // Auto-enable the neural voice when available, but respect an explicit
+    // user opt-out (persisted '0') so the Settings toggle stays sticky.
+    if (!available) {
+      store.setUseLocalTTS(false)
+    } else if (readStoredUseLocalTTS() !== false) {
+      store.setUseLocalTTS(true)
+    }
   }
   capabilityChecked = true
 }
@@ -131,6 +137,7 @@ class TTSQueue {
   private speakingStartedAt: number | null
   private noStartWatchdog: ReturnType<typeof setTimeout> | null
   private speakingWatchdog: ReturnType<typeof setTimeout> | null
+  private speechPoller: ReturnType<typeof setInterval> | null
   private localAudio: HTMLAudioElement | null
   private localAudioUrl: string | null
   private localStartWatchdog: ReturnType<typeof setTimeout> | null
@@ -148,6 +155,7 @@ class TTSQueue {
     this.speakingStartedAt = null
     this.noStartWatchdog = null
     this.speakingWatchdog = null
+    this.speechPoller = null
     this.localAudio = null
     this.localAudioUrl = null
     this.localStartWatchdog = null
@@ -234,6 +242,19 @@ class TTSQueue {
       this.scheduleNoStartWatchdog(utteranceId)
       this.speakViaBrowser(item, utteranceId)
     }
+  }
+
+  /**
+   * Defer the next utterance to a macrotask.
+   *
+   * Calling speechSynthesis.speak() from inside a previous utterance's
+   * onend/onerror handler — even via a microtask (Promise.then) — leaves
+   * WebKit/Safari stuck: the engine keeps reporting speaking=true and the new
+   * utterance's onend never fires, so the AAC speak button hangs. A
+   * setTimeout(0) lets the engine fully settle before the next speak().
+   */
+  private processNextDeferred() {
+    setTimeout(() => this.processNext(), 0)
   }
 
   /**
@@ -336,7 +357,7 @@ class TTSQueue {
         if (localAbandoned || !this.isActiveUtterance(utteranceId)) return
         this.clearLocalStartWatchdog(localStartWatchdog)
         this.finishCurrentUtterance(false)
-        Promise.resolve().then(() => this.processNext())
+        this.processNextDeferred()
       }
       audio.onerror = () => {
         cleanupAudio()
@@ -406,13 +427,17 @@ class TTSQueue {
     if (!('speechSynthesis' in window)) {
       if (this.isActiveUtterance(utteranceId)) {
         this.finishCurrentUtterance(false)
-        Promise.resolve().then(() => this.processNext())
+        this.processNextDeferred()
       }
       return
     }
 
     try {
-      window.speechSynthesis.cancel()
+      // Do NOT call speechSynthesis.cancel() here: the queue already serializes
+      // utterances (activeUtteranceId) and cancels on demand via cancelAll()/
+      // finishCurrentUtterance(true). A synchronous cancel() immediately before
+      // speak() is a known WebKit/Safari bug that leaves speechSynthesis stuck
+      // (speaking=true and onend never firing), breaking the AAC speak button.
       const u = new SpeechSynthesisUtterance(item.text)
       if (item.opts.rate) u.rate = item.opts.rate
       if (item.opts.pitch) u.pitch = item.opts.pitch
@@ -436,14 +461,12 @@ class TTSQueue {
       u.onend = () => {
         if (!this.isActiveUtterance(utteranceId)) return
         this.finishCurrentUtterance(false)
-        // Continue with next queued item
-        // Use microtask to avoid re-entrancy issues
-        Promise.resolve().then(() => this.processNext())
+        this.processNextDeferred()
       }
       u.onerror = () => {
         if (!this.isActiveUtterance(utteranceId)) return
         this.finishCurrentUtterance(false)
-        Promise.resolve().then(() => this.processNext())
+        this.processNextDeferred()
       }
 
       u.onstart = () => {
@@ -454,6 +477,7 @@ class TTSQueue {
         this.setStatus('speaking')
       }
       window.speechSynthesis.speak(u)
+      this.scheduleSpeechPoller(utteranceId)
       if (this.isActiveUtterance(utteranceId)) {
         // Some speech synthesis implementations never emit onstart. Reflect the
         // requested speaking state immediately and let the no-start watchdog
@@ -466,7 +490,7 @@ class TTSQueue {
     } catch {
       if (this.isActiveUtterance(utteranceId)) {
         this.finishCurrentUtterance(false)
-        Promise.resolve().then(() => this.processNext())
+        this.processNextDeferred()
       }
     }
   }
@@ -519,9 +543,41 @@ class TTSQueue {
     }
   }
 
+  /**
+   * Fallback completion detection for browsers (notably WebKit/Safari) that
+   * sometimes never fire an utterance's ``onend`` even after the engine has
+   * finished. Poll ``speechSynthesis.speaking``/``pending`` and finish the
+   * utterance once both are false, so the AAC speak button never stays stuck.
+   * Only acts after ``onstart`` fired, so a still-starting utterance is safe.
+   */
+  private scheduleSpeechPoller(utteranceId: number) {
+    this.clearSpeechPoller()
+    this.speechPoller = setInterval(() => {
+      if (!this.isActiveUtterance(utteranceId)) {
+        this.clearSpeechPoller()
+        return
+      }
+      if (this.speakingStartedAt === null) return
+      const ss = window.speechSynthesis
+      if (ss && ss.speaking === false && ss.pending === false) {
+        this.clearSpeechPoller()
+        this.finishCurrentUtterance(false)
+        this.processNextDeferred()
+      }
+    }, 500)
+  }
+
+  private clearSpeechPoller() {
+    if (this.speechPoller !== null) {
+      clearInterval(this.speechPoller)
+      this.speechPoller = null
+    }
+  }
+
   private clearWatchdogs() {
     this.clearNoStartWatchdog()
     this.clearSpeakingWatchdog()
+    this.clearSpeechPoller()
   }
 
   private finishCurrentUtterance(cancelSpeech: boolean) {
@@ -541,7 +597,7 @@ class TTSQueue {
 }
 
 export const tts = new TTSQueue()
-import { useTTSStore } from '../store/ttsStore'
+import { useTTSStore, readStoredUseLocalTTS } from '../store/ttsStore'
 import { useAuthStore } from '../store/authStore'
 import i18n from '../i18n/index'
 import { config } from '../config'

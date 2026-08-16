@@ -4,7 +4,7 @@ A date-stamped snapshot of only verifiable facts. Figures below marked
 "measured" were read directly from the repository or the GitHub public API on
 the stated date. Nothing here is invented or estimated from memory.
 
-Snapshot date: **2026-08-15**
+Snapshot date: **2026-08-16**
 
 ## Repository
 
@@ -28,16 +28,23 @@ Snapshot date: **2026-08-15**
 
 | Metric | Value |
 | ------ | ----- |
-| Backend tests (pytest) | 671 passed, 0 skipped (reproduced 2026-08-15; voice tests exercised with `faster-whisper` 1.2.1) |
-| Backend test coverage (Coverage.py) | 81.72% statements (7,372/9,021), 65.73% branches (1,793/2,728), 78.01% combined total |
-| Frontend unit/component tests (Vitest) | 231 passed (49 files, reproduced 2026-08-15) |
-| Frontend test coverage (Vitest v8) | 70.67% statements, 60.55% branches, 64.72% functions, 73.10% lines (reproduced 2026-08-15) |
-| End-to-end tests (Playwright, real backend) | 126 passed (reproduced 2026-08-15 against a production build with seeded temporary SQLite data) |
+| Backend tests (pytest) | 689 passed, 0 failed, 0 skipped (reproduced 2026-08-16; voice tests exercised with `faster-whisper` 1.2.1) |
+| Backend test coverage (Coverage.py) | 82.07% statements (7,377/8,989), 66.14% branches (1,807/2,732), 78.36% combined total |
+| Frontend unit/component tests (Vitest) | 256 passed (58 files, reproduced 2026-08-16) |
+| Frontend test coverage (Vitest v8, honest src-only scope) | 52.12% statements, 46.17% branches, 48.21% functions, 54.20% lines (reproduced 2026-08-16) |
+| End-to-end tests (Playwright, real backend) | 127 passed per browser — Chromium, Firefox, and WebKit each 127/127 (reproduced 2026-08-16 against a production build with seeded temporary SQLite data; includes the partner-overlay speech-to-text spec transcribing live through the local faster-whisper endpoint) |
 | Automated accessibility scans (Axe Core) | 5 automated Axe analyses across 5 critical routes (/setup, /login, /communication, /learning, /settings) with 0 serious or critical violations |
 | Python lint (`ruff`) | clean |
-| Frontend lint / typecheck / build | clean; JS bundle 345.1 kB ≤ 450 kB budget, CSS 98.0 kB ≤ 150 kB budget |
+| Frontend lint / typecheck / build | clean; JS bundle 359.2 kB ≤ 450 kB budget, CSS 99.1 kB ≤ 150 kB budget |
 
 > Test counts and coverage percentages are reproduced directly from machine-readable test outputs (`coverage.json`, Vitest summary, Playwright reporter).
+>
+> Frontend coverage is measured against the full `src/**/*.{ts,tsx}` tree
+> (excluding only type declarations and the entry module), which counts files
+> that no unit test imports. GUI-heavy pages are additionally exercised by the
+> Playwright e2e suite. The previous snapshots used a narrower effective scope,
+> so the lower percentages here reflect a wider, more honest measurement, not a
+> loss of coverage.
 
 ## Supported platforms
 
@@ -53,8 +60,9 @@ conducts or verifies a real-world evaluation, evidence will be documented here.
 
 ## CI status
 
-CI runs backend tests with coverage, frontend tests with coverage, lint, build, production E2E,
-Axe accessibility scans, and Windows packaging on GitHub Actions. See `.github/workflows/ci.yml`.
+CI runs backend tests with coverage, frontend tests with coverage, lint, build, production E2E
+(Chromium, Firefox, and WebKit), Axe accessibility scans, and Windows packaging on GitHub Actions.
+See `.github/workflows/ci.yml`.
 
 ## Unavailable information
 

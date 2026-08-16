@@ -45,9 +45,10 @@ These are honest, current limitations; they are not exhaustive:
 - **Symbol alt text** is provided for seeded core vocabulary; custom operator-uploaded symbols depend on the label assigned by the operator.
 - **Switch-access / scanning input** (cycling highlight across rows/columns for single-switch users) is planned on the roadmap (Issue #6) and is not yet implemented.
 
-## 3. Tested environments
+## 4. Tested environments
 
-- Chromium (Playwright) headless, desktop and mobile viewports.
+- Chromium, Firefox, and WebKit (Playwright), desktop and mobile viewports —
+  the full e2e suite (127 tests) passes in all three.
 - Light, dark, and high-contrast themes.
 
 Windows 10/11 packaged execution, physical audio, and native assistive
@@ -56,7 +57,7 @@ Use [`windows-assistive-validation.md`](windows-assistive-validation.md) and
 record the exact Windows artifact and evidence before marking those areas
 passed.
 
-## 4. Reporting accessibility issues
+## 5. Reporting accessibility issues
 
 Please open an issue with:
 
@@ -64,7 +65,7 @@ Please open an issue with:
 - The assistive technology and browser you use.
 - What you expected versus what happened.
 
-## 5. Future work
+## 6. Future work
 
 - Add a dedicated screen-reader test pass.
 - Implement automatic switch-access / scanning input (a focus/selection

@@ -19,6 +19,7 @@
   "create": "Create Symbol",
   "cancel": "Cancel",
   "searchSymbols": "Search symbols...",
+  "semanticSearchUnavailable": "Smart search is temporarily unavailable; showing keyword matches only.",
   "filters": {
     "all": "All",
     "inUse": "In Use",

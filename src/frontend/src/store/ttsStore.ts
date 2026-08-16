@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 const LOCAL_VOICE_KEY = 'aac_local_voice'
+const USE_LOCAL_KEY = 'aac_use_local_tts'
 
 function readStoredLocalVoice(): string {
   try {
@@ -8,6 +9,26 @@ function readStoredLocalVoice(): string {
     return localStorage.getItem(LOCAL_VOICE_KEY) || 'default'
   } catch {
     return 'default'
+  }
+}
+
+/** Return the persisted local-TTS toggle, or null when the user never set it. */
+export function readStoredUseLocalTTS(): boolean | null {
+  try {
+    if (typeof localStorage === 'undefined') return null
+    const raw = localStorage.getItem(USE_LOCAL_KEY)
+    if (raw === null) return null
+    return raw === '1'
+  } catch {
+    return null
+  }
+}
+
+function writeStoredUseLocalTTS(value: boolean): void {
+  try {
+    localStorage.setItem(USE_LOCAL_KEY, value ? '1' : '0')
+  } catch {
+    /* localStorage may be unavailable (private mode/SSR) */
   }
 }
 
@@ -34,8 +55,11 @@ export const useTTSStore = create<TTSState>((set) => ({
   setSelectedVoice: (v) => set({ selectedVoice: v }),
   localTTSAvailable: false,
   setLocalTTSAvailable: (v) => set({ localTTSAvailable: v }),
-  useLocalTTS: false,
-  setUseLocalTTS: (v) => set({ useLocalTTS: v }),
+  useLocalTTS: readStoredUseLocalTTS() ?? false,
+  setUseLocalTTS: (v) => {
+    writeStoredUseLocalTTS(v)
+    set({ useLocalTTS: v })
+  },
   localVoice: readStoredLocalVoice(),
   setLocalVoice: (v) => {
     try {

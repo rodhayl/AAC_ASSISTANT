@@ -160,10 +160,10 @@ def sample_usage_logs(test_db_session, regular_user):
 class TestAnalyticsAPI:
     """Test suite for Analytics API endpoints."""
 
-    def test_log_usage_endpoints_persist_rows(
+    def test_log_usage_endpoint_persists_rows(
         self, test_db_engine, test_db_session, regular_user
     ):
-        """Both legacy analytics write endpoints persist through get_db."""
+        """The single usage-logging write endpoint persists through get_db."""
         symbols = [
             Symbol(label="hello", category="social", language="en", is_builtin=True),
         ]
@@ -179,13 +179,10 @@ class TestAnalyticsAPI:
 
         usage_response = client.post("/api/analytics/usage", json=payload)
         assert usage_response.status_code == 201
-        log_response = client.post("/api/analytics/log", json=payload)
-        assert log_response.status_code == 201
-        # Keep both public write aliases registered while their Python handler
-        # names remain distinct for introspection and OpenAPI maintenance.
+        # The legacy duplicate write endpoint is removed; only /usage remains.
         openapi_paths = app.openapi()["paths"]
         assert "post" in openapi_paths["/api/analytics/usage"]
-        assert "post" in openapi_paths["/api/analytics/log"]
+        assert "/api/analytics/log" not in openapi_paths
 
         test_db_session.close()
         separate_session = sessionmaker(bind=test_db_engine)()
@@ -194,7 +191,7 @@ class TestAnalyticsAPI:
                 separate_session.query(SymbolUsageLog)
                 .filter(SymbolUsageLog.user_id == regular_user.id)
                 .count()
-                == 2
+                == 1
             )
         finally:
             separate_session.close()

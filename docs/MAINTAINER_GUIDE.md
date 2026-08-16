@@ -39,7 +39,7 @@ Before merging any pull request into `main`:
 When preparing an official semantic-versioned release (e.g. `v2.x.y`):
 
 1. **Version Alignment:**
-   - Confirm version constants in `pyproject.toml`, `src/config.py`, `src/frontend/src/config.ts`, `installer/installer.iss`, `.env.example`, and `docs/RELEASE_NOTES.md` are aligned.
+   - Confirm version constants in `pyproject.toml`, `src/config.py`, `src/frontend/src/config.ts`, `installer.iss`, `.env.example`, and `docs/RELEASE_NOTES.md` are aligned.
    - Verify alignment using test suite: `uv run pytest tests/test_config_pydantic.py`.
 
 2. **Documentation & Changelog:**

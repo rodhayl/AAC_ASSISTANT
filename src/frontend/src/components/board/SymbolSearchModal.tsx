@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import api from '../../lib/api';
 import { SymbolCard } from './SymbolCard';
 import type { BoardSymbol, Symbol } from '../../types';
+import { Portal } from '../ui/Portal';
 
 interface SymbolSearchModalProps {
   isOpen: boolean;
@@ -39,6 +40,7 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
   const [isLoading, setIsLoading] = useState(false);
   const [category, setCategory] = useState<string>('');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('');
+  const [semanticDegraded, setSemanticDegraded] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchController = useRef<AbortController | null>(null);
   const searchGeneration = useRef(0);
@@ -108,6 +110,7 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
 
       if (generation === searchGeneration.current) {
         setResults(res.data || []);
+        setSemanticDegraded(res.headers?.['x-semantic-search'] === 'degraded');
       }
     } catch (error) {
       if (generation === searchGeneration.current && (error as { code?: string })?.code !== 'ERR_CANCELED') {
@@ -125,6 +128,7 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
   if (!isOpen) return null;
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" role="presentation">
       <div className="bg-white dark:bg-gray-900/90 backdrop-blur-xl border border-border dark:border-white/10 rounded-xl shadow-xl w-full max-w-2xl h-[85vh] flex flex-col overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="symbol-search-title">
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
@@ -218,6 +222,15 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 bg-gray-100 dark:bg-gray-900/50">
+          {semanticDegraded && (
+            <p
+              role="status"
+              className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-lg px-3 py-2 mb-3"
+            >
+              {t('semanticSearchUnavailable', 'Smart search is temporarily unavailable; showing keyword matches only.')}
+            </p>
+          )}
+
           {results.length === 0 && !isLoading && query && (
             <div className="text-center text-gray-500 dark:text-gray-400 mt-10">
               {t('noResults', 'No symbols found.')}
@@ -258,5 +271,6 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

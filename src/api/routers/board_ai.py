@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from src import config
 from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol, User
+from src.aac_app.providers.lmstudio_provider import LMStudioProvider
 from src.aac_app.providers.ollama_provider import OllamaProvider
 from src.aac_app.providers.openrouter_provider import OpenRouterProvider
 from src.aac_app.services.board_generation_service import BoardGenerationService
@@ -168,7 +169,7 @@ async def create_board(
                     user=current_user, key="errors.boards.aiProviderRequired"
                 ),
             )
-        if board.ai_provider not in ["ollama", "openrouter"]:
+        if board.ai_provider not in ["ollama", "openrouter", "lmstudio"]:
             raise HTTPException(
                 status_code=400,
                 detail=get_text(
@@ -229,6 +230,9 @@ async def create_board(
             elif board.ai_provider == "openrouter":
                 api_key = get_setting_value("openrouter_api_key", "")
                 provider = OpenRouterProvider(api_key=api_key, model=board.ai_model)
+            elif board.ai_provider == "lmstudio":
+                base_url = get_setting_value("lmstudio_base_url", "http://localhost:1234/v1")
+                provider = LMStudioProvider(base_url=base_url, model=board.ai_model)
 
             if provider:
                 # Create a temporary service instance
@@ -321,7 +325,7 @@ async def create_board(
 
 def _resolve_provider_for_board(
     board: CommunicationBoard, db: Session
-) -> OllamaProvider | OpenRouterProvider | None:
+) -> OllamaProvider | OpenRouterProvider | LMStudioProvider | None:
     """
     Build an LLM provider instance from the board or primary global settings.
     """
@@ -332,6 +336,8 @@ def _resolve_provider_for_board(
     if not model_name or model_name.startswith("@"):
         if provider_type == "openrouter":
             model_name = get_setting_value("openrouter_model", "")
+        elif provider_type == "lmstudio":
+            model_name = get_setting_value("lmstudio_model", "")
         else:
             model_name = get_setting_value("ollama_model", "")
 
@@ -341,6 +347,10 @@ def _resolve_provider_for_board(
     if provider_type == "openrouter":
         api_key = get_setting_value("openrouter_api_key", "")
         return OpenRouterProvider(api_key=api_key, model=model_name)
+
+    if provider_type == "lmstudio":
+        base_url = get_setting_value("lmstudio_base_url", "http://localhost:1234/v1")
+        return LMStudioProvider(base_url=base_url, model=model_name)
 
     base_url = get_setting_value("ollama_base_url", config.OLLAMA_BASE_URL)
     return OllamaProvider(base_url=base_url, model=model_name)
@@ -505,5 +515,4 @@ def apply_ai_suggestion(
     db.refresh(board_symbol)
     if created_symbol is not None:
         index_symbol(created_symbol)
-    db.commit()
     return board_symbol

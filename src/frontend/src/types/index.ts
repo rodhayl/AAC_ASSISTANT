@@ -122,6 +122,8 @@ export interface LearningSessionResponse {
   welcome_message?: string;
   topic?: string;
   difficulty?: string;
+  summary?: string;
+  source?: 'llm' | 'fallback';
   error?: string;
 }
 
@@ -193,6 +195,7 @@ export interface QuestionResponse {
   choices?: string[];
   difficulty?: string;
   correct_answer_index?: number;
+  source?: 'llm' | 'fallback';
   message?: string;  // Generic message field
   error?: string;
   full_thinking?: string;  // Admin debug field
@@ -211,6 +214,7 @@ export interface AnswerResponse {
   next_action?: string;
   questions_answered?: number;
   correct_answers?: number;
+  source?: 'llm' | 'fallback';
   error?: string;
   full_thinking?: string;  // Admin debug field
 }

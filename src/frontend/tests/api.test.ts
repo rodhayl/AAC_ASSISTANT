@@ -83,10 +83,10 @@ describe('auth response handling', () => {
     expect(requestAuthorization).toBe(expected);
   });
 
-  it('does not log out for an auth-flow 401', async () => {
-    const logout = vi.fn();
+  it('does not clear the session for an auth-flow 401', async () => {
+    const clearSession = vi.fn();
     const state = useAuthStore.getState();
-    vi.spyOn(useAuthStore, 'getState').mockReturnValue({ ...state, logout });
+    vi.spyOn(useAuthStore, 'getState').mockReturnValue({ ...state, clearSession });
 
     await expect(api.request({
       url: '/auth/token',
@@ -97,13 +97,13 @@ describe('auth response handling', () => {
       }),
     })).rejects.toMatchObject({ response: { status: 401 } });
 
-    expect(logout).not.toHaveBeenCalled();
+    expect(clearSession).not.toHaveBeenCalled();
   });
 
-  it('keeps logging out for a non-auth 401', async () => {
-    const logout = vi.fn();
+  it('clears the session for a non-auth 401', async () => {
+    const clearSession = vi.fn();
     const state = useAuthStore.getState();
-    vi.spyOn(useAuthStore, 'getState').mockReturnValue({ ...state, logout });
+    vi.spyOn(useAuthStore, 'getState').mockReturnValue({ ...state, clearSession });
     vi.stubGlobal('window', undefined);
 
     await expect(api.request({
@@ -115,7 +115,7 @@ describe('auth response handling', () => {
       }),
     })).rejects.toMatchObject({ response: { status: 401 } });
 
-    expect(logout).toHaveBeenCalledOnce();
+    expect(clearSession).toHaveBeenCalledOnce();
   });
 
   it('keeps an unauthorized replay as a visible conflict instead of clearing it on logout', async () => {
@@ -163,7 +163,8 @@ describe('auth response handling', () => {
     useOfflineStore.getState().addConflict({ url: '/boards/1', method: 'post' }, 'stale');
     expect(useOfflineStore.getState().conflicts).toHaveLength(1);
 
-    useAuthStore.getState().logout();
+    vi.spyOn(api, 'post').mockResolvedValue({ data: { ok: true } } as never);
+    await useAuthStore.getState().logout();
     expect(useOfflineStore.getState().conflicts).toHaveLength(0);
 
     window.dispatchEvent(new Event('online'));

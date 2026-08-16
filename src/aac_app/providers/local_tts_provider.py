@@ -292,7 +292,6 @@ class LocalTTSProvider:
     def __init__(self, lazy_load: bool = True):
         self._kokoro = None
         self._load_lock = threading.Lock()
-        self._load_attempted = not lazy_load
         if not lazy_load:
             self._ensure_loaded()
 

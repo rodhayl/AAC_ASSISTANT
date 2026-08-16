@@ -7,6 +7,7 @@ import { SymbolImage } from '../common/SymbolImage';
 import type { Symbol } from '../../types';
 import { getCategoryStyle } from '../../lib/symbolCategoryStyle';
 import { isValidImageFile } from '../../lib/download';
+import { Portal } from '../ui/Portal';
 
 interface SymbolPickerProps {
   isOpen: boolean;
@@ -187,6 +188,7 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
   if (!isOpen) return null;
 
   return (
+    <Portal>
     <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center z-50" role="presentation">
       <div
         className="bg-white dark:bg-gray-900/90 backdrop-blur-xl border border-border dark:border-white/10 rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col"
@@ -457,5 +459,6 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

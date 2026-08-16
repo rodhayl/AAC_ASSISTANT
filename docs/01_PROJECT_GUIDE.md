@@ -71,10 +71,11 @@ outside the application directory. The complete key-by-key configuration
 reference is in the root [README](../README.md) configuration table.
 `TESTING=1` is an operational environment variable for automated validation;
 it disables request rate limiting. `AAC_ASSISTANT_NO_BROWSER=1` is the
-headless validation/managed-launch flag and prevents the frozen launcher from
-opening a browser; normal desktop launches omit it. `DATABASE_URL` may be
-supplied for isolated tests, but normal deployments use SQLite at
-`DATA_DIR/DATABASE_NAME`.
+headless validation/managed-launch flag and prevents the launcher
+(`launcher.pyw` on Windows, `start.sh` / `scripts/start_server.py` on Linux)
+from opening the default browser; normal desktop launches omit it.
+`DATABASE_URL` may be supplied for isolated tests, but normal deployments use
+SQLite at `DATA_DIR/DATABASE_NAME`.
 
 ## 3. Architecture
 

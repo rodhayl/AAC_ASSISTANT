@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=AAC Assistant
+GenericName=AAC Communication
+Comment=Local-first augmentative and alternative communication platform
+Exec=/home/wishmaster/Github/AAC_ASSISTANT/start.sh
+Icon=/home/wishmaster/Github/AAC_ASSISTANT/docs/assets/splash.png
+Terminal=false
+Categories=Utility;Accessibility;
+Keywords=AAC;communication;speech;accessibility;

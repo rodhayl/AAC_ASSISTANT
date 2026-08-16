@@ -13,7 +13,7 @@ from src.aac_app.models import (
     UserAchievement,
 )
 from src.api.main import app
-from src.api.routers.export_import import compute_checksum
+from src.api.routers.export_import import _canonical_score, compute_checksum
 from tests.test_utils_auth import create_test_headers
 
 
@@ -133,6 +133,51 @@ def test_checksum_is_stable_when_object_keys_are_reordered():
         "meta": {"username": "stable", "exported_at": "2024-01-01T00:00:00Z"},
     }
     assert compute_checksum(unicode_first) == compute_checksum(unicode_reordered)
+
+
+def test_checksum_survives_whole_number_float_browser_roundtrip():
+    # Python serializes a whole-number float as "1.0" while the browser's
+    # JSON.parse/JSON.stringify serializes it as "1". The exporter must
+    # normalize whole-number floats to int so the signed checksum still
+    # verifies after the payload round-trips through the browser.
+    assert _canonical_score(1.0) == 1
+    assert isinstance(_canonical_score(1.0), int)
+    assert _canonical_score(0.0) == 0
+    assert _canonical_score(0.75) == 0.75
+    assert _canonical_score(None) is None
+
+    base = {
+        "meta": {"exported_at": "2026-01-01T00:00:00Z", "username": "u"},
+        "boards": [],
+        "assignedBoards": [],
+        "achievements": [],
+        "totalPoints": 0,
+        "learningHistory": [
+            {
+                "topic_name": "animals",
+                "status": "completed",
+                "comprehension_score": 1.0,
+                "questions_asked": 2,
+                "questions_answered": 2,
+                "correct_answers": 2,
+                "started_at": "2026-01-01T10:00:00",
+                "ended_at": "2026-01-01T10:05:00",
+            }
+        ],
+    }
+    normalized = {
+        **base,
+        "learningHistory": [
+            {**record, "comprehension_score": _canonical_score(record["comprehension_score"])}
+            for record in base["learningHistory"]
+        ],
+    }
+    checksum = compute_checksum(normalized)
+    # Simulate the browser round-trip: parse the serialized export back into a
+    # dict (JS drops the trailing ".0" on whole numbers).
+    browser_roundtrip = json.loads(json.dumps(normalized, ensure_ascii=False))
+    assert browser_roundtrip["learningHistory"][0]["comprehension_score"] == 1
+    assert compute_checksum(browser_roundtrip) == checksum
 
 
 def test_import_endpoint_checksum_and_boards(client):

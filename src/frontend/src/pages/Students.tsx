@@ -9,6 +9,7 @@ import { ResetPasswordModal } from '../components/common/ResetPasswordModal'
 import { GuardianProfileModal } from '../components/students/GuardianProfileModal'
 import { Sparkles, Volume2 } from 'lucide-react'
 import { LoadingState } from '../components/ui/LoadingState'
+import { Portal } from '../components/ui/Portal'
 
 
 export function Students() {
@@ -365,6 +366,7 @@ export function Students() {
           }
           {
             editId != null && (
+              <Portal>
               <div
                 className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
                 role="dialog"
@@ -409,11 +411,13 @@ export function Students() {
                   </div>
                 </div>
               </div>
+              </Portal>
             )
           }
 
           {
             assignModalOpen && selectedStudent && (
+              <Portal>
               <div
                 className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
                 role="dialog"
@@ -460,11 +464,13 @@ export function Students() {
                   </div>
                 </div>
               </div>
+              </Portal>
             )
           }
 
           {
             createModalOpen && (
+              <Portal>
               <div
                 className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
                 role="dialog"
@@ -576,6 +582,7 @@ export function Students() {
                   </form>
                 </div>
               </div>
+              </Portal>
             )
           }
         </div >

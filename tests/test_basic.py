@@ -13,7 +13,7 @@ def test_imports():
 
 def test_services():
     """Test that services can be imported"""
-    from src.aac_app.services.learning_companion_service import LearningCompanionService
+    from src.aac_app.services.learning import LearningCompanionService
 
     assert LearningCompanionService is not None
 

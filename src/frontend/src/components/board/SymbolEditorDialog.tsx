@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { BoardSymbol } from '../../types';
 import { useBoardStore } from '../../store/boardStore';
+import { Portal } from '../ui/Portal';
 
 interface SymbolEditorDialogProps {
   isOpen: boolean;
@@ -57,6 +58,7 @@ export function SymbolEditorDialog({
   };
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="presentation">
       <div
         className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-gray-800"
@@ -156,5 +158,6 @@ export function SymbolEditorDialog({
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

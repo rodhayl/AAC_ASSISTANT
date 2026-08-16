@@ -585,7 +585,10 @@ class _PredictionContext:
                 break
             if self.normalize_label(punct) in self.seen_labels:
                 continue
-            fake_id = -(abs(hash(punct)) % 1000000)
+            # Deterministic negative sentinel: Python's str hash is salted
+            # per-process, so hash(punct) would change across restarts and
+            # make the same punctuation render with a different id each run.
+            fake_id = -(PUNCTUATION.index(punct) + 1)
             self.suggestions.append(
                 {
                     "symbol_id": fake_id,

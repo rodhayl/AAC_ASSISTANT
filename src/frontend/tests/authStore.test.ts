@@ -238,6 +238,28 @@ describe('auth session refresh robustness', () => {
     });
   });
 
+  it('clears the local session even when the revocation request fails', async () => {
+    vi.spyOn(api, 'post').mockRejectedValue({ response: { status: 503 } });
+
+    await useAuthStore.getState().logout();
+
+    expect(useAuthStore.getState()).toMatchObject({
+      user: null,
+      token: null,
+      refreshToken: null,
+      isAuthenticated: false,
+      sessionExpiresAt: null,
+      error: null,
+    });
+    expect(persistedState()).toMatchObject({
+      user: null,
+      token: null,
+      refreshToken: null,
+      isAuthenticated: false,
+      sessionExpiresAt: null,
+    });
+  });
+
   it('preserves the session when refresh fails offline', async () => {
     seedSession('not-a-jwt');
     vi.spyOn(api, 'post').mockRejectedValue({

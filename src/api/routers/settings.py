@@ -1,6 +1,7 @@
 """Settings API router for admin configuration"""
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -202,22 +203,29 @@ def update_ai_settings(
     return {"message": "Settings updated successfully", "settings": settings}
 
 
-@router.get("/ai/models/ollama")
-async def get_ollama_models(
-    current_user: User = Depends(get_current_admin_user),
-    db: Session = Depends(get_db),
-):
-    """Fetch available Ollama models (admin only)"""
-    provider: OllamaProvider | None = None
+async def _fetch_available_models(
+    *,
+    provider_factory: Callable[..., Any],
+    fetch_models: Callable[[Any], Awaitable[list[dict[str, Any]]]],
+    base_url_setting: str,
+    default_base_url: str,
+    provider_label: str,
+    error_key: str,
+    current_user: User,
+    db: Session,
+) -> dict[str, Any]:
+    """Fetch available models for a local model provider behind a health check."""
+    provider: Any | None = None
     try:
-        base_url = get_setting(db, "ollama_base_url") or config.OLLAMA_BASE_URL
-        provider = OllamaProvider(base_url=base_url)
+        base_url = get_setting(db, base_url_setting) or default_base_url
+        provider = provider_factory(base_url=base_url)
 
         if not await asyncio.to_thread(provider.is_available):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=get_text(
                     key="errors.provider.unavailable",
+                    provider=provider_label,
                     accept_language=(
                         current_user.settings.ui_language
                         if current_user.settings
@@ -226,18 +234,16 @@ async def get_ollama_models(
                 ),
             )
 
-        model_names = await asyncio.to_thread(provider.list_models)
-        # Convert to format expected by frontend
-        models = [{"name": name} for name in model_names]
+        models = await fetch_models(provider)
         return {"models": models, "base_url": base_url}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching Ollama models: {e}")
+        logger.error(f"Error fetching {provider_label} models: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=get_text(
-                key="errors.provider.fetchModelsFailed",
+                key=error_key,
                 error=str(e),
                 accept_language=(
                     current_user.settings.ui_language if current_user.settings else None
@@ -246,6 +252,30 @@ async def get_ollama_models(
         )
     finally:
         await _close_provider(provider)
+
+
+@router.get("/ai/models/ollama")
+async def get_ollama_models(
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Fetch available Ollama models (admin only)"""
+
+    async def fetch(provider: OllamaProvider) -> list[dict[str, Any]]:
+        model_names = await asyncio.to_thread(provider.list_models)
+        # Convert to format expected by frontend.
+        return [{"name": name} for name in model_names]
+
+    return await _fetch_available_models(
+        provider_factory=OllamaProvider,
+        fetch_models=fetch,
+        base_url_setting="ollama_base_url",
+        default_base_url=config.OLLAMA_BASE_URL,
+        provider_label="Ollama",
+        error_key="errors.provider.fetchModelsFailed",
+        current_user=current_user,
+        db=db,
+    )
 
 
 @router.get("/ai/models/openrouter")
@@ -301,43 +331,21 @@ async def get_lmstudio_models(
     db: Session = Depends(get_db),
 ):
     """Fetch available LM Studio models (admin only)"""
-    provider: LMStudioProvider | None = None
-    try:
-        base_url = get_setting(db, "lmstudio_base_url") or "http://localhost:1234/v1"
-        provider = LMStudioProvider(base_url=base_url)
 
-        if not await asyncio.to_thread(provider.is_available):
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=get_text(
-                    key="errors.provider.unavailable",
-                    accept_language=(
-                        current_user.settings.ui_language
-                        if current_user.settings
-                        else None
-                    ),
-                ),
-            )
-
+    async def fetch(provider: LMStudioProvider) -> list[dict[str, Any]]:
         models_response = await provider.get_available_models()
-        models_list = models_response.get("data", [])
-        return {"models": models_list, "base_url": base_url}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching LM Studio models: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=get_text(
-                key="errors.provider.fetchModelsFailed",
-                error=str(e),
-                accept_language=(
-                    current_user.settings.ui_language if current_user.settings else None
-                ),
-            ),
-        )
-    finally:
-        await _close_provider(provider)
+        return models_response.get("data", [])
+
+    return await _fetch_available_models(
+        provider_factory=LMStudioProvider,
+        fetch_models=fetch,
+        base_url_setting="lmstudio_base_url",
+        default_base_url="http://localhost:1234/v1",
+        provider_label="LM Studio",
+        error_key="errors.provider.fetchLmStudioModelsFailed",
+        current_user=current_user,
+        db=db,
+    )
 
 
 # UI Language endpoints

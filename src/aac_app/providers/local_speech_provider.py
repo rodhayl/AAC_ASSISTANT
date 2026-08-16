@@ -141,6 +141,11 @@ class LocalSpeechProvider:
                 logger.info("faster-whisper model loaded successfully")
             except Exception as exc:
                 self.model = None
+                # A transient failure (interrupted download, low disk space,
+                # temporary native error) must not latch STT off until the
+                # provider is reset. Clear the attempt flag so the next
+                # request can retry while the lock still serializes loads.
+                self._load_attempted = False
                 logger.error("Failed to load faster-whisper model: {}", exc)
 
 

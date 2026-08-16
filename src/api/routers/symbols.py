@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from loguru import logger
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
@@ -97,61 +97,72 @@ def get_symbol_categories(
 
 
 def _apply_symbol_search(query, search: str, db: Session):
-    """Apply the existing keyword-plus-semantic symbol search to a query."""
+    """Apply keyword-plus-semantic symbol search, returning ``(query, status)``.
+
+    ``status`` is ``"enabled"`` when semantic ranking contributed results,
+    ``"keyword"`` when only keyword matching ran (short query or no semantic
+    matches), and ``"degraded"`` when the vector index was unavailable or
+    raised, so callers can surface the fallback instead of degrading silently.
+    """
     s = f"%{search.lower()}%"
+
+    def keyword_query():
+        return query.filter(
+            or_(
+                func.lower(Symbol.label).like(s),
+                func.lower(Symbol.description).like(s),
+                func.lower(Symbol.keywords).like(s),
+            )
+        )
+
+    # Short queries are keyword-only by design: semantic embedding needs
+    # enough signal to be meaningful.
+    if len(search) <= 3:
+        return keyword_query(), "keyword"
 
     try:
         from src.api.deps import get_vector_store
 
         vs = None
         semantic_results = []
-        if len(search) > 3:
-            with vector_store_operation_lock:
-                vs = get_vector_store()
-                semantic_results = vs.search(search, k=20) if vs else []
-        if vs and semantic_results:
-            semantic_ids = [
-                item["id"]
-                for item in semantic_results
-                if item.get("type") == "symbol" and "id" in item
-            ]
+        with vector_store_operation_lock:
+            vs = get_vector_store()
+            semantic_results = vs.search(search, k=20) if vs else []
 
-            if semantic_ids:
-                logger.info(f"Semantic search found {len(semantic_ids)} symbols for '{search}'")
-                semantic_order = case(
-                    {symbol_id: index for index, symbol_id in enumerate(semantic_ids)},
-                    value=Symbol.id,
-                    else_=len(semantic_ids),
-                )
-                return query.filter(
+        semantic_ids = [
+            item["id"]
+            for item in semantic_results
+            if item.get("type") == "symbol" and "id" in item
+        ]
+
+        if semantic_ids:
+            logger.info(f"Semantic search found {len(semantic_ids)} symbols for '{search}'")
+            semantic_order = case(
+                {symbol_id: index for index, symbol_id in enumerate(semantic_ids)},
+                value=Symbol.id,
+                else_=len(semantic_ids),
+            )
+            return (
+                query.filter(
                     or_(
                         func.lower(Symbol.label).like(s),
                         func.lower(Symbol.description).like(s),
                         func.lower(Symbol.keywords).like(s),
                         Symbol.id.in_(semantic_ids),
                     )
-                ).order_by(semantic_order)
-
-        return query.filter(
-            or_(
-                func.lower(Symbol.label).like(s),
-                func.lower(Symbol.description).like(s),
-                func.lower(Symbol.keywords).like(s),
+                ).order_by(semantic_order),
+                "enabled",
             )
-        )
+
+        return keyword_query(), "keyword"
     except Exception as e:
         logger.warning(f"Semantic search failed: {e}")
-        return query.filter(
-            or_(
-                func.lower(Symbol.label).like(s),
-                func.lower(Symbol.description).like(s),
-                func.lower(Symbol.keywords).like(s),
-            )
-        )
+        return keyword_query(), "degraded"
 
 
 @router.get("/symbols", response_model=list[schemas.SymbolResponse])
 def get_symbols(
+    response: Response,
     skip: int = Query(0, ge=0, le=100_000),
     limit: int = Query(100, ge=1, le=1000),
     category: str = None,
@@ -181,8 +192,9 @@ def get_symbols(
         query = query.filter(Symbol.category == category)
     if language:
         query = query.filter(Symbol.language == language)
+    semantic_status = None
     if search:
-        query = _apply_symbol_search(query, search, db)
+        query, semantic_status = _apply_symbol_search(query, search, db)
     if keywords:
         kw = f"%{keywords.lower()}%"
         query = query.filter(func.lower(Symbol.keywords).like(kw))
@@ -229,6 +241,8 @@ def get_symbols(
     for sym, use_count in results:
         sym.is_in_use = bool(use_count and use_count > 0)
         symbols.append(sym)
+    if semantic_status:
+        response.headers["X-Semantic-Search"] = semantic_status
     return symbols
 
 

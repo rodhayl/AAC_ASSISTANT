@@ -23,9 +23,16 @@ test.describe('Data Management', () => {
     // Feed that snapshot back through the hidden import file input.
     const exportPath = await download.path();
     expect(exportPath).toBeTruthy();
+    const importResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/data/import') &&
+        response.request().method() === 'POST',
+      { timeout: 30000 },
+    );
     await page.locator('#import-boards-file').setInputFiles(exportPath!);
 
-    // The import completes and surfaces a localized success toast.
+    // The import round-trip must succeed and surface a localized success toast.
+    expect((await importResponse).status()).toBe(200);
     await expect(
       page.getByText(/import completed successfully|importación completada/i),
     ).toBeVisible();

@@ -34,6 +34,11 @@ class ResponseProcessingMixin:
         logger.info(f"Processing response for session {session_id}")
         transcription_failed = False
         is_symbol = bool(symbols)
+        # True when any part of this answer used a deterministic template
+        # instead of the LLM (transcription error, exact-match grading,
+        # template conversation fallback, or empty model feedback). Exposed to
+        # the UI so teachers/students can tell LLM answers from local ones.
+        used_fallback = False
 
         try:
             with self._session_scope(db) as db:
@@ -91,6 +96,7 @@ class ResponseProcessingMixin:
 
                 # If transcription failed, return a graceful message without erroring
                 if is_voice and transcription_failed:
+                    used_fallback = True
                     feedback_text = translation_service.get(
                         user_lang, "pages/learning", "errors.transcriptionFailed"
                     )
@@ -102,6 +108,7 @@ class ResponseProcessingMixin:
                             "is_correct": None,
                             "feedback": feedback_text,
                             "confidence": 0.0,
+                            "source": "fallback",
                             "timestamp": datetime.now().isoformat(),
                         },
                     )
@@ -119,6 +126,7 @@ class ResponseProcessingMixin:
                         "questions_answered": session.questions_answered,
                         "correct_answers": session.correct_answers,
                         "provider_used": self.provider_type,
+                        "source": "fallback",
                     }
 
                 # If there's a specific question, evaluate the answer
@@ -157,6 +165,7 @@ class ResponseProcessingMixin:
                             max_tokens=150,
                         )
                     except Exception:
+                        used_fallback = True
                         analysis = json.dumps(
                             self._exact_match_analysis(
                                 student_response,
@@ -171,6 +180,7 @@ class ResponseProcessingMixin:
                     if analysis_data is None:
                         logger.error(f"Failed to parse analysis JSON: {analysis}")
                         # Fallback analysis
+                        used_fallback = True
                         analysis_data = self._exact_match_analysis(
                             student_response,
                             last_question,
@@ -317,6 +327,7 @@ class ResponseProcessingMixin:
 
                     except Exception as e:
                         logger.warning(f"LLM generation error: {e}")
+                        used_fallback = True
                         response = translation_service.get(
                             user_lang,
                             "pages/learning",
@@ -325,6 +336,7 @@ class ResponseProcessingMixin:
 
                     # Validate we have content
                     if not response or len(response.strip()) < 5:
+                        used_fallback = True
                         response = translation_service.get(
                             user_lang,
                             "pages/learning",
@@ -351,6 +363,10 @@ class ResponseProcessingMixin:
                 feedback_message = analysis_data.get("encouraging_feedback") or (
                     translation_service.get(user_lang, "pages/learning", default_feedback_key)
                 )
+                # Empty model feedback (or none returned) means the template
+                # message was used, so the reply is a local fallback.
+                if not analysis_data.get("encouraging_feedback"):
+                    used_fallback = True
 
                 # Store response
                 entry = {
@@ -359,6 +375,7 @@ class ResponseProcessingMixin:
                     "is_correct": analysis_data.get("is_correct", False),
                     "feedback": feedback_message,
                     "confidence": analysis_data.get("confidence", 0.5),
+                    "source": "fallback" if used_fallback else "llm",
                     "timestamp": datetime.now().isoformat(),
                 }
                 if is_symbol and symbols:
@@ -454,6 +471,7 @@ class ResponseProcessingMixin:
                     "questions_answered": session.questions_answered,
                     "correct_answers": session.correct_answers,
                     "provider_used": self.provider_type,
+                    "source": "fallback" if used_fallback else "llm",
                 }
 
         except Exception as e:

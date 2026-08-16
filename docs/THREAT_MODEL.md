@@ -59,7 +59,7 @@ flowchart LR
 
 - `POST /api/auth/token` — login (rate-limited, account lockout).
 - Authenticated API routers (`/api/boards`, `/api/learning`, `/api/admin`,
-  `/api/export`, `/api/auth/users`, etc.).
+  `/api/data/export`, `/api/data/import`, `/api/auth/users`, etc.).
 - Multipart upload endpoints (images, audio).
 - Static SPA and `/uploads` file serving.
 - The `launcher.pyw` / installer lifecycle.
