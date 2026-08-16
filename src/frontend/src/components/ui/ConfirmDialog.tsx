@@ -2,6 +2,7 @@ import { useId, useRef } from 'react';
 import { X } from 'lucide-react';
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
 import { Button } from './Button';
+import { Portal } from './Portal';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -33,6 +34,7 @@ export function ConfirmDialog({
   if (!isOpen) return null;
 
   return (
+    <Portal>
     <div
       ref={dialogRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200"
@@ -76,5 +78,6 @@ export function ConfirmDialog({
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

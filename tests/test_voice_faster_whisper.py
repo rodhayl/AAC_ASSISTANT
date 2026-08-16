@@ -288,6 +288,65 @@ def test_provider_degrades_when_voice_extra_is_missing(monkeypatch, tmp_path):
 
 
 @pytest.mark.usefixtures("setup_test_db")
+def test_transcribe_endpoint_returns_local_transcription(user_token):
+    """Partner overlay transcription uses the local engine and returns text."""
+    speech = Mock()
+    speech.is_available.return_value = True
+    speech.transcribe.return_value = "  hello animals  "
+    app.dependency_overrides[get_speech_provider] = lambda: speech
+    try:
+        response = client.post(
+            "/api/providers/transcribe",
+            params={"lang": "es"},
+            files={"file": ("voice.wav", _minimal_wav(), "audio/wav")},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == {"text": "hello animals", "provider": "local"}
+        speech.transcribe.assert_called_once()
+        _path, language = speech.transcribe.call_args[0]
+        assert language == "es"
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_transcribe_endpoint_503_when_stt_unavailable(user_token):
+    speech = Mock()
+    speech.is_available.return_value = False
+    app.dependency_overrides[get_speech_provider] = lambda: speech
+    try:
+        response = client.post(
+            "/api/providers/transcribe",
+            files={"file": ("voice.wav", _minimal_wav(), "audio/wav")},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        assert response.status_code == 503
+        assert not response.json()["detail"].startswith("errors.")
+        speech.transcribe.assert_not_called()
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_transcribe_endpoint_rejects_invalid_audio(user_token):
+    speech = Mock()
+    speech.is_available.return_value = True
+    app.dependency_overrides[get_speech_provider] = lambda: speech
+    try:
+        response = client.post(
+            "/api/providers/transcribe",
+            files={"file": ("voice.txt", b"not audio", "text/plain")},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        assert response.status_code == 400
+        assert not response.json()["detail"].startswith("errors.")
+        speech.transcribe.assert_not_called()
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.usefixtures("setup_test_db")
 def test_voice_answer_gate_uses_availability_before_lazy_model_load(
     regular_user,
     user_token,
@@ -449,6 +508,39 @@ def test_voice_install_endpoint_reports_unsupported_environment(monkeypatch, adm
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Automatic voice installation is unavailable here."
+
+
+def test_model_load_failure_is_retried_on_next_request(monkeypatch, tmp_path):
+    """A transient model-load failure must not latch STT off until reset."""
+    attempts: dict[str, int] = {"count": 0}
+
+    class RecoveredModel:
+        def transcribe(self, _path, **_kwargs):
+            return iter([_FakeSegment("hello")]), object()
+
+    def create_model(*_args, **_kwargs):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RuntimeError("transient model download failure")
+        return RecoveredModel()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "faster_whisper",
+        types.SimpleNamespace(WhisperModel=create_model),
+    )
+    monkeypatch.setattr(local_speech_provider, "faster_whisper", None)
+    monkeypatch.setattr(local_speech_provider, "FASTER_WHISPER_AVAILABLE", True)
+    provider = local_speech_provider.LocalSpeechProvider(
+        lazy_load=True,
+        model_cache_dir=tmp_path / "models",
+    )
+
+    assert provider.recognize_from_file("sample.wav") == ""
+    assert provider.model is None
+
+    assert provider.recognize_from_file("sample.wav") == "hello"
+    assert attempts["count"] == 2
 
 
 @pytest.mark.voice

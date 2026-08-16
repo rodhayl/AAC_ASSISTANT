@@ -8,11 +8,11 @@ validation.
 
 The initial public release `v2.0.0` was validated on commit `7c197c42050ccf53fbad20a846e854ea834dc893`.
 Subsequent post-release maintenance commits on `main` maintain the complete automated validation gates: backend Ruff, compileall, and pytest
-(**653 passed, 0 failed, 2 skipped**); frontend typecheck,
-ESLint, **47 Vitest files / 226 tests**, production build, and bundle budgets
-(344.5 kB JS / 450 kB and 96.9 kB CSS / 150 kB). `uv lock --check`, production
-`npm audit` (0 vulnerabilities), `bash -n start.sh`, and `git diff --check`
-also passed. Note: this represents technical and automated validation; real-world AAC pilot and specialist validation remain future work.
+(**689 passed, 0 failed, 0 skipped**); frontend typecheck,
+ESLint, **58 Vitest files / 256 tests**, production build, and bundle budgets
+(≤450 kB JS and ≤150 kB CSS). The Playwright e2e suite passes **127/127 in
+Chromium, Firefox, and WebKit**. `uv lock --check`, production `npm audit`
+(0 vulnerabilities), `bash -n start.sh`, and `git diff --check` also passed. Note: this represents technical and automated validation; real-world AAC pilot and specialist validation remain future work.
 
 After that baseline, a production-build regression exposed and fixed a static
 `api.ts` ↔ `authStore.ts` import cycle that emitted four browser

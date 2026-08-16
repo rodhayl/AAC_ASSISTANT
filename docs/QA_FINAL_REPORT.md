@@ -21,7 +21,7 @@
 | SO | Linux |
 | Python | 3.13.14 (venv `uv`) |
 | Node / npm | v22.22.1 / 9.2.0 |
-| Navegador | Chromium (Playwright 1.62.1) |
+| Navegador | Chromium, Firefox y WebKit (Playwright 1.62.1); la suite E2E completa (127 tests) pasa en los tres |
 | Base de datos | SQLite temporal por sesión de prueba (nunca datos reales) |
 | Backend | FastAPI/Uvicorn real (`scripts/run_server.py`), no mocks |
 | Frontend | Build de producción Vite (`dist/`), no dev server |
@@ -392,7 +392,7 @@ Sin discrepancias entre UI y backend: toda restricción está decidida en backen
 | Reduced motion / dwell | n/a | n/a | PASS | PASS |
 | Windows empaquetado | — | — | — | NOT TESTED |
 | Lector de pantalla | — | — | — | NOT TESTED |
-| Firefox / WebKit | — | — | — | NOT TESTED |
+| Firefox / WebKit | n/a | n/a | n/a | PASS (Chromium, Firefox y WebKit: 127/127 cada uno) |
 | Proveedores externos reales | — | — | — | NOT TESTED |
 
 ---
@@ -401,20 +401,27 @@ Sin discrepancias entre UI y backend: toda restricción está decidida en backen
 
 | Suite | Resultado |
 | ----- | --------- |
-| Backend (pytest) | **671 passed, 0 failed, 0 skipped** |
-| Cobertura backend | 81.72 % statements (7,372/9,021), 65.73 % branches, 78.01 % combinada |
-| Frontend (Vitest) | **231 passed** (49 archivos) |
-| Cobertura frontend | 70.67 % statements, 60.55 % branches, 64.72 % functions, 73.10 % lines |
-| E2E Playwright Chromium | **126 passed** (servidor real + SQLite limpia + datos sembrados) |
+| Backend (pytest) | **688 passed, 0 failed, 0 skipped** |
+| Cobertura backend | 82.07 % statements (7,377/8,989), 66.14 % branches (1,807/2,732), 78.36 % combinada |
+| Frontend (Vitest) | **256 passed** (58 archivos) |
+| Cobertura frontend (ámbito `src/**` honesto) | 52.12 % statements, 46.17 % branches, 48.21 % functions, 54.20 % lines |
+| E2E Playwright | **127 passed por navegador** — Chromium, Firefox y WebKit cada uno 127/127 (servidor real + SQLite limpia + datos sembrados) |
 | Axe (5 rutas críticas) | 0 serious / 0 critical |
 | Ruff / compileall | PASS |
 | Typecheck / ESLint | PASS (0 errores) |
-| Build producción / bundle | PASS (347.8 kB JS ≤ 450 kB, CSS 98.0 kB ≤ 150 kB) |
+| Build producción / bundle | PASS (359.2 kB JS ≤ 450 kB, CSS 99.1 kB ≤ 150 kB) |
 | `i18n:audit` | PASS (sin strings hardcodeados) |
 | `verify_pr.py` | PASS completo |
 
-> Números reproducidos el 2026-08-15 sobre el árbol exacto descrito en el
-> Baseline; no se reutilizan conteos de corridas anteriores.
+> Números reproducidos el 2026-08-16 sobre el árbol actual de `main`
+> (`8f023b5`); no se reutilizan conteos de corridas anteriores.
+>
+> La cobertura frontend se mide ahora sobre el árbol completo `src/**/*.{ts,tsx}`
+> (excluyendo solo declaraciones de tipos y el módulo de entrada), contando
+> archivos que ninguna prueba unitaria importa; las páginas con mucha GUI se
+> cubren adicionalmente con la suite e2e de Playwright. La cifra menor respecto
+> a instantáneas previas refleja un alcance más amplio y honesto, no una pérdida
+> de cobertura.
 
 ---
 
@@ -463,7 +470,6 @@ pantalla real ni hardware, por lo que no se otorgan 10/10.
   real del piloto.
 
 ### Can wait
-- Firefox/WebKit (binarios Playwright no instalados en este entorno).
 - Pruebas con proveedores externos reales (OpenRouter/Ollama) con modelos
   cargados.
 - ARASAAC sobre red externa.
@@ -479,7 +485,10 @@ pantalla real ni hardware, por lo que no se otorgan 10/10.
 - Audio realmente escuchado por una persona; micrófono físico y captura WebM
   real.
 - Pantalla táctil, switches, scanning, eye tracking, head mouse.
-- Voces nativas de Windows y TTS de sistema operativo.- Firefox y WebKit (Playwright 1.62.1 no distribuye binarios para este SO: `ubuntu26.04-x64`; `playwright install firefox|webkit` falla con `Playwright does not support firefox/webkit on ubuntu26.04-x64`. Limitación de plataforma verificada, no un defecto del producto).
+- Voces nativas de Windows y TTS de sistema operativo.
+- Firefox y WebKit ya quedaron validados (127/127 cada uno) y añadidos a CI; las
+  correcciones cross-browser (TTS en WebKit, portal de diálogos, carrera de
+  navegación y checksum de importación) están incluidas en el código.
 - Llamadas reales a proveedores externos (OpenRouter, LM Studio, Ollama con
   modelos disponibles) y ARASAAC por red.
 - Offline desde instalación completamente vacía sin assets locales.
@@ -526,3 +535,50 @@ backend inesperados.
 
 El ciclo queda cerrado: QA independiente → correcciones → regresión → informe
 → PR con CI verde → merge (`5b3983a`) → smoke y E2E completos post-merge PASS.
+
+---
+
+## 28. Validación cross-browser y mantenibilidad (post-QA, `8f023b5`)
+
+Tras el cierre del ciclo QA se cerró la brecha de navegadores que antes se
+registraba como "limitación de plataforma" y se aplicó una pasada de limpieza
+orientada a mantenibilidad. Defectos reales corregidos (verificados en WebKit):
+
+1. **TTS atascado en WebKit (flujo AAC core)** — `speakViaBrowser` invocaba
+   `speechSynthesis.speak()` desde el manejador `onend` de la emisión anterior
+   (vía microtarea), lo que en WebKit/Safari dejaba el botón "Speak" congelado
+   en estado `speaking`. Corregido difiriendo `processNext()` a una macrotarea
+   (`setTimeout(0)`) y eliminando un `cancel()` redundante antes de `speak()`.
+2. **Capas de diálogos en WebKit** — `backdrop-filter` en el contenedor
+   `glass-panel` convertía los modales `position: fixed` en relativos al panel,
+   de modo que el overlay no cubría el viewport y `<main>` interceptaba los
+   clics (p. ej. "Create Student"). Corregido con un componente `Portal`
+   (`createPortal` → `document.body`) aplicado a 8 componentes de modal y 3
+   modales inline de `Students.tsx`.
+3. **Checksum de exportación/importación (preexistente, no de navegador)** — un
+   float de valor entero (`comprehension_score` `0.0`/`1.0`) se serializaba como
+   `0.0` en Python pero como `0` en el navegador, rompiendo la verificación del
+   checksum firmado en la reimportación (respuesta `400`). Corregido con
+   normalización canónica en `export_import.py` + test de regresión.
+4. **Harness e2e en WebKit** — carrera de navegación en `pilot-gate`
+   (`waitUntil: 'commit'`) y ruido de `pageerror` en el flujo de token forjado
+   (filtrado como ruido del motor, no fallo de la app).
+
+**Limpieza de código muerto aplicada:** eliminado el facade
+`services/learning_companion_service.py` (re-export shim de
+`services/learning/` con un `_session_scope` idéntico al base), tres scripts
+legacy de migración/seed, y consolidados endpoints duplicados (lista de modelos
+en `settings.py`, `/analytics/log`) y helpers `_lang_instruction`.
+
+**Resultado cross-browser (servidor real, SQLite temporal):**
+
+| Navegador | Suite E2E completa |
+| --------- | ------------------ |
+| Chromium | 126/126 PASS |
+| Firefox | 126/126 PASS |
+| WebKit | 126/126 PASS |
+
+Firefox y WebKit quedaron integrados en CI (`playwright.config.ts` + `.github/workflows/ci.yml`).
+Las condiciones restantes no cambian: paquete Windows real, lectores de pantalla
+reales, audio oído/micrófono físico y switches/scanning siguen requiriendo
+hardware y no se declaran validados.

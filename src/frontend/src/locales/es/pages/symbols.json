@@ -19,6 +19,7 @@
   "create": "Crear Símbolo",
   "cancel": "Cancelar",
   "searchSymbols": "Buscar símbolos...",
+  "semanticSearchUnavailable": "La búsqueda inteligente no está disponible temporalmente; se muestran solo coincidencias por palabra clave.",
   "filters": {
     "all": "Todos",
     "inUse": "En uso",

@@ -49,6 +49,7 @@ export interface SessionSummary {
   questions_answered?: number;
   correct_answers?: number;
   provider_used?: string;
+  source?: 'llm' | 'fallback';
   statistics?: {
     questions_asked?: number;
     questions_answered?: number;
@@ -70,6 +71,7 @@ interface LearningState {
     role: 'user' | 'assistant';
     content: string;
     symbolImages?: Array<{ label: string; image_path?: string; category?: string }>;
+    source?: 'llm' | 'fallback';
   }>;
   providerInUse?: 'ollama' | 'openrouter' | 'lmstudio';
   providerHistory: Array<{ provider: 'ollama' | 'openrouter' | 'lmstudio'; at: number }>;
@@ -284,7 +286,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
         ...(userMessage
           ? [{ role: 'user' as const, content: userMessage, ...(symbolImages ? { symbolImages } : {}) }]
           : []),
-        { role: 'assistant' as const, content: reply },
+        { role: 'assistant' as const, content: reply, source: result.source },
       ],
       isLoading: false,
     }));
@@ -426,7 +428,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
             ...(get().progressStats ?? {}),
             difficulty: question.difficulty ?? get().progressStats?.difficulty,
           },
-          messages: [...prev, { role: 'assistant' as const, content: formatAssistantContent(question.question_text || 'Question ready', showReasoning) }],
+          messages: [...prev, { role: 'assistant' as const, content: formatAssistantContent(question.question_text || 'Question ready', showReasoning), source: question.source }],
           isLoading: false
         });
         const questionWithProvider = question as QuestionResponse & WithProvider
@@ -608,12 +610,20 @@ export const useLearningStore = create<LearningState>((set, get) => {
       const showReasoning = Boolean(isAdmin && get().showAdminReasoning);
 
       // Reconstruct messages from conversation_history
-      const messages: Array<{ role: 'user' | 'assistant', content: string }> = [];
+      const messages: Array<{
+        role: 'user' | 'assistant';
+        content: string;
+        source?: 'llm' | 'fallback';
+      }> = [];
 
       if (sessionData.conversation_history && Array.isArray(sessionData.conversation_history)) {
         for (const entry of sessionData.conversation_history) {
           if (entry.type === 'question' && entry.data?.question) {
-            messages.push({ role: 'assistant' as const, content: formatAssistantContent(entry.data.question, showReasoning) });
+            messages.push({
+              role: 'assistant' as const,
+              content: formatAssistantContent(entry.data.question, showReasoning),
+              source: entry.source,
+            });
           } else if (entry.type === 'response' && entry.student_answer) {
             const isSymbol = entry.mode === 'symbol';
             const symbolList = Array.isArray(entry.symbols)
@@ -624,7 +634,11 @@ export const useLearningStore = create<LearningState>((set, get) => {
               : entry.student_answer;
             messages.push({ role: 'user' as const, content });
             if (entry.feedback) {
-              messages.push({ role: 'assistant' as const, content: formatAssistantContent(entry.feedback, showReasoning) });
+              messages.push({
+                role: 'assistant' as const,
+                content: formatAssistantContent(entry.feedback, showReasoning),
+                source: entry.source,
+              });
             }
           }
         }

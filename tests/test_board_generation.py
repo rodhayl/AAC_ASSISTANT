@@ -128,6 +128,82 @@ def test_unrelated_teacher_cannot_use_ai_suggestions_on_student_board(
     assert apply_response.status_code == 403
 
 
+def test_create_board_with_ai_lmstudio_provider(
+    test_db_session: Session, setup_test_db, admin_token, admin_user, mock_ai_response
+):
+    """LM Studio is a first-class AI provider for board generation."""
+    with patch("src.api.routers.board_ai.BoardGenerationService") as MockServiceClass:
+        mock_instance = MockServiceClass.return_value
+        mock_instance.generate_board_items = AsyncMock(return_value=mock_ai_response)
+
+        with patch("src.api.routers.board_ai.LMStudioProvider"):
+            response = client.post(
+                f"/api/boards/?user_id={admin_user.id}",
+                headers={"Authorization": f"Bearer {admin_token}"},
+                json={
+                    "name": "AI LM Studio Board",
+                    "description": "Generated via LM Studio",
+                    "is_public": False,
+                    "ai_enabled": True,
+                    "ai_provider": "lmstudio",
+                    "ai_model": "local-model",
+                },
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["ai_enabled"] is True
+
+            board_symbols = (
+                test_db_session.query(BoardSymbol)
+                .filter(BoardSymbol.board_id == data["id"])
+                .all()
+            )
+            assert len(board_symbols) == 2
+
+
+def test_create_board_rejects_unknown_ai_provider(
+    test_db_session: Session, setup_test_db, admin_token, admin_user
+):
+    """Only the three configured AI providers are accepted for board generation."""
+    response = client.post(
+        f"/api/boards/?user_id={admin_user.id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "name": "Unknown Provider Board",
+            "is_public": False,
+            "ai_enabled": True,
+            "ai_provider": "gpt4",
+            "ai_model": "gpt-4",
+        },
+    )
+
+    assert response.status_code == 400
+
+
+def test_resolve_provider_for_board_supports_lmstudio(
+    test_db_session: Session, setup_test_db, admin_user
+):
+    """Board AI suggestions resolve an LM Studio provider for lmstudio boards."""
+    from src.aac_app.providers.lmstudio_provider import LMStudioProvider
+    from src.api.routers.board_ai import _resolve_provider_for_board
+
+    board = CommunicationBoard(
+        user_id=admin_user.id,
+        name="LM Studio Suggestions Board",
+        ai_enabled=True,
+        ai_provider="lmstudio",
+        ai_model="local-model",
+    )
+    test_db_session.add(board)
+    test_db_session.commit()
+
+    provider = _resolve_provider_for_board(board, test_db_session)
+
+    assert isinstance(provider, LMStudioProvider)
+    assert provider._configured_model == "local-model"
+
+
 def test_create_board_without_ai(
     test_db_session: Session, setup_test_db, admin_token, admin_user
 ):

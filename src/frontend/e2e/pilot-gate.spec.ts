@@ -186,7 +186,10 @@ test.describe('Pilot gate: Student UI boundary checks', () => {
 
   test('cannot access Admin or Teacher UI routes', async ({ page }) => {
     for (const path of ['/admins', '/teachers', '/symbols']) {
-      await page.goto(path);
+      // The SPA guard redirects client-side right after the document commits,
+      // which interrupts the pending load/domcontentloaded event in WebKit.
+      // Wait only for the navigation commit, then assert the final redirect.
+      await page.goto(path, { waitUntil: 'commit' });
       await expect(page).toHaveURL(/\/$/);
     }
   });
@@ -197,7 +200,7 @@ test.describe('Pilot gate: Teacher UI boundary checks', () => {
 
   test('cannot access Admin UI routes', async ({ page }) => {
     for (const path of ['/admins', '/teachers']) {
-      await page.goto(path);
+      await page.goto(path, { waitUntil: 'commit' });
       await expect(page).toHaveURL(/\/$/);
     }
   });

@@ -15,6 +15,8 @@ commitments, and may change as the project evolves.
 - Security and documentation hardening (threat modeling, privacy guidelines, zero default credentials).
 - Production E2E suite exercising core flows against the real backend.
 - Initial public release (`v2.0.0`) with Windows installer, portable package, SHA-256 checksums, and SBOM.
+- Cross-browser E2E validation (Chromium, Firefox, and WebKit) with WebKit-specific AAC speech and modal-layering fixes.
+- Maintainability cleanup: removal of a dead learning-service facade and legacy migration/seed scripts, consolidation of duplicate endpoints.
 
 ## Planned
 

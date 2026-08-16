@@ -191,3 +191,21 @@ def test_predict_next_new_symbols_visible_after_mutation(
         db=test_db_session,
     )
     assert any(suggestion["label"] == "milk" for suggestion in second)
+
+
+def test_punctuation_suggestions_use_deterministic_ids(
+    test_db_session, regular_user
+):
+    """Punctuation fake ids are stable, not salted per-process via hash()."""
+    service = PredictionService()
+    suggestions = service.predict_next(
+        user_id=regular_user.id,
+        current_symbols=[],
+        limit=5,
+        language="en",
+        offset=0,
+        db=test_db_session,
+    )
+    punctuation = [s for s in suggestions if s["category"] == "punctuation"]
+    assert [s["label"] for s in punctuation] == [".", ",", "?", "!"]
+    assert [s["symbol_id"] for s in punctuation] == [-1, -2, -3, -4]

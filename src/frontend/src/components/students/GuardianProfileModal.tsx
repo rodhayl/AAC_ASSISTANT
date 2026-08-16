@@ -3,6 +3,7 @@ import { X, Save, Sparkles, AlertTriangle, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import api, { extractError } from '../../lib/api';
 import type { User, GuardianProfile, TemplateInfo } from '../../types';
+import { Portal } from '../ui/Portal';
 
 interface GuardianProfileModalProps {
     isOpen: boolean;
@@ -96,6 +97,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
     if (!isOpen) return null;
 
     return (
+        <Portal>
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" role="presentation">
             <div
                 className="glass-card w-full max-w-md p-6 max-h-[90vh] overflow-y-auto"
@@ -264,5 +266,6 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                 </div>
             </div>
         </div>
+        </Portal>
     );
 }

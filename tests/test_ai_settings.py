@@ -91,7 +91,7 @@ class TestPrimaryAISettings:
             json={"provider": "invalid_provider", "ollama_model": "some-model"},
         )
         assert response.status_code == 400
-        assert "must be 'ollama' or 'openrouter'" in response.json()["detail"]
+        assert "must be 'ollama', 'openrouter', or 'lmstudio'" in response.json()["detail"]
 
     def test_invalid_later_field_rolls_back_all_settings(self, admin_user, admin_token):
         """A validation failure must not persist earlier fields from the same request."""

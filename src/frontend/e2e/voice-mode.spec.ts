@@ -11,8 +11,13 @@ async function toggleAndSave(page: import('@playwright/test').Page) {
 
   const initial = await toggle.isChecked();
   const target = !initial;
-  if (target) await toggle.check({ force: true });
-  else await toggle.uncheck({ force: true });
+  // Interact with the visible toggle control (a real user clicks the track,
+  // not the visually-hidden checkbox). Firefox does not toggle a clipped
+  // `sr-only` input via a direct force-click, but label activation works
+  // identically in Chromium and Firefox.
+  if (target !== initial) {
+    await page.locator('label:has(#pref-voice-mode-enabled)').click();
+  }
   // Wait for React to commit the controlled input before saving, otherwise
   // the save handler can read the previous value from its stale closure.
   if (target) await expect(toggle).toBeChecked();

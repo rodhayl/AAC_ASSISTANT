@@ -111,7 +111,7 @@ class QuestionGenerationMixin:
 
                 # Generate the question (LLM with a strict-JSON retry, then a
                 # translated fallback) and validate its shape.
-                question_data, response = await self._generate_question_data(
+                question_data, response, is_fallback = await self._generate_question_data(
                     session, difficulty, recent_history, db
                 )
 
@@ -127,6 +127,7 @@ class QuestionGenerationMixin:
                         "type": "question",
                         "data": question_data,
                         "difficulty": difficulty,
+                        "source": "fallback" if is_fallback else "llm",
                         "timestamp": datetime.now().isoformat(),
                     },
                 )
@@ -150,6 +151,7 @@ class QuestionGenerationMixin:
                     "difficulty": difficulty,
                     "correct_answer_index": question_data["correct"],
                     "provider_used": self.provider_type,
+                    "source": "fallback" if is_fallback else "llm",
                 }
 
         except Exception as e:
@@ -162,12 +164,13 @@ class QuestionGenerationMixin:
         difficulty: str,
         recent_history: list,
         db: Session | None,
-    ) -> tuple[dict | None, str]:
+    ) -> tuple[dict | None, str, bool]:
         """Produce adaptive question data: LLM, strict-JSON retry, fallback.
 
-        Returns ``(question_data, response)`` where ``response`` is the last
-        raw LLM reply (empty when generation never reached the model) so the
-        caller can log diagnostics. ``question_data`` is ``None`` only when
+        Returns ``(question_data, response, is_fallback)`` where ``response``
+        is the last raw LLM reply (empty when generation never reached the
+        model) and ``is_fallback`` is True only when the deterministic
+        translated template was used. ``question_data`` is ``None`` only when
         generation itself raised before assigning a value.
         """
         required_fields = ("question", "choices", "correct")
@@ -245,6 +248,7 @@ class QuestionGenerationMixin:
         except Exception:
             question_data = None
 
+        is_fallback = question_data is None
         if question_data is None:
             if response:
                 logger.error(f"Failed to parse question JSON: {response}")
@@ -278,4 +282,4 @@ class QuestionGenerationMixin:
                 "correct": 0,
             }
 
-        return question_data, response
+        return question_data, response, is_fallback

@@ -50,6 +50,7 @@ Be very positive and encouraging. Keep it to 2-3 sentences."""
                         temperature=0.7,
                     )
                     summary = _strip_reasoning(summary_raw)
+                    summary_source = "llm"
                 except Exception:
                     translation_service = TranslationService()
                     user_lang = self._get_user_language(session.user_id, db)
@@ -61,6 +62,7 @@ Be very positive and encouraging. Keep it to 2-3 sentences."""
                         questions=session.questions_answered,
                         correct=session.correct_answers,
                     )
+                    summary_source = "fallback"
 
                 db.add(session)
                 db.commit()
@@ -77,6 +79,7 @@ Be very positive and encouraging. Keep it to 2-3 sentences."""
                     "questions_answered": session.questions_answered,
                     "correct_answers": session.correct_answers,
                     "provider_used": self.provider_type,
+                    "source": summary_source,
                     "statistics": {
                         "questions_asked": session.questions_asked,
                         "questions_answered": session.questions_answered,

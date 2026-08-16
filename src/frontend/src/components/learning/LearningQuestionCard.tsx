@@ -54,6 +54,15 @@ export function LearningQuestionCard({
             : 'border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20'
         }`}
       >
+        {question.source === 'fallback' && (
+          <p
+            role="status"
+            className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-md px-2 py-1 mb-2"
+          >
+            {t('fallbackQuestionNote', 'Showing a practice question because the AI assistant is unavailable.')}
+          </p>
+        )}
+
         <div className="flex items-center justify-between mb-2">
           <div className="text-xs font-medium text-purple-700 dark:text-purple-300">
             {t('chooseAnswer', 'Choose an answer')}

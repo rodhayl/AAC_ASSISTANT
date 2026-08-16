@@ -14,6 +14,8 @@ describe('tts queue watchdog', () => {
     speak: ReturnType<typeof vi.fn>
     cancel: ReturnType<typeof vi.fn>
     getVoices: ReturnType<typeof vi.fn>
+    speaking: boolean
+    pending: boolean
   }
   let utterances: FakeUtterance[]
   let originalSpeechSynthesis: PropertyDescriptor | undefined
@@ -28,6 +30,8 @@ describe('tts queue watchdog', () => {
       }),
       cancel: vi.fn(),
       getVoices: vi.fn(() => []),
+      speaking: true,
+      pending: true,
     }
     originalSpeechSynthesis = Object.getOwnPropertyDescriptor(window, 'speechSynthesis')
     Object.defineProperty(window, 'speechSynthesis', {
@@ -101,7 +105,7 @@ describe('tts queue watchdog', () => {
 
     expect(tts.getStatus()).toBe('speaking')
     utterances[0].onend?.()
-    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(0)
 
     expect(tts.getStatus()).toBe('idle')
   })
@@ -120,10 +124,12 @@ describe('tts queue watchdog', () => {
     await vi.advanceTimersByTimeAsync(2_000)
 
     expect(speechSynthesis.speak).toHaveBeenCalledTimes(1)
-    expect(speechSynthesis.cancel).toHaveBeenCalledTimes(cancelCountBeforeEnqueue + 1)
+    // speakViaBrowser must not cancel() before speak(): the queue serializes
+    // utterances and a synchronous cancel+speak leaves WebKit/Safari stuck.
+    expect(speechSynthesis.cancel).toHaveBeenCalledTimes(cancelCountBeforeEnqueue)
 
     utterances[0].onend?.()
-    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(0)
 
     expect(speechSynthesis.speak).toHaveBeenCalledTimes(2)
     expect(utterances[1].text).toBe('B')
@@ -146,6 +152,26 @@ describe('tts queue watchdog', () => {
 
     expect(speechSynthesis.speak).toHaveBeenCalledTimes(2)
     expect(utterances[1].text).toBe('B')
+  })
+
+  it('recovers via the engine-state poller when onend never fires but speech is idle', async () => {
+    speechSynthesis.speak.mockImplementation((utterance: FakeUtterance) => {
+      utterances.push(utterance)
+      utterance.onstart?.()
+    })
+    const { tts } = await import('../src/lib/tts')
+
+    tts.enqueue('A', { key: 'poller-a' })
+    expect(tts.getStatus()).toBe('speaking')
+
+    // WebKit/Safari quirk: the engine actually finished (speaking/pending are
+    // both false) but the utterance's onend never fired.
+    speechSynthesis.speaking = false
+    speechSynthesis.pending = false
+
+    await vi.advanceTimersByTimeAsync(600)
+
+    expect(tts.getStatus()).toBe('idle')
   })
 })
 

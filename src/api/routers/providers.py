@@ -1,11 +1,13 @@
 import asyncio
+import contextlib
+import os
 import shutil
 import subprocess
 import sys
 import threading
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from loguru import logger
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -25,6 +27,7 @@ from src.aac_app.providers.local_tts_provider import (
     model_files_present,
 )
 from src.api.deps import (
+    LocalSpeechProvider,
     get_current_active_user,
     get_current_admin_user,
     get_db,
@@ -32,9 +35,12 @@ from src.api.deps import (
     get_ollama_provider,
     get_openrouter_provider,
     get_setting_value,
+    get_speech_provider,
+    get_text,
     invalidate_setting,
 )
 from src.api.deps import providers as provider_deps
+from src.api.file_uploads import DEFAULT_MAX_AUDIO_BYTES, save_audio_upload
 
 router = APIRouter(prefix="/api/providers", tags=["providers"])
 _voice_install_lock = threading.Lock()
@@ -167,6 +173,59 @@ def voice_status(current_user: User = Depends(get_current_active_user)):
             },
         },
     }
+
+
+@router.post("/transcribe")
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    lang: str = Query("es"),
+    speech: LocalSpeechProvider = Depends(get_speech_provider),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Transcribe uploaded audio with the local faster-whisper engine.
+
+    Runs the CPU-bound transcription off the event loop and returns the
+    recognized text. When the optional voice extra is missing this returns
+    503 so the frontend can fall back to the browser's SpeechRecognition API.
+    """
+    if not speech.is_available():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=get_text(
+                user=current_user,
+                key="errors.boards.speechUnavailable",
+                namespace="common",
+            ),
+        )
+
+    temp_path = None
+    try:
+        temp_path = await save_audio_upload(
+            file,
+            max_bytes=DEFAULT_MAX_AUDIO_BYTES,
+            too_large_detail=get_text(
+                user=current_user,
+                key="errors.boards.audioFileTooLarge",
+                namespace="common",
+            ),
+            invalid_type_detail=get_text(
+                user=current_user,
+                key="errors.boards.invalidAudioType",
+                namespace="common",
+            ),
+            empty_detail=get_text(
+                user=current_user,
+                key="errors.boards.invalidAudioType",
+                namespace="common",
+            ),
+        )
+        normalized_lang = (lang or "es").strip().lower()
+        text = await asyncio.to_thread(speech.transcribe, temp_path, normalized_lang)
+        return {"text": (text or "").strip(), "provider": "local"}
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            with contextlib.suppress(OSError):
+                os.remove(temp_path)
 
 
 class STTModelUpdateRequest(BaseModel):
@@ -395,20 +454,3 @@ def install_voice_dependencies(
         "installed": is_faster_whisper_available(),
         "message": "Voice dependencies installed successfully.",
     }
-
-
-@router.get("/ai/models/lmstudio")
-async def get_lmstudio_models(
-    current_user: User = Depends(get_current_active_user),
-):
-    """Fetch available LM Studio models"""
-    try:
-        provider = get_lmstudio_provider()
-        if not await asyncio.to_thread(provider.is_available):
-            return {"models": [], "error": "LM Studio is not available"}
-
-        models_response = await provider.get_available_models()
-        models_list = models_response.get("data", [])
-        return {"models": models_list}
-    except Exception as e:
-        return {"models": [], "error": str(e)}

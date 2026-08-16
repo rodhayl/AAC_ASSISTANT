@@ -2,6 +2,7 @@ import { useId, useRef, type FormEvent } from 'react';
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
 import type { TFunction } from 'i18next';
 import type { User } from '../../types';
+import { Portal } from '../ui/Portal';
 
 interface ResetPasswordModalProps {
   user: User;
@@ -32,6 +33,7 @@ export function ResetPasswordModal({
   const errorId = `${idPrefix}-error`;
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <div ref={dialogRef} className="glass-card w-full max-w-md p-6" role="document">
         <h3 id={titleId} className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
@@ -65,5 +67,6 @@ export function ResetPasswordModal({
         </form>
       </div>
     </div>
+    </Portal>
   );
 }

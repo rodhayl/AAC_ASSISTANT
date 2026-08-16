@@ -10,6 +10,10 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
+import webbrowser
+from collections.abc import Callable
 from pathlib import Path
 
 # Make direct execution work from the repository root:
@@ -29,6 +33,64 @@ def is_port_available(host: str, port: int) -> bool:
 
 
 _npm_command = npm_command
+
+
+def _should_open_browser() -> bool:
+    """Return whether desktop startup should open the local app automatically."""
+    return os.environ.get("AAC_ASSISTANT_NO_BROWSER", "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _app_url() -> str:
+    """Return the local URL the production server serves the app at."""
+    host = str(config.BACKEND_HOST)
+    display_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    return f"http://{display_host}:{config.BACKEND_PORT}/"
+
+
+def _server_answers(url: str) -> bool:
+    """Return whether the local production server answers HTTP 200 for ``url``."""
+    try:
+        with urllib.request.urlopen(url, timeout=2) as response:
+            return response.status == 200
+    except (OSError, urllib.error.URLError):
+        return False
+
+
+def _graceful_timeout() -> int:
+    """Return the bounded child-shutdown timeout used throughout startup."""
+    return max(config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS + 2, 5)
+
+
+def _open_browser_when_ready(shutdown_requested: threading.Event) -> None:
+    """Poll readiness, then open the browser unless shutdown was requested."""
+    url = _app_url()
+    deadline = time.monotonic() + 30.0
+    while time.monotonic() < deadline and not shutdown_requested.is_set():
+        if _server_answers(url):
+            _open_browser(url)
+            return
+        time.sleep(0.25)
+    if not shutdown_requested.is_set():
+        print(
+            f"Server did not answer {url} within 30 seconds; "
+            "skipping automatic browser launch.",
+            file=sys.stderr,
+        )
+
+
+def _open_browser(url: str) -> None:
+    """Open the local app for desktop users unless headless mode is enabled."""
+    if not _should_open_browser():
+        return
+    try:
+        webbrowser.open(url)
+    except Exception as exc:  # pragma: no cover - platform-specific launchers
+        print(f"Could not open a browser for {url}: {exc}", file=sys.stderr)
 
 
 def ensure_frontend_build() -> Path:
@@ -113,8 +175,14 @@ def _wait_for_process_with_signal_handling(
     process: subprocess.Popen[bytes] | subprocess.Popen[str],
     *,
     timeout: int,
+    before_wait: Callable[[threading.Event], None] | None = None,
 ) -> int:
-    """Wait for a child while handling Ctrl+C / Ctrl+Break ourselves."""
+    """Wait for a child while handling Ctrl+C / Ctrl+Break ourselves.
+
+    ``before_wait``, when provided, runs after the shutdown handlers are
+    installed but before the blocking wait, so early Ctrl+C / SIGTERM during
+    startup warmup still stops the child gracefully.
+    """
     shutdown_requested = threading.Event()
     previous_sigint = signal.getsignal(signal.SIGINT)
     previous_sigterm = signal.getsignal(signal.SIGTERM)
@@ -129,6 +197,8 @@ def _wait_for_process_with_signal_handling(
         signal.signal(signal.SIGBREAK, _request_shutdown)
 
     try:
+        if before_wait is not None:
+            before_wait(shutdown_requested)
         while True:
             returncode = process.poll()
             if returncode is not None:
@@ -169,7 +239,8 @@ def run_production() -> int:
     try:
         return _wait_for_process_with_signal_handling(
             backend,
-            timeout=max(config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS + 2, 5),
+            timeout=_graceful_timeout(),
+            before_wait=_open_browser_when_ready,
         )
     finally:
         if backend.poll() is None:

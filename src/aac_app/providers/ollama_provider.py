@@ -184,7 +184,3 @@ class OllamaProvider(BaseLLMProvider):
         except Exception as e:
             logger.debug(f"Ollama not available: {e}")
             return False
-
-    def close(self):
-        """Backward-compatible synchronous close alias."""
-        self.close_sync()

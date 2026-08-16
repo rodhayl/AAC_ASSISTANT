@@ -26,8 +26,13 @@ async function toggleAndPersist(
   const putResponse = page.waitForResponse(
     (r) => r.url().includes('/api/auth/preferences') && r.request().method() === 'PUT',
   );
-  if (target) await toggle.check({ force: true });
-  else await toggle.uncheck({ force: true });
+  // Click the visible toggle control (label activation) so the interaction
+  // works in Firefox as well as Chromium; the hidden checkbox input is not a
+  // reliable click target in Firefox.
+  if ((await toggle.isChecked()) !== target) {
+    await page.locator(`label:has(#${id})`).click();
+  }
+  await expect(toggle).toBeChecked({ checked: target });
   await savePrefs(page).click();
 
   const putBody = (await (await putResponse).json()) as Record<string, unknown>;

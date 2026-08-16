@@ -12,6 +12,9 @@ export interface LearningMessage {
     image_path?: string;
     category?: string;
   }>;
+  // Whether this assistant message came from the LLM or from a deterministic
+  // local template; shown as a badge so teachers can tell them apart.
+  source?: 'llm' | 'fallback';
 }
 
 interface LearningMessageListProps {
@@ -87,6 +90,15 @@ export function LearningMessageList({
                   {isSymbolMessage && <GridIcon className="w-3 h-3 mr-1" />}
                   <span className="capitalize">{message.role}</span>
                 </div>
+                {message.role === 'assistant' && message.source === 'fallback' && (
+                  <p
+                    role="status"
+                    data-testid="fallback-source-badge"
+                    className="inline-block text-[11px] leading-tight text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-md px-1.5 py-0.5 mb-1.5"
+                  >
+                    {t('fallbackChatNote', 'This message was generated locally because the AI assistant is unavailable.')}
+                  </p>
+                )}
                 {message.role === 'user' && isSymbolMessage && (
                   <button
                     onClick={() => onEditMessage(index)}

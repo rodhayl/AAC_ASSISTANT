@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from src.aac_app.models import LearningSession, User
 from src.aac_app.services.auth_service import get_password_hash
-from src.aac_app.services.learning_companion_service import LearningCompanionService
+from src.aac_app.services.learning import LearningCompanionService
 from src.api import deps
 from src.api.main import app
 from tests.test_utils_auth import create_test_headers

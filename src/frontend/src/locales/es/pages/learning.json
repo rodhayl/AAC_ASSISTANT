@@ -107,6 +107,9 @@
     "interesting": "¡Eso es interesante! Cuéntame más."
   },
   "fallbackSummary": "¡Buen trabajo al completar tu sesión sobre {{topic}}! Respondiste {{questions}} preguntas y acertaste {{correct}}.",
+  "fallbackQuestionNote": "Mostrando una pregunta de práctica porque el asistente de IA no está disponible.",
+  "fallbackSummaryNote": "Este resumen se generó localmente porque el asistente de IA no está disponible.",
+  "fallbackChatNote": "Este mensaje se generó localmente porque el asistente de IA no está disponible.",
   "endSession": "Finalizar sesión",
   "endSessionConfirmTitle": "¿Finalizar esta sesión?",
   "endSessionConfirm": "Tu progreso se guardará y aparecerá un resumen.",

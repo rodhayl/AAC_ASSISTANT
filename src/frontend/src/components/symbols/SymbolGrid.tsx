@@ -47,11 +47,17 @@ export function SymbolGrid({
                   type="checkbox"
                   checked={selectedIds.has(sym.id)}
                   onChange={(e) => onToggleSelection(sym.id, e.target.checked)}
+                  aria-label={t('selectSymbol', 'Select {{label}}', { label: sym.label })}
                 />
                 <Button variant="secondary" size="sm" onClick={() => onEdit(sym)}>
                   <Edit className="w-4 h-4 mr-1" /> {t('edit', 'Edit')}
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => onDelete(sym.id)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onDelete(sym.id)}
+                  aria-label={t('deleteSymbol', 'Delete {{label}}', { label: sym.label })}
+                >
                   <Trash2 className="w-4 h-4" />
                 </Button>
               </div>

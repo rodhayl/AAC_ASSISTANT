@@ -381,6 +381,7 @@ class LearningSessionResponse(BaseModel):
     topic: str | None = None
     difficulty: str | None = None
     provider_used: str | None = None
+    source: str | None = None
     summary: str | None = None
     comprehension_score: float | None = None
     questions_answered: int | None = None
@@ -397,6 +398,7 @@ class QuestionResponse(BaseModel):
     difficulty: str | None = None
     correct_answer_index: int | None = None
     provider_used: str | None = None
+    source: str | None = None
     error: str | None = None
 
 
@@ -433,6 +435,7 @@ class AnswerResponse(BaseModel):
     questions_answered: int | None = None
     correct_answers: int | None = None
     provider_used: str | None = None
+    source: str | None = None
     error: str | None = None
 
 

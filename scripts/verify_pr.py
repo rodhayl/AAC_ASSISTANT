@@ -91,7 +91,7 @@ def main() -> int:
     steps = [
         ("Backend Ruff Linter", ["uv", "run", "ruff", "check", "src", "tests", "scripts"], root),
         ("Backend Compileall", ["uv", "run", "python", "-m", "compileall", "-q", "src", "scripts"], root),
-        ("Backend Pytest & Coverage", ["uv", "run", "pytest", "--cov=src", "--cov-report=term-missing:skip-covered", "--cov-branch", "-q"], root),
+        ("Backend Pytest & Coverage", ["uv", "run", "pytest", "--cov=src", "--cov-report=term-missing:skip-covered", "--cov-branch", "--cov-fail-under=75", "-q"], root),
         ("Frontend TypeScript Typecheck", ["npm", "run", "typecheck"], frontend_dir),
         ("Frontend ESLint", ["npm", "run", "lint"], frontend_dir),
         ("Frontend Vitest & Coverage", ["npm", "run", "test", "--", "--run", "--coverage"], frontend_dir),

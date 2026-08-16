@@ -141,6 +141,7 @@
   "searchBoards": "Buscar tableros...",
   "noBoardsMatchSearch": "No hay tableros que coincidan con tu búsqueda",
   "symbolSearchPlaceholder": "Buscar símbolos...",
+  "semanticSearchUnavailable": "La búsqueda inteligente no está disponible temporalmente; se muestran solo coincidencias por palabra clave.",
   "noBoardsFound": "No se encontraron tableros",
   "askTeacherForBoards": "Pídele a tu profesor que te asigne un tablero.",
   "createBoardFirst": "Crea un tablero en la sección Tableros primero.",

@@ -361,8 +361,12 @@ api.interceptors.response.use(
     // recorded, causing silent loss when an access token expired offline.
     if (status === 401 && !isAuthFlowEndpoint(error.config?.url) && !isOfflineReplay) {
       try {
-        const { logout } = getAuthState();
-        logout?.();
+        // Clear the session synchronously so the persisted auth state cannot
+        // survive the full-page redirect below. The token is already rejected
+        // server-side (that is why this 401 fired), so no revocation round-trip
+        // is needed here.
+        const { clearSession } = getAuthState();
+        clearSession?.();
         if (typeof window !== 'undefined') {
           window.location.href = '/login';
         }

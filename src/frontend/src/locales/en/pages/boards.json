@@ -141,6 +141,7 @@
   "searchBoards": "Search boards...",
   "noBoardsMatchSearch": "No boards match your search",
   "symbolSearchPlaceholder": "Search for a symbol...",
+  "semanticSearchUnavailable": "Smart search is temporarily unavailable; showing keyword matches only.",
   "noBoardsFound": "No boards found",
   "askTeacherForBoards": "Ask your teacher to assign you a board.",
   "createBoardFirst": "Create a board in the Boards section first.",

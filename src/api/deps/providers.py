@@ -23,7 +23,7 @@ from src.aac_app.providers.ollama_provider import OllamaProvider
 from src.aac_app.providers.openrouter_provider import OpenRouterProvider
 from src.aac_app.services.achievement_system import AchievementSystem
 from src.aac_app.services.board_generation_service import BoardGenerationService
-from src.aac_app.services.learning_companion_service import LearningCompanionService
+from src.aac_app.services.learning import LearningCompanionService
 from src.aac_app.services.local_vector_store import (
     LocalVectorStore,
     vector_store_operation_lock,

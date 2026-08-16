@@ -30,6 +30,24 @@ describe('LearningQuestionCard', () => {
     expect(container.firstChild).toBeNull();
   });
 
+  it('shows a fallback note when the question came from the deterministic template', () => {
+    render(
+      <LearningQuestionCard
+        question={{
+          success: true,
+          question_text: 'What do you know about animals?',
+          choices: ['A', 'B', 'C'],
+          correct_answer_index: 0,
+          source: 'fallback',
+        }}
+        disabled={false}
+        onAnswer={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('status').textContent).toContain('AI assistant is unavailable');
+  });
+
   it('renders the answer choices and reports the tapped choice', () => {
     const onAnswer = vi.fn();
     render(
