@@ -36,7 +36,8 @@ def fresh_db(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(config, "ENV_FILE", tmp_path / ".env")
     monkeypatch.setattr(config, "LEGACY_ENV_FILE", tmp_path / "env.properties")
 
-    return engine, session_factory
+    yield engine, session_factory
+    engine.dispose()
 
 
 def test_default_runtime_does_not_create_admin_with_default_password(fresh_db, monkeypatch):
@@ -288,13 +289,16 @@ def test_production_environment_with_explicit_password_bootstraps_admin(fresh_db
         assert verify_password("ProductionSuperSecret999!", admin.password_hash)
 
 
-def test_ensure_bootstrap_admin_script_no_plaintext_persistence(tmp_path: Path, monkeypatch, capsys):
+def test_ensure_bootstrap_admin_script_no_plaintext_persistence(
+    tmp_path: Path, monkeypatch, capsys, request
+):
     """ensure_bootstrap_admin script reports cleanly without printing or storing plaintext credentials."""
     from scripts import ensure_bootstrap_admin as script_module
 
     db_file = tmp_path / "script_test.sqlite3"
     db_url = f"sqlite:///{db_file.as_posix()}"
     engine = create_engine(db_url, connect_args={"check_same_thread": False})
+    request.addfinalizer(engine.dispose)
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine)
 

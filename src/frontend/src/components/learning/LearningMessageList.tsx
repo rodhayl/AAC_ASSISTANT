@@ -1,7 +1,7 @@
 import { Bot, Edit, Grid as GridIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SymbolMessageEditor } from '../SymbolMessageEditor';
-import { assetUrl } from '../../lib/utils';
+import { SymbolImage } from '../common/SymbolImage';
 
 export interface LearningMessage {
   role: 'user' | 'assistant';
@@ -108,8 +108,8 @@ export function LearningMessageList({
                       title={symbol.label}
                     >
                       {symbol.image_path ? (
-                        <img
-                          src={assetUrl(symbol.image_path)}
+                        <SymbolImage
+                          imagePath={symbol.image_path}
                           alt={symbol.label}
                           className="w-full h-full object-contain"
                         />

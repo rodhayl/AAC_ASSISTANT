@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Edit, Check, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { assetUrl } from '../lib/utils';
+import { SymbolImage } from './common/SymbolImage';
 import { glossSymbolUtterance } from '../lib/gloss';
 import { getCategoryStyle } from '../lib/symbolCategoryStyle';
 
@@ -60,8 +60,8 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
                 } ${getCategoryStyle(sym.category).badgeText} ${getCategoryStyle(sym.category).border}`}
               >
                 {sym.image_path && (
-                  <img
-                    src={assetUrl(sym.image_path)}
+                  <SymbolImage
+                    imagePath={sym.image_path}
                     alt={sym.label}
                     className="w-5 h-5 object-contain"
                   />

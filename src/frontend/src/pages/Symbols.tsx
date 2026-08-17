@@ -8,7 +8,7 @@ import type { Symbol as SymbolType } from '../types';
 import { useTranslation } from 'react-i18next';
 import { DEFAULT_SYMBOL_CATEGORIES } from '../lib/symbolCategories';
 import { isValidImageFile } from '../lib/download';
-import { safeImageUrl } from '../lib/utils';
+import { SymbolImage } from '../components/common/SymbolImage';
 
 type UsageFilter = 'all' | 'in_use' | 'unused';
 
@@ -410,7 +410,7 @@ export function Symbols() {
             {arasaacResults.map((item) => (
               <div key={item.id} className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 flex flex-col gap-2 items-center text-center hover:border-indigo-500 transition-colors">
                 <div className="w-24 h-24 bg-white rounded-lg p-2 flex items-center justify-center">
-                  <img src={safeImageUrl(item.image_url) || ''} alt={item.label} className="max-w-full max-h-full object-contain" />
+                  <SymbolImage imagePath={item.image_url} alt={item.label} className="max-w-full max-h-full object-contain" />
                 </div>
                 <div className="w-full">
                   <div className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate" title={item.label}>{item.label}</div>

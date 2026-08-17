@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Search, Volume2, X } from 'lucide-react';
-import { assetUrl } from '../../lib/utils';
+import { SymbolImage } from '../common/SymbolImage';
 import { glossSymbolUtterance } from '../../lib/gloss';
 import { getCategoryStyle } from '../../lib/symbolCategoryStyle';
 import { LEARNING_SYMBOL_CATEGORY_IDS } from '../../lib/symbolCategories';
@@ -179,8 +179,8 @@ export function LearningSymbolPanel({
                 title={symbol.label}
               >
                 {symbol.image_path ? (
-                  <img
-                    src={assetUrl(symbol.image_path)}
+                  <SymbolImage
+                    imagePath={symbol.image_path}
                     alt={symbol.label}
                     className="w-10 h-10 object-contain mb-1"
                   />

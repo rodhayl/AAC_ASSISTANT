@@ -1,7 +1,7 @@
 import { Edit, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { Symbol as SymbolType } from '../../types';
-import { assetUrl } from '../../lib/utils';
+import { SymbolImage } from '../common/SymbolImage';
 import { Button } from '../ui/Button';
 
 type SymbolGridProps = {
@@ -37,7 +37,7 @@ export function SymbolGrid({
             <div className="flex items-center justify-between">
               <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
                 {sym.image_path ? (
-                  <img src={assetUrl(sym.image_path)} alt={sym.label} className="w-full h-full object-cover" />
+                  <SymbolImage imagePath={sym.image_path} alt={sym.label} className="w-full h-full object-cover" />
                 ) : (
                   <ImageIcon className="w-6 h-6 text-gray-400" />
                 )}

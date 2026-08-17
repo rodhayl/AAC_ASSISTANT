@@ -28,7 +28,6 @@
   "targetUser": "For specific student (optional)",
   "allStudents": "All students",
   "selectStudent": "Select Student",
-  "chooseStudent": "Choose a student...",
   "confirmDelete": "Are you sure you want to delete this achievement?",
   "awardType": "Award Type",
   "manualAward": "Manual Award",

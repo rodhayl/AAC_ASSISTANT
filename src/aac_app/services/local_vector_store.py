@@ -149,9 +149,9 @@ class LocalVectorStore:
         if self._closed:
             raise RuntimeError("LocalVectorStore is closed")
         if self.engine is None:
-            from src.aac_app.db import ensure_tables
+            from src.aac_app.db import create_engine_instance
 
-            self.engine = ensure_tables()
+            self.engine = create_engine_instance()
         self._install_connection_listener(self.engine)
         return self.engine
 

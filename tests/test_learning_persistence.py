@@ -26,7 +26,7 @@ def override_providers(
     from contextlib import contextmanager
 
     from src.aac_app import db
-    from src.aac_app.services import achievement_system, learning_companion_service
+    from src.aac_app.services import achievement_system
 
     # Override providers
     app.dependency_overrides[get_llm_provider] = lambda: mock_llm_provider
@@ -38,7 +38,6 @@ def override_providers(
         yield test_db_session
 
     monkeypatch.setattr(db, "get_session", mock_get_session)
-    monkeypatch.setattr(learning_companion_service, "get_session", mock_get_session)
     monkeypatch.setattr(achievement_system, "get_session", mock_get_session)
 
     yield

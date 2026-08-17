@@ -29,6 +29,8 @@ Before merging any pull request into `main`:
    ```
    Ensures zero regressions against real FastAPI and SPA backend instances, including automated Axe Core accessibility scans (`e2e/axe-accessibility.spec.ts`).
 
+   The server under `PLAYWRIGHT_BASE_URL` (default `http://127.0.0.1:8086`) must be started with sample seeding enabled **and** deterministic seed passwords that match `e2e/auth.setup.ts`, otherwise the seeded demo users receive random passwords and the auth setup fails. See `docs/test_scenarios/execute_all_scenarios.md` for the full startup recipe (`AAC_SEED_SAMPLE_DATA=true` plus `AAC_SEED_ADMIN1_PASSWORD`, `AAC_SEED_STUDENT1_PASSWORD`, and `AAC_SEED_TEACHER1_PASSWORD`), which mirrors the `e2e-production` CI job.
+
 3. **CI Gate Completion:**
    Confirm all required GitHub Actions jobs (`backend`, `frontend`, `packaging-windows`, `e2e-production`, `secret-scan`, `dependency-review`, `codeql`) pass 100% green on the pull request.
 

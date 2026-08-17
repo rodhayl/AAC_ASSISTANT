@@ -76,9 +76,6 @@ ENV_FILE_NAME = ".env"
 LEGACY_ENV_FILE_NAME = "env.properties"
 ENV_FILE = RUNTIME_ROOT / ENV_FILE_NAME
 LEGACY_ENV_FILE = RUNTIME_ROOT / LEGACY_ENV_FILE_NAME
-# Backwards-compatible alias used by existing diagnostics and scripts.
-CONFIG_FILE = ENV_FILE
-
 DEFAULT_ALLOWED_ORIGINS = (
     "http://localhost:5176,http://localhost:3000,http://localhost:5173,"
     "http://127.0.0.1:5173,http://127.0.0.1:5176"

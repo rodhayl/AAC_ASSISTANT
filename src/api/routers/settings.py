@@ -28,25 +28,40 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 # Helper functions
 def get_setting(db: Session, key: str) -> str | None:
-    """Get a setting value by key"""
-    setting = db.query(AppSettings).filter(AppSettings.setting_key == key).first()
-    return setting.setting_value if setting else None
+    """Get a setting value by key."""
+    return _get_settings(db, (key,)).get(key)
 
 
-def set_setting(db: Session, key: str, value: str, user_id: int):
-    """Set or update a setting value"""
-    setting = db.query(AppSettings).filter(AppSettings.setting_key == key).first()
-    if setting:
-        setting.setting_value = value
-        setting.updated_by = user_id
-    else:
-        setting = AppSettings(setting_key=key, setting_value=value, updated_by=user_id)
-        db.add(setting)
-    # Keep the whole settings request atomic: the route commits once after all
-    # validation passes. Committing here would make earlier keys durable if a
-    # later validation fails, leaving a partially applied configuration.
-    invalidate_setting(key)
-    return setting
+def _get_settings(db: Session, keys: tuple[str, ...]) -> dict[str, str]:
+    """Load several settings with one query instead of one query per key."""
+    if not keys:
+        return {}
+    rows = (
+        db.query(AppSettings.setting_key, AppSettings.setting_value)
+        .filter(AppSettings.setting_key.in_(keys))
+        .all()
+    )
+    return {key: value for key, value in rows if value is not None}
+
+
+def set_settings(db: Session, values: dict[str, str], user_id: int) -> None:
+    """Apply a group of settings atomically, invalidating each changed key."""
+    if not values:
+        return
+    existing = {
+        setting.setting_key: setting
+        for setting in db.query(AppSettings)
+        .filter(AppSettings.setting_key.in_(tuple(values)))
+        .all()
+    }
+    for key, value in values.items():
+        setting = existing.get(key)
+        if setting is None:
+            db.add(AppSettings(setting_key=key, setting_value=value, updated_by=user_id))
+        else:
+            setting.setting_value = value
+            setting.updated_by = user_id
+        invalidate_setting(key)
 
 
 async def _close_provider(provider: Any | None) -> None:
@@ -54,10 +69,14 @@ async def _close_provider(provider: Any | None) -> None:
     if provider is None:
         return
     close_async = getattr(provider, "close_async", None)
-    if not callable(close_async):
+    close = getattr(provider, "close", None)
+    close_method = close_async if callable(close_async) else close
+    if not callable(close_method):
         return
     try:
-        await close_async()
+        result = close_method()
+        if hasattr(result, "__await__"):
+            await result
     except Exception as exc:
         logger.debug("Provider cleanup failed after settings request: {}", exc)
 
@@ -68,16 +87,29 @@ def get_ai_settings(
     current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
     """Get current AI provider settings (all users can view, sensitive data masked for non-admins)"""
-    provider = get_setting(db, "ai_provider") or "ollama"
-    ollama_model = get_setting(db, "ollama_model") or ""
-    openrouter_model = get_setting(db, "openrouter_model") or ""
-    openrouter_api_key = get_setting(db, "openrouter_api_key") or ""
-    ollama_base_url = get_setting(db, "ollama_base_url") or config.OLLAMA_BASE_URL
-    lmstudio_base_url = get_setting(db, "lmstudio_base_url") or "http://localhost:1234/v1"
-    lmstudio_model = get_setting(db, "lmstudio_model") or ""
-    # LLM behavior tuning
-    max_tokens = get_setting(db, "ai_max_tokens") or "1024"
-    temperature = get_setting(db, "ai_temperature") or "0.5"
+    values = _get_settings(
+        db,
+        (
+            "ai_provider",
+            "ollama_model",
+            "openrouter_model",
+            "openrouter_api_key",
+            "ollama_base_url",
+            "lmstudio_base_url",
+            "lmstudio_model",
+            "ai_max_tokens",
+            "ai_temperature",
+        ),
+    )
+    provider = values.get("ai_provider") or "ollama"
+    ollama_model = values.get("ollama_model") or ""
+    openrouter_model = values.get("openrouter_model") or ""
+    openrouter_api_key = values.get("openrouter_api_key") or ""
+    ollama_base_url = values.get("ollama_base_url") or config.OLLAMA_BASE_URL
+    lmstudio_base_url = values.get("lmstudio_base_url") or "http://localhost:1234/v1"
+    lmstudio_model = values.get("lmstudio_model") or ""
+    max_tokens = values.get("ai_max_tokens") or "1024"
+    temperature = values.get("ai_temperature") or "0.5"
 
     # Mask API key for non-admins or even for admins (usually only show last few chars or empty)
     # If admin, show full key? Or maybe better to just show it's set.
@@ -121,31 +153,23 @@ def update_ai_settings(
             ),
         )
 
-    # Update settings
-    if "provider" in settings:
-        set_setting(db, "ai_provider", settings["provider"], current_user.id)
-
-    if "ollama_model" in settings:
-        set_setting(db, "ollama_model", settings["ollama_model"], current_user.id)
-
-    if "openrouter_model" in settings:
-        set_setting(
-            db, "openrouter_model", settings["openrouter_model"], current_user.id
+    # Collect all changes before writing them in one query-backed update. This
+    # keeps the request atomic and avoids one SELECT per setting key.
+    updated_values: dict[str, str] = {
+        key: settings[key]
+        for key in (
+            "provider",
+            "ollama_model",
+            "openrouter_model",
+            "openrouter_api_key",
+            "ollama_base_url",
+            "lmstudio_base_url",
+            "lmstudio_model",
         )
-
-    if "openrouter_api_key" in settings:
-        set_setting(
-            db, "openrouter_api_key", settings["openrouter_api_key"], current_user.id
-        )
-
-    if "ollama_base_url" in settings:
-        set_setting(db, "ollama_base_url", settings["ollama_base_url"], current_user.id)
-
-    if "lmstudio_base_url" in settings:
-        set_setting(db, "lmstudio_base_url", settings["lmstudio_base_url"], current_user.id)
-
-    if "lmstudio_model" in settings:
-        set_setting(db, "lmstudio_model", settings["lmstudio_model"], current_user.id)
+        if key in settings
+    }
+    if "provider" in updated_values:
+        updated_values["ai_provider"] = updated_values.pop("provider")
 
     # Optional: global LLM behavior controls
     if "max_tokens" in settings and settings["max_tokens"] is not None:
@@ -153,7 +177,7 @@ def update_ai_settings(
             value = int(settings["max_tokens"])
             if value <= 0:
                 raise ValueError
-            set_setting(db, "ai_max_tokens", str(value), current_user.id)
+            updated_values["ai_max_tokens"] = str(value)
         except (TypeError, ValueError):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -172,7 +196,7 @@ def update_ai_settings(
             value = float(settings["temperature"])
             if not (0.0 <= value <= 1.5):
                 raise ValueError
-            set_setting(db, "ai_temperature", str(value), current_user.id)
+            updated_values["ai_temperature"] = str(value)
         except (TypeError, ValueError):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -191,6 +215,7 @@ def update_ai_settings(
     if "openrouter_api_key" in log_settings:
         log_settings["openrouter_api_key"] = "********"
 
+    set_settings(db, updated_values, current_user.id)
     logger.info(f"Admin {current_user.username} updated AI settings: {log_settings}")
     # Make the new values durable before the provider singletons are rebuilt:
     # the request dependency's teardown commit runs after the response is

@@ -88,7 +88,7 @@ test.describe.serial('Admin Management', () => {
     await expect(dialog.getByLabel(/display name|nombre/i)).toBeVisible();
     await dialog.getByLabel(/username|usuario/i).fill(username);
     await dialog.getByLabel(/display name|nombre/i).fill('E2E Admin Student');
-    await dialog.getByLabel(/^password/i).fill('AdminCreated123!');
+    await dialog.getByLabel(/^password|^contraseña/i).fill('AdminCreated123!');
     await dialog.getByLabel(/confirm password|confirmar contraseña/i).fill('AdminCreated123!');
     await dialog.getByRole('button', { name: /create student|crear estudiante/i }).click();
     await expect(dialog).not.toBeVisible({ timeout: 30000 });

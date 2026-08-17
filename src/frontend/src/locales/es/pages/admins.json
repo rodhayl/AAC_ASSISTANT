@@ -41,7 +41,6 @@
     "updateFailed": "Error al actualizar",
     "createFailed": "Error al crear administrador",
     "deleteFailed": "Error al eliminar",
-    "deleteSelf": "No puedes eliminar tu propia cuenta",
     "resetPasswordFailed": "Error al restablecer contraseña",
     "passwordsDoNotMatch": "Las contraseñas no coinciden"
   },

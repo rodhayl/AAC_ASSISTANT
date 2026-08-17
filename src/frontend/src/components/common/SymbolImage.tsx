@@ -10,8 +10,17 @@ interface SymbolImageProps {
 
 export function SymbolImage({ imagePath, alt, className = '' }: SymbolImageProps) {
   const [error, setError] = useState(false);
+  const normalizedPath = imagePath?.trim();
+  const isSafePath = Boolean(
+    normalizedPath &&
+      (normalizedPath.startsWith('blob:') ||
+        normalizedPath.startsWith('data:image/') ||
+        normalizedPath.startsWith('http://') ||
+        normalizedPath.startsWith('https://') ||
+        normalizedPath.startsWith('/')),
+  );
 
-  if (!imagePath || error) {
+  if (!isSafePath || error) {
     return (
       <div className={`flex items-center justify-center bg-gray-100 dark:bg-gray-800 rounded-lg ${className}`}>
         <ImageIcon className="w-1/2 h-1/2 text-gray-400" />
@@ -21,7 +30,7 @@ export function SymbolImage({ imagePath, alt, className = '' }: SymbolImageProps
 
   return (
     <img
-      src={assetUrl(imagePath)}
+      src={assetUrl(normalizedPath)}
       alt={alt || ''}
       className={className}
       onError={() => setError(true)}

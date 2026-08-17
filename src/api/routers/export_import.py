@@ -25,10 +25,28 @@ from src.api.routers.board_helpers import serialize_export_board
 router = APIRouter()
 
 
+def _normalize_checksum_number(value: Any) -> Any:
+    """Return a JSON value with whole-number floats collapsed to integers.
+
+    JavaScript and Python disagree about ``0.0`` vs ``0``: a browser's
+    ``JSON.parse``/``JSON.stringify`` round-trip collapses ``0.0`` to ``0``,
+    while Python preserves the float. Normalizing whole-number floats here keeps
+    the signed checksum stable across a browser download/re-upload, so an export
+    can always be re-imported through the UI.
+    """
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, dict):
+        return {key: _normalize_checksum_number(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize_checksum_number(item) for item in value]
+    return value
+
+
 def _canonical_export_bytes(payload: dict[str, Any]) -> bytes:
     """Serialize export data deterministically before signing or verifying."""
     return json.dumps(
-        payload,
+        _normalize_checksum_number(payload),
         separators=(",", ":"),
         sort_keys=True,
         ensure_ascii=False,

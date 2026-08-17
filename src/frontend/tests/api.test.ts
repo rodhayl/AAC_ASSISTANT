@@ -163,7 +163,10 @@ describe('auth response handling', () => {
     useOfflineStore.getState().addConflict({ url: '/boards/1', method: 'post' }, 'stale');
     expect(useOfflineStore.getState().conflicts).toHaveLength(1);
 
-    useAuthStore.getState().logout();
+    // logout() clears session-scoped feature state synchronously, then awaits
+    // best-effort server revocation. Await it so the async state flip cannot
+    // leak into the next test's auth context.
+    await useAuthStore.getState().logout();
     expect(useOfflineStore.getState().conflicts).toHaveLength(0);
 
     window.dispatchEvent(new Event('online'));

@@ -310,12 +310,15 @@ async def create_board(
             )
 
     db.refresh(db_board)
-    for symbol in created_symbols:
-        index_symbol(symbol)
-    # Commit before responding: the board and its symbols must be durable
-    # before the client navigates to it in a follow-up request. A single
-    # commit here also keeps the whole create atomic if indexing fails.
+    # Commit before optional vector indexing. Indexing uses a separate
+    # connection and must not compete with this session's uncommitted write
+    # transaction for SQLite's write lock.
     db.commit()
+    for symbol in created_symbols:
+        try:
+            index_symbol(symbol)
+        except Exception as exc:
+            logger.warning("AI-generated symbol indexing failed: {}", exc)
     return db_board
 
 

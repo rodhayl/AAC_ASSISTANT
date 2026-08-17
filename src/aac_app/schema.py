@@ -11,7 +11,7 @@ from loguru import logger
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from src.aac_app.db import create_engine_instance, create_tables, mark_tables_initialized
+from src.aac_app.db import create_engine_instance, create_tables
 
 
 def _ensure_sqlite_columns(engine: Engine) -> None:
@@ -187,5 +187,4 @@ def ensure(engine: Engine | None = None) -> Engine:
     create_tables(engine)
     _ensure_sqlite_columns(engine)
     _ensure_sqlite_indexes(engine)
-    mark_tables_initialized(engine)
     return engine

@@ -36,7 +36,6 @@
     "incorrectCredentials": "Nombre de usuario o contraseña incorrectos",
     "accountConfigurationError": "Error de configuración de cuenta",
     "invalidRefreshToken": "Token de actualización inválido o expirado",
-    "invalidTokenType": "Tipo de token inválido. Se esperaba token de actualización.",
     "invalidTokenClaims": "Reclamaciones de token inválidas",
     "userNotFound": "Usuario no encontrado",
     "provider": {
@@ -143,8 +142,6 @@
     },
     "achievements": {
       "unauthorizedView": "No autorizado para ver estos logros",
-      "unauthorizedCheck": "No autorizado para verificar estos logros",
-      "unauthorizedViewPoints": "No autorizado para ver puntos",
       "viewCategories": "Solo profesores y administradores pueden ver categorías",
       "viewCriteriaTypes": "Solo profesores y administradores pueden ver tipos de criterio",
       "manage": "Solo profesores y administradores pueden gestionar logros",

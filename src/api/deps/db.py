@@ -4,12 +4,11 @@ from collections.abc import Generator
 
 from sqlalchemy.orm import Session
 
-from src.aac_app.db import create_session_factory, ensure_tables
+from src.aac_app.db import create_session_factory
 
 
 def get_db() -> Generator[Session]:
     """Yield one managed database session for a request."""
-    ensure_tables()
     db = create_session_factory()()
     try:
         yield db

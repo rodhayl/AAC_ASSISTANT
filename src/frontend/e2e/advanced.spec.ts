@@ -74,7 +74,7 @@ test.describe('Advanced Scenarios', () => {
       const editLink = page.getByRole('link', { name: /edit board|editar/i }).first();
       await expect(editLink).toBeVisible();
       await editLink.click();
-      const settingsButton = page.getByLabel(/settings|ajustes/i).first();
+      const settingsButton = page.getByLabel(/board settings|configuración del tablero/i).first();
       await expect(settingsButton).toBeVisible();
 
       // 2. Mock the conflict response before replaying the offline mutation.

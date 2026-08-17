@@ -91,6 +91,8 @@ def main() -> int:
     steps = [
         ("Backend Ruff Linter", ["uv", "run", "ruff", "check", "src", "tests", "scripts"], root),
         ("Backend Compileall", ["uv", "run", "python", "-m", "compileall", "-q", "src", "scripts"], root),
+        ("Backend Import Audit", ["uv", "run", "python", "scripts/audit_codebase.py"], root),
+        ("i18n Key Audit", ["uv", "run", "python", "scripts/check_i18n_keys.py"], root),
         ("Backend Pytest & Coverage", ["uv", "run", "pytest", "--cov=src", "--cov-report=term-missing:skip-covered", "--cov-branch", "-q"], root),
         ("Frontend TypeScript Typecheck", ["npm", "run", "typecheck"], frontend_dir),
         ("Frontend ESLint", ["npm", "run", "lint"], frontend_dir),

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from src.aac_app.models import LearningMode, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.aac_app.services.guardian_profile_service import get_guardian_profile_service
-from src.aac_app.services.learning_companion_service import LearningCompanionService
+from src.aac_app.services.learning.service import LearningCompanionService
 from src.api.deps import get_llm_provider, get_speech_provider
 from src.api.main import app
 
@@ -35,7 +35,7 @@ def override_providers(
     from contextlib import contextmanager
 
     from src.aac_app import db
-    from src.aac_app.services import achievement_system, learning_companion_service
+    from src.aac_app.services import achievement_system
 
     # Override providers
     app.dependency_overrides[get_llm_provider] = lambda: mock_llm_provider
@@ -64,7 +64,6 @@ def override_providers(
             session.close()
 
     monkeypatch.setattr(db, "get_session", mock_get_session)
-    monkeypatch.setattr(learning_companion_service, "get_session", mock_get_session)
     monkeypatch.setattr(achievement_system, "get_session", mock_get_session)
 
     yield
@@ -232,7 +231,7 @@ def test_learning_chat_with_custom_mode_regression(
     admin_user, admin_token, test_db_session: Session, client
 ):
     """
-    Regression test for variable shadowing bug in learning_companion_service.
+    Regression test for variable shadowing in the learning service.
 
     The bug caused a session conflict when a LearningMode lookup (inner session)
     occurred within the process_response (outer session) block.

@@ -317,7 +317,10 @@ export function LearningModesTab() {
                     </button>
                     {mode.is_custom && (
                       <button
+                        type="button"
                         onClick={() => handleDeleteMode(mode.id)}
+                        aria-label={`Delete ${mode.name}`}
+                        title="Delete learning mode"
                         className="p-2 text-red-600 hover:bg-red-50 rounded"
                       >
                         <Trash2 className="w-4 h-4" />

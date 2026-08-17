@@ -71,21 +71,27 @@ function syncUserPreferences(user: User | null | undefined) {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => {
-      const clearSession = () => {
+      const emptyAuthState = () => ({
+        user: null,
+        token: null,
+        refreshToken: null,
+        isAuthenticated: false,
+        sessionExpiresAt: null,
+        error: null,
+      });
+
+      const notifySessionEnd = () => {
         // Notify feature stores without importing them here. This avoids a
         // circular auth -> API -> learning-store dependency while ensuring
         // explicit logout and API-triggered 401 logout share cleanup.
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new Event('aac:auth-logout'));
         }
-        set({
-          user: null,
-          token: null,
-          refreshToken: null,
-          isAuthenticated: false,
-          sessionExpiresAt: null,
-          error: null,
-        });
+      };
+
+      const clearSession = () => {
+        notifySessionEnd();
+        set(emptyAuthState());
       };
 
       return {
@@ -220,20 +226,27 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      logout: () => {
+      logout: async () => {
         const token = get().token;
-        const revokeRequest = token
-          ? api.post('/auth/logout', null, {
-              headers: { Authorization: `Bearer ${token}` },
-            }).catch(() => undefined)
-          : Promise.resolve();
-
-        // Clear local state immediately so the UI cannot keep using the
-        // session while the server revocation request completes. The caller
-        // may await the returned promise before navigating away.
-        clearSession();
+        // Clear session-scoped feature state synchronously so offline
+        // mutations and conflicts cannot leak into the next session, even
+        // while the revocation request is still in flight.
+        notifySessionEnd();
         localStorage.removeItem('token');
-        return revokeRequest.then(() => undefined);
+        if (token) {
+          // Wait for server-side revocation to finish before flipping
+          // isAuthenticated, so a token captured before logout is rejected by
+          // the time the UI reaches the login screen. Revocation is
+          // best-effort: a failure still clears the local session.
+          try {
+            await api.post('/auth/logout', null, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+          } catch {
+            // Ignore revocation errors; local session is still cleared below.
+          }
+        }
+        set(emptyAuthState());
       },
 
       checkAuth: async () => {

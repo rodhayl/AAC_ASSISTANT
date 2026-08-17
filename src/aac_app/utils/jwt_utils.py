@@ -167,19 +167,6 @@ def create_refresh_token(data: dict[str, Any]) -> str:
     return encoded_jwt
 
 
-def generate_secret_key() -> str:
-    """
-    Generate a secure random secret key for JWT signing.
-    This should be run once and the result stored securely in environment variables.
-
-    Returns:
-        A secure random 256-bit (32-byte) key encoded as hex string
-    """
-    import secrets
-
-    return secrets.token_hex(32)
-
-
 # Warning on module import if using insecure default
 if JWT_SECRET_KEY == "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION":
     logger.warning(

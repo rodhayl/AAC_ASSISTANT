@@ -126,7 +126,7 @@ class TestGUICoverage:
         headers, user_id = auth_headers
 
         # 1. Start a session
-        with patch("src.aac_app.services.learning_companion_service.LearningCompanionService.start_learning_session") as mock_start:
+        with patch("src.aac_app.services.learning.service.LearningCompanionService.start_learning_session") as mock_start:
             mock_start.return_value = {"success": True, "session_id": 999}
 
             start_res = client.post(
@@ -146,7 +146,7 @@ class TestGUICoverage:
         wav_file = create_dummy_wav()
         files = {"file": ("answer.wav", wav_file, "audio/wav")}
 
-        with patch("src.aac_app.services.learning_companion_service.LearningCompanionService.process_response") as mock_process:
+        with patch("src.aac_app.services.learning.service.LearningCompanionService.process_response") as mock_process:
             mock_process.return_value = {
                 "success": True,
                 "feedback": "Good job",

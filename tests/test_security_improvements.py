@@ -191,15 +191,15 @@ class TestEnvPropertiesCleanup:
     """Further Considerations: Test env.properties is properly formatted."""
 
     def test_env_properties_no_echo_commands(self):
-        """Test that env.properties doesn't contain shell script fragments."""
-        from src.config import CONFIG_FILE
+        """Test that the canonical dotenv file has no shell fragments."""
+        from src.config import ENV_FILE
 
-        if CONFIG_FILE.exists():
-            content = CONFIG_FILE.read_text(encoding="utf-8")
+        if ENV_FILE.exists():
+            content = ENV_FILE.read_text(encoding="utf-8")
 
             # Should not contain shell echo commands
-            assert "echo." not in content.lower(), "env.properties should not contain shell commands"
-            assert "echo #" not in content.lower(), "env.properties should not contain shell commands"
+            assert "echo." not in content.lower(), "dotenv should not contain shell commands"
+            assert "echo #" not in content.lower(), "dotenv should not contain shell commands"
 
     def test_config_loads_without_errors(self):
         """Test that configuration loads correctly after cleanup."""

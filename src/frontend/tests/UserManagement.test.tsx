@@ -65,7 +65,6 @@ const translate = (key: string, options?: { name?: string }) => {
     'security.saving': 'Saving',
     'errors.passwordsDoNotMatch': 'Passwords do not match',
     'errors.deleteFailed': 'Failed to delete',
-    'errors.deleteSelf': 'You cannot delete your own account',
   };
   return translations[key] ?? key;
 };

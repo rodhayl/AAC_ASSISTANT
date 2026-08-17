@@ -36,7 +36,6 @@
     "incorrectCredentials": "Incorrect username or password",
     "accountConfigurationError": "Account configuration error",
     "invalidRefreshToken": "Invalid or expired refresh token",
-    "invalidTokenType": "Invalid token type. Expected refresh token.",
     "invalidTokenClaims": "Invalid token claims",
     "userNotFound": "User not found",
     "provider": {
@@ -143,8 +142,6 @@
     },
     "achievements": {
       "unauthorizedView": "Not authorized to view these achievements",
-      "unauthorizedCheck": "Not authorized to check these achievements",
-      "unauthorizedViewPoints": "Not authorized to view points",
       "viewCategories": "Only teachers and admins can view categories",
       "viewCriteriaTypes": "Only teachers and admins can view criteria types",
       "manage": "Only teachers and admins can manage achievements",

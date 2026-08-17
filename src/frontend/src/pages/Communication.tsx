@@ -11,7 +11,7 @@ import { CommunicationChat } from '../components/board/CommunicationChat';
 import { SymbolSearchModal } from '../components/board/SymbolSearchModal';
 import { PartnerOverlay } from '../components/board/PartnerOverlay';
 import type { BoardSymbol } from '../types';
-import { getBoardCapacity } from '../lib/boardGrid';
+import { getBoardPlayabilityStatus } from './boardEditorUtils';
 import { tts } from '../lib/tts';
 import api from '../lib/api';
 import { glossSymbolUtterance } from '../lib/gloss';
@@ -96,38 +96,6 @@ export function Communication() {
       setIsStartingSession(false);
     }
   };
-
-  // Helper to check if board has enough symbols (at least 50% capacity)
-  type BoardPlayableInfo = {
-    grid_rows?: number;
-    grid_cols?: number;
-    playable_symbols_count?: number;
-    symbols?: Array<{
-      is_visible: boolean;
-      custom_text?: string;
-      symbol?: { label?: string };
-    }>;
-  };
-
-  const isBoardPlayable = useCallback((board: BoardPlayableInfo) => {
-    const capacity = getBoardCapacity(board);
-
-    // Use playable_symbols_count if available (from backend), otherwise count symbols array
-    let symbolCount = 0;
-    if (typeof board.playable_symbols_count === 'number') {
-      symbolCount = board.playable_symbols_count;
-    } else if (board.symbols) {
-      symbolCount = board.symbols.filter(s =>
-        s.is_visible && (s.custom_text || s.symbol?.label)
-      ).length;
-    }
-
-    // Avoid division by zero
-    if (capacity === 0) return false;
-
-    const fillRate = symbolCount / capacity;
-    return fillRate >= 0.5;
-  }, []);
 
   // Fetch available boards on mount
   useEffect(() => {
@@ -447,16 +415,16 @@ export function Communication() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {filteredBoards.map((board) => {
-                const playable = isBoardPlayable(board);
-                // Calculate symbol count for display
+                const status = getBoardPlayabilityStatus(
+                  board,
+                  board.symbols ?? EMPTY_BOARD_SYMBOLS,
+                  board.playable_symbols_count,
+                );
+                const playable = status.playable;
                 const symbolCount = typeof board.playable_symbols_count === 'number'
                   ? board.playable_symbols_count
-                  : (board.symbols?.filter(s => s.is_visible).length || 0);
-
-                const capacity = getBoardCapacity(board);
-                const threshold = Math.ceil(capacity * 0.5);
-                const progress = Math.round((symbolCount / threshold) * 100);
-                const needed = Math.max(0, threshold - symbolCount);
+                  : status.count;
+                const { progress, needed } = status;
 
                 return (
                   <button

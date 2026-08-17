@@ -46,6 +46,24 @@ async function openAssignedCommunicationBoard(page: Page) {
   ).toBeVisible({ timeout: 20000 });
 }
 
+/**
+ * Read the symbol labels rendered in the AAC grid. The app localizes symbol
+ * labels to the student's UI language (e.g. Spanish), so tests must not
+ * hardcode English labels. Returns the first `count` labels in grid order.
+ */
+async function readGridSymbolLabels(page: Page, count: number): Promise<string[]> {
+  const buttons = page.locator('.grid').getByRole('button', { name: /Add .* to sentence/i });
+  const labels: string[] = [];
+  const total = Math.min(count, await buttons.count());
+  for (let i = 0; i < total; i++) {
+    const aria = await buttons.nth(i).getAttribute('aria-label');
+    const match = aria?.match(/^Add (.+) to sentence$/);
+    if (match) labels.push(match[1]);
+  }
+  expect(labels.length, 'the AAC grid must render add-to-sentence buttons').toBeGreaterThan(0);
+  return labels;
+}
+
 test.describe('Pilot gate: initialized setup and unauthenticated boundaries', () => {
   test('initialized setup cannot be reused and setup UI redirects safely', async ({ page }) => {
     const status = await page.request.get('/api/auth/setup-status');
@@ -148,32 +166,34 @@ test.describe('Pilot gate: Student AAC communication', () => {
     await expect(backspace).toBeDisabled();
     await expect(clear).toBeDisabled();
 
-    for (const label of ['hello', 'water', 'please']) {
+    const labels = await readGridSymbolLabels(page, 3);
+    for (const label of labels) {
       await grid.getByRole('button', { name: `Add ${label} to sentence` }).click();
     }
-    await expect(preview).toHaveText('hello water please');
+    await expect(preview).toHaveText(labels.join(' '));
 
     await backspace.click();
-    await expect(preview).toHaveText('hello water');
+    await expect(preview).toHaveText(labels.slice(0, -1).join(' '));
 
     await clear.click();
     await expect(page.getByTestId('sentence-empty')).toBeVisible();
 
     // Keyboard activation is included in the critical communication path.
-    await grid.getByRole('button', { name: 'Add water to sentence' }).press('Enter');
-    await expect(preview).toHaveText('water');
+    await grid.getByRole('button', { name: `Add ${labels[0]} to sentence` }).press('Enter');
+    await expect(preview).toHaveText(labels[0]);
   });
 
   test('keeps core AAC interaction available while the browser is offline', async ({ page }) => {
     await openAssignedCommunicationBoard(page);
-    const water = page.locator('.grid').getByRole('button', { name: 'Add water to sentence' });
+    const [label] = await readGridSymbolLabels(page, 1);
+    const target = page.locator('.grid').getByRole('button', { name: `Add ${label} to sentence` });
     const preview = page.getByTestId('sentence-preview');
 
     try {
       await page.context().setOffline(true);
       await page.evaluate(() => window.dispatchEvent(new Event('offline')));
-      await water.click();
-      await expect(preview).toHaveText('water');
+      await target.click();
+      await expect(preview).toHaveText(label);
     } finally {
       await page.context().setOffline(false);
       await page.evaluate(() => window.dispatchEvent(new Event('online')));

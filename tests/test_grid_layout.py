@@ -1,11 +1,13 @@
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
 
 from src.api.main import app
 from tests.test_utils_auth import create_test_headers
 
 client = TestClient(app)
+pytestmark = pytest.mark.usefixtures("setup_test_db")
 
 
 def test_board_grid_fields_present_and_updatable(test_password):

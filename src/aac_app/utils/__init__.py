@@ -11,14 +11,12 @@ from .jwt_utils import (
     create_access_token,
     decode_access_token,
     decode_refresh_token,
-    generate_secret_key,
 )
 
 __all__ = [
     "create_access_token",
     "decode_access_token",
     "decode_refresh_token",
-    "generate_secret_key",
     "JWT_SECRET_KEY",
     "JWT_ALGORITHM",
     "ACCESS_TOKEN_EXPIRE_MINUTES",

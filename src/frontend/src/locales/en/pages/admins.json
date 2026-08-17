@@ -41,7 +41,6 @@
     "updateFailed": "Failed to update",
     "createFailed": "Failed to create admin",
     "deleteFailed": "Failed to delete",
-    "deleteSelf": "You cannot delete your own account",
     "resetPasswordFailed": "Failed to reset password",
     "passwordsDoNotMatch": "Passwords do not match"
   },
