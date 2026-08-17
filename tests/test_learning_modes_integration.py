@@ -510,3 +510,164 @@ def test_preview_system_prompt_with_sample_question(
     ).json()
     assert plain["user_message"] is None
     assert plain["messages"] is None
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_student_cannot_create_learning_mode(regular_user, user_token, client):
+    """Non-staff users cannot create custom learning modes (403)."""
+    response = client.post(
+        "/api/learning-modes/",
+        json={
+            "name": "Sneaky Mode",
+            "key": "sneaky",
+            "prompt_instruction": "Do nothing.",
+        },
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert response.status_code == 403
+
+
+def test_update_learning_mode_full_field_roundtrip(
+    admin_user, admin_token, test_db_session: Session, client
+):
+    """Updating every editable field at once persists all values."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post(
+        "/api/learning-modes/",
+        json={
+            "name": "Before",
+            "key": "full_update_mode",
+            "description": "old description",
+            "prompt_instruction": "old instruction",
+            "auto_ask_enabled": True,
+        },
+        headers=headers,
+    )
+    assert created.status_code == 200
+    mode_id = created.json()["id"]
+
+    updated = client.put(
+        f"/api/learning-modes/{mode_id}",
+        json={
+            "name": "After",
+            "description": "new description",
+            "prompt_instruction": "new instruction",
+            "auto_ask_enabled": False,
+        },
+        headers=headers,
+    )
+    assert updated.status_code == 200
+    data = updated.json()
+    assert data["name"] == "After"
+    assert data["description"] == "new description"
+    assert data["prompt_instruction"] == "new instruction"
+    assert data["auto_ask_enabled"] is False
+
+
+def test_update_learning_mode_returns_404_for_missing(
+    admin_user, admin_token, client
+):
+    response = client.put(
+        "/api/learning-modes/999999",
+        json={"name": "Ghost"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 404
+
+
+def test_teacher_cannot_edit_system_mode(
+    test_db_session: Session, admin_user, admin_token, client
+):
+    """System modes (created_by=None) are editable only by admins."""
+    system_mode = LearningMode(
+        name="System Mode",
+        key="system_edit_protected",
+        prompt_instruction="System instructions.",
+        created_by=None,
+        is_custom=False,
+    )
+    test_db_session.add(system_mode)
+    test_db_session.commit()
+    test_db_session.refresh(system_mode)
+
+    teacher = User(
+        username="edit_blocked_teacher",
+        display_name="Edit Blocked Teacher",
+        user_type="teacher",
+        password_hash=get_password_hash("TeacherPass123"),
+        is_active=True,
+    )
+    test_db_session.add(teacher)
+    test_db_session.commit()
+
+    from src.aac_app.utils.jwt_utils import create_access_token
+
+    teacher_token = create_access_token(
+        data={
+            "sub": teacher.username,
+            "user_id": teacher.id,
+            "user_type": teacher.user_type,
+        }
+    )
+    response = client.put(
+        f"/api/learning-modes/{system_mode.id}",
+        json={"name": "Hijacked"},
+        headers={"Authorization": f"Bearer {teacher_token}"},
+    )
+    assert response.status_code == 403
+
+
+def test_delete_learning_mode_permissions_and_404(
+    admin_user, admin_token, test_db_session: Session, client
+):
+    """Non-admin cannot delete a system mode; missing modes return 404."""
+    system_mode = LearningMode(
+        name="System Protected",
+        key="system_delete_protected",
+        prompt_instruction="Keep me.",
+        created_by=None,
+        is_custom=False,
+    )
+    test_db_session.add(system_mode)
+    test_db_session.commit()
+    test_db_session.refresh(system_mode)
+
+    teacher = User(
+        username="delete_blocked_teacher",
+        display_name="Delete Blocked Teacher",
+        user_type="teacher",
+        password_hash=get_password_hash("TeacherPass123"),
+        is_active=True,
+    )
+    test_db_session.add(teacher)
+    test_db_session.commit()
+
+    from src.aac_app.utils.jwt_utils import create_access_token
+
+    teacher_token = create_access_token(
+        data={
+            "sub": teacher.username,
+            "user_id": teacher.id,
+            "user_type": teacher.user_type,
+        }
+    )
+    headers = {"Authorization": f"Bearer {teacher_token}"}
+
+    # Teacher cannot delete a system mode.
+    forbidden = client.delete(f"/api/learning-modes/{system_mode.id}", headers=headers)
+    assert forbidden.status_code == 403
+
+    # Missing mode -> 404 for any authenticated user.
+    missing = client.delete(
+        "/api/learning-modes/999999",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert missing.status_code == 404
+
+    # Admin can delete the system mode.
+    deleted = client.delete(
+        f"/api/learning-modes/{system_mode.id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert deleted.status_code == 200
+    assert deleted.json()["success"] is True

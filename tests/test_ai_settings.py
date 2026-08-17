@@ -152,3 +152,157 @@ class TestAISettingsAuthentication:
             "/api/settings/ai", json={"provider": "ollama", "ollama_model": "test"}
         )
         assert response.status_code == 401
+
+
+class TestSettingsValidationAndProviderModels:
+    """Real-case coverage for behavior validation and provider model endpoints."""
+
+    def test_update_ai_settings_rejects_non_positive_max_tokens(self, admin_user, admin_token):
+        response = client.put(
+            "/api/settings/ai",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"provider": "ollama", "max_tokens": 0},
+        )
+        assert response.status_code == 400
+
+    def test_update_ai_settings_rejects_out_of_range_temperature(self, admin_user, admin_token):
+        response = client.put(
+            "/api/settings/ai",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"provider": "ollama", "temperature": 2.5},
+        )
+        assert response.status_code == 400
+
+    def test_update_ai_settings_persists_behavior_values(self, admin_user, admin_token):
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        response = client.put(
+            "/api/settings/ai",
+            headers=headers,
+            json={"provider": "ollama", "max_tokens": 2048, "temperature": 0.3},
+        )
+        assert response.status_code == 200
+
+        data = client.get("/api/settings/ai", headers=headers).json()
+        assert data["max_tokens"] == 2048
+        assert data["temperature"] == 0.3
+
+    def test_ui_language_defaults_to_spanish_without_settings(self, admin_user, admin_token):
+        response = client.get(
+            "/api/settings/ui", headers={"Authorization": f"Bearer {admin_token}"}
+        )
+        assert response.status_code == 200
+        assert response.json()["ui_language"] == "es"
+
+    def test_update_ui_language_round_trip(self, admin_user, admin_token):
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        response = client.put("/api/settings/ui", headers=headers, json={"ui_language": "en"})
+        assert response.status_code == 200
+        assert response.json()["ui_language"] == "en"
+
+        data = client.get("/api/settings/ui", headers=headers).json()
+        assert data["ui_language"] == "en"
+
+    def test_update_ui_language_rejects_unsupported(self, admin_user, admin_token):
+        response = client.put(
+            "/api/settings/ui",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"ui_language": "fr"},
+        )
+        assert response.status_code == 400
+
+    def test_get_ollama_models_unavailable_returns_503(self, admin_user, admin_token, monkeypatch):
+        from unittest.mock import MagicMock
+
+        mock_provider = MagicMock()
+        mock_provider.is_available.return_value = False
+        monkeypatch.setattr(
+            "src.api.routers.settings.OllamaProvider", lambda **kwargs: mock_provider
+        )
+        response = client.get(
+            "/api/settings/ai/models/ollama",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 503
+
+    def test_get_ollama_models_success(self, admin_user, admin_token, monkeypatch):
+        from unittest.mock import MagicMock
+
+        mock_provider = MagicMock()
+        mock_provider.is_available.return_value = True
+        mock_provider.list_models.return_value = ["llama3.2", "mistral"]
+        monkeypatch.setattr(
+            "src.api.routers.settings.OllamaProvider", lambda **kwargs: mock_provider
+        )
+        response = client.get(
+            "/api/settings/ai/models/ollama",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["models"] == [{"name": "llama3.2"}, {"name": "mistral"}]
+
+    def test_get_openrouter_models_requires_api_key(
+        self, admin_user, admin_token
+    ):
+        response = client.get(
+            "/api/settings/ai/models/openrouter",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 400
+
+    def test_get_openrouter_models_success(
+        self, setup_test_db, test_db_session, admin_user, admin_token, monkeypatch
+    ):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from src.aac_app.models import AppSettings
+
+        test_db_session.add(
+            AppSettings(setting_key="openrouter_api_key", setting_value="sk-test-123")
+        )
+        test_db_session.commit()
+
+        mock_provider = MagicMock()
+        mock_provider.get_available_models = AsyncMock(
+            return_value={"data": [{"id": "anthropic/claude-3.5-sonnet"}]}
+        )
+        monkeypatch.setattr(
+            "src.api.routers.settings.OpenRouterProvider", lambda **kwargs: mock_provider
+        )
+        response = client.get(
+            "/api/settings/ai/models/openrouter",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["models"][0]["id"] == "anthropic/claude-3.5-sonnet"
+
+    def test_get_lmstudio_models_unavailable_returns_503(self, admin_user, admin_token, monkeypatch):
+        from unittest.mock import MagicMock
+
+        mock_provider = MagicMock()
+        mock_provider.is_available.return_value = False
+        monkeypatch.setattr(
+            "src.api.routers.settings.LMStudioProvider", lambda **kwargs: mock_provider
+        )
+        response = client.get(
+            "/api/settings/ai/models/lmstudio",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 503
+
+    def test_get_lmstudio_models_success(self, admin_user, admin_token, monkeypatch):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_provider = MagicMock()
+        mock_provider.is_available.return_value = True
+        mock_provider.get_available_models = AsyncMock(
+            return_value={"data": [{"id": "local-model"}]}
+        )
+        monkeypatch.setattr(
+            "src.api.routers.settings.LMStudioProvider", lambda **kwargs: mock_provider
+        )
+        response = client.get(
+            "/api/settings/ai/models/lmstudio",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["models"] == [{"id": "local-model"}]

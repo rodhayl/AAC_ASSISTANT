@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from src.aac_app.models import BoardAssignment, CommunicationBoard, StudentTeacher, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.api.main import app
-from tests.test_utils_auth import create_test_headers
+from tests.auth_helpers import create_test_headers
 
 client = TestClient(app)
 

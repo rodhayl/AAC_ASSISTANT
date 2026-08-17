@@ -4,23 +4,16 @@ import { persist } from 'zustand/middleware';
 interface ThemeState {
   darkMode: boolean;
   setDarkMode: (enabled: boolean) => void;
-  toggleDarkMode: () => void;
 }
 
 export const useThemeStore = create<ThemeState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       darkMode: false,
       
       setDarkMode: (enabled: boolean) => {
         set({ darkMode: enabled });
         applyTheme(enabled);
-      },
-      
-      toggleDarkMode: () => {
-        const newValue = !get().darkMode;
-        set({ darkMode: newValue });
-        applyTheme(newValue);
       },
     }),
     {

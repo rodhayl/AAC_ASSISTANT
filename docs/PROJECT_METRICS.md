@@ -28,14 +28,14 @@ Snapshot date: **2026-08-17**
 
 | Metric | Value |
 | ------ | ----- |
-| Backend tests (pytest) | 671 passed, 0 skipped (reproduced 2026-08-17; voice tests exercised with `faster-whisper` 1.2.1) |
-| Backend test coverage (Coverage.py) | 81.55% statements (7,344/9,005), 65.60% branches (1,791/2,730), 77.84% combined total |
-| Frontend unit/component tests (Vitest) | 231 passed (49 files, reproduced 2026-08-17) |
-| Frontend test coverage (Vitest v8) | 70.86% statements, 60.98% branches, 64.93% functions, 73.28% lines (reproduced 2026-08-17) |
-| End-to-end tests (Playwright, real backend) | 128 passed (reproduced 2026-08-17 against a production build with seeded temporary SQLite data) |
+| Backend tests (pytest) | 759 passed, 0 skipped (reproduced 2026-08-17; overlapping suites consolidated and dead helpers renamed; voice tests exercised with `faster-whisper` 1.2.1) |
+| Backend test coverage (Coverage.py) | 85.35% statements (7,686/9,005), 71.47% branches (1,951/2,730), 82.12% combined total |
+| Frontend unit/component tests (Vitest) | 268 passed (53 files, reproduced 2026-08-17; 3 Smartbar suites consolidated into 1) |
+| Frontend test coverage (Vitest v8, application code only) | 55.92% statements, 46.83% branches, 49.01% functions, 53.53% lines — regression-gated in `src/frontend/vitest.config.ts` (lines ≥ 52%, statements ≥ 53%, functions ≥ 47%, branches ≥ 46%) |
+| End-to-end tests (Playwright, real backend) | 132 passed (reproduced 2026-08-17 against a production build with seeded temporary SQLite data) |
 | Automated accessibility scans (Axe Core) | 5 automated Axe analyses across 5 critical routes (/setup, /login, /communication, /learning, /settings) with 0 serious or critical violations |
 | Python lint (`ruff`) | clean |
-| Frontend lint / typecheck / build | clean; JS bundle 350.2 kB ≤ 450 kB budget, CSS 98.5 kB ≤ 150 kB budget |
+| Frontend lint / typecheck / build | clean; largest JS chunk 357.0 kB ≤ 450 kB budget, largest CSS chunk 100.9 kB ≤ 150 kB budget |
 
 > Test counts and coverage percentages are reproduced directly from machine-readable test outputs (`coverage.json`, Vitest summary, Playwright reporter).
 

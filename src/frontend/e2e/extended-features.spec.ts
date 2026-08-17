@@ -20,11 +20,12 @@ test.describe('Extended Features', () => {
       await page.locator('button').filter({ hasText: /in use|en uso/i }).click({ force: true });
       await expect(cow).toBeVisible();
 
-      // "Unused": cow is on the demo board, so it disappears and the empty
-      // state is shown (also confirms the previous fetch has settled).
+      // "Unused": cow is on the demo board, so it disappears regardless of
+      // whether other specs created their own (unused) symbols. Do not assert
+      // the empty-state message here: it is not deterministic when other specs
+      // leave freshly created symbols in the library.
       await page.locator('button').filter({ hasText: /unused|sin uso/i }).click({ force: true });
       await expect(cow).not.toBeVisible();
-      await expect(page.getByText(/no symbols found|no se encontraron símbolos/i)).toBeVisible();
 
       // "All": the full library returns.
       await page.locator('button').filter({ hasText: /all|todos/i }).first().click({ force: true });
@@ -37,6 +38,43 @@ test.describe('Extended Features', () => {
         .first();
       await sortSelect.selectOption('alpha');
       await expect(cow).toBeVisible();
+    });
+
+    test('creates, edits, and deletes a symbol', async ({ page }) => {
+      const label = `CRUD ${Date.now()}`;
+      await page.goto('/symbols');
+      await expect(page.locator('.animate-spin')).not.toBeVisible({ timeout: 20000 });
+
+      // Create a new symbol via the library form.
+      await page.getByRole('button', { name: /new symbol|nuevo símbolo/i }).click();
+      await page.getByPlaceholder('e.g., Hola').fill(label);
+      await page.getByRole('button', { name: /create symbol|crear símbolo/i }).click();
+      await expect(
+        page.locator('div.flex.flex-col.gap-2', { hasText: label }).first(),
+      ).toBeVisible({ timeout: 15000 });
+
+      // Edit it: the form switches to Save mode and persists the new label.
+      const card = page.locator('div.flex.flex-col.gap-2', { hasText: label }).first();
+      await card.getByRole('button', { name: /edit|editar/i }).click();
+      const newLabel = `${label} v2`;
+      await page.getByPlaceholder('e.g., Hola').fill(newLabel);
+      await page.getByRole('button', { name: /save|guardar/i }).click();
+      await expect(
+        page.locator('div.flex.flex-col.gap-2', { hasText: newLabel }).first(),
+      ).toBeVisible({ timeout: 15000 });
+
+      // Delete it: the confirm dialog completes and the card disappears.
+      const newCard = page.locator('div.flex.flex-col.gap-2', { hasText: newLabel }).first();
+      await newCard
+        .locator('button')
+        .filter({ has: page.locator('svg.lucide-trash-2') })
+        .click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole('button', { name: /delete|eliminar/i }).click();
+      await expect(
+        page.locator('div.flex.flex-col.gap-2', { hasText: newLabel }),
+      ).toHaveCount(0, { timeout: 15000 });
     });
   });
 

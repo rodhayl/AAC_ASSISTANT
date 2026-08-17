@@ -14,7 +14,7 @@ from src.aac_app.models import (
 )
 from src.api.main import app
 from src.api.routers.export_import import compute_checksum
-from tests.test_utils_auth import create_test_headers
+from tests.auth_helpers import create_test_headers
 
 
 @pytest.fixture

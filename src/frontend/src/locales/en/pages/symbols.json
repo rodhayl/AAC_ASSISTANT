@@ -34,5 +34,12 @@
   "previous": "Previous",
   "next": "Next",
   "page": "Page {{n}}",
-  "edit": "Edit"
+  "edit": "Edit",
+  "deleteSymbol": "Delete Symbol",
+  "deleteSymbolConfirm": "Delete this symbol? This action cannot be undone.",
+  "deleteSymbols": "Delete Symbols",
+  "deleteSelectedConfirm": "Delete {{count}} selected symbols?",
+  "forceDelete": "Force Delete",
+  "delete": "Delete",
+  "symbolInUseForceDelete": "This symbol is in use on boards. Remove it from all boards and delete it?"
 }

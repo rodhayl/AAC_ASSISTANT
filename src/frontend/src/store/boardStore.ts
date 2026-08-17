@@ -34,11 +34,9 @@ interface BoardState {
   deleteBoard: (id: number, skipRefresh?: boolean) => Promise<void>;
   duplicateBoard: (id: number, userId: number) => Promise<void>;
   addSymbolToBoard: (boardId: number, symbolId: number, position: { x: number, y: number }) => Promise<BoardSymbol>;
-  updateBoardSymbol: (boardId: number, symbolId: number, updates: Record<string, unknown>) => Promise<void>;
   deleteBoardSymbol: (boardId: number, symbolId: number, signal?: AbortSignal) => Promise<void>;
   batchUpdateSymbols: (boardId: number, updates: Array<Record<string, unknown>>) => Promise<void>;
   assignBoardToStudent: (boardId: number, studentId: number, assignedBy?: number) => Promise<void>;
-  unassignBoardFromStudent: (boardId: number, studentId: number) => Promise<void>;
 }
 
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -340,28 +338,6 @@ export const useBoardStore = create<BoardState>((set, get) => {
     }
   },
 
-  updateBoardSymbol: async (boardId, symbolId, updates) => {
-    beginMutation();
-    try {
-      const response = await api.put(`/boards/${boardId}/symbols/${symbolId}`, updates);
-      
-      // Update current board symbols
-      const currentBoard = get().currentBoard;
-      if (currentBoard && currentBoard.id === boardId) {
-        set({
-          currentBoard: {
-            ...currentBoard,
-            symbols: currentBoard.symbols.map(s => s.id === symbolId ? response.data : s)
-          }
-        });
-      }
-      finishMutation();
-    } catch (error: unknown) {
-      finishMutation(extractError(error, 'Failed to update symbol'));
-      throw error;
-    }
-  },
-
   deleteBoardSymbol: async (boardId, symbolId, signal) => {
     beginMutation();
     try {
@@ -415,24 +391,6 @@ export const useBoardStore = create<BoardState>((set, get) => {
       finishMutation();
     } catch (e: unknown) {
       finishMutation(extractError(e, 'Failed to assign board'));
-      throw e;
-    }
-  }
-  ,
-  unassignBoardFromStudent: async (boardId, studentId) => {
-    beginMutation();
-    try {
-      await api.delete(`/boards/${boardId}/assign/${studentId}`);
-      set((state) => ({
-        assignedBoardsLastFetchTime:
-          state.assignedBoardsStudentId === studentId ? null : state.assignedBoardsLastFetchTime,
-      }));
-      try {
-        useNotificationsStore.getState().add({ title: 'Board unassigned', message: `Board ${boardId} unassigned from student ${studentId}` })
-      } catch { /* notification optional */ }
-      finishMutation();
-    } catch (e: unknown) {
-      finishMutation(extractError(e, 'Failed to unassign board'));
       throw e;
     }
   }

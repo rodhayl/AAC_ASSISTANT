@@ -315,8 +315,7 @@ protección. Sin exposiciones de datos privados entre roles.
 - **`NOT MANUALLY TESTED`** — el entorno es Linux y no existe instalador/
   portable Windows disponible para esta pasada.
 - El packaging se valida únicamente por CI (GitHub Actions) y por tests de
-  launcher/empaquetado (`test_launcher_runtime`, `test_packaging_runtime`,
-  `test_packaging_improvements`), que pasan.
+  launcher/empaquetado (`test_launcher_runtime`, `test_packaging_improvements`), que pasan.
 - `docs/windows-assistive-validation.md` documenta el checklist manual para
   Windows (instalador, NVDA/Narrator, TTS) que debe ejecutarse en hardware real.
 
@@ -401,20 +400,22 @@ Sin discrepancias entre UI y backend: toda restricción está decidida en backen
 
 | Suite | Resultado |
 | ----- | --------- |
-| Backend (pytest) | **671 passed, 0 failed, 0 skipped** |
-| Cobertura backend | 81.72 % statements (7,372/9,021), 65.73 % branches, 78.01 % combinada |
-| Frontend (Vitest) | **231 passed** (49 archivos) |
-| Cobertura frontend | 70.67 % statements, 60.55 % branches, 64.72 % functions, 73.10 % lines |
-| E2E Playwright Chromium | **126 passed** (servidor real + SQLite limpia + datos sembrados) |
-| Axe (5 rutas críticas) | 0 serious / 0 critical |
+| Backend (pytest) | **759 passed, 0 failed, 0 skipped** |
+| Cobertura backend | 82.12 % combinada (statements 85.35 % 7,686/9,005, branches 71.47 % 1,951/2,730) |
+| Frontend (Vitest) | **268 passed** (53 archivos) |
+| Cobertura frontend | 55.92 % statements, 46.83 % branches, 49.01 % functions, 53.53 % lines (solo código de aplicación; gate en `vitest.config.ts`) |
+| E2E Playwright Chromium | **132 passed** (servidor real + SQLite limpia + datos sembrados; ver `docs/GUI_VERIFICATION_REPORT.md`) |
+| Axe (5 rutas críticas) | 0 serious / 0 critical (0 en todos los niveles) |
 | Ruff / compileall | PASS |
 | Typecheck / ESLint | PASS (0 errores) |
-| Build producción / bundle | PASS (347.8 kB JS ≤ 450 kB, CSS 98.0 kB ≤ 150 kB) |
+| Build producción / bundle | PASS (357.0 kB JS ≤ 450 kB, CSS 100.9 kB ≤ 150 kB) |
 | `i18n:audit` | PASS (sin strings hardcodeados) |
 | `verify_pr.py` | PASS completo |
 
-> Números reproducidos el 2026-08-15 sobre el árbol exacto descrito en el
-> Baseline; no se reutilizan conteos de corridas anteriores.
+> Números reproducidos el 2026-08-17 sobre el árbol exacto descrito en el
+> Baseline; no se reutilizan conteos de corridas anteriores. La verificación
+> GUI completa del 2026-08-17 (E2E 132/132, Axe 0 violaciones, smoke de API
+> 12/12) está documentada en `docs/GUI_VERIFICATION_REPORT.md`.
 
 ---
 

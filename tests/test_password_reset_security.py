@@ -12,7 +12,7 @@ from src.aac_app.utils.jwt_utils import (
     create_refresh_token,
 )
 from src.api.main import app
-from tests.test_utils_auth import create_test_headers
+from tests.auth_helpers import create_test_headers
 
 client = TestClient(app)
 

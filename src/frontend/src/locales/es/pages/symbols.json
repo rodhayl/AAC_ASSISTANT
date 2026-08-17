@@ -34,5 +34,12 @@
   "previous": "Anterior",
   "next": "Siguiente",
   "page": "Página {{n}}",
-  "edit": "Editar"
+  "edit": "Editar",
+  "deleteSymbol": "Eliminar símbolo",
+  "deleteSymbolConfirm": "¿Eliminar este símbolo? Esta acción no se puede deshacer.",
+  "deleteSymbols": "Eliminar símbolos",
+  "deleteSelectedConfirm": "¿Eliminar {{count}} símbolos seleccionados?",
+  "forceDelete": "Forzar eliminación",
+  "delete": "Eliminar",
+  "symbolInUseForceDelete": "Este símbolo está en uso en tableros. ¿Eliminarlo de todos los tableros y borrarlo?"
 }

@@ -20,9 +20,6 @@ interface AuthState {
   setupAdmin: (setupData: any) => Promise<void>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   register: (userData: any) => Promise<void>;
-  updateProfile: (data: Partial<User>) => Promise<void>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  updatePreferences: (preferences: any) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
   refreshAccessToken: () => Promise<boolean>;
@@ -194,34 +191,6 @@ export const useAuthStore = create<AuthState>()(
           set({ isLoading: false });
         } catch (error: unknown) {
           set({ error: extractError(error, 'Registration failed'), isLoading: false });
-          throw error;
-        }
-      },
-
-      updateProfile: async (data) => {
-        set({ isLoading: true, error: null });
-        try {
-          const response = await api.put('/users/me', data);
-          set({ user: response.data, isLoading: false });
-        } catch (error: unknown) {
-          set({ error: 'Failed to update profile', isLoading: false });
-          throw error;
-        }
-      },
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      updatePreferences: async (preferences: any) => {
-        set({ isLoading: true, error: null });
-        try {
-          await api.put('/auth/preferences', preferences);
-          // Refresh user data to get updated preferences
-          const response = await api.get('/users/me');
-          const user = response.data;
-          syncUserPreferences(user);
-
-          set({ user, isLoading: false });
-        } catch (error: unknown) {
-          set({ error: 'Failed to update preferences', isLoading: false });
           throw error;
         }
       },

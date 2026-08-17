@@ -18,5 +18,22 @@ export default defineConfig({
       'test-results/**',
       '**/test-results/**',
     ],
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        // Locale data files are not executable code.
+        'src/**/*.json',
+        'src/main.tsx',
+        'src/vite-env.d.ts',
+      ],
+      thresholds: {
+        // Regression guard on the measured application-only baseline.
+        lines: 52,
+        functions: 47,
+        statements: 53,
+        branches: 46,
+      },
+    },
   },
 })

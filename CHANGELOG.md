@@ -22,12 +22,36 @@ All notable changes to this project are documented here. The project follows
 
 - Symbol-usage analytics consolidated onto the canonical `/analytics/usage`
   endpoint instead of split across `/analytics/log` and `/analytics/usage`.
+- Overlapping backend test suites consolidated by domain: `test_api_basic`
+  folded into `test_api_comprehensive`, duplicate JWT-acceptance and
+  preference-mapping cases merged, frozen-runtime cases folded into
+  `test_packaging_improvements`, and the legacy `test_utils_auth` helper
+  renamed to `tests/auth_helpers.py` (no longer collected as a test module).
+- The three Smartbar Vitest suites merged into one file with shared mocks.
+- Frontend Vitest coverage is now scoped to application code and enforced as
+  a regression gate (`src/frontend/vitest.config.ts`: lines ≥ 52%,
+  statements ≥ 53%, functions ≥ 47%, branches ≥ 46%). New real-case tests
+  cover the settings store (12% → 100%), toast store (54% → 100%),
+  board store CRUD (47% → 83%), and the Appearance/Data/Security settings
+  tabs, raising total application coverage from 51% to 54% lines.
+- Backend coverage raised to 82% combined lines+branches with new real-case
+  API tests for the AI-board router (43% → 82%), settings (56% → 90%),
+  providers (56% → 84%), symbols (71% → 88%), learning (77% → 95%),
+  learning modes (67% → 94%), users (66% → 90%), achievements (66% → 81%),
+  collaboration WebSocket access paths, password-policy rules, translation
+  fallbacks, and the request-scoped DB session lifecycle.
 
 ### Removed
 
 - The test-only `learning_companion_service` module and other unreferenced
   production symbols.
 - 22 unreferenced translation keys from the `es` and `en` locales.
+- Dead store actions (`authStore.updatePreferences`/`updateProfile`,
+  `boardStore.unassignBoardFromStudent`, `localeStore.initFromDetected`,
+  `themeStore.toggleDarkMode`, `notificationsStore.setItems`).
+- Orphaned operator scripts with zero references
+  (`migrate_achievements_schema.py`, `migrate_arasaac_category.py`,
+  `seed_core_vocabulary.py`).
 
 ### Maintainability
 
@@ -36,6 +60,15 @@ All notable changes to this project are documented here. The project follows
   (`scripts/check_i18n_keys.py`) so dead code cannot silently regress.
 - `docs/MAINTAINER_GUIDE.md` documents the deterministic seed-password
   requirement for the local E2E run.
+
+### Testing
+
+- Added GUI end-to-end coverage for board drag-and-drop, real-time
+  notification push (SSE), and real-time board collaboration across two
+  browser sessions (WebSocket), closing previously untested interaction paths.
+- Added GUI end-to-end coverage for symbol image fallback (broken image
+  degrades to placeholder), symbol library create/edit/delete, and the
+  first-run onboarding flow on a fresh database.
 
 ## [2.0.0] - 2026-08-14
 

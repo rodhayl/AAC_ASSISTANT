@@ -36,6 +36,31 @@ Before merging any pull request into `main`:
 
 ---
 
+## 1b. Test Suite Structure
+
+Tests are organized by concern, not by phase. Backend tests live in `tests/`
+(with shared fixtures in `tests/conftest.py` and helpers in
+`tests/auth_helpers.py`); frontend unit tests live in `src/frontend/tests/`;
+browser E2E specs live in `src/frontend/e2e/`.
+
+- **Backend API tests** (`tests/test_*_routes.py`, `tests/test_api_*`, ...)
+  exercise endpoints through `TestClient` against an isolated temporary
+  SQLite database.
+- **Backend unit tests** cover services and helpers directly
+  (`tests/test_auth_pwdlib.py`, `tests/test_translation_service.py`, ...).
+- **Domain consolidation:** overlapping suites are merged per domain rather
+  than duplicated (e.g. the legacy helper module `test_utils_auth.py` was
+  renamed to `tests/auth_helpers.py`, and the frozen-runtime cases were
+  folded into `tests/test_packaging_improvements.py`).
+- **Coverage gates:** backend `pytest --cov` reports line/branch coverage
+  (~80% lines); frontend Vitest enforces a regression guard in
+  `src/frontend/vitest.config.ts` on the application-only baseline
+  (lines/statements ≥ 50%, functions ≥ 45%, branches ≥ 45%).
+- **E2E** (`src/frontend/e2e/`) runs against a real FastAPI + SPA backend
+  with sample seeding and deterministic seed passwords (see `auth.setup.ts`).
+
+---
+
 ## 2. Release Checklist
 
 When preparing an official semantic-versioned release (e.g. `v2.x.y`):

@@ -237,7 +237,7 @@ def test_teacher_user_pagination_deduplicates_legacy_assignments(
     test_db_session.commit()
 
     # The request must be authenticated as the teacher, not the admin.
-    from tests.test_utils_auth import create_test_headers
+    from tests.auth_helpers import create_test_headers
 
     teacher_page = client.get(
         "/api/auth/users",

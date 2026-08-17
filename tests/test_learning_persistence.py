@@ -8,11 +8,28 @@ from sqlalchemy.orm import Session
 
 from src.aac_app.models import LearningSession, User
 from src.aac_app.services.auth_service import get_password_hash
+from src.aac_app.services.learning.history import (
+    MAX_CONVERSATION_HISTORY_ENTRIES,
+    append_history_entry,
+)
 from src.api.deps import get_llm_provider, get_speech_provider
 from src.api.main import app
-from tests.test_utils_auth import create_test_headers
+from tests.auth_helpers import create_test_headers
 
 client = TestClient(app)
+
+
+class TestHistoryHelper:
+    """Unit tests for the conversation history helper."""
+
+    def test_append_history_entry_keeps_only_newest_entries(self):
+        history = [{"id": index} for index in range(MAX_CONVERSATION_HISTORY_ENTRIES)]
+
+        updated = append_history_entry(history, {"id": MAX_CONVERSATION_HISTORY_ENTRIES})
+
+        assert len(updated) == MAX_CONVERSATION_HISTORY_ENTRIES
+        assert updated[0]["id"] == 1
+        assert updated[-1]["id"] == MAX_CONVERSATION_HISTORY_ENTRIES
 
 
 @pytest.fixture(autouse=True)

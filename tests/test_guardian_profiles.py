@@ -19,7 +19,7 @@ from sqlalchemy import event
 from src.aac_app.models import GuardianProfile, StudentTeacher, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.api.main import app
-from tests.test_utils_auth import create_test_headers
+from tests.auth_helpers import create_test_headers
 
 client = TestClient(app)
 
@@ -33,7 +33,7 @@ def create_admin_for_tests(test_db_session, test_password) -> tuple[dict, str]:
     """Create an admin user directly in DB for test setup."""
     from src.aac_app.models import User
     from src.aac_app.services.auth_service import get_password_hash
-    from tests.test_utils_auth import create_test_token
+    from tests.auth_helpers import create_test_token
 
     admin = User(
         username="test_admin",
@@ -90,7 +90,7 @@ def create_user(
     # Teachers and admins need to be created by an admin
     if admin_token is None:
         from src.aac_app.services.guardian_profile_service import get_session
-        from tests.test_utils_auth import create_test_token
+        from tests.auth_helpers import create_test_token
 
         with get_session() as db:
             bootstrap_admin = (

@@ -241,3 +241,185 @@ def test_unrelated_teacher_cannot_join_private_student_board(
         websocket.receive_json()
 
     assert exc_info.value.code == 1008
+
+
+def test_collab_ws_without_token_rejected(collab_client):
+    """A WebSocket connection without an auth subprotocol is refused (1008)."""
+    client = collab_client
+    with client.websocket_connect("/api/collab/boards/1") as websocket, pytest.raises(
+        WebSocketDisconnect
+    ) as exc_info:
+        websocket.receive_json()
+
+    assert exc_info.value.code == 1008
+
+
+def test_collab_ws_unknown_board_rejected(test_db_session, test_password, collab_client):
+    """A valid token connecting to a nonexistent board is refused (1008)."""
+    username = f"ws_ghost_{uuid.uuid4().hex[:8]}"
+    reg_response = collab_client.post(
+        "/api/auth/register",
+        json={
+            "username": username,
+            "password": test_password,
+            "display_name": "Ghost User",
+            "user_type": "teacher",
+        },
+    )
+    assert reg_response.status_code == 200
+    login_response = collab_client.post(
+        "/api/auth/token", data={"username": username, "password": test_password}
+    )
+    token = login_response.json()["access_token"]
+
+    with collab_client.websocket_connect(
+        "/api/collab/boards/999999",
+        subprotocols=["aac-auth", token],
+    ) as websocket, pytest.raises(WebSocketDisconnect) as exc_info:
+        websocket.receive_json()
+
+    assert exc_info.value.code == 1008
+
+
+def test_collab_ws_unassigned_student_rejected(test_db_session, collab_client):
+    """A student without a board assignment cannot join a private board (1008)."""
+    student = User(
+        username="collab_unassigned_student",
+        display_name="Unassigned Student",
+        user_type="student",
+        password_hash="test-hash",
+    )
+    teacher = User(
+        username="collab_owner_teacher",
+        display_name="Owner Teacher",
+        user_type="teacher",
+        password_hash="test-hash",
+    )
+    test_db_session.add_all([student, teacher])
+    test_db_session.flush()
+    board = CommunicationBoard(user_id=teacher.id, name="Private Teacher Board")
+    test_db_session.add(board)
+    test_db_session.commit()
+    test_db_session.refresh(board)
+
+    token = create_access_token(
+        data={
+            "sub": student.username,
+            "user_id": student.id,
+            "user_type": student.user_type,
+        }
+    )
+    client = collab_client
+    with client.websocket_connect(
+        f"/api/collab/boards/{board.id}",
+        subprotocols=["aac-auth", token],
+    ) as websocket, pytest.raises(WebSocketDisconnect) as exc_info:
+        websocket.receive_json()
+
+    assert exc_info.value.code == 1008
+
+
+def test_collab_ws_broadcast_skips_sender(
+    test_password, collab_client
+):
+    """A broadcast is delivered to the other client but not echoed to the sender."""
+    client = collab_client
+    username = f"ws_duo_{uuid.uuid4().hex[:8]}"
+    reg_response = client.post(
+        "/api/auth/register",
+        json={
+            "username": username,
+            "password": test_password,
+            "display_name": "Duo User",
+            "user_type": "teacher",
+        },
+    )
+    user_id = reg_response.json()["id"]
+    login_response = client.post(
+        "/api/auth/token", data={"username": username, "password": test_password}
+    )
+    token = login_response.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    board_response = client.post(
+        "/api/boards",
+        headers=headers,
+        params={"user_id": user_id},
+        json={"name": "Duo Board", "grid_rows": 3, "grid_cols": 4},
+    )
+    board_id = board_response.json()["id"]
+    url = f"/api/collab/boards/{board_id}"
+
+    with (
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as ws1,
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as ws2,
+        finish_collab_connections(client, ws1, ws2),
+    ):
+        ws1.send_json({"op": "move", "symbol_id": 1})
+        recv = ws2.receive_json()
+        assert recv["payload"]["symbol_id"] == 1
+
+        # ws2 responds; ws1 receives it and ws2's own socket stays usable
+        # (the sender is skipped in the broadcast).
+        ws2.send_json({"op": "move", "symbol_id": 2})
+        recv = ws1.receive_json()
+        assert recv["payload"]["symbol_id"] == 2
+        ws2.send_json({"op": "ping"})
+
+
+def test_collab_ws_public_board_read_only_viewer(
+    test_db_session, test_password, collab_client
+):
+    """A user without access can join a public board and receive broadcasts."""
+    viewer = User(
+        username="collab_public_viewer",
+        display_name="Public Viewer",
+        user_type="student",
+        password_hash="test-hash",
+    )
+    test_db_session.add(viewer)
+    test_db_session.commit()
+
+    username = f"ws_public_{uuid.uuid4().hex[:8]}"
+    reg_response = collab_client.post(
+        "/api/auth/register",
+        json={
+            "username": username,
+            "password": test_password,
+            "display_name": "Public Owner",
+            "user_type": "teacher",
+        },
+    )
+    user_id = reg_response.json()["id"]
+    login_response = collab_client.post(
+        "/api/auth/token", data={"username": username, "password": test_password}
+    )
+    token = login_response.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    board_response = collab_client.post(
+        "/api/boards",
+        headers=headers,
+        params={"user_id": user_id},
+        json={"name": "Public Board", "grid_rows": 3, "grid_cols": 4, "is_public": True},
+    )
+    board_id = board_response.json()["id"]
+
+    viewer_token = create_access_token(
+        data={
+            "sub": viewer.username,
+            "user_id": viewer.id,
+            "user_type": viewer.user_type,
+        }
+    )
+    url = f"/api/collab/boards/{board_id}"
+    with (
+        collab_client.websocket_connect(url, subprotocols=["aac-auth", token]) as owner_ws,
+        collab_client.websocket_connect(
+            url, subprotocols=["aac-auth", viewer_token]
+        ) as viewer_ws,
+        finish_collab_connections(collab_client, owner_ws, viewer_ws),
+    ):
+        owner_ws.send_json({"op": "move", "symbol_id": 7})
+        recv = viewer_ws.receive_json()
+        assert recv["payload"]["symbol_id"] == 7

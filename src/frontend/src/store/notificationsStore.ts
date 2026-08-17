@@ -19,7 +19,6 @@ interface NotificationsState {
   markAllAsRead: (sync?: boolean) => Promise<void>
   unreadCount: () => number
   loadFromBackend: (userId: number) => Promise<void>
-  setItems: (items: NotificationItem[]) => void
 }
 
 let loadGeneration = 0
@@ -102,10 +101,6 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
         set({ loading: false })
       }
     }
-  },
-
-  setItems: (items) => {
-    set({ items })
   },
 }))
 

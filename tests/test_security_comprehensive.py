@@ -31,7 +31,7 @@ from src.aac_app.utils.jwt_utils import (
 )
 from src.api.deps import get_db
 from src.api.main import app
-from tests.test_utils_auth import create_test_headers
+from tests.auth_helpers import create_test_headers
 
 
 @pytest.fixture
