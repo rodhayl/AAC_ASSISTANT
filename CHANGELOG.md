@@ -4,6 +4,39 @@ All notable changes to this project are documented here. The project follows
 [Keep a Changelog](https://keepachangelog.com/) formatting. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Security
+
+- Logout now awaits server-side token revocation before clearing local auth
+  state, so a captured token can no longer be reused after sign-out.
+
+### Fixed
+
+- Data export/import checksum now normalizes whole-number floats so a browser
+  JSON round-trip no longer fails re-import with `400`.
+- Voice-mode toggle color contrast and the learning-mode delete button's
+  accessible name (Axe `button-name`).
+
+### Changed
+
+- Symbol-usage analytics consolidated onto the canonical `/analytics/usage`
+  endpoint instead of split across `/analytics/log` and `/analytics/usage`.
+
+### Removed
+
+- The test-only `learning_companion_service` module and other unreferenced
+  production symbols.
+- 22 unreferenced translation keys from the `es` and `en` locales.
+
+### Maintainability
+
+- `scripts/verify_pr.py` now runs the internal-import audit
+  (`scripts/audit_codebase.py`) and a new dead-translation-key guard
+  (`scripts/check_i18n_keys.py`) so dead code cannot silently regress.
+- `docs/MAINTAINER_GUIDE.md` documents the deterministic seed-password
+  requirement for the local E2E run.
+
 ## [2.0.0] - 2026-08-14
 
 ### Security
