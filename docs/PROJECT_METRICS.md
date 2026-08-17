@@ -32,7 +32,7 @@ Snapshot date: **2026-08-17**
 | Backend test coverage (Coverage.py) | 81.55% statements (7,344/9,005), 65.60% branches (1,791/2,730), 77.84% combined total |
 | Frontend unit/component tests (Vitest) | 231 passed (49 files, reproduced 2026-08-17) |
 | Frontend test coverage (Vitest v8) | 70.86% statements, 60.98% branches, 64.93% functions, 73.28% lines (reproduced 2026-08-17) |
-| End-to-end tests (Playwright, real backend) | 126 passed (reproduced 2026-08-17 against a production build with seeded temporary SQLite data) |
+| End-to-end tests (Playwright, real backend) | 128 passed (reproduced 2026-08-17 against a production build with seeded temporary SQLite data) |
 | Automated accessibility scans (Axe Core) | 5 automated Axe analyses across 5 critical routes (/setup, /login, /communication, /learning, /settings) with 0 serious or critical violations |
 | Python lint (`ruff`) | clean |
 | Frontend lint / typecheck / build | clean; JS bundle 350.2 kB ≤ 450 kB budget, CSS 98.5 kB ≤ 150 kB budget |
