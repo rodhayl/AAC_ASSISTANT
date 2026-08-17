@@ -26,7 +26,9 @@ For audit work, inspect every production root at least once, then repeat the sca
 
 ## Validation
 
-Backend changes: `uv run ruff check src tests scripts`, `uv run python -m compileall -q src scripts`, and relevant pytest tests (full `uv run pytest -q` for broad changes). Launcher/packaging changes additionally require `uv run ruff check launcher.pyw`, `uv run python -m compileall -q launcher.pyw`, packaging tests, a rebuilt PyInstaller/Inno artifact, and an isolated smoke with `AAC_ASSISTANT_NO_BROWSER=1`.
+**NEVER run full test suites (pytest, vitest, or Playwright E2E) unless the user explicitly asks for a full run.** Full suites are slow and the user does not have unlimited time. Default to running only the specific test files/specs affected by the current change, then the final consolidated gate (`verify_pr.py`) only when the user requests it or a broad change genuinely requires it. This is a permanent rule: do not run `uv run pytest` without paths, `npx playwright test` without a spec filter, or `npm test -- --run` without a file filter unless the user explicitly says to run everything. For GUI verification, prefer targeted API smoke checks (curl) and at most one or two specific Playwright specs over the whole E2E suite.
+
+Backend changes: `uv run ruff check src tests scripts`, `uv run python -m compileall -q src scripts`, and the relevant pytest test files (run with explicit paths; full `uv run pytest -q` only when the user asks). Launcher/packaging changes additionally require `uv run ruff check launcher.pyw`, `uv run python -m compileall -q launcher.pyw`, packaging tests, a rebuilt PyInstaller/Inno artifact, and an isolated smoke with `AAC_ASSISTANT_NO_BROWSER=1`.
 
 Frontend changes: from `src/frontend`, run `npm run typecheck`, `npm run lint`, `npm test -- --run`, and `npm run build` as appropriate.
 

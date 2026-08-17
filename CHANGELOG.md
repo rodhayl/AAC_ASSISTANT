@@ -28,6 +28,20 @@ All notable changes to this project are documented here. The project follows
   `test_packaging_improvements`, and the legacy `test_utils_auth` helper
   renamed to `tests/auth_helpers.py` (no longer collected as a test module).
 - The three Smartbar Vitest suites merged into one file with shared mocks.
+- Frontend page/store coverage expanded with real-case Vitest suites for
+  `Dashboard`, `Students`, `Symbols` and `Achievements` (previously 0%) plus
+  `learningStore` resilience/history-reconstruction and `notificationsStore`
+  read-state cases; application-only line coverage raised 53.5% → 65.9% and
+  the `vitest.config.ts` regression gate raised to lines ≥ 62%.
+- Remaining defensive branches in the `achievements`, `providers` and
+  `symbols` routers closed with real-case tests (permission/404/duplicate
+  award paths, install support limits, TTS/voice install failure mappings,
+  image/upload cleanup on commit failure, best-effort progress and
+  board-symbol partial updates), raising those routers to 95%+ coverage.
+  Also removed an unreachable `update_achievement` branch: system
+  achievements (created_by=None) always fail the ownership check for
+  teachers first, so the separate "system achievements are admin-only"
+  guard could never fire.
 - Frontend Vitest coverage is now scoped to application code and enforced as
   a regression gate (`src/frontend/vitest.config.ts`: lines ≥ 52%,
   statements ≥ 53%, functions ≥ 47%, branches ≥ 46%). New real-case tests

@@ -204,7 +204,9 @@ def update_achievement(
         if not achievement:
             raise HTTPException(status_code=404, detail="Achievement not found")
 
-        # Only creator or admin can update
+        # Only creator or admin can update. System achievements have
+        # created_by=None, so they always fail the ownership check for
+        # teachers and are effectively admin-only; no separate branch needed.
         if achievement.created_by != current_user.id and current_user.user_type != "admin":
             raise HTTPException(
                 status_code=403,
@@ -212,17 +214,6 @@ def update_achievement(
                     user=current_user,
                     accept_language=request.headers.get("accept-language"),
                     key="errors.achievements.updateOwnOnly",
-                ),
-            )
-
-        # System achievements (created_by=None) can only be updated by admin
-        if achievement.created_by is None and current_user.user_type != "admin":
-            raise HTTPException(
-                status_code=403,
-                detail=get_text(
-                    user=current_user,
-                    accept_language=request.headers.get("accept-language"),
-                    key="errors.achievements.updateSystem",
                 ),
             )
 

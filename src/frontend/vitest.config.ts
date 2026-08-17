@@ -29,10 +29,10 @@ export default defineConfig({
       ],
       thresholds: {
         // Regression guard on the measured application-only baseline.
-        lines: 52,
-        functions: 47,
-        statements: 53,
-        branches: 46,
+        lines: 62,
+        functions: 55,
+        statements: 60,
+        branches: 51,
       },
     },
   },

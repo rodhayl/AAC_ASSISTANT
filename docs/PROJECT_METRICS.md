@@ -30,8 +30,8 @@ Snapshot date: **2026-08-17**
 | ------ | ----- |
 | Backend tests (pytest) | 759 passed, 0 skipped (reproduced 2026-08-17; overlapping suites consolidated and dead helpers renamed; voice tests exercised with `faster-whisper` 1.2.1) |
 | Backend test coverage (Coverage.py) | 85.35% statements (7,686/9,005), 71.47% branches (1,951/2,730), 82.12% combined total |
-| Frontend unit/component tests (Vitest) | 268 passed (53 files, reproduced 2026-08-17; 3 Smartbar suites consolidated into 1) |
-| Frontend test coverage (Vitest v8, application code only) | 55.92% statements, 46.83% branches, 49.01% functions, 53.53% lines — regression-gated in `src/frontend/vitest.config.ts` (lines ≥ 52%, statements ≥ 53%, functions ≥ 47%, branches ≥ 46%) |
+| Frontend unit/component tests (Vitest) | 317 passed (58 files, reproduced 2026-08-17; 3 Smartbar suites consolidated into 1) |
+| Frontend test coverage (Vitest v8, application code only) | 63.04% statements, 54.69% branches, 58.78% functions, 65.94% lines — regression-gated in `src/frontend/vitest.config.ts` (lines ≥ 62%, statements ≥ 60%, functions ≥ 55%, branches ≥ 51%) |
 | End-to-end tests (Playwright, real backend) | 132 passed (reproduced 2026-08-17 against a production build with seeded temporary SQLite data) |
 | Automated accessibility scans (Axe Core) | 5 automated Axe analyses across 5 critical routes (/setup, /login, /communication, /learning, /settings) with 0 serious or critical violations |
 | Python lint (`ruff`) | clean |

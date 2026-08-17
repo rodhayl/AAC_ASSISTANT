@@ -1,5 +1,39 @@
 # Informe de Verificación de la GUI — AAC Assistant
 
+## Verificación de seguimiento — 2026-08-18 (dirigida)
+
+Re-verificación contra el **servidor real** con **BD SQLite nueva aislada**
+(`/tmp/aac_gui_verify`, `AAC_SEED_SAMPLE_DATA=true`, admin1/Admin123,
+student1/Student123, teacher1/Teacher123), **build de producción** y
+`AAC_ASSISTANT_NO_BROWSER=1`. Por política de sesión, esta pasada ejecutó
+**solo comprobaciones dirigidas** (no la suite E2E completa):
+
+| Comprobación | Resultado |
+| ------------ | --------- |
+| `GET /ready` | `ready:true, status:healthy`, **4/4 providers** (speech, llm, achievement, vector_store) |
+| `GET /api/auth/setup-status` | `setup_required:false, has_admin:true` (BD sembrada) |
+| `POST /api/auth/token` ×3 (admin/student/teacher) | **200** los tres roles |
+| `GET /api/auth/me` | `admin1 / admin` |
+| `GET /api/boards/` | 3 tableros sembrados (General Communication, …) |
+| `GET /api/boards/symbols?limit=3` | 3 símbolos core (cow, horse, chicken) |
+| `GET /api/learning-modes/` | endpoint 200 (0 modos sembrados) |
+| `GET /api/settings/ai` | configuración de provider servida |
+| `GET /api/providers/voice-status` | STT `faster-whisper` instalado (modelo tiny); TTS local no disponible en headless (limitación documentada) |
+| `POST /api/analytics/usage` | `{"success":true,"count":1}` |
+| `GET /api/achievements/categories` (teacher) | 7 categorías |
+| SPA `/` | `<title>AAC Assistant</title>` + 6 rutas SPA (`/login`, `/settings`, `/learning`, `/students`, `/symbols`, `/achievements`) → **200** |
+| **Spec dirigido `axe-accessibility`** | **8/8 passed, 0 violaciones** en los 5 escaneos Axe (Setup, Login, Communication, Learning, Settings) |
+| **Spec dirigido `role-matrix`** | **15/15 passed** (matriz de permisos admin/teacher/student + navegación por rol) |
+
+La suite E2E completa (132 tests) se ejecutó por última vez el **2026-08-17**
+(ver secciones siguientes); esta pasada confirma que el servidor real sigue
+sano, los 3 roles autentican y las rutas críticas no tienen regresiones de
+accesibilidad ni de permisos.
+
+---
+
+## Verificación completa — 2026-08-17
+
 Fecha de la verificación: **2026-08-17**. Esta verificación se ejecutó contra el
 **servidor real** (FastAPI + SPA de producción) con una **base de datos SQLite
 nueva** y datos sembrados deterministas, no contra mocks.

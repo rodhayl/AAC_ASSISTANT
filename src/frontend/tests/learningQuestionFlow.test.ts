@@ -13,7 +13,7 @@ vi.mock('../src/lib/api', () => ({
   },
 }));
 
-import { useLearningStore, NEXT_QUESTION_REVEAL_DELAY_MS } from '../src/store/learningStore';
+import { useLearningStore, NEXT_QUESTION_REVEAL_DELAY_MS, stripReasoning } from '../src/store/learningStore';
 import { useAuthStore } from '../src/store/authStore';
 import type { User } from '../src/types';
 
@@ -596,5 +596,166 @@ describe('learningStore adaptive question flow', () => {
     expect(state.currentQuestion).toBeNull();
     expect(state.error).toBe('Invalid question format');
     expect(state.isLoading).toBe(false);
+  });
+});
+
+describe('learningStore resilience and history reconstruction', () => {
+  it('stripReasoning removes think blocks and extracts the marked answer', () => {
+    const withThinkBlock =
+      'Let me think.\n<think>hidden chain of thought</think>\nThe answer is 4.';
+    const result = stripReasoning(withThinkBlock);
+    expect(result).not.toContain('hidden chain of thought');
+    expect(result).toContain('answer is 4');
+  });
+
+  it('stripReasoning removes fenced reasoning blocks and answer markers', () => {
+    const fenced = '```reasoning\nsome analysis\n```\nFinal answer: yes';
+    expect(stripReasoning(fenced)).toBe('yes');
+    expect(stripReasoning('<think>x</think>')).toBe('');
+  });
+
+  it('admins with reasoning enabled receive the full thinking trace', async () => {
+    const admin: User = {
+      id: 99,
+      username: 'admin',
+      display_name: 'Admin',
+      user_type: 'admin',
+      is_active: true,
+      created_at: '2026-01-01T00:00:00Z',
+    };
+    useAuthStore.setState({ user: admin });
+    useLearningStore.setState({
+      currentSession: { session_id: 7, success: true },
+      showAdminReasoning: true,
+    });
+    post
+      .mockResolvedValueOnce({
+        data: { success: true, assistant_reply: 'Clean reply', full_thinking: 'model reasoning' },
+      })
+      .mockResolvedValueOnce({
+        data: { success: true, question_text: 'Next', choices: ['A', 'B'] },
+      });
+
+    await useLearningStore.getState().submitAnswer(7, 'Cat');
+
+    const contents = useLearningStore.getState().messages.map((message) => message.content);
+    expect(contents[contents.length - 1]).toContain('Clean reply');
+    expect(contents[contents.length - 1]).toContain('[debug] model reasoning');
+  });
+
+  it('startSession surfaces a non-Error rejection via extractError', async () => {
+    post.mockRejectedValue({ response: { data: { detail: 'provider unavailable' } } });
+
+    await expect(
+      useLearningStore.getState().startSession({ topic: 'T', purpose: 'practice' }, 1),
+    ).rejects.toThrow();
+
+    const state = useLearningStore.getState();
+    expect(state.error).toBe('provider unavailable');
+    expect(state.isLoading).toBe(false);
+  });
+
+  it('submitAnswer rejection sets an error when the request is current', async () => {
+    useLearningStore.setState({ currentSession: { session_id: 7, success: true } });
+    post.mockRejectedValue({ response: { data: { message: 'server down' } } });
+
+    await useLearningStore.getState().submitAnswer(7, 'Cat');
+
+    const state = useLearningStore.getState();
+    expect(state.error).toBe('server down');
+    expect(state.isLoading).toBe(false);
+  });
+
+  it('submitVoiceAnswer falls back to a placeholder when transcription is missing', async () => {
+    useLearningStore.setState({ currentSession: { session_id: 7, success: true } });
+    post.mockResolvedValue({ data: { success: true, feedback_message: 'Heard' } });
+
+    await useLearningStore.getState().submitVoiceAnswer(7, new Blob(['audio']));
+
+    const contents = useLearningStore.getState().messages.map((message) => message.content);
+    expect(contents).toContain('[voice] Audio message');
+    expect(useLearningStore.getState().revealedAnswer?.choice).toBe('[voice]');
+  });
+
+  it('endSession refreshes achievements and history for the active user', async () => {
+    const student: User = {
+      id: 42,
+      username: 'student42',
+      display_name: 'Student 42',
+      user_type: 'student',
+      is_active: true,
+      created_at: '2026-01-01T00:00:00Z',
+    };
+    useAuthStore.setState({ user: student });
+    useLearningStore.setState({ currentSession: { session_id: 7, success: true } });
+    post.mockImplementation((url: string) => {
+      if (url === '/learning/7/end') {
+        return Promise.resolve({ data: { success: true, summary: 'Great work!' } });
+      }
+      if (url === '/achievements/user/42/check') {
+        return Promise.resolve({ data: { success: true } });
+      }
+      return Promise.resolve({ data: { success: true } });
+    });
+    get.mockResolvedValue({ data: { sessions: [] } });
+
+    await useLearningStore.getState().endSession(7);
+
+    expect(post).toHaveBeenCalledWith(
+      '/achievements/user/42/check',
+      undefined,
+      expect.anything(),
+    );
+    expect(get).toHaveBeenCalledWith('/learning/history/42', { params: { limit: 50 } });
+  });
+
+  it('fetchSessionHistory failure clears the loading flag', async () => {
+    get.mockRejectedValue(new Error('boom'));
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await useLearningStore.getState().fetchSessionHistory(1);
+
+    expect(useLearningStore.getState().isLoadingHistory).toBe(false);
+    expect(consoleSpy).toHaveBeenCalled();
+  });
+
+  it('loadSession reconstructs question, text, symbol and feedback messages', async () => {
+    get.mockResolvedValue({
+      data: {
+        id: 9,
+        conversation_history: [
+          { type: 'question', data: { question: 'What color is the sky?' } },
+          { type: 'response', student_answer: 'Blue', feedback: 'Correct!', mode: 'text' },
+          {
+            type: 'response',
+            student_answer: 'sky blue',
+            symbols: [{ label: 'sky' }, { label: 'blue' }],
+            mode: 'symbol',
+          },
+        ],
+      },
+    });
+
+    await useLearningStore.getState().loadSession(9);
+
+    const contents = useLearningStore.getState().messages.map((message) => message.content);
+    expect(contents).toContain('What color is the sky?');
+    expect(contents).toContain('Blue');
+    expect(contents).toContain('Correct!');
+    expect(contents.some((content) => content.startsWith('🧩 sky blue'))).toBe(true);
+    expect(contents.some((content) => content.includes('[Symbols: sky, blue]'))).toBe(true);
+    expect(useLearningStore.getState().currentSession?.session_id).toBe(9);
+  });
+
+  it('loadSession failure sets an error', async () => {
+    get.mockRejectedValue({ message: 'not found' });
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await useLearningStore.getState().loadSession(9);
+
+    const state = useLearningStore.getState();
+    expect(state.error).toBe('not found');
+    expect(state.isLoading).toBe(false);
+    expect(consoleSpy).toHaveBeenCalled();
   });
 });

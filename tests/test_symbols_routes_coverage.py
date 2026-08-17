@@ -15,6 +15,9 @@ from src.api.main import app
 from tests.auth_helpers import create_test_headers
 
 client = TestClient(app)
+# The install-style 500 paths re-raise raw exceptions; use a client that
+# surfaces them as responses instead of re-raising in the test process.
+client_no_raise = TestClient(app, raise_server_exceptions=False)
 
 PNG_BYTES = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
@@ -284,3 +287,315 @@ def test_symbol_reorder_batch(symbols_setup, staff_headers):
     )
     assert res.status_code == 200
     assert res.json() == {"ok": True, "updated": 0}
+
+
+class FaultySession:
+    """Session wrapper that raises on the configured method names."""
+
+    def __init__(self, session, **faults):
+        self._session = session
+        self._faults = faults
+
+    def __getattr__(self, name):
+        if name in self._faults:
+            exc = self._faults[name]
+
+            def raiser(*args, **kwargs):
+                raise exc
+
+            return raiser
+        return getattr(self._session, name)
+
+    def close(self):
+        self._session.close()
+
+
+def _faulty_session(test_db_engine, **faults):
+    from sqlalchemy.orm import sessionmaker
+
+    session = sessionmaker(
+        autocommit=False, autoflush=False, bind=test_db_engine
+    )()
+    return FaultySession(session, **faults)
+
+
+def _override_db(session):
+    from src.api.deps import get_db
+
+    def override():
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = override
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_symbol_reorder_failure_rolls_back_and_returns_500(
+    symbols_setup, staff_headers, test_db_engine, monkeypatch
+):
+    """A commit failure during reorder rolls back and maps to 500."""
+    symbol = symbols_setup[0]
+    faulty = _faulty_session(test_db_engine, commit=RuntimeError("disk full"))
+
+    class ReorderSession(FaultySession):
+        def __init__(self):
+            super().__init__(faulty._session, commit=RuntimeError("disk full"))
+
+        def query(self, model):
+            if model is Symbol:
+                return _FakeQuery([symbol])
+            return self._session.query(model)
+
+    class _FakeQuery:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def filter(self, *args):
+            return self
+
+        def all(self):
+            return self._rows
+
+    _override_db(ReorderSession())
+    try:
+        res = client.put(
+            "/api/boards/symbols/reorder",
+            json=[{"id": symbol.id, "order_index": 5}],
+            headers=staff_headers,
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert res.status_code == 500
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_symbol_upload_commit_failure_cleans_up_upload(
+    staff_headers, test_db_engine, monkeypatch
+):
+    """A commit failure after image persistence removes the orphaned file."""
+    removed = []
+    monkeypatch.setattr(
+        "src.api.routers.symbols.remove_owned_upload",
+        lambda path, uploads_dir: removed.append(path),
+    )
+
+    _override_db(_faulty_session(test_db_engine, commit=RuntimeError("commit failed")))
+    try:
+        res = client_no_raise.post(
+            "/api/boards/symbols/upload",
+            headers=staff_headers,
+            data={"label": "Rotura"},
+            files={"file": ("break.png", io.BytesIO(PNG_BYTES), "image/png")},
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert res.status_code == 500
+    assert len(removed) == 1
+    assert removed[0].startswith("/uploads/symbols/")
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_symbol_upload_survives_refresh_and_index_errors(
+    staff_headers, test_db_engine, monkeypatch
+):
+    """Refresh/index warnings after persistence do not fail the upload."""
+    monkeypatch.setattr(
+        "src.api.routers.symbols.index_symbol",
+        lambda symbol: (_ for _ in ()).throw(RuntimeError("index down")),
+    )
+    _override_db(_faulty_session(test_db_engine, refresh=RuntimeError("refresh lost")))
+    try:
+        res = client.post(
+            "/api/boards/symbols/upload",
+            headers=staff_headers,
+            data={"label": "Resiliente"},
+            files={"file": ("ok.png", io.BytesIO(PNG_BYTES), "image/png")},
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert res.status_code == 200
+    assert res.json()["label"] == "Resiliente"
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_symbol_image_write_oserror_cleans_up_and_rejects(
+    staff_headers, monkeypatch
+):
+    """An OSError while writing the image file removes the partial upload."""
+    import pathlib
+
+    removed = []
+    monkeypatch.setattr(
+        "src.api.routers.symbols.remove_owned_upload",
+        lambda path, uploads_dir: removed.append(path),
+    )
+
+    class ExplodingFile:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def write(self, content):
+            raise OSError("disk full")
+
+    monkeypatch.setattr(
+        pathlib.Path, "open", lambda self, mode, **kwargs: ExplodingFile()
+    )
+    res = client_no_raise.post(
+        "/api/boards/symbols/upload",
+        headers=staff_headers,
+        data={"label": "Fallo"},
+        files={"file": ("fail.png", io.BytesIO(PNG_BYTES), "image/png")},
+    )
+    assert res.status_code == 500
+    assert len(removed) == 1
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_symbol_image_update_commit_failure_cleans_up(
+    symbols_setup, staff_headers, test_db_engine, monkeypatch
+):
+    """A commit failure while replacing an image removes the new upload."""
+    removed = []
+    monkeypatch.setattr(
+        "src.api.routers.symbols.remove_owned_upload",
+        lambda path, uploads_dir: removed.append(path),
+    )
+
+    _override_db(_faulty_session(test_db_engine, commit=RuntimeError("commit failed")))
+    try:
+        symbol = symbols_setup[0]
+        res = client_no_raise.post(
+            f"/api/boards/symbols/{symbol.id}/image",
+            headers=staff_headers,
+            files={"file": ("new.png", io.BytesIO(PNG_BYTES), "image/png")},
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert res.status_code == 500
+    assert len(removed) == 1
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_symbol_image_update_survives_refresh_error(
+    symbols_setup, staff_headers, test_db_engine, monkeypatch
+):
+    """A refresh warning after an image update still returns the symbol."""
+    _override_db(_faulty_session(test_db_engine, refresh=RuntimeError("refresh lost")))
+    try:
+        symbol = symbols_setup[0]
+        res = client.post(
+            f"/api/boards/symbols/{symbol.id}/image",
+            headers=staff_headers,
+            files={"file": ("ok.png", io.BytesIO(PNG_BYTES), "image/png")},
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert res.status_code == 200
+    assert res.json()["image_path"].startswith("/uploads/symbols/")
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_add_symbol_progress_failure_is_best_effort(
+    symbols_setup, test_db_session, admin_user, staff_headers, monkeypatch
+):
+    """Vocabulary-progress failures do not fail the board-symbol creation."""
+    symbol = symbols_setup[0]
+    board = CommunicationBoard(user_id=admin_user.id, name="Progress Board")
+    test_db_session.add(board)
+    test_db_session.commit()
+    test_db_session.refresh(board)
+
+    monkeypatch.setattr(
+        "src.aac_app.services.achievement_system.AchievementSystem.update_progress",
+        lambda self, user_id, metric, value, db: (_ for _ in ()).throw(
+            RuntimeError("progress down")
+        ),
+    )
+    res = client.post(
+        f"/api/boards/{board.id}/symbols",
+        headers=staff_headers,
+        json={"symbol_id": symbol.id, "position_x": 0, "position_y": 0},
+    )
+    assert res.status_code == 200
+    assert res.json()["symbol_id"] == symbol.id
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_board_symbol_partial_update_visibility_text_and_link(
+    symbols_setup, test_db_session, admin_user, staff_headers
+):
+    """Board-symbol updates apply visibility, custom text and linked boards."""
+    symbol = symbols_setup[0]
+    target = CommunicationBoard(user_id=admin_user.id, name="Target Board")
+    test_db_session.add(target)
+    test_db_session.flush()
+    board = CommunicationBoard(user_id=admin_user.id, name="Source Board")
+    test_db_session.add(board)
+    test_db_session.flush()
+    test_db_session.add(
+        BoardSymbol(board_id=board.id, symbol_id=symbol.id, position_x=0, position_y=0)
+    )
+    test_db_session.commit()
+    board_symbol = (
+        test_db_session.query(BoardSymbol).filter_by(board_id=board.id).first()
+    )
+
+    res = client.put(
+        f"/api/boards/{board.id}/symbols/{board_symbol.id}",
+        headers=staff_headers,
+        json={
+            "is_visible": False,
+            "custom_text": "Mi símbolo",
+            "linked_board_id": target.id,
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["is_visible"] is False
+    assert res.json()["custom_text"] == "Mi símbolo"
+    assert res.json()["linked_board_id"] == target.id
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_board_symbol_batch_update_visibility_text_and_link(
+    symbols_setup, test_db_session, admin_user, staff_headers
+):
+    """The batch endpoint applies visibility, custom text and linked boards."""
+    symbol = symbols_setup[0]
+    target = CommunicationBoard(user_id=admin_user.id, name="Batch Target")
+    test_db_session.add(target)
+    test_db_session.flush()
+    board = CommunicationBoard(user_id=admin_user.id, name="Batch Source")
+    test_db_session.add(board)
+    test_db_session.flush()
+    test_db_session.add(
+        BoardSymbol(board_id=board.id, symbol_id=symbol.id, position_x=0, position_y=0)
+    )
+    test_db_session.commit()
+    board_symbol = (
+        test_db_session.query(BoardSymbol).filter_by(board_id=board.id).first()
+    )
+
+    res = client.put(
+        f"/api/boards/{board.id}/symbols/batch",
+        headers=staff_headers,
+        json=[
+            {
+                "id": board_symbol.id,
+                "is_visible": False,
+                "custom_text": "Etiqueta",
+                "linked_board_id": target.id,
+            },
+        ],
+    )
+    assert res.status_code == 200
+    assert res.json()["updated"] == 1
+
+    test_db_session.refresh(board_symbol)
+    assert board_symbol.is_visible is False
+    assert board_symbol.custom_text == "Etiqueta"
+    assert board_symbol.linked_board_id == target.id

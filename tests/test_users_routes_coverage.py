@@ -324,3 +324,208 @@ def test_achievement_delete_permissions_and_flow(
     test_db_session.commit()
     test_db_session.refresh(own)
     assert client.delete(f"/api/achievements/{own.id}", headers=headers).status_code == 204
+
+
+def test_achievement_categories_and_criteria_success(teacher_user):
+    """Teachers can read the predefined categories and criteria types."""
+    headers = create_test_headers(teacher_user.id, teacher_user.username, "teacher")
+
+    res = client.get("/api/achievements/categories", headers=headers)
+    assert res.status_code == 200
+    assert "custom" in res.json()
+
+    res = client.get("/api/achievements/criteria-types", headers=headers)
+    assert res.status_code == 200
+    assert "sessions_completed" in res.json()
+
+
+def test_achievement_update_permission_and_error_paths(
+    teacher_user, student_user, test_db_session
+):
+    """Update enforces staff-only, 404, own-only and system-protection rules."""
+    student_headers = create_test_headers(
+        student_user.id, student_user.username, "student"
+    )
+    assert (
+        client.put(
+            "/api/achievements/1", json={"name": "X"}, headers=student_headers
+        ).status_code
+        == 403
+    )
+
+    teacher_headers = create_test_headers(
+        teacher_user.id, teacher_user.username, "teacher"
+    )
+    # Missing achievement -> 404.
+    assert (
+        client.put(
+            "/api/achievements/999999", json={"name": "X"}, headers=teacher_headers
+        ).status_code
+        == 404
+    )
+
+    # A teacher cannot update another teacher's custom achievement.
+    other = User(
+        username="coverage_other_t2",
+        display_name="Other Teacher 2",
+        user_type="teacher",
+        password_hash="test-hash",
+        is_active=True,
+    )
+    test_db_session.add(other)
+    test_db_session.commit()
+    custom = Achievement(
+        name="Other Custom",
+        description="",
+        category="custom",
+        points=5,
+        created_by=other.id,
+        is_manual=True,
+    )
+    test_db_session.add(custom)
+    test_db_session.commit()
+    test_db_session.refresh(custom)
+    assert (
+        client.put(
+            f"/api/achievements/{custom.id}",
+            json={"name": "Hijacked"},
+            headers=teacher_headers,
+        ).status_code
+        == 403
+    )
+
+    # A teacher cannot update a system achievement (created_by=None).
+    system = Achievement(
+        name="Sys", description="", category="general", points=10, created_by=None
+    )
+    test_db_session.add(system)
+    test_db_session.commit()
+    test_db_session.refresh(system)
+    assert (
+        client.put(
+            f"/api/achievements/{system.id}",
+            json={"name": "Nope"},
+            headers=teacher_headers,
+        ).status_code
+        == 403
+    )
+
+
+def test_achievement_update_all_fields_by_creator(teacher_user, test_db_session):
+    """The creator can update every field; criteria presence flips is_manual."""
+    own = Achievement(
+        name="Own",
+        description="D",
+        category="custom",
+        points=5,
+        icon="⭐",
+        created_by=teacher_user.id,
+        is_manual=True,
+    )
+    test_db_session.add(own)
+    test_db_session.commit()
+    test_db_session.refresh(own)
+    headers = create_test_headers(teacher_user.id, teacher_user.username, "teacher")
+
+    res = client.put(
+        f"/api/achievements/{own.id}",
+        headers=headers,
+        json={
+            "name": "Renamed",
+            "description": "New description",
+            "category": "learning",
+            "points": 20,
+            "icon": "🔥",
+            "is_active": True,
+            "criteria_type": "sessions_completed",
+            "criteria_value": 3,
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["name"] == "Renamed"
+    assert res.json()["description"] == "New description"
+    assert res.json()["category"] == "learning"
+    assert res.json()["points"] == 20
+    assert res.json()["icon"] == "🔥"
+    assert res.json()["criteria_type"] == "sessions_completed"
+    assert res.json()["criteria_value"] == 3
+    assert res.json()["is_manual"] is False
+
+
+def test_achievement_delete_denies_students(student_user):
+    headers = create_test_headers(student_user.id, student_user.username, "student")
+    assert (
+        client.delete("/api/achievements/1", headers=headers).status_code == 403
+    )
+
+
+def test_achievement_award_permissions_errors_and_success(
+    teacher_user, student_user, test_db_session
+):
+    """Award enforces staff-only, existence, roster access, and duplicate checks."""
+    student_headers = create_test_headers(
+        student_user.id, student_user.username, "student"
+    )
+    assert (
+        client.post(
+            "/api/achievements/1/award",
+            json={"user_id": student_user.id},
+            headers=student_headers,
+        ).status_code
+        == 403
+    )
+
+    teacher_headers = create_test_headers(
+        teacher_user.id, teacher_user.username, "teacher"
+    )
+    # Missing achievement -> 404.
+    assert (
+        client.post(
+            "/api/achievements/999999/award",
+            json={"user_id": student_user.id},
+            headers=teacher_headers,
+        ).status_code
+        == 404
+    )
+
+    # A teacher cannot award to a student outside their roster.
+    custom = Achievement(
+        name="Awardable",
+        description="",
+        category="custom",
+        points=5,
+        created_by=teacher_user.id,
+        is_manual=True,
+    )
+    test_db_session.add(custom)
+    test_db_session.commit()
+    test_db_session.refresh(custom)
+    assert (
+        client.post(
+            f"/api/achievements/{custom.id}/award",
+            json={"user_id": student_user.id},
+            headers=teacher_headers,
+        ).status_code
+        == 403
+    )
+
+    # Add the student to the roster: award succeeds once, duplicate -> 400.
+    test_db_session.add(
+        StudentTeacher(teacher_id=teacher_user.id, student_id=student_user.id)
+    )
+    test_db_session.commit()
+    res = client.post(
+        f"/api/achievements/{custom.id}/award",
+        json={"user_id": student_user.id},
+        headers=teacher_headers,
+    )
+    assert res.status_code == 200
+    assert res.json()["name"] == "Awardable"
+    assert res.json()["progress"] == 1.0
+
+    res = client.post(
+        f"/api/achievements/{custom.id}/award",
+        json={"user_id": student_user.id},
+        headers=teacher_headers,
+    )
+    assert res.status_code == 400
