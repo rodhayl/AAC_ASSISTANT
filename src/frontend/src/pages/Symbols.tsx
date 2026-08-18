@@ -100,7 +100,12 @@ export function Symbols() {
     api
       .get('/boards/symbols/categories')
       .then((res) => {
-        if (!cancelled) setServerCategories(Array.isArray(res.data) ? res.data : []);
+        if (!cancelled) {
+          const list = Array.isArray(res.data) ? res.data : [];
+          // The endpoint contract is list[str]; drop anything else so the
+          // filter dropdown never tries to render a non-string option.
+          setServerCategories(list.filter((c): c is string => typeof c === 'string'));
+        }
       })
       .catch(() => {
         // Non-fatal: fall back to defaults plus the current page's categories.

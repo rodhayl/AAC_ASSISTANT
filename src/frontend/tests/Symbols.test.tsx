@@ -176,12 +176,11 @@ describe('Symbols page', () => {
 
   it('batch-deletes selected symbols and reports failures', async () => {
     const user = userEvent.setup();
-    api.get.mockResolvedValue({
-      data: [
-        symbol,
-        { ...symbol, id: 2, label: 'Bye' },
-      ],
-    });
+    api.get.mockImplementation((url: string) =>
+      url === '/boards/symbols'
+        ? Promise.resolve({ data: [symbol, { ...symbol, id: 2, label: 'Bye' }] })
+        : Promise.resolve({ data: [] }),
+    );
     api.delete
       .mockRejectedValueOnce({
         response: { status: 400 },
@@ -267,16 +266,24 @@ describe('Symbols page', () => {
   it('ignores a stale response when a newer fetch supersedes it', async () => {
     const user = userEvent.setup();
     let resolveFirst!: (value: unknown) => void;
-    api.get
-      .mockReturnValueOnce(new Promise((resolve) => {
+    // Queue responses per /boards/symbols call; the mount-time categories
+    // fetch must resolve to [] without consuming the chain below.
+    const symbolResponses = [
+      new Promise((resolve) => {
         resolveFirst = resolve;
-      }))
-      .mockResolvedValueOnce({ data: [{ ...symbol, id: 2, label: 'Fresh' }] });
+      }),
+      Promise.resolve({ data: [{ ...symbol, id: 2, label: 'Fresh' }] }),
+    ];
+    api.get.mockImplementation((url: string) => {
+      if (url === '/boards/symbols') return symbolResponses.shift() ?? Promise.resolve({ data: [symbol] });
+      return Promise.resolve({ data: [] });
+    });
+    const symbolsCalls = () => api.get.mock.calls.filter(([u]) => u === '/boards/symbols');
     render(<Symbols />);
-    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(symbolsCalls()).toHaveLength(1));
 
     await user.type(screen.getByPlaceholderText('searchSymbols'), 'x');
-    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(symbolsCalls()).toHaveLength(2));
     expect(await screen.findByText('Fresh')).toBeInTheDocument();
 
     resolveFirst({ data: [{ ...symbol, id: 3, label: 'Stale' }] });
@@ -287,16 +294,22 @@ describe('Symbols page', () => {
   it('ignores a stale error when a newer fetch supersedes it', async () => {
     const user = userEvent.setup();
     let rejectFirst!: (reason: unknown) => void;
-    api.get
-      .mockReturnValueOnce(new Promise((_, reject) => {
+    const symbolResponses = [
+      new Promise((_, reject) => {
         rejectFirst = reject;
-      }))
-      .mockResolvedValueOnce({ data: [{ ...symbol, id: 2, label: 'Fresh' }] });
+      }),
+      Promise.resolve({ data: [{ ...symbol, id: 2, label: 'Fresh' }] }),
+    ];
+    api.get.mockImplementation((url: string) => {
+      if (url === '/boards/symbols') return symbolResponses.shift() ?? Promise.resolve({ data: [symbol] });
+      return Promise.resolve({ data: [] });
+    });
+    const symbolsCalls = () => api.get.mock.calls.filter(([u]) => u === '/boards/symbols');
     render(<Symbols />);
-    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(symbolsCalls()).toHaveLength(1));
 
     await user.type(screen.getByPlaceholderText('searchSymbols'), 'x');
-    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(symbolsCalls()).toHaveLength(2));
     expect(await screen.findByText('Fresh')).toBeInTheDocument();
 
     rejectFirst(new Error('stale error'));
@@ -457,7 +470,11 @@ describe('Symbols page', () => {
 
   it('reports a batch failure when the force-delete retry also fails', async () => {
     const user = userEvent.setup();
-    api.get.mockResolvedValue({ data: [symbol, { ...symbol, id: 2, label: 'Bye' }] });
+    api.get.mockImplementation((url: string) =>
+      url === '/boards/symbols'
+        ? Promise.resolve({ data: [symbol, { ...symbol, id: 2, label: 'Bye' }] })
+        : Promise.resolve({ data: [] }),
+    );
     api.delete
       .mockRejectedValueOnce({ response: { status: 400 }, message: 'Symbol is in use on 1 board' })
       .mockRejectedValueOnce({ response: { status: 500 }, message: 'server error' })
@@ -514,7 +531,11 @@ describe('Symbols page', () => {
 
   it('deselects a symbol when its checkbox is toggled off', async () => {
     const user = userEvent.setup();
-    api.get.mockResolvedValue({ data: [symbol, { ...symbol, id: 2, label: 'Bye' }] });
+    api.get.mockImplementation((url: string) =>
+      url === '/boards/symbols'
+        ? Promise.resolve({ data: [symbol, { ...symbol, id: 2, label: 'Bye' }] })
+        : Promise.resolve({ data: [] }),
+    );
     render(<Symbols />);
     await screen.findByText('Hello');
 
