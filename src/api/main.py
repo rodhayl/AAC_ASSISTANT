@@ -16,6 +16,7 @@ from slowapi.errors import RateLimitExceeded
 from src import config
 from src.aac_app import schema
 from src.aac_app.seed import init_database
+from src.aac_app.services.arasaac_library_import import import_arasaac_library_if_needed
 from src.aac_app.services.symbol_image_backfill import backfill_missing_symbol_images
 from src.aac_app.services.vector_utils import index_all_symbols
 from src.api.deps import (
@@ -153,6 +154,30 @@ async def lifespan(app: FastAPI):
         name="symbol-image-backfill",
     )
 
+    async def import_arasaac_library_in_background() -> None:
+        try:
+            if not app.state.database_ready:
+                logger.warning(
+                    "Skipping ARASAAC library import because database initialization failed"
+                )
+                return
+            if os.environ.get("TESTING") == "1":
+                logger.info("Skipping ARASAAC library import during tests")
+                return
+            if not config.get_bool("AAC_ENABLE_ARASAAC_LIBRARY_IMPORT", False):
+                logger.info("ARASAAC library import disabled by configuration")
+                return
+            await import_arasaac_library_if_needed(locale="es")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"ARASAAC library import failed: {e}")
+
+    arasaac_import_task = asyncio.create_task(
+        import_arasaac_library_in_background(),
+        name="arasaac-library-import",
+    )
+
     startup_time_ms = (time.perf_counter() - startup_started) * 1000
     logger.info(f"Startup timing: initialization completed in {startup_time_ms:.0f}ms")
     display_host = (
@@ -179,7 +204,12 @@ async def lifespan(app: FastAPI):
         handoff_buffer = min(2.0, graceful_timeout * 0.25)
         shutdown_budget = graceful_timeout - handoff_buffer
         shutdown_deadline = asyncio.get_running_loop().time() + shutdown_budget
-        startup_tasks = (warmup_task, index_task, image_backfill_task)
+        startup_tasks = (
+            warmup_task,
+            index_task,
+            image_backfill_task,
+            arasaac_import_task,
+        )
         pending_tasks = [task for task in startup_tasks if not task.done()]
         for task in pending_tasks:
             task.cancel()

@@ -138,6 +138,9 @@ class Settings(BaseSettings):
     # does not perform avoidable network and database work.
     AAC_ENABLE_SYMBOL_IMAGE_BACKFILL: bool = False
     AAC_SYMBOL_IMAGE_BACKFILL_LIMIT: int = 100
+    # One-time bulk import of the full ARASAAC library at startup. Opt-in for
+    # the same reason: it downloads every distinct pictogram on first run.
+    AAC_ENABLE_ARASAAC_LIBRARY_IMPORT: bool = False
 
     # Optional deterministic passwords are intentionally unset by default.
     AAC_SEED_DEFAULT_PASSWORD: str | None = None
