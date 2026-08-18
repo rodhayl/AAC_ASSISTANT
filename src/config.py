@@ -144,6 +144,10 @@ class Settings(BaseSettings):
     # Comma-separated locale list to import. Pictograms are locale-independent,
     # so each locale materializes its translated labels reusing the same images.
     AAC_ARASAAC_LIBRARY_LOCALES: str = "es"
+    # Rebuild the n-gram prediction models from real symbol usage logs at
+    # startup. Opt-in: it scans the usage-log table and rewrites the writable
+    # data/ngrams models (the bundled files are never modified).
+    AAC_ENABLE_NGRAM_REBUILD: bool = False
 
     # Optional deterministic passwords are intentionally unset by default.
     AAC_SEED_DEFAULT_PASSWORD: str | None = None

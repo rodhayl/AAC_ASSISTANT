@@ -622,10 +622,15 @@ class PredictionService:
             return self._models[lang]
 
         try:
-            # Use frozen-aware path from config
+            # Use frozen-aware path from config. A model rebuilt from real
+            # usage logs lives in the writable data/ngrams directory and
+            # takes precedence over the bundled hand-written seed.
             from src import config
-            ngrams_dir = config.get_ngrams_path()
-            file_path = ngrams_dir / f"{lang}.json"
+            rebuilt_path = config.get_data_path("ngrams") / f"{lang}.json"
+            if rebuilt_path.exists():
+                file_path = rebuilt_path
+            else:
+                file_path = config.get_ngrams_path() / f"{lang}.json"
 
             if file_path.exists():
                 with open(file_path, encoding='utf-8') as f:

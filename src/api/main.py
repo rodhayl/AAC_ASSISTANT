@@ -8,7 +8,6 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -17,6 +16,7 @@ from src import config
 from src.aac_app import schema
 from src.aac_app.seed import init_database
 from src.aac_app.services.arasaac_library_import import import_arasaac_library_if_needed
+from src.aac_app.services.ngram_builder import rebuild_ngram_models
 from src.aac_app.services.symbol_image_backfill import backfill_missing_symbol_images
 from src.aac_app.services.vector_utils import index_all_symbols
 from src.api.deps import (
@@ -49,7 +49,7 @@ from src.api.routers import (
     users,
 )
 from src.api.routers import config as config_router
-from src.api.spa import SPAStaticFiles, resolve_frontend_directory
+from src.api.spa import ImmutableStaticFiles, SPAStaticFiles, resolve_frontend_directory
 
 
 @asynccontextmanager
@@ -186,6 +186,37 @@ async def lifespan(app: FastAPI):
         name="arasaac-library-import",
     )
 
+    async def rebuild_ngrams_in_background() -> None:
+        try:
+            if not app.state.database_ready:
+                logger.warning(
+                    "Skipping n-gram rebuild because database initialization failed"
+                )
+                return
+            if os.environ.get("TESTING") == "1":
+                logger.info("Skipping n-gram rebuild during tests")
+                return
+            if not config.get_bool("AAC_ENABLE_NGRAM_REBUILD", False):
+                logger.info("N-gram rebuild disabled by configuration")
+                return
+            locales = tuple(
+                locale.strip()
+                for locale in str(
+                    config.get("AAC_ARASAAC_LIBRARY_LOCALES", "es")
+                ).split(",")
+                if locale.strip()
+            ) or ("es",)
+            await asyncio.to_thread(rebuild_ngram_models, None, locales)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"N-gram rebuild failed: {e}")
+
+    ngram_rebuild_task = asyncio.create_task(
+        rebuild_ngrams_in_background(),
+        name="ngram-model-rebuild",
+    )
+
     startup_time_ms = (time.perf_counter() - startup_started) * 1000
     logger.info(f"Startup timing: initialization completed in {startup_time_ms:.0f}ms")
     display_host = (
@@ -217,6 +248,7 @@ async def lifespan(app: FastAPI):
             index_task,
             image_backfill_task,
             arasaac_import_task,
+            ngram_rebuild_task,
         )
         pending_tasks = [task for task in startup_tasks if not task.done()]
         for task in pending_tasks:
@@ -425,7 +457,10 @@ from src.config import BUNDLE_DIR, IS_FROZEN, PROJECT_ROOT
 
 UPLOADS_DIR = config.UPLOADS_DIR
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
+# Uploads are content-addressed by UUID filename (see _save_symbol_image and
+# the ARASAAC backfill), so immutable caching is safe and avoids re-fetching
+# the pictogram library on every board render.
+app.mount("/uploads", ImmutableStaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 FRONTEND_PATH = resolve_frontend_directory(
     project_root=PROJECT_ROOT,
