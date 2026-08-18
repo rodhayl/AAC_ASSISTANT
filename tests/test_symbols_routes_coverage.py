@@ -6,6 +6,7 @@ batch-update edge cases, and the 404 paths.
 """
 import base64
 import io
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -599,3 +600,21 @@ def test_board_symbol_batch_update_visibility_text_and_link(
     assert board_symbol.is_visible is False
     assert board_symbol.custom_text == "Etiqueta"
     assert board_symbol.linked_board_id == target.id
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_create_symbol_schedules_image_download_when_missing(
+    staff_headers, monkeypatch
+):
+    """Creating a symbol without an image schedules an automatic download."""
+    with patch(
+        "src.api.routers.symbols.schedule_symbol_image_download"
+    ) as mock_schedule:
+        res = client.post(
+            "/api/boards/symbols",
+            headers=staff_headers,
+            json={"label": "Sin imagen", "category": "general"},
+        )
+    assert res.status_code == 200
+    assert res.json()["image_path"] is None
+    mock_schedule.assert_called_once_with([res.json()["id"]])

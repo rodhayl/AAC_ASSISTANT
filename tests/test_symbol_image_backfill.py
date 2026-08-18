@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from contextlib import contextmanager
 
 import pytest
@@ -286,3 +287,123 @@ def test_backfill_uses_keyword_fallback_queries(test_db_session, monkeypatch, tm
     assert summary["downloaded"] == 1
     assert summary["failed"] == 0
     assert symbol.image_path.startswith("/uploads/symbols/arasaac_auto_1_4901_")
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_backfill_symbol_ids_filter_restricts_processing(
+    test_db_session, monkeypatch, tmp_path
+):
+    targeted = Symbol(
+        label="targeted",
+        category="toys",
+        language="en",
+        image_path=None,
+        is_builtin=True,
+    )
+    other = Symbol(
+        label="other",
+        category="toys",
+        language="en",
+        image_path=None,
+        is_builtin=True,
+    )
+    test_db_session.add_all([targeted, other])
+    test_db_session.commit()
+    test_db_session.refresh(targeted)
+    test_db_session.refresh(other)
+
+    @contextmanager
+    def override_get_session():
+        try:
+            yield test_db_session
+            test_db_session.commit()
+        except Exception:
+            test_db_session.rollback()
+            raise
+
+    class FakeArasaacService:
+        async def search_symbols(self, query: str, locale: str = "es") -> list[dict]:
+            return [{"id": 9901, "label": query}]
+
+        async def download_symbol_image(self, arasaac_id: int) -> bytes | None:
+            return PNG_BYTES
+
+        async def close(self):
+            return None
+
+    uploads_dir = tmp_path / "uploads"
+    monkeypatch.setattr(backfill_mod, "get_session", override_get_session)
+    monkeypatch.setattr(backfill_mod, "ArasaacService", FakeArasaacService)
+    monkeypatch.setattr(backfill_mod.config, "UPLOADS_DIR", uploads_dir)
+
+    summary = asyncio.run(
+        backfill_mod.backfill_missing_symbol_images(symbol_ids=[targeted.id])
+    )
+
+    test_db_session.refresh(targeted)
+    test_db_session.refresh(other)
+    assert summary["processed"] == 1
+    assert summary["updated"] == 1
+    assert targeted.image_path is not None
+    assert other.image_path is None
+
+
+def test_schedule_symbol_image_download_skips_during_testing(monkeypatch):
+    monkeypatch.setenv("TESTING", "1")
+    monkeypatch.setenv("AAC_ENABLE_SYMBOL_IMAGE_BACKFILL", "true")
+    called = []
+
+    async def fake_backfill(**kwargs):
+        called.append(kwargs)
+
+    monkeypatch.setattr(backfill_mod, "backfill_missing_symbol_images", fake_backfill)
+    backfill_mod.schedule_symbol_image_download([1])
+    assert called == []
+
+
+def test_schedule_symbol_image_download_disabled_without_flag(monkeypatch):
+    monkeypatch.delenv("TESTING", raising=False)
+    monkeypatch.setenv("AAC_ENABLE_SYMBOL_IMAGE_BACKFILL", "false")
+    called = []
+
+    async def fake_backfill(**kwargs):
+        called.append(kwargs)
+
+    monkeypatch.setattr(backfill_mod, "backfill_missing_symbol_images", fake_backfill)
+    backfill_mod.schedule_symbol_image_download([1, 2])
+    assert called == []
+
+
+def test_schedule_symbol_image_download_schedules_when_enabled(monkeypatch):
+    monkeypatch.delenv("TESTING", raising=False)
+    monkeypatch.setenv("AAC_ENABLE_SYMBOL_IMAGE_BACKFILL", "true")
+    called = []
+
+    async def fake_backfill(**kwargs):
+        called.append(kwargs)
+
+    monkeypatch.setattr(backfill_mod, "backfill_missing_symbol_images", fake_backfill)
+
+    async def main():
+        backfill_mod.schedule_symbol_image_download([1])
+        await asyncio.sleep(0)
+
+    asyncio.run(main())
+    assert called == [{"symbol_ids": [1]}]
+
+
+def test_schedule_symbol_image_download_uses_thread_without_loop(monkeypatch):
+    monkeypatch.delenv("TESTING", raising=False)
+    monkeypatch.setenv("AAC_ENABLE_SYMBOL_IMAGE_BACKFILL", "true")
+    called = []
+    finished = threading.Event()
+
+    async def fake_backfill(**kwargs):
+        called.append(kwargs)
+        finished.set()
+
+    monkeypatch.setattr(backfill_mod, "backfill_missing_symbol_images", fake_backfill)
+    # A sync test body has no running event loop, so the daemon-thread path is used.
+    backfill_mod.schedule_symbol_image_download([7])
+    assert finished.wait(timeout=5)
+    assert called == [{"symbol_ids": [7]}]

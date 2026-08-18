@@ -317,3 +317,57 @@ def test_apply_suggestion_uses_teacher_roster_access(
     assert response.status_code == 200
     assert response.json()["custom_text"] == "Help"
     assert response.json()["color"] == "#FFCDD2"
+
+
+def test_create_board_schedules_download_for_generated_symbols(
+    setup_test_db, test_db_session: Session, admin_user: User, admin_token
+):
+    """AI board creation schedules an image download for newly created symbols."""
+    items = [{"label": "Apple", "symbol_key": "apple", "color": "#FFCDD2"}]
+    with patch("src.api.routers.board_ai.BoardGenerationService") as MockService:
+        MockService.return_value.generate_board_items = AsyncMock(return_value=items)
+        with patch("src.api.routers.board_ai.OllamaProvider"), patch(
+            "src.api.routers.board_ai.schedule_symbol_image_download"
+        ) as mock_schedule:
+            response = client.post(
+                "/api/boards/",
+                params={"user_id": admin_user.id},
+                headers={"Authorization": f"Bearer {admin_token}"},
+                json={
+                    "name": "Schedule Test Board",
+                    "ai_enabled": True,
+                    "ai_provider": "ollama",
+                    "ai_model": "llama3",
+                },
+            )
+    assert response.status_code == 200
+    symbol = test_db_session.query(Symbol).filter(Symbol.label == "Apple").one()
+    # No dead /static placeholder; the image is filled by the scheduled download.
+    assert symbol.image_path is None
+    mock_schedule.assert_called_once_with([symbol.id])
+
+
+def test_apply_suggestion_schedules_download_only_when_symbol_created(
+    setup_test_db, test_db_session: Session, admin_user: User, admin_token, ai_board
+):
+    """Applying a suggestion downloads once on create and not on reuse."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    url = f"/api/boards/{ai_board.id}/ai/suggestions/apply"
+
+    with patch(
+        "src.api.routers.board_ai.schedule_symbol_image_download"
+    ) as mock_schedule:
+        first = client.post(url, headers=headers, json={"item": {"label": "Fresh"}})
+        assert first.status_code == 200
+        created_id = mock_schedule.call_args.args[0][0]
+        mock_schedule.assert_called_once_with([created_id])
+
+    with patch(
+        "src.api.routers.board_ai.schedule_symbol_image_download"
+    ) as mock_schedule:
+        second = client.post(url, headers=headers, json={"item": {"label": "Fresh"}})
+        assert second.status_code == 200
+        mock_schedule.assert_not_called()
+
+    symbol = test_db_session.query(Symbol).filter(Symbol.label == "Fresh").one()
+    assert symbol.image_path is None

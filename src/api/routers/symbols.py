@@ -9,6 +9,7 @@ from src import config
 from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol, SymbolUsageLog, User
 from src.aac_app.services.achievement_system import AchievementSystem
 from src.aac_app.services.local_vector_store import vector_store_operation_lock
+from src.aac_app.services.symbol_image_backfill import schedule_symbol_image_download
 from src.aac_app.services.vector_utils import delete_symbol as delete_symbol_embedding
 from src.aac_app.services.vector_utils import index_symbol
 from src.api import schemas
@@ -244,6 +245,8 @@ def create_symbol(
     db.commit()
     db.refresh(db_symbol)
     index_symbol(db_symbol)
+    if not db_symbol.image_path:
+        schedule_symbol_image_download([db_symbol.id])
     return db_symbol
 
 

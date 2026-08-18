@@ -10,6 +10,7 @@ from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol, User
 from src.aac_app.providers.ollama_provider import OllamaProvider
 from src.aac_app.providers.openrouter_provider import OpenRouterProvider
 from src.aac_app.services.board_generation_service import BoardGenerationService
+from src.aac_app.services.symbol_image_backfill import schedule_symbol_image_download
 from src.aac_app.services.translation_service import get_translation_service
 from src.aac_app.services.vector_utils import index_symbol
 from src.api import schemas
@@ -42,7 +43,7 @@ def get_or_create_symbol(
     created = Symbol(
         label=label,
         keywords=symbol_key,
-        image_path=f"/static/symbols/generated/{symbol_key}.png",  # placeholder
+        image_path=None,  # populated by the opt-in ARASAAC image backfill
         category="generated",
         is_builtin=False,
     )
@@ -319,6 +320,7 @@ async def create_board(
             index_symbol(symbol)
         except Exception as exc:
             logger.warning("AI-generated symbol indexing failed: {}", exc)
+    schedule_symbol_image_download([symbol.id for symbol in created_symbols])
     return db_board
 
 
@@ -509,4 +511,6 @@ def apply_ai_suggestion(
     if created_symbol is not None:
         index_symbol(created_symbol)
     db.commit()
+    if created_symbol is not None:
+        schedule_symbol_image_download([created_symbol.id])
     return board_symbol
