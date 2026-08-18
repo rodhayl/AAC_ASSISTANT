@@ -12,9 +12,11 @@ from src.aac_app.models import BoardSymbol, Symbol, User
 from src.aac_app.services.runtime_translation import normalize_language_code, translate_text
 from src.aac_app.services.symbol_analytics import SymbolAnalytics
 from src.aac_app.services.symbol_catalog import (
-    ANALYTICS_EXTRA_NOUN_CATEGORIES,
-    NOUN_CATEGORY_KEYWORDS,
-    PLACE_CATEGORY_KEYWORDS,
+    ARTICLE_CATEGORIES,
+    NON_NOUN_CATEGORIES,
+    PLACE_CATEGORIES,
+    PRONOUN_CATEGORIES,
+    VERB_CATEGORIES,
     intent_articles,
     intent_pronouns,
 )
@@ -153,7 +155,7 @@ def get_next_symbol_suggestions_post(
         # 0. Handle specific intents (Quick Words)
         if intent in ["pronouns", "verbs", "articles", "nouns", "places"]:
             try:
-                from sqlalchemy import and_, func, or_
+                from sqlalchemy import func, or_
 
                 def build_query(board_scoped: bool):
                     q = db.query(Symbol).filter(Symbol.label.isnot(None))
@@ -192,8 +194,7 @@ def get_next_symbol_suggestions_post(
                         pronouns = intent_pronouns(user_lang)
                         return q.filter(
                             or_(
-                                Symbol.category.ilike("%pronoun%"),
-                                Symbol.category.ilike("%people%"),
+                                Symbol.category.in_(PRONOUN_CATEGORIES),
                                 func.lower(Symbol.label).in_([p.lower() for p in pronouns]),
                             )
                         )
@@ -201,31 +202,19 @@ def get_next_symbol_suggestions_post(
                         articles = intent_articles(user_lang)
                         return q.filter(
                             or_(
-                                Symbol.category.ilike("%article%"),
-                                Symbol.category.ilike("%preposition%"),
+                                Symbol.category.in_(ARTICLE_CATEGORIES),
                                 func.lower(Symbol.label).in_([a.lower() for a in articles]),
                             )
                         )
                     if intent == "verbs":
-                        return q.filter(Symbol.category.ilike("%verb%"))
+                        return q.filter(Symbol.category.in_(VERB_CATEGORIES))
                     if intent == "nouns":
-                        noun_categories = [
-                            *NOUN_CATEGORY_KEYWORDS,
-                            *ANALYTICS_EXTRA_NOUN_CATEGORIES,
-                        ]
                         return q.filter(
-                            and_(
-                                ~Symbol.category.ilike("%pronoun%"),
-                                ~Symbol.category.ilike("%people%"),
-                                ~Symbol.category.ilike("%article%"),
-                                ~Symbol.category.ilike("%preposition%"),
-                                or_(*[Symbol.category.ilike(f"%{cat}%") for cat in noun_categories]),
-                            )
+                            Symbol.category.isnot(None),
+                            ~Symbol.category.in_(NON_NOUN_CATEGORIES),
                         )
                     if intent == "places":
-                        return q.filter(
-                            or_(*[Symbol.category.ilike(f"%{cat}%") for cat in PLACE_CATEGORY_KEYWORDS])
-                        )
+                        return q.filter(Symbol.category.in_(PLACE_CATEGORIES))
                     return q
 
                 def format_results(rows):

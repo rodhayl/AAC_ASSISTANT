@@ -116,6 +116,27 @@ def test_delete_board_removes_assignments(
     assert test_db_session.query(BoardAssignment).filter_by(board_id=board.id).count() == 0
 
 
+def test_delete_board_removes_own_placements_keeps_symbol(
+    setup_test_db, test_db_session, admin_user, admin_token
+):
+    """Deleting a board removes its placements but keeps the global symbol."""
+    board = _create_board_with_symbol(test_db_session, admin_user)
+    symbol_id = board.symbols[0].symbol_id
+    placement_id = board.symbols[0].id
+
+    client = TestClient(app)
+    response = client.delete(f"/api/boards/{board.id}", headers=_headers(admin_token))
+
+    assert response.status_code == 200
+    # Use count queries so the identity map does not mask cross-session deletes.
+    assert test_db_session.query(BoardSymbol).filter_by(id=placement_id).count() == 0
+    assert (
+        test_db_session.query(CommunicationBoard).filter_by(id=board.id).count() == 0
+    )
+    # The symbol is shared library state, not owned by the board.
+    assert test_db_session.query(Symbol).filter_by(id=symbol_id).count() == 1
+
+
 def test_delete_board_clears_incoming_links(
     setup_test_db, test_db_session, admin_user, admin_token
 ):

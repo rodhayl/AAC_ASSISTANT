@@ -107,3 +107,42 @@ def test_import_deduplicates_and_downloads_images(
     assert len(vacas) == 1
     assert perros[0].image_path == "/uploads/symbols/arasaac_1001.png"
     assert (tmp_path / "uploads" / "symbols" / "arasaac_1001.png").exists()
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_import_reuses_existing_pictogram_file_without_redownload(
+    test_db_session, monkeypatch, tmp_path
+):
+    """A later locale reuses the shared pictogram file without re-downloading."""
+    uploads = tmp_path / "uploads" / "symbols"
+    uploads.mkdir(parents=True)
+    (uploads / "arasaac_2001.png").write_bytes(PNG_BYTES)
+
+    catalog = [
+        {
+            "_id": 2001,
+            "keywords": [{"keyword": "cow", "meaning": "animal"}],
+            "categories": ["animal"],
+        },
+    ]
+
+    class FakeService:
+        async def list_all_symbols(self, locale="en"):
+            return catalog
+
+        async def download_symbol_image_500(self, arasaac_id):
+            raise AssertionError("must not re-download an existing pictogram file")
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(import_mod, "get_session", _override_get_session(test_db_session))
+    monkeypatch.setattr(import_mod, "ArasaacService", FakeService)
+    monkeypatch.setattr(import_mod.config, "UPLOADS_DIR", tmp_path / "uploads")
+
+    summary = asyncio.run(import_mod.import_arasaac_library("en"))
+
+    assert summary == {"imported": 1, "failed": 0, "skipped": 0}
+    cow = test_db_session.query(Symbol).filter(Symbol.label == "cow").one()
+    assert cow.language == "en"
+    assert cow.image_path == "/uploads/symbols/arasaac_2001.png"

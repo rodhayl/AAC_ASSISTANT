@@ -80,6 +80,7 @@ bundled_models/
 !AAC_Assistant.spec
 run.pid
 *.log
+nohup.out
 *.exe
 sbom*.json
 checksums*.txt

@@ -13,7 +13,7 @@ from ..db import get_session
 from ..models import BoardSymbol, Symbol, SymbolUsageLog
 from ..services.runtime_translation import normalize_language_code, translate_text
 from ..services.symbol_analytics import SymbolAnalytics
-from ..services.symbol_catalog import NOUN_CATEGORY_KEYWORDS, standard_library_labels
+from ..services.symbol_catalog import category_is_noun, standard_library_labels
 
 # Punctuation appended after all real suggestions (only when they fit).
 PUNCTUATION: tuple[str, ...] = (".", ",", "?", "!")
@@ -385,8 +385,7 @@ class _PredictionContext:
             noun_candidates = []
             other_candidates = []
             for suggestion in fallback_suggestions:
-                category = (suggestion.get("category") or "").lower()
-                if any(keyword in category for keyword in NOUN_CATEGORY_KEYWORDS):
+                if category_is_noun(suggestion.get("category")):
                     noun_candidates.append(suggestion)
                 else:
                     other_candidates.append(suggestion)

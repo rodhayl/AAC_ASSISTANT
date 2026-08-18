@@ -371,3 +371,138 @@ def test_suggest_next_symbol_excludes_other_users(
     )
 
     assert [item["label"] for item in suggestions] == ["mine"]
+
+
+def test_suggest_next_symbol_prefers_longest_sequence_match(
+    test_db_session, regular_user
+):
+    """Multi-word input ranks next words seen after the full sequence first."""
+    want = Symbol(label="want", category="verb", language="en")
+    cookie = Symbol(label="cookie", category="noun", language="en")
+    milk = Symbol(label="milk", category="noun", language="en")
+    test_db_session.add_all([want, cookie, milk])
+    test_db_session.flush()
+
+    session_one = LearningSession(user_id=regular_user.id, topic_name="seq1")
+    session_two = LearningSession(user_id=regular_user.id, topic_name="seq2")
+    test_db_session.add_all([session_one, session_two])
+    test_db_session.flush()
+
+    # "I want cookie"
+    _add_log(
+        test_db_session, user_id=regular_user.id, label="I", symbol_id=None,
+        position=0, session_id=session_one.id,
+    )
+    _add_log(
+        test_db_session, user_id=regular_user.id, label="want",
+        symbol_id=want.id, position=1, session_id=session_one.id,
+    )
+    _add_log(
+        test_db_session, user_id=regular_user.id, label="cookie",
+        symbol_id=cookie.id, position=2, session_id=session_one.id,
+    )
+    # "want milk"
+    _add_log(
+        test_db_session, user_id=regular_user.id, label="want",
+        symbol_id=want.id, position=0, session_id=session_two.id,
+    )
+    _add_log(
+        test_db_session, user_id=regular_user.id, label="milk",
+        symbol_id=milk.id, position=1, session_id=session_two.id,
+    )
+    test_db_session.commit()
+
+    # The full "I want" prefix only ever precedes "cookie".
+    suggestions = SymbolAnalytics().suggest_next_symbol(
+        regular_user.id,
+        [{"label": "I"}, {"label": "want"}],
+        db=test_db_session,
+    )
+    assert [item["label"] for item in suggestions] == ["cookie"]
+
+    # The single-word fallback still surfaces both transitions for "want".
+    unigram = SymbolAnalytics().suggest_next_symbol(
+        regular_user.id,
+        [{"label": "want"}],
+        db=test_db_session,
+    )
+    assert {item["label"] for item in unigram} == {"cookie", "milk"}
+
+
+def test_suggest_next_symbol_falls_back_to_shorter_suffix(
+    test_db_session, regular_user
+):
+    """A missing full-sequence match falls back to the longest matching suffix."""
+    want = Symbol(label="want", category="verb", language="en")
+    milk = Symbol(label="milk", category="noun", language="en")
+    test_db_session.add_all([want, milk])
+    test_db_session.flush()
+
+    session = LearningSession(user_id=regular_user.id, topic_name="seq")
+    test_db_session.add(session)
+    test_db_session.flush()
+
+    _add_log(
+        test_db_session, user_id=regular_user.id, label="want",
+        symbol_id=want.id, position=0, session_id=session.id,
+    )
+    _add_log(
+        test_db_session, user_id=regular_user.id, label="milk",
+        symbol_id=milk.id, position=1, session_id=session.id,
+    )
+    test_db_session.commit()
+
+    suggestions = SymbolAnalytics().suggest_next_symbol(
+        regular_user.id,
+        [{"label": "I"}, {"label": "want"}],
+        db=test_db_session,
+    )
+    assert [item["label"] for item in suggestions] == ["milk"]
+
+
+def test_history_transitions_cache_reflects_new_usage(
+    test_db_session, regular_user
+):
+    """The cached transition index is invalidated by symbol usage writes."""
+    cookie = Symbol(label="cookie", category="noun", language="en")
+    test_db_session.add(cookie)
+    test_db_session.flush()
+
+    session = LearningSession(user_id=regular_user.id, topic_name="seq")
+    test_db_session.add(session)
+    test_db_session.flush()
+    _add_log(
+        test_db_session, user_id=regular_user.id, label="want", symbol_id=None,
+        position=0, session_id=session.id,
+    )
+    _add_log(
+        test_db_session, user_id=regular_user.id, label="cookie",
+        symbol_id=cookie.id, position=1, session_id=session.id,
+    )
+    test_db_session.commit()
+
+    service = SymbolAnalytics()
+    first = service.get_history_transitions(regular_user.id, db=test_db_session)
+    assert first[("want",)]["cookie"] == 1
+    assert "milk" not in first[("want",)]
+
+    # New usage invalidates and rebuilds the index on the next read.
+    milk = Symbol(label="milk", category="noun", language="en")
+    test_db_session.add(milk)
+    test_db_session.flush()
+    session_two = LearningSession(user_id=regular_user.id, topic_name="seq2")
+    test_db_session.add(session_two)
+    test_db_session.flush()
+    _add_log(
+        test_db_session, user_id=regular_user.id, label="want", symbol_id=None,
+        position=0, session_id=session_two.id,
+    )
+    _add_log(
+        test_db_session, user_id=regular_user.id, label="milk",
+        symbol_id=milk.id, position=1, session_id=session_two.id,
+    )
+    test_db_session.commit()
+
+    second = service.get_history_transitions(regular_user.id, db=test_db_session)
+    assert second[("want",)]["cookie"] == 1
+    assert second[("want",)]["milk"] == 1

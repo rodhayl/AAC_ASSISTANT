@@ -20,6 +20,7 @@ until the first successful import.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 from loguru import logger
 
@@ -108,7 +109,14 @@ async def import_arasaac_library(locale: str = "es") -> dict[str, int]:
         uploads_dir.mkdir(parents=True, exist_ok=True)
         semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
 
+        def image_path(entry: dict) -> Path:
+            return uploads_dir / f"arasaac_{entry['_id']}.png"
+
         async def download(entry: dict) -> tuple[dict, bytes | None]:
+            # Pictogram images are locale-independent; a prior locale's import
+            # may already have stored this exact file, so skip the network fetch.
+            if image_path(entry).exists():
+                return entry, None
             async with semaphore:
                 return entry, await service.download_symbol_image_500(entry["_id"])
 
@@ -118,12 +126,11 @@ async def import_arasaac_library(locale: str = "es") -> dict[str, int]:
 
             with get_session() as db:
                 for (entry, label), (_, content) in zip(batch, results, strict=True):
-                    if not content:
+                    path = image_path(entry)
+                    if content is None and not path.exists():
                         failed += 1
                         continue
-                    filename = f"arasaac_{entry['_id']}.png"
-                    path = uploads_dir / filename
-                    if not path.exists():
+                    if content is not None and not path.exists():
                         path.write_bytes(content)
 
                     all_keywords = ", ".join(
@@ -140,7 +147,7 @@ async def import_arasaac_library(locale: str = "es") -> dict[str, int]:
                             category=categories[0] if categories else "general",
                             keywords=all_keywords or None,
                             language=locale,
-                            image_path=f"/uploads/symbols/{filename}",
+                            image_path=f"/uploads/symbols/{path.name}",
                             is_builtin=False,
                         )
                     )

@@ -167,7 +167,15 @@ async def lifespan(app: FastAPI):
             if not config.get_bool("AAC_ENABLE_ARASAAC_LIBRARY_IMPORT", False):
                 logger.info("ARASAAC library import disabled by configuration")
                 return
-            await import_arasaac_library_if_needed(locale="es")
+            locales = [
+                locale.strip()
+                for locale in str(
+                    config.get("AAC_ARASAAC_LIBRARY_LOCALES", "es")
+                ).split(",")
+                if locale.strip()
+            ] or ["es"]
+            for locale in locales:
+                await import_arasaac_library_if_needed(locale=locale)
         except asyncio.CancelledError:
             raise
         except Exception as e:

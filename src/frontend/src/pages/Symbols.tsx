@@ -36,6 +36,7 @@ export function Symbols() {
   const [page, setPage] = useState(0);
   const pageSize = 100;
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [serverCategories, setServerCategories] = useState<string[]>([]);
   const formRef = useRef<HTMLDivElement>(null);
   // Latest-request-wins guard so a slow response cannot overwrite a newer one
   // when filters/search/sort change in quick succession.
@@ -91,11 +92,30 @@ export function Symbols() {
     fetchSymbols();
   }, [fetchSymbols]);
 
+  // The library can hold hundreds of ARASAAC categories, far more than the
+  // current page's symbols can reveal; fetch the full category list so the
+  // filter dropdown covers every imported category, not just the visible ones.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get('/boards/symbols/categories')
+      .then((res) => {
+        if (!cancelled) setServerCategories(Array.isArray(res.data) ? res.data : []);
+      })
+      .catch(() => {
+        // Non-fatal: fall back to defaults plus the current page's categories.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const availableCategories = useMemo(() => {
     const categories = new Set<string>(DEFAULT_SYMBOL_CATEGORIES);
+    serverCategories.forEach(c => c && categories.add(c));
     symbols.forEach(s => s.category && categories.add(s.category));
     return Array.from(categories).sort();
-  }, [symbols]);
+  }, [serverCategories, symbols]);
 
   const categories = useMemo(
     () => ['all', ...availableCategories],

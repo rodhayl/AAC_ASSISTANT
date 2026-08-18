@@ -315,6 +315,38 @@ class TestAnalyticsAPI:
         assert "yo" in labels
         assert "I" not in labels
 
+    def test_intent_filters_use_arasaac_category_taxonomy(
+        self, test_db_session, regular_user
+    ):
+        """Quick-word intents map ARASAAC categories, not English substrings."""
+        test_db_session.add_all(
+            [
+                Symbol(id=201, label="apple", category="fruit", language="en", is_builtin=True),
+                Symbol(id=202, label="I", category="personal pronoun", language="en", is_builtin=True),
+                Symbol(id=203, label="run", category="verb", language="en", is_builtin=True),
+                Symbol(id=204, label="quickly", category="adverb", language="en", is_builtin=True),
+            ]
+        )
+        test_db_session.commit()
+
+        nouns = client.post(
+            "/api/analytics/next-symbol", json={"intent": "nouns", "limit": 20}
+        )
+        assert nouns.status_code == 200
+        noun_labels = {item["label"] for item in nouns.json()}
+        assert "apple" in noun_labels
+        assert "I" not in noun_labels  # pronoun must not match the nouns intent
+        assert "run" not in noun_labels
+        assert "quickly" not in noun_labels
+
+        verbs = client.post(
+            "/api/analytics/next-symbol", json={"intent": "verbs", "limit": 20}
+        )
+        assert verbs.status_code == 200
+        verb_labels = {item["label"] for item in verbs.json()}
+        assert "run" in verb_labels
+        assert "quickly" not in verb_labels  # adverb is not a verb
+
     def test_get_category_preferences(self, sample_usage_logs):
         """Test retrieving category preferences."""
         response = client.get("/api/analytics/category-preferences")

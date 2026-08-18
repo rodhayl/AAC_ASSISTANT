@@ -141,6 +141,9 @@ class Settings(BaseSettings):
     # One-time bulk import of the full ARASAAC library at startup. Opt-in for
     # the same reason: it downloads every distinct pictogram on first run.
     AAC_ENABLE_ARASAAC_LIBRARY_IMPORT: bool = False
+    # Comma-separated locale list to import. Pictograms are locale-independent,
+    # so each locale materializes its translated labels reusing the same images.
+    AAC_ARASAAC_LIBRARY_LOCALES: str = "es"
 
     # Optional deterministic passwords are intentionally unset by default.
     AAC_SEED_DEFAULT_PASSWORD: str | None = None
