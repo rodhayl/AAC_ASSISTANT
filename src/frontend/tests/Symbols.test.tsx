@@ -1,6 +1,6 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Symbols } from '../src/pages/Symbols';
 
@@ -49,6 +49,14 @@ describe('Symbols page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     Element.prototype.scrollIntoView = vi.fn();
+    class FakeFileReader {
+      result = 'data:image/png;base64,abc';
+      onload: (() => void) | null = null;
+      readAsDataURL() {
+        this.onload?.();
+      }
+    }
+    vi.stubGlobal('FileReader', FakeFileReader);
     api.get.mockImplementation((url: string) => {
       if (url === '/boards/symbols') {
         return Promise.resolve({ data: [symbol] });
@@ -61,6 +69,10 @@ describe('Symbols page', () => {
     api.post.mockResolvedValue({ data: {} });
     api.put.mockResolvedValue({ data: {} });
     api.delete.mockResolvedValue({ data: {} });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('loads and renders the symbol library with filters', async () => {
@@ -230,4 +242,320 @@ describe('Symbols page', () => {
 
     expect(await screen.findByText('offline')).toBeInTheDocument();
   });
+
+  it('filters by category and changes the sort order', async () => {
+    const user = userEvent.setup();
+    render(<Symbols />);
+    await screen.findByText('Hello');
+
+    const combos = screen.getAllByRole('combobox');
+    await user.selectOptions(combos[2], 'greeting');
+    await waitFor(() =>
+      expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', {
+        params: { skip: 0, limit: 100, category: 'greeting' },
+      }),
+    );
+
+    await user.selectOptions(combos[1], 'newest');
+    await waitFor(() =>
+      expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', {
+        params: { skip: 0, limit: 100, category: 'greeting', sort: 'newest' },
+      }),
+    );
+  });
+
+  it('ignores a stale response when a newer fetch supersedes it', async () => {
+    const user = userEvent.setup();
+    let resolveFirst!: (value: unknown) => void;
+    api.get
+      .mockReturnValueOnce(new Promise((resolve) => {
+        resolveFirst = resolve;
+      }))
+      .mockResolvedValueOnce({ data: [{ ...symbol, id: 2, label: 'Fresh' }] });
+    render(<Symbols />);
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+
+    await user.type(screen.getByPlaceholderText('searchSymbols'), 'x');
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Fresh')).toBeInTheDocument();
+
+    resolveFirst({ data: [{ ...symbol, id: 3, label: 'Stale' }] });
+    await waitFor(() => expect(screen.queryByText('Stale')).not.toBeInTheDocument());
+    expect(screen.getByText('Fresh')).toBeInTheDocument();
+  });
+
+  it('ignores a stale error when a newer fetch supersedes it', async () => {
+    const user = userEvent.setup();
+    let rejectFirst!: (reason: unknown) => void;
+    api.get
+      .mockReturnValueOnce(new Promise((_, reject) => {
+        rejectFirst = reject;
+      }))
+      .mockResolvedValueOnce({ data: [{ ...symbol, id: 2, label: 'Fresh' }] });
+    render(<Symbols />);
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
+
+    await user.type(screen.getByPlaceholderText('searchSymbols'), 'x');
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Fresh')).toBeInTheDocument();
+
+    rejectFirst(new Error('stale error'));
+    await waitFor(() => expect(screen.queryByText('stale error')).not.toBeInTheDocument());
+    expect(screen.getByText('Fresh')).toBeInTheDocument();
+  });
+
+  it('edits a symbol and uploads a replacement image', async () => {
+    const user = userEvent.setup();
+    render(<Symbols />);
+    await screen.findByText('Hello');
+
+    await user.click(screen.getByRole('button', { name: /edit/i }));
+    const fileInput = screen.getByLabelText('upload');
+    await user.upload(fileInput, new File(['image-bytes'], 'pic.png', { type: 'image/png' }));
+
+    await user.click(screen.getByRole('button', { name: 'save' }));
+
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith('/boards/symbols/1', {
+        label: 'Hello',
+        description: 'A greeting',
+        category: 'greeting',
+        keywords: 'hi, hello',
+      }),
+    );
+    expect(api.post).toHaveBeenCalledWith('/boards/symbols/1/image', expect.any(FormData));
+  });
+
+  it('creates a symbol with an uploaded image and full metadata', async () => {
+    const user = userEvent.setup();
+    render(<Symbols />);
+    await screen.findByText('Hello');
+
+    await user.click(screen.getByRole('button', { name: /newSymbol/ }));
+    const labelInput = screen.getByPlaceholderText('e.g., Hola');
+    await user.type(labelInput, 'Adiós');
+    await user.type(screen.getByPlaceholderText('optionalDesc'), 'A farewell');
+    await user.type(screen.getByPlaceholderText('commaSeparated'), 'bye, adios');
+    await user.selectOptions(screen.getAllByRole('combobox')[0], 'greeting');
+    const fileInput = screen.getByLabelText('upload');
+    await user.upload(fileInput, new File(['image-bytes'], 'pic.png', { type: 'image/png' }));
+
+    await user.click(screen.getByRole('button', { name: 'create' }));
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/boards/symbols/upload', expect.any(FormData)),
+    );
+  });
+
+  it('shows an error when creating a symbol fails', async () => {
+    const user = userEvent.setup();
+    api.post.mockRejectedValue(new Error('create down'));
+    render(<Symbols />);
+    await screen.findByText('Hello');
+
+    await user.click(screen.getByRole('button', { name: /newSymbol/ }));
+    await user.type(screen.getByPlaceholderText('e.g., Hola'), 'Adiós');
+    await user.click(screen.getByRole('button', { name: 'create' }));
+
+    expect(await screen.findByText('create down')).toBeInTheDocument();
+  });
+
+  it('shows an error when updating a symbol fails', async () => {
+    const user = userEvent.setup();
+    api.put.mockRejectedValue(new Error('update down'));
+    render(<Symbols />);
+    await screen.findByText('Hello');
+
+    await user.click(screen.getByRole('button', { name: /edit/i }));
+    await user.click(screen.getByRole('button', { name: 'save' }));
+
+    expect(await screen.findByText('update down')).toBeInTheDocument();
+  });
+
+  it('rejects a non-image file with an error message', async () => {
+    render(<Symbols />);
+    await screen.findByText('Hello');
+
+    const fileInput = screen.getByLabelText('upload');
+    fireEvent.change(fileInput, {
+      target: { files: [new File(['text'], 'note.txt', { type: 'text/plain' })] },
+    });
+
+    expect(screen.getByText('Invalid file. Must be an image under 5MB.')).toBeInTheDocument();
+  });
+
+  it('clears the selected file when the input is emptied', async () => {
+    render(<Symbols />);
+    await screen.findByText('Hello');
+
+    const fileInput = screen.getByLabelText('upload');
+    fireEvent.change(fileInput, { target: { files: [] } });
+
+    expect(screen.getByText('upload')).toBeInTheDocument();
+  });
+
+  it('does not search ARASAAC with an empty query', async () => {
+    render(<Symbols />);
+    await screen.findByText('Hello');
+
+    fireEvent.click(screen.getByRole('button', { name: /searchArasaac/ }));
+    const queryInput = screen.getByPlaceholderText('searchPlaceholder');
+    fireEvent.submit(queryInput.closest('form') as HTMLFormElement);
+
+    expect(api.get).not.toHaveBeenCalledWith('/arasaac/search', expect.anything());
+  });
+
+  it('shows an error when the ARASAAC search fails', async () => {
+    const user = userEvent.setup();
+    api.get.mockImplementation((url: string) => {
+      if (url === '/boards/symbols') {
+        return Promise.resolve({ data: [symbol] });
+      }
+      if (url === '/arasaac/search') {
+        return Promise.reject(new Error('arasaac down'));
+      }
+      return Promise.resolve({ data: [] });
+    });
+    render(<Symbols />);
+    await screen.findByText('Hello');
+
+    await user.click(screen.getByRole('button', { name: /searchArasaac/ }));
+    await user.type(screen.getByPlaceholderText('searchPlaceholder'), 'casa');
+    await user.click(screen.getByRole('button', { name: 'search' }));
+
+    expect(await screen.findByText('Failed to search ARASAAC')).toBeInTheDocument();
+  });
+
+  it('shows an error when importing an ARASAAC symbol fails', async () => {
+    const user = userEvent.setup();
+    api.post.mockRejectedValue(new Error('import down'));
+    render(<Symbols />);
+    await screen.findByText('Hello');
+
+    await user.click(screen.getByRole('button', { name: /searchArasaac/ }));
+    await user.type(screen.getByPlaceholderText('searchPlaceholder'), 'casa');
+    await user.click(screen.getByRole('button', { name: 'search' }));
+    await screen.findByText('House');
+    await user.click(screen.getByRole('button', { name: /import/i }));
+
+    expect(await screen.findByText('Failed to import symbol')).toBeInTheDocument();
+  });
+
+  it('cancels the delete dialog without deleting', async () => {
+    const user = userEvent.setup();
+    render(<Symbols />);
+    await screen.findByText('Hello');
+
+    const card = screen.getByText('Hello').closest('.p-4') as HTMLElement;
+    await user.click(within(card).getAllByRole('button', { name: '' })[0]);
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByText('cancel'));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(api.delete).not.toHaveBeenCalled();
+  });
+
+  it('reports a batch failure when the force-delete retry also fails', async () => {
+    const user = userEvent.setup();
+    api.get.mockResolvedValue({ data: [symbol, { ...symbol, id: 2, label: 'Bye' }] });
+    api.delete
+      .mockRejectedValueOnce({ response: { status: 400 }, message: 'Symbol is in use on 1 board' })
+      .mockRejectedValueOnce({ response: { status: 500 }, message: 'server error' })
+      .mockResolvedValueOnce({ data: {} });
+    render(<Symbols />);
+    await screen.findByText('Hello');
+
+    const checkboxes = screen.getAllByRole('checkbox');
+    await user.click(checkboxes[0]);
+    await user.click(checkboxes[1]);
+    await user.click(screen.getByRole('button', { name: /deleteSelected/ }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByText('delete'));
+
+    expect(
+      await screen.findByText(/Some deletions failed: ID 1: server error/),
+    ).toBeInTheDocument();
+  });
+
+  it('reports a batch failure when a symbol cannot be deleted', async () => {
+    const user = userEvent.setup();
+    api.delete.mockRejectedValueOnce({
+      response: { status: 400 },
+      message: 'Cannot delete core symbol',
+    });
+    render(<Symbols />);
+    await screen.findByText('Hello');
+
+    const checkboxes = screen.getAllByRole('checkbox');
+    await user.click(checkboxes[0]);
+    await user.click(screen.getByRole('button', { name: /deleteSelected/ }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByText('delete'));
+
+    expect(
+      await screen.findByText(/Some deletions failed: ID 1: Cannot delete core symbol/),
+    ).toBeInTheDocument();
+  });
+
+  it('shows an error when a single delete fails for another reason', async () => {
+    const user = userEvent.setup();
+    api.delete.mockRejectedValue(new Error('offline'));
+    render(<Symbols />);
+    await screen.findByText('Hello');
+
+    const card = screen.getByText('Hello').closest('.p-4') as HTMLElement;
+    await user.click(within(card).getAllByRole('button', { name: '' })[0]);
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByText('delete'));
+
+    expect(await screen.findByText('offline')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('deselects a symbol when its checkbox is toggled off', async () => {
+    const user = userEvent.setup();
+    api.get.mockResolvedValue({ data: [symbol, { ...symbol, id: 2, label: 'Bye' }] });
+    render(<Symbols />);
+    await screen.findByText('Hello');
+
+    const checkboxes = screen.getAllByRole('checkbox');
+    await user.click(checkboxes[0]);
+    expect(screen.getByRole('button', { name: /deleteSelected/ })).toBeEnabled();
+
+    await user.click(checkboxes[0]);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /deleteSelected/ })).toBeDisabled(),
+    );
+  });
+
+  it('paginates through the symbol library', async () => {
+    // Rendering 100+ instrumented cards is slow under coverage, so this test
+    // gets a longer budget than the default 5s.
+    const user = userEvent.setup();
+    const many = Array.from({ length: 101 }, (_, i) => ({
+      ...symbol,
+      id: i + 1,
+      label: `Symbol ${i + 1}`,
+    }));
+    api.get.mockImplementation((url: string, options?: { params?: { skip?: number } }) => {
+      if (url === '/boards/symbols') {
+        const skip = options?.params?.skip ?? 0;
+        return Promise.resolve({ data: many.slice(skip, skip + 100) });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    render(<Symbols />);
+    await screen.findByText('Symbol 1');
+
+    await user.click(screen.getByRole('button', { name: 'next' }));
+    await waitFor(() =>
+      expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', {
+        params: { skip: 100, limit: 100 },
+      }),
+    );
+    expect(await screen.findByText('Symbol 101')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'previous' }));
+    expect(await screen.findByText('Symbol 1')).toBeInTheDocument();
+  }, 20000);
 });

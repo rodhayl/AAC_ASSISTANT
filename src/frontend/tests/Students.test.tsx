@@ -23,7 +23,10 @@ const api = vi.hoisted(() => ({
   patch: vi.fn(),
 }));
 
-const tFn = (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key;
+const tFn = (key: string, defaultValue?: string | { defaultValue?: string }) => {
+  if (typeof defaultValue === 'string') return defaultValue;
+  return defaultValue?.defaultValue ?? key;
+};
 
 vi.mock('../src/store/authStore', () => ({
   useAuthStore: (selector?: (state: typeof authState) => unknown) =>
@@ -237,5 +240,336 @@ describe('Students page', () => {
     render(<Students />);
 
     expect(await screen.findByText('errors.loadFailed')).toBeInTheDocument();
+  });
+
+  it('edits a student display name and role as admin', async () => {
+    const user = userEvent.setup();
+    asAdmin();
+    api.put.mockResolvedValue({ data: { ...studentSummary, display_name: 'Renamed', user_type: 'teacher' } });
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByLabelText('actions.editAria'));
+    const dialog = await screen.findByRole('dialog');
+    await user.clear(within(dialog).getByLabelText('labels.displayName'));
+    await user.type(within(dialog).getByLabelText('labels.displayName'), 'Renamed');
+    await user.selectOptions(within(dialog).getByLabelText('Role'), 'teacher');
+    await user.click(within(dialog).getByText('profile.save'));
+
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith('/auth/users/10', {
+        display_name: 'Renamed',
+        user_type: 'teacher',
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('shows an error when updating a student fails', async () => {
+    const user = userEvent.setup();
+    asAdmin();
+    api.put.mockRejectedValue(new Error('update down'));
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByLabelText('actions.editAria'));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByText('profile.save'));
+
+    expect((await screen.findAllByText('errors.updateFailed')).length).toBeGreaterThan(0);
+  });
+
+  it('cancels editing a student', async () => {
+    const user = userEvent.setup();
+    asAdmin();
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByLabelText('actions.editAria'));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByText('cancel'));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(api.put).not.toHaveBeenCalled();
+  });
+
+  it('creates a student through the admin route with an email', async () => {
+    const user = userEvent.setup();
+    asAdmin();
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByRole('button', { name: /create/i }));
+    await user.type(screen.getByLabelText('labels.username'), 'new_student');
+    await user.type(screen.getByLabelText('labels.displayName'), 'New Student');
+    await user.type(screen.getByLabelText('labels.email'), 'new@example.com');
+    await user.type(screen.getByLabelText('labels.password'), 'StudentPass123');
+    await user.type(screen.getByLabelText('Confirm Password'), 'StudentPass123');
+    await user.click(screen.getByText('createBtn'));
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/auth/admin/create-user', {
+        username: 'new_student',
+        password: 'StudentPass123',
+        confirm_password: 'StudentPass123',
+        display_name: 'New Student',
+        email: 'new@example.com',
+        user_type: 'student',
+      }),
+    );
+  });
+
+  it('cancels the create-student modal', async () => {
+    const user = userEvent.setup();
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByRole('button', { name: /create/i }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByText('cancel'));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('assigns an available board to a student', async () => {
+    const user = userEvent.setup();
+    api.get.mockImplementation((url: string) => {
+      if (url === '/auth/users/student-summaries') {
+        return Promise.resolve({ data: [studentSummary] });
+      }
+      if (url === '/boards/') {
+        return Promise.resolve({ data: [board, { ...board, id: 43, name: 'Evening Routine' }] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByLabelText('actions.assignAria'));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: /Evening Routine/ }));
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/boards/43/assign', { student_id: 10 }),
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('closes the assign modal without assigning', async () => {
+    const user = userEvent.setup();
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByLabelText('actions.assignAria'));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByText('close'));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('shows an error when assigning a board fails', async () => {
+    const user = userEvent.setup();
+    api.post.mockRejectedValue(new Error('assign down'));
+    api.get.mockImplementation((url: string) => {
+      if (url === '/auth/users/student-summaries') {
+        return Promise.resolve({ data: [studentSummary] });
+      }
+      if (url === '/boards/') {
+        return Promise.resolve({ data: [board, { ...board, id: 43, name: 'Evening Routine' }] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByLabelText('actions.assignAria'));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: /Evening Routine/ }));
+
+    expect(await screen.findByText('errors.assignFailed')).toBeInTheDocument();
+  });
+
+  it('shows an error when unassigning a board fails', async () => {
+    const user = userEvent.setup();
+    api.delete.mockRejectedValue(new Error('unassign down'));
+    render(<Students />);
+    await screen.findByText('Morning Routine');
+
+    await user.click(screen.getByLabelText('actions.unassignAria'));
+
+    expect(await screen.findByText('errors.unassignFailed')).toBeInTheDocument();
+  });
+
+  it('falls back to default preferences when loading them fails', async () => {
+    const user = userEvent.setup();
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    api.get.mockImplementation((url: string) => {
+      if (url === '/auth/users/student-summaries') {
+        return Promise.resolve({ data: [studentSummary] });
+      }
+      if (url === '/auth/users/10/preferences') {
+        return Promise.reject(new Error('prefs down'));
+      }
+      return Promise.resolve({ data: [] });
+    });
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByTitle('Preferences'));
+
+    const toggle = (await screen.findByLabelText('Voice Mode')) as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it('shows an error when saving preferences fails', async () => {
+    const user = userEvent.setup();
+    api.put.mockRejectedValue(new Error('save down'));
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByTitle('Preferences'));
+    await screen.findByText(/Preferences for/);
+    await user.click(screen.getByText('save'));
+
+    expect(await screen.findByText('errors.updateFailed')).toBeInTheDocument();
+  });
+
+  it('closes the preferences modal without saving', async () => {
+    const user = userEvent.setup();
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByTitle('Preferences'));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByText('cancel'));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(api.put).not.toHaveBeenCalled();
+  });
+
+  it('shows an error when resetting a password fails', async () => {
+    const user = userEvent.setup();
+    api.post.mockRejectedValue(new Error('reset down'));
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByLabelText(/Reset password for student10/));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText('New Password'), 'NewPass123');
+    await user.click(within(dialog).getByRole('button', { name: 'Reset Password' }));
+
+    expect((await screen.findAllByText('Failed to reset password')).length).toBeGreaterThan(0);
+  });
+
+  it('closes the reset-password modal without resetting', async () => {
+    const user = userEvent.setup();
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByLabelText(/Reset password for student10/));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByText('cancel'));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('cancels the delete-student dialog', async () => {
+    const user = userEvent.setup();
+    asAdmin();
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByLabelText('actions.deleteAria'));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByText('cancel'));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(api.delete).not.toHaveBeenCalled();
+  });
+
+  it('shows an error when deleting a student fails', async () => {
+    const user = userEvent.setup();
+    asAdmin();
+    api.delete.mockRejectedValue(new Error('delete down'));
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByLabelText('actions.deleteAria'));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByText('delete'));
+
+    expect(await screen.findByText('errors.deleteFailed')).toBeInTheDocument();
+  });
+
+  it('opens and closes the guardian profile modal', async () => {
+    const user = userEvent.setup();
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByTitle('Guardian Profile'));
+    expect(await screen.findByText('Guardian Profile: Leo')).toBeInTheDocument();
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByLabelText('Close'));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('shows an error when the post-create refresh fails', async () => {
+    const user = userEvent.setup();
+    api.get
+      .mockResolvedValueOnce({ data: [studentSummary] })
+      .mockRejectedValueOnce(new Error('refresh down'));
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByRole('button', { name: /create/i }));
+    await user.type(screen.getByLabelText('labels.username'), 'new_student');
+    await user.type(screen.getByLabelText('labels.displayName'), 'New Student');
+    await user.type(screen.getByLabelText('labels.password'), 'StudentPass123');
+    await user.click(screen.getByText('createBtn'));
+
+    expect((await screen.findAllByText('errors.createFailed')).length).toBeGreaterThan(0);
+  });
+
+  it('shows an error when creating a student fails', async () => {
+    const user = userEvent.setup();
+    api.post.mockRejectedValue(new Error('create down'));
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByRole('button', { name: /create/i }));
+    await user.type(screen.getByLabelText('labels.username'), 'new_student');
+    await user.type(screen.getByLabelText('labels.displayName'), 'New Student');
+    await user.type(screen.getByLabelText('labels.password'), 'StudentPass123');
+    await user.click(screen.getByText('createBtn'));
+
+    expect((await screen.findAllByText('errors.createFailed')).length).toBeGreaterThan(0);
+  });
+
+  it('handles a failure loading the available boards', async () => {
+    const user = userEvent.setup();
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    api.get.mockImplementation((url: string) => {
+      if (url === '/auth/users/student-summaries') {
+        return Promise.resolve({ data: [studentSummary] });
+      }
+      if (url === '/boards/') {
+        return Promise.reject(new Error('boards down'));
+      }
+      return Promise.resolve({ data: [] });
+    });
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByLabelText('actions.assignAria'));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('noBoardsAvail')).toBeInTheDocument();
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 });

@@ -162,6 +162,22 @@ describe('Dashboard page', () => {
     expect(screen.getAllByText('...').length).toBeGreaterThan(0);
   });
 
+  it('shows the empty state when a student has no assigned boards', () => {
+    asStudent();
+    renderDashboard();
+
+    expect(screen.getByText('No assigned boards')).toBeInTheDocument();
+  });
+
+  it('shows the assigned-boards skeleton while loading for students', () => {
+    asStudent();
+    dashboardState.isLoading = true;
+    const { container } = renderDashboard();
+
+    expect(screen.getByText('Assigned boards section')).toBeInTheDocument();
+    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThanOrEqual(3);
+  });
+
   it('renders recent activity and falls back to an empty state', () => {
     dashboardState.recentActivity = [
       {

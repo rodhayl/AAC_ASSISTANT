@@ -76,7 +76,6 @@ export function Achievements() {
   }, [user])
 
   const loadManagementData = useCallback(async () => {
-    if (!isTeacherOrAdmin) return
     setError(null)
 
     const labels = ['all achievements', 'students', 'categories', 'criteria types']
@@ -95,7 +94,7 @@ export function Achievements() {
         defaultValue: 'Some management data could not be loaded. Please try again.',
       }))
     }
-  }, [isTeacherOrAdmin, t])
+  }, [t])
 
   useEffect(() => {
     loadData()
@@ -133,9 +132,9 @@ export function Achievements() {
   }
 
   const handleUpdate = async () => {
-    if (!editingAchievement) return
+    // Only rendered inside the editor modal, which requires an achievement.
     try {
-      await api.put(`/achievements/${editingAchievement.id}`, {
+      await api.put(`/achievements/${editingAchievement!.id}`, {
         name: formData.name,
         description: formData.description,
         category: formData.category,
@@ -164,7 +163,6 @@ export function Achievements() {
   }
 
   const handleAward = async () => {
-    if (!awardingAchievementId || !selectedStudentId) return
     try {
       await api.post(`/achievements/${awardingAchievementId}/award`, { user_id: selectedStudentId })
       setShowAwardModal(false)

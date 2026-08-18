@@ -33,6 +33,15 @@ All notable changes to this project are documented here. The project follows
   `learningStore` resilience/history-reconstruction and `notificationsStore`
   read-state cases; application-only line coverage raised 53.5% → 65.9% and
   the `vitest.config.ts` regression gate raised to lines ≥ 62%.
+- The six core pages (`Dashboard`, `Achievements`, `Symbols`, `Students`,
+  `Register`, `NotFound`) are now at 100% statement/line coverage with 52 new
+  real-case tests: student empty/loading states, editor/award modal open-close
+  and cancel paths, automatic-criteria achievement creation, symbol
+  create/edit with image upload, invalid-file rejection, ARASAAC search and
+  import failures, batch-delete failure reporting, stale-fetch guards,
+  pagination, admin student edit/create, board assignment success/failure,
+  preferences/reset/delete modal error and cancel paths, and the guardian
+  profile modal. Unreachable defensive guards removed (see Removed).
 - Remaining defensive branches in the `achievements`, `providers` and
   `symbols` routers closed with real-case tests (permission/404/duplicate
   award paths, install support limits, TTS/voice install failure mappings,
@@ -57,6 +66,14 @@ All notable changes to this project are documented here. The project follows
 
 ### Removed
 
+- Unreachable defensive guards in the three core pages, verified by
+  coverage-intersection analysis (the UI can never reach them): the
+  `loadManagementData` teacher-only early return and the `handleUpdate`/
+  `handleAward` null-guards in `Achievements`; the `submitEdit`/`submitCreate`
+  early returns and the unreachable batch-delete outer-catch branch in
+  `Symbols`; and the assign/preferences/reset/delete null-guards plus the
+  already-assigned duplicate check in `Students` (assigned boards are
+  disabled in the modal, so the branch could never fire).
 - The test-only `learning_companion_service` module and other unreferenced
   production symbols.
 - 22 unreferenced translation keys from the `es` and `en` locales.

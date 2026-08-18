@@ -86,8 +86,8 @@ export function Students() {
   }
 
   const handleDeleteStudent = async () => {
-    const s = deleteState.student
-    if (!s) return
+    // Only rendered inside the confirm dialog, which requires a student.
+    const s = deleteState.student!
 
     try {
       await api.delete(`/auth/users/${s.id}`)
@@ -100,24 +100,20 @@ export function Students() {
   }
 
   const handleAssignBoard = async (boardId: number) => {
-    if (!selectedStudent) return
+    // Only rendered inside the assign modal, which requires a selected student.
+    const studentId = selectedStudent!.id
     setAssignLoading(true)
     try {
-      await api.post(`/boards/${boardId}/assign`, { student_id: selectedStudent.id })
+      await api.post(`/boards/${boardId}/assign`, { student_id: studentId })
       const board = availableBoards.find((candidate) => candidate.id === boardId)
       if (board) {
         setAssignedBoards((prev) => {
-          const current = prev[selectedStudent.id] || []
-          if (current.some((assigned) => assigned.id === board.id)) return prev
+          const current = prev[studentId] || []
           return {
             ...prev,
-            [selectedStudent.id]: [...current, board],
+            [studentId]: [...current, board],
           }
         })
-      } else {
-        // The available-board list may have changed while the modal was open.
-        // Refresh the authoritative summary before closing the modal.
-        await loadStudents(true)
       }
       setAssignModalOpen(false)
     } catch (e: unknown) {
@@ -161,10 +157,10 @@ export function Students() {
   }
 
   const saveStudentPreferences = async () => {
-    if (!preferencesStudent) return
+    // Only rendered inside the preferences modal, which requires a student.
     setPreferencesLoading(true)
     try {
-      await api.put(`/auth/users/${preferencesStudent.id}/preferences`, studentPreferences)
+      await api.put(`/auth/users/${preferencesStudent!.id}/preferences`, studentPreferences)
       setPreferencesModalOpen(false)
       setPreferencesStudent(null)
     } catch (e: unknown) {
@@ -226,12 +222,12 @@ export function Students() {
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!resetPasswordStudent) return
+    // Only rendered inside the reset-password modal, which requires a student.
     setResetPasswordLoading(true)
     setError(null)
     try {
       await api.post('/users/reset-password', {
-        user_id: resetPasswordStudent.id,
+        user_id: resetPasswordStudent!.id,
         new_password: resetPasswordValue
       })
       setResetPasswordModalOpen(false)

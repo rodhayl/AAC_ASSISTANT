@@ -267,4 +267,229 @@ describe('Achievements page', () => {
       }),
     );
   });
+
+  it('skips network calls when there is no authenticated user', async () => {
+    authState.user = null as unknown as (typeof authState)['user'];
+    const user = userEvent.setup();
+    render(<Achievements />);
+
+    expect(screen.getByRole('button', { name: 'check' })).toBeInTheDocument();
+    expect(api.get).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'check' }));
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('creates an achievement with automatic criteria and a target student', async () => {
+    const user = userEvent.setup();
+    render(<Achievements />);
+    await screen.findByText('First Steps');
+
+    await user.click(screen.getByRole('button', { name: /Manage/ }));
+    await screen.findByText('System Badge');
+    await user.click(screen.getByRole('button', { name: /Create/ }));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: '⭐' }));
+    await user.type(within(dialog).getAllByRole('textbox')[1], 'Automatic badge');
+    await user.selectOptions(within(dialog).getAllByRole('combobox')[0], 'learning');
+    await user.clear(within(dialog).getAllByRole('spinbutton')[0]);
+    await user.type(within(dialog).getAllByRole('spinbutton')[0], '15');
+    await user.click(within(dialog).getByLabelText('Automatic Criteria'));
+
+    const combos = within(dialog).getAllByRole('combobox');
+    await user.selectOptions(combos[1], 'sessions_completed');
+    await user.clear(within(dialog).getAllByRole('spinbutton')[1]);
+    await user.type(within(dialog).getAllByRole('spinbutton')[1], '5');
+    await user.selectOptions(combos[2], '10');
+    await user.click(within(dialog).getByRole('button', { name: 'Create' }));
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/achievements/', {
+        name: '',
+        description: 'Automatic badge',
+        category: 'learning',
+        points: 15,
+        icon: '⭐',
+        target_user_id: 10,
+        criteria_type: 'sessions_completed',
+        criteria_value: 5,
+      }),
+    );
+  });
+
+  it('switches the award type back to manual in the editor', async () => {
+    const user = userEvent.setup();
+    render(<Achievements />);
+    await screen.findByText('First Steps');
+
+    await user.click(screen.getByRole('button', { name: /Manage/ }));
+    await screen.findByText('System Badge');
+    await user.click(screen.getByRole('button', { name: /Create/ }));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByLabelText('Automatic Criteria'));
+    expect(within(dialog).getAllByRole('combobox').length).toBe(3);
+
+    await user.click(within(dialog).getByLabelText('Manual Award'));
+    expect(within(dialog).getAllByRole('combobox').length).toBe(2);
+  });
+
+  it('closes the editor modal via the close button and the cancel button', async () => {
+    const user = userEvent.setup();
+    render(<Achievements />);
+    await screen.findByText('First Steps');
+
+    await user.click(screen.getByRole('button', { name: /Manage/ }));
+    await screen.findByText('System Badge');
+
+    await user.click(screen.getByRole('button', { name: /Create/ }));
+    let dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByLabelText('Close'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    await user.click(screen.getByTitle('Edit'));
+    dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('closes the award modal via the close and cancel buttons', async () => {
+    const user = userEvent.setup();
+    render(<Achievements />);
+    await screen.findByText('First Steps');
+
+    await user.click(screen.getByRole('button', { name: /Manage/ }));
+    await screen.findByText('System Badge');
+
+    await user.click(screen.getAllByTitle('Award')[0]);
+    let dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByLabelText('Close'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    await user.click(screen.getAllByTitle('Award')[0]);
+    dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('keeps the achievement when the delete confirmation is dismissed', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<Achievements />);
+    await screen.findByText('First Steps');
+
+    await user.click(screen.getByRole('button', { name: /Manage/ }));
+    await screen.findByText('System Badge');
+    await user.click(screen.getByTitle('Delete'));
+
+    await waitFor(() => expect(window.confirm).toHaveBeenCalled());
+    expect(api.delete).not.toHaveBeenCalled();
+  });
+
+  it('shows an error when the re-check request fails', async () => {
+    const user = userEvent.setup();
+    api.post.mockRejectedValue(new Error('check failed'));
+    render(<Achievements />);
+    await screen.findByText('First Steps');
+
+    await user.click(screen.getByRole('button', { name: 'check' }));
+
+    expect(await screen.findByText('check failed')).toBeInTheDocument();
+  });
+
+  it('shows an error when creating an achievement fails', async () => {
+    const user = userEvent.setup();
+    api.post.mockRejectedValue(new Error('create failed'));
+    render(<Achievements />);
+    await screen.findByText('First Steps');
+
+    await user.click(screen.getByRole('button', { name: /Manage/ }));
+    await screen.findByText('System Badge');
+    await user.click(screen.getByRole('button', { name: /Create/ }));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getAllByRole('textbox')[0], 'Badge');
+    await user.click(within(dialog).getByRole('button', { name: 'Create' }));
+
+    expect(await screen.findByText('create failed')).toBeInTheDocument();
+  });
+
+  it('shows an error when updating an achievement fails', async () => {
+    const user = userEvent.setup();
+    api.put.mockRejectedValue(new Error('update failed'));
+    render(<Achievements />);
+    await screen.findByText('First Steps');
+
+    await user.click(screen.getByRole('button', { name: /Manage/ }));
+    await screen.findByText('System Badge');
+    await user.click(screen.getByTitle('Edit'));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('update failed')).toBeInTheDocument();
+  });
+
+  it('shows an error when deleting an achievement fails', async () => {
+    const user = userEvent.setup();
+    api.delete.mockRejectedValue(new Error('delete failed'));
+    render(<Achievements />);
+    await screen.findByText('First Steps');
+
+    await user.click(screen.getByRole('button', { name: /Manage/ }));
+    await screen.findByText('System Badge');
+    await user.click(screen.getByTitle('Delete'));
+
+    expect(await screen.findByText('delete failed')).toBeInTheDocument();
+  });
+
+  it('alerts when awarding an achievement fails', async () => {
+    const user = userEvent.setup();
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    api.post.mockRejectedValue(new Error('award failed'));
+    render(<Achievements />);
+    await screen.findByText('First Steps');
+
+    await user.click(screen.getByRole('button', { name: /Manage/ }));
+    await screen.findByText('System Badge');
+    await user.click(screen.getAllByTitle('Award')[0]);
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByPlaceholderText(/Search student/), 'Leo');
+    await user.click(within(dialog).getByText('Leo'));
+    await user.click(within(dialog).getByRole('button', { name: 'Award' }));
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('award failed'));
+  });
+
+  it('shows an error when part of the management data fails to load', async () => {
+    const user = userEvent.setup();
+    api.get.mockImplementation((url: string) => {
+      if (url === '/achievements/user/1') {
+        return Promise.resolve({ data: [achievement] });
+      }
+      if (url === '/achievements/user/1/points') {
+        return Promise.resolve({ data: 25 });
+      }
+      if (url === '/achievements/') {
+        return Promise.resolve({ data: [managementAchievement] });
+      }
+      if (url === '/users/students') {
+        return Promise.reject(new Error('students down'));
+      }
+      if (url === '/achievements/categories') {
+        return Promise.resolve({ data: ['learning'] });
+      }
+      if (url === '/achievements/criteria-types') {
+        return Promise.resolve({ data: ['sessions_completed'] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    render(<Achievements />);
+    await screen.findByText('First Steps');
+
+    await user.click(screen.getByRole('button', { name: /Manage/ }));
+
+    expect(
+      await screen.findByText('Some management data could not be loaded. Please try again.'),
+    ).toBeInTheDocument();
+  });
 });

@@ -128,7 +128,6 @@ export function Symbols() {
   };
 
   const submitEdit = async () => {
-    if (!editingId) return;
     setCreating(true);
     try {
       await api.put(`/boards/symbols/${editingId}`, {
@@ -152,7 +151,6 @@ export function Symbols() {
   };
 
   const submitCreate = async () => {
-    if (!form.label) return;
     setCreating(true);
     try {
       if (newFile) {
@@ -268,9 +266,6 @@ export function Symbols() {
           return;
         }
         setError(detail);
-        setDeleteState(prev => ({ ...prev, isOpen: false }));
-      } else {
-        setError('Batch delete failed unexpectedly');
         setDeleteState(prev => ({ ...prev, isOpen: false }));
       }
     } finally {
