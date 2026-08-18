@@ -10,6 +10,7 @@ writable ``data/ngrams`` directory; the prediction service prefers them over
 the bundled files, so the effective model is learned from real usage.
 """
 
+import asyncio
 import json
 from collections import Counter, defaultdict
 from datetime import timedelta
@@ -244,3 +245,30 @@ def rebuild_ngram_models(
         prediction_service._models.pop(locale_key, None)
 
     return written
+
+
+async def run_periodic_ngram_rebuild(
+    locales: tuple[str, ...] = DEFAULT_LOCALES,
+    interval_seconds: int = 3600,
+    *,
+    rebuild_fn=rebuild_ngram_models,
+) -> None:
+    """Rebuild n-gram models now and then every ``interval_seconds``.
+
+    Runs one rebuild immediately (preserving the startup behaviour) and keeps
+    refreshing while the server runs, so the model learns from new usage
+    without a restart. A non-positive interval performs the single startup
+    rebuild and returns. Each iteration runs in a thread and is isolated:
+    a transient failure is logged without killing the loop. The coroutine
+    exits promptly on cancellation (used during shutdown).
+    """
+    while True:
+        try:
+            await asyncio.to_thread(rebuild_fn, None, locales)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - keep the loop alive
+            logger.error(f"Periodic n-gram rebuild failed: {exc}")
+        if interval_seconds <= 0:
+            return
+        await asyncio.sleep(interval_seconds)

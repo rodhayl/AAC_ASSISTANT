@@ -148,6 +148,10 @@ class Settings(BaseSettings):
     # startup. Opt-in: it scans the usage-log table and rewrites the writable
     # data/ngrams models (the bundled files are never modified).
     AAC_ENABLE_NGRAM_REBUILD: bool = False
+    # Seconds between periodic n-gram rebuilds while the server runs, so the
+    # model keeps learning from new usage without a restart. 0 disables the
+    # periodic refresh (startup-only rebuild when the flag above is enabled).
+    AAC_NGRAM_REBUILD_INTERVAL_SECONDS: int = 3600
 
     # Optional deterministic passwords are intentionally unset by default.
     AAC_SEED_DEFAULT_PASSWORD: str | None = None

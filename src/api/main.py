@@ -16,7 +16,7 @@ from src import config
 from src.aac_app import schema
 from src.aac_app.seed import init_database
 from src.aac_app.services.arasaac_library_import import import_arasaac_library_if_needed
-from src.aac_app.services.ngram_builder import rebuild_ngram_models
+from src.aac_app.services.ngram_builder import run_periodic_ngram_rebuild
 from src.aac_app.services.symbol_image_backfill import backfill_missing_symbol_images
 from src.aac_app.services.vector_utils import index_all_symbols
 from src.api.deps import (
@@ -206,7 +206,12 @@ async def lifespan(app: FastAPI):
                 ).split(",")
                 if locale.strip()
             ) or ("es",)
-            await asyncio.to_thread(rebuild_ngram_models, None, locales)
+            interval = config.get_int(
+                "AAC_NGRAM_REBUILD_INTERVAL_SECONDS", 3600
+            )
+            await run_periodic_ngram_rebuild(
+                locales, interval_seconds=interval
+            )
         except asyncio.CancelledError:
             raise
         except Exception as e:

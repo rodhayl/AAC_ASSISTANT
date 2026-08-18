@@ -1,5 +1,6 @@
 """Tests for rebuilding n-gram prediction models from real usage logs."""
 
+import asyncio
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -12,6 +13,7 @@ from src.aac_app.services import ngram_builder
 from src.aac_app.services.ngram_builder import (
     collect_usage_bigrams,
     rebuild_ngram_models,
+    run_periodic_ngram_rebuild,
 )
 from src.aac_app.services.prediction_service import PredictionService
 
@@ -268,3 +270,165 @@ def test_position_advance_keeps_utterance_together(
 
     learned = collect_usage_bigrams(db=test_db_session)
     assert learned["en"][("want", "cookie")] == 1
+
+
+async def _run_until_rebuilt(
+    rebuild_fn, interval_seconds: int, *, run_for: float, locales=("en",)
+):
+    """Run the periodic loop for a short wall-clock window and cancel it."""
+    task = asyncio.create_task(
+        run_periodic_ngram_rebuild(
+            locales, interval_seconds=interval_seconds, rebuild_fn=rebuild_fn
+        )
+    )
+    await asyncio.sleep(run_for)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+def test_periodic_rebuild_runs_multiple_times():
+    """A positive interval rebuilds immediately and again after each sleep."""
+    calls: list[tuple[object, tuple[str, ...]]] = []
+
+    def fake_rebuild(db, locales):
+        calls.append((db, locales))
+
+    asyncio.run(_run_until_rebuilt(fake_rebuild, interval_seconds=1, run_for=2.3))
+
+    # First call is immediate, then one per interval tick within the window.
+    assert len(calls) >= 3
+    assert all(locales == ("en",) for _, locales in calls)
+
+
+def test_periodic_rebuild_survives_transient_failure():
+    """A failing iteration is logged and the loop keeps rebuilding."""
+    calls: list[int] = []
+
+    def flaky_rebuild(db, locales):
+        calls.append(len(calls))
+        if len(calls) == 1:
+            raise RuntimeError("transient database lock")
+
+    asyncio.run(_run_until_rebuilt(flaky_rebuild, interval_seconds=1, run_for=2.2))
+
+    assert len(calls) >= 2  # second iteration succeeded after the failure
+
+
+def test_periodic_rebuild_stops_on_non_positive_interval():
+    """interval <= 0 performs the single startup rebuild and returns."""
+    calls: list[tuple[object, tuple[str, ...]]] = []
+
+    def fake_rebuild(db, locales):
+        calls.append((db, locales))
+
+    asyncio.run(
+        run_periodic_ngram_rebuild(
+            ("en",), interval_seconds=0, rebuild_fn=fake_rebuild
+        )
+    )
+
+    assert len(calls) == 1
+
+
+def test_periodic_rebuild_passes_locales_through():
+    """The configured locale tuple is forwarded to every rebuild call."""
+    received: list[tuple[str, ...]] = []
+
+    def fake_rebuild(db, locales):
+        received.append(locales)
+
+    asyncio.run(
+        _run_until_rebuilt(fake_rebuild, interval_seconds=1, run_for=1.1, locales=("es", "en"))
+    )
+
+    assert len(received) >= 2
+    assert all(locales == ("es", "en") for locales in received)
+
+
+def test_periodic_rebuild_cancel_during_inflight_worker():
+    """Cancelling while a rebuild runs in a thread drains without a dangling task.
+
+    The shutdown path cancels the periodic task, which may be mid-rebuild in an
+    ``asyncio.to_thread`` worker. The wrapper must surface CancelledError and
+    finish; the thread worker is allowed to finish on its own (it is isolated
+    from the event loop), but the loop must not schedule a next iteration.
+    """
+    import threading
+
+    worker_reached = threading.Event()
+    release_worker = threading.Event()
+    rebuilds_started = 0
+
+    def slow_rebuild(db, locales):
+        nonlocal rebuilds_started
+        rebuilds_started += 1
+        worker_reached.set()
+        release_worker.wait(timeout=5)
+
+    async def scenario() -> None:
+        task = asyncio.create_task(
+            run_periodic_ngram_rebuild(
+                ("en",), interval_seconds=1, rebuild_fn=slow_rebuild
+            )
+        )
+        # Wait until the first rebuild is running inside the thread pool.
+        while rebuilds_started == 0:
+            await asyncio.sleep(0.01)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        # The periodic task is fully drained; only this test's own task remains.
+        assert asyncio.all_tasks() == {asyncio.current_task()}
+
+    asyncio.run(scenario())
+
+    # The worker may still be running; let it finish so the thread pool drains.
+    release_worker.set()
+    assert rebuilds_started == 1  # no second iteration was scheduled
+
+
+def test_lifespan_cancels_periodic_ngram_rebuild_on_shutdown(monkeypatch):
+    """The real lifespan cancels the periodic task at shutdown, no errors.
+
+    Starts the production ASGI app via TestClient (which runs the full lifespan
+    startup and shutdown), with the periodic n-gram task enabled on a 1s
+    interval. After the context exits, the loop must have stopped scheduling
+    rebuilds and the server must have shut down cleanly.
+    """
+    import time as time_module
+
+    from fastapi.testclient import TestClient
+
+    from src.api import main as main_module
+    from src.api.main import app
+
+    calls: list[tuple[str, ...]] = []
+
+    async def fake_periodic(locales, interval_seconds=3600):
+        while True:
+            calls.append(locales)
+            await asyncio.sleep(interval_seconds)
+
+    # Activate the periodic task; keep the other startup work inert so the
+    # lifespan is fast and touches no network.
+    monkeypatch.setenv("TESTING", "0")
+    monkeypatch.setenv("AAC_ENABLE_NGRAM_REBUILD", "true")
+    monkeypatch.setenv("AAC_NGRAM_REBUILD_INTERVAL_SECONDS", "1")
+    monkeypatch.setattr(main_module, "run_periodic_ngram_rebuild", fake_periodic)
+    monkeypatch.setattr(main_module, "warmup_providers", lambda *a, **kw: None)
+    monkeypatch.setattr(main_module, "index_all_symbols", lambda *a, **kw: None)
+
+    with TestClient(app) as client:
+        assert client.get("/api/health").status_code == 200
+        # Wait for the periodic loop to run at least twice.
+        deadline = time_module.monotonic() + 8
+        while len(calls) < 2 and time_module.monotonic() < deadline:
+            time_module.sleep(0.05)
+        assert len(calls) >= 2
+
+    # After shutdown the loop must have stopped scheduling new rebuilds.
+    time_module.sleep(1.3)
+    after_shutdown = len(calls)
+    time_module.sleep(1.3)
+    assert len(calls) == after_shutdown
