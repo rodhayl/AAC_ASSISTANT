@@ -1,12 +1,19 @@
 # Voice transcription
 
-Voice input is optional. The core installation boots without speech-to-text:
+Voice input uses faster-whisper and voice output defaults to the local Kokoro neural
+engine. The source-checkout launcher prepares both voice runtimes before starting:
 
 ```powershell
-uv sync --group dev
+uv sync --group dev --extra voice --extra tts
 ```
 
-Install the faster-whisper extra when voice answers are needed:
+`start.sh` verifies the packages and downloads the Kokoro model files before launching
+the server. This avoids a first-use model download and prevents an implicit switch to
+the browser voice. In Settings → Voice, select either Kokoro or the browser/system
+voice from the single Voice output engine selector.
+
+Whisper is only for voice input. Install the faster-whisper extra directly when voice
+answers are needed outside the launcher:
 
 ```powershell
 uv sync --extra voice --group dev
@@ -24,5 +31,6 @@ packaged installer bundles this model (and the fastembed semantic-search model)
 via `scripts/bundle_models.py`, so a fresh install works fully offline.
 
 The browser records WAV/WebM audio with `MediaRecorder` and uploads it to the
-learning API. PyAV, included by faster-whisper, decodes those containers.
-Server-side microphone capture and text-to-speech are not required.
+learning API. PyAV, included by faster-whisper, decodes those containers. Kokoro
+synthesizes text to audio locally; browser SpeechSynthesis remains an explicit
+alternative.

@@ -12,14 +12,13 @@ function readStoredLocalVoice(): string {
 }
 
 interface TTSState {
+  ttsProvider: 'kokoro' | 'browser'
+  setTTSProvider: (provider: 'kokoro' | 'browser') => void
   selectedVoice: string
   setSelectedVoice: (v: string) => void
   /** Whether the local neural TTS engine is available on the backend. */
   localTTSAvailable: boolean
   setLocalTTSAvailable: (v: boolean) => void
-  /** Whether the app should prefer local neural TTS over browser voices. */
-  useLocalTTS: boolean
-  setUseLocalTTS: (v: boolean) => void
   /**
    * Specific Kokoro voice name used for local neural TTS ('default' = auto).
    * Kept separate from `selectedVoice` (the browser voice) so picking a
@@ -30,12 +29,12 @@ interface TTSState {
 }
 
 export const useTTSStore = create<TTSState>((set) => ({
+  ttsProvider: 'kokoro',
+  setTTSProvider: (provider) => set({ ttsProvider: provider }),
   selectedVoice: 'default',
   setSelectedVoice: (v) => set({ selectedVoice: v }),
   localTTSAvailable: false,
   setLocalTTSAvailable: (v) => set({ localTTSAvailable: v }),
-  useLocalTTS: false,
-  setUseLocalTTS: (v) => set({ useLocalTTS: v }),
   localVoice: readStoredLocalVoice(),
   setLocalVoice: (v) => {
     try {

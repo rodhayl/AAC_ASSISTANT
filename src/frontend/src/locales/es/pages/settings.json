@@ -33,6 +33,18 @@
     },
     "tts": "Voz de Texto a Voz",
     "ttsHelp": "Elige la voz para leer símbolos",
+    "ttsEngine": "Motor de salida de voz",
+    "ttsEngineHelp": "Elige un único motor para hablar en paneles y mensajes.",
+    "selectedEngine": "Motor seleccionado",
+    "defaultEngine": "predeterminado",
+    "engineSingleChoiceHelp": "Solo este motor producirá voz. El navegador se usa únicamente si lo seleccionas explícitamente.",
+    "ttsProviders": {
+      "kokoro": "Kokoro (voz neural local)",
+      "browser": "Navegador / voz del sistema"
+    },
+    "browserVoice": "Voz del navegador",
+    "browserVoiceHelp": "Usa las voces instaladas por el navegador o el sistema operativo.",
+    "kokoroUnavailable": "Kokoro no está preparado. Reinicia start.sh para instalar y preparar el motor de voz local.",
     "voiceMode": "Modo de voz",
     "voiceModeHelp": "Habilitar/deshabilitar funciones de voz",
     "notifications": "Notificaciones",
@@ -109,8 +121,8 @@
     "lmstudioUnavailable": "LM Studio no está accesible en la URL base configurada.",
     "openrouterApiKeyMissing": "Falta la clave API de OpenRouter.",
     "openrouterUnavailable": "OpenRouter está configurado pero no respondió. Revisa la clave API, la cuenta o la red.",
-    "voiceDeps": "Dependencias de Voz / STT",
-    "voiceDepsHelp": "La transcripción es opcional; la síntesis de voz del navegador siempre está disponible.",
+    "voiceDeps": "Estado del sistema de voz",
+    "voiceDepsHelp": "Kokoro y el reconocimiento de voz se preparan al iniciar start.sh. Whisper solo se usa para la entrada de voz.",
     "installed": "Instalado",
     "notInstalled": "No instalado",
     "howToInstall": "Cómo instalar",
@@ -128,12 +140,16 @@
         "help": "No es necesario: faster-whisper decodifica las cargas de audio del navegador"
       },
       "fasterWhisper": {
-        "label": "faster-whisper (opcional)",
-        "help": "Usa el botón inferior en un checkout fuente de Windows, o ejecuta uv sync --extra voice manualmente"
+        "label": "faster-whisper (entrada de voz)",
+        "help": "Lo prepara start.sh para convertir la voz grabada en texto"
       },
       "browserTts": {
         "label": "Texto a voz del navegador",
-        "help": "La salida de voz usa la API SpeechSynthesis del navegador"
+        "help": "Disponible cuando se selecciona Navegador / voz del sistema"
+      },
+      "localTts": {
+        "label": "Voz neural local Kokoro",
+        "help": "La prepara start.sh y se usa cuando se selecciona Kokoro"
       }
     },
     "keysUrl": "openrouter.ai/keys",

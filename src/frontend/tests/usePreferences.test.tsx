@@ -51,7 +51,9 @@ describe('usePreferences', () => {
     await act(async () => {
       resolveGet({
         data: {
+          tts_provider: 'kokoro',
           tts_voice: 'default',
+          tts_local_voice: 'default',
           ui_language: 'es-ES',
           notifications_enabled: true,
           voice_mode_enabled: true,
@@ -69,7 +71,9 @@ describe('usePreferences', () => {
   it('applies the fetched preferences when the user has not edited', async () => {
     get.mockResolvedValue({
       data: {
+        tts_provider: 'kokoro',
         tts_voice: 'es-voice',
+        tts_local_voice: 'ef_dora',
         ui_language: 'en-US',
         notifications_enabled: false,
         voice_mode_enabled: false,

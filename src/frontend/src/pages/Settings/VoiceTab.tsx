@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Circle, Volume2 } from 'lucide-react';
+import { AlertCircle, Check, Circle, Volume2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import api, { extractError } from '../../lib/api';
 import { useTTSStore } from '../../store/ttsStore';
@@ -11,6 +11,10 @@ interface VoiceTabProps {
   setPreferences: Dispatch<SetStateAction<Preferences>>;
   filteredVoices: SpeechSynthesisVoice[];
   showStatus: boolean;
+  prefsLoading?: boolean;
+  prefsSaveSuccess?: boolean;
+  prefsSaveError?: string | null;
+  onSave?: () => Promise<void>;
 }
 
 type LocalVoiceEntry = {
@@ -42,13 +46,24 @@ function localVoiceLabel(voice: LocalVoiceEntry): string {
   return parts.join(' · ');
 }
 
-export function VoiceTab({ preferences, setPreferences, filteredVoices, showStatus }: VoiceTabProps) {
+export function VoiceTab({
+  preferences,
+  setPreferences,
+  filteredVoices,
+  showStatus,
+  prefsLoading = false,
+  prefsSaveSuccess = false,
+  prefsSaveError = null,
+  onSave,
+}: VoiceTabProps) {
   const { t } = useTranslation('settings');
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
   const [installingVoiceDeps, setInstallingVoiceDeps] = useState(false);
   const [installMessage, setInstallMessage] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
   const [sttModelSaving, setSttModelSaving] = useState(false);
+  const setTTSProvider = useTTSStore((state) => state.setTTSProvider);
+  const setLocalVoice = useTTSStore((state) => state.setLocalVoice);
 
   const fetchVoiceStatus = useCallback(async () => {
     const res = await api.get('/providers/voice-status');
@@ -56,7 +71,6 @@ export function VoiceTab({ preferences, setPreferences, filteredVoices, showStat
   }, []);
 
   useEffect(() => {
-    if (!showStatus) return;
     const loadVoiceStatus = async () => {
       try {
         await fetchVoiceStatus();
@@ -124,23 +138,6 @@ export function VoiceTab({ preferences, setPreferences, filteredVoices, showStat
       setSttModelSaving(false);
     }
   };
-  const useLocalTTS = useTTSStore((state) => state.useLocalTTS);
-  const setUseLocalTTS = useTTSStore((state) => state.setUseLocalTTS);
-  const localVoice = useTTSStore((state) => state.localVoice);
-  const setLocalVoice = useTTSStore((state) => state.setLocalVoice);
-  const localTTSToggle = (
-    <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
-      <input
-        type="checkbox"
-        checked={useLocalTTS}
-        disabled={!localTTSAvailable}
-        onChange={(event) => setUseLocalTTS(event.target.checked)}
-        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-      />
-      {t('ai.localTtsToggle', 'Use local neural voice (Kokoro)')}
-    </label>
-  );
-
   const groupedLocalVoices = useMemo(() => {
     const groups = new Map<string, LocalVoiceEntry[]>();
     for (const voice of voiceStatus?.tts_local?.voices || []) {
@@ -153,7 +150,7 @@ export function VoiceTab({ preferences, setPreferences, filteredVoices, showStat
 
   const localVoicePicker = (
     <div className="flex items-center justify-between gap-4">
-      <div>
+          <div>
         <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {t('ai.localVoice', 'Local neural voice')}
         </p>
@@ -165,9 +162,12 @@ export function VoiceTab({ preferences, setPreferences, filteredVoices, showStat
         id="pref-local-tts-voice"
         name="local_tts_voice"
         aria-label={t('ai.localVoice', 'Local neural voice')}
-        value={localVoice}
+        value={preferences.tts_local_voice}
         disabled={!localTTSAvailable}
-        onChange={(event) => setLocalVoice(event.target.value)}
+        onChange={(event) => {
+          setLocalVoice(event.target.value);
+          setPreferences((prev) => ({ ...prev, tts_local_voice: event.target.value }));
+        }}
         className="block w-72 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md disabled:cursor-not-allowed disabled:opacity-60"
       >
         <option value="default">{t('ai.voiceDefault', 'Default (auto)')}</option>
@@ -215,7 +215,7 @@ export function VoiceTab({ preferences, setPreferences, filteredVoices, showStat
       help: t('ai.dependencies.localTts.help', 'Natural multi-language speech that runs locally on your computer.'),
       link: 'https://github.com/thewh1teagle/kokoro-onnx',
       status: localTTSAvailable,
-      optional: true,
+      optional: false,
       extra: voiceStatus?.tts_local?.model_size_mb ? `~${voiceStatus.tts_local.model_size_mb} MB` : undefined,
     },
   ];
@@ -226,46 +226,105 @@ export function VoiceTab({ preferences, setPreferences, filteredVoices, showStat
       aria-labelledby="settings-voice-heading"
       className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
     >
-      <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex items-center justify-between gap-4 border-b border-gray-200 p-6 dark:border-gray-700">
+        <div>
         <h3 id="settings-voice-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
           {t('preferences.tts')}
         </h3>
         <p className="text-sm text-gray-500 mt-1">{t('preferences.ttsHelp')}</p>
+        </div>
+        {onSave && (
+          <div className="flex shrink-0 items-center gap-3">
+            {prefsSaveSuccess && (
+              <span className="flex items-center text-sm text-green-600">
+                <Check className="mr-1 h-4 w-4" /> {t('preferences.saved')}
+              </span>
+            )}
+            {prefsSaveError && (
+              <span className="flex items-center text-sm text-red-600">
+                <AlertCircle className="mr-1 h-4 w-4" /> {prefsSaveError}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => { void onSave(); }}
+              disabled={prefsLoading}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {prefsLoading ? t('security.saving') : t('preferences.savePrefs')}
+            </button>
+          </div>
+        )}
       </div>
       <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-blue-50 rounded-lg">
-              <Volume2 className="w-5 h-5 text-blue-600" />
+        <div className="rounded-xl border-2 border-indigo-100 bg-indigo-50/50 p-4 dark:border-indigo-900 dark:bg-indigo-950/30">
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg bg-white p-2 shadow-sm dark:bg-gray-800">
+              <Volume2 className="h-5 w-5 text-indigo-600" />
             </div>
-            <div>
-              <p className="font-medium text-gray-900">{t('preferences.tts')}</p>
-              <p className="text-sm text-gray-500">{t('preferences.ttsHelp')}</p>
+            <div className="min-w-0 flex-1">
+              <h4 className="font-semibold text-gray-900 dark:text-gray-100">{t('preferences.ttsEngine', 'Voice output engine')}</h4>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{t('preferences.ttsEngineHelp', 'Choose one engine for spoken panels and messages.')}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <label htmlFor="pref-tts-provider" className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                  {t('preferences.selectedEngine', 'Selected engine')}
+                </label>
+                <select
+                  id="pref-tts-provider"
+                  name="tts_provider"
+                  aria-label={t('preferences.ttsEngine', 'Voice output engine')}
+                  value={preferences.tts_provider}
+                  onChange={(event) => {
+                    const provider = event.target.value as Preferences['tts_provider'];
+                    setTTSProvider(provider);
+                    setPreferences((prev) => ({ ...prev, tts_provider: provider }));
+                  }}
+                  className="block w-72 rounded-md border-gray-300 bg-white py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm dark:bg-gray-800"
+                >
+                  <option value="kokoro">{t('preferences.ttsProviders.kokoro', 'Kokoro (local neural voice)')} — {t('preferences.defaultEngine', 'default')}</option>
+                  <option value="browser">{t('preferences.ttsProviders.browser', 'Browser / system voice')}</option>
+                </select>
+              </div>
+              <p className="mt-2 text-xs text-indigo-800 dark:text-indigo-200">{t('preferences.engineSingleChoiceHelp', 'Only this engine speaks. Browser voice is used only when you explicitly select it.')}</p>
             </div>
           </div>
-          <select
-            id="pref-tts-voice"
-            name="tts_voice"
-            aria-label={t('preferences.tts')}
-            value={preferences.tts_voice}
-            onChange={(event) => setPreferences((prev) => ({ ...prev, tts_voice: event.target.value }))}
-            className="block w-48 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-          >
-            <option value="default">{t('preferences.voices.default')}</option>
-            {filteredVoices.length > 0 && <option disabled>──────────</option>}
-            {filteredVoices.map((voice) => (
-              <option key={voice.voiceURI} value={voice.voiceURI}>
-                {voice.name} ({voice.lang})
-              </option>
-            ))}
-          </select>
         </div>
 
-        <div className="flex items-center justify-between">
-          {localTTSToggle}
-        </div>
+        {preferences.tts_provider === 'browser' && (
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('preferences.browserVoice', 'Browser voice')}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{t('preferences.browserVoiceHelp', 'Uses voices installed by your browser or operating system.')}</p>
+            </div>
+            <select
+              id="pref-tts-voice"
+              name="tts_voice"
+              aria-label={t('preferences.browserVoice', 'Browser voice')}
+              value={preferences.tts_voice}
+              onChange={(event) => setPreferences((prev) => ({ ...prev, tts_voice: event.target.value }))}
+              className="block w-56 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+            >
+              <option value="default">{t('preferences.voices.default')}</option>
+              {filteredVoices.length > 0 && <option disabled>──────────</option>}
+              {filteredVoices.map((voice) => (
+                <option key={voice.voiceURI} value={voice.voiceURI}>
+                  {voice.name} ({voice.lang})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
-        {localVoicePicker}
+        {preferences.tts_provider === 'kokoro' && (
+          <>
+            {!localTTSAvailable && (
+              <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                {t('preferences.kokoroUnavailable', 'Kokoro is not ready. Restart start.sh to install and prepare the local voice runtime.')}
+              </div>
+            )}
+            {localVoicePicker}
+          </>
+        )}
 
         {showStatus && (
           <div className="border-t border-gray-200 pt-6">
@@ -274,9 +333,9 @@ export function VoiceTab({ preferences, setPreferences, filteredVoices, showStat
                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {t('ai.sttModel', 'Speech-to-text model')}
                 </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {t('ai.sttModelHelp', 'Whisper-tiny is the fast 39M-parameter default. Tiny is bundled with the installer; other sizes download on first use.')}
-                </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {t('ai.sttModelHelp', 'Whisper-tiny is the fast 39M-parameter default. Tiny is bundled with the installer; other sizes download on first use.')}
+              </p>
               </div>
               <select
                 id="stt-model"

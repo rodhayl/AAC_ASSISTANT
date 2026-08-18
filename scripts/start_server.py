@@ -32,7 +32,7 @@ _npm_command = npm_command
 
 
 def ensure_frontend_build() -> Path:
-    """Return the built frontend directory, building it when Node is available."""
+    """Return a current built frontend, rebuilding it when source changed."""
     frontend_dir = config.PROJECT_ROOT / "src" / "frontend"
     dist_dir = frontend_dir / "dist"
     prebuilt_candidates = (
@@ -42,7 +42,23 @@ def ensure_frontend_build() -> Path:
         config.BUNDLE_DIR / "frontend",
     )
     for candidate in prebuilt_candidates:
-        if (candidate / "index.html").is_file():
+        index_file = candidate / "index.html"
+        if not index_file.is_file():
+            continue
+        # A checked-in/stale dist directory otherwise hides frontend changes
+        # forever because production startup only checks for index.html.
+        # Compare application sources, not tests or node_modules, so a normal
+        # restart rebuilds only when the served SPA actually changed.
+        if candidate == dist_dir:
+            built_at = index_file.stat().st_mtime
+            source_roots = (frontend_dir / "src", frontend_dir / "public")
+            source_files = [frontend_dir / "index.html", frontend_dir / "package.json"]
+            for root in source_roots:
+                if root.is_dir():
+                    source_files.extend(path for path in root.rglob("*") if path.is_file())
+            if all(path.stat().st_mtime <= built_at for path in source_files if path.exists()):
+                return candidate
+        else:
             return candidate
 
     npm = _npm_command()
@@ -52,7 +68,7 @@ def ensure_frontend_build() -> Path:
             f"{dist_dir}. Install Node.js to build it, or ship a prebuilt dist/ folder."
         )
 
-    print("Production frontend is missing; installing Node dependencies and building it.")
+    print("Production frontend is missing or stale; installing Node dependencies and building it.")
     subprocess.run([npm, "ci"], cwd=frontend_dir, check=True)
     subprocess.run([npm, "run", "build"], cwd=frontend_dir, check=True)
     if not (dist_dir / "index.html").is_file():

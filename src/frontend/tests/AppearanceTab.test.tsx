@@ -31,7 +31,9 @@ vi.mock('react-i18next', () => ({
 }));
 
 const basePreferences = {
+  tts_provider: 'kokoro' as const,
   tts_voice: 'default',
+  tts_local_voice: 'default',
   ui_language: 'es-ES',
   notifications_enabled: true,
   voice_mode_enabled: true,

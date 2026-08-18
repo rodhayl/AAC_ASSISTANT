@@ -26,7 +26,9 @@ class TestBuildPreferencesResponse:
         response = build_preferences_response(None)
 
         assert response.model_dump() == {
+            "tts_provider": "kokoro",
             "tts_voice": "default",
+            "tts_local_voice": "default",
             "tts_language": None,
             "ui_language": None,
             "notifications_enabled": True,
@@ -61,7 +63,9 @@ class TestBuildPreferencesResponse:
 
     def test_build_preferences_response_maps_populated_settings(self):
         settings = SimpleNamespace(
+            tts_provider="browser",
             tts_voice="female",
+            tts_local_voice="ef_dora",
             tts_language="es",
             ui_language="es-ES",
             notifications_enabled=False,
@@ -75,7 +79,9 @@ class TestBuildPreferencesResponse:
         response = build_preferences_response(settings)
 
         assert response.model_dump() == {
+            "tts_provider": "browser",
             "tts_voice": "female",
+            "tts_local_voice": "ef_dora",
             "tts_language": "es",
             "ui_language": "es-ES",
             "notifications_enabled": False,
@@ -114,7 +120,9 @@ class TestUserPreferences:
         )
         assert response.status_code == 200
         data = response.json()
+        assert data["tts_provider"] == "kokoro"
         assert data["tts_voice"] == "default"
+        assert data["tts_local_voice"] == "default"
         assert data["notifications_enabled"] is True
         assert data["dark_mode"] is False
 
@@ -125,14 +133,18 @@ class TestUserPreferences:
             "/api/auth/preferences",
             headers=create_test_headers(user_id, username, user_type),
             json={
+                "tts_provider": "browser",
                 "tts_voice": "female",
+                "tts_local_voice": "ef_dora",
                 "notifications_enabled": False,
                 "dark_mode": True,
             },
         )
         assert response.status_code == 200
         data = response.json()
+        assert data["tts_provider"] == "browser"
         assert data["tts_voice"] == "female"
+        assert data["tts_local_voice"] == "ef_dora"
         assert data["notifications_enabled"] is False
         assert data["dark_mode"] is True
 

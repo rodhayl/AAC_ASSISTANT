@@ -38,7 +38,9 @@ class UserSettings(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    tts_provider = Column(String(20), default="kokoro", server_default="kokoro")
     tts_voice = Column(String(20), default="default")
+    tts_local_voice = Column(String(40), default="default", server_default="default")
     tts_language = Column(String(10), default="en")
     ui_language = Column(String(10), default="es-ES")
     notifications_enabled = Column(Boolean, default=True)

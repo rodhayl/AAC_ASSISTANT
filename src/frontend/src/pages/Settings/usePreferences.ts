@@ -9,7 +9,9 @@ import { useTranslation } from 'react-i18next';
 import type { Preferences } from './types';
 
 const defaultPreferences = (user: ReturnType<typeof useAuthStore.getState>['user']): Preferences => ({
+  tts_provider: user?.settings?.tts_provider === 'browser' ? 'browser' : 'kokoro',
   tts_voice: user?.settings?.tts_voice || 'default',
+  tts_local_voice: user?.settings?.tts_local_voice || 'default',
   ui_language: user?.settings?.ui_language || 'es-ES',
   notifications_enabled: user?.settings?.notifications_enabled ?? true,
   voice_mode_enabled: user?.settings?.voice_mode_enabled ?? true,
@@ -50,7 +52,9 @@ export function usePreferences() {
         const language = res.data.ui_language || 'es-ES';
 
         setPreferencesState({
+          tts_provider: res.data.tts_provider === 'browser' ? 'browser' : 'kokoro',
           tts_voice: voice,
+          tts_local_voice: res.data.tts_local_voice || 'default',
           ui_language: language,
           notifications_enabled: res.data.notifications_enabled ?? true,
           voice_mode_enabled: res.data.voice_mode_enabled ?? true,
@@ -60,6 +64,8 @@ export function usePreferences() {
           high_contrast: res.data.high_contrast ?? false,
         });
         useTTSStore.getState().setSelectedVoice(voice);
+        useTTSStore.getState().setTTSProvider(res.data.tts_provider === 'browser' ? 'browser' : 'kokoro');
+        useTTSStore.getState().setLocalVoice(res.data.tts_local_voice || 'default');
         useThemeStore.getState().setDarkMode(darkMode);
         useLocaleStore.getState().setLocale(language);
       } catch (err) {
@@ -112,10 +118,13 @@ export function usePreferences() {
         const { setDarkMode } = useThemeStore.getState();
         const { setLocale } = useLocaleStore.getState();
         const { setSelectedVoice } = useTTSStore.getState();
+        const { setTTSProvider, setLocalVoice } = useTTSStore.getState();
 
         setDarkMode(preferences.dark_mode);
         setLocale(preferences.ui_language);
         setSelectedVoice(preferences.tts_voice);
+        setTTSProvider(preferences.tts_provider);
+        setLocalVoice(preferences.tts_local_voice);
 
         useAuthStore.setState((state) => {
           if (!state.user) return state;

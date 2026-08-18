@@ -82,6 +82,8 @@ def test_schema_ensure_upgrades_legacy_sqlite_without_losing_data():
     }
     settings_columns = {column["name"] for column in inspector.get_columns("user_settings")}
     assert {
+        "tts_provider",
+        "tts_local_voice",
         "ui_language",
         "voice_mode_enabled",
         "dwell_time",

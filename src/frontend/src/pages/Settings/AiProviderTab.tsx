@@ -166,7 +166,7 @@ export function AiProviderTab() {
       if (currentAiProvider === 'ollama') {
         await fetchOllamaModels();
       } else if (currentAiProvider === 'openrouter') {
-        await fetchOpenRouterModels();
+        await fetchOpenRouterModels(currentOpenRouterApiKey);
       } else {
         await fetchLmStudioModels();
       }

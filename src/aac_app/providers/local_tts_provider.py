@@ -1,10 +1,10 @@
 """Optional local neural text-to-speech backed by kokoro-onnx.
 
 Kokoro-82M is a small (~325 MB) StyleTTS2-based model that synthesizes
-natural multi-language speech faster than real-time on CPU. It is an
-optional dependency: when ``kokoro-onnx`` or the model files are missing,
-:class:`LocalTTSProvider` reports itself unavailable and callers fall back
-to the browser's SpeechSynthesis API.
+natural multi-language speech faster than real-time on CPU. The source
+launcher installs ``kokoro-onnx`` and prepares the model files before the
+server starts. If either is unavailable, :class:`LocalTTSProvider` reports
+itself unavailable and the selected Kokoro provider refuses to speak.
 
 Model files (Apache-2.0) are cached under ``data/models/kokoro``:
     - kokoro-v1.0.onnx     (~325 MB)
@@ -330,8 +330,9 @@ class LocalTTSProvider:
         """
         Synthesize ``text`` into a 16-bit mono WAV and return its bytes.
 
-        Returns ``None`` when the provider is unavailable so callers can
-        fall back to another TTS engine without error handling.
+        Returns ``None`` when the provider is unavailable so callers can report
+        the selected provider failure without producing speech through another
+        engine.
         """
         if not text or not text.strip():
             return None

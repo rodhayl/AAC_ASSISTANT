@@ -57,8 +57,8 @@ ALLOW_DB_RESET=false
 AAC_SEED_SAMPLE_DATA=false
 AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=true
 AAC_BOOTSTRAP_ADMIN_USERNAME=admin1
-# Production requires an explicit strong password. In development / packaged runtime,
-# if unset, no default account is created and the operator completes setup via /setup.
+# For local development only, use Admin123 and change it immediately after first login.
+# Production requires an explicit unique strong password.
 AAC_BOOTSTRAP_ADMIN_PASSWORD=REPLACE_WITH_A_UNIQUE_PASSWORD
 DATA_DIR=data
 LOGS_DIR=logs
@@ -116,11 +116,10 @@ supplied for isolated tests, but normal deployments use SQLite at
   shared prompt helpers into small modules, with
   `LearningCompanionService` as the public service facade.
 - `src/aac_app/providers/` contains optional HTTP AI providers and the lazy
-  faster-whisper speech provider. The browser handles speech synthesis and
-  microphone capture; server-side audio devices are not required. The optional
-  Kokoro neural TTS extra is available on Python 3.13; Python 3.14 uses the
-  browser TTS fallback because the current Kokoro release declares Python
-  `<3.14` support.
+  faster-whisper speech provider. The source launcher prepares the Kokoro neural
+  TTS runtime before starting; the browser remains an explicit alternative in
+  Settings → Voice. Kokoro currently requires Python 3.13 because its release
+  declares Python `<3.14` support.
 - Semantic search uses fastembed embeddings and sqlite-vec in the SQLite
   database. Runtime model caches belong under `data/models/` and are never
   committed. Release builds stage the bundled fastembed and faster-whisper

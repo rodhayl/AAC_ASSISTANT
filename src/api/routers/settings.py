@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
@@ -277,11 +277,16 @@ async def get_ollama_models(
 async def get_openrouter_models(
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
+    request_api_key: str | None = Header(default=None, alias="X-OpenRouter-API-Key"),
 ):
     """Fetch available OpenRouter models (admin only)"""
     provider: OpenRouterProvider | None = None
     try:
-        api_key = get_setting(db, "openrouter_api_key")
+        # The settings form may contain a newly entered key that has not been
+        # saved yet. Prefer that request-scoped value, while preserving the
+        # saved setting as the fallback for automatic refreshes.
+        api_key = request_api_key.strip() if request_api_key else None
+        api_key = api_key or get_setting(db, "openrouter_api_key")
         if not api_key:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

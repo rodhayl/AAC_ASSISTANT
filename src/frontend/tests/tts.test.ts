@@ -62,8 +62,14 @@ describe('tts queue watchdog', () => {
     vi.useRealTimers()
   })
 
+  async function selectBrowserTTS() {
+    const { useTTSStore } = await import('../src/store/ttsStore')
+    useTTSStore.getState().setTTSProvider('browser')
+  }
+
   it('advances a queue when speech events never fire', async () => {
     const { tts } = await import('../src/lib/tts')
+    await selectBrowserTTS()
 
     tts.enqueue('A', { key: 'a' })
     tts.enqueue('B', { key: 'b' })
@@ -80,6 +86,7 @@ describe('tts queue watchdog', () => {
 
   it('marks speech as active optimistically and recovers when events never fire', async () => {
     const { tts } = await import('../src/lib/tts')
+    await selectBrowserTTS()
 
     tts.enqueue('A', { key: 'eventless-a' })
 
@@ -96,6 +103,7 @@ describe('tts queue watchdog', () => {
       utterance.onstart?.()
     })
     const { tts } = await import('../src/lib/tts')
+    await selectBrowserTTS()
 
     tts.enqueue('A', { key: 'eventful-a' })
 
@@ -112,6 +120,7 @@ describe('tts queue watchdog', () => {
       utterance.onstart?.()
     })
     const { tts } = await import('../src/lib/tts')
+    await selectBrowserTTS()
     const cancelCountBeforeEnqueue = speechSynthesis.cancel.mock.calls.length
 
     tts.enqueue('A', { key: 'normal-a' })
@@ -135,6 +144,7 @@ describe('tts queue watchdog', () => {
       utterance.onstart?.()
     })
     const { tts } = await import('../src/lib/tts')
+    await selectBrowserTTS()
 
     tts.enqueue('A', { key: 'started-a' })
     tts.enqueue('B', { key: 'started-b' })
@@ -150,10 +160,10 @@ describe('tts queue watchdog', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Local neural TTS path (backend Kokoro synthesis with browser fallback)
+// Local neural TTS path (backend Kokoro synthesis without implicit fallback)
 // ---------------------------------------------------------------------------
 // LOCAL_START_WINDOW_MS in ../src/lib/tts is 12_000; the race-guard test
-// relies on the watchdog handing control to browser speech after that window.
+// relies on the watchdog stopping the utterance after that window.
 const LOCAL_START_WINDOW_MS = 12_000
 
 describe('tts queue local neural path', () => {
@@ -253,7 +263,7 @@ describe('tts queue local neural path', () => {
   async function loadLocalTTS() {
     const { tts } = await import('../src/lib/tts')
     const { useTTSStore } = await import('../src/store/ttsStore')
-    useTTSStore.getState().setUseLocalTTS(true)
+    useTTSStore.getState().setTTSProvider('kokoro')
     useTTSStore.getState().setLocalTTSAvailable(true)
     return tts
   }
@@ -281,7 +291,9 @@ describe('tts queue local neural path', () => {
       expect.objectContaining({ method: 'POST' }),
     )
     const calls = fetchMock.mock.calls as Array<[unknown, { body: string }]>
-    expect(JSON.parse(calls[1][1].body)).toMatchObject({
+    const synthesisCall = calls.find((call) => call[1]?.body)
+    expect(synthesisCall).toBeDefined()
+    expect(JSON.parse(synthesisCall![1].body)).toMatchObject({
       text: 'Hola, ¿cómo estás?',
       lang: 'es',
       voice: 'default',
@@ -300,7 +312,36 @@ describe('tts queue local neural path', () => {
     expect(tts.getStatus()).toBe('idle')
   })
 
-  it('falls back to browser speech when the backend answers with an error', async () => {
+  it('does not abort a successful WAV response before reading its body', async () => {
+    let synthesisSignal: AbortSignal | undefined
+    let blobRead = false
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/providers/voice-status')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ tts_local: { available: true } }),
+        })
+      }
+      synthesisSignal = init?.signal
+      return Promise.resolve({
+        ok: true,
+        blob: async () => {
+          blobRead = true
+          expect(synthesisSignal?.aborted).toBe(false)
+          return new Blob(['fake-wav'])
+        },
+      })
+    })
+    const tts = await loadLocalTTS()
+
+    tts.enqueue('Respuesta local', { key: 'local-body', lang: 'es' })
+    await flush()
+
+    expect(blobRead).toBe(true)
+    expect(audioInstances[0].play).toHaveBeenCalled()
+  })
+
+  it('does not switch to browser speech when Kokoro answers with an error', async () => {
     fetchMock.mockImplementation((url: string) =>
       url.includes('/providers/voice-status')
         ? Promise.resolve({ ok: true, json: async () => ({ tts_local: { available: true } }) })
@@ -311,12 +352,11 @@ describe('tts queue local neural path', () => {
     tts.enqueue('Hola', { key: 'local-not-ok', lang: 'es' })
     await flush()
 
-    expect(speechSynthesis.speak).toHaveBeenCalledTimes(1)
-    expect(utterances[0].text).toBe('Hola')
+    expect(speechSynthesis.speak).not.toHaveBeenCalled()
     expect(audioInstances).toHaveLength(0)
   })
 
-  it('falls back to browser speech when the request fails', async () => {
+  it('does not switch to browser speech when the Kokoro request fails', async () => {
     fetchMock.mockImplementation((url: string) =>
       url.includes('/providers/voice-status')
         ? Promise.resolve({ ok: true, json: async () => ({ tts_local: { available: true } }) })
@@ -327,11 +367,10 @@ describe('tts queue local neural path', () => {
     tts.enqueue('Adiós', { key: 'local-reject', lang: 'es' })
     await flush()
 
-    expect(speechSynthesis.speak).toHaveBeenCalledTimes(1)
-    expect(utterances[0].text).toBe('Adiós')
+    expect(speechSynthesis.speak).not.toHaveBeenCalled()
   })
 
-  it('falls back to browser speech when synthesized audio cannot play', async () => {
+  it('does not switch to browser speech when synthesized audio cannot play', async () => {
     fetchMock.mockImplementation((url: string) =>
       url.includes('/providers/voice-status')
         ? Promise.resolve({ ok: true, json: async () => ({ tts_local: { available: true } }) })
@@ -347,15 +386,14 @@ describe('tts queue local neural path', () => {
     audioInstances[0].onerror?.()
     await flush()
 
-    expect(speechSynthesis.speak).toHaveBeenCalledTimes(1)
-    expect(utterances[0].text).toBe('Salida de audio')
-    expect(tts.getStatus()).toBe('speaking')
+    expect(speechSynthesis.speak).not.toHaveBeenCalled()
+    expect(tts.getStatus()).toBe('idle')
   })
 
-  it('uses browser speech when local TTS is enabled but unavailable on the backend', async () => {
+  it('does not speak when Kokoro is selected but unavailable on the backend', async () => {
     const { tts } = await import('../src/lib/tts')
     const { useTTSStore } = await import('../src/store/ttsStore')
-    useTTSStore.getState().setUseLocalTTS(true)
+    useTTSStore.getState().setTTSProvider('kokoro')
     // localTTSAvailable stays false: the queue must not even try to fetch.
     useTTSStore.getState().setLocalTTSAvailable(false)
 
@@ -367,12 +405,11 @@ describe('tts queue local neural path', () => {
       expect.anything(),
     )
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(speechSynthesis.speak).toHaveBeenCalledTimes(1)
-    expect(utterances[0].text).toBe('Hola')
+    expect(speechSynthesis.speak).not.toHaveBeenCalled()
     expect(audioInstances).toHaveLength(0)
   })
 
-  it('never double-speaks when a late local response arrives after fallback (race guard)', async () => {
+  it('does not speak when a late local response arrives after Kokoro timeout', async () => {
     let resolveFetch: (value: unknown) => void = () => {}
     const deferred = new Promise((resolve) => {
       resolveFetch = resolve
@@ -382,19 +419,19 @@ describe('tts queue local neural path', () => {
 
     tts.enqueue('Hola', { key: 'local-race', lang: 'es' })
 
-    // The synthesize request never answers: the start watchdog must hand
-    // control to the browser voice after the local start window.
+    // The synthesize request never answers: the start watchdog must stop
+    // the utterance after the local start window.
     await vi.advanceTimersByTimeAsync(LOCAL_START_WINDOW_MS)
-    expect(speechSynthesis.speak).toHaveBeenCalledTimes(1)
+    expect(speechSynthesis.speak).not.toHaveBeenCalled()
     expect(audioInstances).toHaveLength(0)
 
-    // A late response arrives after the fallback already started; it must be
+    // A late response arrives after the utterance already stopped; it must be
     // ignored so the text is not spoken twice.
     resolveFetch({ ok: true, blob: async () => new Blob(['fake-wav']) })
     await flush()
 
     expect(audioInstances).toHaveLength(0)
-    expect(speechSynthesis.speak).toHaveBeenCalledTimes(1)
-    expect(tts.getStatus()).toBe('speaking')
+    expect(speechSynthesis.speak).not.toHaveBeenCalled()
+    expect(tts.getStatus()).toBe('idle')
   })
 })

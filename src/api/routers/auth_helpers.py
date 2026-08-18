@@ -109,6 +109,12 @@ def validate_preference_updates(
     user: User | None = None,
 ) -> None:
     """Reject negative timing preferences consistently across preference routes."""
+    provider = updates.get("tts_provider")
+    if provider is not None and provider not in {"browser", "kokoro"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported text-to-speech provider.",
+        )
     for key in ("dwell_time", "ignore_repeats"):
         value = updates.get(key)
         if value is not None and int(value) < 0:
@@ -175,7 +181,9 @@ def build_preferences_response(
     dark_mode = getattr(settings, "dark_mode", None)
 
     return schemas.UserPreferencesResponse(
+        tts_provider=getattr(settings, "tts_provider", None) or "kokoro",
         tts_voice=getattr(settings, "tts_voice", None) or "default",
+        tts_local_voice=getattr(settings, "tts_local_voice", None) or "default",
         tts_language=getattr(settings, "tts_language", None),
         ui_language=getattr(settings, "ui_language", None),
         notifications_enabled=(

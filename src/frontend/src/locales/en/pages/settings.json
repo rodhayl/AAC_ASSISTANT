@@ -33,6 +33,18 @@
     },
     "tts": "Text-to-Speech Voice",
     "ttsHelp": "Choose the voice for reading symbols",
+    "ttsEngine": "Voice output engine",
+    "ttsEngineHelp": "Choose one engine for spoken panels and messages.",
+    "selectedEngine": "Selected engine",
+    "defaultEngine": "default",
+    "engineSingleChoiceHelp": "Only this engine speaks. Browser voice is used only when you explicitly select it.",
+    "ttsProviders": {
+      "kokoro": "Kokoro (local neural voice)",
+      "browser": "Browser / system voice"
+    },
+    "browserVoice": "Browser voice",
+    "browserVoiceHelp": "Uses voices installed by your browser or operating system.",
+    "kokoroUnavailable": "Kokoro is not ready. Restart start.sh to install and prepare the local voice runtime.",
     "voiceMode": "Voice Mode",
     "voiceModeHelp": "Enable/disable voice features",
     "notifications": "Notifications",
@@ -109,8 +121,8 @@
     "lmstudioUnavailable": "LM Studio is not reachable at the configured base URL.",
     "openrouterApiKeyMissing": "OpenRouter API key is missing.",
     "openrouterUnavailable": "OpenRouter is configured but did not respond. Check the API key, account, or network.",
-    "voiceDeps": "Voice / STT Dependencies",
-    "voiceDepsHelp": "Speech-to-text is optional; browser text-to-speech is always available.",
+    "voiceDeps": "Voice runtime status",
+    "voiceDepsHelp": "Kokoro and speech-to-text are prepared when start.sh starts. Whisper is used only for voice input.",
     "installed": "Installed",
     "notInstalled": "Not installed",
     "howToInstall": "How to install",
@@ -128,12 +140,16 @@
         "help": "Not required: faster-whisper decodes browser audio uploads"
       },
       "fasterWhisper": {
-        "label": "faster-whisper (optional)",
-        "help": "Use the button below on Windows source checkouts, or run uv sync --extra voice manually"
+        "label": "faster-whisper (voice input)",
+        "help": "Prepared by start.sh for converting recorded speech to text"
       },
       "browserTts": {
         "label": "Browser text-to-speech",
-        "help": "Speech output uses the browser SpeechSynthesis API"
+        "help": "Available when Browser / system voice is selected above"
+      },
+      "localTts": {
+        "label": "Kokoro local neural voice",
+        "help": "Prepared by start.sh and used when Kokoro is selected above"
       }
     },
     "keysUrl": "openrouter.ai/keys",

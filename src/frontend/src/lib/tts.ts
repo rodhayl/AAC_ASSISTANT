@@ -107,16 +107,7 @@ async function refreshLocalTTSCapability() {
   if (typeof store.setLocalTTSAvailable === 'function') {
     store.setLocalTTSAvailable(available)
   }
-  if (typeof store.setUseLocalTTS === 'function') {
-    store.setUseLocalTTS(available)
-  }
   capabilityChecked = true
-}
-
-/** Probe the backend once (cached) and enable local TTS when available. */
-export function initLocalTTS() {
-  if (capabilityChecked) return
-  void refreshLocalTTSCapability()
 }
 
 class TTSQueue {
@@ -196,9 +187,6 @@ class TTSQueue {
     if (now - last < this.debounceMs) return
     this.lastSpokenAt.set(k, now)
 
-    // Probe the backend for local neural TTS on first use (lazy, non-blocking).
-    initLocalTTS()
-
     this.queue.push({ text, opts })
     this.processNext()
   }
@@ -228,19 +216,41 @@ class TTSQueue {
     // no-start watchdog takes over from here.
     this.setStatus('speaking')
 
-    if (useTTSStore.getState().useLocalTTS && useTTSStore.getState().localTTSAvailable) {
-      void this.speakLocalWithFallback(item, utteranceId)
+    const { ttsProvider, localTTSAvailable } = useTTSStore.getState()
+    if (ttsProvider === 'kokoro' && !capabilityChecked) {
+      void this.waitForLocalTTS(item, utteranceId)
+    } else if (ttsProvider === 'kokoro' && localTTSAvailable) {
+      void this.speakLocal(item, utteranceId)
+    } else if (ttsProvider === 'kokoro') {
+      console.error('Kokoro TTS is selected but unavailable; no speech was produced.')
+      this.finishCurrentUtterance(false)
+      Promise.resolve().then(() => this.processNext())
     } else {
       this.scheduleNoStartWatchdog(utteranceId)
       this.speakViaBrowser(item, utteranceId)
     }
   }
 
+  private async waitForLocalTTS(
+    item: { text: string; opts: EnqueueOptions },
+    utteranceId: number,
+  ) {
+    await refreshLocalTTSCapability()
+    if (!this.isActiveUtterance(utteranceId)) return
+    if (useTTSStore.getState().localTTSAvailable) {
+      void this.speakLocal(item, utteranceId)
+      return
+    }
+    console.error('Kokoro TTS is selected but unavailable; no speech was produced.')
+    this.finishCurrentUtterance(false)
+    Promise.resolve().then(() => this.processNext())
+  }
+
   /**
-   * Try the local neural TTS engine; if it cannot synthesize within the
-   * start window, fall back to the browser's SpeechSynthesis voices.
+   * Use the selected local neural TTS engine without silently switching
+   * providers. The user can select browser speech explicitly in Settings.
    */
-  private async speakLocalWithFallback(
+  private async speakLocal(
     item: { text: string; opts: EnqueueOptions },
     utteranceId: number,
   ) {
@@ -264,21 +274,23 @@ class TTSQueue {
     }
     this.localSynthesisCleanup = clearSynthesisRequest
 
-    const fallback = () => {
+    const stopWithoutFallback = () => {
       if (localAbandoned || !this.isActiveUtterance(utteranceId)) return
       localAbandoned = true
       this.clearLocalStartWatchdog(localStartWatchdog)
       clearSynthesisRequest()
       this.stopLocalAudio()
       this.clearNoStartWatchdog()
-      this.speakViaBrowser(item, utteranceId)
+      console.error('Kokoro TTS could not synthesize the utterance.')
+      this.finishCurrentUtterance(false)
+      Promise.resolve().then(() => this.processNext())
     }
 
     const localStartWatchdog = setTimeout(() => {
       if (this.localStartWatchdog === localStartWatchdog) {
         this.localStartWatchdog = null
       }
-      fallback()
+      stopWithoutFallback()
     }, LOCAL_START_WINDOW_MS)
     this.localStartWatchdog = localStartWatchdog
 
@@ -308,10 +320,20 @@ class TTSQueue {
         }),
         signal: controller.signal,
       })
-      clearSynthesisRequest()
+      // The headers have arrived, but the WAV body is still unread. Do not
+      // abort the controller here: aborting it cancels res.blob() and turns a
+      // successful 200 response into AbortError before playback can start.
+      if (synthesisTimeout !== null) {
+        clearTimeout(synthesisTimeout)
+        synthesisTimeout = null
+      }
+      synthesisController = null
+      if (this.localSynthesisCleanup === clearSynthesisRequest) {
+        this.localSynthesisCleanup = null
+      }
       if (localAbandoned) return
       if (!res.ok) {
-        fallback()
+        stopWithoutFallback()
         return
       }
 
@@ -343,9 +365,9 @@ class TTSQueue {
         if (localAbandoned || !this.isActiveUtterance(utteranceId)) return
         // A successful synthesis can still fail at the device/playback layer
         // (missing output device, autoplay policy, invalid decoder, etc.).
-        // Preserve communication by using the same browser fallback as an
-        // HTTP/synthesis failure instead of silently dropping the utterance.
-        fallback()
+        // Keep the selected provider explicit: stop and report the failure
+        // instead of silently switching to browser speech.
+        stopWithoutFallback()
       }
 
       await audio.play()
@@ -361,10 +383,11 @@ class TTSQueue {
       this.clearNoStartWatchdog()
       const durationMs = Number.isFinite(audio.duration) ? audio.duration * 1000 : 0
       this.scheduleSpeakingWatchdog(utteranceId, Math.max(SPEAKING_WATCHDOG_MS, durationMs + 3_000))
-    } catch {
+    } catch (error) {
       this.clearLocalStartWatchdog(localStartWatchdog)
       clearSynthesisRequest()
-      if (!localAbandoned) fallback()
+      console.error('Kokoro TTS playback/synthesis error', error)
+      if (!localAbandoned) stopWithoutFallback()
     }
   }
 

@@ -37,6 +37,8 @@ def _ensure_sqlite_columns(engine: Engine) -> None:
             ("symbols", "order_index", "INTEGER DEFAULT 0"),
             ("board_symbols", "order_index", "INTEGER DEFAULT 0"),
             ("user_settings", "ui_language", "TEXT DEFAULT 'es-ES'"),
+            ("user_settings", "tts_provider", "TEXT DEFAULT 'kokoro'"),
+            ("user_settings", "tts_local_voice", "TEXT DEFAULT 'default'"),
             ("user_settings", "voice_mode_enabled", "INTEGER DEFAULT 1"),
             ("user_settings", "dwell_time", "INTEGER DEFAULT 0"),
             ("user_settings", "ignore_repeats", "INTEGER DEFAULT 0"),

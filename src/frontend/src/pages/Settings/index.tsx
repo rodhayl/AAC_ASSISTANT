@@ -79,6 +79,10 @@ export function Settings() {
         setPreferences={preferences.setPreferences}
         filteredVoices={preferences.filteredVoices}
         showStatus={isAdmin}
+        prefsLoading={preferences.prefsLoading}
+        prefsSaveSuccess={preferences.prefsSaveSuccess}
+        prefsSaveError={preferences.prefsSaveError}
+        onSave={preferences.handleSavePreferences}
       />
       <AiProviderTab key={`${user?.id ?? 'anonymous'}:${user?.user_type ?? 'unknown'}`} />
       {isStaff && <LearningModesTab />}

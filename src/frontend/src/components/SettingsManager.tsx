@@ -9,6 +9,8 @@ export function SettingsManager() {
   const setLocale = useLocaleStore((state) => state.setLocale);
   const setDarkMode = useThemeStore((state) => state.setDarkMode);
   const setSelectedVoice = useTTSStore((state) => state.setSelectedVoice);
+  const setTTSProvider = useTTSStore((state) => state.setTTSProvider);
+  const setLocalVoice = useTTSStore((state) => state.setLocalVoice);
 
   useEffect(() => {
     if (user?.settings) {
@@ -33,8 +35,12 @@ export function SettingsManager() {
       if (user.settings.tts_voice) {
           setSelectedVoice(user.settings.tts_voice);
       }
+      setTTSProvider(user.settings.tts_provider === 'browser' ? 'browser' : 'kokoro');
+      if (user.settings.tts_local_voice) {
+        setLocalVoice(user.settings.tts_local_voice);
+      }
     }
-  }, [user?.settings, setLocale, setDarkMode, setSelectedVoice]);
+  }, [user?.settings, setLocale, setDarkMode, setSelectedVoice, setTTSProvider, setLocalVoice]);
 
   return null;
 }

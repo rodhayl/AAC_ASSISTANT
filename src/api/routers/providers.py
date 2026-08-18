@@ -236,9 +236,8 @@ def tts_synthesize(
     """
     Synthesize text with the local neural TTS engine (Kokoro).
 
-    Returns a 16-bit mono WAV. When the optional engine or its model files
-    are missing this returns 503 so the frontend can fall back to the
-    browser's SpeechSynthesis voices.
+    Returns a 16-bit mono WAV. When the engine or its model files are missing
+    this returns 503 so the selected Kokoro provider can report a clear error.
     """
     provider = get_local_tts_provider()
     if not provider.is_available():

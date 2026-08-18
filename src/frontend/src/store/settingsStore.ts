@@ -43,7 +43,7 @@ interface SettingsState {
   fetchAISettings: () => Promise<void>;
   updateAISettings: (settings: Partial<AISettings>) => Promise<void>;
   fetchOllamaModels: () => Promise<void>;
-  fetchOpenRouterModels: () => Promise<void>;
+  fetchOpenRouterModels: (apiKey?: string) => Promise<void>;
   fetchLmStudioModels: () => Promise<void>;
 }
 
@@ -53,11 +53,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
   const fetchModelList = async (
     endpoint: string,
     stateKey: 'ollamaModels' | 'openRouterModels' | 'lmStudioModels',
-    failureMessage: string
+    failureMessage: string,
+    headers?: Record<string, string>
   ) => {
     set({ loading: true, error: null });
     try {
-      const response = await api.get(endpoint);
+      const response = headers
+        ? await api.get(endpoint, { headers })
+        : await api.get(endpoint);
       set({ [stateKey]: response.data.models, loading: false });
     } catch (error: unknown) {
       const message = extractError(error, failureMessage);
@@ -100,8 +103,16 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
       await fetchModelList('/settings/ai/models/ollama', 'ollamaModels', 'Failed to fetch Ollama models');
     },
 
-    fetchOpenRouterModels: async () => {
-      await fetchModelList('/settings/ai/models/openrouter', 'openRouterModels', 'Failed to fetch OpenRouter models');
+    fetchOpenRouterModels: async (apiKey?: string) => {
+      const headers = apiKey?.trim()
+        ? { 'X-OpenRouter-API-Key': apiKey.trim() }
+        : undefined;
+      await fetchModelList(
+        '/settings/ai/models/openrouter',
+        'openRouterModels',
+        'Failed to fetch OpenRouter models',
+        headers,
+      );
     },
 
     fetchLmStudioModels: async () => {

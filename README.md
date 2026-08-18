@@ -58,10 +58,9 @@ One-time onboarding flow restricted to local loopback (`127.0.0.1`) requiring op
 - Communication boards with a symbol library and sentence strip.
 - Symbol search and board editing (drag-and-drop, custom uploads).
 - Learning sessions with adaptive questions and achievements.
-- Local speech-to-text (faster-whisper) bundled in the Windows installer;
-  browser-based text-to-speech works everywhere. Optional local neural TTS
-  (Kokoro) is supported on Python 3.13; Python 3.14 uses the browser fallback
-  because the current Kokoro release does not support Python 3.14.
+- Local speech-to-text (faster-whisper) and local neural text-to-speech (Kokoro)
+  are prepared by the source launcher; browser-based text-to-speech remains an
+  explicit user-selectable alternative.
 - Role-based accounts (student / teacher / admin) with per-endpoint
   authorization.
 - Optional LLM learning questions via local services (Ollama, LM Studio) or an
@@ -135,7 +134,7 @@ and open `http://127.0.0.1:8086/`.
 ### Source checkout (Linux / macOS)
 
 ```bash
-uv sync --group dev
+uv sync --group dev --extra voice --extra tts
 npm --prefix src/frontend ci
 npm --prefix src/frontend run build
 uv run python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8086
@@ -145,11 +144,25 @@ and open `http://127.0.0.1:8086/`.
 
 ### First-run administrator setup
 
-On first run, when no administrator account exists, opening the web interface at
-`http://127.0.0.1:8086/` automatically redirects to the initial setup screen (`/setup`)
-where you choose your administrator username and a strong password. Initial setup
-is strictly restricted to local loopback (`127.0.0.1` / `::1`) to prevent remote
-takeover on fresh installations.
+For the standard local `start.sh` setup, the first administrator is:
+
+```text
+Username: admin1
+Password: Admin123
+```
+
+This is a development/bootstrap credential only. Log in immediately and change
+the password from the account settings before using the application with real
+data or exposing it beyond the local machine. The password is enabled by setting
+`AAC_BOOTSTRAP_ADMIN_PASSWORD=Admin123` in the local `.env` file; choose a unique
+strong password instead for any shared or production deployment.
+
+If no bootstrap password is configured, opening the web interface at
+`start.sh` installs/verifies the voice dependencies and prepares the Kokoro model before
+starting the server. If no bootstrap password is configured, opening the web interface at
+`http://127.0.0.1:8086/` automatically redirects to the initial setup screen
+(`/setup`), where you choose the administrator username and password. Initial
+setup is strictly restricted to local loopback (`127.0.0.1` / `::1`).
 
 Alternatively, operators can configure `AAC_BOOTSTRAP_ADMIN_PASSWORD` in `.env` or the
 process environment before starting the server. In production (`ENVIRONMENT=production`),
@@ -208,7 +221,7 @@ Process environment variables take precedence over the file. Key settings:
 | `AAC_SEED_SAMPLE_DATA` | `false` | Seeds demo users/boards (keep false in production). |
 | `AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN` | `true` | Enables interactive setup (/setup) or automatic bootstrap when no admin exists. |
 | `AAC_BOOTSTRAP_ADMIN_USERNAME` | `admin1` | Username for the first-run admin. |
-| `AAC_BOOTSTRAP_ADMIN_PASSWORD` | unset | Unset by default; operators set a strong password via `/setup` (loopback only). Production requires an explicit password. |
+| `AAC_BOOTSTRAP_ADMIN_PASSWORD` | `Admin123` (local example) | Bootstrap password for the local first run; change it immediately after login. Use a unique strong password in shared or production deployments. |
 
 See `docs/01_PROJECT_GUIDE.md` for the full reference.
 

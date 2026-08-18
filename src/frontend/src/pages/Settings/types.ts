@@ -1,5 +1,7 @@
 export interface Preferences {
+  tts_provider: 'kokoro' | 'browser';
   tts_voice: string;
+  tts_local_voice: string;
   ui_language: string;
   notifications_enabled: boolean;
   voice_mode_enabled: boolean;

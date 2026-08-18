@@ -86,7 +86,7 @@ describe('VoiceTab', () => {
 
     render(
       <VoiceTab
-        preferences={{ tts_voice: 'default', ui_language: 'en-US', notifications_enabled: true, voice_mode_enabled: true, dark_mode: false, dwell_time: 0, ignore_repeats: 0, high_contrast: false }}
+        preferences={{ tts_provider: 'kokoro', tts_voice: 'default', tts_local_voice: 'default', ui_language: 'en-US', notifications_enabled: true, voice_mode_enabled: true, dark_mode: false, dwell_time: 0, ignore_repeats: 0, high_contrast: false }}
         setPreferences={vi.fn()}
         filteredVoices={[]}
         showStatus
@@ -110,7 +110,9 @@ describe('VoiceTab', () => {
     render(
       <VoiceTab
         preferences={{
+          tts_provider: 'kokoro',
           tts_voice: 'default',
+          tts_local_voice: 'default',
           ui_language: 'en-US',
           notifications_enabled: true,
           voice_mode_enabled: true,
@@ -165,7 +167,9 @@ describe('VoiceTab', () => {
     render(
       <VoiceTab
         preferences={{
+          tts_provider: 'kokoro',
           tts_voice: 'default',
+          tts_local_voice: 'default',
           ui_language: 'en-US',
           notifications_enabled: true,
           voice_mode_enabled: true,

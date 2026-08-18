@@ -275,6 +275,37 @@ class TestSettingsValidationAndProviderModels:
         assert response.status_code == 200
         assert response.json()["models"][0]["id"] == "anthropic/claude-3.5-sonnet"
 
+    def test_get_openrouter_models_uses_unsaved_request_key(
+        self, setup_test_db, test_db_session, admin_user, admin_token, monkeypatch
+    ):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from src.aac_app.models import AppSettings
+
+        test_db_session.add(
+            AppSettings(setting_key="openrouter_api_key", setting_value="saved-key")
+        )
+        test_db_session.commit()
+
+        mock_provider = MagicMock()
+        mock_provider.get_available_models = AsyncMock(return_value={"data": []})
+        provider_factory = MagicMock(return_value=mock_provider)
+        monkeypatch.setattr(
+            "src.api.routers.settings.OpenRouterProvider",
+            provider_factory,
+        )
+        response = client.get(
+            "/api/settings/ai/models/openrouter",
+            headers={
+                "Authorization": f"Bearer {admin_token}",
+                "X-OpenRouter-API-Key": "unsaved-key",
+            },
+        )
+
+        assert response.status_code == 200
+        provider_factory.assert_called_once_with(api_key="unsaved-key")
+        assert mock_provider.get_available_models.await_count == 1
+
     def test_get_lmstudio_models_unavailable_returns_503(self, admin_user, admin_token, monkeypatch):
         from unittest.mock import MagicMock
 

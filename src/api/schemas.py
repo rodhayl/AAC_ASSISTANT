@@ -5,7 +5,9 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class UserPreferencesResponse(BaseModel):
+    tts_provider: str = "kokoro"
     tts_voice: str = "default"
+    tts_local_voice: str = "default"
     tts_language: str | None = None
     ui_language: str | None = None
     notifications_enabled: bool = True
@@ -19,7 +21,9 @@ class UserPreferencesResponse(BaseModel):
 
 
 class UserPreferencesUpdate(BaseModel):
+    tts_provider: str | None = None
     tts_voice: str | None = None
+    tts_local_voice: str | None = None
     tts_language: str | None = None
     ui_language: str | None = None
     notifications_enabled: bool | None = None
