@@ -25,6 +25,8 @@
     "title": "Preferences",
     "saved": "Saved",
     "savePrefs": "Save Preferences",
+    "saveAppearance": "Save Appearance Settings",
+    "saveVoice": "Save Voice Settings",
     "language": "Interface Language",
     "languageHelp": "Choose your preferred language",
     "languages": {

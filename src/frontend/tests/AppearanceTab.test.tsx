@@ -9,6 +9,7 @@ vi.mock('react-i18next', () => ({
         'preferences.title': 'Preferences',
         'preferences.saved': 'Saved',
         'preferences.savePrefs': 'Save preferences',
+        'preferences.saveAppearance': 'Save appearance settings',
         'preferences.language': 'Language',
         'preferences.languageHelp': 'Choose language',
         'preferences.voiceMode': 'Voice mode',
@@ -99,7 +100,7 @@ describe('AppearanceTab', () => {
     renderTab({ prefsSaveSuccess: true });
     expect(screen.getByText('Saved')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save preferences' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save appearance settings' }));
     expect(onSave).toHaveBeenCalledTimes(1);
   });
 

@@ -163,7 +163,7 @@ describe('End-to-End Options Tests', () => {
     }
 
     // Save preferences
-    const saveBtn = screen.getByText('preferences.savePrefs');
+    const saveBtn = screen.getByText('preferences.saveAppearance');
     fireEvent.click(saveBtn);
 
     await waitFor(() => {

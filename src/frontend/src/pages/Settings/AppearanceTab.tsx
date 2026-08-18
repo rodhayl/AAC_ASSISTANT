@@ -49,7 +49,7 @@ export function AppearanceTab({
             disabled={prefsLoading}
             className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium"
           >
-            {prefsLoading ? t('security.saving') : t('preferences.savePrefs')}
+            {prefsLoading ? t('security.saving') : t('preferences.saveAppearance')}
           </button>
         </div>
       </div>

@@ -25,6 +25,8 @@
     "title": "Preferencias",
     "saved": "Guardado",
     "savePrefs": "Guardar preferencias",
+    "saveAppearance": "Guardar ajustes de apariencia",
+    "saveVoice": "Guardar ajustes de voz",
     "language": "Idioma de la Interfaz",
     "languageHelp": "Elige tu idioma preferido",
     "languages": {

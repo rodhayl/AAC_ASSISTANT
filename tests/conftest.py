@@ -20,6 +20,12 @@ from src.api.deps import clear_settings_cache, get_db
 from src.api.main import app
 
 
+@pytest.fixture(scope="session")
+def anyio_backend():
+    """Run async tests on the asyncio backend used by the application."""
+    return "asyncio"
+
+
 @pytest.fixture(scope="function")
 def test_db_engine(tmp_path: Path, monkeypatch, reset_production_db):
     """
