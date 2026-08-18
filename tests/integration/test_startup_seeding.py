@@ -14,7 +14,13 @@ from sqlalchemy.orm import sessionmaker
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.aac_app.models import Achievement, Base, User, UserAchievement  # noqa: E402
+from src.aac_app.models import (  # noqa: E402
+    Achievement,
+    Base,
+    CommunicationBoard,
+    User,
+    UserAchievement,
+)
 from src.aac_app.services.auth_service import verify_password  # noqa: E402
 
 # Use a separate test database file for this test to verify seeding logic specifically
@@ -276,7 +282,7 @@ def test_seeded_demo_board_is_playable():
 
     board = (
         session.query(CommunicationBoard)
-        .filter(CommunicationBoard.name == "General Communication")
+        .filter(CommunicationBoard.name == "Comunicación General")
         .first()
     )
     assert board is not None
@@ -292,6 +298,66 @@ def test_seeded_demo_board_is_playable():
     assert capacity > 0
     assert symbol_count / capacity >= 0.5, (
         f"demo board underfilled: {symbol_count}/{capacity}"
+    )
+    session.close()
+    engine.dispose()
+
+
+def test_legacy_demo_board_is_renamed_without_touching_custom_boards():
+    """Startup migrates the old demo name but preserves user-created boards."""
+    from src.aac_app.seed import _rename_legacy_default_board
+
+    engine = create_engine(TEST_DB_URL)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    admin = User(
+        username="admin1",
+        display_name="Admin",
+        user_type="admin",
+        password_hash="test-hash",
+    )
+    teacher = User(
+        username="teacher1",
+        display_name="Teacher",
+        user_type="teacher",
+        password_hash="test-hash",
+    )
+    session.add_all([admin, teacher])
+    session.flush()
+    session.add_all(
+        [
+            CommunicationBoard(
+                name="General Communication",
+                user_id=admin.id,
+                is_template=True,
+            ),
+            CommunicationBoard(
+                name="General Communication",
+                user_id=teacher.id,
+                is_template=True,
+            ),
+        ]
+    )
+    session.flush()
+
+    _rename_legacy_default_board(session)
+    session.commit()
+
+    assert (
+        session.query(CommunicationBoard)
+        .filter_by(user_id=admin.id)
+        .one()
+        .name
+        == "Comunicación General"
+    )
+    assert (
+        session.query(CommunicationBoard)
+        .filter_by(user_id=teacher.id)
+        .one()
+        .name
+        == "General Communication"
     )
     session.close()
     engine.dispose()

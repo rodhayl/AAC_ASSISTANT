@@ -13,7 +13,7 @@ test.describe('Board Assignment', () => {
     const row = page.locator('tbody tr', { hasText: 'student1' }).first();
     await expect(row).toBeVisible();
 
-    // The seeded "General Communication" board is assigned by default.
+    // The seeded "Comunicación General" board is assigned by default.
     await expect(row.getByText(/general communication/i)).toBeVisible();
 
     // Unassign it via the chip's close button.

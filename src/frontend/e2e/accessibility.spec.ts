@@ -22,7 +22,7 @@ test.describe('Accessibility: keyboard operation', () => {
 
   async function openBoard(page: import('@playwright/test').Page) {
     await page.goto('/communication');
-    const board = page.getByRole('button', { name: /General Communication/ }).first();
+    const board = page.getByRole('button', { name: /Comunicación General/ }).first();
     await expect(board).toBeVisible();
     await board.click();
     const grid = page.locator('.grid');

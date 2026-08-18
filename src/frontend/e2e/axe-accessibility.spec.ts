@@ -52,7 +52,7 @@ test.describe('Automated Accessibility Scans (Axe Core)', () => {
       await expect(page.locator('main#main-content')).toBeVisible({ timeout: 10000 });
 
       // If on board picker, open the default board so actual board grid and sentence controls are scanned
-      const boardPickerItem = page.getByRole('button', { name: /General Communication/ }).first();
+    const boardPickerItem = page.getByRole('button', { name: /Comunicación General/ }).first();
       if (await boardPickerItem.isVisible({ timeout: 2000 }).catch(() => false)) {
         await boardPickerItem.click();
       }

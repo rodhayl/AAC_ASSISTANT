@@ -41,9 +41,13 @@ vi.mock('../src/store/learningStore', () => {
     setDifficultyOverride: vi.fn(),
   };
   return {
-    useLearningStore: (selector?: (state: typeof mockStore) => unknown) =>
-      selector ? selector(mockStore) : mockStore,
+    useLearningStore: Object.assign(
+      (selector?: (state: typeof mockStore) => unknown) =>
+        selector ? selector(mockStore) : mockStore,
+      { getState: () => mockStore },
+    ),
     glossSymbolUtterance: (symbols: { label: string }[]) => symbols.map(s => s.label).join(' '),
+    stripReasoning: (text: string) => text,
     __startSession: startSession,
     __submitAnswer: submitAnswer,
     __submitVoiceAnswer: submitVoiceAnswer,
@@ -150,6 +154,14 @@ describe('Learning symbol-first and audio-first flows', () => {
     const store = (await import('../src/store/learningStore')).__mockStore;
     store.currentSession = null;
     store.isLoading = false;
+    store.messages = [];
+    store.providerHistory = [];
+    store.sessionHistory = [];
+    store.isLoadingHistory = false;
+    store.lastSessionSummary = null;
+    store.askQuestion.mockReset();
+    store.endSession.mockReset();
+    store.loadSession.mockReset();
 
     (globalThis as unknown as { navigator: { mediaDevices: unknown } }).navigator.mediaDevices = {
       getUserMedia: vi.fn().mockResolvedValue({
@@ -264,5 +276,276 @@ describe('Learning symbol-first and audio-first flows', () => {
     });
     await waitFor(() => expect(__startSession).toHaveBeenCalled());
     expect(__startSession.mock.calls[0][0].topic).toBe('audio conversation');
+  });
+
+  it('chat: sends a typed answer when a session is active', async () => {
+    const store = (await import('../src/store/learningStore')).__mockStore;
+    store.currentSession = { session_id: 99, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
+
+    render(<Learning />);
+    const input = screen.getByPlaceholderText('typeAnswer');
+    fireEvent.change(input, { target: { value: 'Red and blue' } });
+    fireEvent.submit(input.closest('form') as HTMLFormElement);
+
+    await waitFor(() => expect(__submitAnswer).toHaveBeenCalledWith(99, 'Red and blue'));
+  });
+
+  it('chat: asks to start a session first when none is active', async () => {
+    render(<Learning />);
+    const input = screen.getByPlaceholderText('typeAnswer');
+    fireEvent.change(input, { target: { value: 'Hello' } });
+    fireEvent.submit(input.closest('form') as HTMLFormElement);
+
+    expect(await screen.findByText('errors.startSessionFirst')).toBeInTheDocument();
+    expect(__submitAnswer).not.toHaveBeenCalled();
+  });
+
+  it('chat: requests a new question manually for an active session', async () => {
+    const store = (await import('../src/store/learningStore')).__mockStore;
+    store.currentSession = { session_id: 99, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
+
+    render(<Learning />);
+    fireEvent.click(await screen.findByRole('button', { name: 'newQuestion' }));
+
+    await waitFor(() => expect(store.askQuestion).toHaveBeenCalledWith(99, undefined));
+  });
+
+  it('chat: ends the session through the confirmation dialog', async () => {
+    const store = (await import('../src/store/learningStore')).__mockStore;
+    store.currentSession = { session_id: 99, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
+
+    render(<Learning />);
+    fireEvent.click(await screen.findByRole('button', { name: 'endSession' }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getAllByRole('button', { name: 'endSession' })[1]);
+
+    await waitFor(() => expect(store.endSession).toHaveBeenCalledWith(99));
+  });
+
+  it('history: loads a past session from the history panel', async () => {
+    const store = (await import('../src/store/learningStore')).__mockStore;
+    store.sessionHistory = [
+      {
+        id: 5,
+        topic: 'Colors',
+        created_at: '2026-01-01T00:00:00Z',
+        status: 'completed',
+        comprehension_score: 0.8,
+      },
+    ];
+
+    render(<Learning />);
+    fireEvent.click(screen.getByText('showHistory'));
+    fireEvent.click(await screen.findByTestId('learning-history-item'));
+
+    await waitFor(() => expect(store.loadSession).toHaveBeenCalledWith(5));
+  });
+
+  it('header: announces a provider switch from the provider history', async () => {
+    const store = (await import('../src/store/learningStore')).__mockStore;
+    store.providerHistory = [{ provider: 'openrouter', model: 'gpt-4o-mini' }];
+
+    render(<Learning />);
+
+    expect(await screen.findByText('Switched to OpenRouter')).toBeInTheDocument();
+  });
+
+  it('voice: speaks the last assistant message through the TTS queue', async () => {
+    const store = (await import('../src/store/learningStore')).__mockStore;
+    store.messages = [{ role: 'assistant', content: 'Hello there' }];
+
+    render(<Learning />);
+
+    await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledWith('Hello there', { rate: 0.9 }));
+  });
+
+  it('voice: ignores non-assistant messages for TTS', async () => {
+    const store = (await import('../src/store/learningStore')).__mockStore;
+    store.messages = [{ role: 'user', content: 'Hello there' }];
+
+    render(<Learning />);
+
+    await waitFor(() => expect(screen.getByText('Hello there')).toBeInTheDocument());
+    expect(mockTtsEnqueue).not.toHaveBeenCalled();
+  });
+
+  it('chat: ignores an empty message', async () => {
+    const store = (await import('../src/store/learningStore')).__mockStore;
+    store.currentSession = { session_id: 99, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
+
+    render(<Learning />);
+    const input = screen.getByPlaceholderText('typeAnswer');
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.submit(input.closest('form') as HTMLFormElement);
+
+    await waitFor(() => expect(__submitAnswer).not.toHaveBeenCalled());
+  });
+
+  it('chat: does not request a question while loading', async () => {
+    const store = (await import('../src/store/learningStore')).__mockStore;
+    store.currentSession = { session_id: 99, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
+    store.isLoading = true;
+
+    render(<Learning />);
+    fireEvent.click(await screen.findByRole('button', { name: 'newQuestion' }));
+
+    expect(store.askQuestion).not.toHaveBeenCalled();
+  });
+
+  it('chat: does not end the session while loading', async () => {
+    const store = (await import('../src/store/learningStore')).__mockStore;
+    store.currentSession = { session_id: 99, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
+    store.isLoading = true;
+
+    render(<Learning />);
+    fireEvent.click(await screen.findByRole('button', { name: 'endSession' }));
+
+    expect(store.endSession).not.toHaveBeenCalled();
+  });
+
+  it('symbol-first: shows a failure when the session does not start', async () => {
+    render(<Learning />);
+    fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+    const hello = await screen.findByText('Hello');
+    fireEvent.click(hello);
+    fireEvent.click(screen.getByText('sendSymbols'));
+
+    expect(await screen.findByText('errors.sessionStartFailed')).toBeInTheDocument();
+  });
+
+  it('symbol-first: falls back to an empty list when symbols fail to load', async () => {
+    const api = await getMockedApi();
+    api.get.mockImplementation((url: string) => {
+      if (url === '/boards/symbols') return Promise.reject(new Error('offline'));
+      return Promise.resolve({ data: [] });
+    });
+    render(<Learning />);
+    await act(async () => {
+      fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+    });
+
+    expect(await screen.findByPlaceholderText('search')).toBeInTheDocument();
+    expect(screen.queryByText('Hello')).not.toBeInTheDocument();
+  });
+
+  it('symbol-first: filters symbols by search text and core words', async () => {
+    const api = await getMockedApi();
+    api.get.mockImplementation((url: string) => {
+      if (url === '/boards/symbols') {
+        return Promise.resolve({
+          data: [
+            { id: 10, label: 'I', category: 'pronoun', image_path: '/uploads/symbols/i.png' },
+            { id: 11, label: 'Hello', category: 'greeting', image_path: null },
+            { id: 12, label: 'Bye', category: 'greeting', image_path: null },
+          ],
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    render(<Learning />);
+    await act(async () => {
+      fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+    });
+
+    const search = await screen.findByPlaceholderText('search');
+    await act(async () => {
+      fireEvent.change(search, { target: { value: 'hello' } });
+    });
+    // The core-words row always shows priority words like "I".
+    expect(screen.getByText('I')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('Bye')).not.toBeInTheDocument());
+    expect(screen.getByText('Hello')).toBeInTheDocument();
+  });
+
+  it('symbol-first: removes and clears symbols from the utterance', async () => {
+    render(<Learning />);
+    await act(async () => {
+      fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+    });
+    const hello = await screen.findByText('Hello');
+    await act(async () => {
+      fireEvent.click(hello);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Remove symbol'));
+    });
+    expect(screen.queryByLabelText('Remove symbol')).not.toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(hello);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText('clear'));
+    });
+    expect(screen.queryByLabelText('Remove symbol')).not.toBeInTheDocument();
+  });
+
+  it('header: toggles voice input', async () => {
+    render(<Learning />);
+
+    await act(async () => {
+      fireEvent.click(await screen.findByTitle('Disable voice input'));
+    });
+
+    expect(await screen.findByTitle('Enable voice input')).toBeInTheDocument();
+  });
+
+  it('symbol-first: filters by the food category including drinks', async () => {
+    const api = await getMockedApi();
+    api.get.mockImplementation((url: string) => {
+      if (url === '/boards/symbols') {
+        return Promise.resolve({
+          data: [
+            { id: 10, label: 'Apple', category: 'food', image_path: null },
+            { id: 11, label: 'Water', category: 'drinks', image_path: null },
+            { id: 12, label: 'Hello', category: 'greeting', image_path: null },
+          ],
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    render(<Learning />);
+    await act(async () => {
+      fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+    });
+
+    await screen.findByText('Apple');
+    await act(async () => {
+      fireEvent.click(screen.getByText('categories.food'));
+    });
+
+    await waitFor(() => expect(screen.queryByText('Hello')).not.toBeInTheDocument());
+    expect(screen.getByText('Apple')).toBeInTheDocument();
+    expect(screen.getByText('Water')).toBeInTheDocument();
+  });
+
+  it('symbol-first: orders core words by priority', async () => {
+    const api = await getMockedApi();
+    api.get.mockImplementation((url: string) => {
+      if (url === '/boards/symbols') {
+        return Promise.resolve({
+          data: [
+            { id: 10, label: 'want', category: 'verb', image_path: null },
+            { id: 11, label: 'I', category: 'pronoun', image_path: '/uploads/symbols/i.png' },
+            { id: 12, label: 'zebra', category: 'animal', image_path: null },
+          ],
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    render(<Learning />);
+    await act(async () => {
+      fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+    });
+
+    await screen.findAllByText('I');
+    await screen.findAllByText('want');
+    const coreButtons = screen.getAllByRole('button').filter((button) =>
+      ['I', 'want'].includes(button.textContent ?? ''),
+    );
+    // The core-words row renders before the symbol grid, so its two entries
+    // come first and must follow the priority order (I before want).
+    expect(coreButtons.slice(0, 2).map((button) => button.textContent)).toEqual(['I', 'want']);
   });
 });

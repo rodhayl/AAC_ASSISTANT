@@ -231,6 +231,11 @@ export function BoardEditor() {
 
   const handleSaveSettings = async () => {
     if (!currentBoard) return;
+    const trimmedBoardName = boardName.trim();
+    if (!trimmedBoardName) {
+      addToast(t('boardNameRequired', 'Board name is required'), 'error');
+      return;
+    }
     if (aiEnabled && (!resolvedProvider || !resolvedModel)) {
       setAiConfigError(t('aiConfigIncomplete'));
       return;
@@ -238,7 +243,7 @@ export function BoardEditor() {
 
     try {
       await updateBoard(currentBoard.id, {
-        name: boardName,
+        name: trimmedBoardName,
         description: boardDescription,
         category: boardCategory,
         ai_enabled: aiEnabled,

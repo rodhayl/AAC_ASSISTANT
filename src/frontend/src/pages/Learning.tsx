@@ -229,7 +229,9 @@ export function Learning() {
   };
 
   const sendSymbolUtterance = async () => {
-    if (symbolUtterance.length === 0 || isLoading || !user) return;
+    // The send button is disabled whenever the utterance is empty, loading is
+    // in progress, or a session is starting, so no guard is needed for those.
+    if (!user) return;
     let sessionId = currentSession?.session_id;
 
     if (!sessionId) {

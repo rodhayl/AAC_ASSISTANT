@@ -37,7 +37,7 @@ async function readStoredToken(page: Page): Promise<string> {
 
 async function openAssignedCommunicationBoard(page: Page) {
   await page.goto('/communication');
-  const board = page.getByRole('button', { name: /General Communication/i }).first();
+  const board = page.getByRole('button', { name: /Comunicación General/i }).first();
   await expect(board).toBeVisible({ timeout: 20000 });
   await board.click();
   await expect(page.getByTestId('sentence-strip')).toBeVisible();

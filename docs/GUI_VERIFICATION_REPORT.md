@@ -14,7 +14,7 @@ student1/Student123, teacher1/Teacher123), **build de producción** y
 | `GET /api/auth/setup-status` | `setup_required:false, has_admin:true` (BD sembrada) |
 | `POST /api/auth/token` ×3 (admin/student/teacher) | **200** los tres roles |
 | `GET /api/auth/me` | `admin1 / admin` |
-| `GET /api/boards/` | 3 tableros sembrados (General Communication, …) |
+| `GET /api/boards/` | 3 tableros sembrados (Comunicación General, …) |
 | `GET /api/boards/symbols?limit=3` | 3 símbolos core (cow, horse, chicken) |
 | `GET /api/learning-modes/` | endpoint 200 (0 modos sembrados) |
 | `GET /api/settings/ai` | configuración de provider servida |
@@ -99,7 +99,7 @@ nueva** y datos sembrados deterministas, no contra mocks.
 | `GET /api/auth/setup-status` | `setup_required:false, has_admin:true` (BD sembrada) |
 | `POST /api/auth/token` (admin1/Admin123) | Token JWT válido (257 chars) |
 | `GET /api/auth/me` | Usuario admin, `is_active:true` |
-| `GET /api/boards/` | 4 tableros sembrados (ej. "General Communication") |
+| `GET /api/boards/` | 4 tableros sembrados (ej. "Comunicación General") |
 | `GET /api/boards/symbols?limit=5` | 5 símbolos del core (cow, horse, chicken, apple…) |
 | `GET /api/learning-modes/` | 2 modos de aprendizaje |
 | `GET /api/settings/ai` | Configuración de provider servida |

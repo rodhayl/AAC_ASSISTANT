@@ -38,7 +38,7 @@ test.describe('Learning Page - Boards and Topics', () => {
         const topicSelect = page.locator('#comp-topic-select');
 
         await expect(boardSelect).toBeVisible();
-        await boardSelect.selectOption({ label: 'General Communication' });
+    await boardSelect.selectOption({ label: 'Comunicación General' });
 
         await expect(topicSelect).toBeVisible();
         // "daily" is one of the client-side common topics.
@@ -50,7 +50,7 @@ test.describe('Learning Page - Boards and Topics', () => {
         // The saved topic lists the translated topic and the real board name.
         const listArea = page.locator('.space-y-2').last();
         await expect(listArea.getByText(/Daily Routines|Rutinas Diarias/i).first()).toBeVisible();
-        await expect(listArea.getByText('General Communication').first()).toBeVisible();
+    await expect(listArea.getByText('Comunicación General').first()).toBeVisible();
 
         // --- Custom context + custom topic (client-side) ---
         await boardSelect.selectOption({ value: 'custom' });

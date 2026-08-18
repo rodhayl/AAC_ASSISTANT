@@ -135,6 +135,92 @@ describe('Setup Page', () => {
     });
   });
 
+  it('renders the form when the setup status request fails', async () => {
+    vi.mocked(api.get).mockRejectedValue(new Error('network down'));
+
+    render(
+      <MemoryRouter>
+        <Setup />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /crear cuenta de administrador|create administrator/i })).toBeInTheDocument();
+    });
+  });
+
+  it('shows a mismatch error when the passwords differ', async () => {
+    render(
+      <MemoryRouter>
+        <Setup />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /crear cuenta de administrador|create administrator/i })).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/^contraseña$|^password$/i), {
+      target: { value: 'ValidStrongPass123!' },
+    });
+    fireEvent.change(screen.getByLabelText(/confirmar contraseña|confirm password/i), {
+      target: { value: 'DifferentPass123!' },
+    });
+
+    fireEvent.submit(document.querySelector('form') as HTMLFormElement);
+
+    expect((await screen.findAllByText(/no coinciden|do not match/i)).length).toBeGreaterThan(0);
+  });
+
+  it('shows a length error when the password is too weak', async () => {
+    render(
+      <MemoryRouter>
+        <Setup />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /crear cuenta de administrador|create administrator/i })).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/^contraseña$|^password$/i), {
+      target: { value: 'short' },
+    });
+    fireEvent.change(screen.getByLabelText(/confirmar contraseña|confirm password/i), {
+      target: { value: 'short' },
+    });
+
+    fireEvent.submit(document.querySelector('form') as HTMLFormElement);
+
+    expect((await screen.findAllByText(/al menos 8|at least 8/i)).length).toBeGreaterThan(0);
+  });
+
+  it('updates the username, display name and email inputs', async () => {
+    render(
+      <MemoryRouter>
+        <Setup />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /crear cuenta de administrador|create administrator/i })).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/nombre de usuario|username/i), {
+      target: { value: 'custom-admin' },
+    });
+    fireEvent.change(screen.getByLabelText(/nombre visible|display name/i), {
+      target: { value: 'Custom Admin' },
+    });
+    fireEvent.change(screen.getByLabelText(/correo|email/i), {
+      target: { value: 'admin@example.com' },
+    });
+
+    expect(screen.getByLabelText(/nombre de usuario|username/i)).toHaveValue('custom-admin');
+    expect(screen.getByLabelText(/nombre visible|display name/i)).toHaveValue('Custom Admin');
+    expect(screen.getByLabelText(/correo|email/i)).toHaveValue('admin@example.com');
+  });
+
   it('automatically redirects Login to /setup when setup is required', async () => {
     vi.mocked(api.get).mockResolvedValue({
       data: { setup_required: true, has_admin: false, app_name: 'AAC Assistant', app_version: '2.0.0' },

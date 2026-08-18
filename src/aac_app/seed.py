@@ -27,6 +27,9 @@ from src.aac_app.services.achievement_catalog import (
 from src.aac_app.services.auth_service import password_strength_error
 from src.aac_app.services.credential_service import mark_credentials_changed
 
+DEFAULT_COMMUNICATION_BOARD_NAME = "Comunicación General"
+LEGACY_COMMUNICATION_BOARD_NAME = "General Communication"
+
 
 def _env_flag(name: str, default: bool = False) -> bool:
     """Read a boolean environment flag."""
@@ -59,6 +62,7 @@ def init_database(*, ensure_schema: bool = True) -> None:
         _create_sample_symbols(session)
         _create_sample_achievements(session)
         _ensure_bootstrap_admin(session)
+        _rename_legacy_default_board(session)
 
         if _env_flag("AAC_SEED_SAMPLE_DATA", default=False):
             _create_sample_users(session)
@@ -135,6 +139,25 @@ def _ensure_bootstrap_admin(session: Session) -> None:
     session.flush()
 
 
+def _rename_legacy_default_board(session: Session) -> None:
+    """Rename only the untouched legacy demo template, once."""
+    admin = session.query(User).filter(User.username == "admin1").first()
+    if admin is None:
+        return
+    board = (
+        session.query(CommunicationBoard)
+        .filter(
+            CommunicationBoard.user_id == admin.id,
+            CommunicationBoard.name == LEGACY_COMMUNICATION_BOARD_NAME,
+            CommunicationBoard.is_template.is_(True),
+        )
+        .first()
+    )
+    if board is not None:
+        board.name = DEFAULT_COMMUNICATION_BOARD_NAME
+        logger.info("Renamed legacy demo board to {}", DEFAULT_COMMUNICATION_BOARD_NAME)
+
+
 def _create_sample_boards(session: Session) -> None:
     """Create the demo communication board and its student assignment."""
     admin = session.query(User).filter(User.username == "admin1").first()
@@ -147,13 +170,27 @@ def _create_sample_boards(session: Session) -> None:
         session.query(CommunicationBoard)
         .filter(
             CommunicationBoard.user_id == admin.id,
-            CommunicationBoard.name == "General Communication",
+            CommunicationBoard.name == DEFAULT_COMMUNICATION_BOARD_NAME,
         )
         .first()
     )
     if board is None:
+        # Migrate only the untouched demo board created by older versions.
+        # A user-created board that was renamed must never be overwritten.
+        board = (
+            session.query(CommunicationBoard)
+            .filter(
+                CommunicationBoard.user_id == admin.id,
+                CommunicationBoard.name == LEGACY_COMMUNICATION_BOARD_NAME,
+                CommunicationBoard.is_template.is_(True),
+            )
+            .first()
+        )
+        if board is not None:
+            board.name = DEFAULT_COMMUNICATION_BOARD_NAME
+    if board is None:
         board = CommunicationBoard(
-            name="General Communication",
+            name=DEFAULT_COMMUNICATION_BOARD_NAME,
             description="Basic vocabulary board with common symbols",
             user_id=admin.id,
             is_public=True,

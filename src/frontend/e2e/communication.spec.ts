@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 // Real-backend verification of the core AAC flow (no page.route mocks).
-// A student opens the seeded "General Communication" board (auto-assigned by
+// A student opens the seeded "Comunicación General" board (auto-assigned by
 // the sample seed) and drives the full sentence-building lifecycle, so symbol
 // selection -> sentence construction -> reordering/backspace/clear/speak are
 // exercised end-to-end against the production API.
@@ -16,7 +16,7 @@ test.describe('Communication', () => {
   async function openBoard(page: import('@playwright/test').Page) {
     await page.goto('/communication');
 
-    const board = page.getByRole('button', { name: /General Communication/ }).first();
+  const board = page.getByRole('button', { name: /Comunicación General/ }).first();
     await expect(board).toBeVisible();
     await board.click();
 
