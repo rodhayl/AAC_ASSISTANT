@@ -10,6 +10,20 @@ class ArasaacService:
     def __init__(self):
         self.client = httpx.AsyncClient(timeout=10.0)
 
+    async def list_all_symbols(self, locale: str = "es") -> list[dict]:
+        """
+        List every pictogram available for a locale.
+
+        The full catalog response is much larger than a search result, so it
+        uses its own client with a longer timeout instead of the shared
+        short-timeout client used for searches and single downloads.
+        """
+        url = f"{ARASAAC_API_BASE}/pictograms/all/{locale}"
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            return response.json()
+
     async def search_symbols(self, query: str, locale: str = "es") -> list[dict]:
         """
         Search for symbols in ARASAAC.
@@ -64,6 +78,19 @@ class ArasaacService:
                 url = f"{ARASAAC_IMAGE_BASE}/{arasaac_id}/{arasaac_id}_500.png"
                 response = await self.client.get(url)
 
+            response.raise_for_status()
+            return response.content
+        except Exception as e:
+            logger.error(f"Failed to download ARASAAC image {arasaac_id}: {e}")
+            return None
+
+    async def download_symbol_image_500(self, arasaac_id: int) -> bytes | None:
+        """
+        Download the 500px pictogram used for card and board display.
+        """
+        url = f"{ARASAAC_IMAGE_BASE}/{arasaac_id}/{arasaac_id}_500.png"
+        try:
+            response = await self.client.get(url)
             response.raise_for_status()
             return response.content
         except Exception as e:
