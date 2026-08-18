@@ -69,6 +69,7 @@ export function AiProviderFields({
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-gray-700">{t('ai.models')}</label>
               <button
+                type="button"
                 onClick={onFetchModels}
                 disabled={loading}
                 className="flex items-center space-x-1 text-indigo-600 hover:text-indigo-700 text-sm font-medium disabled:opacity-50"
@@ -86,6 +87,15 @@ export function AiProviderFields({
                 setModelSearchQuery(event.target.value);
                 setModelSearchOpen(true);
               }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                const model = ollamaModels.find((candidate) => candidate.name === modelSearchQuery.trim());
+                if (model) {
+                  setAiOverride((prev) => ({ ...prev, ollama_model: model.name }));
+                  setModelSearchQuery('');
+                  setModelSearchOpen(false);
+                }
+              }}
               onFocus={() => setModelSearchOpen(true)}
               placeholder={t('ai.searchModels')}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
@@ -97,6 +107,7 @@ export function AiProviderFields({
                   .filter((model) => model.name.toLowerCase().includes(modelSearchQuery.toLowerCase()))
                   .map((model) => (
                     <button
+                      type="button"
                       key={model.name}
                       onClick={() => {
                         setAiOverride((prev) => ({ ...prev, ollama_model: model.name }));
@@ -148,6 +159,7 @@ export function AiProviderFields({
                 {t('ai.models', 'Available Models')}
               </label>
               <button
+                type="button"
                 onClick={onFetchModels}
                 disabled={loading || !openRouterApiKey}
                 className="flex items-center space-x-1 text-indigo-600 hover:text-indigo-700 text-sm font-medium disabled:opacity-50"
@@ -165,6 +177,15 @@ export function AiProviderFields({
                 setModelSearchQuery(event.target.value);
                 setModelSearchOpen(true);
               }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                const model = openRouterModels.find((candidate) => candidate.id === modelSearchQuery.trim());
+                if (model) {
+                  setAiOverride((prev) => ({ ...prev, openrouter_model: model.id }));
+                  setModelSearchQuery('');
+                  setModelSearchOpen(false);
+                }
+              }}
               onFocus={() => setModelSearchOpen(true)}
               placeholder={t('ai.searchModels')}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
@@ -180,6 +201,7 @@ export function AiProviderFields({
                   )
                   .map((model) => (
                     <button
+                      type="button"
                       key={model.id}
                       onClick={() => {
                         setAiOverride((prev) => ({ ...prev, openrouter_model: model.id }));
@@ -221,6 +243,7 @@ export function AiProviderFields({
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-gray-700">{t('ai.models')}</label>
               <button
+                type="button"
                 onClick={onFetchModels}
                 disabled={loading}
                 className="flex items-center space-x-1 text-indigo-600 hover:text-indigo-700 text-sm font-medium disabled:opacity-50"

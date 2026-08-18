@@ -110,6 +110,21 @@ describe('AiProviderTab', () => {
     expect(screen.getByText((content, element) => element?.textContent === 'LM Studio: down')).toBeInTheDocument();
   });
 
+  it('persists provider changes without requiring a second save action', async () => {
+    render(<AiProviderTab />);
+
+    fireEvent.click(screen.getByText('OpenRouter'));
+
+    await waitFor(() => {
+      expect(settingsState.updateAISettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'openrouter',
+          ollama_model: 'qwen:7b-q4_0',
+        }),
+      );
+    });
+  });
+
   it('shows OpenRouter API key guidance when OpenRouter is selected without a key', async () => {
     get.mockResolvedValueOnce({
       data: {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, Cloud, Cpu } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
@@ -30,6 +30,7 @@ export function AiProviderTab() {
   const [modelSearchOpen, setModelSearchOpen] = useState(false);
   const [modelSearchQuery, setModelSearchQuery] = useState('');
   const [health, setHealth] = useState<ProviderHealth | null>(null);
+  const lastSavedSettingsRef = useRef('');
   const [readOnlyState, setReadOnlyState] = useState<{
     requestKey: string;
     settings: AISettings | null;
@@ -175,24 +176,47 @@ export function AiProviderTab() {
     }
   };
 
-  const handleSaveAllSettings = async () => {
+  const buildSettingsPayload = useCallback((overrides: AiOverride) => ({
+    provider: overrides.provider ?? aiSettings?.provider ?? 'ollama',
+    ollama_model: overrides.ollama_model ?? aiSettings?.ollama_model ?? '',
+    openrouter_model: overrides.openrouter_model ?? aiSettings?.openrouter_model ?? '',
+    lmstudio_model: overrides.lmstudio_model ?? aiSettings?.lmstudio_model ?? '',
+    openrouter_api_key: overrides.openrouter_api_key ?? aiSettings?.openrouter_api_key ?? '',
+    ollama_base_url: overrides.ollama_base_url ?? aiSettings?.ollama_base_url ?? config.OLLAMA_BASE_URL,
+    lmstudio_base_url: overrides.lmstudio_base_url ?? aiSettings?.lmstudio_base_url ?? 'http://localhost:1234/v1',
+    max_tokens: overrides.max_tokens ?? aiSettings?.max_tokens ?? 1024,
+    temperature: overrides.temperature ?? aiSettings?.temperature ?? 0.5,
+  }), [aiSettings]);
+
+  const persistSettings = useCallback(async (overrides: AiOverride) => {
+    const payload = buildSettingsPayload(overrides);
+    const signature = JSON.stringify(payload);
+    lastSavedSettingsRef.current = signature;
     try {
-      await updateAISettings({
-        provider: currentAiProvider,
-        ollama_model: currentOllamaModel,
-        openrouter_model: currentOpenRouterModel,
-        lmstudio_model: currentLmStudioModel,
-        openrouter_api_key: currentOpenRouterApiKey,
-        ollama_base_url: currentOllamaBaseUrl,
-        lmstudio_base_url: currentLmStudioBaseUrl,
-        max_tokens: currentMaxTokens,
-        temperature: currentTemperature,
-      });
+      await updateAISettings(payload);
       setSaveSuccess(true);
     } catch (err) {
+      if (lastSavedSettingsRef.current === signature) {
+        lastSavedSettingsRef.current = '';
+      }
       console.error('Failed to save settings:', err);
     }
-  };
+  }, [buildSettingsPayload, updateAISettings]);
+
+  useEffect(() => {
+    if (!isAdmin || Object.keys(aiOverride).length === 0) return;
+
+    const payload = buildSettingsPayload(aiOverride);
+    const signature = JSON.stringify(payload);
+    if (signature === lastSavedSettingsRef.current) return;
+
+    // Persist every AI change after a short pause, including model selection,
+    // so controls cannot remain as unsaved local state.
+    const timer = setTimeout(() => {
+      void persistSettings(aiOverride);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [aiOverride, buildSettingsPayload, isAdmin, persistSettings]);
 
   const checkHealth = async () => {
     try {
@@ -284,6 +308,7 @@ export function AiProviderTab() {
           <p className="block text-sm font-medium text-gray-700 mb-3">{t('ai.primary')}</p>
           <div className="grid grid-cols-2 gap-4">
             <button
+              type="button"
               onClick={() => setAiOverride((prev) => ({ ...prev, provider: 'ollama' }))}
               className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${
                 currentAiProvider === 'ollama'
@@ -298,6 +323,7 @@ export function AiProviderTab() {
               </div>
             </button>
             <button
+              type="button"
               onClick={() => setAiOverride((prev) => ({ ...prev, provider: 'openrouter' }))}
               className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${
                 currentAiProvider === 'openrouter'
@@ -312,6 +338,7 @@ export function AiProviderTab() {
               </div>
             </button>
             <button
+              type="button"
               onClick={() => setAiOverride((prev) => ({ ...prev, provider: 'lmstudio' }))}
               className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${
                 currentAiProvider === 'lmstudio'
@@ -350,7 +377,7 @@ export function AiProviderTab() {
         />
 
         <div className="flex items-center gap-2 pt-4 border-t border-gray-200">
-          <button onClick={checkHealth} className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg">
+          <button type="button" onClick={checkHealth} className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg">
             {t('ai.health')}
           </button>
         </div>
@@ -377,13 +404,9 @@ export function AiProviderTab() {
         )}
 
         <div className="flex justify-end pt-6 border-t border-gray-200">
-          <button
-            onClick={handleSaveAllSettings}
-            disabled={loading}
-            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-          >
-            {loading ? 'Saving...' : 'Save AI Settings'}
-          </button>
+          <p className="text-sm text-gray-500">
+            {t('ai.autoSave', 'AI settings are saved automatically.')}
+          </p>
         </div>
       </div>
     </section>
