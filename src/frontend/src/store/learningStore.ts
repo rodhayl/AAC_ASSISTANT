@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import api, { extractError } from '../lib/api';
+import i18n from '../i18n/index';
 import { useAuthStore } from './authStore';
 import type {
   LearningSessionStart,
@@ -100,6 +101,14 @@ interface LearningState {
   resetSession: () => void;
 }
 
+// Translate a learning-namespace fallback string. Guards on i18n being
+// initialized: before init (e.g. unit tests that import the store directly)
+// i18next returns the raw key instead of the default value, so fall back to
+// the caller-provided text to keep messages deterministic.
+function tLearning(key: string, fallback: string): string {
+  return i18n.isInitialized ? i18n.t(key, fallback) : fallback;
+}
+
 // Strip model reasoning from text - lightweight fallback for legacy data
 // With backend JSON mode, this should rarely be needed
 export function stripReasoning(text: string): string {
@@ -136,7 +145,7 @@ function buildAssistantReply(
     '';
 
   if (includeReasoning) {
-    const base = primaryRaw || 'Answer received';
+    const base = primaryRaw || tLearning('learning:answerReceived', 'Answer received');
     if (payload.full_thinking) {
       return `${base}\n\n[debug] ${payload.full_thinking}`.trim();
     }
@@ -144,7 +153,7 @@ function buildAssistantReply(
   }
 
   const cleaned = stripReasoning(primaryRaw);
-  return cleaned || 'Answer received';
+  return cleaned || tLearning('learning:answerReceived', 'Answer received');
 }
 
 function formatAssistantContent(content: string | undefined, includeReasoning: boolean): string {
@@ -426,7 +435,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
             ...(get().progressStats ?? {}),
             difficulty: question.difficulty ?? get().progressStats?.difficulty,
           },
-          messages: [...prev, { role: 'assistant' as const, content: formatAssistantContent(question.question_text || 'Question ready', showReasoning) }],
+          messages: [...prev, { role: 'assistant' as const, content: formatAssistantContent(question.question_text || tLearning('learning:questionReady', 'Question ready'), showReasoning) }],
           isLoading: false
         });
         const questionWithProvider = question as QuestionResponse & WithProvider
@@ -500,7 +509,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
         result,
         'Failed to submit voice answer',
         result.transcription || '[voice]',
-        `[voice] ${result.transcription || 'Audio message'}`,
+        `[voice] ${result.transcription || tLearning('learning:audioMessage', 'Audio message')}`,
       );
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;

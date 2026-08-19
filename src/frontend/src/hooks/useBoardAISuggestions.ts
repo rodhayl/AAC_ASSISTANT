@@ -203,7 +203,7 @@ export function useBoardAISuggestions({
           successCount += 1;
         } catch (error: unknown) {
           if (!isCurrentApply()) return;
-          failures.push(`${item.label}: ${extractError(error, 'unknown error')}`);
+          failures.push(`${item.label}: ${extractError(error, t('unknownError', 'Unknown error'))}`);
         }
       }
       if (!isCurrentApply()) return;
@@ -235,7 +235,6 @@ export function useBoardAISuggestions({
     applyId,
     refinePrompt,
     applyAllLoading,
-    setAiError,
     setRefinePrompt,
     loadAISuggestions,
     handleRefine,

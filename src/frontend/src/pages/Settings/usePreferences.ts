@@ -4,6 +4,7 @@ import { useLocaleStore } from '../../store/localeStore';
 import { useThemeStore } from '../../store/themeStore';
 import { useTTSStore } from '../../store/ttsStore';
 import api from '../../lib/api';
+import { normalizeUILanguage } from '../../lib/utils';
 import { useToastStore } from '../../store/toastStore';
 import { useTranslation } from 'react-i18next';
 import type { Preferences } from './types';
@@ -12,7 +13,7 @@ const defaultPreferences = (user: ReturnType<typeof useAuthStore.getState>['user
   tts_provider: user?.settings?.tts_provider === 'browser' ? 'browser' : 'kokoro',
   tts_voice: user?.settings?.tts_voice || 'default',
   tts_local_voice: user?.settings?.tts_local_voice || 'default',
-  ui_language: user?.settings?.ui_language || 'es-ES',
+  ui_language: normalizeUILanguage(user?.settings?.ui_language),
   notifications_enabled: user?.settings?.notifications_enabled ?? true,
   voice_mode_enabled: user?.settings?.voice_mode_enabled ?? true,
   dark_mode: user?.settings?.dark_mode ?? false,
@@ -49,7 +50,7 @@ export function usePreferences() {
         if (userEditedRef.current) return;
         const voice = res.data.tts_voice || 'default';
         const darkMode = res.data.dark_mode ?? false;
-        const language = res.data.ui_language || 'es-ES';
+        const language = normalizeUILanguage(res.data.ui_language);
 
         setPreferencesState({
           tts_provider: res.data.tts_provider === 'browser' ? 'browser' : 'kokoro',

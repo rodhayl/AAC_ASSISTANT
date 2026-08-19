@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { Trophy, Star, Lock, CheckCircle, Settings, Plus, Pencil, Trash2, Award, X, Users } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import api, { extractError } from '../lib/api'
 import type { Achievement, AchievementFull, User } from '../types'
 import { useTranslation } from 'react-i18next'
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap'
 
 interface AchievementFormData {
   name: string;
@@ -17,6 +18,20 @@ interface AchievementFormData {
 }
 
 const EMOJI_OPTIONS = ['🏆', '⭐', '🎯', '🔥', '📚', '⚡', '🌟', '🎤', '📖', '💪', '🎨', '🎮', '🚀', '💎', '👑'];
+
+// Maps the canonical English name of a seeded system achievement to its stable
+// catalog key so the name/description can be localized in the UI without a
+// database migration. Custom or renamed achievements keep their stored text.
+const SYSTEM_ACHIEVEMENT_KEYS: Record<string, string> = {
+  'First Steps': 'first_steps',
+  'Vocabulary Explorer': 'vocabulary_explorer',
+  'Quick Learner': 'quick_learner',
+  'Comprehension Champion': 'comprehension_champion',
+  'Streak Master': 'streak_master',
+  'Dedicated Learner': 'dedicated_learner',
+  'Topic Expert': 'topic_expert',
+  'Voice Pioneer': 'voice_pioneer',
+};
 
 export function Achievements() {
   const user = useAuthStore((state) => state.user)
@@ -46,6 +61,17 @@ export function Achievements() {
     criteria_value: null,
   })
   const { t } = useTranslation('achievements')
+
+  const localizeAchievementName = (name: string) => {
+    const key = SYSTEM_ACHIEVEMENT_KEYS[name]
+    return key ? t(`systemAchievements.${key}.name`, name) : name
+  }
+
+  const localizeAchievementDescription = (name: string, description: string) => {
+    const key = SYSTEM_ACHIEVEMENT_KEYS[name]
+    return key ? t(`systemAchievements.${key}.description`, description) : description
+  }
+
   const filteredStudents = useMemo(() => {
     const search = studentSearch.trim().toLowerCase()
     if (!search) return students
@@ -69,11 +95,11 @@ export function Achievements() {
       setAchievements(achRes.data)
       setPoints(ptsRes.data)
     } catch (e: unknown) {
-      setError(extractError(e, 'Failed to load achievements'))
+      setError(extractError(e, t('errors.loadFailed', { defaultValue: 'Failed to load achievements' })))
     } finally {
       setLoading(false)
     }
-  }, [user])
+  }, [user, t])
 
   const loadManagementData = useCallback(async () => {
     setError(null)
@@ -114,7 +140,7 @@ export function Achievements() {
       await api.post(`/achievements/user/${user.id}/check`)
       await loadData()
     } catch (e: unknown) {
-      setError(extractError(e, 'Failed to check achievements'))
+      setError(extractError(e, t('errors.checkFailed', { defaultValue: 'Failed to check achievements' })))
     } finally {
       setLoading(false)
     }
@@ -152,14 +178,26 @@ export function Achievements() {
     }
   }
 
-  const handleDelete = async (id: number) => {
-    if (!confirm(t('confirmDelete', 'Are you sure you want to delete this achievement?'))) return
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const confirmDeleteAchievement = async () => {
+    if (pendingDeleteId == null) return
+    setIsDeleting(true)
     try {
-      await api.delete(`/achievements/${id}`)
+      await api.delete(`/achievements/${pendingDeleteId}`)
+      setPendingDeleteId(null)
       void loadManagementData()
     } catch (e: unknown) {
       setError(extractError(e, t('errors.deleteFailed', { defaultValue: 'Failed to delete achievement' })))
+      setPendingDeleteId(null)
+    } finally {
+      setIsDeleting(false)
     }
+  }
+
+  const handleDelete = (id: number) => {
+    setPendingDeleteId(id)
   }
 
   const handleAward = async () => {
@@ -170,8 +208,9 @@ export function Achievements() {
       setSelectedStudentId(null)
       void loadManagementData()
     } catch (e: unknown) {
-      const msg = extractError(e, 'Failed to award')
-      alert(msg)
+      // Surface the failure in the shared error banner instead of a native
+      // alert() so the experience matches the rest of the app.
+      setError(extractError(e, t('errors.awardFailed', { defaultValue: 'Failed to award achievement' })))
     }
   }
 
@@ -206,6 +245,23 @@ export function Achievements() {
   const resetForm = () => {
     setFormData({ name: '', description: '', category: 'custom', points: 10, icon: '🏆', target_user_id: null, criteria_type: null, criteria_value: null })
   }
+
+  const editorDialogRef = useRef<HTMLDivElement | null>(null)
+  const awardDialogRef = useRef<HTMLDivElement | null>(null)
+  const deleteDialogRef = useRef<HTMLDivElement | null>(null)
+
+  useModalFocusTrap(editorDialogRef, showModal, () => {
+    setShowModal(false)
+    setEditingAchievement(null)
+    resetForm()
+  })
+  useModalFocusTrap(awardDialogRef, showAwardModal, () => {
+    setShowAwardModal(false)
+    setAwardingAchievementId(null)
+  })
+  useModalFocusTrap(deleteDialogRef, pendingDeleteId != null, () => setPendingDeleteId(null))
+
+  const nameIsEmpty = !formData.name.trim()
 
   return (
     <div className="space-y-6">
@@ -275,8 +331,8 @@ export function Achievements() {
                 {allAchievements.map(a => (
                   <tr key={a.id} className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <td className="px-4 py-3 text-2xl">{a.icon}</td>
-                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{a.name}</td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{a.category}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{localizeAchievementName(a.name)}</td>
+                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{t(`categories.${a.category}`, a.category)}</td>
                     <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{a.points}</td>
                     <td className="px-4 py-3">
                       <span className={`text-xs px-2 py-1 rounded ${a.created_by ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}>
@@ -285,7 +341,7 @@ export function Achievements() {
                       {a.is_manual ? (
                         <span className="ml-2 text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300">{t('manual', 'Manual')}</span>
                       ) : (
-                        <span className="ml-2 text-xs px-2 py-1 rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300" title={`${a.criteria_type}: ${a.criteria_value}`}>
+                        <span className="ml-2 text-xs px-2 py-1 rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300" title={`${t(`criteria.${a.criteria_type}`, a.criteria_type ?? '')}: ${a.criteria_value}`}>
                           {t('auto', 'Auto')}
                         </span>
                       )}
@@ -327,11 +383,11 @@ export function Achievements() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {achievements.map((a, i) => {
+          {achievements.map((a) => {
             const isUnlocked = !!a.earned_at;
             return (
               <div
-                key={i}
+                key={a.name}
                 className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 relative overflow-hidden transition-all ${!isUnlocked ? 'opacity-70 grayscale' : ''}`}
               >
                 {!isUnlocked && (
@@ -350,11 +406,11 @@ export function Achievements() {
                     <span>{a.icon}</span>
                   </div>
                   <div>
-                    <p className="font-semibold text-gray-900 dark:text-gray-100">{a.name}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{a.category}</p>
+                    <p className="font-semibold text-gray-900 dark:text-gray-100">{localizeAchievementName(a.name)}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{t(`categories.${a.category}`, a.category)}</p>
                   </div>
                 </div>
-                <p className="text-gray-700 dark:text-gray-300 text-sm mb-4">{a.description}</p>
+                <p className="text-gray-700 dark:text-gray-300 text-sm mb-4">{localizeAchievementDescription(a.name, a.description)}</p>
 
                 {isUnlocked ? (
                   <p className="text-xs text-green-600 dark:text-green-400 font-medium">
@@ -381,6 +437,7 @@ export function Achievements() {
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation">
           <div
+            ref={editorDialogRef}
             className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-md mx-4"
             role="dialog"
             aria-modal="true"
@@ -410,7 +467,7 @@ export function Achievements() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('name', 'Name')}</label>
-                <input type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })}
+                <input type="text" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
               </div>
 
@@ -426,7 +483,7 @@ export function Achievements() {
                   <select value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
                     {categories.map(cat => (
-                      <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
+                      <option key={cat} value={cat}>{t(`categories.${cat}`, cat.charAt(0).toUpperCase() + cat.slice(1))}</option>
                     ))}
                   </select>
                 </div>
@@ -461,7 +518,7 @@ export function Achievements() {
                       <select value={formData.criteria_type} onChange={e => setFormData({ ...formData, criteria_type: e.target.value })}
                         className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
                         {criteriaTypes.map(ct => (
-                          <option key={ct} value={ct}>{ct.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}</option>
+                          <option key={ct} value={ct}>{t(`criteria.${ct}`, ct.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '))}</option>
                         ))}
                       </select>
                     </div>
@@ -495,7 +552,8 @@ export function Achievements() {
                 {t('cancel', 'Cancel')}
               </button>
               <button onClick={editingAchievement ? handleUpdate : handleCreate}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+                disabled={nameIsEmpty}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
                 {editingAchievement ? t('save', 'Save') : t('create', 'Create')}
               </button>
             </div>
@@ -507,6 +565,7 @@ export function Achievements() {
       {showAwardModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation">
           <div
+            ref={awardDialogRef}
             className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-sm mx-4"
             role="dialog"
             aria-modal="true"
@@ -518,6 +577,12 @@ export function Achievements() {
                 <X className="w-5 h-5" />
               </button>
             </div>
+            {allAchievements.find((a) => a.id === awardingAchievementId) && (
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 flex items-center gap-2">
+                <span className="text-xl">{allAchievements.find((a) => a.id === awardingAchievementId)!.icon}</span>
+                {localizeAchievementName(allAchievements.find((a) => a.id === awardingAchievementId)!.name)}
+              </p>
+            )}
 
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('selectStudent', 'Select Student')}</label>
@@ -559,6 +624,53 @@ export function Achievements() {
               <button onClick={handleAward} disabled={!selectedStudentId}
                 className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50">
                 {t('award', 'Award')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {pendingDeleteId != null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation">
+          <div
+            ref={deleteDialogRef}
+            className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-sm mx-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="achievement-delete-title"
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h3 id="achievement-delete-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                {t('deleteTitle', 'Delete Achievement')}
+              </h3>
+              <button onClick={() => setPendingDeleteId(null)} className="text-gray-400 hover:text-gray-600" aria-label={t('close', 'Close')}>
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
+              {t('confirmDelete', 'Are you sure you want to delete this achievement?')}
+            </p>
+            {allAchievements.find((a) => a.id === pendingDeleteId) && (
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+                <span className="text-xl">{allAchievements.find((a) => a.id === pendingDeleteId)!.icon}</span>
+                {localizeAchievementName(allAchievements.find((a) => a.id === pendingDeleteId)!.name)}
+              </p>
+            )}
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setPendingDeleteId(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+              >
+                {t('cancel', 'Cancel')}
+              </button>
+              <button
+                onClick={confirmDeleteAchievement}
+                disabled={isDeleting}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+              >
+                {t('delete', 'Delete')}
               </button>
             </div>
           </div>

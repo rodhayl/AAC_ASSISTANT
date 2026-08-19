@@ -36,10 +36,11 @@ vi.mock('lucide-react', () => ({
 }));
 
 // Mock translation
+const i18nLanguage = vi.hoisted(() => ({ current: 'en-US' }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, defaultVal: string) => defaultVal || key,
-    i18n: { language: 'en-US' },
+    i18n: { language: i18nLanguage.current },
   }),
   initReactI18next: {
     type: '3rdParty',
@@ -361,5 +362,44 @@ describe('KeyboardOverlay', () => {
     fireEvent.click(screen.getByText('Speak'));
 
     expect(onSpeak).toHaveBeenCalledWith('Hello World');
+  });
+
+  it('does not crash when the saved phrase history is corrupt', () => {
+    localStorage.setItem('aac_phrase_history', '{not valid json');
+    try {
+      render(
+        <KeyboardOverlay
+          isOpen={true}
+          onClose={vi.fn()}
+          onSpeak={vi.fn()}
+        />
+      );
+
+      // The overlay still renders and works.
+      expect(screen.getByPlaceholderText('Type something here...')).toBeInTheDocument();
+    } finally {
+      localStorage.removeItem('aac_phrase_history');
+    }
+  });
+
+  it('suggests words matching the active language', async () => {
+    i18nLanguage.current = 'es';
+    try {
+      render(
+        <KeyboardOverlay
+          isOpen={true}
+          onClose={vi.fn()}
+          onSpeak={vi.fn()}
+        />
+      );
+
+      const input = screen.getByPlaceholderText('Type something here...');
+      fireEvent.change(input, { target: { value: 'qui' } });
+
+      // Spanish list contains "quiero"; the English list has no "qui" word.
+      expect(screen.getByText('quiero')).toBeInTheDocument();
+    } finally {
+      i18nLanguage.current = 'en-US';
+    }
   });
 });

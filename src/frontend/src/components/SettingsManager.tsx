@@ -3,6 +3,7 @@ import { useAuthStore } from '../store/authStore';
 import { useLocaleStore } from '../store/localeStore';
 import { useThemeStore } from '../store/themeStore';
 import { useTTSStore } from '../store/ttsStore';
+import { normalizeUILanguage } from '../lib/utils';
 
 export function SettingsManager() {
   const user = useAuthStore(state => state.user);
@@ -26,9 +27,10 @@ export function SettingsManager() {
          setDarkMode(user.settings.dark_mode);
       }
 
-      // Apply Locale
+      // Apply Locale (normalize legacy short codes so the switcher select
+      // matches regardless of how the value was persisted)
       if (user.settings.ui_language) {
-        setLocale(user.settings.ui_language);
+        setLocale(normalizeUILanguage(user.settings.ui_language));
       }
       
       // Apply TTS Voice

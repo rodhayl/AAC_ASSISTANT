@@ -58,7 +58,13 @@
     "travel": "Travel & Transport",
     "hobbies": "Hobbies & Play",
     "health": "Health & Body",
-    "shopping": "Shopping"
+    "shopping": "Shopping",
+    "symbolConversation": "Symbol Conversation",
+    "audioConversation": "Audio Conversation"
+  },
+  "messageRole": {
+    "user": "You",
+    "assistant": "Assistant"
   },
   "selectTopic": "Select a topic...",
   "selectBoard": "Select a board...",
@@ -116,10 +122,40 @@
   "aiAssistant": "AI Assistant",
   "conversationPartner": "Conversation Partner",
   "panelSubtitle": "Practice questions, explanations, and conversational support",
-  "voiceOff": "Voice Off",
-  "difficulty": {
-    "basic": "Basic",
-    "intermediate": "Intermediate",
-    "advanced": "Advanced"
+  "voiceOff": "Voice Off",    "difficulty": {
+      "adaptive": "Adaptive",
+      "basic": "Basic",
+      "intermediate": "Intermediate",
+      "advanced": "Advanced"
+    },
+  "providerSwitched": "Switched to {{provider}}",
+  "toggleSymbolView": "Toggle symbol-first view",
+  "newQuestionTitle": "Get a new question",
+  "currentProvider": "Current AI provider",
+  "disableVoice": "Disable voice input",
+  "enableVoice": "Enable voice input",
+  "aiProviderLabel": "AI: {{provider}}",
+  "closeSummary": "Close summary",
+  "errorPrefix": "Error: {{message}}",
+  "endSessionTitle": "End this session and see a summary",
+  "startSessionLabel": "Start Session",
+  "stopRecordingLabel": "Stop recording",
+  "sendRecordingLabel": "Send recording",
+  "discardRecordingLabel": "Discard recording",
+  "startRecordingLabel": "Start recording",
+  "editSymbolMessage": "Edit symbol message",
+  "collapseSidebar": "Collapse sidebar",
+  "expandSidebar": "Expand sidebar",
+  "removeSymbolLabel": "Remove symbol",
+  "audioMessage": "Audio message",
+  "questionReady": "Question ready",
+  "chooseAnswer": "Choose an answer",
+  "editSymbols": "Edit symbols",
+  "newQuestion": "New question",
+  "modes": {
+    "practice": "Practice",
+    "quiz": "Quiz",
+    "conversation": "Conversation",
+    "roleplay": "Roleplay"
   }
 }

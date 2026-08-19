@@ -19,6 +19,8 @@ interface BoardEditorToolbarProps {
   onClear: () => void;
 }
 
+const GRID_PRESETS = ['2x2', '3x3', '4x4', '2x6', '4x5'];
+
 export function BoardEditorToolbar({
   boardName,
   showSuggestions,
@@ -106,6 +108,9 @@ export function BoardEditorToolbar({
             <option value="4x4">{t('grid4x4', '4x4')}</option>
             <option value="2x6">{t('grid2x6', '2x6')}</option>
             <option value="4x5">{t('grid4x5', '4x5')}</option>
+            {!GRID_PRESETS.includes(gridPreset) && (
+              <option value={gridPreset}>{gridPreset}</option>
+            )}
           </select>
         </div>
         <button

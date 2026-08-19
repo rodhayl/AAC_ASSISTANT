@@ -4,11 +4,13 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src import config
 from src.aac_app.models import Symbol, User, UserSettings
 from src.aac_app.services.arasaac import ArasaacService
+from src.aac_app.services.runtime_translation import normalize_language_code
 from src.aac_app.services.vector_utils import index_symbol
 from src.api import schemas
 from src.api.deps import get_current_active_user, get_db, get_text
@@ -71,8 +73,16 @@ async def import_arasaac_symbol(
     committed = False
     db_symbol = None
     try:
-        # Check if symbol already exists (optional, maybe by label or some external ID field if we added one)
-        # For now, we just allow duplicates or user manages them.
+        # Dedupe: link to an existing symbol with the same (case-folded) label
+        # instead of creating a duplicate row and downloading the image again.
+        # This mirrors the bulk library import, which also dedupes by label.
+        existing = (
+            db.query(Symbol)
+            .filter(func.lower(Symbol.label) == payload.label.strip().casefold())
+            .first()
+        )
+        if existing is not None:
+            return existing
 
         # Download image
         image_content = await service.download_symbol_image(payload.arasaac_id)
@@ -103,7 +113,9 @@ async def import_arasaac_symbol(
                 .filter(UserSettings.user_id == current_user.id)
                 .first()
             )
-            user_lang = settings.ui_language if settings else None
+            # Store the base code (e.g. "es") so it matches the language
+            # filter used by the symbol search (exact match against "es"/"en").
+            user_lang = normalize_language_code(settings.ui_language) if settings else None
         except Exception:
             user_lang = None
 

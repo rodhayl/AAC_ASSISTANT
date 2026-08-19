@@ -572,4 +572,27 @@ describe('Students page', () => {
     expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();
   });
+
+  it('closes the create-student modal with the Escape key', async () => {
+    const user = userEvent.setup();
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByRole('button', { name: /create/i }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('closes the guardian profile modal with the Escape key', async () => {
+    const user = userEvent.setup();
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByTitle('Guardian Profile'));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
 });

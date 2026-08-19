@@ -46,19 +46,22 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle }: Communication
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Auto-start session if none exists
+  // Auto-start session if none exists. A failed attempt resets the guard so a
+  // later state change (e.g. the user opening the chat again) retries instead
+  // of leaving the chat permanently without a session.
   useEffect(() => {
     if (!currentSession && user && !isLoading && !error && !initAttempted.current) {
       initAttempted.current = true;
       startSession({
-        topic: 'general conversation',
+        topic: t('topics.general'),
         purpose: 'communication board',
         difficulty: 'adaptive'
       }, user.id).catch(err => {
         console.error('Failed to auto-start session:', err);
+        initAttempted.current = false;
       });
     }
-  }, [currentSession, user, startSession, isLoading, error]);
+  }, [currentSession, user, startSession, isLoading, error, t]);
 
   // Auto-speak assistant messages
   useEffect(() => {
@@ -80,11 +83,30 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle }: Communication
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!input.trim() || !currentSession) return;
+    if (!input.trim()) return;
+
+    // Sending with no active session (e.g. the auto-start failed) must not
+    // fail silently: start one on demand, then submit the message.
+    let activeSession = currentSession;
+    if (!activeSession && user) {
+      try {
+        await startSession({
+          topic: t('topics.general'),
+          purpose: 'communication board',
+          difficulty: 'adaptive'
+        }, user.id);
+        activeSession = useLearningStore.getState().currentSession;
+      } catch (err) {
+        console.error('Failed to start session for chat message:', err);
+        addToast(t('errors.sessionStartFailed', 'Could not start the conversation session'), 'error');
+        return;
+      }
+    }
+    if (!activeSession) return;
 
     const answer = input;
     setInput('');
-    await submitAnswer(currentSession.session_id, answer);
+    await submitAnswer(activeSession.session_id, answer);
   };
 
   const {
@@ -103,6 +125,7 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle }: Communication
     submitVoiceAnswer,
     addToast,
     microphoneAccessMessage: t('errors.microphoneAccess', 'Microphone access denied'),
+    sessionTopic: t('topics.audioConversation'),
   });
 
   return (
@@ -126,7 +149,7 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle }: Communication
               ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
               : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
             }`}
-          title={voiceEnabled ? 'Voice Output On' : 'Voice Output Off'}
+          title={voiceEnabled ? t('voiceOn', 'Voice On') : t('voiceOff', 'Voice Off')}
         >
           <Volume2 className={`w-4 h-4 ${!voiceEnabled && 'opacity-50'}`} />
         </button>
@@ -134,6 +157,11 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle }: Communication
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300" role="alert">
+            {t('errorPrefix', 'Error: {{message}}', { message: error })}
+          </div>
+        )}
         {messages.length === 0 && (
           <div className="text-center text-gray-500 dark:text-gray-400 mt-10 text-sm">
             <p>{t('startChatting', 'Start chatting using the board or type here.')}</p>

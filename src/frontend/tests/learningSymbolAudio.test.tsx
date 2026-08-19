@@ -106,9 +106,14 @@ class MockMediaRecorder {
 import { Learning } from '../src/pages/Learning';
 import { __startSession, __submitAnswer } from '../src/store/learningStore';
 
+// A stable t identity matters: Learning's modes effect depends on `t`, and
+// react-i18next memoizes t across renders. A fresh arrow per render would
+// re-run the effect (and its fetch) on every render.
+const stableT = (key: string) => key;
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: stableT,
     i18n: {
       language: mockLanguage.value,
       changeLanguage: () => new Promise(() => {}),
@@ -174,7 +179,7 @@ describe('Learning symbol-first and audio-first flows', () => {
   it('symbol-first: clicking symbol starts session when none active', async () => {
     render(<Learning />);
     await act(async () => {
-      fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+      fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });
     const api = await getMockedApi();
     await waitFor(() => expect(api.get).toHaveBeenCalled());
@@ -190,7 +195,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     });
 
     await waitFor(() => expect(__startSession).toHaveBeenCalled());
-    expect(__startSession.mock.calls[0][0].topic).toBe('symbol conversation');
+    expect(__startSession.mock.calls[0][0].topic).toBe('topics.symbolConversation');
   });
 
   it('symbol-first: with active session, clicking symbol submits answer', async () => {
@@ -200,7 +205,7 @@ describe('Learning symbol-first and audio-first flows', () => {
 
     render(<Learning />);
     await act(async () => {
-      fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+      fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });
     const api2 = await getMockedApi();
     await waitFor(() => expect(api2.get).toHaveBeenCalled());
@@ -230,7 +235,7 @@ describe('Learning symbol-first and audio-first flows', () => {
   it('symbol-first: Speak only uses the shared TTS queue with the active locale', async () => {
     render(<Learning />);
     await act(async () => {
-      fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+      fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });
     await waitFor(() => expect(screen.getByText('Hello')).toBeInTheDocument());
     await act(async () => {
@@ -250,7 +255,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     mockLanguage.value = 'es';
     render(<Learning />);
     await act(async () => {
-      fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+      fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });
     await waitFor(() => expect(screen.getByText('Hello')).toBeInTheDocument());
 
@@ -270,12 +275,12 @@ describe('Learning symbol-first and audio-first flows', () => {
   it('audio-first: clicking mic starts default session when none active', async () => {
     render(<Learning />);
     // Click mic button
-    const micBtn = screen.getByLabelText(/Start recording/i);
+    const micBtn = screen.getByLabelText(/startRecordingLabel/i);
     await act(async () => {
       fireEvent.click(micBtn);
     });
     await waitFor(() => expect(__startSession).toHaveBeenCalled());
-    expect(__startSession.mock.calls[0][0].topic).toBe('audio conversation');
+    expect(__startSession.mock.calls[0][0].topic).toBe('topics.audioConversation');
   });
 
   it('chat: sends a typed answer when a session is active', async () => {
@@ -347,7 +352,7 @@ describe('Learning symbol-first and audio-first flows', () => {
 
     render(<Learning />);
 
-    expect(await screen.findByText('Switched to OpenRouter')).toBeInTheDocument();
+    expect(await screen.findByText('providerSwitched')).toBeInTheDocument();
   });
 
   it('voice: speaks the last assistant message through the TTS queue', async () => {
@@ -405,7 +410,7 @@ describe('Learning symbol-first and audio-first flows', () => {
 
   it('symbol-first: shows a failure when the session does not start', async () => {
     render(<Learning />);
-    fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+    fireEvent.click(screen.getByTitle('toggleSymbolView'));
     const hello = await screen.findByText('Hello');
     fireEvent.click(hello);
     fireEvent.click(screen.getByText('sendSymbols'));
@@ -421,7 +426,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     });
     render(<Learning />);
     await act(async () => {
-      fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+      fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });
 
     expect(await screen.findByPlaceholderText('search')).toBeInTheDocument();
@@ -444,7 +449,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     });
     render(<Learning />);
     await act(async () => {
-      fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+      fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });
 
     const search = await screen.findByPlaceholderText('search');
@@ -460,7 +465,7 @@ describe('Learning symbol-first and audio-first flows', () => {
   it('symbol-first: removes and clears symbols from the utterance', async () => {
     render(<Learning />);
     await act(async () => {
-      fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+      fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });
     const hello = await screen.findByText('Hello');
     await act(async () => {
@@ -468,9 +473,9 @@ describe('Learning symbol-first and audio-first flows', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByLabelText('Remove symbol'));
+      fireEvent.click(screen.getByLabelText('removeSymbolLabel'));
     });
-    expect(screen.queryByLabelText('Remove symbol')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('removeSymbolLabel')).not.toBeInTheDocument();
 
     await act(async () => {
       fireEvent.click(hello);
@@ -478,17 +483,17 @@ describe('Learning symbol-first and audio-first flows', () => {
     await act(async () => {
       fireEvent.click(screen.getByText('clear'));
     });
-    expect(screen.queryByLabelText('Remove symbol')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('removeSymbolLabel')).not.toBeInTheDocument();
   });
 
   it('header: toggles voice input', async () => {
     render(<Learning />);
 
     await act(async () => {
-      fireEvent.click(await screen.findByTitle('Disable voice input'));
+      fireEvent.click(await screen.findByTitle('disableVoice'));
     });
 
-    expect(await screen.findByTitle('Enable voice input')).toBeInTheDocument();
+    expect(await screen.findByTitle('enableVoice')).toBeInTheDocument();
   });
 
   it('symbol-first: filters by the food category including drinks', async () => {
@@ -507,7 +512,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     });
     render(<Learning />);
     await act(async () => {
-      fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+      fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });
 
     await screen.findByText('Apple');
@@ -536,7 +541,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     });
     render(<Learning />);
     await act(async () => {
-      fireEvent.click(screen.getByTitle('Toggle symbol-first view'));
+      fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });
 
     await screen.findAllByText('I');

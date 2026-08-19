@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { DEFAULT_SYMBOL_CATEGORIES } from '../lib/symbolCategories';
 import { isValidImageFile } from '../lib/download';
 import { SymbolImage } from '../components/common/SymbolImage';
+import { useToastStore } from '../store/toastStore';
 
 type UsageFilter = 'all' | 'in_use' | 'unused';
 
@@ -66,6 +67,7 @@ export function Symbols() {
   const [isSearchingArasaac, setIsSearchingArasaac] = useState(false);
   const [importingId, setImportingId] = useState<number | null>(null);
   const { t, i18n } = useTranslation('symbols');
+  const addToast = useToastStore((state) => state.addToast);
 
   const fetchSymbols = useCallback(async () => {
     const seq = ++fetchSeqRef.current;
@@ -82,11 +84,11 @@ export function Symbols() {
       setSymbols(res.data);
     } catch (e: unknown) {
       if (seq !== fetchSeqRef.current) return;
-      setError(extractError(e, 'Failed to load symbols'));
+      setError(extractError(e, t('loadFailed', 'Failed to load symbols')));
     } finally {
       if (seq === fetchSeqRef.current) setIsLoading(false);
     }
-  }, [usage, category, search, page, sort]);
+  }, [usage, category, search, page, sort, t]);
 
   useEffect(() => {
     fetchSymbols();
@@ -169,7 +171,7 @@ export function Symbols() {
       resetForm();
       await fetchSymbols();
     } catch (e: unknown) {
-      setError(extractError(e, 'Failed to update symbol'));
+      setError(extractError(e, t('updateFailed', 'Failed to update symbol')));
     } finally {
       setCreating(false);
     }
@@ -178,6 +180,7 @@ export function Symbols() {
   const submitCreate = async () => {
     setCreating(true);
     try {
+      const language = i18n.language?.split('-')[0] || 'en';
       if (newFile) {
         const fd = new FormData();
         fd.append('file', newFile);
@@ -185,19 +188,21 @@ export function Symbols() {
         fd.append('description', form.description);
         fd.append('category', form.category);
         fd.append('keywords', form.keywords);
+        fd.append('language', language);
         await api.post('/boards/symbols/upload', fd);
       } else {
         await api.post('/boards/symbols', {
           label: form.label,
           description: form.description,
           category: form.category,
-          keywords: form.keywords
+          keywords: form.keywords,
+          language
         });
       }
       resetForm();
       await fetchSymbols();
     } catch (e: unknown) {
-      setError(extractError(e, 'Failed to create symbol'));
+      setError(extractError(e, t('createFailed', 'Failed to create symbol')));
     } finally {
       setCreating(false);
     }
@@ -243,6 +248,7 @@ export function Symbols() {
         const ids = Array.from(selectedIds);
         const failures: string[] = [];
         const deletedIds: number[] = [];
+        const inUseCount: string[] = [];
 
         for (const id of ids) {
           try {
@@ -250,19 +256,17 @@ export function Symbols() {
             deletedIds.push(id);
           } catch (e: unknown) {
             const err = e as { response?: { status?: number } };
-            const detail = extractError(e, 'Failed');
-            if (err?.response?.status === 400 && detail.toLowerCase().includes('in use')) {
-              try {
-                await api.delete(`/boards/symbols/${id}?force=true`);
-                deletedIds.push(id);
-                continue;
-              } catch (err2: unknown) {
-                const errDetail = extractError(err2, 'force delete failed');
-                failures.push(`ID ${id}: ${errDetail}`);
-                continue;
-              }
+            const detail = extractError(e, t('failed', 'Failed'));
+            // The backend error text is localized, but always mentions the
+            // force=true escape hatch, so that marker is the stable signal
+            // that the symbol is in use on boards. Never force-delete in a
+            // batch: that would silently strip symbols from boards without
+            // the explicit confirmation the single-delete flow provides.
+            if (err?.response?.status === 400 && detail.includes('force=true')) {
+              inUseCount.push(`#${id}`);
+            } else {
+              failures.push(`#${id}: ${detail}`);
             }
-            failures.push(`ID ${id}: ${detail}`);
           }
         }
         setSymbols(prev => prev.filter(s => !deletedIds.includes(s.id)));
@@ -271,17 +275,22 @@ export function Symbols() {
           deletedIds.forEach(id => next.delete(id));
           return next;
         });
-        
-        if (failures.length) {
-          setError(`Some deletions failed: ${failures.join('; ')}`);
+
+        if (inUseCount.length) {
+          setError(t('batchDeleteInUseSkipped', '{{count}} selected symbols are in use on boards and were not deleted. Delete them individually to force removal.', { count: inUseCount.length }));
+        } else if (failures.length) {
+          setError(t('someDeletionsFailed', 'Some deletions failed: {{details}}', { details: failures.join('; ') }));
         }
         setDeleteState(prev => ({ ...prev, isOpen: false }));
       }
     } catch (e: unknown) {
       if (deleteState.mode === 'single') {
         const err = e as { response?: { status?: number } };
-        const detail = extractError(e, 'Failed to delete symbol');
-        if (err?.response?.status === 400 && detail.toLowerCase().includes('in use')) {
+        const detail = extractError(e, t('deleteFailed', 'Failed to delete symbol'));
+        // Backend error text is localized but always mentions force=true when
+        // the symbol is in use on boards (e.g. en: "...use force=true",
+        // es: "...use force=true"), so that is the language-independent signal.
+        if (err?.response?.status === 400 && detail.includes('force=true')) {
           setDeleteState(prev => ({
             ...prev,
             force: true,
@@ -307,7 +316,7 @@ export function Symbols() {
     }
     const maxSizeMb = 5;
     if (!isValidImageFile(file)) {
-      setError(`Invalid file. Must be an image under ${maxSizeMb}MB.`);
+      setError(t('invalidFile', 'Invalid file. Must be an image under {{size}}MB.', { size: maxSizeMb }));
       setNewFile(null);
       setNewPreview(null);
       return;
@@ -339,7 +348,7 @@ export function Symbols() {
       setArasaacResults(res.data);
     } catch (e: unknown) {
       console.error(e);
-      setError('Failed to search ARASAAC');
+      setError(t('arasaacSearchFailed', 'Failed to search ARASAAC'));
     } finally {
       setIsSearchingArasaac(false);
     }
@@ -356,10 +365,12 @@ export function Symbols() {
         category: 'ARASAAC'
       });
       await fetchSymbols();
-      // Optional: Switch back to local view or show success
+      // Confirm the import so the user isn't left guessing whether the click
+      // did anything (the library is behind this view).
+      addToast(t('importSuccess', 'Symbol imported'), 'success');
     } catch (e: unknown) {
       console.error(e);
-      setError('Failed to import symbol');
+      setError(t('importFailed', 'Failed to import symbol'));
     } finally {
       setImportingId(null);
     }
@@ -464,7 +475,7 @@ export function Symbols() {
               value={form.label}
               onChange={(e) => setForm(prev => ({ ...prev, label: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-              placeholder="e.g., Hola"
+              placeholder={t('labelPlaceholder', 'e.g., Hello')}
             />
           </div>
           <div>
@@ -508,7 +519,7 @@ export function Symbols() {
               <ImageIcon className="w-4 h-4" /> {newFile ? newFile.name : t('upload')}
             </label>
           {newPreview && newPreview.startsWith('data:image/') && (
-            <img src={newPreview} alt="preview" className="w-12 h-12 rounded object-cover border" />
+            <img src={newPreview} alt={t('previewAlt', 'preview')} className="w-12 h-12 rounded object-cover border" />
           )}
           <div className="flex gap-2">
             <Button

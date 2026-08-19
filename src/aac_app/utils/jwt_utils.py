@@ -90,9 +90,15 @@ def create_access_token(
 
 
 def _decode_token(
-    token: str, *, expected_type: str | None
+    token: str, *, expected_type: str | None, verify_exp: bool = True
 ) -> dict[str, Any] | None:
-    """Decode a signed token and optionally enforce its token type."""
+    """Decode a signed token and optionally enforce its token type.
+
+    ``verify_exp=False`` still verifies the signature, issuer, type, and
+    required claims; it only ignores an expired ``exp``. Callers use this
+    exclusively for best-effort flows such as logout, where an expired access
+    token must still identify its account so the refresh token can be revoked.
+    """
     try:
         payload = jwt.decode(
             token,
@@ -100,7 +106,7 @@ def _decode_token(
             algorithms=[JWT_ALGORITHM],
             options={
                 "verify_signature": True,
-                "verify_exp": True,
+                "verify_exp": verify_exp,
                 "verify_iat": True,
                 "require": ["exp", "iat", "sub"],
             },
@@ -137,9 +143,15 @@ def _decode_token(
         return None
 
 
-def decode_access_token(token: str) -> dict[str, Any] | None:
-    """Decode and validate an access token, rejecting other token types."""
-    return _decode_token(token, expected_type="access")
+def decode_access_token(
+    token: str, *, verify_exp: bool = True
+) -> dict[str, Any] | None:
+    """Decode and validate an access token, rejecting other token types.
+
+    Pass ``verify_exp=False`` for best-effort flows (e.g. logout) that must
+    still identify the account of an expired token.
+    """
+    return _decode_token(token, expected_type="access", verify_exp=verify_exp)
 
 
 def decode_refresh_token(token: str) -> dict[str, Any] | None:

@@ -37,6 +37,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const sessionExpiresAt = useAuthStore((state) => state.sessionExpiresAt);
   const logout = useAuthStore((state) => state.logout);
+  const refreshAccessToken = useAuthStore((state) => state.refreshAccessToken);
   const [isExpired, setIsExpired] = useState(false);
 
   useEffect(() => {
@@ -44,15 +45,23 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
     const checkExpiration = () => {
       if (Date.now() > sessionExpiresAt) {
-        setIsExpired(true);
-        logout();
+        // The access token (2h) expires before the refresh token (7d); try to
+        // extend the session silently before dropping the user to the login
+        // screen mid-use.
+        void (async () => {
+          const refreshed = await refreshAccessToken();
+          if (!refreshed) {
+            setIsExpired(true);
+            await logout();
+          }
+        })();
       }
     };
 
     checkExpiration();
     const interval = setInterval(checkExpiration, 60000);
     return () => clearInterval(interval);
-  }, [sessionExpiresAt, logout]);
+  }, [sessionExpiresAt, logout, refreshAccessToken]);
 
   if (!isAuthenticated || isExpired) return <Navigate to="/login" />;
   return <>{children}</>;

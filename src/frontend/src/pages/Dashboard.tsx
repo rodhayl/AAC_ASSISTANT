@@ -147,7 +147,7 @@ export function Dashboard() {
                   <Clock className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{activity.description}</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{t('activity.practiced', { topic: activity.topic })}</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     {formatDateTime(activity.timestamp)}
                   </p>

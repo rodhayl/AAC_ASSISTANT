@@ -1,5 +1,6 @@
 {
   "skip": "Saltar al contenido principal",
   "offline": "Estás sin conexión. Algunas acciones están deshabilitadas. Los cambios reintentarán al reconectarse.",
-  "main": "Contenido principal"
+  "main": "Contenido principal",
+  "closeSidebar": "Cerrar barra lateral"
 }

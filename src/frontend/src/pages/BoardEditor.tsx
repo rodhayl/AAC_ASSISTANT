@@ -121,7 +121,6 @@ export function BoardEditor() {
     applyId,
     refinePrompt,
     applyAllLoading,
-    setAiError,
     setRefinePrompt,
     loadAISuggestions,
     handleRefine,
@@ -187,9 +186,9 @@ export function BoardEditor() {
       setHasChanges(true);
     } catch (error) {
       console.error('Failed to add symbol:', error);
-      // Optional: Show user feedback if needed
+      addToast(extractError(error, t('failedToAddSymbol', 'Failed to add symbol')), 'error');
     }
-  }, [currentBoard, selectedPosition, addSymbolToBoard, fetchBoard, id, deleteBoardSymbol, localSymbols, setHasChanges]);
+  }, [currentBoard, selectedPosition, addSymbolToBoard, fetchBoard, id, deleteBoardSymbol, localSymbols, setHasChanges, addToast, t]);
 
   const handleSave = useCallback(async () => {
     if (!currentBoard || !hasChanges) return;
@@ -276,14 +275,15 @@ export function BoardEditor() {
       await fetchBoard(currentBoard.id, true);
       setHasChanges(true);
     } catch (e: unknown) {
-      setAiError(extractError(e, t('failedToRemoveSymbol')));
+      // Toast (not the AI panel error) so the failure is visible even on
+      // boards without AI enabled, where the panel never renders.
+      addToast(extractError(e, t('failedToRemoveSymbol')), 'error');
     }
-  }, [currentBoard, deleteBoardSymbol, fetchBoard, setAiError, setHasChanges, t]);
+  }, [currentBoard, deleteBoardSymbol, fetchBoard, setHasChanges, t, addToast]);
 
   const clearBoard = useCallback(async () => {
     if (!currentBoard || !currentBoard.symbols?.length) return;
     setClearLoading(true);
-    setAiError(null);
     try {
       for (const s of currentBoard.symbols) {
         await deleteBoardSymbol(currentBoard.id, s.id);
@@ -292,11 +292,13 @@ export function BoardEditor() {
       setHasChanges(true);
       setClearDialogOpen(false);
     } catch (e: unknown) {
-      setAiError(extractError(e, t('failedToClearBoard')));
+      // Toast (not the AI panel error) so the failure is visible even on
+      // boards without AI enabled, where the panel never renders.
+      addToast(extractError(e, t('failedToClearBoard')), 'error');
     } finally {
       setClearLoading(false);
     }
-  }, [currentBoard, deleteBoardSymbol, fetchBoard, setAiError, setHasChanges, t]);
+  }, [currentBoard, deleteBoardSymbol, fetchBoard, setHasChanges, t, addToast]);
 
   const requestClearBoard = useCallback(() => {
     setClearDialogOpen(true);

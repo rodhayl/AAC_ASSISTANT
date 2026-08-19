@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import api, { extractError } from '../lib/api';
 
 interface DashboardStats {
-  boardCount: number;
   learningStreak: number;
   achievementCount: number;
   totalPoints: number;
@@ -10,7 +9,7 @@ interface DashboardStats {
 
 interface ActivityItem {
   type: string;
-  description: string;
+  topic: string;
   timestamp: string;
 }
 
@@ -56,16 +55,16 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       // Calculate streak from learning history
       const learningStreak = calculateStreak(learningHistory);
 
-      // Map learning history to activity items
+      // Map learning history to activity items. The topic is kept raw so the
+      // page can localize the activity label in the active UI language.
       const recentActivity: ActivityItem[] = learningHistory.map((session) => ({
         type: 'learning',
-        description: `Practiced "${session.topic}"`,
+        topic: session.topic,
         timestamp: session.created_at
       }));
 
       set({
         stats: {
-          boardCount: 0, // Will be populated from board store
           learningStreak,
           achievementCount: achievements.length,
           totalPoints

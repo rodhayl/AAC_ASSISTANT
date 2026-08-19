@@ -49,7 +49,7 @@ export function ProfileTab() {
       setProfileSuccess(true);
       setEditingProfile(false);
     } catch (err: unknown) {
-      setProfileError(extractError(err, 'Failed to save profile'));
+      setProfileError(extractError(err, t('profile.saveFailed')));
     } finally {
       setProfileSaving(false);
     }

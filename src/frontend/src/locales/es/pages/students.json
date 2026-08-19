@@ -20,13 +20,30 @@
   "close": "Cerrar",
   "createTitle": "Crear Nuevo Estudiante",
   "resetPasswordTitle": "Restablecer Contraseña para {{name}}",
+  "save": "Guardar",
+  "guardianProfile": "Perfil del tutor",
+  "preferencesTitle": "Preferencias de",
+  "preferences": {
+    "title": "Preferencias",
+    "voiceMode": "Modo de voz",
+    "voiceModeHelp": "Activar/desactivar funciones de voz"
+  },
+  "tabs": {
+    "general": "General",
+    "persona": "Persona",
+    "safety": "Seguridad"
+  },
+  "success": {
+    "saved": "Perfil guardado correctamente"
+  },
   "labels": {
     "username": "Usuario *",
     "displayName": "Nombre para mostrar *",
     "email": "Correo (opcional)",
     "password": "Contraseña *",
     "passwordHint": "Mínimo 8 caracteres, con mayúscula, minúscula y número",
-    "newPassword": "Nueva Contraseña"
+    "newPassword": "Nueva Contraseña",
+    "confirmPassword": "Confirmar Contraseña"
   },
   "cancel": "Cancelar",
   "createBtn": "Crear Estudiante",
@@ -38,7 +55,9 @@
   "placeholders": {
     "username": "ej., estudiante123",
     "displayName": "ej., Alex Smith",
-    "email": "ej., alex@ejemplo.com"
+    "email": "ej., alex@ejemplo.com",
+    "companionName": "ej., Buddy, Robo",
+    "role": "ej., Profesor, Amigo, Asistente"
   },
   "errors": {
     "loadFailed": "Error al cargar estudiantes",
@@ -47,7 +66,10 @@
     "updateFailed": "Error al actualizar",
     "createFailed": "Error al crear estudiante",
     "deleteFailed": "Error al eliminar",
-    "resetPasswordFailed": "Error al restablecer contraseña"
+    "resetPasswordFailed": "Error al restablecer contraseña",
+    "passwordsDoNotMatch": "Las contraseñas no coinciden",
+    "saveFailed": "No se pudo guardar el perfil",
+    "profileLoadFailed": "No se pudieron cargar los datos del perfil"
   },
   "actions": {
     "unassignAria": "Desasignar {{board}}",

@@ -667,6 +667,13 @@ describe('learningStore resilience and history reconstruction', () => {
   });
 
   it('submitVoiceAnswer falls back to a placeholder when transcription is missing', async () => {
+    // The store localizes its fallback via the real i18n instance; pin the
+    // language so the expected text is deterministic. English is a lazy
+    // chunk, so load it explicitly before switching.
+    const { default: i18n, ensureLocale } = await import('../src/i18n/index');
+    await ensureLocale('en');
+    await i18n.changeLanguage('en');
+
     useLearningStore.setState({ currentSession: { session_id: 7, success: true } });
     post.mockResolvedValue({ data: { success: true, feedback_message: 'Heard' } });
 

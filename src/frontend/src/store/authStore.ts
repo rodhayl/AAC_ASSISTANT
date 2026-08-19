@@ -201,7 +201,6 @@ export const useAuthStore = create<AuthState>()(
         // mutations and conflicts cannot leak into the next session, even
         // while the revocation request is still in flight.
         notifySessionEnd();
-        localStorage.removeItem('token');
         if (token) {
           // Wait for server-side revocation to finish before flipping
           // isAuthenticated, so a token captured before logout is rejected by

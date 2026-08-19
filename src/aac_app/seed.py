@@ -16,6 +16,7 @@ from src.aac_app.models import (
     BoardAssignment,
     BoardSymbol,
     CommunicationBoard,
+    LearningMode,
     Symbol,
     User,
     UserAchievement,
@@ -61,6 +62,7 @@ def init_database(*, ensure_schema: bool = True) -> None:
     with get_session() as session:
         _create_sample_symbols(session)
         _create_sample_achievements(session)
+        _create_default_learning_modes(session)
         _ensure_bootstrap_admin(session)
         _rename_legacy_default_board(session)
 
@@ -269,6 +271,60 @@ def _create_sample_users(session: Session) -> None:
         )
 
     session.flush()
+
+
+DEFAULT_LEARNING_MODES = [
+    {
+        "key": "practice",
+        "name": "Practice",
+        "description": "Adaptive questions with feedback on every answer.",
+        "prompt_instruction": "Ask short adaptive questions about the topic and give encouraging feedback after each answer.",
+        "auto_ask_enabled": True,
+    },
+    {
+        "key": "quiz",
+        "name": "Quiz",
+        "description": "Multiple-choice questions with a score at the end.",
+        "prompt_instruction": "Run a quiz: ask multiple-choice questions one at a time, track correct answers, and summarise the score at the end.",
+        "auto_ask_enabled": True,
+    },
+    {
+        "key": "conversation",
+        "name": "Conversation",
+        "description": "Open-ended conversation practice without auto-generated questions.",
+        "prompt_instruction": "Hold a natural conversation about the topic. Do not generate quiz-style questions; respond conversationally.",
+        "auto_ask_enabled": False,
+    },
+    {
+        "key": "roleplay",
+        "name": "Roleplay",
+        "description": "Practice by acting out a scenario with the AI.",
+        "prompt_instruction": "Act out a roleplay scenario about the topic. Take one role and invite the student to take the other, staying in character.",
+        "auto_ask_enabled": False,
+    },
+]
+
+
+def _create_default_learning_modes(session: Session) -> None:
+    """Seed the system learning modes when none exist (idempotent)."""
+    existing = (
+        session.query(LearningMode).filter(LearningMode.created_by.is_(None)).first()
+    )
+    if existing is not None:
+        return
+    for mode in DEFAULT_LEARNING_MODES:
+        session.add(
+            LearningMode(
+                name=mode["name"],
+                key=mode["key"],
+                description=mode["description"],
+                prompt_instruction=mode["prompt_instruction"],
+                auto_ask_enabled=mode["auto_ask_enabled"],
+                is_custom=False,
+                created_by=None,
+            )
+        )
+    logger.info("Seeded %d default learning modes", len(DEFAULT_LEARNING_MODES))
 
 
 def _create_sample_symbols(session: Session) -> None:

@@ -90,7 +90,7 @@ export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
           <button
             type="button"
             onClick={onMenuToggle}
-            aria-label={t('navbar.toggleMenu', { defaultValue: 'Toggle menu' })}
+            aria-label={t('navbar.toggleMenu')}
             aria-expanded={isSidebarOpen}
             className="md:hidden rounded-lg p-2 text-secondary hover:bg-surface-hover transition-colors"
             data-touch-target="true"
@@ -99,7 +99,7 @@ export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
           </button>
         )}
         <h2 className="hidden sm:block text-lg md:text-xl font-semibold text-primary truncate max-w-[32vw] lg:max-w-none">
-          {t('navbar.welcome', { name: user?.display_name || 'Guest' })}
+          {t('navbar.welcome', { name: user?.display_name || t('navbar.guest') })}
         </h2>
       </div>
 
@@ -122,7 +122,7 @@ export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
           <button
             onClick={() => setOpen(v => !v)}
             className="p-2 text-secondary hover:bg-surface-hover dark:hover:bg-gray-700 rounded-full relative transition-colors"
-            aria-label="Notifications"
+            aria-label={t('notifications.title')}
             data-touch-target="true"
           >
             <Bell className="w-5 h-5" />
@@ -137,8 +137,8 @@ export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
               <User className="w-5 h-5" />
             </div>
             <div className="hidden md:block">
-              <p className="text-sm font-medium text-primary">{user?.display_name || 'Guest'}</p>
-              <p className="text-xs text-muted capitalize">{user?.user_type || 'Visitor'}</p>
+              <p className="text-sm font-medium text-primary">{user?.display_name || t('navbar.guest')}</p>
+              <p className="text-xs text-muted capitalize">{user?.user_type ? t(`navbar.roles.${user.user_type}`) : t('navbar.visitor')}</p>
             </div>
           </Link>
           <div className="ml-1 sm:ml-2 md:ml-4 min-w-0">

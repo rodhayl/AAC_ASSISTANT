@@ -44,6 +44,7 @@ function makeOptions() {
     currentSession: { session_id: 42 } as LearningSessionResponse,
     isLoading: false,
     sessionDifficulty: 'adaptive',
+    sessionTopic: 'Audio Conversation',
     startSession: vi.fn().mockResolvedValue(undefined),
     submitVoiceAnswer: vi.fn().mockResolvedValue(undefined),
     addToast: vi.fn(),

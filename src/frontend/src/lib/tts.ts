@@ -258,8 +258,14 @@ class TTSQueue {
     // abandoned) any late fetch/audio result must be ignored to avoid
     // speaking twice or restarting an in-flight utterance.
     let localAbandoned = false
+    // True when the LOCAL_START_WINDOW_MS watchdog aborted the request: that
+    // is a real synthesis failure, unlike an intentional cancel below.
+    let synthesisTimedOut = false
     let synthesisController: AbortController | null = null
     let synthesisTimeout: ReturnType<typeof setTimeout> | null = null
+    // Mirrors the in-flight controller so the catch (outside the try scope)
+    // can tell an intentional cancel from a real failure.
+    let activeController: AbortController | null = null
 
     const clearSynthesisRequest = () => {
       if (synthesisTimeout !== null) {
@@ -304,8 +310,12 @@ class TTSQueue {
       const token = useAuthStore.getState().token || ''
 
       const controller = new AbortController()
+      activeController = controller
       synthesisController = controller
-      synthesisTimeout = setTimeout(() => controller.abort(), LOCAL_START_WINDOW_MS)
+      synthesisTimeout = setTimeout(() => {
+        synthesisTimedOut = true
+        controller.abort()
+      }, LOCAL_START_WINDOW_MS)
       const res = await fetch(`${config.API_BASE_URL}/providers/tts/synthesize`, {
         method: 'POST',
         headers: {
@@ -386,8 +396,14 @@ class TTSQueue {
     } catch (error) {
       this.clearLocalStartWatchdog(localStartWatchdog)
       clearSynthesisRequest()
-      console.error('Kokoro TTS playback/synthesis error', error)
-      if (!localAbandoned) stopWithoutFallback()
+      // Cancelling the previous utterance when a newer one is enqueued (or
+      // the queue is cleared) rejects the in-flight request with AbortError;
+      // that is intentional, not a failure. Report only real failures: the
+      // start timeout, network errors, or playback errors.
+      if (!localAbandoned && (!activeController?.signal.aborted || synthesisTimedOut)) {
+        console.error('Kokoro TTS playback/synthesis error', error)
+        stopWithoutFallback()
+      }
     }
   }
 

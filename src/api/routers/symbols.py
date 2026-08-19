@@ -9,6 +9,7 @@ from src import config
 from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol, SymbolUsageLog, User
 from src.aac_app.services.achievement_system import AchievementSystem
 from src.aac_app.services.local_vector_store import vector_store_operation_lock
+from src.aac_app.services.runtime_translation import normalize_language_code
 from src.aac_app.services.symbol_image_backfill import schedule_symbol_image_download
 from src.aac_app.services.vector_utils import delete_symbol as delete_symbol_embedding
 from src.aac_app.services.vector_utils import index_symbol
@@ -240,7 +241,10 @@ def create_symbol(
     current_user: User = Depends(get_current_staff_user),
 ):
     """Create a new symbol"""
-    db_symbol = Symbol(**symbol.model_dump())
+    symbol_data = symbol.model_dump()
+    # Normalize to a base code so it matches the exact-match language filter.
+    symbol_data["language"] = normalize_language_code(symbol_data.get("language")) or "en"
+    db_symbol = Symbol(**symbol_data)
     db.add(db_symbol)
     db.commit()
     db.refresh(db_symbol)
@@ -301,6 +305,7 @@ async def upload_symbol(
     current_user: User = Depends(get_current_staff_user),
 ):
     """Upload a new symbol image"""
+    language = normalize_language_code(language) or "en"
     public_path = await _save_symbol_image(file, current_user)
     uploads_dir = config.UPLOADS_DIR / "symbols"
     db_symbol = Symbol(

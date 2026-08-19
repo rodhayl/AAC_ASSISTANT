@@ -20,13 +20,30 @@
   "close": "Close",
   "createTitle": "Create New Student",
   "resetPasswordTitle": "Reset Password for {{name}}",
+  "save": "Save",
+  "guardianProfile": "Guardian Profile",
+  "preferencesTitle": "Preferences for",
+  "preferences": {
+    "title": "Preferences",
+    "voiceMode": "Voice Mode",
+    "voiceModeHelp": "Enable/disable voice features"
+  },
+  "tabs": {
+    "general": "General",
+    "persona": "Persona",
+    "safety": "Safety"
+  },
+  "success": {
+    "saved": "Profile saved successfully"
+  },
   "labels": {
     "username": "Username *",
     "displayName": "Display Name *",
     "email": "Email (optional)",
     "password": "Password *",
     "passwordHint": "At least 8 characters with uppercase, lowercase, and number",
-    "newPassword": "New Password"
+    "newPassword": "New Password",
+    "confirmPassword": "Confirm Password"
   },
   "cancel": "Cancel",
   "createBtn": "Create Student",
@@ -38,7 +55,9 @@
   "placeholders": {
     "username": "e.g., student123",
     "displayName": "e.g., Alex Smith",
-    "email": "e.g., alex@example.com"
+    "email": "e.g., alex@example.com",
+    "companionName": "e.g., Buddy, Robo",
+    "role": "e.g., Teacher, Friend, Assistant"
   },
   "errors": {
     "loadFailed": "Failed to load students",
@@ -47,7 +66,10 @@
     "updateFailed": "Failed to update",
     "createFailed": "Failed to create student",
     "deleteFailed": "Failed to delete",
-    "resetPasswordFailed": "Failed to reset password"
+    "resetPasswordFailed": "Failed to reset password",
+    "passwordsDoNotMatch": "Passwords do not match",
+    "saveFailed": "Failed to save profile",
+    "profileLoadFailed": "Failed to load profile data"
   },
   "actions": {
     "unassignAria": "Unassign {{board}}",

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
@@ -6,6 +6,7 @@ import { ResetPasswordModal } from '../components/common/ResetPasswordModal'
 import api, { extractError } from '../lib/api'
 import type { User } from '../types'
 import { useAuthStore } from '../store/authStore'
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap'
 
 export type ManagedUserRole = 'teacher' | 'admin'
 
@@ -159,6 +160,16 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     }
   }
 
+  const editDialogRef = useRef<HTMLDivElement | null>(null)
+  const createDialogRef = useRef<HTMLDivElement | null>(null)
+
+  useModalFocusTrap(editDialogRef, editId != null, () => setEditId(null))
+  useModalFocusTrap(createDialogRef, createModalOpen, () => {
+    setCreateModalOpen(false)
+    clearCreateForm()
+    setError(null)
+  })
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -229,9 +240,10 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
                       >{t('actions.resetPassword')}</button>
                       <button
                         onClick={() => setDeleteState({ isOpen: true, user: item })}
-                        className="rounded px-3 py-1 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30"
+                        disabled={role === 'admin' && item.id === user?.id}
+                        className="rounded px-3 py-1 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
                         aria-label={t('actions.deleteAria', { name: item.username })}
-                        title={t('actions.deleteTitle')}
+                        title={role === 'admin' && item.id === user?.id ? t('actions.deleteSelfTitle') : t('actions.deleteTitle')}
                       >{t('delete')}</button>
                     </div>
                   </td>
@@ -249,6 +261,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
 
       {editId != null && (
         <div
+          ref={editDialogRef}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
@@ -276,6 +289,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
 
       {createModalOpen && (
         <div
+          ref={createDialogRef}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
@@ -330,7 +344,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       <ConfirmDialog
         isOpen={deleteState.isOpen}
         title={t('actions.deleteTitle')}
-        description={t('actions.deleteConfirm', { name: deleteState.user?.username })}
+        description={t('deleteConfirm')}
         confirmText={t('delete')}
         cancelText={t('cancel')}
         onConfirm={handleDelete}

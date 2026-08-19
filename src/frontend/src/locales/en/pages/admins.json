@@ -49,6 +49,7 @@
     "editTitle": "Edit admin",
     "deleteAria": "Delete {{name}}",
     "deleteTitle": "Delete admin",
+    "deleteSelfTitle": "You cannot delete your own account",
     "resetPassword": "Reset Pwd",
     "resetPasswordAria": "Reset password for {{name}}",
     "resetPasswordTitle": "Reset Password"

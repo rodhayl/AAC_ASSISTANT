@@ -434,4 +434,27 @@ describe('tts queue local neural path', () => {
     expect(speechSynthesis.speak).not.toHaveBeenCalled()
     expect(tts.getStatus()).toBe('idle')
   })
+
+  it('does not log an error when a pending synthesis is cancelled by a newer utterance', async () => {
+    // A fetch that never resolves: the synthesis stays in flight while the
+    // next utterance (or cancelAll) aborts it.
+    const deferred = new Promise(() => {})
+    fetchMock.mockImplementation(() => deferred)
+    const tts = await loadLocalTTS()
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    tts.enqueue('Hola', { key: 'local-cancel-1', lang: 'es' })
+    await flush()
+
+    // Replacing the utterance cancels the in-flight synthesis request; the
+    // AbortError is intentional and must not be reported as a failure.
+    tts.cancelAll()
+    await flush()
+
+    expect(errorSpy).not.toHaveBeenCalledWith(
+      'Kokoro TTS playback/synthesis error',
+      expect.anything(),
+    )
+    errorSpy.mockRestore()
+  })
 })

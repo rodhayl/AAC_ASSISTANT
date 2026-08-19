@@ -58,7 +58,13 @@
     "travel": "Viajes y Transporte",
     "hobbies": "Aficiones y Juegos",
     "health": "Salud y Cuerpo",
-    "shopping": "Compras"
+    "shopping": "Compras",
+    "symbolConversation": "Conversación con símbolos",
+    "audioConversation": "Conversación de audio"
+  },
+  "messageRole": {
+    "user": "Tú",
+    "assistant": "Asistente"
   },
   "selectTopic": "Selecciona un tema...",
   "selectBoard": "Selecciona un tablero...",
@@ -118,8 +124,39 @@
   "panelSubtitle": "Preguntas de práctica, explicaciones y apoyo conversacional",
   "voiceOff": "Voz apagada",
   "difficulty": {
+    "adaptive": "Adaptativo",
     "basic": "Básico",
     "intermediate": "Intermedio",
     "advanced": "Avanzado"
+  },
+  "providerSwitched": "Cambiado a {{provider}}",
+  "toggleSymbolView": "Alternar vista de símbolos",
+  "newQuestionTitle": "Obtener una nueva pregunta",
+  "currentProvider": "Proveedor de IA actual",
+  "disableVoice": "Desactivar entrada de voz",
+  "enableVoice": "Activar entrada de voz",
+  "aiProviderLabel": "IA: {{provider}}",
+  "closeSummary": "Cerrar resumen",
+  "errorPrefix": "Error: {{message}}",
+  "endSessionTitle": "Terminar esta sesión y ver un resumen",
+  "startSessionLabel": "Iniciar sesión",
+  "stopRecordingLabel": "Detener grabación",
+  "sendRecordingLabel": "Enviar grabación",
+  "discardRecordingLabel": "Descartar grabación",
+  "startRecordingLabel": "Iniciar grabación",
+  "editSymbolMessage": "Editar mensaje de símbolos",
+  "collapseSidebar": "Contraer panel lateral",
+  "expandSidebar": "Expandir panel lateral",
+  "removeSymbolLabel": "Eliminar símbolo",
+  "audioMessage": "Mensaje de audio",
+  "questionReady": "Pregunta lista",
+  "chooseAnswer": "Elige una respuesta",
+  "editSymbols": "Editar símbolos",
+  "newQuestion": "Nueva pregunta",
+  "modes": {
+    "practice": "Práctica",
+    "quiz": "Cuestionario",
+    "conversation": "Conversación",
+    "roleplay": "Juego de roles"
   }
 }

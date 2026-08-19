@@ -73,7 +73,7 @@ export function AiProviderTab() {
             requestKey: readOnlyRequestKey,
             settings: null,
             loading: false,
-            error: extractError(requestError, 'Failed to load AI settings'),
+            error: extractError(requestError, t('ai.loadFailed')),
           });
         }
       });
@@ -81,7 +81,7 @@ export function AiProviderTab() {
       active = false;
       controller.abort();
     };
-  }, [userId, userRole, isAdmin, fetchAISettings, readOnlyRequestKey]);
+  }, [userId, userRole, isAdmin, fetchAISettings, readOnlyRequestKey, t]);
 
   const currentAiProvider = aiOverride.provider ?? aiSettings?.provider ?? 'ollama';
   const currentOllamaModel = aiOverride.ollama_model ?? aiSettings?.ollama_model ?? '';
@@ -120,7 +120,7 @@ export function AiProviderTab() {
       ? t('ai.ollama')
       : currentAiProvider === 'openrouter'
         ? t('ai.openrouter')
-        : 'LM Studio';
+        : t('ai.lmstudio', 'LM Studio');
 
   const selectedProviderStatusMessage = (() => {
     if (!selectedHealth) return null;
@@ -269,7 +269,7 @@ export function AiProviderTab() {
                     ? visibleAiSettings.ollama_model
                     : visibleAiSettings.provider === 'lmstudio'
                       ? visibleAiSettings.lmstudio_model
-                      : visibleAiSettings.openrouter_model) || 'Not configured'}
+                      : visibleAiSettings.openrouter_model) || t('ai.notConfigured', 'Not configured')}
                 </div>
               </div>
             </div>

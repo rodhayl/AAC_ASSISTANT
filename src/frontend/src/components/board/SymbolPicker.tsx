@@ -84,6 +84,16 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
     }
   }, [isOpen, fetchSymbols]);
 
+  // Close on Escape so keyboard users are never trapped in the modal.
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   const toggleReorderMode = useCallback(() => {
     if (!reorderMode) {
       setReorderedSymbols([...symbols]);
@@ -340,7 +350,7 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
             </select>
             {previewUrl && previewUrl.startsWith('data:image/') && (
               <div className="md:col-span-3 mt-2 flex items-center gap-3">
-                <img src={previewUrl} alt="Preview" className="w-16 h-16 object-cover rounded" />
+                <img src={previewUrl} alt={t('symbolPicker.preview')} className="w-16 h-16 object-cover rounded" />
                 <span className="text-xs text-gray-500 dark:text-gray-400">{t('symbolPicker.preview')}</span>
               </div>
             )}

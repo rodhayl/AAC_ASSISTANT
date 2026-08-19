@@ -51,7 +51,7 @@ export function SymbolGrid({
                 <Button variant="secondary" size="sm" onClick={() => onEdit(sym)}>
                   <Edit className="w-4 h-4 mr-1" /> {t('edit', 'Edit')}
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => onDelete(sym.id)}>
+                <Button variant="ghost" size="sm" onClick={() => onDelete(sym.id)} aria-label={t('deleteSymbol', 'Delete Symbol')}>
                   <Trash2 className="w-4 h-4" />
                 </Button>
               </div>
@@ -74,7 +74,7 @@ export function SymbolGrid({
         >
           {t('previous')}
         </Button>
-        <span className="flex items-center px-2 text-sm text-gray-500">Page {page + 1}</span>
+        <span className="flex items-center px-2 text-sm text-gray-500">{t('page', 'Page {{n}}', { n: page + 1 })}</span>
         <Button
           variant="secondary"
           disabled={symbols.length < pageSize}

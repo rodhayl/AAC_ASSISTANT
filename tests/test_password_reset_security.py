@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import jwt
 import pytest
@@ -57,6 +57,68 @@ def test_logout_revokes_existing_access_and_refresh_tokens(test_db_session):
     assert client.post(
         f"/api/auth/refresh?refresh_token={refresh_token}"
     ).status_code == 401
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_logout_with_expired_access_token_still_revokes(test_db_session):
+    """Logout must succeed with an expired access token and revoke refresh.
+
+    The access token expires after 2h while the refresh token lives 7 days; a
+    user logging out after a long session must not get a 401 that blocks
+    revoking the still-valid refresh token.
+    """
+    student = User(
+        username="expired_logout_target",
+        display_name="Expired Logout Target",
+        user_type="student",
+        password_hash=get_password_hash("OldPass123"),
+        is_active=True,
+    )
+    test_db_session.add(student)
+    test_db_session.commit()
+    test_db_session.refresh(student)
+
+    expired_access_token = jwt.encode(
+        {
+            "sub": student.username,
+            "user_id": student.id,
+            "user_type": student.user_type,
+            "sec_ver": student.security_version,
+            "exp": datetime.now(UTC) - timedelta(hours=1),
+            "iat": datetime.now(UTC) - timedelta(hours=3),
+            "iss": "aac-assistant",
+        },
+        jwt_utils.JWT_SECRET_KEY,
+        algorithm=jwt_utils.JWT_ALGORITHM,
+    )
+    refresh_token = create_refresh_token(
+        {
+            "sub": student.username,
+            "user_id": student.id,
+            "sec_ver": student.security_version,
+        }
+    )
+
+    response = client.post(
+        "/api/auth/logout",
+        headers={"Authorization": f"Bearer {expired_access_token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    test_db_session.refresh(student)
+    assert student.security_version == 2
+    assert client.post(
+        f"/api/auth/refresh?refresh_token={refresh_token}"
+    ).status_code == 401
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_logout_without_token_returns_ok(test_db_session):
+    """Logout without any token still succeeds (client clears local session)."""
+    response = client.post("/api/auth/logout")
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
 
 
 @pytest.mark.usefixtures("setup_test_db")

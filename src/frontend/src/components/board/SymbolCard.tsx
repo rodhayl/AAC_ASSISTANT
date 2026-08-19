@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { BoardSymbol } from '../../types';
 import { Folder } from 'lucide-react';
 import { SymbolImage } from '../common/SymbolImage';
@@ -9,9 +10,11 @@ interface SymbolCardProps {
   boardSymbol: BoardSymbol;
   onClick: (boardSymbol: BoardSymbol) => void;
   disabled?: boolean;
+  ariaLabel?: string;
 }
 
-export const SymbolCard = memo(function SymbolCard({ boardSymbol, onClick, disabled }: SymbolCardProps) {
+export const SymbolCard = memo(function SymbolCard({ boardSymbol, onClick, disabled, ariaLabel }: SymbolCardProps) {
+  const { t } = useTranslation('boards');
   const label = boardSymbol.custom_text || boardSymbol.symbol.label;
   const categoryStyle = getCategoryStyle(boardSymbol.symbol?.category);
 
@@ -39,7 +42,9 @@ export const SymbolCard = memo(function SymbolCard({ boardSymbol, onClick, disab
         active:scale-95 transition-all duration-300 cursor-pointer w-full h-full
         ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
       `}
-      aria-label={boardSymbol.linked_board_id ? `Open folder ${label}` : `Add ${label} to sentence`}
+      aria-label={ariaLabel ?? (boardSymbol.linked_board_id
+        ? t('openFolder', 'Open folder {{label}}', { label })
+        : t('addToSentence', 'Add {{label}} to sentence', { label }))}
     >
       <div className={`absolute top-2 left-2 w-2.5 h-2.5 rounded-full ${categoryStyle.dot} opacity-80`} aria-hidden="true" />
       {boardSymbol.linked_board_id && (

@@ -24,12 +24,11 @@ const boardState = vi.hoisted(() => ({
 
 const dashboardState = vi.hoisted(() => ({
   stats: null as {
-    boardCount: number;
     learningStreak: number;
     achievementCount: number;
     totalPoints: number;
   } | null,
-  recentActivity: [] as { type: string; description: string; timestamp: string }[],
+  recentActivity: [] as { type: string; topic: string; timestamp: string }[],
   isLoading: false as boolean,
   fetchDashboardData: vi.fn(),
 }));
@@ -81,6 +80,7 @@ vi.mock('react-i18next', () => ({
         'assigned.none': 'No assigned boards',
         'activity.recent': 'Recent activity',
         'activity.none': 'No activity yet',
+        'activity.practiced': `Practiced "${String((options as { topic?: string } | undefined)?.topic ?? '')}"`,
       };
       return table[key] ?? key;
     },
@@ -104,7 +104,7 @@ describe('Dashboard page', () => {
     vi.clearAllMocks();
     boardState.boards = [];
     boardState.assignedBoards = [];
-    dashboardState.stats = { boardCount: 0, learningStreak: 3, achievementCount: 2, totalPoints: 40 };
+    dashboardState.stats = { learningStreak: 3, achievementCount: 2, totalPoints: 40 };
     dashboardState.recentActivity = [];
     dashboardState.isLoading = false;
     authState.user = {
@@ -182,7 +182,7 @@ describe('Dashboard page', () => {
     dashboardState.recentActivity = [
       {
         type: 'learning',
-        description: 'Practiced "Colors"',
+        topic: 'Colors',
         timestamp: '2026-01-02T10:00:00Z',
       },
     ];

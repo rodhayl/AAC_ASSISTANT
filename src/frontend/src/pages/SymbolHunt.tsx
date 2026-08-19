@@ -3,7 +3,7 @@ import { useToastStore } from '../store/toastStore';
 import type { BoardSymbol } from '../types';
 import { SymbolCard } from '../components/board/SymbolCard';
 import { useSymbolHunt } from '../hooks/useSymbolHunt';
-import { Trophy, Play, ArrowLeft, RotateCcw, Volume2, CheckCircle } from 'lucide-react';
+import { Trophy, Play, ArrowLeft, RotateCcw, Volume2, CheckCircle, XCircle } from 'lucide-react';
 
 export function SymbolHunt() {
   const { t } = useTranslation('games');
@@ -19,6 +19,7 @@ export function SymbolHunt() {
     score,
     targetSymbol,
     feedback,
+    incorrectSymbolId,
     symbols,
     startGame,
     handleSymbolClick,
@@ -38,7 +39,11 @@ export function SymbolHunt() {
           <p className="text-gray-600">{t('symbolHunt.selectBoard', 'Select a board to start playing')}</p>
         </div>
 
-        {loading ? (
+        {!loading && playableBoards.length === 0 && unplayableBoards.length === 0 ? (
+          <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
+            <p className="text-gray-500">{t('symbolHunt.noBoards', 'No boards available yet. Ask your teacher to create one.')}</p>
+          </div>
+        ) : loading ? (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto" />
           </div>
@@ -53,7 +58,7 @@ export function SymbolHunt() {
                 >
                   <h3 className="text-lg font-semibold text-gray-900 group-hover:text-indigo-600 mb-2">{board.name}</h3>
                   <p className="text-sm text-gray-500 mb-4 line-clamp-2">
-                    {board.description || t('common.noDescription', 'No description')}
+                    {board.description || t('symbolHunt.noDescription', 'No description')}
                   </p>
                   <div className="flex items-center text-sm text-gray-400">
                     <Play className="w-4 h-4 mr-2" />
@@ -73,7 +78,7 @@ export function SymbolHunt() {
                     <div key={board.id} className="bg-gray-50 p-6 rounded-xl border border-gray-200 text-left cursor-not-allowed relative overflow-hidden">
                       <h3 className="text-lg font-semibold text-gray-500 mb-2">{board.name}</h3>
                       <p className="text-sm text-gray-400 mb-4 line-clamp-2">
-                        {board.description || t('common.noDescription', 'No description')}
+                        {board.description || t('symbolHunt.noDescription', 'No description')}
                       </p>
                       <div className="flex items-center text-sm text-gray-400">
                         <div className="w-4 h-4 mr-2 flex items-center justify-center rounded-full text-xs font-bold">!</div>
@@ -119,7 +124,7 @@ export function SymbolHunt() {
     <div className="h-[calc(100vh-4rem)] flex flex-col bg-gray-50">
       <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shadow-sm z-10">
         <div className="flex items-center">
-          <button onClick={() => setGameState('selecting')} className="p-2 hover:bg-gray-100 rounded-full mr-4">
+          <button onClick={() => setGameState('selecting')} aria-label={t('symbolHunt.back', 'Back')} className="p-2 hover:bg-gray-100 rounded-full mr-4">
             <ArrowLeft className="w-6 h-6 text-gray-500" />
           </button>
           <div>
@@ -151,10 +156,19 @@ export function SymbolHunt() {
         <div className="grid gap-4 mx-auto max-w-5xl" style={{ gridTemplateColumns: `repeat(${selectedBoard?.grid_cols || 5}, minmax(0, 1fr))` }}>
           {symbols.map((symbol: BoardSymbol) => (
             <div key={symbol.id} className="relative aspect-square w-full min-h-[110px]">
-              <SymbolCard boardSymbol={symbol} onClick={handleSymbolClick} />
+              <SymbolCard
+                boardSymbol={symbol}
+                onClick={handleSymbolClick}
+                ariaLabel={symbol.custom_text || symbol.symbol.label}
+              />
               {feedback === 'correct' && symbol.id === targetSymbol?.id && (
                 <div className="absolute inset-0 bg-green-500 bg-opacity-30 rounded-xl flex items-center justify-center pointer-events-none border-4 border-green-500">
                   <CheckCircle className="w-12 h-12 text-green-600 drop-shadow-lg" />
+                </div>
+              )}
+              {feedback === 'incorrect' && symbol.id === incorrectSymbolId && (
+                <div className="absolute inset-0 bg-red-500 bg-opacity-30 rounded-xl flex items-center justify-center pointer-events-none border-4 border-red-500">
+                  <XCircle className="w-12 h-12 text-red-600 drop-shadow-lg" />
                 </div>
               )}
               {feedback === 'incorrect' && symbol.id !== targetSymbol?.id && <div className="absolute inset-0 z-10" />}

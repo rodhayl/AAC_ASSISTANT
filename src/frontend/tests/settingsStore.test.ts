@@ -40,7 +40,9 @@ describe('settings store', () => {
 
     await useSettingsStore.getState().fetchAISettings();
 
-    expect(useSettingsStore.getState().error).toBe('Failed to fetch AI settings');
+    // The store localizes its failure messages through the real (es) i18n
+    // instance, which is initialized in the test environment.
+    expect(useSettingsStore.getState().error).toBe('No se pudieron obtener los ajustes de IA');
     expect(useSettingsStore.getState().aiSettings).toBeNull();
   });
 
@@ -62,13 +64,13 @@ describe('settings store', () => {
     await expect(
       useSettingsStore.getState().updateAISettings({ provider: 'ollama' }),
     ).rejects.toThrow('denied');
-    expect(useSettingsStore.getState().error).toBe('Failed to update settings');
+    expect(useSettingsStore.getState().error).toBe('No se pudieron actualizar los ajustes');
   });
 
   it.each([
-    ['fetchOllamaModels', '/settings/ai/models/ollama', 'ollamaModels', 'Failed to fetch Ollama models'],
-    ['fetchOpenRouterModels', '/settings/ai/models/openrouter', 'openRouterModels', 'Failed to fetch OpenRouter models'],
-    ['fetchLmStudioModels', '/settings/ai/models/lmstudio', 'lmStudioModels', 'Failed to fetch LM Studio models'],
+    ['fetchOllamaModels', '/settings/ai/models/ollama', 'ollamaModels', 'No se pudieron obtener los modelos de Ollama'],
+    ['fetchOpenRouterModels', '/settings/ai/models/openrouter', 'openRouterModels', 'No se pudieron obtener los modelos de OpenRouter'],
+    ['fetchLmStudioModels', '/settings/ai/models/lmstudio', 'lmStudioModels', 'No se pudieron obtener los modelos de LM Studio'],
   ] as const)(
     '%s stores the model list',
     async (action, endpoint, stateKey, failureMessage) => {

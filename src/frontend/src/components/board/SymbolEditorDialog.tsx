@@ -13,15 +13,15 @@ interface SymbolEditorDialogProps {
 }
 
 const COLORS = [
-  { name: 'White', value: '#ffffff', class: 'bg-white' },
-  { name: 'Red', value: '#fee2e2', class: 'bg-red-100' },
-  { name: 'Orange', value: '#ffedd5', class: 'bg-orange-100' },
-  { name: 'Yellow', value: '#fef9c3', class: 'bg-yellow-100' },
-  { name: 'Green', value: '#dcfce7', class: 'bg-green-100' },
-  { name: 'Blue', value: '#dbeafe', class: 'bg-blue-100' },
-  { name: 'Purple', value: '#f3e8ff', class: 'bg-purple-100' },
-  { name: 'Pink', value: '#fce7f3', class: 'bg-pink-100' },
-  { name: 'Gray', value: '#f3f4f6', class: 'bg-gray-100' },
+  { key: 'white', name: 'White', value: '#ffffff', class: 'bg-white' },
+  { key: 'red', name: 'Red', value: '#fee2e2', class: 'bg-red-100' },
+  { key: 'orange', name: 'Orange', value: '#ffedd5', class: 'bg-orange-100' },
+  { key: 'yellow', name: 'Yellow', value: '#fef9c3', class: 'bg-yellow-100' },
+  { key: 'green', name: 'Green', value: '#dcfce7', class: 'bg-green-100' },
+  { key: 'blue', name: 'Blue', value: '#dbeafe', class: 'bg-blue-100' },
+  { key: 'purple', name: 'Purple', value: '#f3e8ff', class: 'bg-purple-100' },
+  { key: 'pink', name: 'Pink', value: '#fce7f3', class: 'bg-pink-100' },
+  { key: 'gray', name: 'Gray', value: '#f3f4f6', class: 'bg-gray-100' },
 ];
 
 export function SymbolEditorDialog({
@@ -44,6 +44,16 @@ export function SymbolEditorDialog({
       fetchBoards();
     }
   }, [isOpen, fetchBoards]);
+
+  // Close on Escape so keyboard users are never trapped in the modal.
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen || !symbol) return null;
 
@@ -107,8 +117,8 @@ export function SymbolEditorDialog({
                       ? 'border-indigo-600 ring-2 ring-indigo-600 ring-offset-2 dark:ring-offset-gray-800'
                       : 'border-gray-200 dark:border-gray-600'
                   }`}
-                  aria-label={c.name}
-                  title={c.name}
+                  aria-label={t(`colors.${c.key}`, c.name)}
+                  title={t(`colors.${c.key}`, c.name)}
                 />
               ))}
             </div>

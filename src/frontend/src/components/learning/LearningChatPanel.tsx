@@ -185,7 +185,7 @@ export function LearningChatPanel({
                 aria-controls="end-session-confirmation"
                 data-testid="learning-session-active"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                title="End this session and see a summary"
+                title={t('endSessionTitle', 'End this session and see a summary')}
               >
                 <LogOut className="w-3.5 h-3.5" />
                 {t('endSession', 'End Session')}
@@ -263,7 +263,7 @@ export function LearningChatPanel({
 
         {error && (
           <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
-            <p className="font-medium">Error: {error}</p>
+            <p className="font-medium">{t('errorPrefix', 'Error: {{message}}', { message: error })}</p>
           </div>
         )}
 
@@ -273,7 +273,7 @@ export function LearningChatPanel({
             <p>{t('promptStart')}</p>
             <button
               onClick={onStartSession}
-              aria-label="Start Session"
+              aria-label={t('startSessionLabel', 'Start Session')}
               data-testid="learning-session-start"
               className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
               disabled={isStartingSession}

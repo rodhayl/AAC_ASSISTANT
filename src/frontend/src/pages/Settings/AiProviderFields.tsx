@@ -62,7 +62,7 @@ export function AiProviderFields({
               onChange={(event) => setAiOverride((prev) => ({ ...prev, ollama_base_url: event.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               placeholder={config.OLLAMA_BASE_URL}
-              aria-label="Primary Ollama Base URL"
+              aria-label={t('ai.ollamaUrl')}
             />
           </div>
           <div className="relative">
@@ -99,7 +99,7 @@ export function AiProviderFields({
               onFocus={() => setModelSearchOpen(true)}
               placeholder={t('ai.searchModels')}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              aria-label="Primary Ollama model search"
+              aria-label={t('ai.models')}
             />
             {modelSearchOpen && ollamaModels.length > 0 && (
               <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
@@ -144,7 +144,7 @@ export function AiProviderFields({
               }
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               placeholder="sk-or-..."
-              aria-label="Primary OpenRouter API Key"
+              aria-label={t('ai.apiKey')}
             />
             <p className="text-xs text-gray-500 mt-1">
               {t('ai.getKey')}{' '}
@@ -189,7 +189,7 @@ export function AiProviderFields({
               onFocus={() => setModelSearchOpen(true)}
               placeholder={t('ai.searchModels')}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              aria-label="Primary OpenRouter model search"
+              aria-label={t('ai.models')}
             />
             {modelSearchOpen && openRouterModels.length > 0 && (
               <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
@@ -235,7 +235,7 @@ export function AiProviderFields({
               onChange={(event) => setAiOverride((prev) => ({ ...prev, lmstudio_base_url: event.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               placeholder="http://localhost:1234/v1"
-              aria-label="Primary LM Studio Base URL"
+              aria-label={t('ai.lmstudioUrl')}
             />
             <p className="text-xs text-gray-500 mt-1">{t('ai.lmstudioDefault', 'Default: http://localhost:1234/v1')}</p>
           </div>
@@ -259,7 +259,7 @@ export function AiProviderFields({
               value={lmStudioModel}
               onChange={(event) => setAiOverride((prev) => ({ ...prev, lmstudio_model: event.target.value }))}
               className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-              aria-label="Primary LM Studio model"
+              aria-label={t('ai.selectModel')}
             >
               <option value="">{t('ai.selectModelPlaceholder', 'Select a model...')}</option>
               {lmStudioModels.length > 0 ? (
@@ -291,7 +291,7 @@ export function AiProviderFields({
             value={maxTokens}
             onChange={(event) => setAiOverride((prev) => ({ ...prev, max_tokens: Number(event.target.value) || 0 }))}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-            aria-label="Primary max tokens per reply"
+            aria-label={t('ai.maxTokens')}
           />
           <div className="mt-1 flex flex-wrap gap-2 text-xs">
             <span className="text-gray-500 mr-1">{t('ai.presets')}</span>
@@ -322,7 +322,7 @@ export function AiProviderFields({
             value={temperature}
             onChange={(event) => setAiOverride((prev) => ({ ...prev, temperature: Number(event.target.value) }))}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-            aria-label="Primary temperature"
+            aria-label={t('ai.temperature')}
           />
           <p className="mt-1 text-xs text-gray-500">{t('ai.temperatureHelp')}</p>
         </div>

@@ -7,6 +7,7 @@ import { tts } from '../../lib/tts';
 import { SymbolImage } from '../common/SymbolImage';
 import { useAuthStore } from '../../store/authStore';
 import { getCategoryStyle } from '../../lib/symbolCategoryStyle';
+import { useTranslation } from 'react-i18next';
 
 interface DraggableSymbolProps {
   boardSymbol: BoardSymbol;
@@ -17,6 +18,7 @@ interface DraggableSymbolProps {
 
 function DraggableSymbolInner({ boardSymbol, isOverlay, onRemove, onEdit }: DraggableSymbolProps) {
   const user = useAuthStore(state => state.user);
+  const { t } = useTranslation('boards');
   const categoryStyle = getCategoryStyle(boardSymbol.symbol?.category);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `symbol-${boardSymbol.id}`,
@@ -73,7 +75,7 @@ function DraggableSymbolInner({ boardSymbol, isOverlay, onRemove, onEdit }: Drag
               type="button"
               onClick={(e) => { e.stopPropagation(); onEdit(boardSymbol); }}
               className="p-1 rounded-md bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800"
-              aria-label="Edit symbol"
+              aria-label={t('editSymbol', 'Edit symbol')}
             >
               <Pencil className="w-4 h-4" />
             </button>
@@ -83,7 +85,7 @@ function DraggableSymbolInner({ boardSymbol, isOverlay, onRemove, onEdit }: Drag
               type="button"
               onClick={(e) => { e.stopPropagation(); onRemove(boardSymbol.id); }}
               className="p-1 rounded-md bg-red-50 dark:bg-red-900/40 text-red-600 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-800"
-              aria-label="Remove symbol"
+              aria-label={t('removeSymbol', 'Remove symbol')}
             >
               <X className="w-4 h-4" />
             </button>
@@ -103,7 +105,7 @@ function DraggableSymbolInner({ boardSymbol, isOverlay, onRemove, onEdit }: Drag
         type="button"
         onClick={speak}
         className="absolute top-1 left-1 p-1 rounded-md bg-indigo-50 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900"
-        aria-label="Speak label"
+        aria-label={t('speakLabel', 'Speak label')}
       >
         <Volume2 className="w-4 h-4" />
       </button>

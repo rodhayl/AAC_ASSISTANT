@@ -106,8 +106,6 @@ describe('Achievements page', () => {
       is_active: true,
       created_at: '2026-01-01T00:00:00Z',
     };
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    vi.spyOn(window, 'alert').mockImplementation(() => {});
     api.get.mockImplementation((url: string) => {
       if (url === '/achievements/user/1') {
         return Promise.resolve({ data: [achievement, earnedAchievement] });
@@ -243,8 +241,10 @@ describe('Achievements page', () => {
     await screen.findByText('System Badge');
     await user.click(screen.getByTitle('Delete'));
 
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/achievements/4'));
-    expect(window.confirm).toHaveBeenCalled();
   });
 
   it('awards an achievement to a selected student', async () => {
@@ -290,6 +290,7 @@ describe('Achievements page', () => {
     await user.click(screen.getByRole('button', { name: /Create/ }));
 
     const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getAllByRole('textbox')[0], 'Auto Badge');
     await user.click(within(dialog).getByRole('button', { name: '⭐' }));
     await user.type(within(dialog).getAllByRole('textbox')[1], 'Automatic badge');
     await user.selectOptions(within(dialog).getAllByRole('combobox')[0], 'learning');
@@ -306,7 +307,7 @@ describe('Achievements page', () => {
 
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/achievements/', {
-        name: '',
+        name: 'Auto Badge',
         description: 'Automatic badge',
         category: 'learning',
         points: 15,
@@ -373,9 +374,22 @@ describe('Achievements page', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
+  it('shows the achievement name and icon in the award modal', async () => {
+    const user = userEvent.setup();
+    render(<Achievements />);
+    await screen.findByText('First Steps');
+
+    await user.click(screen.getByRole('button', { name: /Manage/ }));
+    await screen.findByText('System Badge');
+    await user.click(screen.getAllByTitle('Award')[0]);
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('System Badge')).toBeInTheDocument();
+    expect(within(dialog).getByText('⭐')).toBeInTheDocument();
+  });
+
   it('keeps the achievement when the delete confirmation is dismissed', async () => {
     const user = userEvent.setup();
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
     render(<Achievements />);
     await screen.findByText('First Steps');
 
@@ -383,7 +397,10 @@ describe('Achievements page', () => {
     await screen.findByText('System Badge');
     await user.click(screen.getByTitle('Delete'));
 
-    await waitFor(() => expect(window.confirm).toHaveBeenCalled());
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(api.delete).not.toHaveBeenCalled();
   });
 
@@ -439,12 +456,14 @@ describe('Achievements page', () => {
     await screen.findByText('System Badge');
     await user.click(screen.getByTitle('Delete'));
 
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
     expect(await screen.findByText('delete failed')).toBeInTheDocument();
   });
 
-  it('alerts when awarding an achievement fails', async () => {
+  it('shows an error when awarding an achievement fails', async () => {
     const user = userEvent.setup();
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
     api.post.mockRejectedValue(new Error('award failed'));
     render(<Achievements />);
     await screen.findByText('First Steps');
@@ -457,7 +476,7 @@ describe('Achievements page', () => {
     await user.click(within(dialog).getByText('Leo'));
     await user.click(within(dialog).getByRole('button', { name: 'Award' }));
 
-    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('award failed'));
+    expect(await screen.findByText('award failed')).toBeInTheDocument();
   });
 
   it('shows an error when part of the management data fails to load', async () => {
@@ -491,5 +510,51 @@ describe('Achievements page', () => {
     expect(
       await screen.findByText('Some management data could not be loaded. Please try again.'),
     ).toBeInTheDocument();
+  });
+
+  it('closes the editor modal with the Escape key', async () => {
+    const user = userEvent.setup();
+    render(<Achievements />);
+    await screen.findByText('First Steps');
+
+    await user.click(screen.getByRole('button', { name: /Manage/ }));
+    await screen.findByText('System Badge');
+    await user.click(screen.getByRole('button', { name: /Create/ }));
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('closes the delete confirmation with the Escape key', async () => {
+    const user = userEvent.setup();
+    render(<Achievements />);
+    await screen.findByText('First Steps');
+
+    await user.click(screen.getByRole('button', { name: /Manage/ }));
+    await screen.findByText('System Badge');
+    await user.click(screen.getByTitle('Delete'));
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(api.delete).not.toHaveBeenCalled();
+  });
+
+  it('disables create until a name is provided', async () => {
+    const user = userEvent.setup();
+    render(<Achievements />);
+    await screen.findByText('First Steps');
+
+    await user.click(screen.getByRole('button', { name: /Manage/ }));
+    await screen.findByText('System Badge');
+    await user.click(screen.getByRole('button', { name: /Create/ }));
+
+    const dialog = await screen.findByRole('dialog');
+    const createButton = within(dialog).getByRole('button', { name: 'Create' });
+    expect(createButton).toBeDisabled();
+
+    await user.type(within(dialog).getAllByRole('textbox')[0], 'Named');
+    expect(createButton).not.toBeDisabled();
   });
 });

@@ -85,14 +85,14 @@ export function LearningMessageList({
                 <div className="flex items-center opacity-75 text-xs">
                   {message.role === 'assistant' && <Bot className="w-3 h-3 mr-1" />}
                   {isSymbolMessage && <GridIcon className="w-3 h-3 mr-1" />}
-                  <span className="capitalize">{message.role}</span>
+                  <span>{message.role === 'user' ? t('messageRole.user') : t('messageRole.assistant')}</span>
                 </div>
                 {message.role === 'user' && isSymbolMessage && (
                   <button
                     onClick={() => onEditMessage(index)}
                     className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-white/20 rounded"
                     title={t('editSymbols', 'Edit symbols')}
-                    aria-label="Edit symbol message"
+                    aria-label={t('editSymbolMessage', 'Edit symbol message')}
                   >
                     <Edit className="w-3 h-3" />
                   </button>

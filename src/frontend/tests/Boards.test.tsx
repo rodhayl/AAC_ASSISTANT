@@ -223,7 +223,7 @@ describe('Boards page management', () => {
     fireEvent.click(screen.getByLabelText('enableAI'));
 
     expect(
-      await screen.findByText('AI settings are missing a configured provider/model. Update them in Settings first.'),
+      await screen.findByText('aiSettingsMissing'),
     ).toBeInTheDocument();
     expect(api.post).not.toHaveBeenCalled();
   });
@@ -235,7 +235,7 @@ describe('Boards page management', () => {
 
     fireEvent.click(screen.getByLabelText('delete'));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByText('delete'));
+    fireEvent.click(within(dialog).getByText('Delete'));
 
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/boards/1'));
   });
@@ -271,6 +271,11 @@ describe('Boards page management', () => {
           category: 'general',
           is_public: false,
           is_template: false,
+          grid_rows: 4,
+          grid_cols: 5,
+          locale: 'en',
+          is_language_learning: false,
+          ai_enabled: false,
         },
         { params: { user_id: 10 } },
       ),
@@ -283,6 +288,87 @@ describe('Boards page management', () => {
         size: 1,
         is_visible: true,
         custom_text: null,
+        color: null,
+        linked_board_id: null,
+      }),
+    );
+  });
+
+  it('duplicates a board preserving grid, language flag, symbol color, folder links and AI config', async () => {
+    const source = {
+      ...board,
+      grid_rows: 3,
+      grid_cols: 6,
+      locale: 'es',
+      is_language_learning: true,
+      ai_enabled: true,
+      ai_provider: 'openrouter',
+      ai_model: 'gpt-4o-mini',
+    };
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/boards/') return Promise.resolve({ data: [source] });
+      if (url === '/boards/1') {
+        return Promise.resolve({
+          data: {
+            ...source,
+            symbols: [
+              {
+                symbol: { id: 5 },
+                position_x: 2,
+                position_y: 1,
+                size: 2,
+                is_visible: true,
+                custom_text: 'Mi vaca',
+                color: '#fee2e2',
+                linked_board_id: 7,
+              },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    vi.mocked(api.post).mockResolvedValue({ data: { id: 99 } });
+    renderBoards();
+    await screen.findByText('Morning Routine');
+
+    fireEvent.click(screen.getByLabelText('Duplicate board'));
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith(
+        '/boards/',
+        {
+          name: 'Morning Routine (Copy)',
+          description: 'Daily steps',
+          category: 'general',
+          is_public: false,
+          is_template: false,
+          grid_rows: 3,
+          grid_cols: 6,
+          locale: 'es',
+          is_language_learning: true,
+          ai_enabled: false,
+        },
+        { params: { user_id: 10 } },
+      ),
+    );
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/boards/99/symbols', {
+        symbol_id: 5,
+        position_x: 2,
+        position_y: 1,
+        size: 2,
+        is_visible: true,
+        custom_text: 'Mi vaca',
+        color: '#fee2e2',
+        linked_board_id: 7,
+      }),
+    );
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith('/boards/99', {
+        ai_enabled: true,
+        ai_provider: 'openrouter',
+        ai_model: 'gpt-4o-mini',
       }),
     );
   });
@@ -322,7 +408,7 @@ describe('Boards page management', () => {
     fireEvent.click(screen.getByLabelText('selectAll'));
     fireEvent.click(screen.getByText(/deleteSelected/));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByText('delete'));
+    fireEvent.click(within(dialog).getByText('Delete'));
 
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/boards/1'));
     expect(api.delete).toHaveBeenCalledWith('/boards/2');

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '../store/authStore'
 import api, { extractError } from '../lib/api'
 import type { Board, StudentBoardSummary, User } from '../types'
 import { useTranslation } from 'react-i18next'
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { Toggle } from '../components/ui/Toggle'
 import { ResetPasswordModal } from '../components/common/ResetPasswordModal'
@@ -241,6 +242,24 @@ export function Students() {
     }
   }
 
+  const createDialogRef = useRef<HTMLDivElement | null>(null)
+  const editDialogRef = useRef<HTMLDivElement | null>(null)
+  const assignDialogRef = useRef<HTMLDivElement | null>(null)
+  const preferencesDialogRef = useRef<HTMLDivElement | null>(null)
+
+  useModalFocusTrap(createDialogRef, createModalOpen, () => {
+    setCreateModalOpen(false)
+    setNewUsername('')
+    setNewDisplayName('')
+    setNewEmail('')
+    setNewPassword('')
+    setConfirmPassword('')
+    setError(null)
+  })
+  useModalFocusTrap(editDialogRef, editId != null, () => setEditId(null))
+  useModalFocusTrap(assignDialogRef, assignModalOpen, () => setAssignModalOpen(false))
+  useModalFocusTrap(preferencesDialogRef, preferencesModalOpen, () => setPreferencesModalOpen(false))
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -317,7 +336,7 @@ export function Students() {
                       <button
                         onClick={() => openPreferencesModal(s)}
                         className="px-3 py-1 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center gap-1"
-                        title={t('preferences', { defaultValue: 'Preferences' })}
+                        title={t('preferences.title', { defaultValue: 'Preferences' })}
                       >
                         <Volume2 className="w-4 h-4" />
                       </button>
@@ -363,6 +382,7 @@ export function Students() {
             editId != null && (
               <div
                 className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+                ref={editDialogRef}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="edit-student-title"
@@ -412,6 +432,7 @@ export function Students() {
             assignModalOpen && selectedStudent && (
               <div
                 className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+                ref={assignDialogRef}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="assign-student-title"
@@ -463,6 +484,7 @@ export function Students() {
             createModalOpen && (
               <div
                 className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+                ref={createDialogRef}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="create-student-title"
@@ -486,7 +508,7 @@ export function Students() {
                         onChange={(e) => setNewUsername(e.target.value)}
                         required
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                        placeholder="student123"
+                        placeholder={t('placeholders.username')}
                       />
                     </div>
 
@@ -499,7 +521,7 @@ export function Students() {
                         onChange={(e) => setNewDisplayName(e.target.value)}
                         required
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                        placeholder="Alex Smith"
+                        placeholder={t('placeholders.displayName')}
                       />
                     </div>
 
@@ -511,7 +533,7 @@ export function Students() {
                         value={newEmail}
                         onChange={(e) => setNewEmail(e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                        placeholder="alex@example.com"
+                        placeholder={t('placeholders.email')}
                       />
                     </div>
 
@@ -601,6 +623,7 @@ export function Students() {
         preferencesModalOpen && preferencesStudent && (
           <div
             className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+            ref={preferencesDialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="student-preferences-title"

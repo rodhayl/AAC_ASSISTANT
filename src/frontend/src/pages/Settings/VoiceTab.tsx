@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Check, Circle, Volume2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import api, { extractError } from '../../lib/api';
 import { useTTSStore } from '../../store/ttsStore';
 import type { Preferences, VoiceStatus } from './types';
@@ -38,11 +39,15 @@ function languageLabel(code: string): string {
   return LANGUAGE_LABELS[code] || code;
 }
 
-function localVoiceLabel(voice: LocalVoiceEntry): string {
+function localVoiceLabel(voice: LocalVoiceEntry, t: TFunction): string {
   const parts = [voice.name];
-  if (voice.region === 'american') parts.push('American English');
-  else if (voice.region === 'british') parts.push('British English');
-  parts.push(voice.gender === 'female' ? 'Female' : 'Male');
+  if (voice.region === 'american') parts.push(t('voice.americanEnglish', 'American English'));
+  else if (voice.region === 'british') parts.push(t('voice.britishEnglish', 'British English'));
+  parts.push(
+    voice.gender === 'female'
+      ? t('voice.female', 'Female')
+      : t('voice.male', 'Male'),
+  );
   return parts.join(' · ');
 }
 
@@ -175,7 +180,7 @@ export function VoiceTab({
           <optgroup key={language} label={`${languageLabel(language)} (${language})`}>
             {voices.map((voice) => (
               <option key={voice.name} value={voice.name}>
-                {localVoiceLabel(voice)}
+                {localVoiceLabel(voice, t)}
               </option>
             ))}
           </optgroup>

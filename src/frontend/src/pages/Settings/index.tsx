@@ -44,7 +44,7 @@ export function Settings() {
       </div>
 
       <nav
-        aria-label="Settings sections"
+        aria-label={t('tabs.sectionsLabel')}
         className="sticky top-0 z-10 flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-800/95"
       >
         {visibleSections.map((section) => (

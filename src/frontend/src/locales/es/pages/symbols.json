@@ -41,5 +41,18 @@
   "deleteSelectedConfirm": "¿Eliminar {{count}} símbolos seleccionados?",
   "forceDelete": "Forzar eliminación",
   "delete": "Eliminar",
-  "symbolInUseForceDelete": "Este símbolo está en uso en tableros. ¿Eliminarlo de todos los tableros y borrarlo?"
+  "symbolInUseForceDelete": "Este símbolo está en uso en tableros. ¿Eliminarlo de todos los tableros y borrarlo?",
+  "failed": "Error",
+  "loadFailed": "Error al cargar símbolos",
+  "updateFailed": "Error al actualizar símbolo",
+  "createFailed": "Error al crear símbolo",
+  "deleteFailed": "Error al eliminar símbolo",
+  "arasaacSearchFailed": "Error al buscar en ARASAAC",
+  "importSuccess": "Símbolo importado",
+  "importFailed": "Error al importar símbolo",
+  "invalidFile": "Archivo no válido. Debe ser una imagen de menos de {{size}}MB.",
+  "labelPlaceholder": "p. ej., Hola",
+  "previewAlt": "vista previa",
+  "batchDeleteInUseSkipped": "{{count}} símbolos seleccionados están en uso en tableros y no se eliminaron. Bórralos individualmente para forzar su eliminación.",
+  "someDeletionsFailed": "Algunas eliminaciones fallaron: {{details}}"
 }

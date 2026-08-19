@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Save, Sparkles, AlertTriangle, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import api, { extractError } from '../../lib/api';
 import type { User, GuardianProfile, TemplateInfo } from '../../types';
+import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
 
 interface GuardianProfileModalProps {
     isOpen: boolean;
@@ -46,7 +47,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                 }
             }
         } catch {
-            setError(t('errors.loadFailed', 'Failed to load profile data'));
+            setError(t('errors.profileLoadFailed', 'Failed to load profile data'));
         } finally {
             setLoading(false);
         }
@@ -93,11 +94,15 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
         }
     };
 
+    const dialogRef = useRef<HTMLDivElement | null>(null);
+    useModalFocusTrap(dialogRef, isOpen, onClose);
+
     if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" role="presentation">
             <div
+                ref={dialogRef}
                 className="glass-card w-full max-w-md p-6 max-h-[90vh] overflow-y-auto"
                 role="dialog"
                 aria-modal="true"
@@ -191,7 +196,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                                         companion_persona: { ...profile.companion_persona, name: e.target.value }
                                     })}
                                     className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
-                                    placeholder="e.g. Buddy, Robo"
+                                    placeholder={t('placeholders.companionName')}
                                 />
                             </div>
                             <div>
@@ -204,7 +209,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                                         companion_persona: { ...profile.companion_persona, role: e.target.value }
                                     })}
                                     className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
-                                    placeholder="e.g. Teacher, Friend, Assistant"
+                                    placeholder={t('placeholders.role')}
                                 />
                             </div>
                         </div>
@@ -259,7 +264,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                         className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
                     >
                         <Save className="w-4 h-4" />
-                        {t('save', 'Save Profile')}
+                        {t('save')}
                     </button>
                 </div>
             </div>

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Board, BoardSymbol } from '../types';
 import api, { apiOffline, extractError } from '../lib/api';
+import i18n from '../i18n/index';
 import { useNotificationsStore } from './notificationsStore';
 
 interface BoardState {
@@ -248,12 +249,21 @@ export const useBoardStore = create<BoardState>((set, get) => {
       } else {
         base = (await api.get(`/boards/${id}`)).data
       }
+      // Preserve grid, locale and the language-learning flag so a duplicate is
+      // a faithful copy. AI content generation is intentionally NOT triggered
+      // on duplicate: the board is created with AI disabled, its symbols are
+      // copied manually, and AI settings are restored via the update endpoint.
       const createRes = await api.post('/boards/', {
         name: `${base.name} (Copy)`,
         description: base.description,
         category: base.category,
         is_public: base.is_public,
-        is_template: base.is_template
+        is_template: base.is_template,
+        grid_rows: base.grid_rows ?? 4,
+        grid_cols: base.grid_cols ?? 5,
+        locale: base.locale ?? 'en',
+        is_language_learning: base.is_language_learning ?? false,
+        ai_enabled: false
       }, { params: { user_id: userId } });
       const newBoard = createRes.data;
       for (const s of base.symbols || []) {
@@ -263,7 +273,16 @@ export const useBoardStore = create<BoardState>((set, get) => {
           position_y: s.position_y,
           size: s.size,
           is_visible: s.is_visible,
-          custom_text: s.custom_text
+          custom_text: s.custom_text,
+          color: s.color ?? null,
+          linked_board_id: s.linked_board_id ?? null
+        });
+      }
+      if (base.ai_enabled) {
+        await api.put(`/boards/${newBoard.id}`, {
+          ai_enabled: true,
+          ai_provider: base.ai_provider,
+          ai_model: base.ai_model
         });
       }
       await get().fetchBoards(userId, get().currentSearchQuery, true, 1);
@@ -386,7 +405,10 @@ export const useBoardStore = create<BoardState>((set, get) => {
           state.assignedBoardsStudentId === studentId ? null : state.assignedBoardsLastFetchTime,
       }));
       try {
-        useNotificationsStore.getState().add({ title: 'Board assigned', message: `Board ${boardId} assigned to student ${studentId}` })
+        useNotificationsStore.getState().add({
+          title: i18n.t('boards:boardAssigned', 'Board assigned'),
+          message: i18n.t('boards:boardAssignedTo', 'Board {{boardId}} assigned to student {{studentId}}', { boardId, studentId }),
+        })
       } catch { /* notification optional */ }
       finishMutation();
     } catch (e: unknown) {

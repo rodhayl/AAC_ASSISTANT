@@ -49,6 +49,7 @@
     "editTitle": "Editar administrador",
     "deleteAria": "Eliminar {{name}}",
     "deleteTitle": "Eliminar administrador",
+    "deleteSelfTitle": "No puedes eliminar tu propia cuenta",
     "resetPassword": "Reset",
     "resetPasswordAria": "Restablecer contraseña para {{name}}",
     "resetPasswordTitle": "Restablecer Contraseña"

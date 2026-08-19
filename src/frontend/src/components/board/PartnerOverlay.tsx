@@ -85,6 +85,16 @@ export function PartnerOverlay({ isOpen, onClose }: PartnerOverlayProps) {
     return () => cleanupRecognition();
   }, [isOpen, startListening, stopListening, cleanupRecognition]);
 
+  // Close on Escape so keyboard users are never trapped in the modal.
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (

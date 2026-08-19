@@ -92,4 +92,41 @@ describe('SymbolSearchModal request lifecycle', () => {
       params: expect.objectContaining({ search: 'cat' }),
     }));
   });
+
+  it('re-runs the search when the category filter changes', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: [] });
+    renderModal();
+    const input = screen.getByPlaceholderText('Search for a symbol...');
+    fireEvent.change(input, { target: { value: 'cat' } });
+    await act(() => vi.advanceTimersByTimeAsync(200));
+    await act(async () => { await Promise.resolve(); });
+    expect(api.get).toHaveBeenCalledTimes(1);
+
+    // Picking a category must trigger a new search with the new filter,
+    // not leave stale results on screen (regression: the change only set
+    // state and never re-queried).
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'animals' } });
+    await act(() => vi.advanceTimersByTimeAsync(200));
+    await act(async () => { await Promise.resolve(); });
+    expect(api.get).toHaveBeenCalledTimes(2);
+    expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', expect.objectContaining({
+      params: expect.objectContaining({ search: 'cat', category: 'animals' }),
+    }));
+  });
+
+  it('re-runs the search when the language filter changes', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: [] });
+    renderModal();
+    const input = screen.getByPlaceholderText('Search for a symbol...');
+    fireEvent.change(input, { target: { value: 'cat' } });
+    await act(() => vi.advanceTimersByTimeAsync(200));
+    await act(async () => { await Promise.resolve(); });
+
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: 'es' } });
+    await act(() => vi.advanceTimersByTimeAsync(200));
+    await act(async () => { await Promise.resolve(); });
+    expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', expect.objectContaining({
+      params: expect.objectContaining({ search: 'cat', language: 'es' }),
+    }));
+  });
 });

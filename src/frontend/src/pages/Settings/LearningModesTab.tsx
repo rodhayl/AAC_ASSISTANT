@@ -5,6 +5,7 @@ import { useAuthStore } from '../../store/authStore';
 import api, { extractError } from '../../lib/api';
 import { useAutoHide } from '../../hooks/useAutoHide';
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import type { LearningMode } from './types';
 
 interface PreviewStudent {
@@ -40,6 +41,8 @@ export function LearningModesTab() {
   const [modeForm, setModeForm] = useState<ModeForm>({ ...EMPTY_MODE_FORM });
   const [modeError, setModeError] = useState<string | null>(null);
   const [modeSuccess, setModeSuccess] = useState<string | null>(null);
+  const [pendingDeleteMode, setPendingDeleteMode] = useState<LearningMode | null>(null);
+  const [deletingMode, setDeletingMode] = useState(false);
 
   // System prompt preview state
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -134,7 +137,7 @@ export function LearningModesTab() {
         });
       } catch (err) {
         if (requestId !== previewRequestIdRef.current) return;
-        setPreviewError(extractError(err, 'Failed to preview system prompt'));
+        setPreviewError(extractError(err, t('learningModes.previewFailed', 'Failed to preview system prompt')));
       } finally {
         if (requestId === previewRequestIdRef.current) setPreviewLoading(false);
       }
@@ -145,6 +148,7 @@ export function LearningModesTab() {
       previewStudentId,
       sampleEnabled,
       sampleQuestion,
+      t,
     ],
   );
 
@@ -210,6 +214,21 @@ export function LearningModesTab() {
   };
 
   const handleSaveMode = async () => {
+    // Client-side validation keeps required fields from reaching the backend
+    // (which would otherwise surface raw English Pydantic 422 messages).
+    if (!modeForm.name.trim()) {
+      setModeError(t('learningModes.nameRequired', 'Name is required'));
+      return;
+    }
+    if (editingModeId === -1 && !modeForm.key.trim()) {
+      setModeError(t('learningModes.keyRequired', 'Key is required'));
+      return;
+    }
+    if (!modeForm.prompt_instruction.trim()) {
+      setModeError(t('learningModes.promptRequired', 'System prompt instruction is required'));
+      return;
+    }
+    setModeError(null);
     try {
       if (editingModeId && editingModeId !== -1) {
         await api.put(`/learning-modes/${editingModeId}`, {
@@ -218,26 +237,36 @@ export function LearningModesTab() {
           prompt_instruction: modeForm.prompt_instruction,
           auto_ask_enabled: modeForm.auto_ask_enabled,
         });
-        setModeSuccess('Mode updated successfully');
+        setModeSuccess(t('learningModes.updated', 'Mode updated successfully'));
       } else {
         await api.post('/learning-modes/', modeForm);
-        setModeSuccess('Mode created successfully');
+        setModeSuccess(t('learningModes.created', 'Mode created successfully'));
       }
       fetchLearningModes();
       handleCancelModeEdit();
     } catch (err: unknown) {
-      setModeError(extractError(err, 'Failed to save mode'));
+      setModeError(extractError(err, t('learningModes.saveFailed', 'Failed to save mode')));
     }
   };
 
-  const handleDeleteMode = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this learning mode?')) return;
+  const handleDeleteMode = (id: number) => {
+    const mode = learningModes.find((candidate) => candidate.id === id);
+    if (mode) setPendingDeleteMode(mode);
+  };
+
+  const confirmDeleteMode = async () => {
+    if (!pendingDeleteMode) return;
+    setDeletingMode(true);
     try {
-      await api.delete(`/learning-modes/${id}`);
+      await api.delete(`/learning-modes/${pendingDeleteMode.id}`);
+      setPendingDeleteMode(null);
       fetchLearningModes();
-      setModeSuccess('Mode deleted');
+      setModeSuccess(t('learningModes.deleted', 'Mode deleted'));
     } catch (err: unknown) {
-      setModeError(extractError(err, 'Failed to delete mode'));
+      setModeError(extractError(err, t('learningModes.deleteFailed', 'Failed to delete mode')));
+      setPendingDeleteMode(null);
+    } finally {
+      setDeletingMode(false);
     }
   };
 
@@ -292,9 +321,9 @@ export function LearningModesTab() {
                             ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'
                             : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
                         }`}
-                        title={mode.auto_ask_enabled !== false ? 'Auto-asks adaptive questions' : 'Adaptive questions must be requested manually'}
+                        title={mode.auto_ask_enabled !== false ? t('learningModes.autoAskTitle', 'Auto-asks adaptive questions') : t('learningModes.manualAskTitle', 'Adaptive questions must be requested manually')}
                       >
-                        Auto-ask: {mode.auto_ask_enabled !== false ? 'On' : 'Off'}
+                        {t('learningModes.autoAskLabel', 'Auto-ask')}: {mode.auto_ask_enabled !== false ? t('learningModes.on', 'On') : t('learningModes.off', 'Off')}
                       </span>
                     </div>
                   </div>
@@ -302,15 +331,15 @@ export function LearningModesTab() {
                     <button
                       type="button"
                       onClick={() => { void openPreview(mode); }}
-                      aria-label={`Preview ${mode.name}`}
-                      title="Preview system prompt"
+                      aria-label={`${t('learningModes.preview', 'Preview')} ${mode.name}`}
+                      title={t('learningModes.previewSystemPrompt', 'Preview System Prompt')}
                       className="p-2 text-indigo-600 hover:bg-indigo-50 rounded"
                     >
                       <Eye className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => handleEditMode(mode)}
-                      aria-label={`Edit ${mode.name}`}
+                      aria-label={`${t('learningModes.edit', 'Edit')} ${mode.name}`}
                       className="p-2 text-indigo-600 hover:bg-indigo-50 rounded"
                     >
                       <Edit2 className="w-4 h-4" />
@@ -319,8 +348,8 @@ export function LearningModesTab() {
                       <button
                         type="button"
                         onClick={() => handleDeleteMode(mode.id)}
-                        aria-label={`Delete ${mode.name}`}
-                        title="Delete learning mode"
+                        aria-label={`${t('learningModes.delete', 'Delete')} ${mode.name}`}
+                        title={t('learningModes.deleteModeTitle', 'Delete learning mode')}
                         className="p-2 text-red-600 hover:bg-red-50 rounded"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -343,7 +372,7 @@ export function LearningModesTab() {
         ) : (
           <div className="space-y-4">
             <h4 className="font-medium text-gray-900">
-              {editingModeId === -1 ? 'Create New Mode' : 'Edit Mode'}
+              {editingModeId === -1 ? t('learningModes.createNew', 'Create New Mode') : t('learningModes.editMode', 'Edit Mode')}
             </h4>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('learningModes.name', 'Name')}</label>
@@ -351,7 +380,7 @@ export function LearningModesTab() {
                 value={modeForm.name}
                 onChange={(event) => setModeForm({ ...modeForm, name: event.target.value })}
                 className="w-full p-2 border rounded-lg"
-                placeholder="e.g. Daily Conversation"
+                placeholder={t('learningModes.namePlaceholder', 'e.g. Daily Conversation')}
               />
             </div>
             <div>
@@ -360,7 +389,7 @@ export function LearningModesTab() {
                 value={modeForm.key}
                 onChange={(event) => setModeForm({ ...modeForm, key: event.target.value })}
                 className="w-full p-2 border rounded-lg"
-                placeholder="e.g. daily_conversation"
+                placeholder={t('learningModes.keyPlaceholder', 'e.g. daily_conversation')}
                 disabled={editingModeId !== -1}
               />
               <p className="text-xs text-gray-500 mt-1">{t('learningModes.keyHelp', 'Unique identifier for this mode.')}</p>
@@ -371,7 +400,7 @@ export function LearningModesTab() {
                 value={modeForm.description}
                 onChange={(event) => setModeForm({ ...modeForm, description: event.target.value })}
                 className="w-full p-2 border rounded-lg"
-                placeholder="Brief description for the user"
+                placeholder={t('learningModes.descriptionPlaceholder', 'Brief description for the user')}
               />
             </div>
             <div>
@@ -393,7 +422,7 @@ export function LearningModesTab() {
                 value={modeForm.prompt_instruction}
                 onChange={(event) => setModeForm({ ...modeForm, prompt_instruction: event.target.value })}
                 className="w-full p-2 border rounded-lg h-32 font-mono text-sm"
-                placeholder="Instructions for the AI on how to behave in this mode..."
+                placeholder={t('learningModes.promptPlaceholder', 'Instructions for the AI on how to behave in this mode...')}
               />
               <p className="text-xs text-gray-500 mt-1">
                 {t('learningModes.promptHelp', 'This text is appended to the AI system prompt. It is not visible to the student.')}
@@ -411,9 +440,7 @@ export function LearningModesTab() {
               <span className="leading-tight">
                 <span className="font-medium">{t('learningModes.autoAsk', 'Auto-ask questions')}</span>
                 <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  Automatically ask adaptive questions during sessions. Turn off for
-                  conversational modes (e.g. roleplay); the "New question" button in the
-                  Learning tab still works.
+                  {t('learningModes.autoAskHelp', 'Automatically ask adaptive questions during sessions. Turn off for conversational modes (e.g. roleplay); the "New question" button in the Learning tab still works.')}
                 </span>
               </span>
             </label>
@@ -456,14 +483,14 @@ export function LearningModesTab() {
                 </h4>
                 <p className="text-sm text-gray-500 mt-1">
                   {previewMode
-                    ? `Previewing saved mode "${previewMode.name}" — the exact prompt sent to the LLM (guardian profile + mode instruction).`
-                    : "The exact prompt sent to the LLM: the student's guardian profile (or the default prompt) plus this mode's instruction."}
+                    ? t('learningModes.previewingSaved', 'Previewing saved mode "{{name}}" — the exact prompt sent to the LLM (guardian profile + mode instruction).', { name: previewMode.name })
+                    : t('learningModes.previewingForm', "The exact prompt sent to the LLM: the student's guardian profile (or the default prompt) plus this mode's instruction.")}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={closePreview}
-                aria-label="Close preview"
+                aria-label={t('learningModes.closePreview', 'Close preview')}
                 className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
               >
                 <X className="w-5 h-5" />
@@ -489,7 +516,7 @@ export function LearningModesTab() {
                     <option value="">{t('learningModes.noStudent', 'No student (default prompt)')}</option>
                     {previewStudents.map((student) => (
                       <option key={student.id} value={student.id}>
-                        {student.display_name}{student.has_profile ? ' • guardian profile' : ''}
+                        {student.display_name}{student.has_profile ? ` • ${t('learningModes.guardianProfile', 'guardian profile')}` : ''}
                       </option>
                     ))}
                   </select>
@@ -500,7 +527,7 @@ export function LearningModesTab() {
                   disabled={previewLoading}
                   className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-60"
                 >
-                  {previewLoading ? 'Loading...' : 'Preview'}
+                  {previewLoading ? t('learningModes.loading', 'Loading...') : t('learningModes.preview', 'Preview')}
                 </button>
                 <button
                   type="button"
@@ -509,7 +536,7 @@ export function LearningModesTab() {
                   className="inline-flex items-center gap-1.5 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-60"
                 >
                   <Copy className="w-4 h-4" />
-                  {copied ? 'Copied' : 'Copy'}
+                  {copied ? t('learningModes.copied', 'Copied') : t('learningModes.copy', 'Copy')}
                 </button>
               </div>
 
@@ -551,7 +578,7 @@ export function LearningModesTab() {
                           void runPreview();
                         }
                       }}
-                      placeholder="e.g. ¿Por qué llueve? / Why does it rain?"
+                      placeholder={t('learningModes.samplePlaceholder', 'e.g. Why does it rain?')}
                       className="w-full p-2 border rounded-lg text-sm"
                     />
                   </div>
@@ -572,8 +599,8 @@ export function LearningModesTab() {
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
                   {t('learningModes.template', 'Template:')} <span className="font-medium">{previewMeta.template_name}</span> ·{' '}
                   {previewMeta.has_guardian_profile
-                    ? 'Guardian profile included'
-                    : 'No guardian profile (default prompt)'}
+                    ? t('learningModes.guardianIncluded', 'Guardian profile included')
+                    : t('learningModes.noGuardian', 'No guardian profile (default prompt)')}
                 </div>
               )}
               {previewError && (
@@ -593,7 +620,7 @@ export function LearningModesTab() {
                       </span>
                       {previewParams && (
                         <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">
-                          temperature {previewParams.temperature ?? '—'} · max_tokens {previewParams.max_tokens ?? '—'}
+                          {t('learningModes.temperature', 'temperature')} {previewParams.temperature ?? '—'} · {t('learningModes.maxTokens', 'max_tokens')} {previewParams.max_tokens ?? '—'}
                         </span>
                       )}
                     </div>
@@ -622,6 +649,18 @@ export function LearningModesTab() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={pendingDeleteMode != null}
+        onClose={() => setPendingDeleteMode(null)}
+        onConfirm={confirmDeleteMode}
+        title={t('learningModes.deleteModeTitle', 'Delete learning mode')}
+        description={t('learningModes.confirmDelete', 'Are you sure you want to delete this learning mode?')}
+        confirmText={t('learningModes.delete', 'Delete')}
+        cancelText={t('learningModes.cancel', 'Cancel')}
+        variant="danger"
+        isLoading={deletingMode}
+      />
     </section>
   );
 }

@@ -28,6 +28,15 @@ vi.mock('../src/lib/api', () => ({
   },
 }));
 
+const addToast = vi.hoisted(() => vi.fn());
+
+vi.mock('../src/store/toastStore', () => ({
+  useToastStore: (selector?: (s: { addToast: typeof addToast }) => unknown) => {
+    const state = { addToast };
+    return selector ? selector(state) : state;
+  },
+}));
+
 const tFn = (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key;
 
 vi.mock('react-i18next', () => ({
@@ -111,7 +120,7 @@ describe('Symbols page', () => {
     await screen.findByText('Hello');
 
     await user.click(screen.getByRole('button', { name: /newSymbol/ }));
-    const labelInput = screen.getByPlaceholderText('e.g., Hola');
+    const labelInput = screen.getByPlaceholderText('labelPlaceholder');
     await user.type(labelInput, 'Adiós');
     await user.click(screen.getByRole('button', { name: 'create' }));
 
@@ -121,6 +130,7 @@ describe('Symbols page', () => {
         description: '',
         category: 'general',
         keywords: '',
+        language: 'en',
       }),
     );
   });
@@ -131,7 +141,7 @@ describe('Symbols page', () => {
     await screen.findByText('Hello');
 
     await user.click(screen.getByRole('button', { name: /edit/i }));
-    const labelInput = screen.getByPlaceholderText('e.g., Hola');
+    const labelInput = screen.getByPlaceholderText('labelPlaceholder');
     await user.clear(labelInput);
     await user.type(labelInput, 'Hi there');
     await user.click(screen.getByRole('button', { name: 'save' }));
@@ -151,14 +161,14 @@ describe('Symbols page', () => {
     api.delete
       .mockRejectedValueOnce({
         response: { status: 400 },
-        message: 'Symbol is in use on 2 boards',
+        message: 'Symbol is in use on 2 boards; remove or use force=true',
       })
       .mockResolvedValueOnce({ data: {} });
     render(<Symbols />);
     await screen.findByText('Hello');
 
     const card = screen.getByText('Hello').closest('.p-4') as HTMLElement;
-    await user.click(within(card).getAllByRole('button', { name: '' })[0]);
+    await user.click(within(card).getByRole('button', { name: 'deleteSymbol' }));
     let dialog = await screen.findByRole('dialog');
     await user.click(within(dialog).getByText('delete'));
 
@@ -174,7 +184,7 @@ describe('Symbols page', () => {
     );
   });
 
-  it('batch-deletes selected symbols and reports failures', async () => {
+  it('batch-deletes symbols and skips in-use ones without force-deleting them', async () => {
     const user = userEvent.setup();
     api.get.mockImplementation((url: string) =>
       url === '/boards/symbols'
@@ -184,9 +194,8 @@ describe('Symbols page', () => {
     api.delete
       .mockRejectedValueOnce({
         response: { status: 400 },
-        message: 'Symbol is in use on 1 board',
+        message: 'El símbolo está en uso en tableros; elimine o use force=true',
       })
-      .mockResolvedValueOnce({ data: {} })
       .mockResolvedValueOnce({ data: {} });
     render(<Symbols />);
     await screen.findByText('Hello');
@@ -203,8 +212,11 @@ describe('Symbols page', () => {
       expect(api.delete).toHaveBeenCalledWith('/boards/symbols/1');
       expect(api.delete).toHaveBeenCalledWith('/boards/symbols/2');
     });
-    // First delete fails as in-use, is retried with force and succeeds; the
-    // second symbol deletes cleanly, so no failure banner is shown.
+    // The in-use symbol is reported (localized backend message with the
+    // force=true marker) but never force-deleted in a batch; the clean one
+    // deletes normally and the banner explains what was skipped.
+    expect(api.delete).not.toHaveBeenCalledWith('/boards/symbols/1?force=true');
+    expect(await screen.findByText(/batchDeleteInUseSkipped/)).toBeInTheDocument();
     expect(screen.queryByText(/Some deletions failed/)).not.toBeInTheDocument();
   });
 
@@ -345,7 +357,7 @@ describe('Symbols page', () => {
     await screen.findByText('Hello');
 
     await user.click(screen.getByRole('button', { name: /newSymbol/ }));
-    const labelInput = screen.getByPlaceholderText('e.g., Hola');
+    const labelInput = screen.getByPlaceholderText('labelPlaceholder');
     await user.type(labelInput, 'Adiós');
     await user.type(screen.getByPlaceholderText('optionalDesc'), 'A farewell');
     await user.type(screen.getByPlaceholderText('commaSeparated'), 'bye, adios');
@@ -367,7 +379,7 @@ describe('Symbols page', () => {
     await screen.findByText('Hello');
 
     await user.click(screen.getByRole('button', { name: /newSymbol/ }));
-    await user.type(screen.getByPlaceholderText('e.g., Hola'), 'Adiós');
+    await user.type(screen.getByPlaceholderText('labelPlaceholder'), 'Adiós');
     await user.click(screen.getByRole('button', { name: 'create' }));
 
     expect(await screen.findByText('create down')).toBeInTheDocument();
@@ -394,7 +406,7 @@ describe('Symbols page', () => {
       target: { files: [new File(['text'], 'note.txt', { type: 'text/plain' })] },
     });
 
-    expect(screen.getByText('Invalid file. Must be an image under 5MB.')).toBeInTheDocument();
+    expect(screen.getByText('invalidFile')).toBeInTheDocument();
   });
 
   it('clears the selected file when the input is emptied', async () => {
@@ -436,7 +448,23 @@ describe('Symbols page', () => {
     await user.type(screen.getByPlaceholderText('searchPlaceholder'), 'casa');
     await user.click(screen.getByRole('button', { name: 'search' }));
 
-    expect(await screen.findByText('Failed to search ARASAAC')).toBeInTheDocument();
+    expect(await screen.findByText('arasaacSearchFailed')).toBeInTheDocument();
+  });
+
+  it('shows a success toast after importing an ARASAAC symbol', async () => {
+    const user = userEvent.setup();
+    render(<Symbols />);
+    await screen.findByText('Hello');
+
+    await user.click(screen.getByRole('button', { name: /searchArasaac/ }));
+    await user.type(screen.getByPlaceholderText('searchPlaceholder'), 'casa');
+    await user.click(screen.getByRole('button', { name: 'search' }));
+    await screen.findByText('House');
+    await user.click(screen.getByRole('button', { name: /import/i }));
+
+    await waitFor(() =>
+      expect(addToast).toHaveBeenCalledWith('importSuccess', 'success'),
+    );
   });
 
   it('shows an error when importing an ARASAAC symbol fails', async () => {
@@ -451,7 +479,7 @@ describe('Symbols page', () => {
     await screen.findByText('House');
     await user.click(screen.getByRole('button', { name: /import/i }));
 
-    expect(await screen.findByText('Failed to import symbol')).toBeInTheDocument();
+    expect(await screen.findByText('importFailed')).toBeInTheDocument();
   });
 
   it('cancels the delete dialog without deleting', async () => {
@@ -460,7 +488,7 @@ describe('Symbols page', () => {
     await screen.findByText('Hello');
 
     const card = screen.getByText('Hello').closest('.p-4') as HTMLElement;
-    await user.click(within(card).getAllByRole('button', { name: '' })[0]);
+    await user.click(within(card).getByRole('button', { name: 'deleteSymbol' }));
     const dialog = await screen.findByRole('dialog');
     await user.click(within(dialog).getByText('cancel'));
 
@@ -468,30 +496,24 @@ describe('Symbols page', () => {
     expect(api.delete).not.toHaveBeenCalled();
   });
 
-  it('reports a batch failure when the force-delete retry also fails', async () => {
+  it('skips an in-use symbol in a batch without any force retry', async () => {
     const user = userEvent.setup();
-    api.get.mockImplementation((url: string) =>
-      url === '/boards/symbols'
-        ? Promise.resolve({ data: [symbol, { ...symbol, id: 2, label: 'Bye' }] })
-        : Promise.resolve({ data: [] }),
-    );
-    api.delete
-      .mockRejectedValueOnce({ response: { status: 400 }, message: 'Symbol is in use on 1 board' })
-      .mockRejectedValueOnce({ response: { status: 500 }, message: 'server error' })
-      .mockResolvedValueOnce({ data: {} });
+    api.delete.mockRejectedValueOnce({
+      response: { status: 400 },
+      message: 'Symbol is in use on 1 board; remove or use force=true',
+    });
     render(<Symbols />);
     await screen.findByText('Hello');
 
     const checkboxes = screen.getAllByRole('checkbox');
     await user.click(checkboxes[0]);
-    await user.click(checkboxes[1]);
     await user.click(screen.getByRole('button', { name: /deleteSelected/ }));
     const dialog = await screen.findByRole('dialog');
     await user.click(within(dialog).getByText('delete'));
 
-    expect(
-      await screen.findByText(/Some deletions failed: ID 1: server error/),
-    ).toBeInTheDocument();
+    expect(api.delete).toHaveBeenCalledWith('/boards/symbols/1');
+    expect(api.delete).not.toHaveBeenCalledWith('/boards/symbols/1?force=true');
+    expect(await screen.findByText(/batchDeleteInUseSkipped/)).toBeInTheDocument();
   });
 
   it('reports a batch failure when a symbol cannot be deleted', async () => {
@@ -509,9 +531,7 @@ describe('Symbols page', () => {
     const dialog = await screen.findByRole('dialog');
     await user.click(within(dialog).getByText('delete'));
 
-    expect(
-      await screen.findByText(/Some deletions failed: ID 1: Cannot delete core symbol/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/someDeletionsFailed/)).toBeInTheDocument();
   });
 
   it('shows an error when a single delete fails for another reason', async () => {
@@ -521,7 +541,7 @@ describe('Symbols page', () => {
     await screen.findByText('Hello');
 
     const card = screen.getByText('Hello').closest('.p-4') as HTMLElement;
-    await user.click(within(card).getAllByRole('button', { name: '' })[0]);
+    await user.click(within(card).getByRole('button', { name: 'deleteSymbol' }));
     const dialog = await screen.findByRole('dialog');
     await user.click(within(dialog).getByText('delete'));
 

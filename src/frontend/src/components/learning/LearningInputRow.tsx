@@ -93,7 +93,7 @@ export function LearningInputRow({
                 onClick={stopRecording}
                 className="p-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors animate-pulse"
                 title={t('stopReview')}
-                aria-label="Stop recording"
+                aria-label={t('stopRecordingLabel', 'Stop recording')}
               >
                 <Square className="w-5 h-5" />
               </button>
@@ -104,7 +104,7 @@ export function LearningInputRow({
                   onClick={sendRecording}
                   className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
                   title={t('sendRecording')}
-                  aria-label="Send recording"
+                  aria-label={t('sendRecordingLabel', 'Send recording')}
                   disabled={isLoading}
                 >
                   <Send className="w-5 h-5" />
@@ -114,7 +114,7 @@ export function LearningInputRow({
                   onClick={discardRecording}
                   className="p-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                   title={t('discardRecording')}
-                  aria-label="Discard recording"
+                  aria-label={t('discardRecordingLabel', 'Discard recording')}
                   disabled={isLoading}
                 >
                   <Trash2 className="w-5 h-5" />
@@ -132,7 +132,7 @@ export function LearningInputRow({
                 onClick={startRecording}
                 className="p-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                 title={t('startRecording')}
-                aria-label="Start recording"
+                aria-label={t('startRecordingLabel', 'Start recording')}
                 disabled={isLoading || isStartingSession}
               >
                 <Mic className="w-5 h-5" />

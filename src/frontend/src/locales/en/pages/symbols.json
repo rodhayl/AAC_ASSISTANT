@@ -41,5 +41,18 @@
   "deleteSelectedConfirm": "Delete {{count}} selected symbols?",
   "forceDelete": "Force Delete",
   "delete": "Delete",
-  "symbolInUseForceDelete": "This symbol is in use on boards. Remove it from all boards and delete it?"
+  "symbolInUseForceDelete": "This symbol is in use on boards. Remove it from all boards and delete it?",
+  "failed": "Failed",
+  "loadFailed": "Failed to load symbols",
+  "updateFailed": "Failed to update symbol",
+  "createFailed": "Failed to create symbol",
+  "deleteFailed": "Failed to delete symbol",
+  "arasaacSearchFailed": "Failed to search ARASAAC",
+  "importSuccess": "Symbol imported",
+  "importFailed": "Failed to import symbol",
+  "invalidFile": "Invalid file. Must be an image under {{size}}MB.",
+  "labelPlaceholder": "e.g., Hello",
+  "previewAlt": "preview",
+  "batchDeleteInUseSkipped": "{{count}} selected symbols are in use on boards and were not deleted. Delete them individually to force removal.",
+  "someDeletionsFailed": "Some deletions failed: {{details}}"
 }

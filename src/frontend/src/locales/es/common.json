@@ -1,7 +1,16 @@
 {
+  "close": "Cerrar",
   "navbar": {
     "welcome": "¡Bienvenido de nuevo, {{name}}!",
-    "apiDocs": "Documentación API"
+    "apiDocs": "Documentación API",
+    "toggleMenu": "Alternar menú",
+    "guest": "Invitado",
+    "visitor": "Visitante",
+    "roles": {
+      "admin": "Administrador",
+      "teacher": "Profesor",
+      "student": "Estudiante"
+    }
   },
   "notifications": {
     "title": "Notificaciones",
@@ -22,6 +31,8 @@
     "unauthorized": "No autorizado",
     "forbidden": "Acceso denegado",
     "notFound": "Recurso no encontrado",
+    "notFoundTitle": "Página no encontrada",
+    "notFoundMessage": "La página que buscas no existe o ha sido movida.",
     "unknown": "Error desconocido",
     "validation": "Error de validación",
     "credentialsInvalid": "No se pudieron validar las credenciales",
@@ -147,7 +158,6 @@
       "manage": "Solo profesores y administradores pueden gestionar logros",
       "create": "Solo profesores y administradores pueden crear logros",
       "update": "Solo profesores y administradores pueden actualizar logros",
-      "updateSystem": "Solo los administradores pueden actualizar logros del sistema",
       "delete": "Solo profesores y administradores pueden eliminar logros",
       "award": "Solo profesores y administradores pueden otorgar logros",
       "updateOwnOnly": "Solo puedes actualizar los logros que creaste",
@@ -193,9 +203,21 @@
     "preview": "Vista previa:",
     "emptyMessage": "Mensaje vacío",
     "saveResend": "Guardar y reenviar",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "removeSymbol": "Quitar {{label}}",
+    "removeSymbolTitle": "Quitar símbolo",
+    "saveResendTitle": "Guardar y reenviar mensaje",
+    "cancelTitle": "Cancelar edición"
+  },
+  "actions": {
+    "backHome": "Volver al inicio"
   },
   "offline": {
-    "conflictsHint": "Estas solicitudes fallaron al volver a estar en línea. Puedes reintentarlas o descartarlas."
+    "conflictsHint": "Estas solicitudes fallaron al volver a estar en línea. Puedes reintentarlas o descartarlas.",
+    "title": "Conflictos sin conexión ({{count}})",
+    "clearAll": "Limpiar todos los conflictos",
+    "retries": "Reintentos: {{count}}",
+    "retry": "Reintentar",
+    "dismiss": "Descartar"
   }
 }

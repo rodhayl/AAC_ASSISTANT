@@ -13,6 +13,7 @@ const hunt = vi.hoisted(() => ({
   score: 3,
   targetSymbol: null as BoardSymbol | null,
   feedback: null as string | null,
+  incorrectSymbolId: null as number | null,
   symbols: [] as BoardSymbol[],
   startGame: vi.fn(),
   handleSymbolClick: vi.fn(),
@@ -58,6 +59,7 @@ vi.mock('lucide-react', () => {
     RotateCcw: Icon,
     Volume2: Icon,
     CheckCircle: Icon,
+    XCircle: Icon,
   };
 });
 
@@ -89,6 +91,7 @@ describe('SymbolHunt page', () => {
     hunt.score = 3;
     hunt.targetSymbol = makeSymbol(1, 'Dog');
     hunt.feedback = null;
+    hunt.incorrectSymbolId = null;
     hunt.symbols = [makeSymbol(1, 'Dog'), makeSymbol(2, 'Cat')];
     hunt.voiceEnabled = true;
   });
@@ -133,7 +136,7 @@ describe('SymbolHunt page', () => {
     hunt.gameState = 'playing';
     render(<SymbolHunt />);
 
-    fireEvent.click(screen.getByRole('button', { name: '' }).closest('button') as HTMLElement);
+    fireEvent.click(screen.getByLabelText('Back'));
     expect(hunt.setGameState).toHaveBeenCalledWith('selecting');
   });
 
@@ -144,5 +147,27 @@ describe('SymbolHunt page', () => {
     hunt.symbols = [makeSymbol(1, 'Dog')];
     render(<SymbolHunt />);
     expect(screen.getByText('card-Dog')).toBeInTheDocument();
+  });
+
+  it('highlights the clicked wrong symbol when feedback is incorrect', () => {
+    hunt.gameState = 'playing';
+    hunt.feedback = 'incorrect';
+    hunt.incorrectSymbolId = 2;
+    hunt.targetSymbol = makeSymbol(1, 'Dog');
+    hunt.symbols = [makeSymbol(1, 'Dog'), makeSymbol(2, 'Cat')];
+    render(<SymbolHunt />);
+
+    // The wrong symbol (Cat) renders with the incorrect overlay and the target
+    // (Dog) still renders normally.
+    const catCell = screen.getByText('card-Cat').closest('.relative');
+    expect(catCell?.querySelector('.bg-red-500')).not.toBeNull();
+  });
+
+  it('shows an empty state when no boards exist', () => {
+    hunt.playableBoards = [];
+    hunt.unplayableBoards = [];
+    render(<SymbolHunt />);
+
+    expect(screen.getByText('No boards available yet. Ask your teacher to create one.')).toBeInTheDocument();
   });
 });

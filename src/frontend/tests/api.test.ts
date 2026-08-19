@@ -118,6 +118,134 @@ describe('auth response handling', () => {
     expect(logout).toHaveBeenCalledOnce();
   });
 
+  it('refreshes the token and retries once on a non-auth 401', async () => {
+    const logout = vi.fn();
+    const refreshAccessToken = vi.fn().mockResolvedValue(true);
+    const state = useAuthStore.getState();
+    vi.spyOn(useAuthStore, 'getState').mockReturnValue({
+      ...state,
+      logout,
+      refreshAccessToken,
+    });
+
+    let calls = 0;
+    const adapter = vi.fn().mockImplementation((config) => {
+      calls += 1;
+      if (calls === 1) {
+        return Promise.reject({ config, response: { status: 401 } });
+      }
+      return Promise.resolve({
+        data: {},
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    });
+
+    await api.request({ url: '/boards/1', method: 'get', adapter });
+
+    expect(refreshAccessToken).toHaveBeenCalledOnce();
+    expect(adapter).toHaveBeenCalledTimes(2);
+    expect(logout).not.toHaveBeenCalled();
+  });
+
+  it('retries without the expired Authorization header after a refresh', async () => {
+    const logout = vi.fn();
+    const refreshAccessToken = vi.fn().mockResolvedValue(true);
+    const state = useAuthStore.getState();
+    vi.spyOn(useAuthStore, 'getState').mockReturnValue({
+      ...state,
+      logout,
+      refreshAccessToken,
+    });
+
+    let calls = 0;
+    let retriedAuthorization: unknown;
+    const adapter = vi.fn().mockImplementation((config) => {
+      calls += 1;
+      if (calls === 1) {
+        return Promise.reject({
+          config,
+          response: { status: 401 },
+        });
+      }
+      retriedAuthorization =
+        config.headers?.Authorization ?? config.headers?.authorization;
+      return Promise.resolve({
+        data: {},
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    });
+
+    await api.request({
+      url: '/boards/1',
+      method: 'get',
+      headers: { Authorization: 'Bearer expired-token' },
+      adapter,
+    });
+
+    // The expired bearer header must be stripped so the request interceptor
+    // can attach the freshly refreshed token.
+    expect(retriedAuthorization).toBeUndefined();
+    expect(refreshAccessToken).toHaveBeenCalledOnce();
+    expect(adapter).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a second 401 after a refresh and then logs out', async () => {
+    const logout = vi.fn();
+    const refreshAccessToken = vi.fn().mockResolvedValue(true);
+    const state = useAuthStore.getState();
+    vi.spyOn(useAuthStore, 'getState').mockReturnValue({
+      ...state,
+      logout,
+      refreshAccessToken,
+    });
+    vi.stubGlobal('window', undefined);
+
+    const adapter = vi.fn().mockImplementation((config) =>
+      Promise.reject({ config, response: { status: 401 } }),
+    );
+
+    await expect(api.request({
+      url: '/boards/1',
+      method: 'get',
+      adapter,
+    })).rejects.toMatchObject({ response: { status: 401 } });
+
+    // One refresh + one retry, then logout; no infinite refresh loop.
+    expect(refreshAccessToken).toHaveBeenCalledOnce();
+    expect(adapter).toHaveBeenCalledTimes(2);
+    expect(logout).toHaveBeenCalledOnce();
+  });
+
+  it('logs out when the silent refresh fails on a non-auth 401', async () => {
+    const logout = vi.fn();
+    const refreshAccessToken = vi.fn().mockResolvedValue(false);
+    const state = useAuthStore.getState();
+    vi.spyOn(useAuthStore, 'getState').mockReturnValue({
+      ...state,
+      logout,
+      refreshAccessToken,
+    });
+    vi.stubGlobal('window', undefined);
+
+    await expect(api.request({
+      url: '/boards/1',
+      method: 'get',
+      adapter: (config) => Promise.reject({
+        config,
+        response: { status: 401 },
+      }),
+    })).rejects.toMatchObject({ response: { status: 401 } });
+
+    expect(refreshAccessToken).toHaveBeenCalledOnce();
+    expect(logout).toHaveBeenCalledOnce();
+  });
+
   it('keeps an unauthorized replay as a visible conflict instead of clearing it on logout', async () => {
     authenticateOfflineTestUser();
     const adapter = vi.fn().mockImplementation((config) => Promise.reject({

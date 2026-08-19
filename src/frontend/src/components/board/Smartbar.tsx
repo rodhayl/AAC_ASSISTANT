@@ -307,7 +307,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
                 </button>
 
                 {isAI && (
-                  <div className="absolute -top-1 -right-1 bg-purple-500 text-white rounded-full p-0.5 shadow-sm z-10 pointer-events-none" title="AI Suggestion">
+                  <div className="absolute -top-1 -right-1 bg-purple-500 text-white rounded-full p-0.5 shadow-sm z-10 pointer-events-none" title={t('aiSuggestionTitle', 'AI Suggestion')}>
                     <Brain className="w-2.5 h-2.5" />
                   </div>
                 )}

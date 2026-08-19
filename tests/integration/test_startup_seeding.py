@@ -303,6 +303,73 @@ def test_seeded_demo_board_is_playable():
     engine.dispose()
 
 
+def test_default_learning_modes_are_seeded_idempotently():
+    """
+    System learning modes are seeded on first run and never duplicated, and
+    custom teacher modes are left untouched.
+    """
+    from src.aac_app.models import LearningMode
+    from src.aac_app.seed import DEFAULT_LEARNING_MODES, _create_default_learning_modes
+
+    engine = create_engine(TEST_DB_URL)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    # A custom teacher mode must survive the system-mode seed.
+    teacher = User(
+        username="mode_teacher",
+        display_name="Mode Teacher",
+        user_type="teacher",
+        password_hash="test-hash",
+    )
+    session.add(teacher)
+    session.flush()
+    custom = LearningMode(
+        name="Andaluz",
+        key="andalusian",
+        description="Speaks Andalusian Spanish",
+        prompt_instruction="Speak in Andalusian Spanish.",
+        is_custom=True,
+        created_by=teacher.id,
+    )
+    session.add(custom)
+    session.flush()
+
+    _create_default_learning_modes(session)
+    session.commit()
+
+    system_modes = (
+        session.query(LearningMode)
+        .filter(LearningMode.created_by.is_(None))
+        .order_by(LearningMode.key)
+        .all()
+    )
+    assert [mode.key for mode in system_modes] == sorted(
+        mode["key"] for mode in DEFAULT_LEARNING_MODES
+    )
+    assert all(not mode.is_custom for mode in system_modes)
+    assert all(mode.prompt_instruction for mode in system_modes)
+    assert [mode.key for mode in system_modes if not mode.auto_ask_enabled] == [
+        "conversation",
+        "roleplay",
+    ]
+
+    # Second run must not duplicate the system modes nor touch the custom one.
+    _create_default_learning_modes(session)
+    session.commit()
+    assert (
+        session.query(LearningMode).filter(LearningMode.created_by.is_(None)).count()
+        == len(DEFAULT_LEARNING_MODES)
+    )
+    custom_still = session.get(LearningMode, custom.id)
+    assert custom_still is not None
+    assert custom_still.key == "andalusian"
+
+    session.close()
+    engine.dispose()
+
+
 def test_legacy_demo_board_is_renamed_without_touching_custom_boards():
     """Startup migrates the old demo name but preserves user-created boards."""
     from src.aac_app.seed import _rename_legacy_default_board

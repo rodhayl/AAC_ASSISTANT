@@ -47,7 +47,6 @@ const hoisted = vi.hoisted(() => {
     applyId: null as number | null,
     refinePrompt: '',
     applyAllLoading: false,
-    setAiError: vi.fn(),
     setRefinePrompt: vi.fn(),
     loadAISuggestions: vi.fn(),
     handleRefine: vi.fn(),
@@ -371,13 +370,13 @@ describe('BoardEditor page', () => {
     });
   });
 
-  it('reports a remove error through the AI error surface', async () => {
+  it('reports a remove error as a toast (visible even without AI enabled)', async () => {
     hoisted.board.deleteBoardSymbol.mockRejectedValue(new Error('remove fail'));
     renderEditor();
     fireEvent.click(screen.getByRole('button', { name: 'remove-symbol' }));
 
     await waitFor(() => {
-      expect(hoisted.ai.setAiError).toHaveBeenCalledWith('failedToRemoveSymbol');
+      expect(hoisted.toast.addToast).toHaveBeenCalledWith('failedToRemoveSymbol', 'error');
     });
   });
 
@@ -392,14 +391,14 @@ describe('BoardEditor page', () => {
     });
   });
 
-  it('reports a clear error through the AI error surface', async () => {
+  it('reports a clear error as a toast (visible even without AI enabled)', async () => {
     hoisted.board.deleteBoardSymbol.mockRejectedValue(new Error('clear fail'));
     renderEditor();
     fireEvent.click(screen.getByRole('button', { name: 'clear-board' }));
     fireEvent.click(screen.getByRole('button', { name: 'confirm-clear' }));
 
     await waitFor(() => {
-      expect(hoisted.ai.setAiError).toHaveBeenCalledWith('failedToClearBoard');
+      expect(hoisted.toast.addToast).toHaveBeenCalledWith('failedToClearBoard', 'error');
     });
   });
 

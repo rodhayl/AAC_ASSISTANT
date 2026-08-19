@@ -63,7 +63,7 @@ export function LearningHeader({
                 ? 'bg-indigo-600 text-white'
                 : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
             }`}
-            title="Toggle symbol-first view"
+            title={t('toggleSymbolView', 'Toggle symbol-first view')}
           >
             <GridIcon className="w-4 h-4 inline-block mr-2" />
             {symbolView ? t('textChat') : t('symbolFirst')}
@@ -72,7 +72,7 @@ export function LearningHeader({
             onClick={onNewQuestion}
             disabled={!canAskQuestion}
             className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 transition-colors flex items-center gap-1.5"
-            title="Get a new question"
+            title={t('newQuestionTitle', 'Get a new question')}
           >
             <HelpCircle className="w-4 h-4" />
             {t('newQuestion', 'New question')}
@@ -130,10 +130,10 @@ export function LearningHeader({
                   ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800'
                   : 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800'
               }`}
-              title="Current AI provider"
+              title={t('currentProvider', 'Current AI provider')}
             >
               {isCloud ? <Cloud className="w-4 h-4" /> : <Cpu className="w-4 h-4" />}
-              <span>AI: {label}</span>
+              <span>{t('aiProviderLabel', 'AI: {{provider}}', { provider: label })}</span>
             </span>
           );
         })()}
@@ -152,7 +152,7 @@ export function LearningHeader({
               ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50'
               : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
           }`}
-          title={voiceEnabled ? 'Disable voice input' : 'Enable voice input'}
+          title={voiceEnabled ? t('disableVoice', 'Disable voice input') : t('enableVoice', 'Enable voice input')}
         >
           {voiceEnabled ? (
             <>

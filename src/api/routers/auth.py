@@ -18,10 +18,11 @@ from src.aac_app.services.lockout_service import lockout_service
 from src.aac_app.utils.jwt_utils import (
     create_access_token,
     create_refresh_token,
+    decode_access_token,
     decode_refresh_token,
 )
 from src.api import schemas
-from src.api.deps import get_current_active_user, get_db, get_text
+from src.api.deps import get_db, get_text, oauth2_scheme
 from src.api.routers.auth_helpers import (
     conditional_limiter,
     ensure_username_email_available,
@@ -338,13 +339,26 @@ def login_for_access_token(
 
 @router.post("/logout")
 def logout(
-    current_user: User = Depends(get_current_active_user),
+    token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Revoke every token issued for the current account."""
-    mark_credentials_changed(current_user)
-    db.add(current_user)
-    db.commit()
+    """Revoke every token issued for the current account.
+
+    Best-effort: the access token is decoded without enforcing expiration so
+    an expired token still identifies its account and revokes the refresh
+    tokens. A missing or undecodable token is accepted (the client clears its
+    local session regardless), so logout never fails just because the access
+    token aged out while the user was still logged in.
+    """
+    if token:
+        payload = decode_access_token(token, verify_exp=False)
+        user_id = payload.get("user_id") if payload else None
+        if user_id:
+            current_user = db.query(User).filter(User.id == user_id).first()
+            if current_user:
+                mark_credentials_changed(current_user)
+                db.add(current_user)
+                db.commit()
     return {"ok": True}
 
 

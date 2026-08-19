@@ -30,15 +30,15 @@ export function DataManagementTab() {
     try {
       const text = await file.text();
       const json = JSON.parse(text);
-      if (!json.meta || typeof json.meta !== 'object') throw new Error('Invalid export: missing meta');
-      if (!Array.isArray(json.boards)) throw new Error('Invalid export: boards must be array');
-      if (!Array.isArray(json.assignedBoards)) throw new Error('Invalid export: assignedBoards must be array');
-      if (!Array.isArray(json.achievements)) throw new Error('Invalid export: achievements must be array');
+      if (!json.meta || typeof json.meta !== 'object') throw new Error(t('data.invalidExportMeta'));
+      if (!Array.isArray(json.boards)) throw new Error(t('data.invalidExportBoards'));
+      if (!Array.isArray(json.assignedBoards)) throw new Error(t('data.invalidExportAssignedBoards'));
+      if (!Array.isArray(json.achievements)) throw new Error(t('data.invalidExportAchievements'));
       await api.post('/data/import', json);
       addToast(t('data.importSuccess'), 'success');
     } catch (error) {
       console.error('Failed to import data:', error);
-      const errorMessage = error instanceof Error ? error.message : t('errors.unknownError', 'Unknown error');
+      const errorMessage = error instanceof Error ? error.message : t('errors.unknownError');
       addToast(t('data.importFailed') + errorMessage, 'error');
     }
   };

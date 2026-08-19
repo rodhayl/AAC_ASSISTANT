@@ -97,6 +97,7 @@ export function Learning() {
     addToast,
     microphoneAccessMessage: t('errors.microphoneAccess'),
     sessionDifficulty,
+    sessionTopic: t('topics.audioConversation'),
   });
 
   useEffect(() => {
@@ -138,9 +139,27 @@ export function Learning() {
     if (!user?.id) return;
     fetchBoards(user.id);
     api.get('/learning-modes/')
-      .then((response) => setAvailableModes(response.data))
+      .then((response) => {
+        // System modes (created_by null) keep the seeded English name in the
+        // DB; translate by key so the dropdown matches the UI language.
+        // Custom teacher modes always show their stored name.
+        const modes = (response.data as Array<{
+          id: number;
+          name: string;
+          key: string;
+          description: string;
+          auto_ask_enabled?: boolean;
+          created_by?: number | null;
+        }>).map((mode) => ({
+          ...mode,
+          name: mode.created_by == null
+            ? t(`modes.${mode.key}`, mode.name)
+            : mode.name,
+        }));
+        setAvailableModes(modes);
+      })
       .catch((fetchError) => console.error('Failed to fetch learning modes', fetchError));
-  }, [fetchBoards, user?.id]);
+  }, [fetchBoards, t, user?.id]);
 
   useEffect(() => {
     if (user?.id) {
@@ -187,9 +206,9 @@ export function Learning() {
   }, [fetchSessionHistory, showHistory, user?.id]);
 
   const handleNewConversation = useCallback(async () => {
-    await startActivity('general conversation', 'practice');
+    await startActivity(t('topics.general'), 'practice');
     setShowHistory(false);
-  }, [startActivity]);
+  }, [startActivity, t]);
   // Submit an answer; the store auto-requests the next adaptive question.
   const answerAndContinue = useCallback(async (answer: string) => {
     if (!currentSession) return;
@@ -239,7 +258,7 @@ export function Learning() {
       setSessionStartError(null);
       try {
         await startSession({
-          topic: 'symbol conversation',
+          topic: t('topics.symbolConversation'),
           purpose: 'aac symbols',
           difficulty: sessionDifficulty,
           mode_key: selectedModeKey,
@@ -346,10 +365,10 @@ export function Learning() {
         : last.provider === 'lmstudio'
           ? 'LM Studio'
           : 'Ollama';
-    setProviderNotice(`Switched to ${providerName}`);
+    setProviderNotice(t('providerSwitched', 'Switched to {{provider}}', { provider: providerName }));
     const timeoutId = setTimeout(() => setProviderNotice(null), 3000);
     return () => clearTimeout(timeoutId);
-  }, [providerHistory]);
+  }, [providerHistory, t]);
 
   useEffect(() => {
     if (!voiceEnabled || messages.length === 0) return;

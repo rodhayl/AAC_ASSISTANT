@@ -110,7 +110,7 @@ export function BoardsAndTopicsSidebar({
                 <button
                     onClick={onToggle}
                     className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                    title={isOpen ? "Collapse sidebar" : "Expand sidebar"}
+                    title={isOpen ? t('collapseSidebar', 'Collapse sidebar') : t('expandSidebar', 'Expand sidebar')}
                 >
                     {isOpen ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
                 </button>

@@ -28,7 +28,7 @@ const CATEGORIES = [
 const LANGUAGES = [
   { code: 'es', label: 'Español' },
   { code: 'en', label: 'English' },
-  { code: 'all', label: 'All' }
+  { code: 'all', label: '' } // localized below via the `allLanguages` key
 ];
 
 
@@ -50,6 +50,16 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
     };
   }, []);
 
+  // Close on Escape so keyboard users are never trapped in the modal.
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   useEffect(() => {
     if (!isOpen) {
       searchGeneration.current += 1;
@@ -69,9 +79,18 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
     setSelectedLanguage(currentLang);
   }, [isOpen, i18n.language]);
 
-  const handleSearch = async (e?: React.FormEvent, queryOverride?: string) => {
+  const handleSearch = async (
+    e?: React.FormEvent,
+    queryOverride?: string,
+    filters?: { category?: string; language?: string },
+  ) => {
     e?.preventDefault();
     const searchQuery = queryOverride ?? query;
+    // Filter changes arrive with the new value explicitly: setState has not
+    // re-rendered yet when the debounced callback fires, so reading the state
+    // closure would search with the stale filter.
+    const searchCategory = filters?.category ?? category;
+    const searchLanguage = filters?.language ?? selectedLanguage;
     const generation = ++searchGeneration.current;
     if (searchTimer.current) {
       clearTimeout(searchTimer.current);
@@ -80,7 +99,7 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
     searchController.current?.abort();
 
     // Allow empty query if category is selected
-    if (!searchQuery.trim() && !category) {
+    if (!searchQuery.trim() && !searchCategory) {
       setResults([]);
       setIsLoading(false);
       return;
@@ -96,12 +115,12 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
         search: searchQuery // Pass search query to backend
       };
 
-      if (selectedLanguage && selectedLanguage !== 'all') {
-        params.language = selectedLanguage;
+      if (searchLanguage && searchLanguage !== 'all') {
+        params.language = searchLanguage;
       }
 
-      if (category && category !== 'all') {
-        params.category = category;
+      if (searchCategory && searchCategory !== 'all') {
+        params.category = searchCategory;
       }
 
       const res = await api.get('/boards/symbols', { params, signal: controller.signal });
@@ -183,9 +202,16 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
               <select
                 value={category}
                 onChange={(e) => {
-                  setCategory(e.target.value);
-                  // Optional: auto-trigger search on filter change
-                  // setTimeout(() => handleSearch(), 0);
+                  const next = e.target.value;
+                  setCategory(next);
+                  if (searchTimer.current) {
+                    clearTimeout(searchTimer.current);
+                    searchTimer.current = null;
+                  }
+                  searchTimer.current = setTimeout(() => {
+                    searchTimer.current = null;
+                    void handleSearch(undefined, query, { category: next });
+                  }, 200);
                 }}
                 className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 appearance-none"
               >
@@ -203,13 +229,22 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
               <select
                 value={selectedLanguage}
                 onChange={(e) => {
-                  setSelectedLanguage(e.target.value);
+                  const next = e.target.value;
+                  setSelectedLanguage(next);
+                  if (searchTimer.current) {
+                    clearTimeout(searchTimer.current);
+                    searchTimer.current = null;
+                  }
+                  searchTimer.current = setTimeout(() => {
+                    searchTimer.current = null;
+                    void handleSearch(undefined, query, { language: next });
+                  }, 200);
                 }}
                 className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 appearance-none"
               >
                 {LANGUAGES.map(lang => (
                   <option key={lang.code} value={lang.code}>
-                    {lang.label}
+                    {lang.label || t('allLanguages', 'All')}
                   </option>
                 ))}
               </select>

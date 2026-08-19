@@ -58,28 +58,32 @@ vi.mock('../src/config', () => ({
   },
 }));
 
+const tMock = vi.hoisted(() => {
+  const table: Record<string, string> = {
+    'ai.title': 'AI Provider Configuration',
+    'ai.subtitle': 'Configure AI model',
+    'ai.primary': 'Primary AI Provider',
+    'ai.ollama': 'Ollama',
+    'ai.ollamaDesc': 'Local LLM',
+    'ai.openrouter': 'OpenRouter',
+    'ai.openrouterDesc': 'Cloud API',
+    'ai.health': 'Check Provider Health',
+  };
+  return (key: string, defaultValue?: string | { defaultValue?: string }, options?: Record<string, string>) => {
+    if (typeof defaultValue === 'string') {
+      let text = defaultValue;
+      for (const [name, value] of Object.entries(options || {})) {
+        text = text.replace(`{{${name}}}`, value);
+      }
+      return text;
+    }
+    return table[key] || key;
+  };
+});
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, defaultValue?: string | { defaultValue?: string }, options?: Record<string, string>) => {
-      const table: Record<string, string> = {
-        'ai.title': 'AI Provider Configuration',
-        'ai.subtitle': 'Configure AI model',
-        'ai.primary': 'Primary AI Provider',
-        'ai.ollama': 'Ollama',
-        'ai.ollamaDesc': 'Local LLM',
-        'ai.openrouter': 'OpenRouter',
-        'ai.openrouterDesc': 'Cloud API',
-        'ai.health': 'Check Provider Health',
-      };
-      if (typeof defaultValue === 'string') {
-        let text = defaultValue;
-        for (const [name, value] of Object.entries(options || {})) {
-          text = text.replace(`{{${name}}}`, value);
-        }
-        return text;
-      }
-      return table[key] || key;
-    },
+    t: tMock,
   }),
 }));
 

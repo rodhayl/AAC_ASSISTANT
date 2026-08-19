@@ -105,6 +105,10 @@ let offline = typeof navigator !== 'undefined' ? !navigator.onLine : false;
 const MAX_OFFLINE_QUEUE_SIZE = 100;
 const OFFLINE_REPLAY: unique symbol = Symbol('offline-replay');
 type OfflineReplayConfig = AxiosRequestConfig & { [OFFLINE_REPLAY]?: true };
+// Marks a request retried after a silent token refresh so a second 401 cannot
+// loop: one refresh-and-retry per request, then fall back to logout.
+const RETRIED_AFTER_REFRESH: unique symbol = Symbol('retried-after-refresh');
+type RefreshRetryConfig = AxiosRequestConfig & { [RETRIED_AFTER_REFRESH]?: true };
 type QueuedRequest = { config: AxiosRequestConfig; userId: number };
 function readQueuedRequests(): QueuedRequest[] {
   return readOfflineQueue().map((item) => ({
@@ -348,7 +352,7 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     if (error.config && !error.config.headers) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       error.config.headers = {} as any;
@@ -360,8 +364,32 @@ api.interceptors.response.use(
     // out here would clear the queued mutation before that conflict can be
     // recorded, causing silent loss when an access token expired offline.
     if (status === 401 && !isAuthFlowEndpoint(error.config?.url) && !isOfflineReplay) {
+      const alreadyRetried = Boolean(error.config?.[RETRIED_AFTER_REFRESH]);
+      const { logout, refreshAccessToken } = getAuthState();
+      if (!alreadyRetried && refreshAccessToken) {
+        try {
+          // The refresh token outlives the access token (7 days vs 2 hours);
+          // silently extending the session keeps long-running users logged in
+          // instead of bouncing them to the login screen mid-use.
+          const refreshed = await refreshAccessToken();
+          if (refreshed) {
+            // Retry the original request once with the fresh token. The
+            // request interceptor only attaches a stored token when no
+            // Authorization header is present, so strip the expired one
+            // from the retried config before re-issuing.
+            const retryConfig: RefreshRetryConfig = {
+              ...error.config,
+              [RETRIED_AFTER_REFRESH]: true,
+            };
+            if (retryConfig.headers) {
+              delete retryConfig.headers.Authorization;
+              delete retryConfig.headers.authorization;
+            }
+            return api.request(retryConfig);
+          }
+        } catch { /* fall through to logout */ }
+      }
       try {
-        const { logout } = getAuthState();
         logout?.();
         if (typeof window !== 'undefined') {
           window.location.href = '/login';

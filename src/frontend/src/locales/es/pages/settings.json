@@ -8,7 +8,8 @@
     "voice": "Voz",
     "ai": "Proveedor de IA",
     "learningModes": "Modos de aprendizaje",
-    "data": "Datos"
+    "data": "Datos",
+    "sectionsLabel": "Secciones de ajustes"
   },
   "profile": {
     "edit": "Editar",
@@ -19,20 +20,17 @@
     "displayName": "Nombre para mostrar",
     "email": "Correo electrónico",
     "emailPlaceholder": "Ingresa correo",
-    "noEmail": "Sin correo"
+    "noEmail": "Sin correo",
+    "saveFailed": "No se pudo guardar el perfil"
   },
   "preferences": {
     "title": "Preferencias",
     "saved": "Guardado",
-    "savePrefs": "Guardar preferencias",
     "saveAppearance": "Guardar ajustes de apariencia",
     "saveVoice": "Guardar ajustes de voz",
     "language": "Idioma de la Interfaz",
     "languageHelp": "Elige tu idioma preferido",
-    "languages": {
-      "en-US": "Inglés",
-      "es-ES": "Español"
-    },
+    "languages": {},
     "tts": "Voz de Texto a Voz",
     "ttsHelp": "Elige la voz para leer símbolos",
     "ttsEngine": "Motor de salida de voz",
@@ -54,9 +52,7 @@
     "dark": "Modo oscuro",
     "darkHelp": "Cambiar entre temas claro y oscuro",
     "voices": {
-      "default": "Predeterminado (Español)",
-      "female": "Femenina (Español)",
-      "male": "Masculina (Español)"
+      "default": "Predeterminado (Español)"
     },
     "dwellTime": "Tiempo de espera",
     "dwellTimeHelp": "Auto-seleccionar al pasar el cursor (0 = desactivado)",
@@ -76,7 +72,8 @@
     "new": "Nueva contraseña",
     "confirm": "Confirmar nueva contraseña",
     "saving": "Guardando...",
-    "save": "Guardar"
+    "save": "Guardar",
+    "changeFailed": "No se pudo cambiar la contraseña"
   },
   "data": {
     "title": "Gestión de Datos",
@@ -89,7 +86,10 @@
     "importBoards": "Importar Tableros",
     "importSuccess": "Importación completada correctamente",
     "importFailed": "Importación fallida: ",
-    "close": "Cerrar"
+    "invalidExportMeta": "Exportación no válida: falta meta",
+    "invalidExportBoards": "Exportación no válida: los tableros deben ser un array",
+    "invalidExportAssignedBoards": "Exportación no válida: assignedBoards debe ser un array",
+    "invalidExportAchievements": "Exportación no válida: los logros deben ser un array"
   },
   "ai": {
     "title": "Configuración de Proveedor de IA",
@@ -160,12 +160,24 @@
     "selectModel": "Seleccionar modelo",
     "selectModelPlaceholder": "Selecciona un modelo...",
     "localModelDefault": "local-model (Predeterminado)",
+    "localVoice": "Voz neural local",
+    "localVoiceHelp": "Elige una voz Kokoro específica. Su idioma se usa para la síntesis, así que elige una que coincida con el idioma que hablas.",
+    "voiceDefault": "Predeterminada (auto)",
+    "loading": "Cargando ajustes de IA...",
     "readOnlyTitle": "Configuración de IA",
     "viewOnly": "Ajustes de IA actuales (solo lectura - contacta al administrador para cambiarlos)",
     "primaryProvider": "Proveedor principal",
     "primaryModel": "Modelo principal",
     "lmstudio": "LM Studio",
-    "localOpenAIAPI": "API de OpenAI local"
+    "localOpenAIAPI": "API de OpenAI local",
+    "notConfigured": "Sin configurar",
+    "loadFailed": "No se pudieron cargar los ajustes de IA",
+    "fetchFailed": "No se pudieron obtener los ajustes de IA",
+    "updateFailed": "No se pudieron actualizar los ajustes",
+    "fetchOllamaFailed": "No se pudieron obtener los modelos de Ollama",
+    "fetchOpenRouterFailed": "No se pudieron obtener los modelos de OpenRouter",
+    "fetchLmStudioFailed": "No se pudieron obtener los modelos de LM Studio",
+    "autoSave": "Los ajustes de IA se guardan automáticamente."
   },
   "learningModes": {
     "subtitle": "Configura modos de aprendizaje inteligentes y prompts",
@@ -192,6 +204,54 @@
     "fullRequest": "Solicitud LLM completa",
     "systemPrompt": "Prompt del sistema",
     "userMessage": "Mensaje del usuario",
-    "userMessageHelp": "(en lo que se convierte la pregunta del estudiante)"
+    "userMessageHelp": "(en lo que se convierte la pregunta del estudiante)",
+    "updated": "Modo actualizado correctamente",
+    "created": "Modo creado correctamente",
+    "deleted": "Modo eliminado",
+    "confirmDelete": "¿Seguro que quieres eliminar este modo de aprendizaje?",
+    "deleteFailed": "No se pudo eliminar el modo",
+    "createNew": "Crear nuevo modo",
+    "editMode": "Editar modo",
+    "loading": "Cargando...",
+    "preview": "Vista previa",
+    "copied": "Copiado",
+    "copy": "Copiar",
+    "previewingSaved": "Vista previa del modo guardado \"{{name}}\": el prompt exacto enviado al LLM (perfil del tutor + instrucción del modo).",
+    "previewingForm": "El prompt exacto enviado al LLM: el perfil del tutor del estudiante (o el prompt predeterminado) más la instrucción de este modo.",
+    "guardianIncluded": "Perfil del tutor incluido",
+    "noGuardian": "Sin perfil del tutor (prompt predeterminado)",
+    "temperature": "temperature",
+    "maxTokens": "max_tokens",
+    "autoAskTitle": "Hace preguntas adaptativas automáticamente",
+    "manualAskTitle": "Las preguntas adaptativas deben solicitarse manualmente",
+    "autoAskLabel": "Preguntas automáticas",
+    "on": "Activado",
+    "off": "Desactivado",
+    "deleteModeTitle": "Eliminar modo de aprendizaje",
+    "namePlaceholder": "p. ej. Conversación diaria",
+    "keyPlaceholder": "p. ej. conversacion_diaria",
+    "descriptionPlaceholder": "Breve descripción para el usuario",
+    "promptPlaceholder": "Instrucciones para la IA sobre cómo comportarse en este modo...",
+    "autoAskHelp": "Haz preguntas adaptativas automáticamente durante las sesiones. Desactívalo para modos conversacionales (p. ej. roleplay); el botón \"Nueva pregunta\" en la pestaña Aprendizaje sigue funcionando.",
+    "closePreview": "Cerrar vista previa",
+    "previewFailed": "No se pudo generar la vista previa del prompt del sistema",
+    "saveFailed": "No se pudo guardar el modo",
+    "samplePlaceholder": "p. ej. ¿Por qué llueve?",
+    "guardianProfile": "perfil del tutor",
+    "edit": "Editar",
+    "delete": "Eliminar",
+    "nameRequired": "El nombre es obligatorio",
+    "keyRequired": "La clave es obligatoria",
+    "promptRequired": "La instrucción del prompt del sistema es obligatoria"
+  },
+  "voice": {
+    "americanEnglish": "Inglés americano",
+    "britishEnglish": "Inglés británico",
+    "female": "Femenina",
+    "male": "Masculino"
+  },
+  "errors": {
+    "saveFailed": "No se pudieron guardar las preferencias",
+    "unknownError": "Error desconocido"
   }
 }

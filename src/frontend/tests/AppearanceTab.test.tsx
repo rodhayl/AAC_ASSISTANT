@@ -8,7 +8,6 @@ vi.mock('react-i18next', () => ({
       const table: Record<string, string> = {
         'preferences.title': 'Preferences',
         'preferences.saved': 'Saved',
-        'preferences.savePrefs': 'Save preferences',
         'preferences.saveAppearance': 'Save appearance settings',
         'preferences.language': 'Language',
         'preferences.languageHelp': 'Choose language',

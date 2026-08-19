@@ -1,7 +1,16 @@
 {
+  "close": "Close",
   "navbar": {
     "welcome": "Welcome back, {{name}}!",
-    "apiDocs": "API Docs"
+    "apiDocs": "API Docs",
+    "toggleMenu": "Toggle menu",
+    "guest": "Guest",
+    "visitor": "Visitor",
+    "roles": {
+      "admin": "Admin",
+      "teacher": "Teacher",
+      "student": "Student"
+    }
   },
   "notifications": {
     "title": "Notifications",
@@ -22,6 +31,8 @@
     "unauthorized": "Not authorized",
     "forbidden": "Access forbidden",
     "notFound": "Resource not found",
+    "notFoundTitle": "Page Not Found",
+    "notFoundMessage": "The page you are looking for doesn't exist or has been moved.",
     "unknown": "Unknown error",
     "validation": "Validation error",
     "credentialsInvalid": "Could not validate credentials",
@@ -147,7 +158,6 @@
       "manage": "Only teachers and admins can manage achievements",
       "create": "Only teachers and admins can create achievements",
       "update": "Only teachers and admins can update achievements",
-      "updateSystem": "Only admins can update system achievements",
       "delete": "Only teachers and admins can delete achievements",
       "award": "Only teachers and admins can award achievements",
       "updateOwnOnly": "You can only update achievements you created",
@@ -193,9 +203,21 @@
     "preview": "Preview:",
     "emptyMessage": "Empty message",
     "saveResend": "Save & Resend",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "removeSymbol": "Remove {{label}}",
+    "removeSymbolTitle": "Remove symbol",
+    "saveResendTitle": "Save and resend message",
+    "cancelTitle": "Cancel editing"
+  },
+  "actions": {
+    "backHome": "Go Back Home"
   },
   "offline": {
-    "conflictsHint": "These requests failed after coming back online. You can retry or dismiss them."
+    "conflictsHint": "These requests failed after coming back online. You can retry or dismiss them.",
+    "title": "Offline Conflicts ({{count}})",
+    "clearAll": "Clear all conflicts",
+    "retries": "Retries: {{count}}",
+    "retry": "Retry",
+    "dismiss": "Dismiss"
   }
 }

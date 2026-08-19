@@ -167,7 +167,7 @@ export const SentenceStrip = memo(function SentenceStrip({
                   {activeId ? (
                     <div className="flex-shrink-0 flex flex-col items-center bg-white dark:bg-gray-800 border-2 border-indigo-500 rounded-lg p-1.5 min-w-[4rem] shadow-xl opacity-90 scale-105">
                       {(() => {
-                        const s = symbols.find((_, i) => `${_.id}-${i}` === activeId);
+                        const s = symbols.find((_, i) => `symbol-${_.id}-${i}` === activeId);
                         if (!s) return null;
                         return (
                           <>

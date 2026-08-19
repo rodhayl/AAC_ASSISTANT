@@ -64,7 +64,7 @@ export function SessionSummaryModal({ summary, onClose }: SessionSummaryModalPro
           <button
             type="button"
             onClick={close}
-            aria-label="Close summary"
+            aria-label={t('closeSummary', 'Close summary')}
             className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
           >
             <X className="w-5 h-5" />

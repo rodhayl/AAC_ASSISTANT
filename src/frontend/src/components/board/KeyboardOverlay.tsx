@@ -10,17 +10,31 @@ interface KeyboardOverlayProps {
 
 // Simple trie-based or frequency-based word prediction could go here.
 // For now, let's use a static list of common core words + recent history.
-const COMMON_WORDS = [
-  "I", "you", "want", "go", "help", "more", "stop", "like", "eat", "drink",
-  "play", "read", "watch", "yes", "no", "good", "bad", "happy", "sad"
-];
+// Lists are per-language so predictions match what the user actually types.
+const COMMON_WORDS: Record<string, string[]> = {
+  en: [
+    "I", "you", "want", "go", "help", "more", "stop", "like", "eat", "drink",
+    "play", "read", "watch", "yes", "no", "good", "bad", "happy", "sad"
+  ],
+  es: [
+    "yo", "tú", "quiero", "ir", "ayuda", "más", "parar", "gusta", "comer", "beber",
+    "jugar", "leer", "ver", "sí", "no", "bueno", "malo", "feliz", "triste"
+  ],
+};
 
 export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayProps) {
-  const { t } = useTranslation('boards');
+  const { t, i18n } = useTranslation('boards');
   const [text, setText] = useState('');
   const [history, setHistory] = useState<string[]>(() => {
     const saved = localStorage.getItem('aac_phrase_history');
-    return saved ? JSON.parse(saved) : [];
+    if (!saved) return [];
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : [];
+    } catch {
+      // Corrupt history must never crash the overlay.
+      return [];
+    }
   });
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -35,9 +49,11 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
         return [];
     }
 
-    const matches = COMMON_WORDS.filter(w => w.toLowerCase().startsWith(lastWord));
+    const baseLang = (i18n.language || 'en').split('-')[0].toLowerCase();
+    const wordsForLang = COMMON_WORDS[baseLang] || COMMON_WORDS.en;
+    const matches = wordsForLang.filter(w => w.toLowerCase().startsWith(lastWord));
     return matches.slice(0, 5);
-  }, [text]);
+  }, [text, i18n.language]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -45,6 +61,16 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
     const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 100);
     return () => window.clearTimeout(focusTimer);
   }, [isOpen]);
+
+  // Close on Escape so keyboard users are never trapped in the modal.
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   const handleSpeak = () => {
     if (text.trim()) {

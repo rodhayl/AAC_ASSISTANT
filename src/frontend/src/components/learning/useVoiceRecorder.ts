@@ -7,6 +7,7 @@ interface UseVoiceRecorderOptions {
   userId?: number;
   isLoading: boolean;
   sessionDifficulty: string;
+  sessionTopic: string;
   startSession: (data: {
     topic: string;
     purpose: string;
@@ -38,6 +39,7 @@ export function useVoiceRecorder({
   userId,
   isLoading,
   sessionDifficulty,
+  sessionTopic,
   startSession,
   submitVoiceAnswer,
   addToast,
@@ -82,7 +84,7 @@ export function useVoiceRecorder({
     try {
       if (!currentSession && userId) {
         await startSession({
-          topic: 'audio conversation',
+          topic: sessionTopic,
           purpose: 'voice',
           difficulty: sessionDifficulty,
         }, userId);
@@ -159,6 +161,7 @@ export function useVoiceRecorder({
     releaseStream,
     stopStream,
     sessionDifficulty,
+    sessionTopic,
     startSession,
     userId,
   ]);

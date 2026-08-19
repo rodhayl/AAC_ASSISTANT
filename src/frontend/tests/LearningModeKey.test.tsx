@@ -68,7 +68,11 @@ vi.mock('react-i18next', () => ({
     },
     i18n: { language: 'en' },
   }),
-}))
+  initReactI18next: {
+    type: '3rdParty',
+    init: () => {},
+  },
+}));
 
 vi.mock('../src/components/learning/LearningChatPanel', () => ({
   LearningChatPanel: ({ onStartSession }: { onStartSession: () => void }) => (
@@ -170,7 +174,9 @@ describe('Learning mode dropdown', () => {
         '/learning/start',
         expect.objectContaining({
           mode_key: 'practice',
-          topic: 'general conversation',
+          // The page localizes the default topic via t('topics.general'); the
+          // i18n mock returns the key itself, so assert that it is forwarded.
+          topic: 'topics.general',
           purpose: 'practice',
         }),
         expect.anything(),

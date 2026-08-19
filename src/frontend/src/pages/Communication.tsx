@@ -32,7 +32,7 @@ import { BoardsAndTopicsSidebar } from '../components/learning/BoardsAndTopicsSi
 const EMPTY_BOARD_SYMBOLS: BoardSymbol[] = [];
 
 export function Communication() {
-  const { t } = useTranslation('boards');
+  const { t } = useTranslation(['boards', 'learning']);
   const [searchParams, setSearchParams] = useSearchParams();
   const boards = useBoardStore((state) => state.boards);
   const currentBoard = useBoardStore((state) => state.currentBoard);
@@ -68,6 +68,10 @@ export function Communication() {
   const addToast = useToastStore((state) => state.addToast);
   const [isStartingSession, setIsStartingSession] = useState(false);
   const lastClickRef = useRef<{ id: number; time: number } | null>(null);
+  // Tracks the board id already mirrored into the URL so the effect below
+  // does not re-fetch the board when setSearchParams re-renders with the same
+  // value (previously every board open fetched twice).
+  const syncedBoardIdRef = useRef<number | null>(null);
 
   // Helper to start activity from sidebar
   const handleStartActivity = async (topic: string, purpose: string, boardId?: number) => {
@@ -123,13 +127,15 @@ export function Communication() {
 
   // Load active board details when selected
   useEffect(() => {
-    if (activeBoardId) {
-      if (!isNaN(activeBoardId)) {
+    if (activeBoardId && !isNaN(activeBoardId)) {
+      if (syncedBoardIdRef.current !== activeBoardId) {
+        syncedBoardIdRef.current = activeBoardId;
         fetchBoard(activeBoardId);
         setSearchParams({ boardId: activeBoardId.toString() });
       }
     } else {
       if (searchParams.has('boardId')) {
+        syncedBoardIdRef.current = null;
         setSearchParams({});
       }
     }
@@ -248,7 +254,7 @@ export function Communication() {
     if (!activeSession && user) {
       try {
         await startSession({
-          topic: "general conversation",
+          topic: t('topics.general'),
           difficulty: "basic",
           purpose: "communication board"
         }, user.id);
@@ -257,6 +263,7 @@ export function Communication() {
         activeSession = useLearningStore.getState().currentSession;
       } catch (e) {
         console.error("Failed to start session for chat", e);
+        addToast(t('sessionStartFailed'), 'error');
         return;
       }
     }
@@ -275,7 +282,7 @@ export function Communication() {
 
     submitSymbolAnswer(activeSession.session_id, symbolsForChat, enriched_gloss, raw_gloss)
       .catch(err => console.error('Failed to send to chat:', err));
-  }, [sentence, currentSession, isChatLoading, submitSymbolAnswer, isChatOpen, user, startSession]);
+  }, [sentence, currentSession, isChatLoading, submitSymbolAnswer, isChatOpen, user, startSession, addToast, t]);
 
   const handleHome = useCallback(() => {
     setActiveBoardId(null);

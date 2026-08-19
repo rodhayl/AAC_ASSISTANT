@@ -30,7 +30,7 @@ export function SecurityTab() {
       setNewPassword('');
       setConfirmPassword('');
     } catch (err: unknown) {
-      setChangeError(extractError(err, 'Failed to change password'));
+      setChangeError(extractError(err, t('security.changeFailed')));
     } finally {
       setChangeLoading(false);
     }

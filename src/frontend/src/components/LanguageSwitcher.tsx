@@ -32,7 +32,7 @@ export function LanguageSwitcher() {
         aria-label={t('language.switcher.label')}
       >
         <option value="es-ES">{t('language.switcher.es')} (España)</option>
-        <option value="en">{t('language.switcher.en')}</option>
+        <option value="en-US">{t('language.switcher.en')}</option>
       </select>
     </label>
   )

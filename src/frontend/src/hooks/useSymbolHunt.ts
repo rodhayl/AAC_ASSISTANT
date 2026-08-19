@@ -22,6 +22,7 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
   const [score, setScore] = useState(0);
   const [targetSymbol, setTargetSymbol] = useState<BoardSymbol | null>(null);
   const [feedback, setFeedback] = useState<'correct' | 'incorrect' | null>(null);
+  const [incorrectSymbolId, setIncorrectSymbolId] = useState<number | null>(null);
   const [symbols, setSymbols] = useState<BoardSymbol[]>([]);
   const gameGenerationRef = useRef(0);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -93,6 +94,7 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
     if (!target) return;
     setTargetSymbol(target);
     setFeedback(null);
+    setIncorrectSymbolId(null);
     const label = target.custom_text || target.symbol.label;
     if (user?.settings?.voice_mode_enabled !== false) {
       schedule(() => {
@@ -108,9 +110,7 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
     clearTimers();
     try {
       setLoading(true);
-      const response = await api.get(`/boards/${board.id}`, {
-        params: { skip_translation: true },
-      });
+      const response = await api.get(`/boards/${board.id}`);
       const fullBoard = response.data as Board;
       if (generation !== gameGenerationRef.current) return;
       const uniqueSymbols = getUniquePlayableSymbols(fullBoard.symbols);
@@ -131,6 +131,10 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
     } catch (error) {
       if (generation === gameGenerationRef.current) {
         console.error('Failed to start game:', error);
+        addToast(
+          t('symbolHunt.loadError', 'Failed to load the board. Please try again.'),
+          'error',
+        );
       }
     } finally {
       if (generation === gameGenerationRef.current) setLoading(false);
@@ -144,17 +148,22 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
 
     if (clickedLabel !== targetLabel) {
       setFeedback('incorrect');
+      setIncorrectSymbolId(symbol.id);
       if (user?.settings?.voice_mode_enabled !== false) {
         tts.enqueue(t('symbolHunt.tryAgain', 'Try again'));
       }
       const generation = gameGenerationRef.current;
       schedule(() => {
-        if (generation === gameGenerationRef.current) setFeedback(null);
+        if (generation === gameGenerationRef.current) {
+          setFeedback(null);
+          setIncorrectSymbolId(null);
+        }
       }, 1000);
       return;
     }
 
     setFeedback('correct');
+    setIncorrectSymbolId(null);
     setScore((currentScore) => currentScore + 1);
     Promise.resolve(api.post('/analytics/usage', {
       symbols: [{
@@ -207,6 +216,8 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
   useEffect(() => () => {
     ++gameGenerationRef.current;
     clearTimers();
+    // Stop any queued/playing instruction audio when leaving the page.
+    tts.cancelAll();
   }, [clearTimers]);
 
   return {
@@ -221,6 +232,7 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
     score,
     targetSymbol,
     feedback,
+    incorrectSymbolId,
     symbols,
     startGame,
     handleSymbolClick,

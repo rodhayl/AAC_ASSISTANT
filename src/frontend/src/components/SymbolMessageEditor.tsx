@@ -70,8 +70,8 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
                 <button
                   onClick={() => removeSymbol(idx)}
                   className="ml-1 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors"
-                  aria-label={`Remove ${sym.label}`}
-                  title="Remove symbol"
+                  aria-label={t('symbolEditor.removeSymbol', { label: sym.label })}
+                  title={t('symbolEditor.removeSymbolTitle')}
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -91,7 +91,7 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
           onClick={handleSave}
           disabled={editedSymbols.length === 0}
           className="px-3 py-1.5 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
-          title="Save and resend message"
+          title={t('symbolEditor.saveResendTitle')}
         >
           <Check className="w-4 h-4" />
           {t('symbolEditor.saveResend', 'Save & Resend')}
@@ -99,7 +99,7 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
         <button
           onClick={onCancel}
           className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-          title="Cancel editing"
+          title={t('symbolEditor.cancelTitle')}
         >
           {t('symbolEditor.cancel', 'Cancel')}
         </button>

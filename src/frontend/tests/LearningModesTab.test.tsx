@@ -2,9 +2,10 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LearningModesTab } from '../src/pages/Settings/LearningModesTab';
 
-const { get, post } = vi.hoisted(() => ({
+const { get, post, delete: deleteApi } = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
+  delete: vi.fn(),
 }));
 
 vi.mock('../src/lib/api', () => ({
@@ -12,7 +13,7 @@ vi.mock('../src/lib/api', () => ({
     get,
     post,
     put: vi.fn(),
-    delete: vi.fn(),
+    delete: deleteApi,
   },
   extractError: (error: { message?: string } | undefined, fallback: string) =>
     error?.message || fallback,
@@ -33,6 +34,7 @@ describe('LearningModesTab preview', () => {
   beforeEach(() => {
     get.mockReset();
     post.mockReset();
+    deleteApi.mockReset();
     get.mockImplementation((url: string) => {
       if (url.includes('/learning-modes/')) return Promise.resolve({ data: [] });
       if (url.includes('/guardian-profiles/students')) {
@@ -90,6 +92,25 @@ describe('LearningModesTab preview', () => {
         }),
       );
     });
+  });
+
+  it('blocks saving a mode without a system prompt instruction', async () => {
+    render(<LearningModesTab />);
+
+    fireEvent.click(await screen.findByText('Add New Learning Mode'));
+    fireEvent.change(screen.getByPlaceholderText(/e.g. Daily Conversation/), {
+      target: { value: 'Role Play' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/e.g. daily_conversation/), {
+      target: { value: 'roleplay' },
+    });
+    // prompt_instruction is intentionally left empty
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Mode/i }));
+
+    // The localized validation message appears and no API call is made.
+    expect(await screen.findByText('System prompt instruction is required')).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
   });
 
   it('previews the exact system prompt with the selected student', async () => {
@@ -182,7 +203,7 @@ describe('LearningModesTab preview', () => {
     render(<LearningModesTab />);
 
     // Click the row shortcut (Eye icon) for the saved mode
-    fireEvent.click(await screen.findByRole('button', { name: 'Preview Andaluz' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Preview Andaluz$/ }));
 
     // The list view stays - no edit form was opened
     expect(screen.queryByText('Save Mode')).not.toBeInTheDocument();
@@ -330,6 +351,63 @@ describe('LearningModesTab preview', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       expect(document.activeElement).toBe(trigger);
     });
+  });
+});
+
+describe('LearningModesTab delete', () => {
+  const customMode = {
+    id: 10,
+    name: 'Andaluz',
+    key: 'andalusian',
+    description: 'Habla andaluz',
+    prompt_instruction: 'Respuesta breve.',
+    is_custom: true,
+    created_by: 1,
+  };
+
+  beforeEach(() => {
+    get.mockImplementation((url: string) => {
+      if (url.includes('/learning-modes/')) return Promise.resolve({ data: [customMode] });
+      return Promise.resolve({ data: [] });
+    });
+    deleteApi.mockReset();
+    deleteApi.mockResolvedValue({ data: {} });
+  });
+
+  it('deletes a custom mode after confirming in the dialog', async () => {
+    render(<LearningModesTab />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Delete Andaluz$/ }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/delete this learning mode/i)).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => expect(deleteApi).toHaveBeenCalledWith('/learning-modes/10'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('keeps the mode when the delete dialog is dismissed', async () => {
+    render(<LearningModesTab />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Delete Andaluz$/ }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(deleteApi).not.toHaveBeenCalled();
+    expect(screen.getByText('Andaluz')).toBeInTheDocument();
+  });
+
+  it('surfaces an error when deleting a mode fails', async () => {
+    deleteApi.mockRejectedValue(new Error('delete down'));
+    render(<LearningModesTab />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Delete Andaluz$/ }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    expect(await screen.findByText('delete down')).toBeInTheDocument();
   });
 });
 

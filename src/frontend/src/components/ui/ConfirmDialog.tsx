@@ -1,5 +1,6 @@
 import { useId, useRef } from 'react';
 import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
 import { Button } from './Button';
 
@@ -26,6 +27,7 @@ export function ConfirmDialog({
   variant = 'primary',
   isLoading = false,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation('common');
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const titleId = useId();
   useModalFocusTrap(dialogRef, isOpen, onClose);
@@ -47,7 +49,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onClose}
             className="modal-close rounded-lg p-2 text-secondary hover:bg-surface-hover transition-colors"
-            aria-label="Close dialog"
+            aria-label={t('close')}
             disabled={isLoading}
           >
             <X className="h-5 w-5" />
