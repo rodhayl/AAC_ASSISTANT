@@ -54,8 +54,9 @@ const hoisted = vi.hoisted(() => {
     applySuggestion: vi.fn(),
     applyAllSuggestions: vi.fn(),
   };
+  const api = { get: vi.fn(), post: vi.fn(), put: vi.fn() };
   const navigate = vi.fn();
-  return { board, auth, settings, toast, editorSymbols, ai, navigate };
+  return { board, auth, settings, toast, editorSymbols, ai, api, navigate };
 });
 
 vi.mock('../src/store/boardStore', () => {
@@ -85,7 +86,7 @@ vi.mock('../src/store/toastStore', () => ({
 
 vi.mock('../src/lib/api', () => ({
   extractError: (_e: unknown, fallback: string) => fallback,
-  default: { get: vi.fn(), post: vi.fn() },
+  default: hoisted.api,
 }));
 
 vi.mock('../src/hooks/useBoardEditorSymbols', () => ({
@@ -462,8 +463,14 @@ describe('BoardEditor page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'pick-symbol' }));
 
     await waitFor(() => {
-      expect(hoisted.board.deleteBoardSymbol).toHaveBeenCalledWith(1, 1);
-      expect(hoisted.board.addSymbolToBoard).toHaveBeenCalledWith(1, 77, { x: 1, y: 2 });
+      // Replacing must be a single server mutation (delete-then-add could
+      // permanently lose the old placement if the add failed).
+      expect(hoisted.api.put).toHaveBeenCalledWith(
+        '/boards/1/symbols/1',
+        { symbol_id: 77, position_x: 1, position_y: 2 },
+      );
+      expect(hoisted.board.deleteBoardSymbol).not.toHaveBeenCalled();
+      expect(hoisted.board.addSymbolToBoard).not.toHaveBeenCalled();
     });
   });
 

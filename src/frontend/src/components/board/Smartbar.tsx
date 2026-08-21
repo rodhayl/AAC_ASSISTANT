@@ -31,13 +31,17 @@ type IntentType = 'general' | 'pronouns' | 'verbs' | 'articles' | 'nouns' | 'pla
 const SMARTBAR_DEBOUNCE_MS = 300;
 
 export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarProps) {
-  const { t } = useTranslation('boards');
+  const { t, i18n } = useTranslation('boards');
+  const currentLanguage = i18n?.language?.split('-')[0] || 'en';
   const messages = useLearningStore((state) => state.messages);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [activeIntent, setActiveIntent] = useState<IntentType>('general');
   const [offset, setOffset] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [debouncedSentence, setDebouncedSentence] = useState(currentSentence);
+
+  const SUGGESTIONS_PAGE_SIZE = 20;
 
   // Collapse rapid sentence updates into one prediction fetch.
   useEffect(() => {
@@ -110,7 +114,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
         const response = await api.post('/analytics/next-symbol', {
           current_symbols: labels,
           chat_history: chatHistory,
-          limit: 20,
+          limit: SUGGESTIONS_PAGE_SIZE,
           intent: activeIntent,
           offset: offset,
           board_id: boardId ?? undefined,
@@ -123,6 +127,9 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
           } else {
             setSuggestions(mergeSuggestions([], response.data));
           }
+          // A short page means the backend has nothing left to offer, so the
+          // "More" button must not keep re-fetching the same items.
+          setHasMore(Array.isArray(response.data) && response.data.length >= SUGGESTIONS_PAGE_SIZE);
         }
       } catch (error) {
         if (active && (error as { code?: string })?.code !== 'ERR_CANCELED') {
@@ -143,7 +150,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
   }, [debouncedSentence, messages, activeIntent, offset, boardId]); // Re-fetch when sentence OR chat updates
 
   const handleMore = () => {
-    setOffset(prev => prev + 20);
+    setOffset(prev => prev + SUGGESTIONS_PAGE_SIZE);
   };
 
   // Always render to allow access to categories
@@ -224,7 +231,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
           {/* More Button */}
           <button
             onClick={handleMore}
-            disabled={isLoading}
+            disabled={isLoading || !hasMore}
             className="px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/50 transition-colors flex items-center gap-1 border border-indigo-100 dark:border-indigo-800 disabled:opacity-50"
             title={t('moreSuggestions', 'More suggestions')}
           >
@@ -268,7 +275,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
                         description: '',
                         keywords: '',
                         audio_path: '',
-                        language: 'en',
+                        language: currentLanguage,
                         is_builtin: false,
                         is_in_use: true,
                         created_at: new Date().toISOString()

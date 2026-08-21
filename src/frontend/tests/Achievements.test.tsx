@@ -86,6 +86,26 @@ const customAchievement = {
   criteria_value: null,
 };
 
+const otherTeacherAchievement = {
+  ...managementAchievement,
+  id: 5,
+  name: 'Other Teacher Badge',
+  created_by: 99,
+  is_manual: true,
+  criteria_type: null,
+  criteria_value: null,
+};
+
+const zeroThresholdAchievement = {
+  ...managementAchievement,
+  id: 6,
+  name: 'Zero Threshold Badge',
+  created_by: 1,
+  is_manual: false,
+  criteria_type: 'sessions_completed',
+  criteria_value: 0,
+};
+
 const student = {
   id: 10,
   username: 'student10',
@@ -217,6 +237,7 @@ describe('Achievements page', () => {
     const nameInput = within(dialog).getAllByRole('textbox')[0];
     await user.clear(nameInput);
     await user.type(nameInput, 'Renamed Badge');
+    await user.selectOptions(within(dialog).getAllByRole('combobox').at(-1)!, '10');
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     await waitFor(() =>
@@ -226,6 +247,7 @@ describe('Achievements page', () => {
         category: 'system',
         points: 20,
         icon: '⭐',
+        target_user_id: 10,
         criteria_type: null,
         criteria_value: null,
       }),
@@ -556,5 +578,89 @@ describe('Achievements page', () => {
 
     await user.type(within(dialog).getAllByRole('textbox')[0], 'Named');
     expect(createButton).not.toBeDisabled();
+  });
+
+  it('preserves a zero criteria value when editing an automatic achievement', async () => {
+    const user = userEvent.setup();
+    api.get.mockImplementation((url: string) => {
+      if (url === '/achievements/user/1') {
+        return Promise.resolve({ data: [achievement] });
+      }
+      if (url === '/achievements/user/1/points') {
+        return Promise.resolve({ data: 25 });
+      }
+      if (url === '/achievements/') {
+        return Promise.resolve({ data: [zeroThresholdAchievement] });
+      }
+      if (url === '/users/students') {
+        return Promise.resolve({ data: [student] });
+      }
+      if (url === '/achievements/categories') {
+        return Promise.resolve({ data: ['learning'] });
+      }
+      if (url === '/achievements/criteria-types') {
+        return Promise.resolve({ data: ['sessions_completed'] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    render(<Achievements />);
+    await screen.findByText('First Steps');
+
+    await user.click(screen.getByRole('button', { name: /Manage/ }));
+    await screen.findByText('Zero Threshold Badge');
+    await user.click(screen.getByTitle('Edit'));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith('/achievements/6', {
+        name: 'Zero Threshold Badge',
+        description: 'Automatic badge',
+        category: 'system',
+        points: 20,
+        icon: '⭐',
+        target_user_id: null,
+        criteria_type: 'sessions_completed',
+        criteria_value: 0,
+      }),
+    );
+  });
+
+  it('hides edit/delete actions for achievements owned by another teacher', async () => {
+    const user = userEvent.setup();
+    api.get.mockImplementation((url: string) => {
+      if (url === '/achievements/user/1') {
+        return Promise.resolve({ data: [achievement] });
+      }
+      if (url === '/achievements/user/1/points') {
+        return Promise.resolve({ data: 25 });
+      }
+      if (url === '/achievements/') {
+        return Promise.resolve({ data: [otherTeacherAchievement] });
+      }
+      if (url === '/users/students') {
+        return Promise.resolve({ data: [student] });
+      }
+      if (url === '/achievements/categories') {
+        return Promise.resolve({ data: ['learning'] });
+      }
+      if (url === '/achievements/criteria-types') {
+        return Promise.resolve({ data: ['sessions_completed'] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    render(<Achievements />);
+    await screen.findByText('First Steps');
+
+    await user.click(screen.getByRole('button', { name: /Manage/ }));
+    await screen.findByText('Other Teacher Badge');
+
+    // Awarding any achievement stays available to every teacher/admin.
+    expect(screen.getByTitle('Award')).toBeInTheDocument();
+    // But editing/deleting a custom achievement owned by another teacher is
+    // guaranteed to fail with 403, so the actions must not be offered.
+    expect(screen.queryByTitle('Edit')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Delete')).not.toBeInTheDocument();
   });
 });

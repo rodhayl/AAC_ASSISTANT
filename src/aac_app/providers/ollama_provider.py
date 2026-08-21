@@ -3,6 +3,8 @@ import json
 import httpx
 from loguru import logger
 
+from src import config
+
 from .base_provider import BaseLLMProvider
 
 
@@ -19,12 +21,12 @@ class OllamaProvider(BaseLLMProvider):
 
     def __init__(
         self,
-        base_url="http://localhost:11434",
+        base_url: str | None = None,
         hardware_profile="mid_range",
         model: str | None = None,
     ):
         super().__init__()
-        self.base_url = base_url
+        self.base_url = base_url or config.OLLAMA_BASE_URL
         self.hardware_profile = hardware_profile
         # Default to user-specified model, env var, or hardware profile
         env_model = None

@@ -7,6 +7,7 @@ import { useBoardStore } from '../src/store/boardStore';
 import { useAuthStore } from '../src/store/authStore';
 import { useSettingsStore } from '../src/store/settingsStore';
 import api from '../src/lib/api';
+import i18n from '../src/i18n/index';
 
 vi.mock('../src/lib/api', () => ({
   default: {
@@ -50,6 +51,10 @@ vi.mock('react-i18next', () => ({
     init: () => {},
   },
 }));
+
+// The store's duplicateBoard reads the real i18n module (not the mocked
+// useTranslation hook above), so compute the localized suffix the same way.
+const copySuffix = i18n.t('boards:copySuffix', ' (Copy)');
 
 describe('Boards page management', () => {
   const board = {
@@ -266,7 +271,7 @@ describe('Boards page management', () => {
       expect(api.post).toHaveBeenCalledWith(
         '/boards/',
         {
-          name: 'Morning Routine (Copy)',
+          name: `Morning Routine${copySuffix}`,
           description: 'Daily steps',
           category: 'general',
           is_public: false,
@@ -338,7 +343,7 @@ describe('Boards page management', () => {
       expect(api.post).toHaveBeenCalledWith(
         '/boards/',
         {
-          name: 'Morning Routine (Copy)',
+          name: `Morning Routine${copySuffix}`,
           description: 'Daily steps',
           category: 'general',
           is_public: false,

@@ -36,6 +36,12 @@
     "displayName": "e.g., Administrator",
     "email": "e.g., admin@example.com"
   },
+  "success": {
+    "created": "Admin created",
+    "updated": "Admin updated",
+    "deleted": "Admin deleted",
+    "passwordReset": "Password reset"
+  },
   "errors": {
     "loadFailed": "Failed to load admins",
     "updateFailed": "Failed to update",

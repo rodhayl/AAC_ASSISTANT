@@ -27,6 +27,9 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
         if (!student) return;
         setLoading(true);
         setError(null);
+        // Clear any success state left by a previous student: reopening the
+        // modal for another student must not keep showing the old toast text.
+        setSuccess(null);
         try {
             // Load templates
             const templatesRes = await api.get('/guardian-profiles/templates');
@@ -103,7 +106,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" role="presentation">
             <div
                 ref={dialogRef}
-                className="glass-card w-full max-w-md p-6 max-h-[90vh] overflow-y-auto"
+                className="glass-card w-full max-w-md max-h-[90vh] overflow-y-auto"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="guardian-profile-title"

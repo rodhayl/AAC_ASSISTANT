@@ -78,6 +78,25 @@ def extract_json_object(text: str | None) -> dict | None:
         search_from = block_end + 1
 
 
+def _is_valid_question_data(value: object) -> bool:
+    """Validate the small question contract before it reaches persistence."""
+    if not isinstance(value, dict):
+        return False
+    question = value.get("question")
+    choices = value.get("choices")
+    correct = value.get("correct")
+    return (
+        isinstance(question, str)
+        and bool(question.strip())
+        and isinstance(choices, list)
+        and len(choices) == 3
+        and all(isinstance(choice, str) and bool(choice.strip()) for choice in choices)
+        and len({choice.strip().casefold() for choice in choices}) == len(choices)
+        and type(correct) is int
+        and 0 <= correct < len(choices)
+    )
+
+
 class QuestionGenerationMixin:
     async def ask_question(
         self, session_id: int, difficulty: str = None, db: Session | None = None
@@ -107,16 +126,16 @@ class QuestionGenerationMixin:
                     session.conversation_history[-3:] if session.conversation_history else []
                 )
 
-                required_fields = ("question", "choices", "correct")
-
                 # Generate the question (LLM with a strict-JSON retry, then a
                 # translated fallback) and validate its shape.
                 question_data, response = await self._generate_question_data(
                     session, difficulty, recent_history, db
                 )
 
-                # Validate question data
-                if not all(field in question_data for field in required_fields):
+                # Validate the complete question contract, not only key presence.
+                # An out-of-range correct index would be persisted and crash when
+                # the student submits an answer.
+                if not _is_valid_question_data(question_data):
                     logger.error(f"Invalid question data structure: {question_data}")
                     return {"success": False, "error": "Invalid question format"}
 
@@ -170,7 +189,6 @@ class QuestionGenerationMixin:
         caller can log diagnostics. ``question_data`` is ``None`` only when
         generation itself raised before assigning a value.
         """
-        required_fields = ("question", "choices", "correct")
         response = ""
         try:
             prompt = f"""Generate a {difficulty} level question about {session.topic_name}.
@@ -202,12 +220,14 @@ class QuestionGenerationMixin:
             response = await self.llm.generate(
                 prompt=prompt,
                 system=system_prompt,
-                temperature=0.8,
-                max_tokens=200,
+                temperature=self.default_temperature,
+                max_tokens=self.default_max_tokens,
             )
 
             # Parse JSON response (tolerating markdown fences / prose)
             question_data = extract_json_object(response)
+            if question_data is not None and not _is_valid_question_data(question_data):
+                question_data = None
             if question_data is None:
                 # Corrective retry: the model ignored the JSON contract.
                 logger.warning(
@@ -229,13 +249,11 @@ class QuestionGenerationMixin:
                 retry_response = await self.llm.generate(
                     prompt=retry_prompt,
                     system=system_prompt,
-                    temperature=0.2,
-                    max_tokens=200,
+                    temperature=min(self.default_temperature, 0.2),
+                    max_tokens=self.default_max_tokens,
                 )
                 retry_data = extract_json_object(retry_response)
-                if retry_data is not None and all(
-                    field in retry_data for field in required_fields
-                ):
+                if retry_data is not None and _is_valid_question_data(retry_data):
                     question_data = retry_data
                     response = retry_response
                     logger.info(

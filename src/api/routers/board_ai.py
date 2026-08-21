@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from src import config
 from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol, User
+from src.aac_app.providers.lmstudio_provider import LMStudioProvider
 from src.aac_app.providers.ollama_provider import OllamaProvider
 from src.aac_app.providers.openrouter_provider import OpenRouterProvider
 from src.aac_app.services.board_generation_service import BoardGenerationService
@@ -24,6 +25,7 @@ from src.api.deps import (
     validate_board_position,
     validate_linked_board,
 )
+from src.api.routers.board_helpers import SUPPORTED_AI_PROVIDERS
 
 router = APIRouter()
 
@@ -161,22 +163,21 @@ async def create_board(
         user = current_user
 
     # Validate AI configuration
-    if board.ai_enabled:
-        if not board.ai_provider or not board.ai_model:
+    if board.ai_provider is not None and board.ai_provider not in SUPPORTED_AI_PROVIDERS:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=current_user, key="errors.boards.aiProviderInvalid"
+            ),
+        )
+
+    if board.ai_enabled and (not board.ai_provider or not board.ai_model):
             raise HTTPException(
                 status_code=400,
                 detail=get_text(
                     user=current_user, key="errors.boards.aiProviderRequired"
                 ),
             )
-        if board.ai_provider not in ["ollama", "openrouter"]:
-            raise HTTPException(
-                status_code=400,
-                detail=get_text(
-                    user=current_user, key="errors.boards.aiProviderInvalid"
-                ),
-            )
-
     payload = board.model_dump()
     # Extract symbols to handle manually (SQLAlchemy doesn't handle list of dicts for relationship automatically)
     symbols_data = payload.pop("symbols", []) if "symbols" in payload else []
@@ -222,14 +223,12 @@ async def create_board(
                 f"Generating AI content for board {db_board.id} using {board.ai_provider} ({board.ai_model})"
             )
 
-            # Instantiate the correct provider based on request
-            provider = None
-            if board.ai_provider == "ollama":
-                base_url = get_setting_value("ollama_base_url", config.OLLAMA_BASE_URL)
-                provider = OllamaProvider(base_url=base_url, model=board.ai_model)
-            elif board.ai_provider == "openrouter":
-                api_key = get_setting_value("openrouter_api_key", "")
-                provider = OpenRouterProvider(api_key=api_key, model=board.ai_model)
+            # Instantiate the correct provider based on request. The shared
+            # resolver honors the "@primary" marker (and empty model names) by
+            # falling back to the current global primary model, so a board
+            # created with ``ai_model="@primary"`` does not hand the literal
+            # marker to the LLM and fail generation.
+            provider = _resolve_provider_for_board(db_board, db)
 
             if provider:
                 # Create a temporary service instance
@@ -291,13 +290,13 @@ async def create_board(
                     f"Successfully added {len(items)} AI-generated symbols to board {db_board.id}"
                 )
             else:
-                logger.warning("Could not initialize AI provider")
-                # If AI was requested but provider failed to init, we should probably fail?
-                # For now, let's just log warning, but maybe we should raise error if strict?
-                # The validation above checks for valid provider type, so this handles connection init issues?
-                # Actually provider init is just class instantiation, so it shouldn't fail unless params are missing.
-                pass
+                raise RuntimeError("AI provider could not be initialized")
 
+        except HTTPException:
+            # Validation failures (invalid positions, links, or symbols) are
+            # client errors and must not be disguised as upstream AI failures.
+            db.rollback()
+            raise
         except Exception as e:
             logger.error(f"AI Board generation failed: {e}")
             db.rollback()
@@ -308,7 +307,7 @@ async def create_board(
                     key="errors.boards.aiGenerationFailed",
                     error=str(e)
                 ),
-            )
+            ) from e
 
     db.refresh(db_board)
     # Commit before optional vector indexing. Indexing uses a separate
@@ -326,7 +325,7 @@ async def create_board(
 
 def _resolve_provider_for_board(
     board: CommunicationBoard, db: Session
-) -> OllamaProvider | OpenRouterProvider | None:
+) -> OllamaProvider | OpenRouterProvider | LMStudioProvider | None:
     """
     Build an LLM provider instance from the board or primary global settings.
     """
@@ -337,15 +336,22 @@ def _resolve_provider_for_board(
     if not model_name or model_name.startswith("@"):
         if provider_type == "openrouter":
             model_name = get_setting_value("openrouter_model", "")
+        elif provider_type == "lmstudio":
+            model_name = get_setting_value("lmstudio_model", "")
         else:
             model_name = get_setting_value("ollama_model", "")
 
     if not provider_type or not model_name:
         return None
+    if provider_type not in SUPPORTED_AI_PROVIDERS:
+        return None
 
     if provider_type == "openrouter":
         api_key = get_setting_value("openrouter_api_key", "")
         return OpenRouterProvider(api_key=api_key, model=model_name)
+    if provider_type == "lmstudio":
+        base_url = get_setting_value("lmstudio_base_url", config.LMSTUDIO_BASE_URL)
+        return LMStudioProvider(base_url=base_url, model=model_name)
 
     base_url = get_setting_value("ollama_base_url", config.OLLAMA_BASE_URL)
     return OllamaProvider(base_url=base_url, model=model_name)
@@ -472,23 +478,40 @@ def apply_ai_suggestion(
     used = {(s.position_x, s.position_y) for s in (board.symbols or [])}
     target_x = payload.position_x if payload.position_x is not None else 0
     target_y = payload.position_y if payload.position_y is not None else 0
+    # "Replace at selected position" (explicit coordinates) and the plain
+    # "Add" button (no coordinates) must behave differently when the target
+    # cell is occupied: an explicit position replaces the occupant atomically,
+    # while an omitted position keeps auto-placing at the first free cell.
+    explicit_position = payload.position_x is not None or payload.position_y is not None
 
     if (target_x, target_y) in used:
-        found = None
-        for y in range(r):
-            for x in range(c):
-                if (x, y) not in used:
-                    found = (x, y)
+        if explicit_position:
+            # Replace the occupying placement in the same transaction as the
+            # insert. A failure here must never leave the board with the old
+            # symbol already deleted (the previous delete-then-add round trip
+            # could lose the placement when the apply step failed).
+            occupant = next(
+                s
+                for s in (board.symbols or [])
+                if (s.position_x, s.position_y) == (target_x, target_y)
+            )
+            db.delete(occupant)
+        else:
+            found = None
+            for y in range(r):
+                for x in range(c):
+                    if (x, y) not in used:
+                        found = (x, y)
+                        break
+                if found:
                     break
             if found:
-                break
-        if found:
-            target_x, target_y = found
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=get_text(user=current_user, key="errors.boards.boardFull"),
-            )
+                target_x, target_y = found
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=get_text(user=current_user, key="errors.boards.boardFull"),
+                )
 
     validate_board_position(board, target_x, target_y, current_user)
     validate_linked_board(

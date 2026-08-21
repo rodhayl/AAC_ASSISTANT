@@ -31,18 +31,46 @@ def _ensure_sqlite_columns(engine: Engine) -> None:
             rows = connection.execute(text(f"PRAGMA table_info({table})")).fetchall()
             return any(row[1] == column for row in rows)
 
+        # ``create_all`` only creates missing tables; it deliberately does not
+        # alter tables from an older installation. Keep every additive column
+        # introduced after the original schema here, including nullable/default
+        # fields whose absence would otherwise make ORM queries fail at runtime.
+        # SQLite permits these safe additive changes without rebuilding tables.
         columns = (
             ("users", "security_version", "INTEGER NOT NULL DEFAULT 1"),
             ("users", "credentials_changed_at", "DATETIME"),
             ("symbols", "order_index", "INTEGER DEFAULT 0"),
             ("board_symbols", "order_index", "INTEGER DEFAULT 0"),
-            ("user_settings", "ui_language", "TEXT DEFAULT 'es-ES'"),
+            ("board_symbols", "linked_board_id", "INTEGER"),
+            ("board_symbols", "color", "VARCHAR(20)"),
+            ("communication_boards", "grid_rows", "INTEGER DEFAULT 4"),
+            ("communication_boards", "grid_cols", "INTEGER DEFAULT 5"),
+            ("communication_boards", "locale", "VARCHAR(10) DEFAULT 'en'"),
+            ("communication_boards", "is_language_learning", "BOOLEAN DEFAULT 0"),
+            ("communication_boards", "ai_enabled", "BOOLEAN DEFAULT 0"),
+            ("communication_boards", "ai_provider", "VARCHAR(50)"),
+            ("communication_boards", "ai_model", "VARCHAR(100)"),
             ("user_settings", "tts_provider", "TEXT DEFAULT 'kokoro'"),
+            ("user_settings", "tts_voice", "TEXT DEFAULT 'default'"),
             ("user_settings", "tts_local_voice", "TEXT DEFAULT 'default'"),
-            ("user_settings", "voice_mode_enabled", "INTEGER DEFAULT 1"),
+            ("user_settings", "tts_language", "TEXT DEFAULT 'en'"),
+            ("user_settings", "ui_language", "TEXT DEFAULT 'es-ES'"),
+            ("user_settings", "notifications_enabled", "BOOLEAN DEFAULT 1"),
+            ("user_settings", "voice_mode_enabled", "BOOLEAN DEFAULT 1"),
+            ("user_settings", "dark_mode", "BOOLEAN DEFAULT 0"),
             ("user_settings", "dwell_time", "INTEGER DEFAULT 0"),
             ("user_settings", "ignore_repeats", "INTEGER DEFAULT 0"),
-            ("user_settings", "high_contrast", "INTEGER DEFAULT 0"),
+            ("user_settings", "high_contrast", "BOOLEAN DEFAULT 0"),
+            ("achievements", "criteria_type", "VARCHAR(50)"),
+            ("achievements", "criteria_value", "FLOAT"),
+            ("achievements", "is_manual", "BOOLEAN DEFAULT 0"),
+            ("achievements", "created_by", "INTEGER"),
+            ("achievements", "target_user_id", "INTEGER"),
+            ("symbol_usage_logs", "session_id", "INTEGER"),
+            ("symbol_usage_logs", "symbol_id", "INTEGER"),
+            ("symbol_usage_logs", "symbol_category", "VARCHAR(50)"),
+            ("symbol_usage_logs", "semantic_intent", "VARCHAR(20)"),
+            ("symbol_usage_logs", "context_topic", "VARCHAR(100)"),
         )
         for table, column, definition in columns:
             if table_exists(table) and not has_column(table, column):

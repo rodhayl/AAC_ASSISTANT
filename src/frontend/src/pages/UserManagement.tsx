@@ -7,6 +7,7 @@ import api, { extractError } from '../lib/api'
 import type { User } from '../types'
 import { useAuthStore } from '../store/authStore'
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap'
+import { useToastStore } from '../store/toastStore'
 
 export type ManagedUserRole = 'teacher' | 'admin'
 
@@ -16,6 +17,7 @@ interface UserManagementPageProps {
 
 export function UserManagementPage({ role }: UserManagementPageProps) {
   const user = useAuthStore((state) => state.user)
+  const addToast = useToastStore((state) => state.addToast)
   const namespace = role === 'teacher' ? 'teachers' : 'admins'
   const { t } = useTranslation([namespace, 'settings'])
   const [managedUsers, setManagedUsers] = useState<User[]>([])
@@ -42,6 +44,8 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
   const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null)
   const [resetPasswordValue, setResetPasswordValue] = useState('')
   const [resetPasswordLoading, setResetPasswordLoading] = useState(false)
+  const [updateLoading, setUpdateLoading] = useState(false)
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   const loadUsers = useCallback(async () => {
     const response = await api.get('/auth/users', {
@@ -87,12 +91,15 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     const selectedUser = deleteState.user
     if (!selectedUser) return
 
+    setDeleteLoading(true)
     try {
       await api.delete(`/auth/users/${selectedUser.id}`)
       setManagedUsers(previous => previous.filter(item => item.id !== selectedUser.id))
+      addToast(t('success.deleted'), 'success')
     } catch (deleteError: unknown) {
       setError(extractError(deleteError, t('errors.deleteFailed')))
     } finally {
+      setDeleteLoading(false)
       setDeleteState({ isOpen: false, user: null })
     }
   }
@@ -118,6 +125,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       await loadUsers()
       clearCreateForm()
       setCreateModalOpen(false)
+      addToast(t('success.created'), 'success')
     } catch (createError: unknown) {
       setError(extractError(createError, t('errors.createFailed')))
     } finally {
@@ -127,15 +135,22 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
 
   const handleUpdate = async () => {
     if (!editId) return
+    setUpdateLoading(true)
     try {
+      // Send the email as typed (empty string included) so clearing the
+      // field in the editor actually removes the stored email; the backend
+      // normalizes an empty string to NULL, mirroring update_profile.
       const response = await api.put(`/auth/users/${editId}`, {
         display_name: editDisplayName,
-        email: editEmail || undefined,
+        email: editEmail,
       })
       setManagedUsers(previous => previous.map(item => item.id === editId ? response.data : item))
       setEditId(null)
+      addToast(t('success.updated'), 'success')
     } catch (updateError: unknown) {
       setError(extractError(updateError, t('errors.updateFailed')))
+    } finally {
+      setUpdateLoading(false)
     }
   }
 
@@ -153,6 +168,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       setResetPasswordModalOpen(false)
       setResetPasswordValue('')
       setResetPasswordUser(null)
+      addToast(t('success.passwordReset'), 'success')
     } catch (resetError: unknown) {
       setError(extractError(resetError, t('errors.resetPasswordFailed')))
     } finally {
@@ -234,9 +250,10 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
                           setResetPasswordValue('')
                           setError(null)
                         }}
-                        className="rounded px-3 py-1 text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/30"
+                        disabled={role === 'admin' && item.id === user?.id}
+                        className="rounded px-3 py-1 text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
                         aria-label={t('actions.resetPasswordAria', { name: item.username })}
-                        title={t('actions.resetPasswordTitle')}
+                        title={role === 'admin' && item.id === user?.id ? t('actions.resetSelfTitle', { defaultValue: 'Use Change Password in Settings' }) : t('actions.resetPasswordTitle')}
                       >{t('actions.resetPassword')}</button>
                       <button
                         onClick={() => setDeleteState({ isOpen: true, user: item })}
@@ -280,8 +297,8 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
               </label>
             </div>
             <div className="mt-4 flex justify-end gap-2">
-              <button onClick={() => setEditId(null)} className="rounded-lg px-4 py-2 text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700">{t('cancel')}</button>
-              <button onClick={handleUpdate} className="rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">{t('profile.save', { ns: 'settings' })}</button>
+              <button onClick={() => setEditId(null)} disabled={updateLoading} className="rounded-lg px-4 py-2 text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700">{t('cancel')}</button>
+              <button onClick={handleUpdate} disabled={updateLoading} className="rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:opacity-50">{updateLoading ? t('security.saving', { ns: 'settings' }) : t('profile.save', { ns: 'settings' })}</button>
             </div>
           </div>
         </div>
@@ -350,6 +367,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
         onConfirm={handleDelete}
         onClose={() => setDeleteState({ isOpen: false, user: null })}
         variant="danger"
+        isLoading={deleteLoading}
       />
     </div>
   )

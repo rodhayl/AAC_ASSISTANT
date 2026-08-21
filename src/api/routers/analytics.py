@@ -20,7 +20,13 @@ from src.aac_app.services.symbol_catalog import (
     intent_articles,
     intent_pronouns,
 )
-from src.api.deps import get_current_active_user, get_db, get_text
+from src.api.deps import (
+    get_board_or_404,
+    get_current_active_user,
+    get_db,
+    get_text,
+    require_board_view_access,
+)
 from src.api.schemas import NextSymbolRequest, SymbolUsageRequest
 
 router = APIRouter()
@@ -138,6 +144,10 @@ def get_next_symbol_suggestions_post(
 
         logger.info(f"Suggestions request: user={current_user.id}, intent={intent}, limit={limit}, offset={offset}")
 
+        if request.board_id is not None:
+            board = get_board_or_404(db, request.board_id, current_user)
+            require_board_view_access(board, current_user, db)
+
         # Parse current symbols
         symbols_list = []
         if current_symbols:
@@ -217,7 +227,7 @@ def get_next_symbol_suggestions_post(
                         return q.filter(Symbol.category.in_(PLACE_CATEGORIES))
                     return q
 
-                def format_results(rows):
+                def format_results(rows, *, offset, limit):
                     rows = sorted(rows, key=lambda sym: (language_rank(sym), sym.id))
                     seen = set()
                     suggestions = []
@@ -237,9 +247,11 @@ def get_next_symbol_suggestions_post(
                                 "source": "category",
                             }
                         )
-                        if len(suggestions) >= limit:
-                            break
-                    return suggestions
+                    # Paginate AFTER the language-rank sort: applying SQL OFFSET
+                    # to the unsorted rows first would skip or repeat entries
+                    # across pages because the rank ordering is computed in
+                    # Python, not by the database.
+                    return suggestions[offset : offset + limit]
 
                 strict_passes = [True, False]
                 board_scopes = [request.board_id is not None, False]
@@ -248,8 +260,10 @@ def get_next_symbol_suggestions_post(
                         query = build_query(board_scoped)
                         query = apply_language_filter(query, strict)
                         query = apply_intent_filter(query)
-                        results = query.offset(offset).limit(limit * 3).all()
-                        suggestions = format_results(results)
+                        # Fetch a bounded window, then sort and paginate in
+                        # Python so pages follow the language-rank ordering.
+                        results = query.limit(500).all()
+                        suggestions = format_results(results, offset=offset, limit=limit)
                         if suggestions:
                             return suggestions
             except Exception as db_err:

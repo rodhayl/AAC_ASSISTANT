@@ -347,6 +347,68 @@ class TestAnalyticsAPI:
         assert "run" in verb_labels
         assert "quickly" not in verb_labels  # adverb is not a verb
 
+    def test_intent_suggestions_paginate_after_language_rank(
+        self, test_db_session, regular_user
+    ):
+        """Quick-word pages continue after the previous page, without repeats."""
+        test_db_session.add_all(
+            [
+                Symbol(
+                    id=301,
+                    label="apple",
+                    category="fruit",
+                    language="en",
+                    is_builtin=True,
+                ),
+                Symbol(
+                    id=302,
+                    label="banana",
+                    category="fruit",
+                    language="en",
+                    is_builtin=True,
+                ),
+                Symbol(
+                    id=303,
+                    label="cherry",
+                    category="fruit",
+                    language="en",
+                    is_builtin=True,
+                ),
+                Symbol(
+                    id=304,
+                    label="date",
+                    category="fruit",
+                    language="en",
+                    is_builtin=True,
+                ),
+                Symbol(
+                    id=305,
+                    label="elderberry",
+                    category="fruit",
+                    language="en",
+                    is_builtin=True,
+                ),
+            ]
+        )
+        test_db_session.commit()
+
+        first = client.post(
+            "/api/analytics/next-symbol",
+            json={"intent": "nouns", "limit": 2, "offset": 0},
+        )
+        second = client.post(
+            "/api/analytics/next-symbol",
+            json={"intent": "nouns", "limit": 2, "offset": 2},
+        )
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        first_labels = [item["label"] for item in first.json()]
+        second_labels = [item["label"] for item in second.json()]
+        assert len(first_labels) == 2
+        assert len(second_labels) == 2
+        assert not set(first_labels) & set(second_labels)
+
     def test_get_category_preferences(self, sample_usage_logs):
         """Test retrieving category preferences."""
         response = client.get("/api/analytics/category-preferences")

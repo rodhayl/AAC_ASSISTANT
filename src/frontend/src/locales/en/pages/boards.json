@@ -83,6 +83,7 @@
   "settingsSaved": "Settings saved successfully!",
   "aiConfigDescription": "AI will use the provider and model configured in Settings.",
   "saveSettings": "Save Settings",
+  "saving": "Saving...",
   "category": "Category",
   "deleteConfirm": "Are you sure you want to delete this board?",
   "loadStudentsError": "Failed to load students",
@@ -161,6 +162,7 @@
   "bulkDeleteTitle": "Delete Selected Boards",
   "bulkDeleteConfirm": "Are you sure you want to delete the {{count}} selected boards?",
   "duplicateBoard": "Duplicate board",
+  "copySuffix": " (Copy)",
   "assignToStudentTitle": "Assign to Student",
   "assignToStudent": "Assign to student",
   "removeSymbol": "Remove symbol",
@@ -185,6 +187,10 @@
   "boardAssigned": "Board assigned",
   "boardAssignedTo": "Board {{boardId}} assigned to student {{studentId}}",
   "allLanguages": "All",
+  "languages": {
+    "es": "Spanish",
+    "en": "English"
+  },
   "sessionStarted": "Session started",
   "sessionStartFailed": "Failed to start session",
   "boardTooEmpty": "Board needs at least 50% symbols to be used",
@@ -233,5 +239,9 @@
   "loadingBoard": "Loading board",
   "boardReady": "Board Ready",
   "boardIncomplete": "{{count}}/{{total}} Symbols",
-  "failedToAddSymbol": "Failed to add symbol"
+  "failedToAddSymbol": "Failed to add symbol",
+  "boardLoadFailed": "Could not load this board",
+  "retry": "Retry",
+  "backToBoards": "Back to boards",
+  "sendToChatFailed": "Could not send the phrase to the assistant"
 }

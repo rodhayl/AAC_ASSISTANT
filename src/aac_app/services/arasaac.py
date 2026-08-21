@@ -1,4 +1,6 @@
 
+from urllib.parse import quote
+
 import httpx
 from loguru import logger
 
@@ -29,8 +31,11 @@ class ArasaacService:
         Search for symbols in ARASAAC.
         """
         try:
-            # Use 'bestsearch' for better results
-            url = f"{ARASAAC_API_BASE}/pictograms/{locale}/bestsearch/{query}"
+            # Use 'bestsearch' for better results. The query is a path segment
+            # and must be percent-encoded: spaces, '/', '?' or '#' in a raw
+            # query would otherwise corrupt the URL (extra path segments,
+            # query-string parsing, or an early fragment).
+            url = f"{ARASAAC_API_BASE}/pictograms/{locale}/bestsearch/{quote(query, safe='')}"
             response = await self.client.get(url)
             response.raise_for_status()
             data = response.json()

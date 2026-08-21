@@ -213,6 +213,25 @@ class TestUserPreferences:
         )
         assert len(settings_rows) == 1
 
+    def test_preferences_reject_unsupported_language_and_out_of_range_timing(self, prefs_user):
+        """The API accepts only configured UI languages and the UI timing range."""
+        user_id, username, user_type = prefs_user
+        headers = create_test_headers(user_id, username, user_type)
+
+        unsupported = client.put(
+            "/api/auth/preferences",
+            headers=headers,
+            json={"ui_language": "fr-FR"},
+        )
+        assert unsupported.status_code == 400
+
+        too_large = client.put(
+            "/api/auth/preferences",
+            headers=headers,
+            json={"dwell_time": 2001},
+        )
+        assert too_large.status_code == 422
+
     def test_update_partial_preferences(self, prefs_user):
         """Test updating only some preferences"""
         user_id, username, user_type = prefs_user
@@ -367,6 +386,34 @@ class TestUserProfile:
         assert response.status_code == 200
         data = response.json()
         assert data["email"] == "newemail@test.com"
+
+    def test_explicit_null_email_clears_existing_email(self, prefs_user, test_db_session):
+        """An explicit null clears an optional email instead of being ignored."""
+        user_id, username, user_type = prefs_user
+        user = test_db_session.get(User, user_id)
+        user.email = "existing@test.com"
+        test_db_session.commit()
+
+        response = client.put(
+            "/api/auth/profile",
+            headers=create_test_headers(user_id, username, user_type),
+            json={"email": None},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["email"] is None
+        test_db_session.refresh(user)
+        assert user.email is None
+
+    def test_blank_display_name_is_rejected(self, prefs_user):
+        """Profile saves must not leave the account without a display name."""
+        user_id, username, user_type = prefs_user
+        response = client.put(
+            "/api/auth/profile",
+            headers=create_test_headers(user_id, username, user_type),
+            json={"display_name": "   "},
+        )
+        assert response.status_code == 400
 
     def test_update_profile_both_fields(self, prefs_user):
         """Test updating both display name and email"""

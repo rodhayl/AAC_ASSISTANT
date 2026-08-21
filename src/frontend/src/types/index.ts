@@ -77,8 +77,8 @@ export interface Board {
   grid_rows?: number;
   grid_cols?: number;
   ai_enabled?: boolean;
-  ai_provider?: string;
-  ai_model?: string;
+  ai_provider?: string | null;
+  ai_model?: string | null;
   playable_symbols_count?: number;
   locale?: string;
   is_language_learning?: boolean;

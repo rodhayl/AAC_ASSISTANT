@@ -48,6 +48,7 @@ class AccountLockoutService:
                 FailedLoginAttempt.username == username,
                 FailedLoginAttempt.timestamp >= window_start,
             )
+            .order_by(FailedLoginAttempt.timestamp.desc(), FailedLoginAttempt.id.desc())
             .first()
         )
 

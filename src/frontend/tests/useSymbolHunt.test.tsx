@@ -102,6 +102,23 @@ describe('useSymbolHunt game logic', () => {
     expect(result.current.unplayableBoards.map((b) => b.name)).toEqual(['Locked']);
   });
 
+  it('keeps duplicate-label boards unplayable even when placements >= 2', async () => {
+    // Two playable placements with the same normalized label: the list must
+    // not offer this board as playable, because startGame would reject it.
+    getApi.mockResolvedValue({
+      data: [
+        makeBoard(1, 'Dupe', [makeSymbol(1, 'Apple'), makeSymbol(2, 'apple')]),
+        makeBoard(2, 'Real', [makeSymbol(3, 'Apple'), makeSymbol(4, 'Banana')]),
+      ],
+    });
+
+    const { result } = renderHook(() => useSymbolHunt({ addToast }));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.playableBoards.map((b) => b.name)).toEqual(['Real']);
+    expect(result.current.unplayableBoards.map((b) => b.name)).toEqual(['Dupe']);
+  });
+
   it('starts a game with deduplicated symbols, round 1 and score 0', async () => {
     getApi
       .mockResolvedValueOnce({ data: [makeBoard(1, 'Board', [makeSymbol(1, 'A'), makeSymbol(2, 'B')])] })

@@ -224,8 +224,14 @@ class TemplateManager:
                 and isinstance(result[key], list)
                 and isinstance(value, list)
             ):
-                # For lists, extend rather than replace
-                result[key] = list(set(result[key] + value))
+                # Preserve configured order while removing duplicate scalar
+                # entries. A set-based merge made prompts nondeterministic and
+                # failed for valid list values that were not hashable.
+                merged = []
+                for item in [*result[key], *value]:
+                    if item not in merged:
+                        merged.append(copy.deepcopy(item))
+                result[key] = merged
             else:
                 result[key] = value
         return result

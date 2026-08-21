@@ -34,7 +34,13 @@
     "safety": "Seguridad"
   },
   "success": {
-    "saved": "Perfil guardado correctamente"
+    "saved": "Perfil guardado correctamente",
+    "created": "Estudiante creado",
+    "updated": "Estudiante actualizado",
+    "deleted": "Estudiante eliminado",
+    "passwordReset": "Contraseña restablecida",
+    "boardAssigned": "Tablero asignado",
+    "boardUnassigned": "Tablero desasignado"
   },
   "labels": {
     "username": "Usuario *",
@@ -61,6 +67,7 @@
   },
   "errors": {
     "loadFailed": "Error al cargar estudiantes",
+    "loadBoardsFailed": "Error al cargar tableros",
     "assignFailed": "Error al asignar tablero",
     "unassignFailed": "Error al desasignar tablero",
     "updateFailed": "Error al actualizar",

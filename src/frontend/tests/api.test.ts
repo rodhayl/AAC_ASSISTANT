@@ -366,6 +366,36 @@ describe('auth response handling', () => {
     expect(sessionStorage.getItem('aac-assistant-offline-queue-v1')).toBeNull();
   });
 
+  it('keeps replaying the queue after a rejected item instead of stalling it', async () => {
+    authenticateOfflineTestUser();
+    const adapter = vi.fn().mockImplementation((config) => {
+      if (config.url === '/boards/gone') {
+        return Promise.reject({ config, response: { status: 404, data: { detail: 'not found' } } });
+      }
+      return Promise.resolve({
+        data: {},
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    });
+
+    window.dispatchEvent(new Event('offline'));
+    await expect(api.request({ url: '/boards/gone', method: 'post', adapter })).rejects.toMatchObject({ code: 'ERR_OFFLINE' });
+    await expect(api.request({ url: '/boards/after', method: 'post', adapter })).rejects.toMatchObject({ code: 'ERR_OFFLINE' });
+
+    window.dispatchEvent(new Event('online'));
+    await vi.waitFor(() => expect(adapter).toHaveBeenCalledTimes(2));
+
+    // The rejected mutation is surfaced as a conflict, and the one behind it
+    // was still replayed rather than left stuck in the queue.
+    expect(useOfflineStore.getState().conflicts).toEqual([
+      expect.objectContaining({ error: 'not found' }),
+    ]);
+    expect(sessionStorage.getItem('aac-assistant-offline-queue-v1')).toBeNull();
+  });
+
   it('does not queue unauthenticated offline mutations', async () => {
     const adapter = vi.fn();
     window.dispatchEvent(new Event('offline'));

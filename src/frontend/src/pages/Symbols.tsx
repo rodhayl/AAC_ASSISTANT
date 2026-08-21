@@ -6,8 +6,8 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { SymbolGrid } from '../components/symbols/SymbolGrid';
 import type { Symbol as SymbolType } from '../types';
 import { useTranslation } from 'react-i18next';
-import { DEFAULT_SYMBOL_CATEGORIES } from '../lib/symbolCategories';
-import { isValidImageFile } from '../lib/download';
+import { ARASAAC_CATEGORY, DEFAULT_SYMBOL_CATEGORIES } from '../lib/symbolCategories';
+import { isValidImageFile, MAX_IMAGE_FILE_BYTES } from '../lib/download';
 import { SymbolImage } from '../components/common/SymbolImage';
 import { useToastStore } from '../store/toastStore';
 
@@ -36,12 +36,14 @@ export function Symbols() {
   const [creating, setCreating] = useState(false);
   const [page, setPage] = useState(0);
   const pageSize = 100;
+  const [hasMore, setHasMore] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [serverCategories, setServerCategories] = useState<string[]>([]);
   const formRef = useRef<HTMLDivElement>(null);
   // Latest-request-wins guard so a slow response cannot overwrite a newer one
   // when filters/search/sort change in quick succession.
   const fetchSeqRef = useRef(0);
+  const arasaacSearchSeqRef = useRef(0);
 
   const [deleteState, setDeleteState] = useState<{
     isOpen: boolean;
@@ -74,14 +76,18 @@ export function Symbols() {
     setIsLoading(true);
     setError(null);
     try {
-      const params: Record<string, string | number> = { skip: page * pageSize, limit: pageSize };
+      // Request one extra item so we can detect whether a next page exists
+      // without relying on the brittle "items < pageSize" heuristic.
+      const params: Record<string, string | number> = { skip: page * pageSize, limit: pageSize + 1 };
       if (usage !== 'all') params.usage = usage;
       if (category !== 'all') params.category = category;
       if (search) params.search = search;
       if (sort !== 'default') params.sort = sort;
       const res = await api.get('/boards/symbols', { params });
       if (seq !== fetchSeqRef.current) return;
-      setSymbols(res.data);
+      const items: SymbolType[] = Array.isArray(res.data) ? res.data : [];
+      setHasMore(items.length > pageSize);
+      setSymbols(items.slice(0, pageSize));
     } catch (e: unknown) {
       if (seq !== fetchSeqRef.current) return;
       setError(extractError(e, t('loadFailed', 'Failed to load symbols')));
@@ -314,7 +320,7 @@ export function Symbols() {
       setNewPreview(null);
       return;
     }
-    const maxSizeMb = 5;
+    const maxSizeMb = MAX_IMAGE_FILE_BYTES / (1024 * 1024);
     if (!isValidImageFile(file)) {
       setError(t('invalidFile', 'Invalid file. Must be an image under {{size}}MB.', { size: maxSizeMb }));
       setNewFile(null);
@@ -334,23 +340,29 @@ export function Symbols() {
 
   const searchArasaac = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!arasaacQuery.trim()) return;
+    const query = arasaacQuery.trim();
+    if (!query) return;
+    const searchSeq = ++arasaacSearchSeqRef.current;
     setIsSearchingArasaac(true);
     setError(null);
     try {
       const locale = i18n.language?.split('-')[0] || 'es';
       const res = await api.get('/arasaac/search', { 
         params: { 
-          q: arasaacQuery,
+          q: query,
           locale: locale
         } 
       });
-      setArasaacResults(res.data);
+      if (searchSeq === arasaacSearchSeqRef.current) {
+        setArasaacResults(Array.isArray(res.data) ? res.data : []);
+      }
     } catch (e: unknown) {
-      console.error(e);
-      setError(t('arasaacSearchFailed', 'Failed to search ARASAAC'));
+      if (searchSeq === arasaacSearchSeqRef.current) {
+        console.error(e);
+        setError(t('arasaacSearchFailed', 'Failed to search ARASAAC'));
+      }
     } finally {
-      setIsSearchingArasaac(false);
+      if (searchSeq === arasaacSearchSeqRef.current) setIsSearchingArasaac(false);
     }
   };
 
@@ -362,7 +374,7 @@ export function Symbols() {
         label: item.label,
         description: item.description,
         keywords: item.keywords,
-        category: 'ARASAAC'
+        category: ARASAAC_CATEGORY
       });
       await fetchSymbols();
       // Confirm the import so the user isn't left guessing whether the click
@@ -545,7 +557,10 @@ export function Symbols() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(0);
+              }}
               className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               placeholder={t('searchSymbols')}
             />
@@ -614,7 +629,7 @@ export function Symbols() {
             onEdit={startEdit}
             onDelete={deleteSymbol}
             page={page}
-            pageSize={pageSize}
+            hasMore={hasMore}
             onPreviousPage={() => setPage(p => Math.max(0, p - 1))}
             onNextPage={() => setPage(p => p + 1)}
           />

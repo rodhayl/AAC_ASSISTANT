@@ -89,7 +89,7 @@ describe('Symbols page', () => {
 
     expect(await screen.findByText('Hello')).toBeInTheDocument();
     expect(api.get).toHaveBeenCalledWith('/boards/symbols', {
-      params: { skip: 0, limit: 100 },
+      params: { skip: 0, limit: 101 },
     });
   });
 
@@ -102,14 +102,14 @@ describe('Symbols page', () => {
     await user.type(searchInput, 'hola');
     await waitFor(() =>
       expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', {
-        params: { skip: 0, limit: 100, search: 'hola' },
+        params: { skip: 0, limit: 101, search: 'hola' },
       }),
     );
 
     await user.click(screen.getByRole('button', { name: 'filters.inUse' }));
     await waitFor(() =>
       expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', {
-        params: { skip: 0, limit: 100, search: 'hola', usage: 'in_use' },
+        params: { skip: 0, limit: 101, search: 'hola', usage: 'in_use' },
       }),
     );
   });
@@ -263,14 +263,14 @@ describe('Symbols page', () => {
     await user.selectOptions(combos[2], 'greeting');
     await waitFor(() =>
       expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', {
-        params: { skip: 0, limit: 100, category: 'greeting' },
+        params: { skip: 0, limit: 101, category: 'greeting' },
       }),
     );
 
     await user.selectOptions(combos[1], 'newest');
     await waitFor(() =>
       expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', {
-        params: { skip: 0, limit: 100, category: 'greeting', sort: 'newest' },
+        params: { skip: 0, limit: 101, category: 'greeting', sort: 'newest' },
       }),
     );
   });
@@ -581,7 +581,7 @@ describe('Symbols page', () => {
     api.get.mockImplementation((url: string, options?: { params?: { skip?: number } }) => {
       if (url === '/boards/symbols') {
         const skip = options?.params?.skip ?? 0;
-        return Promise.resolve({ data: many.slice(skip, skip + 100) });
+        return Promise.resolve({ data: many.slice(skip, skip + 101) });
       }
       return Promise.resolve({ data: [] });
     });
@@ -591,7 +591,7 @@ describe('Symbols page', () => {
     await user.click(screen.getByRole('button', { name: 'next' }));
     await waitFor(() =>
       expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', {
-        params: { skip: 100, limit: 100 },
+        params: { skip: 100, limit: 101 },
       }),
     );
     expect(await screen.findByText('Symbol 101')).toBeInTheDocument();

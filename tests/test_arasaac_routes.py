@@ -8,6 +8,48 @@ from src.aac_app.models import Symbol, User, UserSettings
 from src.api.routers import arasaac
 
 
+def test_arasaac_search_percent_encodes_query_in_url():
+    """Queries with spaces or special characters must not corrupt the URL path."""
+    from src.aac_app.services.arasaac import ArasaacService
+
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return [
+                {"_id": 1, "keywords": [{"keyword": "pan"}], "desc": "bread"}
+            ]
+
+    class FakeClient:
+        async def get(self, url):
+            captured["url"] = url
+            return FakeResponse()
+
+        async def aclose(self):
+            pass
+
+    service = ArasaacService()
+    service.client = FakeClient()
+    try:
+        results = asyncio.run(service.search_symbols("pan de leche", "es"))
+    finally:
+        asyncio.run(service.close())
+
+    assert (
+        captured["url"]
+        == "https://api.arasaac.org/api/pictograms/es/bestsearch/pan%20de%20leche"
+    )
+    assert results and results[0]["label"] == "pan"
+
+    # Path-breaking characters are encoded too, never parsed as separators.
+    captured.clear()
+    asyncio.run(service.search_symbols("rosa#1?x/y", "es"))
+    assert captured["url"].endswith("/bestsearch/rosa%231%3Fx%2Fy")
+
+
 @pytest.mark.usefixtures("setup_test_db")
 def test_arasaac_import_preserves_missing_image_status_and_closes_client(
     test_db_session, monkeypatch

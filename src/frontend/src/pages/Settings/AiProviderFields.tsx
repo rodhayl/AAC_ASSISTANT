@@ -234,10 +234,10 @@ export function AiProviderFields({
               value={lmStudioBaseUrl}
               onChange={(event) => setAiOverride((prev) => ({ ...prev, lmstudio_base_url: event.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="http://localhost:1234/v1"
+              placeholder={config.LMSTUDIO_BASE_URL}
               aria-label={t('ai.lmstudioUrl')}
             />
-            <p className="text-xs text-gray-500 mt-1">{t('ai.lmstudioDefault', 'Default: http://localhost:1234/v1')}</p>
+            <p className="text-xs text-gray-500 mt-1">{t('ai.lmstudioDefault', 'Default: {{url}}', { url: config.LMSTUDIO_BASE_URL })}</p>
           </div>
           <div className="relative">
             <div className="flex items-center justify-between mb-2">

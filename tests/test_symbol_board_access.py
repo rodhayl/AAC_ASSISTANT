@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol, User
+from src.aac_app.models import BoardSymbol, CommunicationBoard, StudentTeacher, Symbol, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.api.main import app
 from tests.auth_helpers import create_test_headers
@@ -60,6 +60,40 @@ def test_board_symbol_mutations_reject_non_owner(
         kwargs["json"] = body
     response = request(url, **kwargs)
     assert response.status_code == 403
+
+
+def test_rostered_teacher_can_view_private_student_board(
+    setup_test_db, test_db_session
+):
+    teacher = _user(test_db_session, "detail_teacher", "teacher")
+    student = _user(test_db_session, "detail_student", "student")
+    test_db_session.add(StudentTeacher(teacher_id=teacher.id, student_id=student.id))
+    board, _, _ = _board(test_db_session, student)
+    test_db_session.commit()
+
+    response = TestClient(app).get(
+        f"/api/boards/{board.id}",
+        headers=create_test_headers(teacher.id, teacher.username, teacher.user_type),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == board.id
+
+
+def test_unrostered_teacher_cannot_view_private_student_board(
+    setup_test_db, test_db_session
+):
+    owner = _user(test_db_session, "detail_owner", "student")
+    teacher = _user(test_db_session, "detail_unrelated", "teacher")
+    board, _, _ = _board(test_db_session, owner)
+
+    response = TestClient(app).get(
+        f"/api/boards/{board.id}",
+        headers=create_test_headers(teacher.id, teacher.username, teacher.user_type),
+    )
+
+    assert response.status_code == 403
+
 
 
 @pytest.mark.parametrize(

@@ -34,7 +34,13 @@
     "safety": "Safety"
   },
   "success": {
-    "saved": "Profile saved successfully"
+    "saved": "Profile saved successfully",
+    "created": "Student created",
+    "updated": "Student updated",
+    "deleted": "Student deleted",
+    "passwordReset": "Password reset",
+    "boardAssigned": "Board assigned",
+    "boardUnassigned": "Board unassigned"
   },
   "labels": {
     "username": "Username *",
@@ -61,6 +67,7 @@
   },
   "errors": {
     "loadFailed": "Failed to load students",
+    "loadBoardsFailed": "Failed to load boards",
     "assignFailed": "Failed to assign board",
     "unassignFailed": "Failed to unassign board",
     "updateFailed": "Failed to update",

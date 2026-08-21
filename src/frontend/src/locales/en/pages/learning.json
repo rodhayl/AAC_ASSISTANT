@@ -34,6 +34,8 @@
   "startRecording": "Start Recording",
   "sendMessage": "Send message",
   "boardOptional": "Board or context (optional)",
+  "boardNameDefault": "General",
+  "teacherDefault": "Teacher",
   "topicStudy": "Topic to study",
   "saveTopic": "Save topic",
   "noSavedTopics": "No saved topics yet.",
@@ -93,6 +95,7 @@
     "unauthorizedUser": "Not authorized to start session for another user",
     "unknownError": "Unknown error",
     "sessionNotFound": "Session not found",
+    "sessionNotActive": "This learning session is no longer active.",
     "unauthorized": "Not authorized",
     "noSymbolsProvided": "No symbols provided",
     "transcriptionFailed": "I received your audio but couldn't transcribe it. Please try again or switch to text for now."

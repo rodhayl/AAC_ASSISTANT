@@ -102,6 +102,16 @@ def preview_template(
     the final prompt.
     """
     guardian_service = get_guardian_profile_service()
+    template_manager = get_template_manager()
+    if not template_manager.template_exists(template_name):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=get_text(
+                user=current_user,
+                key="errors.guardian.templateNotFound",
+                name=template_name,
+            ),
+        )
 
     prompt = guardian_service.preview_system_prompt(
         template_name=template_name, overrides=overrides

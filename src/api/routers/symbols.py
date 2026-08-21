@@ -242,6 +242,12 @@ def create_symbol(
 ):
     """Create a new symbol"""
     symbol_data = symbol.model_dump()
+    symbol_data["label"] = symbol_data["label"].strip()
+    if not symbol_data["label"]:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(user=current_user, key="errors.validation"),
+        )
     # Normalize to a base code so it matches the exact-match language filter.
     symbol_data["language"] = normalize_language_code(symbol_data.get("language")) or "en"
     db_symbol = Symbol(**symbol_data)
@@ -306,6 +312,12 @@ async def upload_symbol(
 ):
     """Upload a new symbol image"""
     language = normalize_language_code(language) or "en"
+    label = label.strip()
+    if not label:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(user=current_user, key="errors.validation"),
+        )
     public_path = await _save_symbol_image(file, current_user)
     uploads_dir = config.UPLOADS_DIR / "symbols"
     db_symbol = Symbol(
@@ -344,7 +356,17 @@ def update_symbol(
     current_user: User = Depends(get_current_staff_user),
 ):
     db_symbol = _get_symbol_or_404(db, symbol_id, current_user)
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    symbol_data = payload.model_dump(exclude_unset=True)
+    if "label" in symbol_data:
+        symbol_data["label"] = symbol_data["label"].strip()
+        if not symbol_data["label"]:
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(user=current_user, key="errors.validation"),
+            )
+    if "language" in symbol_data:
+        symbol_data["language"] = normalize_language_code(symbol_data["language"])
+    for key, value in symbol_data.items():
         setattr(db_symbol, key, value)
     db.commit()
     db.refresh(db_symbol)
@@ -472,6 +494,16 @@ def _update_single_symbol(
 ) -> bool:
     """Apply updates to a single board symbol after validating link targets."""
     changed = False
+    if "symbol_id" in update:
+        new_symbol_id = update["symbol_id"]
+        if type(new_symbol_id) is not int:
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(user=current_user, key="errors.boards.symbolNotFound"),
+            )
+        _get_symbol_or_404(db, new_symbol_id, current_user)
+        db_board_symbol.symbol_id = new_symbol_id
+        changed = True
     if "position_x" in update:
         db_board_symbol.position_x = update["position_x"]
         changed = True
@@ -483,6 +515,9 @@ def _update_single_symbol(
         changed = True
     if "is_visible" in update:
         db_board_symbol.is_visible = update["is_visible"]
+        changed = True
+    if "color" in update:
+        db_board_symbol.color = update["color"]
         changed = True
     if "custom_text" in update:
         db_board_symbol.custom_text = update["custom_text"]
@@ -512,7 +547,7 @@ def _update_single_symbol(
 @router.put("/{board_id}/symbols/batch")
 def batch_update_board_symbols(
     board_id: int,
-    updates: list[dict],
+    updates: list[schemas.BoardSymbolBatchUpdate],
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -521,8 +556,9 @@ def batch_update_board_symbols(
     require_board_owner_or_admin(board, current_user)
 
     updated_count = 0
-    for update in updates:
-        symbol_id = update.get("id")
+    for update_model in updates:
+        update = update_model.model_dump(exclude_unset=True)
+        symbol_id = update.pop("id", None)
         if not symbol_id:
             continue
 
@@ -564,11 +600,22 @@ def update_board_symbol(
             symbol_data.position_y if symbol_data.position_y is not None else db_board_symbol.position_y or 0,
             current_user,
         )
+    updates = symbol_data.model_dump(exclude_unset=True)
+    if "symbol_id" in updates:
+        new_symbol_id = updates.pop("symbol_id")
+        if new_symbol_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(user=current_user, key="errors.boards.symbolNotFound"),
+            )
+        _get_symbol_or_404(db, new_symbol_id, current_user)
+        db_board_symbol.symbol_id = new_symbol_id
+
     validate_linked_board(
         db, board_id, symbol_data.linked_board_id, current_user
     )
 
-    for key, value in symbol_data.model_dump(exclude_unset=True).items():
+    for key, value in updates.items():
         setattr(db_board_symbol, key, value)
 
     db.commit()

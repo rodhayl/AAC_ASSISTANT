@@ -347,7 +347,7 @@ def get_lmstudio_provider() -> LMStudioProvider:
     """Return the configured LM Studio provider singleton."""
     global _lmstudio_provider
 
-    base_url = _get_setting_value("lmstudio_base_url", "http://localhost:1234/v1")
+    base_url = _get_setting_value("lmstudio_base_url", config.LMSTUDIO_BASE_URL)
     model = _get_setting_value("lmstudio_model", "")
     discarded: Any | None = None
 
@@ -576,14 +576,14 @@ def get_vector_store() -> LocalVectorStore:
 def _get_llm_settings() -> tuple[int, float]:
     """Read the configured primary LLM behavior settings."""
     try:
-        max_tokens = int(_get_setting_value("ai_max_tokens", "1024"))
+        max_tokens = int(_get_setting_value("ai_max_tokens", str(config.AI_MAX_TOKENS)))
     except ValueError:
-        max_tokens = 1024
+        max_tokens = config.AI_MAX_TOKENS
 
     try:
-        temperature = float(_get_setting_value("ai_temperature", "0.5"))
+        temperature = float(_get_setting_value("ai_temperature", str(config.AI_TEMPERATURE)))
     except ValueError:
-        temperature = 0.5
+        temperature = config.AI_TEMPERATURE
 
     return max_tokens, temperature
 
@@ -674,7 +674,7 @@ def _init_llm_provider_sync() -> bool:
                     discarded_llm = _lmstudio_provider
                     _lmstudio_provider = LMStudioProvider(
                         base_url=_get_setting_value(
-                            "lmstudio_base_url", "http://localhost:1234/v1"
+                            "lmstudio_base_url", config.LMSTUDIO_BASE_URL
                         ),
                         model=_get_setting_value("lmstudio_model", ""),
                     )

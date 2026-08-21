@@ -140,6 +140,51 @@ def test_learning_mode_list_uses_one_query_and_scopes_custom_modes(
 
 
 @pytest.mark.usefixtures("setup_test_db")
+def test_learning_mode_preview_does_not_leak_other_teachers_prompt(
+    admin_user, test_db_session: Session, client
+):
+    """A teacher cannot preview a saved mode owned by another teacher."""
+    from src.aac_app.utils.jwt_utils import create_access_token
+
+    owner = User(
+        username="private_mode_owner",
+        password_hash=get_password_hash("OwnerPass123"),
+        display_name="Private Mode Owner",
+        user_type="teacher",
+        is_active=True,
+    )
+    viewer = User(
+        username="private_mode_viewer",
+        password_hash=get_password_hash("ViewerPass123"),
+        display_name="Private Mode Viewer",
+        user_type="teacher",
+        is_active=True,
+    )
+    test_db_session.add_all([owner, viewer])
+    test_db_session.flush()
+    mode = LearningMode(
+        name="Private Mode",
+        key="private_mode_key",
+        prompt_instruction="Do not expose this teacher's private instruction.",
+        created_by=owner.id,
+        is_custom=True,
+    )
+    test_db_session.add(mode)
+    test_db_session.commit()
+
+    token = create_access_token(
+        data={"sub": viewer.username, "user_id": viewer.id, "user_type": viewer.user_type}
+    )
+    response = client.post(
+        "/api/learning-modes/preview",
+        json={"mode_key": mode.key, "prompt_instruction": mode.prompt_instruction},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.usefixtures("setup_test_db")
 def test_learning_mode_auto_ask_enabled_flag_roundtrip(
     admin_user, admin_token, test_db_session: Session, client
 ):

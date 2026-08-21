@@ -108,6 +108,11 @@ class GuardianProfileService:
                 )
                 session.add(profile)
                 session.flush()
+            elif not profile.is_active:
+                # Updating a previously soft-deleted profile is the explicit
+                # restore path used by the create/update APIs. Without this,
+                # the API returned success while the profile remained hidden.
+                profile.is_active = True
 
             # Track changes for audit
             for field, new_value in changes.items():
@@ -367,23 +372,19 @@ class GuardianProfileService:
             )
 
             if teacher_id:
-                has_assignments = (
-                    session.query(StudentTeacher.id)
-                    .filter(StudentTeacher.teacher_id == teacher_id)
-                    .first()
-                    is not None
-                )
-                if has_assignments:
-                    # Use EXISTS instead of a join so duplicate legacy
-                    # assignment rows cannot duplicate students in the roster.
-                    query = query.filter(
-                        exists().where(
-                            and_(
-                                StudentTeacher.teacher_id == teacher_id,
-                                StudentTeacher.student_id == User.id,
-                            )
+                # Always apply the roster filter. The old conditional skipped
+                # it when a teacher had zero assignments, exposing every active
+                # student to that teacher.
+                # Use EXISTS instead of a join so duplicate legacy assignment
+                # rows cannot duplicate students in the roster.
+                query = query.filter(
+                    exists().where(
+                        and_(
+                            StudentTeacher.teacher_id == teacher_id,
+                            StudentTeacher.student_id == User.id,
                         )
                     )
+                )
 
             query = query.order_by(User.id)
             result = []

@@ -120,12 +120,18 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = ""
 
     OLLAMA_BASE_URL: str = "http://localhost:11434"
+    LMSTUDIO_BASE_URL: str = "http://localhost:1234/v1"
+    AI_MAX_TOKENS: int = 1024
+    AI_TEMPERATURE: float = 0.5
     OPENROUTER_API_KEY: str = ""
 
     APP_NAME: str = "AAC Assistant"
     APP_VERSION: str = "2.0.0"
     ENVIRONMENT: str = "development"
     DEFAULT_LOCALE: str = "es"
+    # Localized UI values accepted by the preferences API. Short codes remain
+    # supported for legacy installations and are normalized by the frontend.
+    SUPPORTED_UI_LANGUAGES: str = "es-ES,en-US,es,en"
 
     ALLOWED_ORIGINS: str = DEFAULT_ALLOWED_ORIGINS
     ALLOW_DB_RESET: bool = False
@@ -262,7 +268,7 @@ def _dotenv_value(path: Path, key: str) -> str | None:
     """Return the last non-empty assignment for ``key`` in a dotenv file."""
     if not path.exists():
         return None
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in reversed(path.read_text(encoding="utf-8").splitlines()):
         if _env_key(line) == key:
             value = line.partition("=")[2].strip()
             if value:

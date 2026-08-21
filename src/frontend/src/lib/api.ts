@@ -15,6 +15,7 @@ import { useOfflineStore } from '../store/offlineStore';
 type ApiError = {
   message?: unknown;
   response?: {
+    status?: number;
     data?: {
       detail?: unknown;
       error?: unknown;
@@ -224,6 +225,14 @@ async function flushQueue() {
         useOfflineStore.getState().addConflict(item.config, String(errorMsg), item.userId);
         queue.shift();
         persistQueue();
+        // A server-side rejection (an HTTP status) is final for this item:
+        // surface it as a conflict and keep replaying the rest of the queue.
+        // A 401 means every remaining mutation shares the auth problem, so
+        // stop there (the refresh/logout flow re-triggers a fresh flush).
+        // Network-level failures mean the connection dropped again, so stop
+        // and let the next flush trigger (online event, auth-ready) retry.
+        const status = replayError.response?.status;
+        if (typeof status === 'number' && status !== 401) continue;
         return;
       }
       return;

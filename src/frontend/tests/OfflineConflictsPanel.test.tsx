@@ -25,6 +25,7 @@ vi.mock('../src/store/offlineStore', () => ({
 
 vi.mock('../src/lib/api', () => ({
   default: { request },
+  apiOffline: { isOffline: () => false, resumeQueue: vi.fn() },
 }));
 
 vi.mock('../src/lib/format', () => ({

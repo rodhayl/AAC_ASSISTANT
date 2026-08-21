@@ -4,6 +4,8 @@
 from loguru import logger
 from sqlalchemy.orm import Session
 
+from src import config
+
 from ...db import session_scope
 from ...models import UserSettings
 from ...providers.lmstudio_provider import LMStudioProvider
@@ -29,19 +31,28 @@ class LearningCompanionService(
 ):
     def __init__(
         self,
-        llm_provider: OllamaProvider | OpenRouterProvider,
+        llm_provider: OllamaProvider | OpenRouterProvider | LMStudioProvider,
         speech_provider: LocalSpeechProvider,
-        default_max_tokens: int = 1024,
-        default_temperature: float = 0.5,
+        default_max_tokens: int | None = None,
+        default_temperature: float | None = None,
     ):
         self.llm = llm_provider
         self.speech = speech_provider
 
         # LLM behavior defaults (can be overridden via AppSettings)
-        self.default_max_tokens = max(64, int(default_max_tokens or 1024))
+        self.default_max_tokens = max(
+            64,
+            int(
+                config.AI_MAX_TOKENS
+                if default_max_tokens is None
+                else default_max_tokens
+            ),
+        )
         # Clamp temperature to reasonable range
         self.default_temperature = float(
-            default_temperature if default_temperature is not None else 0.5
+            config.AI_TEMPERATURE
+            if default_temperature is None
+            else default_temperature
         )
         if self.default_temperature < 0.0:
             self.default_temperature = 0.0

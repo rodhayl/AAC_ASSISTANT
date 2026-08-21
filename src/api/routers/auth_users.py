@@ -10,6 +10,7 @@ from src.aac_app.models import (
     BoardSymbol,
     CollaborationSession,
     CommunicationBoard,
+    FailedLoginAttempt,
     GuardianProfile,
     GuardianProfileHistory,
     LearningMode,
@@ -454,22 +455,70 @@ def update_user(
             ),
         )
 
-    new_email = payload.get('email')
-    if new_email is not None and new_email != user.email:
-        validate_email_format(
-            new_email,
-            user=current_user,
-            accept_language=request.headers.get("accept-language"),
+    # Never allow demoting or deactivating the last active administrator:
+    # doing so would leave the application without any admin account and
+    # force it back into first-run setup with no way to manage users.
+    if user.user_type == "admin":
+        would_leave_admin = (
+            ("user_type" in payload and payload.get("user_type") != "admin")
+            or ("is_active" in payload and payload.get("is_active") is False)
         )
-        if db.query(User).filter(User.email == new_email, User.id != user.id).first():
+        if would_leave_admin:
+            other_active_admins = (
+                db.query(User)
+                .filter(
+                    User.user_type == "admin",
+                    User.is_active.is_(True),
+                    User.id != user_id,
+                )
+                .count()
+            )
+            if other_active_admins == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=get_text(
+                        user=current_user,
+                        accept_language=request.headers.get("accept-language"),
+                        key="errors.auth.lastAdminRequired",
+                    ),
+                )
+
+    # Mirror the profile-update contract: a blank display name is rejected so
+    # admins cannot accidentally leave a user with an invisible name.
+    if 'display_name' in payload:
+        display_name = (payload.get('display_name') or '').strip()
+        if not display_name:
             raise HTTPException(
                 status_code=400,
                 detail=get_text(
                     user=current_user,
                     accept_language=request.headers.get("accept-language"),
-                    key="errors.auth.emailTaken",
+                    key="errors.auth.displayNameRequired",
                 ),
             )
+
+    new_email = payload.get('email')
+    if new_email is not None and new_email != user.email:
+        # An empty string from the editor means "clear the optional email".
+        # Normalize it to None so the row stores NULL like an account created
+        # without an email, matching update_profile's clear semantics.
+        if isinstance(new_email, str):
+            new_email = new_email.strip() or None
+        if new_email is not None:
+            validate_email_format(
+                new_email,
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+            )
+            if db.query(User).filter(User.email == new_email, User.id != user.id).first():
+                raise HTTPException(
+                    status_code=400,
+                    detail=get_text(
+                        user=current_user,
+                        accept_language=request.headers.get("accept-language"),
+                        key="errors.auth.emailTaken",
+                    ),
+                )
 
     if 'is_active' in payload and not isinstance(payload['is_active'], bool):
         raise HTTPException(status_code=400, detail="is_active must be a boolean")
@@ -477,7 +526,7 @@ def update_user(
     # Allowed fields
     for key in ["display_name", "user_type", "email", "is_active"]:
         if key in payload:
-            setattr(user, key, payload[key])
+            setattr(user, key, new_email if key == "email" else payload[key])
     db.add(user)
     db.flush()
     db.commit()
@@ -508,6 +557,29 @@ def delete_user(
             status_code=404,
             detail=get_text(user=current_user, key="errors.userNotFound"),
         )
+
+    # Deleting the last active administrator would strand the application in
+    # first-run setup with no account able to manage users or re-create an
+    # admin. Reject the operation instead of allowing a dead-end state.
+    if user.user_type == "admin" and user.is_active:
+        other_active_admins = (
+            db.query(User)
+            .filter(
+                User.user_type == "admin",
+                User.is_active.is_(True),
+                User.id != user_id,
+            )
+            .count()
+        )
+        if other_active_admins == 0:
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(
+                    user=current_user,
+                    accept_language=request.headers.get("accept-language"),
+                    key="errors.auth.lastAdminRequired",
+                ),
+            )
 
     # Delete dependent rows explicitly instead of relying on ORM relationship
     # synchronization. Several legacy relationships have non-null foreign
@@ -651,6 +723,15 @@ def delete_user(
         )
     )
 
+    # Remove lockout rows before deleting the account. Otherwise a later
+    # account with the same username could inherit stale failed-login attempts
+    # from this deleted account.
+    db.execute(
+        delete(FailedLoginAttempt).where(
+            FailedLoginAttempt.username == user.username
+        )
+    )
+
     # Use a Core DELETE after dependents are handled so SQLAlchemy does not
     # synchronize already-loaded relationship collections by nulling required
     # foreign keys.
@@ -714,15 +795,29 @@ def update_profile(
 ):
     """Update current user's profile (display name, email)"""
     if profile.display_name is not None:
-        current_user.display_name = profile.display_name
-    if profile.email is not None:
-        # Check email uniqueness
-        existing = db.query(User).filter(User.email == profile.email, User.id != current_user.id).first()
-        if existing:
+        display_name = profile.display_name.strip()
+        if not display_name:
             raise HTTPException(
                 status_code=400,
-                detail=get_text(user=current_user, key="errors.auth.emailInUse"),
+                detail=get_text(user=current_user, key="errors.auth.displayNameRequired"),
             )
+        current_user.display_name = display_name
+
+    # Pydantic keeps explicit null in model_fields_set. That distinction is
+    # required here: null means "clear my optional email", while an omitted
+    # field means "leave the existing email unchanged".
+    if "email" in profile.model_fields_set:
+        if profile.email is not None:
+            existing = (
+                db.query(User)
+                .filter(User.email == profile.email, User.id != current_user.id)
+                .first()
+            )
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=get_text(user=current_user, key="errors.auth.emailInUse"),
+                )
         current_user.email = profile.email
 
     db.flush()

@@ -49,6 +49,13 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       const totalPoints = pointsRes.data;
       const learningHistoryData = learningHistoryRes.data;
 
+      // Only count unlocked achievements: the user endpoint also returns locked
+      // ones (with progress) so the dashboard's "badges earned" card must not
+      // count trophies the student has not earned yet.
+      const earnedAchievements = achievements.filter(
+        (a: { earned_at: string | null }) => a.earned_at != null,
+      );
+
       // Extract sessions array from response (API returns { sessions: [...] })
       const learningHistory: LearningHistoryItem[] = learningHistoryData.sessions || learningHistoryData || [];
 
@@ -66,7 +73,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       set({
         stats: {
           learningStreak,
-          achievementCount: achievements.length,
+          achievementCount: earnedAchievements.length,
           totalPoints
         },
         recentActivity,

@@ -108,6 +108,42 @@ describe('Smartbar debounce', () => {
   });
 });
 
+describe('Smartbar pagination', () => {
+  const suggestion = (symbol_id: number, label: string) => ({
+    symbol_id,
+    label,
+    category: 'general',
+    confidence: 0.5,
+  });
+
+  it('disables the More button when the backend returns a short page', async () => {
+    vi.mocked(api.post).mockResolvedValue({
+      data: [suggestion(1, 'One'), suggestion(2, 'Two'), suggestion(3, 'Three')],
+    });
+
+    render(<Smartbar currentSentence={[]} onSelectSymbol={vi.fn()} />);
+
+    await waitFor(() => {
+      const moreButton = screen.getByRole('button', { name: 'More' });
+      expect(moreButton).toBeDisabled();
+    });
+  });
+
+  it('keeps the More button enabled after a full page of suggestions', async () => {
+    const fullPage = Array.from({ length: 20 }, (_, index) =>
+      suggestion(index + 1, `Word ${index + 1}`),
+    );
+    vi.mocked(api.post).mockResolvedValue({ data: fullPage });
+
+    render(<Smartbar currentSentence={[]} onSelectSymbol={vi.fn()} />);
+
+    await waitFor(() => {
+      const moreButton = screen.getByRole('button', { name: 'More' });
+      expect(moreButton).toBeEnabled();
+    });
+  });
+});
+
 describe('Smartbar request cancellation', () => {
   it('passes an AbortSignal and does not log cancellation as an error', async () => {
     let rejectRequest!: (error: unknown) => void;

@@ -11,6 +11,7 @@ const hoisted = vi.hoisted(() => {
     currentBoard: null as Board | null,
     isListLoading: false,
     isBoardLoading: false,
+    error: null as string | null,
     hasMore: false,
     page: 1,
     fetchBoards: vi.fn(),
@@ -38,7 +39,7 @@ const hoisted = vi.hoisted(() => {
     isLoading: false,
   };
   const ttsHandlers: { cb: ((s: 'idle' | 'speaking') => void) | null } = { cb: null };
-  const api = { get: vi.fn(), post: vi.fn() };
+  const api = { get: vi.fn(), post: vi.fn(), put: vi.fn() };
   return { boardStore, auth, learning, ttsHandlers, api, addToast: vi.fn() };
 });
 
@@ -49,8 +50,11 @@ vi.mock('../src/store/boardStore', () => {
 });
 
 vi.mock('../src/store/authStore', () => {
-  const useAuthStore = (selector?: (value: typeof hoisted.auth) => unknown) =>
-    selector ? selector(hoisted.auth) : hoisted.auth;
+  const useAuthStore = Object.assign(
+    (selector?: (value: typeof hoisted.auth) => unknown) =>
+      selector ? selector(hoisted.auth) : hoisted.auth,
+    { setState: vi.fn() },
+  );
   return { useAuthStore };
 });
 
@@ -74,6 +78,7 @@ vi.mock('../src/lib/api', () => ({
   default: {
     get: hoisted.api.get,
     post: hoisted.api.post,
+    put: hoisted.api.put,
   },
 }));
 
@@ -324,6 +329,7 @@ describe('Communication page', () => {
     hoisted.boardStore.currentBoard = makeBoard();
     hoisted.boardStore.isListLoading = false;
     hoisted.boardStore.isBoardLoading = false;
+    hoisted.boardStore.error = null;
     hoisted.boardStore.hasMore = false;
     hoisted.boardStore.page = 1;
     hoisted.auth.user.user_type = 'admin';
@@ -334,6 +340,7 @@ describe('Communication page', () => {
     hoisted.learning.submitSymbolAnswer.mockReset();
     hoisted.api.post.mockResolvedValue({ data: { success: true } });
     hoisted.api.get.mockResolvedValue({ data: [] });
+    hoisted.api.put.mockResolvedValue({ data: {} });
   });
 
   describe('board selection', () => {
@@ -395,6 +402,18 @@ describe('Communication page', () => {
       hoisted.boardStore.currentBoard = null;
       renderCommunication('/communication?boardId=1');
       expect(document.querySelector('.animate-spin')).toBeInTheDocument();
+    });
+
+    it('shows a retry state when the board fetch fails', () => {
+      hoisted.boardStore.isBoardLoading = false;
+      hoisted.boardStore.currentBoard = null;
+      hoisted.boardStore.error = 'Failed to fetch board';
+      renderCommunication('/communication?boardId=1');
+
+      expect(screen.getByText('Could not load this board')).toBeInTheDocument();
+      expect(screen.getByText('Failed to fetch board')).toBeInTheDocument();
+      fireEvent.click(screen.getByText('Retry'));
+      expect(hoisted.boardStore.fetchBoard).toHaveBeenCalledWith(1, true);
     });
 
     it('appends a clicked symbol to the sentence and logs usage', async () => {

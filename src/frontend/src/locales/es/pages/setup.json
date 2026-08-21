@@ -22,6 +22,7 @@
   "loginLink": "¿Ya tienes una cuenta? Iniciar sesión",
   "errors": {
     "passwordMismatch": "Las contraseñas no coinciden",
-    "passwordTooShort": "La contraseña debe tener al menos 8 caracteres"
+    "passwordTooShort": "La contraseña debe tener al menos 8 caracteres",
+    "statusCheckFailed": "No se pudo verificar el estado de configuración. Aun así puedes continuar, pero es posible que el servidor ya esté configurado."
   }
 }

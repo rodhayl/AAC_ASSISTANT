@@ -65,6 +65,31 @@ class AchievementSystem:
                 if earned:
                     newly_earned.append(achievement_data)
 
+        # Custom achievements with automatic criteria are stored as DB rows,
+        # not in the predefined catalog. Evaluate them here so the "Automatic
+        # Criteria" editor option actually awards them once a student meets
+        # the threshold (previously they could only ever be awarded manually).
+        custom_automatic = (
+            session.query(Achievement)
+            .filter(
+                Achievement.created_by.is_not(None),
+                Achievement.is_active.is_(True),
+                Achievement.criteria_type.is_not(None),
+                Achievement.criteria_value.is_not(None),
+            )
+            .all()
+        )
+        for achievement in custom_automatic:
+            if (
+                achievement.target_user_id is not None
+                and achievement.target_user_id != user_id
+            ):
+                continue
+            if self._check_db_achievement_criteria(
+                user_id, achievement, stats, session
+            ) and self._award_db_achievement(user_id, achievement, session):
+                newly_earned.append(achievement)
+
         session.flush()
         if newly_earned:
             logger.success(
@@ -182,16 +207,14 @@ class AchievementSystem:
     def _check_achievement_criteria(
         self, user_id: int, achievement: dict, stats: dict, session
     ) -> bool:
-        """Check if user meets achievement criteria"""
-        criteria_type = achievement["criteria_type"]
-        criteria_value = achievement["criteria_value"]
-
+        """Check if user meets predefined achievement criteria."""
         # Check if already earned
         existing = (
             session.query(UserAchievement)
             .join(Achievement)
             .filter(
                 UserAchievement.user_id == user_id,
+                Achievement.created_by.is_(None),
                 Achievement.name == achievement["name"],
             )
             .first()
@@ -200,28 +223,48 @@ class AchievementSystem:
         if existing:
             return False
 
-        # Check criteria
+        return self._meets_criteria(
+            achievement["criteria_type"], achievement["criteria_value"], stats
+        )
+
+    def _check_db_achievement_criteria(
+        self, user_id: int, achievement: Achievement, stats: dict, session
+    ) -> bool:
+        """Check if a user meets a custom automatic achievement's criteria."""
+        existing = (
+            session.query(UserAchievement)
+            .filter(
+                UserAchievement.user_id == user_id,
+                UserAchievement.achievement_id == achievement.id,
+            )
+            .first()
+        )
+        if existing:
+            return False
+
+        return self._meets_criteria(
+            achievement.criteria_type, achievement.criteria_value, stats
+        )
+
+    @staticmethod
+    def _meets_criteria(
+        criteria_type: str, criteria_value: float, stats: dict
+    ) -> bool:
+        """Evaluate a single criteria type against computed user stats."""
         if criteria_type == "sessions_completed":
             return stats["sessions_completed"] >= criteria_value
-
         elif criteria_type == "correct_answers":
             return stats["total_correct_answers"] >= criteria_value
-
         elif criteria_type == "comprehension_score":
             return stats["average_comprehension"] >= criteria_value
-
         elif criteria_type == "vocabulary_size":
             return stats["vocabulary_size"] >= criteria_value
-
         elif criteria_type == "topics_completed":
             return stats["topics_completed"] >= criteria_value
-
         elif criteria_type == "consecutive_days":
             return stats["consecutive_days"] >= criteria_value
-
         elif criteria_type == "voice_usage":
             return stats["voice_usage"] >= criteria_value
-
         return False
 
     def _award_achievement(self, user_id: int, achievement_key: str, session) -> bool:
@@ -232,7 +275,10 @@ class AchievementSystem:
             # Get or create achievement definition
             achievement = (
                 session.query(Achievement)
-                .filter(Achievement.name == achievement_data["name"])
+                .filter(
+                    Achievement.created_by.is_(None),
+                    Achievement.name == achievement_data["name"],
+                )
                 .first()
             )
 
@@ -284,6 +330,44 @@ class AchievementSystem:
         except Exception as e:
             logger.error(
                 f"Failed to award achievement {achievement_key} to user {user_id}: {e}"
+            )
+            return False
+
+    def _award_db_achievement(
+        self, user_id: int, achievement: Achievement, session
+    ) -> bool:
+        """Award a custom automatic achievement already stored in the database."""
+        try:
+            user_achievement = UserAchievement(
+                user_id=user_id,
+                achievement_id=achievement.id,
+                earned_at=datetime.now(),
+            )
+            session.add(user_achievement)
+
+            try:
+                db_notification = Notification(
+                    user_id=user_id,
+                    title="Achievement Unlocked",
+                    message=f"{achievement.name} (+{achievement.points or 0} pts)",
+                    notification_type="achievement",
+                    priority="high",
+                    is_read=False,
+                )
+                session.add(db_notification)
+                session.flush()
+                stage_notification(session, db_notification)
+            except Exception as e:
+                logger.warning(f"Failed to send notification: {e}")
+
+            logger.success(
+                f"Awarded custom achievement '{achievement.name}' to user {user_id}"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(
+                f"Failed to award custom achievement {achievement.id} to user {user_id}: {e}"
             )
             return False
 
@@ -384,7 +468,7 @@ class AchievementSystem:
 
     def _calculate_progress(self, achievement: Achievement, stats: dict) -> float:
         """Calculate progress percentage for an achievement"""
-        if not achievement.criteria_type or not achievement.criteria_value:
+        if not achievement.criteria_type or achievement.criteria_value is None:
             return 0.0  # Manual achievements have no auto-progress
 
         return self._calculate_progress_generic(
@@ -403,8 +487,12 @@ class AchievementSystem:
 
     def _calculate_progress_generic(self, criteria_type: str, criteria_value: float, stats: dict) -> float:
         """Generic progress calculation based on criteria type"""
-        if not criteria_type or not criteria_value:
+        if not criteria_type or criteria_value is None:
             return 0.0
+        if criteria_value <= 0:
+            # A zero threshold is a valid automatic criterion and is already
+            # satisfied by every non-negative statistic.
+            return 100.0
 
         current_value = 0.0
 

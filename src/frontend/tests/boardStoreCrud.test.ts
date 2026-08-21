@@ -15,6 +15,7 @@ vi.mock('../src/lib/api', () => ({
 }));
 
 import api from '../src/lib/api';
+import i18n from '../src/i18n/index';
 import { useBoardStore } from '../src/store/boardStore';
 import { useNotificationsStore } from '../src/store/notificationsStore';
 
@@ -113,7 +114,8 @@ describe('board store CRUD', () => {
         },
       ],
     };
-    const copy = { ...board, id: 2, name: 'My Board (Copy)' };
+    const copySuffix = i18n.t('boards:copySuffix', ' (Copy)');
+    const copy = { ...board, id: 2, name: `My Board${copySuffix}` };
     (api.get as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({ data: source }) // base board lookup
       .mockResolvedValueOnce({ data: [copy] }); // list refresh
@@ -125,13 +127,65 @@ describe('board store CRUD', () => {
 
     expect(api.post).toHaveBeenCalledWith(
       '/boards/',
-      expect.objectContaining({ name: 'My Board (Copy)' }),
+      expect.objectContaining({ name: `My Board${copySuffix}` }),
       { params: { user_id: 7 } },
     );
     expect(api.post).toHaveBeenCalledWith(
       '/boards/2/symbols',
       expect.objectContaining({ symbol_id: 10, position_x: 0, position_y: 1 }),
     );
+  });
+
+  it('drops links to boards the new owner cannot view instead of failing mid-copy', async () => {
+    const source = {
+      ...board,
+      symbols: [
+        {
+          id: 100,
+          symbol: { id: 10 },
+          position_x: 0,
+          position_y: 0,
+          size: 1,
+          is_visible: true,
+          linked_board_id: 99, // private board of the original owner
+        },
+        {
+          id: 101,
+          symbol: { id: 11 },
+          position_x: 1,
+          position_y: 0,
+          size: 1,
+          is_visible: true,
+          linked_board_id: 12, // accessible linked board
+        },
+      ],
+    };
+    const copy = { ...board, id: 2, name: 'My Board (Copy)' };
+    (api.get as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ data: source }) // base board lookup
+      .mockRejectedValueOnce(new Error('403')) // linked board 99 is inaccessible
+      .mockResolvedValueOnce({ data: { id: 12 } }) // linked board 12 resolves
+      .mockResolvedValueOnce({ data: [copy] }); // list refresh
+    (api.post as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ data: copy }) // board creation
+      .mockResolvedValueOnce({}) // symbol 10
+      .mockResolvedValueOnce({}); // symbol 11
+
+    await useBoardStore.getState().duplicateBoard(1, 7);
+
+    // Symbol with an inaccessible link is copied without the link; the
+    // accessible one keeps it. The copy completes despite the 403 on one link.
+    expect(api.post).toHaveBeenCalledWith(
+      '/boards/2/symbols',
+      expect.objectContaining({ symbol_id: 10, linked_board_id: null }),
+    );
+    expect(api.post).toHaveBeenCalledWith(
+      '/boards/2/symbols',
+      expect.objectContaining({ symbol_id: 11, linked_board_id: 12 }),
+    );
+    expect(api.get).toHaveBeenCalledWith('/boards/99', {
+      params: { skip_translation: true },
+    });
   });
 
   it('adds a symbol to the current board when it is the modified board', async () => {

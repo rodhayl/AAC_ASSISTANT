@@ -26,9 +26,9 @@ const CATEGORIES = [
 ];
 
 const LANGUAGES = [
-  { code: 'es', label: 'Español' },
-  { code: 'en', label: 'English' },
-  { code: 'all', label: '' } // localized below via the `allLanguages` key
+  { code: 'es' },
+  { code: 'en' },
+  { code: 'all' },
 ];
 
 
@@ -244,7 +244,9 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
               >
                 {LANGUAGES.map(lang => (
                   <option key={lang.code} value={lang.code}>
-                    {lang.label || t('allLanguages', 'All')}
+                    {lang.code === 'all'
+                      ? t('allLanguages', 'All')
+                      : t(`languages.${lang.code}`, lang.code.toUpperCase())}
                   </option>
                 ))}
               </select>

@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Shield } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
+import { useToastStore } from '../../store/toastStore';
 import api, { extractError } from '../../lib/api';
+import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
 
 export function SecurityTab() {
   const user = useAuthStore(state => state.user);
+  const addToast = useToastStore(state => state.addToast);
   const { t } = useTranslation('settings');
   const [changeOpen, setChangeOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -13,6 +16,16 @@ export function SecurityTab() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changeError, setChangeError] = useState<string | null>(null);
   const [changeLoading, setChangeLoading] = useState(false);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  const closeChangeDialog = () => {
+    setChangeOpen(false);
+    setChangeError(null);
+  };
+
+  // Escape closes the dialog, focus moves into it on open and is restored on
+  // close (the same keyboard behavior as the other Settings modals).
+  useModalFocusTrap(dialogRef, changeOpen, closeChangeDialog);
 
   const handleChangePassword = async () => {
     if (!user) return;
@@ -29,6 +42,7 @@ export function SecurityTab() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      addToast(t('security.changeSuccess'), 'success');
     } catch (err: unknown) {
       setChangeError(extractError(err, t('security.changeFailed')));
     } finally {
@@ -65,6 +79,7 @@ export function SecurityTab() {
       {changeOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center z-50" role="presentation">
           <div
+            ref={dialogRef}
             className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md p-6"
             role="dialog"
             aria-modal="true"
@@ -111,7 +126,7 @@ export function SecurityTab() {
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
-                onClick={() => setChangeOpen(false)}
+                onClick={closeChangeDialog}
                 className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
               >
                 {t('profile.cancel')}

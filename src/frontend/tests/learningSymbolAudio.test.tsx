@@ -57,8 +57,11 @@ vi.mock('../src/store/learningStore', () => {
 
 vi.mock('../src/store/authStore', () => {
   const state = { user: { id: 1, user_type: 'teacher', display_name: 'Teacher' } };
-  const useAuthStore = (selector?: (value: typeof state) => unknown) =>
-    selector ? selector(state) : state;
+  const useAuthStore = Object.assign(
+    (selector?: (value: typeof state) => unknown) =>
+      selector ? selector(state) : state,
+    { setState: vi.fn() },
+  );
   return { useAuthStore };
 });
 
@@ -131,6 +134,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     const api = (await import('../src/lib/api')).default;
     api.get.mockReset?.();
     api.post?.mockReset?.();
+    api.put?.mockResolvedValue({ data: {} });
     api.get.mockImplementation((url: string) => {
       if (url === '/learning-modes/' || url.startsWith('/learning-modes/')) {
         return Promise.resolve({

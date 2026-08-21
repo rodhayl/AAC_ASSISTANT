@@ -5,6 +5,10 @@ import api, { extractError } from '../lib/api'
 import type { Achievement, AchievementFull, User } from '../types'
 import { useTranslation } from 'react-i18next'
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap'
+import {
+  localizeAchievementDescription,
+  localizeAchievementName,
+} from '../lib/achievementLocalization'
 
 interface AchievementFormData {
   name: string;
@@ -19,19 +23,6 @@ interface AchievementFormData {
 
 const EMOJI_OPTIONS = ['🏆', '⭐', '🎯', '🔥', '📚', '⚡', '🌟', '🎤', '📖', '💪', '🎨', '🎮', '🚀', '💎', '👑'];
 
-// Maps the canonical English name of a seeded system achievement to its stable
-// catalog key so the name/description can be localized in the UI without a
-// database migration. Custom or renamed achievements keep their stored text.
-const SYSTEM_ACHIEVEMENT_KEYS: Record<string, string> = {
-  'First Steps': 'first_steps',
-  'Vocabulary Explorer': 'vocabulary_explorer',
-  'Quick Learner': 'quick_learner',
-  'Comprehension Champion': 'comprehension_champion',
-  'Streak Master': 'streak_master',
-  'Dedicated Learner': 'dedicated_learner',
-  'Topic Expert': 'topic_expert',
-  'Voice Pioneer': 'voice_pioneer',
-};
 
 export function Achievements() {
   const user = useAuthStore((state) => state.user)
@@ -61,16 +52,6 @@ export function Achievements() {
     criteria_value: null,
   })
   const { t } = useTranslation('achievements')
-
-  const localizeAchievementName = (name: string) => {
-    const key = SYSTEM_ACHIEVEMENT_KEYS[name]
-    return key ? t(`systemAchievements.${key}.name`, name) : name
-  }
-
-  const localizeAchievementDescription = (name: string, description: string) => {
-    const key = SYSTEM_ACHIEVEMENT_KEYS[name]
-    return key ? t(`systemAchievements.${key}.description`, description) : description
-  }
 
   const filteredStudents = useMemo(() => {
     const search = studentSearch.trim().toLowerCase()
@@ -166,8 +147,9 @@ export function Achievements() {
         category: formData.category,
         points: formData.points,
         icon: formData.icon,
-        criteria_type: formData.criteria_type || null,
-        criteria_value: formData.criteria_value || null,
+        target_user_id: formData.target_user_id ?? null,
+        criteria_type: formData.criteria_type ?? null,
+        criteria_value: formData.criteria_value ?? null,
       })
       setShowModal(false)
       setEditingAchievement(null)
@@ -331,7 +313,7 @@ export function Achievements() {
                 {allAchievements.map(a => (
                   <tr key={a.id} className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <td className="px-4 py-3 text-2xl">{a.icon}</td>
-                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{localizeAchievementName(a.name)}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{localizeAchievementName(a.name, t)}</td>
                     <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{t(`categories.${a.category}`, a.category)}</td>
                     <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{a.points}</td>
                     <td className="px-4 py-3">
@@ -351,7 +333,7 @@ export function Achievements() {
                         <button onClick={() => openAwardModal(a.id)} className="p-2 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded" title={t('award', 'Award')}>
                           <Award className="w-4 h-4" />
                         </button>
-                        {a.created_by && (
+                        {a.created_by && (a.created_by === user?.id || user?.user_type === 'admin') && (
                           <>
                             <button onClick={() => openEditModal(a)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded" title={t('edit', 'Edit')}>
                               <Pencil className="w-4 h-4" />
@@ -406,11 +388,11 @@ export function Achievements() {
                     <span>{a.icon}</span>
                   </div>
                   <div>
-                    <p className="font-semibold text-gray-900 dark:text-gray-100">{localizeAchievementName(a.name)}</p>
+                    <p className="font-semibold text-gray-900 dark:text-gray-100">{localizeAchievementName(a.name, t)}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">{t(`categories.${a.category}`, a.category)}</p>
                   </div>
                 </div>
-                <p className="text-gray-700 dark:text-gray-300 text-sm mb-4">{localizeAchievementDescription(a.name, a.description)}</p>
+                <p className="text-gray-700 dark:text-gray-300 text-sm mb-4">{localizeAchievementDescription(a.name, a.description, t)}</p>
 
                 {isUnlocked ? (
                   <p className="text-xs text-green-600 dark:text-green-400 font-medium">
@@ -489,7 +471,7 @@ export function Achievements() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('points', 'Points')}</label>
-                  <input type="number" value={formData.points} onChange={e => setFormData({ ...formData, points: parseInt(e.target.value) || 0 })}
+                  <input type="number" min={0} value={formData.points} onChange={e => setFormData({ ...formData, points: parseInt(e.target.value) || 0 })}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
                 </div>
               </div>
@@ -524,14 +506,14 @@ export function Achievements() {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t('targetValue', 'Target Value')}</label>
-                      <input type="number" value={formData.criteria_value || ''} onChange={e => setFormData({ ...formData, criteria_value: parseFloat(e.target.value) || 0 })}
+                      <input type="number" min={0} value={formData.criteria_value ?? ''} onChange={e => setFormData({ ...formData, criteria_value: parseFloat(e.target.value) || 0 })}
                         className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
                     </div>
                   </div>
                 )}
               </div>
 
-              {!editingAchievement && students.length > 0 && (
+              {students.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     <Users className="w-4 h-4 inline mr-1" />
@@ -580,7 +562,7 @@ export function Achievements() {
             {allAchievements.find((a) => a.id === awardingAchievementId) && (
               <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 flex items-center gap-2">
                 <span className="text-xl">{allAchievements.find((a) => a.id === awardingAchievementId)!.icon}</span>
-                {localizeAchievementName(allAchievements.find((a) => a.id === awardingAchievementId)!.name)}
+                {localizeAchievementName(allAchievements.find((a) => a.id === awardingAchievementId)!.name, t)}
               </p>
             )}
 
@@ -654,7 +636,7 @@ export function Achievements() {
             {allAchievements.find((a) => a.id === pendingDeleteId) && (
               <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
                 <span className="text-xl">{allAchievements.find((a) => a.id === pendingDeleteId)!.icon}</span>
-                {localizeAchievementName(allAchievements.find((a) => a.id === pendingDeleteId)!.name)}
+                {localizeAchievementName(allAchievements.find((a) => a.id === pendingDeleteId)!.name, t)}
               </p>
             )}
             <div className="flex justify-end gap-3">

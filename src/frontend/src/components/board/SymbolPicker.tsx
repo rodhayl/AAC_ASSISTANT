@@ -175,10 +175,15 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
     if (valid.length === 0) return
     setIsUploading(true)
     try {
+      // A batch of files must not all inherit the single-upload label field:
+      // each file gets its own name-based label (extension stripped), while a
+      // lone file still honors an explicitly typed label.
+      const labelForFile = (file: File) =>
+        (file.name || '').replace(/\.[^.]+$/, '') || 'symbol';
       for (const f of valid) {
         const fd = new FormData()
         fd.append('file', f)
-        fd.append('label', uploadLabel || f.name)
+        fd.append('label', valid.length === 1 ? (uploadLabel || labelForFile(f)) : labelForFile(f))
         fd.append('category', uploadCategory)
         await api.post('/boards/symbols/upload', fd)
       }

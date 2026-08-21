@@ -127,6 +127,73 @@ describe('usePreferences', () => {
     expect(result.current.prefsSaveError).toBe('Failed to save preferences');
   });
 
+  it('discards a preferences response that resolves after the user switched accounts', async () => {
+    // The first (slow) GET belongs to user A; the hook must ignore its result
+    // once the authenticated user changes to B so stale settings never leak
+    // into the new account's form.
+    const pendingGets: Array<{
+      resolve: (value: { data: Record<string, unknown> }) => void;
+    }> = [];
+    get.mockImplementation(
+      () =>
+        new Promise<{ data: Record<string, unknown> }>((resolve) => {
+          pendingGets.push({ resolve });
+        }),
+    );
+
+    const makeUser = (id: number, username: string, ttsVoice: string) => ({
+      id,
+      username,
+      display_name: username,
+      user_type: 'student',
+      settings: {
+        tts_provider: 'kokoro',
+        tts_voice: ttsVoice,
+        tts_local_voice: 'default',
+        ui_language: 'es-ES',
+        notifications_enabled: true,
+        voice_mode_enabled: true,
+        dark_mode: false,
+        dwell_time: 0,
+        ignore_repeats: 0,
+        high_contrast: false,
+      },
+    });
+    useAuthStore.setState({ user: makeUser(1, 'student_a', 'a-voice') });
+
+    const { result, rerender } = renderHook(() => usePreferences());
+    expect(pendingGets).toHaveLength(1);
+
+    // Switch accounts before the first GET response arrives.
+    act(() => {
+      useAuthStore.setState({ user: makeUser(2, 'student_b', 'b-voice') });
+    });
+    rerender();
+
+    // The stale response for user A arrives late and must be ignored.
+    await act(async () => {
+      pendingGets[0].resolve({
+        data: {
+          tts_provider: 'kokoro',
+          tts_voice: 'stale-voice',
+          tts_local_voice: 'default',
+          ui_language: 'en-US',
+          notifications_enabled: true,
+          voice_mode_enabled: true,
+          dark_mode: false,
+          dwell_time: 0,
+          ignore_repeats: 0,
+          high_contrast: false,
+        },
+      });
+      await Promise.resolve();
+    });
+
+    // The form still reflects user B's defaults, not the stale account's data.
+    expect(result.current.preferences.tts_voice).toBe('b-voice');
+    expect(result.current.preferences.ui_language).toBe('es-ES');
+  });
+
   it('normalizes a legacy short ui_language so it matches the select options', async () => {
     // The navbar LanguageSwitcher used to persist "en"; the appearance select
     // only offers es-ES / en-US. A stored short code must be normalized so the

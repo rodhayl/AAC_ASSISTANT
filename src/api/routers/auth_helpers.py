@@ -14,6 +14,7 @@ from slowapi.util import get_remote_address
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from src import config
 from src.aac_app.models import User, UserSettings
 from src.aac_app.services.auth_service import password_strength_error_key
 from src.api import schemas
@@ -41,6 +42,9 @@ def conditional_limiter(rate: str) -> Callable[[_F], _F]:
 
 
 _EMAIL_PATTERN = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+SUPPORTED_UI_LANGUAGES = frozenset(
+    value.strip() for value in config.SUPPORTED_UI_LANGUAGES.split(",") if value.strip()
+)
 
 
 def validate_email_format(
@@ -113,7 +117,21 @@ def validate_preference_updates(
     if provider is not None and provider not in {"browser", "kokoro"}:
         raise HTTPException(
             status_code=400,
-            detail="Unsupported text-to-speech provider.",
+            detail=get_text(
+                user=user,
+                accept_language=accept_language,
+                key="errors.preferences.unsupportedTtsProvider",
+            ),
+        )
+    language = updates.get("ui_language")
+    if language is not None and language not in SUPPORTED_UI_LANGUAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=user,
+                accept_language=accept_language,
+                key="errors.settings.unsupportedLanguage",
+            ),
         )
     for key in ("dwell_time", "ignore_repeats"):
         value = updates.get(key)
@@ -179,19 +197,34 @@ def build_preferences_response(
     notifications_enabled = getattr(settings, "notifications_enabled", None)
     voice_mode_enabled = getattr(settings, "voice_mode_enabled", None)
     dark_mode = getattr(settings, "dark_mode", None)
+    tts_provider = getattr(settings, "tts_provider", None)
+    ui_language = getattr(settings, "ui_language", None)
+
+    def bounded_int(value: Any, default: int = 0) -> int:
+        try:
+            return min(max(int(value), 0), 2000)
+        except (TypeError, ValueError):
+            return default
 
     return schemas.UserPreferencesResponse(
-        tts_provider=getattr(settings, "tts_provider", None) or "kokoro",
+        tts_provider=(
+            tts_provider if tts_provider in {"browser", "kokoro"} else "kokoro"
+        ),
         tts_voice=getattr(settings, "tts_voice", None) or "default",
         tts_local_voice=getattr(settings, "tts_local_voice", None) or "default",
         tts_language=getattr(settings, "tts_language", None),
-        ui_language=getattr(settings, "ui_language", None),
+        # Legacy rows may keep NULL: preserve it (the frontend normalizes a
+        # missing language to its default). Only an unsupported non-null value
+        # is corrected so the select always shows a known option.
+        ui_language=(
+            ui_language if ui_language is None or ui_language in SUPPORTED_UI_LANGUAGES else "es-ES"
+        ),
         notifications_enabled=(
             notifications_enabled if notifications_enabled is not None else True
         ),
         voice_mode_enabled=voice_mode_enabled if voice_mode_enabled is not None else True,
         dark_mode=dark_mode if dark_mode is not None else False,
-        dwell_time=int(getattr(settings, "dwell_time", 0) or 0),
-        ignore_repeats=int(getattr(settings, "ignore_repeats", 0) or 0),
+        dwell_time=bounded_int(getattr(settings, "dwell_time", 0)),
+        ignore_repeats=bounded_int(getattr(settings, "ignore_repeats", 0)),
         high_contrast=bool(getattr(settings, "high_contrast", False) or False),
     )

@@ -79,7 +79,12 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
       // Save to history
       const newHistory = [text, ...history.filter(h => h !== text)].slice(0, 10);
       setHistory(newHistory);
-      localStorage.setItem('aac_phrase_history', JSON.stringify(newHistory));
+      try {
+        localStorage.setItem('aac_phrase_history', JSON.stringify(newHistory));
+      } catch {
+        // Storage may be unavailable (private mode/quota); the in-memory
+        // history still works for this session.
+      }
     }
   };
 

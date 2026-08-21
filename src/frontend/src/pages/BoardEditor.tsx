@@ -14,7 +14,7 @@ import { AISuggestionPanel } from '../components/board/AISuggestionPanel';
 import { BoardSettingsDialog } from '../components/board/BoardSettingsDialog';
 import { BoardEditorToolbar } from '../components/board/BoardEditorToolbar';
 import { useBoardAISuggestions } from '../hooks/useBoardAISuggestions';
-import { extractError } from '../lib/api';
+import api, { extractError } from '../lib/api';
 import { useBoardCollab } from '../hooks/useBoardCollab';
 import { useBoardEditorSymbols } from '../hooks/useBoardEditorSymbols';
 import { getBoardPlayabilityStatus } from './boardEditorUtils';
@@ -48,6 +48,7 @@ export function BoardEditor() {
   const [boardCategory, setBoardCategory] = useState('general');
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiConfigError, setAiConfigError] = useState<string | null>(null);  const [saveSuccess, setSaveSuccess] = useState(false)
+  const [savingSettings, setSavingSettings] = useState(false)
   const [clearLoading, setClearLoading] = useState(false)
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const saveSettingsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -133,7 +134,6 @@ export function BoardEditor() {
     resolvedProvider,
     resolvedModel,
     fetchBoard,
-    deleteBoardSymbol,
     setHasChanges,
   });
 
@@ -179,16 +179,23 @@ export function BoardEditor() {
     try {
       const existing = localSymbols.find(s => s.position_x === selectedPosition.x && s.position_y === selectedPosition.y);
       if (existing) {
-        await deleteBoardSymbol(currentBoard.id, existing.id);
+        // Replace in one server mutation. Deleting first could permanently lose
+        // the old placement when the subsequent add failed.
+        await api.put(`/boards/${currentBoard.id}/symbols/${existing.id}`, {
+          symbol_id: symbolId,
+          position_x: selectedPosition.x,
+          position_y: selectedPosition.y,
+        });
+      } else {
+        await addSymbolToBoard(currentBoard.id, symbolId, selectedPosition);
       }
-      await addSymbolToBoard(currentBoard.id, symbolId, selectedPosition);
       await fetchBoard(parseInt(id!), true);
       setHasChanges(true);
     } catch (error) {
       console.error('Failed to add symbol:', error);
       addToast(extractError(error, t('failedToAddSymbol', 'Failed to add symbol')), 'error');
     }
-  }, [currentBoard, selectedPosition, addSymbolToBoard, fetchBoard, id, deleteBoardSymbol, localSymbols, setHasChanges, addToast, t]);
+  }, [currentBoard, selectedPosition, addSymbolToBoard, fetchBoard, id, localSymbols, setHasChanges, addToast, t]);
 
   const handleSave = useCallback(async () => {
     if (!currentBoard || !hasChanges) return;
@@ -240,14 +247,15 @@ export function BoardEditor() {
       return;
     }
 
+    setSavingSettings(true);
     try {
       await updateBoard(currentBoard.id, {
         name: trimmedBoardName,
         description: boardDescription,
         category: boardCategory,
         ai_enabled: aiEnabled,
-        ai_provider: aiEnabled ? (resolvedProvider ?? undefined) : undefined,
-        ai_model: aiEnabled ? '@primary' : undefined
+        ai_provider: aiEnabled ? (resolvedProvider ?? undefined) : null,
+        ai_model: aiEnabled ? '@primary' : null
       });
 
       setSaveSuccess(true);
@@ -261,10 +269,11 @@ export function BoardEditor() {
       }, 1500);
 
       await fetchBoard(parseInt(id!), true);
-      setHasChanges(true);
     } catch (error) {
       console.error('Failed to save board settings:', error);
       addToast(t('settingsSaveFailed'), 'error');
+    } finally {
+      setSavingSettings(false);
     }
   };
 
@@ -419,6 +428,7 @@ export function BoardEditor() {
         primaryProvider={primaryProvider}
         primaryModel={primaryModel}
         aiConfigError={aiConfigError}
+        saving={savingSettings}
         onClose={() => setIsSettingsOpen(false)}
         onSave={handleSaveSettings}
         onBoardNameChange={setBoardName}

@@ -146,7 +146,7 @@ describe('Students page', () => {
       }),
     );
     expect(api.get).toHaveBeenCalledWith('/auth/users/student-summaries', {
-      params: { limit: 100 },
+      params: { limit: 500 },
     });
   });
 
@@ -263,6 +263,26 @@ describe('Students page', () => {
       }),
     );
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('keeps the assigned board chips when editing a student row', async () => {
+    const user = userEvent.setup();
+    asAdmin();
+    api.put.mockResolvedValue({ data: { ...studentSummary, display_name: 'Renamed', user_type: 'student' } });
+    render(<Students />);
+    await screen.findByText('Morning Routine');
+
+    await user.click(screen.getByLabelText('actions.editAria'));
+    const dialog = await screen.findByRole('dialog');
+    await user.clear(within(dialog).getByLabelText('labels.displayName'));
+    await user.type(within(dialog).getByLabelText('labels.displayName'), 'Renamed');
+    await user.click(within(dialog).getByText('profile.save'));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    // The PUT response is a bare User; the row must keep the board chip it
+    // already had instead of dropping to the empty-assignment placeholder.
+    expect(screen.getByText('Morning Routine')).toBeInTheDocument();
+    expect(screen.queryByText('noneAssigned')).not.toBeInTheDocument();
   });
 
   it('shows an error when updating a student fails', async () => {
@@ -594,5 +614,35 @@ describe('Students page', () => {
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     await user.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('clears the previous success toast when reopening the guardian modal', async () => {
+    const user = userEvent.setup();
+    api.get.mockImplementation((url: string) => {
+      if (url === '/auth/users/student-summaries') {
+        return Promise.resolve({ data: [studentSummary] });
+      }
+      if (url === '/guardian-profiles/templates') {
+        return Promise.resolve({ data: [{ name: 'default', display_name: 'Default' }] });
+      }
+      if (url === '/guardian-profiles/students/10') {
+        return Promise.reject({ response: { status: 404 } });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByTitle('Guardian Profile'));
+    expect(await screen.findByText('Guardian Profile: Leo')).toBeInTheDocument();
+    await user.click(screen.getByText('save'));
+    expect(await screen.findByText('Profile saved successfully')).toBeInTheDocument();
+
+    // Close and reopen: the stale success toast must not come back.
+    await user.click(within(screen.getByRole('dialog')).getByLabelText('Close'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await user.click(screen.getByTitle('Guardian Profile'));
+    expect(await screen.findByText('Guardian Profile: Leo')).toBeInTheDocument();
+    expect(screen.queryByText('Profile saved successfully')).not.toBeInTheDocument();
   });
 });

@@ -199,6 +199,60 @@ def test_board_links_reject_self_and_missing_targets(
     assert unchanged.linked_board_id is None
 
 
+def test_batch_board_symbol_updates_validate_payload_and_apply_color(
+    setup_test_db, test_db_session, admin_user, admin_token
+):
+    board = _create_board_with_symbol(test_db_session, admin_user)
+    replacement = Symbol(label="Replacement symbol", category="general")
+    test_db_session.add(replacement)
+    test_db_session.commit()
+    placement = board.symbols[0]
+
+    client = TestClient(app)
+    response = client.put(
+        f"/api/boards/{board.id}/symbols/batch",
+        headers=_headers(admin_token),
+        json=[
+            {
+                "id": placement.id,
+                "symbol_id": replacement.id,
+                "position_x": 1,
+                "position_y": 1,
+                "color": "#123456",
+            }
+        ],
+    )
+
+    assert response.status_code == 200
+    test_db_session.expire_all()
+    updated = test_db_session.get(BoardSymbol, placement.id)
+    assert updated is not None
+    assert updated.symbol_id == replacement.id
+    assert updated.position_x == 1
+    assert updated.position_y == 1
+    assert updated.color == "#123456"
+
+
+def test_batch_board_symbol_updates_reject_invalid_position_without_partial_write(
+    setup_test_db, test_db_session, admin_user, admin_token
+):
+    board = _create_board_with_symbol(test_db_session, admin_user)
+    placement = board.symbols[0]
+    client = TestClient(app)
+
+    response = client.put(
+        f"/api/boards/{board.id}/symbols/batch",
+        headers=_headers(admin_token),
+        json=[{"id": placement.id, "position_x": -1}],
+    )
+
+    assert response.status_code == 422
+    test_db_session.expire_all()
+    unchanged = test_db_session.get(BoardSymbol, placement.id)
+    assert unchanged is not None
+    assert unchanged.position_x == 2
+
+
 def test_board_mutations_reject_invalid_grid_positions_and_preserve_layout(
     setup_test_db, test_db_session, admin_user, admin_token
 ):

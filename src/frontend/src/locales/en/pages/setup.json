@@ -22,6 +22,7 @@
   "loginLink": "Already have an account? Sign in",
   "errors": {
     "passwordMismatch": "Passwords do not match",
-    "passwordTooShort": "Password must be at least 8 characters"
+    "passwordTooShort": "Password must be at least 8 characters",
+    "statusCheckFailed": "Could not verify setup status. You can still continue, but the server may already be configured."
   }
 }

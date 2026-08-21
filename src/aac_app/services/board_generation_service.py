@@ -4,6 +4,7 @@ import re
 
 from loguru import logger
 
+from ..providers.lmstudio_provider import LMStudioProvider
 from ..providers.ollama_provider import OllamaProvider
 from ..providers.openrouter_provider import OpenRouterProvider
 
@@ -62,11 +63,17 @@ def _extract_first_json_array(text: str) -> str | None:
 class BoardGenerationService:
     """Service for generating communication board content using AI"""
 
-    def __init__(self, llm_provider: OllamaProvider | OpenRouterProvider):
+    def __init__(
+        self,
+        llm_provider: OllamaProvider | OpenRouterProvider | LMStudioProvider,
+    ):
         self.llm = llm_provider
-        self.provider_type = (
-            "openrouter" if isinstance(llm_provider, OpenRouterProvider) else "ollama"
-        )
+        if isinstance(llm_provider, LMStudioProvider):
+            self.provider_type = "lmstudio"
+        elif isinstance(llm_provider, OpenRouterProvider):
+            self.provider_type = "openrouter"
+        else:
+            self.provider_type = "ollama"
         logger.info(
             f"Board Generation Service initialized with {self.provider_type} provider"
         )

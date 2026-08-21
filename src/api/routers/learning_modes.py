@@ -71,6 +71,22 @@ def preview_learning_mode_system_prompt(
             detail=get_text(user=current_user, key="errors.learningModes.staffOnly"),
         )
 
+    # A mode key is an addressable reference to a saved prompt. Enforce the
+    # same visibility rule as the mode list before rendering it; otherwise a
+    # teacher could guess another teacher's key and read their private prompt.
+    if payload.mode_key:
+        mode_query = db.query(LearningMode).filter(LearningMode.key == payload.mode_key)
+        if current_user.user_type != "admin":
+            mode_query = mode_query.filter(
+                (LearningMode.created_by.is_(None))
+                | (LearningMode.created_by == current_user.id)
+            )
+        if mode_query.first() is None:
+            raise HTTPException(
+                status_code=404,
+                detail=get_text(user=current_user, key="errors.learningModes.notFound"),
+            )
+
     # Preview against a specific student's guardian profile when selected,
     # otherwise against the current user (default template when no profile).
     target_user_id = current_user.id
@@ -144,10 +160,11 @@ def create_learning_mode(
         )
 
     # Check for duplicate key for this user
-    existing = db.query(LearningMode).filter(
-        LearningMode.key == mode.key,
-        (LearningMode.created_by == current_user.id) | (LearningMode.created_by.is_(None))
-    ).first()
+    # Keys are persisted on sessions and later resolved by key alone. Allowing
+    # two teachers to create the same key would make a session pick an
+    # unrelated teacher's prompt nondeterministically, so enforce one namespace
+    # for keys across system and custom modes.
+    existing = db.query(LearningMode).filter(LearningMode.key == mode.key).first()
 
     if existing:
         raise HTTPException(

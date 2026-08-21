@@ -41,6 +41,7 @@ export function Communication() {
   const fetchAssignedBoards = useBoardStore((state) => state.fetchAssignedBoards);
   const isListLoading = useBoardStore((state) => state.isListLoading);
   const isBoardLoading = useBoardStore((state) => state.isBoardLoading);
+  const boardError = useBoardStore((state) => state.error);
   const assignedBoards = useBoardStore((state) => state.assignedBoards);
   const hasMore = useBoardStore((state) => state.hasMore);
   const page = useBoardStore((state) => state.page);
@@ -64,6 +65,12 @@ export function Communication() {
   const [isPartnerOpen, setIsPartnerOpen] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(user?.settings?.voice_mode_enabled ?? true);
   const [isBoardsOpen, setIsBoardsOpen] = useState(false);
+
+  useEffect(() => {
+    if (user?.settings?.voice_mode_enabled !== undefined) {
+      setVoiceEnabled(user.settings.voice_mode_enabled);
+    }
+  }, [user?.settings?.voice_mode_enabled]);
   const [history, setHistory] = useState<number[]>([]);
   const addToast = useToastStore((state) => state.addToast);
   const [isStartingSession, setIsStartingSession] = useState(false);
@@ -280,8 +287,17 @@ export function Communication() {
     const enriched_gloss = glossSymbolUtterance(symbolsForChat);
     const raw_gloss = symbolsForChat.map(s => s.label).join(' ');
 
+    // Clear the strip immediately so the same phrase cannot be re-sent
+    // accidentally while the request is in flight, but restore it (with an
+    // error toast) when the send fails so the phrase is never lost.
+    const phrase = sentence;
+    setSentence([]);
     submitSymbolAnswer(activeSession.session_id, symbolsForChat, enriched_gloss, raw_gloss)
-      .catch(err => console.error('Failed to send to chat:', err));
+      .catch(err => {
+        console.error('Failed to send to chat:', err);
+        addToast(t('sendToChatFailed', 'Could not send the phrase to the assistant'), 'error');
+        setSentence(phrase);
+      });
   }, [sentence, currentSession, isChatLoading, submitSymbolAnswer, isChatOpen, user, startSession, addToast, t]);
 
   const handleHome = useCallback(() => {
@@ -323,6 +339,30 @@ export function Communication() {
     [speakText],
   );
 
+  // Toggle the chat voice and persist the choice so it survives a reload.
+  const handleVoiceToggle = useCallback(() => {
+    const next = !voiceEnabled;
+    setVoiceEnabled(next);
+    if (!user) return;
+    api
+      .put('/auth/preferences', { voice_mode_enabled: next })
+      .then((response) => {
+        useAuthStore.setState((state) => {
+          if (!state.user) return state;
+          return {
+            user: {
+              ...state.user,
+              settings: response.data,
+            },
+          };
+        });
+      })
+      .catch(() => {
+        setVoiceEnabled(!next);
+        addToast(t('voiceSaveFailed', 'Could not save voice preference'), 'error');
+      });
+  }, [addToast, t, user, voiceEnabled]);
+
   const handleReorder = useCallback((fromIndex: number, toIndex: number) => {
     setSentence(prev => {
       const newSentence = [...prev];
@@ -353,8 +393,15 @@ export function Communication() {
   }, [voiceEnabled]);
 
   const availableBoards = useMemo(() => {
-    return boards.length > 0 ? boards : assignedBoards;
-  }, [boards, assignedBoards]);
+    // Students can have personal boards as well as assigned boards. Showing
+    // only one collection made assigned boards disappear whenever the student
+    // owned at least one board.
+    return Array.from(
+      new Map(
+        [...boards, ...assignedBoards].map((board) => [board.id, board]),
+      ).values(),
+    );
+  }, [assignedBoards, boards]);
 
   const filteredBoards = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -523,6 +570,34 @@ export function Communication() {
 
   // RENDER: Active Board View (Communication Mode)
   if (isBoardLoading || !currentBoard) {
+    // A failed board fetch must not leave the user staring at an endless
+    // spinner: offer a retry and a way back to the board list.
+    if (!isBoardLoading && !currentBoard && activeBoardId && boardError) {
+      return (
+        <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900 p-4">
+          <div className="max-w-md w-full text-center bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-900/60 p-8 shadow-lg">
+            <div className="text-red-600 dark:text-red-400 text-lg font-bold mb-2">
+              {t('boardLoadFailed', 'Could not load this board')}
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-6 break-words">{boardError}</p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <button
+                onClick={() => fetchBoard(activeBoardId, true)}
+                className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors"
+              >
+                {t('retry', 'Retry')}
+              </button>
+              <button
+                onClick={handleHome}
+                className="px-5 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                {t('backToBoards', 'Back to boards')}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
@@ -624,7 +699,7 @@ export function Communication() {
       >
         <CommunicationChat
           voiceEnabled={voiceEnabled}
-          onVoiceToggle={() => setVoiceEnabled(prev => !prev)}
+          onVoiceToggle={handleVoiceToggle}
         />
       </div>
 

@@ -5,14 +5,16 @@ import os
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import User
+from src.aac_app.models import LearningMode, User
 from src.aac_app.services.learning.service import LearningCompanionService
 from src.api import schemas
 from src.api.deps import (
+    get_board_or_404,
     get_current_active_user,
     get_db,
     get_learning_service,
     get_learning_session_or_404,
+    require_board_view_access,
 )
 from src.api.deps import (
     get_text as get_shared_text,
@@ -40,6 +42,28 @@ def start_session(
         raise HTTPException(
             status_code=403, detail=get_text(current_user, "errors.unauthorizedUser")
         )
+
+    if session_data.board_id is not None:
+        board = get_board_or_404(db, session_data.board_id, current_user)
+        require_board_view_access(board, current_user, db)
+
+    if session_data.mode_key:
+        mode_query = db.query(LearningMode).filter(LearningMode.key == session_data.mode_key)
+        if current_user.user_type != "admin":
+            mode_query = mode_query.filter(
+                (LearningMode.created_by.is_(None))
+                | (LearningMode.created_by == current_user.id)
+            )
+        mode = mode_query.order_by(LearningMode.id).first()
+        mode_visible = mode is not None
+        if not mode_visible:
+            raise HTTPException(
+                status_code=404,
+                # The learningModes keys live in the shared common namespace.
+                detail=get_shared_text(
+                    current_user, "errors.learningModes.notFound"
+                ),
+            )
 
     result = service.start_learning_session(
         user_id=user_id,
@@ -74,6 +98,7 @@ async def ask_question(
         session_id,
         current_user,
         message=lambda key: get_text(current_user, key),
+        require_active=True,
     )
 
     result = await service.ask_question(
@@ -103,6 +128,7 @@ async def submit_answer(
         session_id,
         current_user,
         message=lambda key: get_text(current_user, key),
+        require_active=True,
     )
 
     result = await service.process_response(
@@ -135,6 +161,7 @@ async def submit_voice_answer(
         session_id,
         current_user,
         message=lambda key: get_text(current_user, key),
+        require_active=True,
     )
 
     temp_path = None
@@ -193,6 +220,7 @@ async def submit_symbol_answer(
         session_id,
         current_user,
         message=lambda key: get_text(current_user, key),
+        require_active=True,
     )
 
     if not payload.symbols or len(payload.symbols) == 0:
@@ -241,6 +269,7 @@ async def end_session(
         session_id,
         current_user,
         message=lambda key: get_text(current_user, key),
+        require_active=True,
     )
 
     result = await service.end_learning_session(session_id, db=db)

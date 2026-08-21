@@ -2,6 +2,7 @@
 
 import asyncio
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from loguru import logger
@@ -21,7 +22,7 @@ from src.api.deps import (
     invalidate_setting,
 )
 from src.api.deps import providers as provider_deps
-from src.api.routers.auth_helpers import update_user_settings
+from src.api.routers.auth_helpers import SUPPORTED_UI_LANGUAGES, update_user_settings
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -62,6 +63,24 @@ def set_settings(db: Session, values: dict[str, str], user_id: int) -> None:
             setting.setting_value = value
             setting.updated_by = user_id
         invalidate_setting(key)
+
+
+def _safe_int_setting(value: str | None, default: int, *, minimum: int, maximum: int) -> int:
+    """Read a persisted integer setting without allowing corrupt rows to 500."""
+    try:
+        parsed = int(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+    return min(max(parsed, minimum), maximum)
+
+
+def _safe_float_setting(value: str | None, default: float, *, minimum: float, maximum: float) -> float:
+    """Read a persisted float setting without allowing corrupt rows to 500."""
+    try:
+        parsed = float(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+    return min(max(parsed, minimum), maximum)
 
 
 async def _close_provider(provider: Any | None) -> None:
@@ -106,10 +125,14 @@ def get_ai_settings(
     openrouter_model = values.get("openrouter_model") or ""
     openrouter_api_key = values.get("openrouter_api_key") or ""
     ollama_base_url = values.get("ollama_base_url") or config.OLLAMA_BASE_URL
-    lmstudio_base_url = values.get("lmstudio_base_url") or "http://localhost:1234/v1"
+    lmstudio_base_url = values.get("lmstudio_base_url") or config.LMSTUDIO_BASE_URL
     lmstudio_model = values.get("lmstudio_model") or ""
-    max_tokens = values.get("ai_max_tokens") or "1024"
-    temperature = values.get("ai_temperature") or "0.5"
+    max_tokens = _safe_int_setting(
+        values.get("ai_max_tokens"), config.AI_MAX_TOKENS, minimum=64, maximum=4096
+    )
+    temperature = _safe_float_setting(
+        values.get("ai_temperature"), config.AI_TEMPERATURE, minimum=0.0, maximum=1.5
+    )
 
     # Mask API key for non-admins or even for admins (usually only show last few chars or empty)
     # If admin, show full key? Or maybe better to just show it's set.
@@ -127,8 +150,8 @@ def get_ai_settings(
         "ollama_base_url": ollama_base_url,
         "lmstudio_base_url": lmstudio_base_url,
         "lmstudio_model": lmstudio_model,
-        "max_tokens": int(max_tokens) if max_tokens is not None else 1024,
-        "temperature": float(temperature) if temperature is not None else 0.5,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
         "can_edit": current_user.user_type == "admin",
     }
 
@@ -155,27 +178,48 @@ def update_ai_settings(
 
     # Collect all changes before writing them in one query-backed update. This
     # keeps the request atomic and avoids one SELECT per setting key.
-    updated_values: dict[str, str] = {
-        key: settings[key]
-        for key in (
-            "provider",
-            "ollama_model",
-            "openrouter_model",
-            "openrouter_api_key",
-            "ollama_base_url",
-            "lmstudio_base_url",
-            "lmstudio_model",
-        )
-        if key in settings
+    text_limits = {
+        "ollama_model": 200,
+        "openrouter_model": 200,
+        "lmstudio_model": 200,
+        "openrouter_api_key": 500,
+        "ollama_base_url": 500,
+        "lmstudio_base_url": 500,
     }
-    if "provider" in updated_values:
-        updated_values["ai_provider"] = updated_values.pop("provider")
+    updated_values: dict[str, str] = {}
+    for key, maximum in text_limits.items():
+        if key not in settings:
+            continue
+        raw_value = settings[key]
+        if raw_value is None and key == "openrouter_api_key":
+            value = ""
+        elif isinstance(raw_value, str):
+            value = raw_value.strip()
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="AI setting values must be text.",
+            )
+        if len(value) > maximum:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{key} exceeds the maximum length of {maximum} characters.",
+            )
+        if key.endswith("_base_url") and value:
+            parsed_url = urlparse(value)
+            if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"{key} must be a valid HTTP or HTTPS URL.",
+                )
+        updated_values[key] = value
+    updated_values["ai_provider"] = provider
 
     # Optional: global LLM behavior controls
     if "max_tokens" in settings and settings["max_tokens"] is not None:
         try:
             value = int(settings["max_tokens"])
-            if value <= 0:
+            if not 64 <= value <= 4096:
                 raise ValueError
             updated_values["ai_max_tokens"] = str(value)
         except (TypeError, ValueError):
@@ -333,7 +377,7 @@ async def get_lmstudio_models(
     """Fetch available LM Studio models (admin only)"""
     provider: LMStudioProvider | None = None
     try:
-        base_url = get_setting(db, "lmstudio_base_url") or "http://localhost:1234/v1"
+        base_url = get_setting(db, "lmstudio_base_url") or config.LMSTUDIO_BASE_URL
         provider = LMStudioProvider(base_url=base_url)
 
         if not await asyncio.to_thread(provider.is_available):
@@ -389,7 +433,7 @@ def update_ui_language(
     db: Session = Depends(get_db),
 ):
     lang = (payload or {}).get("ui_language")
-    if lang not in ["es", "en", "es-ES", "en-US"]:
+    if lang not in SUPPORTED_UI_LANGUAGES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=get_text(

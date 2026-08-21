@@ -218,6 +218,28 @@ describe('UserManagementPage', () => {
     );
   });
 
+  it('clearing the email field removes the stored email', async () => {
+    vi.mocked(api.put).mockResolvedValue({
+      data: { ...teacher, display_name: 'Teacher One', email: null },
+    } as never);
+    render(<UserManagementPage role="teacher" />);
+    await screen.findByText('Teacher One');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit teacher1' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Email'), { target: { value: '' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    // The empty string is sent so the backend can normalize it to NULL;
+    // sending undefined would silently keep the old email.
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith('/auth/users/2', {
+        display_name: 'Teacher One',
+        email: '',
+      }),
+    );
+  });
+
   it('deletes a teacher after confirming', async () => {
     vi.mocked(api.delete).mockResolvedValue({ data: {} } as never);
     render(<UserManagementPage role="teacher" />);

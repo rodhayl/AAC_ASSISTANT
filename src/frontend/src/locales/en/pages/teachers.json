@@ -35,6 +35,12 @@
     "displayName": "e.g., Mr. Smith",
     "email": "e.g., teacher@example.com"
   },
+  "success": {
+    "created": "Teacher created",
+    "updated": "Teacher updated",
+    "deleted": "Teacher deleted",
+    "passwordReset": "Password reset"
+  },
   "errors": {
     "loadFailed": "Failed to load teachers",
     "updateFailed": "Failed to update",

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Smartbar } from '../board/Smartbar';
 import type { BoardSymbol } from '../../types';
 
-const inputToSymbols = (text: string): BoardSymbol[] => {
+const inputToSymbols = (text: string, language: string): BoardSymbol[] => {
   if (!text.trim()) return [];
 
   return text.trim().split(/\s+/).map((word, index) => ({
@@ -18,7 +18,7 @@ const inputToSymbols = (text: string): BoardSymbol[] => {
       id: 0,
       label: word,
       category: 'unknown',
-      language: 'en',
+      language,
       is_builtin: false,
       created_at: '',
     },
@@ -56,13 +56,14 @@ export function LearningInputRow({
   sendRecording,
   discardRecording,
 }: LearningInputRowProps) {
-  const { t } = useTranslation('learning');
+  const { t, i18n } = useTranslation('learning');
+  const currentLanguage = i18n.language?.split('-')[0] || 'en';
 
   return (
     <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
       <div className="mb-3">
         <Smartbar
-          currentSentence={inputToSymbols(input)}
+          currentSentence={inputToSymbols(input, currentLanguage)}
           onSelectSymbol={(symbol) => {
             const label = symbol.custom_text || symbol.symbol.label;
             onInputChange(
@@ -143,7 +144,7 @@ export function LearningInputRow({
 
         <button
           type="submit"
-          disabled={isLoading || (!input.trim() && !isRecording) || isStartingSession}
+          disabled={isLoading || isRecording || (!input.trim() && !isRecording) || isStartingSession}
           className="p-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
           aria-label={t('sendMessage')}
         >

@@ -234,13 +234,22 @@ class SymbolAnalytics:
             current_sequence = []
             current_session = None
             current_timestamp = None
+            last_position: int | None = None
 
             for log in logs:
-                # Start new sequence if different session or time gap > 5 minutes
-                if current_session != log.session_id or (
-                    current_timestamp
+                # A repeated/decreasing position starts a new utterance even
+                # when clients reuse a session ID for several sentences.
+                position_reset = (
+                    last_position is not None
+                    and log.position_in_utterance is not None
+                    and log.position_in_utterance <= last_position
+                )
+                time_gap = (
+                    current_timestamp is not None
+                    and log.timestamp is not None
                     and (log.timestamp - current_timestamp).total_seconds() > 300
-                ):
+                )
+                if current_session != log.session_id or position_reset or time_gap:
                     if len(current_sequence) >= 2:
                         _record_sequence(
                             sequences,
@@ -261,6 +270,7 @@ class SymbolAnalytics:
                 )
                 current_session = log.session_id
                 current_timestamp = log.timestamp
+                last_position = log.position_in_utterance
 
             # Add final sequence
             if len(current_sequence) >= 2:
@@ -479,6 +489,7 @@ class SymbolAnalytics:
         current_sequence: list[str] = []
         current_session = None
         current_timestamp: datetime | None = None
+        last_position: int | None = None
 
         def record_sequence(sequence: list[str]) -> None:
             for i in range(len(sequence) - 1):
@@ -489,12 +500,20 @@ class SymbolAnalytics:
                 transitions.setdefault(prefix, Counter())[next_label] += 1
 
         for log in logs:
-            # Start a new utterance on a session or >5 minute time boundary.
-            if current_session != log.session_id or (
+            # Start a new utterance on a session, a position reset, or a
+            # >5-minute time boundary. Position resets matter because a client
+            # can keep one learning session open across multiple utterances.
+            position_reset = (
+                last_position is not None
+                and log.position_in_utterance is not None
+                and log.position_in_utterance <= last_position
+            )
+            time_gap = (
                 current_timestamp is not None
                 and log.timestamp is not None
                 and (log.timestamp - current_timestamp).total_seconds() > 300
-            ):
+            )
+            if current_session != log.session_id or position_reset or time_gap:
                 if len(current_sequence) >= 2:
                     record_sequence(current_sequence)
                 current_sequence = []
@@ -502,6 +521,7 @@ class SymbolAnalytics:
             current_sequence.append((log.symbol_label or "").strip())
             current_session = log.session_id
             current_timestamp = log.timestamp
+            last_position = log.position_in_utterance
 
         if len(current_sequence) >= 2:
             record_sequence(current_sequence)

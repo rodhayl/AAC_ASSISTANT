@@ -173,6 +173,34 @@ class TestSettingsValidationAndProviderModels:
         )
         assert response.status_code == 400
 
+    def test_update_ai_settings_rejects_invalid_provider_url(self, admin_user, admin_token):
+        response = client.put(
+            "/api/settings/ai",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"provider": "ollama", "ollama_base_url": "not-a-url"},
+        )
+        assert response.status_code == 400
+
+    def test_get_ai_settings_recovers_from_corrupt_behavior_values(
+        self, admin_user, admin_token, test_db_session
+    ):
+        from src.aac_app.models import AppSettings
+
+        test_db_session.add_all(
+            [
+                AppSettings(setting_key="ai_max_tokens", setting_value="broken"),
+                AppSettings(setting_key="ai_temperature", setting_value="not-a-number"),
+            ]
+        )
+        test_db_session.commit()
+
+        response = client.get(
+            "/api/settings/ai", headers={"Authorization": f"Bearer {admin_token}"}
+        )
+        assert response.status_code == 200
+        assert response.json()["max_tokens"] == 1024
+        assert response.json()["temperature"] == 0.5
+
     def test_update_ai_settings_persists_behavior_values(self, admin_user, admin_token):
         headers = {"Authorization": f"Bearer {admin_token}"}
         response = client.put(

@@ -145,6 +145,26 @@ def test_admin_password_reset_rejects_weak_password(test_db_session, admin_user)
 
 
 @pytest.mark.usefixtures("setup_test_db")
+def test_admin_cannot_reset_own_password_via_reset_route(
+    test_db_session, admin_user
+):
+    """Self-reset is rejected; admins must use the change-password endpoint
+    that verifies the current password (mirrors the self-delete guard)."""
+    original_hash = admin_user.password_hash
+    original_security_version = admin_user.security_version
+    response = client.post(
+        "/api/users/reset-password",
+        json={"user_id": admin_user.id, "new_password": "NewPass123"},
+        headers=create_test_headers(admin_user.id, admin_user.username, "admin"),
+    )
+
+    assert response.status_code == 400
+    test_db_session.refresh(admin_user)
+    assert admin_user.password_hash == original_hash
+    assert admin_user.security_version == original_security_version
+
+
+@pytest.mark.usefixtures("setup_test_db")
 def test_admin_password_reset_revokes_existing_access_and_refresh_tokens(
     test_db_session, admin_user
 ):

@@ -88,6 +88,99 @@ def test_ai_board_requires_provider_and_model(
     assert response.status_code == 400
 
 
+def test_update_board_rejects_invalid_ai_provider(
+    setup_test_db, test_db_session: Session, admin_user: User, admin_token
+):
+    """Updating a board with AI enabled must reject an unsupported provider (400)."""
+    board = CommunicationBoard(
+        user_id=admin_user.id, name="Plain board", ai_enabled=False
+    )
+    test_db_session.add(board)
+    test_db_session.commit()
+    test_db_session.refresh(board)
+
+    response = client.put(
+        f"/api/boards/{board.id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "ai_enabled": True,
+            "ai_provider": "unsupported-provider",
+            "ai_model": "local-model",
+        },
+    )
+    assert response.status_code == 400
+
+    # The invalid provider must not have been persisted.
+    test_db_session.refresh(board)
+    assert board.ai_provider != "unsupported-provider"
+    assert board.ai_enabled is False
+
+
+def test_disabled_board_still_rejects_invalid_ai_provider(
+    setup_test_db, test_db_session: Session, admin_user: User, admin_token
+):
+    """A disabled board must not persist an unsupported provider value."""
+    response = client.post(
+        "/api/boards/",
+        params={"user_id": admin_user.id},
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "name": "Invalid disabled provider",
+            "ai_enabled": False,
+            "ai_provider": "unsupported-provider",
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_update_disabled_board_rejects_invalid_ai_provider(
+    setup_test_db, test_db_session: Session, admin_user: User, admin_token
+):
+    """Disabling AI must not make invalid provider metadata acceptable."""
+    board = CommunicationBoard(
+        user_id=admin_user.id, name="Plain board", ai_enabled=False
+    )
+    test_db_session.add(board)
+    test_db_session.commit()
+
+    response = client.put(
+        f"/api/boards/{board.id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"ai_provider": "unsupported-provider"},
+    )
+    assert response.status_code == 400
+
+
+def test_lmstudio_board_generation_is_supported(
+    setup_test_db, test_db_session: Session, admin_user: User, admin_token
+):
+    """LM Studio can be selected for AI boards just like other providers."""
+    with (
+        patch("src.api.routers.board_ai.BoardGenerationService") as mock_service,
+        patch("src.api.routers.board_ai.LMStudioProvider") as mock_provider,
+    ):
+        mock_service.return_value.generate_board_items = AsyncMock(
+            return_value=[
+                {"label": "Local item", "symbol_key": "local_item", "color": "#FFFFFF"}
+            ]
+        )
+        response = client.post(
+            "/api/boards/",
+            params={"user_id": admin_user.id},
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={
+                "name": "LM Studio board",
+                "ai_enabled": True,
+                "ai_provider": "lmstudio",
+                "ai_model": "local-model",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["ai_provider"] == "lmstudio"
+    mock_provider.assert_called_once()
+
+
 def test_ai_board_generation_failure_aborts_creation(
     setup_test_db, test_db_session: Session, admin_user: User, admin_token
 ):
@@ -274,6 +367,62 @@ def test_apply_suggestion_creates_and_reuses_symbol(
     assert test_db_session.query(BoardSymbol).filter_by(board_id=ai_board.id).count() == 1
 
 
+def test_apply_suggestion_replaces_occupant_at_explicit_position(
+    setup_test_db, test_db_session: Session, admin_user: User, admin_token, ai_board
+):
+    """An explicit position replaces the occupying symbol atomically."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    url = f"/api/boards/{ai_board.id}/ai/suggestions/apply"
+
+    first = client.post(
+        url,
+        headers=headers,
+        json={"item": {"label": "Old"}, "position_x": 1, "position_y": 2},
+    )
+    assert first.status_code == 200
+    old_id = first.json()["id"]
+
+    # Replacing at the same explicit position must swap the occupant in one
+    # transaction: the new symbol lands there and the old placement is gone.
+    second = client.post(
+        url,
+        headers=headers,
+        json={"item": {"label": "New"}, "position_x": 1, "position_y": 2},
+    )
+    assert second.status_code == 200
+    assert second.json()["position_x"] == 1
+    assert second.json()["position_y"] == 2
+    assert second.json()["id"] != old_id
+
+    placements = test_db_session.query(BoardSymbol).filter_by(
+        board_id=ai_board.id
+    ).all()
+    assert len(placements) == 1
+    assert placements[0].custom_text == "New"
+
+
+def test_apply_suggestion_auto_places_when_position_omitted(
+    setup_test_db, test_db_session: Session, admin_user: User, admin_token, ai_board
+):
+    """Adding without coordinates keeps auto-placing at the first free cell."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    url = f"/api/boards/{ai_board.id}/ai/suggestions/apply"
+
+    # Occupy the (0, 0) default target.
+    first = client.post(url, headers=headers, json={"item": {"label": "First"}})
+    assert first.status_code == 200
+    assert (first.json()["position_x"], first.json()["position_y"]) == (0, 0)
+
+    # A second add without coordinates must move to the next free cell
+    # (scanned column-major), not replace (0, 0).
+    second = client.post(url, headers=headers, json={"item": {"label": "Second"}})
+    assert second.status_code == 200
+    assert (second.json()["position_x"], second.json()["position_y"]) == (1, 0)
+    assert test_db_session.query(BoardSymbol).filter_by(
+        board_id=ai_board.id
+    ).count() == 2
+
+
 def test_apply_suggestion_uses_teacher_roster_access(
     setup_test_db, test_db_session: Session, admin_user: User, admin_token, ai_board
 ):
@@ -345,6 +494,45 @@ def test_create_board_schedules_download_for_generated_symbols(
     # No dead /static placeholder; the image is filled by the scheduled download.
     assert symbol.image_path is None
     mock_schedule.assert_called_once_with([symbol.id])
+
+
+def test_create_board_with_primary_marker_resolves_global_model(
+    setup_test_db, test_db_session: Session, admin_user: User, admin_token
+):
+    """A board created with ai_model='@primary' uses the global primary model."""
+    items = [{"label": "Apple", "symbol_key": "apple", "color": "#FFCDD2"}]
+    with (
+        patch("src.api.routers.board_ai.BoardGenerationService") as mock_service,
+        patch("src.api.routers.board_ai.OllamaProvider") as mock_provider,
+        patch(
+            "src.api.routers.board_ai.get_setting_value",
+            side_effect=lambda key, default="": (
+                "http://ollama.test"
+                if key == "ollama_base_url"
+                else "global-ollama-model"
+                if key == "ollama_model"
+                else default
+            ),
+        ) as mock_setting,
+    ):
+        mock_service.return_value.generate_board_items = AsyncMock(return_value=items)
+        response = client.post(
+            "/api/boards/",
+            params={"user_id": admin_user.id},
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={
+                "name": "Primary Marker Board",
+                "ai_enabled": True,
+                "ai_provider": "ollama",
+                "ai_model": "@primary",
+            },
+        )
+    assert response.status_code == 200
+    # The provider must receive the resolved global model, never the marker.
+    mock_provider.assert_called_once_with(
+        base_url="http://ollama.test", model="global-ollama-model"
+    )
+    mock_setting.assert_any_call("ollama_model", "")
 
 
 def test_apply_suggestion_schedules_download_only_when_symbol_created(

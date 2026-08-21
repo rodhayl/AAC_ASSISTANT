@@ -34,6 +34,8 @@
   "startRecording": "Iniciar grabación",
   "sendMessage": "Enviar mensaje",
   "boardOptional": "Tablero o contexto (opcional)",
+  "boardNameDefault": "General",
+  "teacherDefault": "Profesor",
   "topicStudy": "Tema a estudiar",
   "saveTopic": "Guardar tema",
   "noSavedTopics": "Aún no hay temas guardados.",
@@ -93,6 +95,7 @@
     "unauthorizedUser": "No autorizado para iniciar sesión para otro usuario",
     "unknownError": "Error desconocido",
     "sessionNotFound": "Sesión no encontrada",
+    "sessionNotActive": "Esta sesión de aprendizaje ya no está activa.",
     "unauthorized": "No autorizado",
     "noSymbolsProvided": "No se proporcionaron símbolos",
     "transcriptionFailed": "Recibí tu audio pero no pude transcribirlo. Por favor intenta de nuevo o usa texto por ahora."

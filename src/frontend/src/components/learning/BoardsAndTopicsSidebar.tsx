@@ -63,9 +63,9 @@ export function BoardsAndTopicsSidebar({
         if (!topicName) return;
         if (!user?.id) return;
 
-        let boardName = 'General';
+        let boardName = t('boardNameDefault', 'General');
         if (selectedBoardId === 'custom') {
-            boardName = customPurpose.trim() || 'General';
+            boardName = customPurpose.trim() || t('boardNameDefault', 'General');
         } else if (selectedBoardId) {
             const board = boards.find(b => b.id.toString() === selectedBoardId);
             if (board) boardName = board.name;
@@ -75,7 +75,7 @@ export function BoardsAndTopicsSidebar({
             id: Date.now(),
             board: boardName,
             topic: topicName,
-            createdBy: user?.display_name || user?.username || 'Teacher',
+            createdBy: user?.display_name || user?.username || t('teacherDefault', 'Teacher'),
         };
         addTopicHelper(user.id, topic);
         setTopicsRevision((value) => value + 1);

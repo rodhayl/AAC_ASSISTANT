@@ -20,10 +20,15 @@ class UserService:
     def get_assigned_students(
         self, db: Session, teacher_id: int, skip: int = 0, limit: int = 500
     ):
+        # Keep the roster scoped to actual students: an admin can promote a
+        # user out of the student role (update_user), leaving a stale roster
+        # row. Filtering by user_type here matches get_student_summaries and
+        # /auth/users so promoted users never resurface in teacher lists.
         return (
             db.query(User)
             .join(StudentTeacher, User.id == StudentTeacher.student_id)
             .filter(StudentTeacher.teacher_id == teacher_id)
+            .filter(User.user_type == "student")
             .order_by(User.id)
             .offset(skip)
             .limit(limit)

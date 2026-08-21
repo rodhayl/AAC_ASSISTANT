@@ -42,7 +42,7 @@ def test_predict_next_loads_symbol_library_once_per_request(
             current_symbols=[{"label": "want"}],
             limit=5,
             language="en",
-            offset=1,
+            offset=0,
             db=test_db_session,
         )
     finally:
@@ -90,7 +90,7 @@ def test_predict_next_caches_symbol_catalog_between_requests(
             current_symbols=[{"label": "want"}],
             limit=5,
             language="en",
-            offset=1,
+            offset=0,
             db=test_db_session,
         )
         first_count = statement_count
@@ -99,7 +99,7 @@ def test_predict_next_caches_symbol_catalog_between_requests(
             current_symbols=[{"label": "want"}],
             limit=5,
             language="en",
-            offset=1,
+            offset=0,
             db=test_db_session,
         )
     finally:
@@ -110,6 +110,65 @@ def test_predict_next_caches_symbol_catalog_between_requests(
     assert first_count == 3
     assert statement_count == first_count + 2
     assert suggestions[0]["label"] == "cookie"
+
+
+def test_predict_next_pagination_skips_seen_suggestions(
+    test_db_session, regular_user, monkeypatch
+):
+    """A non-zero offset continues after the previous page instead of repeating it."""
+    service = PredictionService()
+    monkeypatch.setattr(
+        prediction_module, "translate_text", lambda text, _target_lang: text
+    )
+    test_db_session.add_all(
+        [
+            Symbol(label="one", category="noun", language="en", is_builtin=True),
+            Symbol(label="two", category="noun", language="en", is_builtin=True),
+            Symbol(label="three", category="noun", language="en", is_builtin=True),
+            Symbol(label="four", category="noun", language="en", is_builtin=True),
+            Symbol(label="five", category="noun", language="en", is_builtin=True),
+        ]
+    )
+    test_db_session.commit()
+    monkeypatch.setitem(
+        service._models,
+        "en",
+        {
+            "bigrams": {
+                "want": {
+                    "one": 1.0,
+                    "two": 0.9,
+                    "three": 0.8,
+                    "four": 0.7,
+                    "five": 0.6,
+                }
+            }
+        },
+    )
+
+    user_id = regular_user.id
+    page_one = service.predict_next(
+        user_id=user_id,
+        current_symbols=[{"label": "want"}],
+        limit=2,
+        language="en",
+        offset=0,
+        db=test_db_session,
+    )
+    page_two = service.predict_next(
+        user_id=user_id,
+        current_symbols=[{"label": "want"}],
+        limit=2,
+        language="en",
+        offset=2,
+        db=test_db_session,
+    )
+
+    labels_one = [s["label"] for s in page_one]
+    labels_two = [s["label"] for s in page_two]
+    assert labels_one == ["one", "two"]
+    assert labels_two == ["three", "four"]
+    assert not set(labels_one) & set(labels_two)
 
 
 def test_predict_next_board_scope_uses_scalar_symbol_ids(
@@ -145,7 +204,7 @@ def test_predict_next_board_scope_uses_scalar_symbol_ids(
         current_symbols=[],
         limit=5,
         language="en",
-        offset=1,
+        offset=0,
         board_id=board.id,
         db=test_db_session,
     )
@@ -172,7 +231,7 @@ def test_predict_next_new_symbols_visible_after_mutation(
         current_symbols=[{"label": "want"}],
         limit=5,
         language="en",
-        offset=1,
+        offset=0,
         db=test_db_session,
     )
     assert not any(suggestion["label"] == "milk" for suggestion in first)
@@ -187,7 +246,7 @@ def test_predict_next_new_symbols_visible_after_mutation(
         current_symbols=[{"label": "want"}],
         limit=5,
         language="en",
-        offset=1,
+        offset=0,
         db=test_db_session,
     )
     assert any(suggestion["label"] == "milk" for suggestion in second)

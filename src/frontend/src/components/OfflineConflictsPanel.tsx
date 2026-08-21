@@ -1,7 +1,7 @@
 import { AlertTriangle, RefreshCw, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useOfflineStore } from '../store/offlineStore'
-import api from '../lib/api'
+import api, { apiOffline } from '../lib/api'
 import { formatTime } from '../lib/format'
 
 export function OfflineConflictsPanel() {
@@ -16,6 +16,10 @@ export function OfflineConflictsPanel() {
   const handleRetry = async (conflictId: string) => {
     const conflict = conflicts.find(c => c.id === conflictId)
     if (!conflict) return
+
+    if (apiOffline.isOffline()) {
+      return
+    }
 
     incrementRetry(conflictId)
 

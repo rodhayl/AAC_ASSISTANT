@@ -6,7 +6,7 @@ const bootstrapPassword = process.env.AAC_BOOTSTRAP_ADMIN_PASSWORD || 'Admin123'
 // preference, so these tests assert real persistence (PUT body + reload)
 // instead of relying on translated label text or fixed sleeps.
 const savePrefs = (page: Page) =>
-  page.getByRole('button', { name: /Save Preferences|Guardar preferencias/i });
+  page.getByRole('button', { name: /Save Appearance Settings|Guardar ajustes de apariencia/i });
 
 async function gotoSettings(page: Page) {
   await page.goto('/settings');

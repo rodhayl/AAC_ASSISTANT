@@ -38,6 +38,7 @@ interface BoardState {
   deleteBoardSymbol: (boardId: number, symbolId: number, signal?: AbortSignal) => Promise<void>;
   batchUpdateSymbols: (boardId: number, updates: Array<Record<string, unknown>>) => Promise<void>;
   assignBoardToStudent: (boardId: number, studentId: number, assignedBy?: number) => Promise<void>;
+  reset: () => void;
 }
 
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -99,19 +100,12 @@ export const useBoardStore = create<BoardState>((set, get) => {
         if (userId) params.user_id = userId;
         if (name) params.name = name;
         
-        let limit = PAGE_SIZE;
-        if (forceRefresh && page === 1 && boards.length > PAGE_SIZE) {
-            // If we have more than one page loaded, try to fetch enough to cover what we have
-            // Round up to nearest PAGE_SIZE
-            limit = Math.ceil(boards.length / PAGE_SIZE) * PAGE_SIZE;
-        }
-
-        params.skip = (page - 1) * limit;
-
-        if (page > 1) {
-            params.skip = (page - 1) * PAGE_SIZE;
-            limit = PAGE_SIZE; // Enforce standard page size for subsequent pages
-        }
+        // Keep every request on the same fixed page boundary. A refresh must
+        // replace page one rather than requesting a larger first page; otherwise
+        // a later page request starts at offset 100 and repeatedly re-fetches
+        // items already present in state.
+        const limit = PAGE_SIZE;
+        params.skip = (page - 1) * PAGE_SIZE;
         
         params.limit = limit;
         
@@ -121,6 +115,11 @@ export const useBoardStore = create<BoardState>((set, get) => {
         const hasMore = newBoards.length === limit;
 
         if (requestId !== boardsRequestSequence) return;
+        // This is the newest list request, so any other in-flight list request
+        // is stale and its result will be discarded. Clear the loading flag
+        // now: waiting for the stale request to settle would leave the flag
+        // stuck when that request finishes last (it is correctly barred from
+        // touching the indicator by the requestId check).
         set((state) => {
             const updatedBoards = isPagination ? [...state.boards, ...newBoards] : newBoards;
             
@@ -131,7 +130,7 @@ export const useBoardStore = create<BoardState>((set, get) => {
 
             return {
               boards: uniqueBoards,
-              isListLoading: listRequestCount > 1,
+              isListLoading: false,
               isFiltered: !!name,
               hasMore,
               page,
@@ -141,13 +140,21 @@ export const useBoardStore = create<BoardState>((set, get) => {
             };
         });
       } catch (error: unknown) {
-      if (requestId === boardsRequestSequence) {
-        set({ error: extractError(error, 'Failed to fetch boards'), isListLoading: listRequestCount > 1 });
+        if (requestId === boardsRequestSequence) {
+          set({
+            error: extractError(error, 'Failed to fetch boards'),
+            isListLoading: false,
+          });
+        }
+      } finally {
+        listRequestCount = Math.max(0, listRequestCount - 1);
+        // Safety net: a request from a previous auth context must not clear a
+        // newer request's indicator, so only the newest request may reset it.
+        if (requestId === boardsRequestSequence && listRequestCount === 0) {
+          set({ isListLoading: false });
+        }
       }
-    } finally {
-      listRequestCount = Math.max(0, listRequestCount - 1);
-      if (listRequestCount === 0) set({ isListLoading: false });
-    }
+
   },
 
   fetchBoard: async (id, forceRefresh = false) => {
@@ -240,21 +247,21 @@ export const useBoardStore = create<BoardState>((set, get) => {
   duplicateBoard: async (id, userId) => {
     beginMutation();
     try {
-      const offline = apiOffline.isOffline()
-      let base: Board
-      if (offline) {
-        const found = get().boards.find(b => b.id === id) || get().currentBoard
-        if (!found || found.id !== id) throw new Error('Source board unavailable offline')
-        base = found
-      } else {
-        base = (await api.get(`/boards/${id}`)).data
+      if (apiOffline.isOffline()) {
+        throw new Error(
+          i18n.t(
+            'boards:offlineDuplicateUnsupported',
+            'Board duplication requires an internet connection.',
+          ),
+        );
       }
+      const base: Board = (await api.get(`/boards/${id}`)).data
       // Preserve grid, locale and the language-learning flag so a duplicate is
       // a faithful copy. AI content generation is intentionally NOT triggered
       // on duplicate: the board is created with AI disabled, its symbols are
       // copied manually, and AI settings are restored via the update endpoint.
       const createRes = await api.post('/boards/', {
-        name: `${base.name} (Copy)`,
+        name: `${base.name}${i18n.t('boards:copySuffix', ' (Copy)')}`,
         description: base.description,
         category: base.category,
         is_public: base.is_public,
@@ -266,6 +273,26 @@ export const useBoardStore = create<BoardState>((set, get) => {
         ai_enabled: false
       }, { params: { user_id: userId } });
       const newBoard = createRes.data;
+      // A copied symbol keeps its folder link only when the new owner can
+      // actually view the target board. Resolving every link before the first
+      // symbol POST prevents a mid-way 403 from orphaning a partial copy, and
+      // avoids copying broken links (private boards of the original owner,
+      // boards deleted since the source board was built).
+      const effectiveLinkedIds = new Map<number, number | null>();
+      for (const s of base.symbols || []) {
+        if (s.linked_board_id == null) {
+          effectiveLinkedIds.set(s.id, null);
+          continue;
+        }
+        try {
+          await api.get(`/boards/${s.linked_board_id}`, {
+            params: { skip_translation: true },
+          });
+          effectiveLinkedIds.set(s.id, s.linked_board_id);
+        } catch {
+          effectiveLinkedIds.set(s.id, null);
+        }
+      }
       for (const s of base.symbols || []) {
         await api.post(`/boards/${newBoard.id}/symbols`, {
           symbol_id: s.symbol?.id ?? s.symbol_id,
@@ -275,7 +302,7 @@ export const useBoardStore = create<BoardState>((set, get) => {
           is_visible: s.is_visible,
           custom_text: s.custom_text,
           color: s.color ?? null,
-          linked_board_id: s.linked_board_id ?? null
+          linked_board_id: effectiveLinkedIds.get(s.id) ?? null
         });
       }
       if (base.ai_enabled) {
@@ -311,21 +338,31 @@ export const useBoardStore = create<BoardState>((set, get) => {
     try {
       const response = await api.get('/boards/assigned', { params: { student_id: studentId } });
       if (requestId === assignedBoardsRequestSequence) {
+        // Newest request wins; stale in-flight ones are ignored, so clear the
+        // loading flag instead of counting them (see fetchBoards).
         set({
           assignedBoards: response.data,
-          isListLoading: listRequestCount > 1,
+          isListLoading: false,
           assignedBoardsLastFetchTime: now,
           assignedBoardsStudentId: studentId,
         });
       }
     } catch (error: unknown) {
       if (requestId === assignedBoardsRequestSequence) {
-        set({ error: extractError(error, 'Failed to fetch assigned boards'), isListLoading: listRequestCount > 1 });
+        set({
+          error: extractError(error, 'Failed to fetch assigned boards'),
+          isListLoading: false,
+        });
       }
     } finally {
       listRequestCount = Math.max(0, listRequestCount - 1);
-      if (listRequestCount === 0) set({ isListLoading: false });
+      // A request from a previous auth context may finish after a new request
+      // starts. It must not clear the new user's loading indicator.
+      if (requestId === assignedBoardsRequestSequence && listRequestCount === 0) {
+        set({ isListLoading: false });
+      }
     }
+
   },
 
   addSymbolToBoard: async (boardId, symbolId, position) => {
@@ -393,6 +430,29 @@ export const useBoardStore = create<BoardState>((set, get) => {
     }
   },
 
+  reset: () => {
+    boardRequestSequence += 1;
+    boardsRequestSequence += 1;
+    assignedBoardsRequestSequence += 1;
+    set({
+      boards: [],
+      assignedBoards: [],
+      currentBoard: null,
+      isLoading: false,
+      isListLoading: false,
+      isBoardLoading: false,
+      error: null,
+      lastFetchTime: null,
+      assignedBoardsLastFetchTime: null,
+      assignedBoardsStudentId: undefined,
+      isFiltered: false,
+      hasMore: true,
+      page: 1,
+      currentUserId: undefined,
+      currentSearchQuery: '',
+    });
+  },
+
   assignBoardToStudent: async (boardId, studentId, assignedBy) => {
     beginMutation();
     try {
@@ -418,3 +478,11 @@ export const useBoardStore = create<BoardState>((set, get) => {
   }
   };
 });
+
+if (typeof window !== 'undefined') {
+  const resetForAuthContextChange = () => {
+    useBoardStore.getState().reset();
+  };
+  window.addEventListener('aac:auth-logout', resetForAuthContextChange);
+  window.addEventListener('aac:auth-context-changed', resetForAuthContextChange);
+}

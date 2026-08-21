@@ -122,7 +122,18 @@ class ResponseProcessingMixin:
                     }
 
                 # If there's a specific question, evaluate the answer
-                if last_question:
+                if last_question and (
+                    isinstance(last_question.get("question"), str)
+                    and bool(last_question["question"].strip())
+                    and isinstance(last_question.get("choices"), list)
+                    and len(last_question["choices"]) == 3
+                    and all(
+                        isinstance(choice, str) and bool(choice.strip())
+                        for choice in last_question["choices"]
+                    )
+                    and type(last_question.get("correct")) is int
+                    and 0 <= last_question["correct"] < len(last_question["choices"])
+                ):
                     # Add language instruction
                     lang_instruction = self._lang_instruction(user_lang)
 
@@ -179,9 +190,25 @@ class ResponseProcessingMixin:
                             miss_confidence=0.0,
                         )
 
+                    # LLM JSON is untrusted input. Normalize its fields before
+                    # using them for scores, persistence, or the response model.
+                    raw_correct = analysis_data.get("is_correct")
+                    if isinstance(raw_correct, bool):
+                        normalized_correct = raw_correct
+                    elif isinstance(raw_correct, str):
+                        normalized_correct = raw_correct.strip().lower() == "true"
+                    else:
+                        normalized_correct = False
+                    try:
+                        normalized_confidence = float(analysis_data.get("confidence", 0.5))
+                    except (TypeError, ValueError):
+                        normalized_confidence = 0.5
+                    analysis_data["is_correct"] = normalized_correct
+                    analysis_data["confidence"] = min(max(normalized_confidence, 0.0), 1.0)
+
                     # Update session stats
                     session.questions_answered += 1
-                    if analysis_data.get("is_correct", False):
+                    if normalized_correct:
                         session.correct_answers += 1
                 else:
                     # Conversational mode - generate a response

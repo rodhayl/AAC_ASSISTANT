@@ -82,20 +82,8 @@ export function useVoiceRecorder({
     recordingSessionIdRef.current = currentSession?.session_id ?? null;
     recordingUserIdRef.current = userId ?? null;
     try {
-      if (!currentSession && userId) {
-        await startSession({
-          topic: sessionTopic,
-          purpose: 'voice',
-          difficulty: sessionDifficulty,
-        }, userId);
-      }
-      if (
-        !mountedRef.current ||
-        recordingGenerationRef.current !== generation ||
-        activeUserIdRef.current !== (userId ?? null) ||
-        (currentSession && activeSessionIdRef.current !== currentSession.session_id)
-      ) return;
-
+      // Request the microphone before creating a server session. A permission
+      // denial must not leave an empty active learning session behind.
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (
         !mountedRef.current ||
@@ -107,6 +95,31 @@ export function useVoiceRecorder({
         return;
       }
       streamRef.current = stream;
+
+      if (!currentSession && userId) {
+        try {
+          await startSession({
+            topic: sessionTopic,
+            purpose: 'voice',
+            difficulty: sessionDifficulty,
+          }, userId);
+        } catch (error) {
+          stopStream(stream);
+          streamRef.current = null;
+          throw error;
+        }
+      }
+      if (
+        !mountedRef.current ||
+        recordingGenerationRef.current !== generation ||
+        activeUserIdRef.current !== (userId ?? null) ||
+        (currentSession && activeSessionIdRef.current !== currentSession.session_id)
+      ) {
+        stopStream(stream);
+        streamRef.current = null;
+        return;
+      }
+
       const mediaRecorder = new MediaRecorder(stream);
       recordingMimeTypeRef.current = mediaRecorder.mimeType || 'audio/wav';
       mediaRecorderRef.current = mediaRecorder;

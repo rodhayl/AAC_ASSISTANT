@@ -63,6 +63,23 @@ describe('ProfileTab', () => {
     });
   });
 
+  it('clears an existing email when the field is emptied', async () => {
+    authState.user.email = 'old@example.com';
+    put.mockResolvedValueOnce({
+      data: { id: 1, username: 'admin1', display_name: 'Admin', email: null },
+    });
+
+    render(<ProfileTab />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(put).toHaveBeenCalledWith('/auth/profile', { display_name: 'Admin', email: null });
+    });
+  });
+
   it('trims and sends a non-empty email as-is', async () => {
     put.mockResolvedValueOnce({
       data: { id: 1, username: 'admin1', display_name: 'Admin', email: 'a@b.com' },

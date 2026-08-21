@@ -37,7 +37,7 @@ def test_prediction_service_uses_bundled_spanish_ngrams(
         current_symbols=[{"label": "quiero"}],
         limit=3,
         language="es-ES",
-        offset=1,
+        offset=0,
         db=test_db_session,
     )
 
@@ -346,7 +346,7 @@ def test_prediction_service_localizes_history_labels_to_requested_language(
         current_symbols=[],
         limit=5,
         language="es-ES",
-        offset=1,
+        offset=0,
         db=test_db_session,
     )
 

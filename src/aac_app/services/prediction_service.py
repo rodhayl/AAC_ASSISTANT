@@ -669,14 +669,22 @@ class PredictionService:
         Returns:
             List of suggested symbol dicts
         """
-        reserved_punct = len(PUNCTUATION) if offset == 0 else 0
-        base_limit = max(0, limit - reserved_punct)
+        # Real symbol suggestions must get the full requested budget. Punctuation
+        # is only a fallback when slots remain; reserving four slots up front
+        # made a limit=1 request return punctuation instead of a next symbol.
+        #
+        # Pagination: generate ``limit + offset`` unique suggestions so a later
+        # page can skip the already-seen ones while still returning a full
+        # page. The offset is capped so a large page number cannot force an
+        # unbounded history/catalog fetch.
+        safe_offset = min(offset, 250)
+        base_limit = min(limit + safe_offset, 300)
 
         context = _PredictionContext(
             user_id=user_id,
             current_symbols=current_symbols,
             language=language,
-            offset=offset,
+            offset=safe_offset,
             base_limit=base_limit,
             limit=limit,
             board_id=board_id,
@@ -692,7 +700,7 @@ class PredictionService:
         context.suggest_board_library()
         context.suggest_punctuation()
 
-        return context.suggestions[:limit]
+        return context.suggestions[safe_offset : safe_offset + limit]
 
 
 # Global instance

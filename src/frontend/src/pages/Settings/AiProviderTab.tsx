@@ -96,9 +96,9 @@ export function AiProviderTab() {
   const currentOpenRouterApiKey = aiOverride.openrouter_api_key ?? aiSettings?.openrouter_api_key ?? '';
   const currentOllamaBaseUrl = aiOverride.ollama_base_url ?? aiSettings?.ollama_base_url ?? config.OLLAMA_BASE_URL;
   const currentLmStudioBaseUrl =
-    aiOverride.lmstudio_base_url ?? aiSettings?.lmstudio_base_url ?? 'http://localhost:1234/v1';
-  const currentMaxTokens = aiOverride.max_tokens ?? aiSettings?.max_tokens ?? 1024;
-  const currentTemperature = aiOverride.temperature ?? aiSettings?.temperature ?? 0.5;
+    aiOverride.lmstudio_base_url ?? aiSettings?.lmstudio_base_url ?? config.LMSTUDIO_BASE_URL;
+  const currentMaxTokens = aiOverride.max_tokens ?? aiSettings?.max_tokens ?? config.AI_MAX_TOKENS;
+  const currentTemperature = aiOverride.temperature ?? aiSettings?.temperature ?? config.AI_TEMPERATURE;
   const readOnlyForCurrentUser =
     !isAdmin && readOnlyState?.requestKey === readOnlyRequestKey;
   const visibleAiSettings = isAdmin
@@ -183,9 +183,9 @@ export function AiProviderTab() {
     lmstudio_model: overrides.lmstudio_model ?? aiSettings?.lmstudio_model ?? '',
     openrouter_api_key: overrides.openrouter_api_key ?? aiSettings?.openrouter_api_key ?? '',
     ollama_base_url: overrides.ollama_base_url ?? aiSettings?.ollama_base_url ?? config.OLLAMA_BASE_URL,
-    lmstudio_base_url: overrides.lmstudio_base_url ?? aiSettings?.lmstudio_base_url ?? 'http://localhost:1234/v1',
-    max_tokens: overrides.max_tokens ?? aiSettings?.max_tokens ?? 1024,
-    temperature: overrides.temperature ?? aiSettings?.temperature ?? 0.5,
+    lmstudio_base_url: overrides.lmstudio_base_url ?? aiSettings?.lmstudio_base_url ?? config.LMSTUDIO_BASE_URL,
+    max_tokens: overrides.max_tokens ?? aiSettings?.max_tokens ?? config.AI_MAX_TOKENS,
+    temperature: overrides.temperature ?? aiSettings?.temperature ?? config.AI_TEMPERATURE,
   }), [aiSettings]);
 
   const persistSettings = useCallback(async (overrides: AiOverride) => {

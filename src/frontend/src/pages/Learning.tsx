@@ -205,6 +205,30 @@ export function Learning() {
     }
   }, [fetchSessionHistory, showHistory, user?.id]);
 
+  // Toggle the voice input and persist it so it survives a reload.
+  const handleToggleVoice = useCallback(() => {
+    const next = !voiceEnabled;
+    setVoiceEnabled(next);
+    if (!user) return;
+    api
+      .put('/auth/preferences', { voice_mode_enabled: next })
+      .then((response) => {
+        useAuthStore.setState((state) => {
+          if (!state.user) return state;
+          return {
+            user: {
+              ...state.user,
+              settings: response.data,
+            },
+          };
+        });
+      })
+      .catch(() => {
+        setVoiceEnabled(!next);
+        addToast(t('voiceSaveFailed', 'Could not save voice preference'), 'error');
+      });
+  }, [addToast, t, user, voiceEnabled]);
+
   const handleNewConversation = useCallback(async () => {
     await startActivity(t('topics.general'), 'practice');
     setShowHistory(false);
@@ -336,10 +360,15 @@ export function Learning() {
       es: ['yo', 'tú', 'quiero', 'ir', 'parar', 'ayuda', 'sí', 'no', 'más', 'terminado', 'me gusta', 'comer', 'beber'],
     };
     const priorityWords = coreWordsByLanguage[currentLang] || coreWordsByLanguage.en;
+    // Case/accent-insensitive index so labels like "Yo" or "Me gusta" still
+    // match the priority list and keep the panel populated for any casing.
+    const priorityIndex = new Map(
+      priorityWords.map((word, index) => [word.trim().toLowerCase(), index]),
+    );
     const byLabel = new Map<string, SymbolItem>();
 
     symbolItems
-      .filter((symbol) => priorityWords.includes(symbol.label))
+      .filter((symbol) => priorityIndex.has(symbol.label.trim().toLowerCase()))
       .forEach((symbol) => {
         const key = symbol.label.trim().toLowerCase();
         const existing = byLabel.get(key);
@@ -348,8 +377,10 @@ export function Learning() {
         }
       });
 
-    return Array.from(byLabel.values()).sort((a, b) =>
-      priorityWords.indexOf(a.label) - priorityWords.indexOf(b.label),
+    return Array.from(byLabel.values()).sort(
+      (a, b) =>
+        (priorityIndex.get(a.label.trim().toLowerCase()) ?? 0) -
+        (priorityIndex.get(b.label.trim().toLowerCase()) ?? 0),
     );
   }, [currentLang, symbolItems]);
 
@@ -409,7 +440,7 @@ export function Learning() {
         providerInUse={providerInUse}
         providerNotice={providerNotice}
         voiceEnabled={voiceEnabled}
-        onToggleVoice={() => setVoiceEnabled((enabled) => !enabled)}
+        onToggleVoice={handleToggleVoice}
         onNewQuestion={handleNewQuestion}
         canAskQuestion={Boolean(currentSession) && !isLoading && !symbolView}
       />

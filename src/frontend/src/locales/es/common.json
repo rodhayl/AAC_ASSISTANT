@@ -18,7 +18,8 @@
     "empty": "Sin notificaciones",
     "close": "Cerrar",
     "defaultTitle": "Notificación",
-    "defaultMessage": "Sin contenido de mensaje"
+    "defaultMessage": "Sin contenido de mensaje",
+    "achievementUnlocked": "Logro desbloqueado"
   },
   "language": {
     "switcher": {
@@ -98,8 +99,10 @@
       "currentPasswordIncorrect": "Contraseña actual incorrecta",
       "cannotChangeOtherUserPassword": "No se puede cambiar la contraseña de otro usuario a través de este punto final",
       "emailInUse": "El correo electrónico ya está en uso",
+      "displayNameRequired": "El nombre para mostrar es obligatorio",
       "invalidUserType": "Tipo de usuario inválido. Debe ser uno de: {{types}}",
-      "cannotDeleteOwnAccount": "No puedes eliminar tu propia cuenta"
+      "cannotDeleteOwnAccount": "No puedes eliminar tu propia cuenta",
+      "lastAdminRequired": "Debe quedar al menos un administrador activo. Crea otro administrador antes de eliminar este."
     },
     "export": {
       "unauthorizedExport": "No autorizado para exportar datos de este usuario",
@@ -122,7 +125,7 @@
       "unauthorizedAssignments": "No autorizado para ver estas asignaciones",
       "cannotCreateBoardForOther": "No se puede crear tablero para otro usuario",
       "aiProviderRequired": "Se requieren proveedor y modelo de IA cuando la IA está habilitada",
-      "aiProviderInvalid": "El proveedor de IA debe ser 'ollama' u 'openrouter'",
+      "aiProviderInvalid": "El proveedor de IA debe ser 'ollama', 'openrouter' o 'lmstudio'",
       "boardNotFound": "Tablero no encontrado",
       "invalidPosition": "La posición del símbolo ({{x}}, {{y}}) está fuera de la cuadrícula {{cols}}x{{rows}}",
       "gridTooSmall": "La cuadrícula {{cols}}x{{rows}} es demasiado pequeña para los símbolos existentes",
@@ -163,7 +166,8 @@
       "updateOwnOnly": "Solo puedes actualizar los logros que creaste",
       "deleteOwnOnly": "Solo puedes eliminar los logros que creaste",
       "alreadyAwarded": "El usuario ya tiene este logro",
-      "cannotDeleteSystem": "Los logros del sistema no se pueden eliminar"
+      "cannotDeleteSystem": "Los logros del sistema no se pueden eliminar",
+      "criteriaIncomplete": "Los logros automáticos requieren un tipo de criterio y un valor objetivo"
     },
     "learningModes": {
       "staffOnly": "Solo los administradores y profesores pueden gestionar modos de aprendizaje",
@@ -186,6 +190,7 @@
       "assignOnlySelf": "Los profesores solo pueden asignar estudiantes a sí mismos",
       "unassignOnlySelf": "Los profesores solo pueden desasignar estudiantes de sí mismos",
       "resetOnlyStudents": "Los profesores solo pueden restablecer contraseñas de estudiantes",
+      "cannotResetOwnPassword": "Usa Cambiar contraseña para restablecer tu propia contraseña",
       "notAssignedToTeacher": "El estudiante no está asignado a este profesor",
       "studentIdRequired": "Se requiere user_id o student_id",
       "teacherNotFound": "Profesor no encontrado",
@@ -194,7 +199,8 @@
     },
     "preferences": {
       "unauthorizedView": "No autorizado para acceder a las preferencias",
-      "mustBeNonNegative": "{{field}} debe ser >= 0"
+      "mustBeNonNegative": "{{field}} debe ser >= 0",
+      "unsupportedTtsProvider": "Proveedor de texto a voz no compatible"
     }
   },
   "symbolEditor": {

@@ -253,8 +253,18 @@ def reset_user_password(
 
     # Permission check
     if current_user.user_type == "admin":
-        # Admin can reset anyone
-        pass
+        # Admin can reset anyone *except themselves*: resetting your own
+        # password here bypasses the current-password check that
+        # /auth/change-password enforces (mirroring the self-delete guard).
+        if target_user_id == current_user.id:
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(
+                    user=current_user,
+                    accept_language=request.headers.get("accept-language"),
+                    key="errors.users.cannotResetOwnPassword",
+                ),
+            )
     elif current_user.user_type == "teacher":
         # Teacher can only reset assigned students
         if user.user_type != "student":

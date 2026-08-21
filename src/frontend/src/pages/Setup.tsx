@@ -12,6 +12,7 @@ export function Setup() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(true);
 
   const setupAdmin = useAuthStore(state => state.setupAdmin);
@@ -32,12 +33,15 @@ export function Setup() {
         }
       })
       .catch(() => {
-        if (isMounted) setCheckingStatus(false);
+        if (isMounted) {
+          setStatusError(t('errors.statusCheckFailed'));
+          setCheckingStatus(false);
+        }
       });
     return () => {
       isMounted = false;
     };
-  }, [navigate]);
+  }, [navigate, t]);
 
   const hasMinLength = password.length >= 8;
   const hasUpper = /[A-Z]/.test(password);
@@ -96,6 +100,12 @@ export function Setup() {
         {(error || localError) && (
           <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-3 rounded-lg mb-6 text-sm">
             {localError || error}
+          </div>
+        )}
+
+        {statusError && (
+          <div className="bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 p-3 rounded-lg mb-6 text-sm">
+            {statusError}
           </div>
         )}
 

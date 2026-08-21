@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '../store/authStore'
 import api, { extractError } from '../lib/api'
-import type { Board, StudentBoardSummary, User } from '../types'
+import type { Board, StudentBoardSummary, User, UserPreferences } from '../types'
 import { useTranslation } from 'react-i18next'
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
@@ -10,12 +10,14 @@ import { ResetPasswordModal } from '../components/common/ResetPasswordModal'
 import { GuardianProfileModal } from '../components/students/GuardianProfileModal'
 import { Sparkles, Volume2 } from 'lucide-react'
 import { LoadingState } from '../components/ui/LoadingState'
+import { useToastStore } from '../store/toastStore'
 
 
 export function Students() {
   const user = useAuthStore((state) => state.user)
+  const addToast = useToastStore((state) => state.addToast)
   const { t } = useTranslation(['students', 'settings'])
-  const [students, setStudents] = useState<User[]>([])
+  const [students, setStudents] = useState<StudentBoardSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editId, setEditId] = useState<number | null>(null)
@@ -47,8 +49,7 @@ export function Students() {
 
   const [preferencesModalOpen, setPreferencesModalOpen] = useState(false)
   const [preferencesStudent, setPreferencesStudent] = useState<User | null>(null)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [studentPreferences, setStudentPreferences] = useState<any>({ voice_mode_enabled: true })
+  const [studentPreferences, setStudentPreferences] = useState<Pick<UserPreferences, 'voice_mode_enabled'>>({ voice_mode_enabled: true })
   const [preferencesLoading, setPreferencesLoading] = useState(false)
 
   const loadStudents = useCallback(async (rethrow = false) => {
@@ -56,7 +57,10 @@ export function Students() {
     setError(null)
     try {
       const res = await api.get('/auth/users/student-summaries', {
-        params: { limit: 100 },
+        // Use the backend's maximum page size: admins with large rosters must
+        // not silently lose students beyond the old hardcoded 100. The backend
+        // caps the page at 500 and this page has no pagination UI yet.
+        params: { limit: 500 },
       })
       const summaries = res.data as StudentBoardSummary[]
       setStudents(summaries)
@@ -79,9 +83,13 @@ export function Students() {
 
   const loadAvailableBoards = async () => {
     try {
-      const res = await api.get('/boards/', { params: { user_id: user?.id } })
+      // Admins may assign any teacher's board, so list everything for them;
+      // teachers stay scoped to their own boards.
+      const params = user?.user_type === 'admin' ? undefined : { user_id: user?.id }
+      const res = await api.get('/boards/', { params })
       setAvailableBoards(res.data)
     } catch (e) {
+      setError(extractError(e, t('errors.loadBoardsFailed', { defaultValue: 'Failed to load boards' })))
       console.error('Failed to load boards:', e)
     }
   }
@@ -94,6 +102,7 @@ export function Students() {
       await api.delete(`/auth/users/${s.id}`)
       setStudents(prev => prev.filter(x => x.id !== s.id))
       setDeleteState({ isOpen: false, student: null })
+      addToast(t('success.deleted'), 'success')
     } catch (e: unknown) {
       setError(extractError(e, t('errors.deleteFailed')))
       setDeleteState({ isOpen: false, student: null })
@@ -110,6 +119,9 @@ export function Students() {
       if (board) {
         setAssignedBoards((prev) => {
           const current = prev[studentId] || []
+          if (current.some((assignedBoard) => assignedBoard.id === board.id)) {
+            return prev
+          }
           return {
             ...prev,
             [studentId]: [...current, board],
@@ -117,6 +129,7 @@ export function Students() {
         })
       }
       setAssignModalOpen(false)
+      addToast(t('success.boardAssigned'), 'success')
     } catch (e: unknown) {
       setError(extractError(e, t('errors.assignFailed')))
     } finally {
@@ -131,6 +144,7 @@ export function Students() {
         ...prev,
         [studentId]: (prev[studentId] || []).filter((board) => board.id !== boardId),
       }))
+      addToast(t('success.boardUnassigned'), 'success')
     } catch (e: unknown) {
       setError(extractError(e, t('errors.unassignFailed')))
     }
@@ -148,10 +162,11 @@ export function Students() {
     setPreferencesModalOpen(true)
     try {
       const res = await api.get(`/auth/users/${student.id}/preferences`)
-      setStudentPreferences(res.data)
+      setStudentPreferences({ voice_mode_enabled: res.data.voice_mode_enabled ?? true })
     } catch (e) {
       console.error(e)
       setStudentPreferences({ voice_mode_enabled: true })
+      addToast(t('errors.profileLoadFailed'), 'error')
     } finally {
       setPreferencesLoading(false)
     }
@@ -164,6 +179,7 @@ export function Students() {
       await api.put(`/auth/users/${preferencesStudent!.id}/preferences`, studentPreferences)
       setPreferencesModalOpen(false)
       setPreferencesStudent(null)
+      addToast(t('success.saved'), 'success')
     } catch (e: unknown) {
       setError(extractError(e, t('errors.updateFailed')))
     } finally {
@@ -214,6 +230,7 @@ export function Students() {
       setNewPassword('')
       setConfirmPassword('')
       setCreateModalOpen(false)
+      addToast(t('success.created'), 'success')
     } catch (e: unknown) {
       setError(extractError(e, t('errors.createFailed')))
     } finally {
@@ -234,7 +251,7 @@ export function Students() {
       setResetPasswordModalOpen(false)
       setResetPasswordValue('')
       setResetPasswordStudent(null)
-      // Optional: show success message
+      addToast(t('success.passwordReset'), 'success')
     } catch (e: unknown) {
       setError(extractError(e, t('errors.resetPasswordFailed', { defaultValue: 'Failed to reset password' })))
     } finally {
@@ -398,7 +415,7 @@ export function Students() {
                     <label htmlFor="edit-student-display-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                       {t('labels.displayName')}
                     </label>
-                    <input id="edit-student-display-name" type="text" value={editDisplayName} onChange={(e) => setEditDisplayName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
+                    <input id="edit-student-display-name" type="text" value={editDisplayName} onChange={(e) => setEditDisplayName(e.target.value)} required className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
                     <label htmlFor="edit-student-role" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                       {t('role', { defaultValue: 'Role' })}
                     </label>
@@ -414,8 +431,12 @@ export function Students() {
                       onClick={async () => {
                         try {
                           const res = await api.put(`/auth/users/${editId}`, { display_name: editDisplayName, user_type: editUserType })
-                          setStudents(prev => prev.map(x => x.id === editId ? res.data : x))
+                          // The PUT response is a bare User without the
+                          // assigned_boards payload from the summaries endpoint;
+                          // preserve the existing row's board chips.
+                          setStudents(prev => prev.map(x => x.id === editId ? { ...res.data, assigned_boards: x.assigned_boards ?? [] } : x))
                           setEditId(null)
+                          addToast(t('success.updated'), 'success')
                         } catch (e: unknown) {
                           setError(extractError(e, t('errors.updateFailed')))
                         }

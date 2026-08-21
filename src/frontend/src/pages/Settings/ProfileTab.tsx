@@ -32,8 +32,13 @@ export function ProfileTab() {
       // A blank email must be sent as null, not an empty string: the backend
       // schema types email as EmailStr | None, so '' fails validation and
       // blocks saving even when the user only changed their display name.
+      const displayName = profileForm.display_name.trim();
+      if (!displayName) {
+        setProfileError(t('profile.displayNameRequired', 'Display name is required'));
+        return;
+      }
       const res = await api.put('/auth/profile', {
-        display_name: profileForm.display_name,
+        display_name: displayName,
         email: profileForm.email.trim() === '' ? null : profileForm.email.trim(),
       });
       useAuthStore.setState((state) => {

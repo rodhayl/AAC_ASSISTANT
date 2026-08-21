@@ -42,12 +42,20 @@ export function usePreferences() {
   const [prefsSaveError, setPrefsSaveError] = useState<string | null>(null);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
 
+  const userId = user?.id;
+
   useEffect(() => {
+    let active = true;
+    userEditedRef.current = false;
+    const activeUser = useAuthStore.getState().user;
+    setPreferencesState(defaultPreferences(activeUser));
+
     const loadPreferences = async () => {
       try {
         const res = await api.get('/auth/preferences');
-        // Do not clobber edits made before the initial hydration resolved.
-        if (userEditedRef.current) return;
+        // Do not clobber edits made before the initial hydration resolved, or
+        // apply a response belonging to a previous authenticated user.
+        if (!active || userEditedRef.current) return;
         const voice = res.data.tts_voice || 'default';
         const darkMode = res.data.dark_mode ?? false;
         const language = normalizeUILanguage(res.data.ui_language);
@@ -68,13 +76,16 @@ export function usePreferences() {
         useTTSStore.getState().setTTSProvider(res.data.tts_provider === 'browser' ? 'browser' : 'kokoro');
         useTTSStore.getState().setLocalVoice(res.data.tts_local_voice || 'default');
         useThemeStore.getState().setDarkMode(darkMode);
-        useLocaleStore.getState().setLocale(language);
+        await useLocaleStore.getState().setLocale(language);
       } catch (err) {
-        console.error('Failed to load preferences:', err);
+        if (active) console.error('Failed to load preferences:', err);
       }
     };
-    loadPreferences();
-  }, []);
+    void loadPreferences();
+    return () => {
+      active = false;
+    };
+  }, [userId]);
 
   useEffect(() => {
     const speechSynthesis = window.speechSynthesis;
@@ -122,7 +133,7 @@ export function usePreferences() {
         const { setTTSProvider, setLocalVoice } = useTTSStore.getState();
 
         setDarkMode(preferences.dark_mode);
-        setLocale(preferences.ui_language);
+        await setLocale(preferences.ui_language);
         setSelectedVoice(preferences.tts_voice);
         setTTSProvider(preferences.tts_provider);
         setLocalVoice(preferences.tts_local_voice);

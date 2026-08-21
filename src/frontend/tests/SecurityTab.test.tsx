@@ -131,4 +131,17 @@ describe('SecurityTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
+
+  it('closes the dialog with the Escape key and restores focus to the trigger', () => {
+    render(<SecurityTab />);
+    const trigger = screen.getByRole('button', { name: 'Change password' });
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(trigger);
+  });
 });

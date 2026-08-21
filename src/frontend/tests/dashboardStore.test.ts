@@ -68,4 +68,29 @@ describe('dashboard store learning streak', () => {
     expect(useDashboardStore.getState().stats?.learningStreak).toBe(6);
     expect(useDashboardStore.getState().recentActivity).toHaveLength(6);
   });
+
+  it('counts only unlocked achievements in the badge counter', async () => {
+    vi.mocked(api.get).mockImplementation((url) => {
+      if (url.includes('/achievements/user/1/points')) {
+        return Promise.resolve({ data: 25 }) as never;
+      }
+      if (url.includes('/achievements/user/1')) {
+        return Promise.resolve({
+          data: [
+            { name: 'Earned One', earned_at: '2026-01-01T00:00:00Z' },
+            { name: 'Earned Two', earned_at: '2026-01-02T00:00:00Z' },
+            { name: 'Locked One', earned_at: null },
+          ],
+        }) as never;
+      }
+      if (url === '/learning/history/1') {
+        return Promise.resolve({ data: { sessions: [] } }) as never;
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    await useDashboardStore.getState().fetchDashboardData(1);
+
+    expect(useDashboardStore.getState().stats?.achievementCount).toBe(2);
+  });
 });

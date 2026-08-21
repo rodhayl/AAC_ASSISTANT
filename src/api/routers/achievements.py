@@ -19,6 +19,20 @@ from src.api.deps import (
 router = APIRouter()
 
 
+def _validate_criteria_pair(
+    criteria_type: str | None,
+    criteria_value: float | None,
+    *,
+    user: User,
+) -> None:
+    """Require automatic achievement criteria to be complete or absent."""
+    if (criteria_type is None) != (criteria_value is None):
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(user=user, key="errors.achievements.criteriaIncomplete"),
+        )
+
+
 # ============== Categories Endpoint ==============
 
 @router.get("/categories", response_model=list[str])
@@ -131,6 +145,12 @@ def create_achievement(
             ),
         )
 
+    _validate_criteria_pair(
+        data.criteria_type,
+        data.criteria_value,
+        user=current_user,
+    )
+
     if data.target_user_id is not None:
         verify_student_access(
             data.target_user_id,
@@ -217,6 +237,11 @@ def update_achievement(
                 ),
             )
 
+        if "target_user_id" in data.model_fields_set:
+            if data.target_user_id is not None:
+                verify_student_access(data.target_user_id, current_user, session)
+            achievement.target_user_id = data.target_user_id
+
         # Update fields
         if data.name is not None:
             achievement.name = data.name
@@ -231,13 +256,22 @@ def update_achievement(
         if data.is_active is not None:
             achievement.is_active = data.is_active
 
-        # Update criteria if provided
-        if data.criteria_type is not None:
+        # Update criteria when the client explicitly sends the fields. Checking
+        # model_fields_set preserves the ability to clear an automatic
+        # achievement back to a manual one by sending null values.
+        if "criteria_type" in data.model_fields_set:
             achievement.criteria_type = data.criteria_type
-        if data.criteria_value is not None:
+        if "criteria_value" in data.model_fields_set:
             achievement.criteria_value = data.criteria_value
 
-        # Recalculate is_manual based on presence of criteria
+        # Recalculate is_manual based on presence of criteria. Reject a
+        # partially specified pair rather than silently changing the award
+        # type based on whichever field happened to be sent.
+        _validate_criteria_pair(
+            achievement.criteria_type,
+            achievement.criteria_value,
+            user=current_user,
+        )
         has_criteria = (
             achievement.criteria_type is not None
             and achievement.criteria_value is not None

@@ -35,6 +35,12 @@
     "displayName": "ej., Sr. Pérez",
     "email": "ej., profesor@ejemplo.com"
   },
+  "success": {
+    "created": "Profesor creado",
+    "updated": "Profesor actualizado",
+    "deleted": "Profesor eliminado",
+    "passwordReset": "Contraseña restablecida"
+  },
   "errors": {
     "loadFailed": "Error al cargar profesores",
     "updateFailed": "Error al actualizar",

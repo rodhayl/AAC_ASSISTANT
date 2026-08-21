@@ -12,6 +12,7 @@ interface BoardSettingsDialogProps {
   primaryProvider?: string;
   primaryModel?: string;
   aiConfigError: string | null;
+  saving: boolean;
   onClose: () => void;
   onSave: () => void;
   onBoardNameChange: (value: string) => void;
@@ -31,6 +32,7 @@ export function BoardSettingsDialog({
   primaryProvider,
   primaryModel,
   aiConfigError,
+  saving,
   onClose,
   onSave,
   onBoardNameChange,
@@ -169,9 +171,10 @@ export function BoardSettingsDialog({
           <button
             type="button"
             onClick={onSave}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+            disabled={saving}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {t('saveSettings')}
+            {saving ? t('saving', 'Saving...') : t('saveSettings')}
           </button>
         </div>
       </div>

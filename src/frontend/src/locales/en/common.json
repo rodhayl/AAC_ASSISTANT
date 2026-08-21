@@ -18,7 +18,8 @@
     "empty": "No notifications",
     "close": "Close",
     "defaultTitle": "Notification",
-    "defaultMessage": "No message content"
+    "defaultMessage": "No message content",
+    "achievementUnlocked": "Achievement Unlocked"
   },
   "language": {
     "switcher": {
@@ -98,8 +99,10 @@
       "currentPasswordIncorrect": "Current password incorrect",
       "cannotChangeOtherUserPassword": "Cannot change another user's password via this endpoint",
       "emailInUse": "Email already in use",
+      "displayNameRequired": "Display name is required",
       "invalidUserType": "Invalid user type. Must be one of: {{types}}",
-      "cannotDeleteOwnAccount": "Cannot delete your own account"
+      "cannotDeleteOwnAccount": "Cannot delete your own account",
+      "lastAdminRequired": "At least one active administrator must remain. Create another admin before removing this one."
     },
     "export": {
       "unauthorizedExport": "Not authorized to export data for this user",
@@ -122,7 +125,7 @@
       "unauthorizedAssignments": "Not authorized to view these assignments",
       "cannotCreateBoardForOther": "Cannot create board for another user",
       "aiProviderRequired": "AI provider and model are required when AI is enabled",
-      "aiProviderInvalid": "AI provider must be either 'ollama' or 'openrouter'",
+      "aiProviderInvalid": "AI provider must be 'ollama', 'openrouter', or 'lmstudio'",
       "boardNotFound": "Board not found",
       "invalidPosition": "Symbol position ({{x}}, {{y}}) is outside the {{cols}}x{{rows}} board grid",
       "gridTooSmall": "The {{cols}}x{{rows}} grid is too small for the existing symbols",
@@ -163,7 +166,8 @@
       "updateOwnOnly": "You can only update achievements you created",
       "deleteOwnOnly": "You can only delete achievements you created",
       "alreadyAwarded": "User already has this achievement",
-      "cannotDeleteSystem": "System achievements cannot be deleted"
+      "cannotDeleteSystem": "System achievements cannot be deleted",
+      "criteriaIncomplete": "Automatic achievements require both a criteria type and target value"
     },
     "learningModes": {
       "staffOnly": "Only admins and teachers can manage learning modes",
@@ -186,6 +190,7 @@
       "assignOnlySelf": "Teachers can only assign students to themselves",
       "unassignOnlySelf": "Teachers can only unassign students from themselves",
       "resetOnlyStudents": "Teachers can only reset student passwords",
+      "cannotResetOwnPassword": "Use Change Password to reset your own password",
       "notAssignedToTeacher": "Student is not assigned to this teacher",
       "studentIdRequired": "user_id or student_id is required",
       "teacherNotFound": "Teacher not found",
@@ -194,7 +199,8 @@
     },
     "preferences": {
       "unauthorizedView": "Not authorized to access preferences",
-      "mustBeNonNegative": "{{field}} must be >= 0"
+      "mustBeNonNegative": "{{field}} must be >= 0",
+      "unsupportedTtsProvider": "Unsupported text-to-speech provider"
     }
   },
   "symbolEditor": {

@@ -40,12 +40,18 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
     timersRef.current.push(timer);
   }, []);
 
+  // A round needs at least two *unique* playable symbols: `startGame` fails
+  // with an error when `getUniquePlayableSymbols` returns fewer than two, so
+  // a board whose playable cells are all duplicate labels (e.g. two "apple"
+  // placements) must not be offered as playable in the list. Derive the
+  // count from the loaded symbols instead of trusting `playable_symbols_count`
+  // (which counts placements, not unique labels).
   const playableBoards = useMemo(
-    () => boards.filter((board) => (board.playable_symbols_count ?? 0) >= 2),
+    () => boards.filter((board) => getUniquePlayableSymbols(board.symbols ?? []).length >= 2),
     [boards],
   );
   const unplayableBoards = useMemo(
-    () => boards.filter((board) => (board.playable_symbols_count ?? 0) < 2),
+    () => boards.filter((board) => getUniquePlayableSymbols(board.symbols ?? []).length < 2),
     [boards],
   );
 

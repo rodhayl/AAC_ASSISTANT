@@ -3,7 +3,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -27,11 +27,11 @@ class ArasaacSymbol(BaseModel):
 
 
 class ImportArasaacRequest(BaseModel):
-    arasaac_id: int
-    label: str
-    description: str | None = None
-    category: str = "general"
-    keywords: str | None = None
+    arasaac_id: int = Field(..., ge=1)
+    label: str = Field(..., min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=10_000)
+    category: str = Field("general", min_length=1, max_length=50)
+    keywords: str | None = Field(None, max_length=10_000)
 
 
 @router.get("/search", response_model=list[ArasaacSymbol])
@@ -73,12 +73,19 @@ async def import_arasaac_symbol(
     committed = False
     db_symbol = None
     try:
+        normalized_label = payload.label.strip()
+        if not normalized_label:
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(user=current_user, key="errors.validation"),
+            )
+
         # Dedupe: link to an existing symbol with the same (case-folded) label
         # instead of creating a duplicate row and downloading the image again.
         # This mirrors the bulk library import, which also dedupes by label.
         existing = (
             db.query(Symbol)
-            .filter(func.lower(Symbol.label) == payload.label.strip().casefold())
+            .filter(func.lower(Symbol.label) == normalized_label.casefold())
             .first()
         )
         if existing is not None:
@@ -120,7 +127,7 @@ async def import_arasaac_symbol(
             user_lang = None
 
         db_symbol = Symbol(
-            label=payload.label,
+            label=normalized_label,
             description=payload.description,
             category=payload.category,
             image_path=public_path,

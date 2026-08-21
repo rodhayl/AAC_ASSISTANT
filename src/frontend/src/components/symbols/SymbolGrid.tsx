@@ -11,7 +11,7 @@ type SymbolGridProps = {
   onEdit: (symbol: SymbolType) => void;
   onDelete: (id: number) => void;
   page: number;
-  pageSize: number;
+  hasMore: boolean;
   onPreviousPage: () => void;
   onNextPage: () => void;
 };
@@ -23,7 +23,7 @@ export function SymbolGrid({
   onEdit,
   onDelete,
   page,
-  pageSize,
+  hasMore,
   onPreviousPage,
   onNextPage,
 }: SymbolGridProps) {
@@ -77,7 +77,7 @@ export function SymbolGrid({
         <span className="flex items-center px-2 text-sm text-gray-500">{t('page', 'Page {{n}}', { n: page + 1 })}</span>
         <Button
           variant="secondary"
-          disabled={symbols.length < pageSize}
+          disabled={!hasMore}
           onClick={onNextPage}
         >
           {t('next')}

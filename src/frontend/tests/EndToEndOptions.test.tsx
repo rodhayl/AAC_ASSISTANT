@@ -175,8 +175,15 @@ describe('End-to-End Options Tests', () => {
 
   // --- Option 5: Gamification ---
   it('Option 5: Gamification - Plays Symbol Hunt game', async () => {
+    const mockSymbols = [
+      { id: 1, symbol_id: 101, custom_text: 'Dog', is_visible: true, position_x: 0, position_y: 0, symbol: { id: 101, label: 'Dog', image_path: '/dog.png' } },
+      { id: 2, symbol_id: 102, custom_text: 'Cat', is_visible: true, position_x: 1, position_y: 0, symbol: { id: 102, label: 'Cat', image_path: '/cat.png' } }
+    ];
+
+    // The list endpoint returns serialized boards including their symbols;
+    // the hunt hook needs them to decide playability by unique labels.
     const mockBoards = [
-      { id: 1, name: 'Game Board', description: 'Fun', playable_symbols_count: 2 }
+      { id: 1, name: 'Game Board', description: 'Fun', playable_symbols_count: 2, symbols: mockSymbols }
     ];
     
     const mockFullBoard = {
@@ -184,10 +191,7 @@ describe('End-to-End Options Tests', () => {
       name: 'Game Board',
       grid_rows: 2,
       grid_cols: 2,
-      symbols: [
-        { id: 1, symbol_id: 101, custom_text: 'Dog', is_visible: true, position_x: 0, position_y: 0, symbol: { id: 101, label: 'Dog', image_path: '/dog.png' } },
-        { id: 2, symbol_id: 102, custom_text: 'Cat', is_visible: true, position_x: 1, position_y: 0, symbol: { id: 102, label: 'Cat', image_path: '/cat.png' } }
-      ]
+      symbols: mockSymbols
     };
 
     (api.get as unknown as Mock).mockImplementation((url: string) => {

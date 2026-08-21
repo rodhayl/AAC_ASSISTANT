@@ -15,6 +15,7 @@ interface NavbarProps {
 
 export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
   const user = useAuthStore(state => state.user);
+  const token = useAuthStore(state => state.token);
   const [open, setOpen] = useState(false);
   const unread = useNotificationsStore(state => state.unreadCount());
   const loadFromBackend = useNotificationsStore(state => state.loadFromBackend);
@@ -28,20 +29,36 @@ export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
   }, [user?.id, loadFromBackend]);
 
   useEffect(() => {
+    // Respect the user's notification preference: a disabled setting means the
+    // bell must not open a live push stream (it is persisted but was previously
+    // never consumed by any reader).
+    if (!user?.id || !token || user.settings?.notifications_enabled === false) return;
+
     // Authenticate the stream with a bearer header. EventSource cannot set
     // headers, so use fetch and consume the SSE body instead of putting the
     // JWT in a query string where access logs and browser history can retain it.
-    const token = useAuthStore.getState().token;
-    if (!user?.id || !token) return;
-
     const controller = new AbortController();
+    const maxRetryDelay = 30000;
+    let retryDelay = 1000;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    // A 401 means the token is invalid or expired; the auth flow will refresh
+    // or log out, and reconnecting would only hammer the server forever.
+    let unauthorized = false;
+
     const consumeStream = async () => {
       try {
         const response = await fetch(`${config.API_BASE_URL}/notifications/stream`, {
           headers: { Authorization: `Bearer ${token}` },
           signal: controller.signal,
         });
-        if (!response.ok || !response.body) return;
+        if (!response.ok || !response.body) {
+          if (response.status === 401) unauthorized = true;
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        // A successful connection resets the backoff so a brief hiccup does not
+        // accumulate into a long silence.
+        retryDelay = 1000;
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -72,16 +89,30 @@ export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
           }
         }
       } catch (error) {
-        if ((error as { name?: string })?.name !== 'AbortError') {
-          // Notification delivery is optional and must not disrupt the AAC UI.
-          console.debug('Notification stream unavailable');
-        }
+        if ((error as { name?: string })?.name === 'AbortError') return;
+        // Notification delivery is optional and must not disrupt the AAC UI.
+        console.debug('Notification stream unavailable');
+      }
+
+      // The stream ended or dropped; reconnect with exponential backoff so a
+      // transient outage does not permanently silence the notification bell.
+      // An invalid session must not keep retrying, though.
+      if (!controller.signal.aborted && !unauthorized) {
+        const delay = retryDelay;
+        retryDelay = Math.min(retryDelay * 2, maxRetryDelay);
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          if (!controller.signal.aborted) void consumeStream();
+        }, delay);
       }
     };
 
     void consumeStream();
-    return () => controller.abort();
-  }, [user?.id])
+    return () => {
+      controller.abort();
+      if (reconnectTimer !== null) clearTimeout(reconnectTimer);
+    };
+  }, [token, user?.id, user?.settings?.notifications_enabled])
 
   return (
     <header className="h-16 bg-surface/90 dark:bg-transparent backdrop-blur-sm border-b border-border dark:border-white/5 flex items-center justify-between gap-2 px-4 md:px-6 transition-all duration-200 z-10 sticky top-0">

@@ -83,6 +83,7 @@
   "settingsSaved": "¡Ajustes guardados exitosamente!",
   "aiConfigDescription": "La IA usará el proveedor y modelo configurados en Ajustes.",
   "saveSettings": "Guardar Ajustes",
+  "saving": "Guardando...",
   "category": "Categoría",
   "deleteConfirm": "¿Estás seguro de que quieres eliminar este tablero?",
   "loadStudentsError": "Error al cargar estudiantes",
@@ -161,6 +162,7 @@
   "bulkDeleteTitle": "Eliminar tableros seleccionados",
   "bulkDeleteConfirm": "¿Seguro que quieres eliminar los {{count}} tableros seleccionados?",
   "duplicateBoard": "Duplicar tablero",
+  "copySuffix": " (Copia)",
   "assignToStudentTitle": "Asignar a estudiante",
   "assignToStudent": "Asignar a estudiante",
   "removeSymbol": "Eliminar símbolo",
@@ -185,6 +187,10 @@
   "boardAssigned": "Tablero asignado",
   "boardAssignedTo": "Tablero {{boardId}} asignado al estudiante {{studentId}}",
   "allLanguages": "Todos",
+  "languages": {
+    "es": "Español",
+    "en": "English"
+  },
   "sessionStarted": "Sesión iniciada",
   "sessionStartFailed": "No se pudo iniciar la sesión",
   "boardTooEmpty": "El tablero necesita al menos el 50% de símbolos para usarse",
@@ -233,5 +239,9 @@
   "loadingBoard": "Cargando tablero",
   "boardReady": "Tablero listo",
   "boardIncomplete": "{{count}}/{{total}} símbolos",
-  "failedToAddSymbol": "Error al añadir símbolo"
+  "failedToAddSymbol": "Error al añadir símbolo",
+  "boardLoadFailed": "No se pudo cargar este tablero",
+  "retry": "Reintentar",
+  "backToBoards": "Volver a los tableros",
+  "sendToChatFailed": "No se pudo enviar la frase al asistente"
 }

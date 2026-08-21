@@ -1,7 +1,9 @@
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+PreferenceLanguage = Annotated[str, Field(min_length=2, max_length=10)]
 
 
 class UserPreferencesResponse(BaseModel):
@@ -21,16 +23,19 @@ class UserPreferencesResponse(BaseModel):
 
 
 class UserPreferencesUpdate(BaseModel):
-    tts_provider: str | None = None
-    tts_voice: str | None = None
-    tts_local_voice: str | None = None
-    tts_language: str | None = None
-    ui_language: str | None = None
+    tts_provider: Literal["browser", "kokoro"] | None = None
+    tts_voice: str | None = Field(None, max_length=200)
+    tts_local_voice: str | None = Field(None, max_length=40)
+    tts_language: PreferenceLanguage | None = None
+    ui_language: PreferenceLanguage | None = None
     notifications_enabled: bool | None = None
     voice_mode_enabled: bool | None = None
     dark_mode: bool | None = None
-    dwell_time: int | None = None
-    ignore_repeats: int | None = None
+    # Negative values are rejected with a localized 400 by
+    # validate_preference_updates; only the upper bound is enforced here so
+    # legacy clients keep receiving the translated error.
+    dwell_time: int | None = Field(None, le=2000)
+    ignore_repeats: int | None = Field(None, le=2000)
     high_contrast: bool | None = None
 
 
@@ -55,7 +60,7 @@ class UserUpdate(BaseModel):
 
 
 class UserProfileUpdate(BaseModel):
-    display_name: str | None = None
+    display_name: str | None = Field(None, max_length=100)
     email: EmailStr | None = None
 
 
@@ -128,7 +133,7 @@ class BoardSummaryResponse(BaseModel):
     ai_enabled: bool = False
     ai_provider: str | None = None
     ai_model: str | None = None
-    locale: str = "en"
+    locale: str = Field("en", min_length=2, max_length=10)
     is_language_learning: bool = False
     symbols: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -209,13 +214,13 @@ class LearningModePreviewResponse(BaseModel):
 
 # --- Board Schemas ---
 class SymbolBase(BaseModel):
-    label: str
-    description: str | None = None
-    category: str = "general"
-    image_path: str | None = None
-    audio_path: str | None = None
-    keywords: str | None = None
-    language: str = "en"
+    label: str = Field(..., min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=10_000)
+    category: str = Field("general", min_length=1, max_length=50)
+    image_path: str | None = Field(None, max_length=500)
+    audio_path: str | None = Field(None, max_length=500)
+    keywords: str | None = Field(None, max_length=10_000)
+    language: str = Field("en", min_length=2, max_length=10)
 
 
 class SymbolCreate(SymbolBase):
@@ -232,13 +237,13 @@ class SymbolResponse(SymbolBase):
 
 
 class SymbolUpdate(BaseModel):
-    label: str | None = None
-    description: str | None = None
-    category: str | None = None
-    image_path: str | None = None
-    audio_path: str | None = None
-    keywords: str | None = None
-    language: str | None = None
+    label: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=10_000)
+    category: str | None = Field(None, min_length=1, max_length=50)
+    image_path: str | None = Field(None, max_length=500)
+    audio_path: str | None = Field(None, max_length=500)
+    keywords: str | None = Field(None, max_length=10_000)
+    language: str | None = Field(None, min_length=2, max_length=10)
 
 
 class SymbolReorderUpdate(BaseModel):
@@ -254,8 +259,8 @@ class BoardSymbolBase(BaseModel):
     position_y: int = Field(0, ge=0)
     size: int = Field(1, ge=1, le=100)
     is_visible: bool = True
-    custom_text: str | None = None
-    color: str | None = None
+    custom_text: str | None = Field(None, max_length=100)
+    color: str | None = Field(None, max_length=20)
     linked_board_id: int | None = Field(None, ge=1)
 
 
@@ -269,9 +274,17 @@ class BoardSymbolUpdate(BaseModel):
     position_y: int | None = Field(None, ge=0)
     size: int | None = Field(None, ge=1, le=100)
     is_visible: bool | None = None
-    custom_text: str | None = None
-    color: str | None = None
+    custom_text: str | None = Field(None, max_length=100)
+    color: str | None = Field(None, max_length=20)
     linked_board_id: int | None = Field(None, ge=1)
+
+
+class BoardSymbolBatchUpdate(BoardSymbolUpdate):
+    """Validated placement update used by the board editor batch endpoint."""
+
+    # Older board-editor clients may include placeholder entries without an
+    # association ID; the endpoint intentionally ignores those entries.
+    id: int | None = Field(None, ge=1, description="Board-symbol placement ID")
 
 
 class BoardSymbolResponse(BoardSymbolBase):
@@ -284,7 +297,7 @@ class BoardSymbolResponse(BoardSymbolBase):
 class BoardBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: str | None = Field(None, max_length=10_000)
-    category: str = Field("general", max_length=50)
+    category: str = Field("general", min_length=1, max_length=50)
     is_public: bool = False
     is_template: bool = False
     grid_rows: int | None = Field(4, ge=1, le=100)
@@ -292,7 +305,7 @@ class BoardBase(BaseModel):
     ai_enabled: bool = False
     ai_provider: str | None = None
     ai_model: str | None = None
-    locale: str = "en"
+    locale: str = Field("en", min_length=2, max_length=10)
     is_language_learning: bool = False
 
 
@@ -311,7 +324,7 @@ class BoardUpdate(BaseModel):
     ai_enabled: bool | None = None
     ai_provider: str | None = None
     ai_model: str | None = None
-    locale: str | None = None
+    locale: str | None = Field(None, min_length=2, max_length=10)
     is_language_learning: bool | None = None
 
 
@@ -368,11 +381,11 @@ class StudentAssignRequest(BaseModel):
 
 # --- Learning Schemas ---
 class LearningSessionStart(BaseModel):
-    topic: str
-    purpose: str | None = None
-    difficulty: str = "basic"
-    board_id: int | None = None
-    mode_key: str | None = None
+    topic: str = Field(..., min_length=1, max_length=100)
+    purpose: str | None = Field(None, max_length=10_000)
+    difficulty: str = Field("basic", min_length=1, max_length=20)
+    board_id: int | None = Field(None, ge=1)
+    mode_key: str | None = Field(None, min_length=1, max_length=50)
 
 
 class LearningSessionResponse(BaseModel):
@@ -405,25 +418,29 @@ class QuestionResponse(BaseModel):
 
 
 class AnswerSubmit(BaseModel):
-    answer: str
+    # Bound text before it is copied into an LLM prompt and JSON history.
+    answer: str = Field(..., min_length=1, max_length=10_000)
     is_voice: bool = False
 
 
 class SymbolItem(BaseModel):
-    id: int | None = None
-    label: str
-    category: str | None = None
-    image_path: str | None = None
-    position: int | None = None  # Order in utterance (0-indexed)
-    weight: float | None = 1.0  # Confidence/emphasis (for future use)
+    id: int | None = Field(None, ge=1)
+    label: str = Field(..., min_length=1, max_length=100)
+    category: str | None = Field(None, max_length=50)
+    image_path: str | None = Field(None, max_length=500)
+    position: int | None = Field(None, ge=0)  # Order in utterance (0-indexed)
+    weight: float | None = Field(1.0, ge=0.0, le=1.0)  # Confidence/emphasis
 
 
 class SymbolAnswerSubmit(BaseModel):
-    symbols: list[SymbolItem]
-    text: str | None = None  # Deprecated: use enriched_gloss
-    raw_gloss: str | None = None  # Simple concatenation of labels
-    enriched_gloss: str | None = None  # Template-enhanced gloss
-    context_hint: str | None = None  # Optional user-provided context
+    # Empty symbol lists are allowed through validation so the endpoint can
+    # answer with a translated 400 (errors.noSymbolsProvided) instead of an
+    # opaque Pydantic 422 validation array.
+    symbols: list[SymbolItem] = Field(..., max_length=100)
+    text: str | None = Field(None, max_length=10_000)  # Deprecated: use enriched_gloss
+    raw_gloss: str | None = Field(None, max_length=10_000)  # Simple concatenation of labels
+    enriched_gloss: str | None = Field(None, max_length=10_000)  # Template-enhanced gloss
+    context_hint: str | None = Field(None, max_length=10_000)  # Optional user-provided context
 
 
 class AnswerResponse(BaseModel):
@@ -456,28 +473,46 @@ class AchievementResponse(AchievementBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+AchievementCriteriaType = Literal[
+    "sessions_completed",
+    "correct_answers",
+    "comprehension_score",
+    "vocabulary_size",
+    "topics_completed",
+    "consecutive_days",
+    "voice_usage",
+]
+
+
 class AchievementCreate(BaseModel):
     """Create a custom achievement"""
-    name: str
-    description: str
-    category: str = "custom"
-    points: int = 10
-    icon: str = "🏆"
-    target_user_id: int | None = None  # If set, only this user sees it
-    criteria_type: str | None = None
-    criteria_value: float | None = None
+
+    name: str = Field(..., min_length=1, max_length=100)
+    # Description is optional: the editor allows leaving it blank, so an empty
+    # string must not be rejected by validation (it is stored as-is).
+    description: str = Field("", max_length=10_000)
+    category: str = Field("custom", min_length=1, max_length=50)
+    points: int = Field(10, ge=0)
+    icon: str = Field("🏆", min_length=1, max_length=50)
+    target_user_id: int | None = Field(None, ge=1)  # If set, only this user sees it
+    criteria_type: AchievementCriteriaType | None = None
+    criteria_value: float | None = Field(None, ge=0)
 
 
 class AchievementUpdate(BaseModel):
     """Update an achievement"""
-    name: str | None = None
-    description: str | None = None
-    category: str | None = None
-    points: int | None = None
-    icon: str | None = None
+
+    name: str | None = Field(None, min_length=1, max_length=100)
+    # Description is optional; an empty string is a valid value (editor allows
+    # clearing it). Only the length limit applies.
+    description: str | None = Field(None, max_length=10_000)
+    category: str | None = Field(None, min_length=1, max_length=50)
+    points: int | None = Field(None, ge=0)
+    icon: str | None = Field(None, min_length=1, max_length=50)
     is_active: bool | None = None
-    criteria_type: str | None = None
-    criteria_value: float | None = None
+    target_user_id: int | None = Field(None, ge=1)
+    criteria_type: AchievementCriteriaType | None = None
+    criteria_value: float | None = Field(None, ge=0)
 
 
 class AchievementFullResponse(BaseModel):
@@ -513,8 +548,8 @@ class LeaderboardEntry(BaseModel):
 
 # --- Analytics Schemas ---
 class SymbolUsageItem(BaseModel):
-    id: int
-    label: str
+    id: int = Field(..., ge=1)
+    label: str = Field(..., min_length=1, max_length=100)
     category: str | None = None
 
 
