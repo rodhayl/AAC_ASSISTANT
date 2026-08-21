@@ -37,7 +37,7 @@ jobs:
       TESTING: "1"
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
-      - uses: astral-sh/setup-uv@ae3b92d1bdb308a10adfe7b8f408e5cc8c30f3f6 # v6
+      - uses: astral-sh/setup-uv@19b4d1e990bec64818914c40230bde93a0de300b # v6
         with:
           version: latest
       - uses: actions/setup-python@8549b9f8f590ad24eab7482f36f6e1e24d34597b # v5
@@ -107,7 +107,7 @@ jobs:
         working-directory: src/frontend
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
-      - uses: astral-sh/setup-uv@ae3b92d1bdb308a10adfe7b8f408e5cc8c30f3f6 # v6
+      - uses: astral-sh/setup-uv@19b4d1e990bec64818914c40230bde93a0de300b # v6
         with:
           version: latest
       - uses: actions/setup-python@8549b9f8f590ad24eab7482f36f6e1e24d34597b # v5
@@ -168,7 +168,7 @@ jobs:
       AAC_BOOTSTRAP_ADMIN_PASSWORD: Admin123
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
-      - uses: astral-sh/setup-uv@ae3b92d1bdb308a10adfe7b8f408e5cc8c30f3f6 # v6
+      - uses: astral-sh/setup-uv@19b4d1e990bec64818914c40230bde93a0de300b # v6
         with:
           version: latest
       - uses: actions/setup-python@8549b9f8f590ad24eab7482f36f6e1e24d34597b # v5
