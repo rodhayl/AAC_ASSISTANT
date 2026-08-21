@@ -85,6 +85,12 @@ def migrate_passwords(temp_password: str, skip_confirmation: bool = False) -> No
             migrated_count = 0
             for user in users:
                 old_hash = user.password_hash
+                if old_hash is None:
+                    logger.warning(
+                        f"Skipped user: {user.username} (null password_hash — "
+                        "run scripts/fix_null_passwords.py first)"
+                    )
+                    continue
                 is_sha256 = len(old_hash) == 64 and all(
                     c in "0123456789abcdef" for c in old_hash.lower()
                 )
@@ -132,7 +138,10 @@ def verify_migration() -> None:
 
             for user in users:
                 hash_value = user.password_hash
-                if hash_value.startswith(("$2a$", "$2b$", "$2y$")):
+                if hash_value is None:
+                    other_count += 1
+                    logger.warning(f"{user.username}: null password_hash")
+                elif hash_value.startswith(("$2a$", "$2b$", "$2y$")):
                     bcrypt_count += 1
                 elif len(hash_value) == 64 and all(
                     c in "0123456789abcdef" for c in hash_value.lower()
