@@ -40,7 +40,7 @@ jobs:
       - uses: astral-sh/setup-uv@ae3b92d1bdb308a10adfe7b8f408e5cc8c30f3f6 # v6
         with:
           version: latest
-      - uses: actions/setup-python@8549b9f8f590ad24eab7482f36f6e1e24d34597b # v5
+      - uses: actions/setup-python@751276eafca55f10f252026015f43c488f2322ba # v5
         with:
           python-version: "3.13"
       - run: uv sync --locked --group dev
@@ -110,7 +110,7 @@ jobs:
       - uses: astral-sh/setup-uv@ae3b92d1bdb308a10adfe7b8f408e5cc8c30f3f6 # v6
         with:
           version: latest
-      - uses: actions/setup-python@8549b9f8f590ad24eab7482f36f6e1e24d34597b # v5
+      - uses: actions/setup-python@751276eafca55f10f252026015f43c488f2322ba # v5
         with:
           python-version: "3.13"
       - uses: actions/setup-node@3d7870f6218881292d183093179901ae8dc2ef85 # v4
@@ -171,7 +171,7 @@ jobs:
       - uses: astral-sh/setup-uv@ae3b92d1bdb308a10adfe7b8f408e5cc8c30f3f6 # v6
         with:
           version: latest
-      - uses: actions/setup-python@8549b9f8f590ad24eab7482f36f6e1e24d34597b # v5
+      - uses: actions/setup-python@751276eafca55f10f252026015f43c488f2322ba # v5
         with:
           python-version: "3.13"
       - uses: actions/setup-node@3d7870f6218881292d183093179901ae8dc2ef85 # v4
