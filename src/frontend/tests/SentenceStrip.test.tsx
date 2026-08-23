@@ -78,7 +78,6 @@ const symbol = (id: number, label: string): BoardSymbol => ({
 
 const apple = symbol(1, 'apple');
 const banana = symbol(2, 'banana');
-const bread = symbol(3, 'bread');
 
 function renderStrip(
   symbols: BoardSymbol[] = [],
