@@ -1,4 +1,5 @@
 import asyncio
+import os
 import signal
 import subprocess
 import sys
@@ -104,3 +105,35 @@ def test_server_command_includes_graceful_shutdown_timeout(monkeypatch):
     assert "--timeout-graceful-shutdown" in command
     timeout_index = command.index("--timeout-graceful-shutdown")
     assert command[timeout_index + 1] == "12"
+
+
+def test_frontend_dependencies_are_missing_without_node_modules(tmp_path):
+    frontend = tmp_path / "src" / "frontend"
+    frontend.mkdir(parents=True)
+    (frontend / "package.json").write_text("{}", encoding="utf-8")
+    (frontend / "package-lock.json").write_text("{}", encoding="utf-8")
+
+    assert start_server._frontend_dependencies_need_install(frontend) is True
+
+
+def test_frontend_dependencies_are_reused_until_manifests_change(tmp_path):
+    frontend = tmp_path / "src" / "frontend"
+    node_modules = frontend / "node_modules"
+    node_modules.mkdir(parents=True)
+    for name in ("package.json", "package-lock.json"):
+        (frontend / name).write_text("{}", encoding="utf-8")
+    stamp = node_modules / ".package-lock.json"
+    stamp.write_text("{}", encoding="utf-8")
+    os.utime(stamp, (1, 1))
+
+    assert start_server._frontend_dependencies_need_install(frontend) is True
+
+    current_time = max(
+        (frontend / "package.json").stat().st_mtime,
+        (frontend / "package-lock.json").stat().st_mtime,
+    )
+    os.utime(stamp, (current_time + 1, current_time + 1))
+    assert start_server._frontend_dependencies_need_install(frontend) is False
+
+    os.utime(frontend / "package-lock.json", (current_time + 2, current_time + 2))
+    assert start_server._frontend_dependencies_need_install(frontend) is True

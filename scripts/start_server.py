@@ -31,6 +31,29 @@ def is_port_available(host: str, port: int) -> bool:
 _npm_command = npm_command
 
 
+def _frontend_dependencies_need_install(frontend_dir: Path) -> bool:
+    """Return whether npm dependencies are absent or older than the lockfiles."""
+    node_modules = frontend_dir / "node_modules"
+    if not node_modules.is_dir():
+        return True
+
+    # npm writes this hidden lockfile only after a successful install. Using
+    # it as the dependency-install stamp avoids running npm ci again merely
+    # because application source files changed and the SPA needs rebuilding.
+    install_stamp = node_modules / ".package-lock.json"
+    if not install_stamp.is_file():
+        return True
+
+    dependency_manifests = (
+        frontend_dir / "package.json",
+        frontend_dir / "package-lock.json",
+    )
+    return any(
+        manifest.is_file() and manifest.stat().st_mtime > install_stamp.stat().st_mtime
+        for manifest in dependency_manifests
+    )
+
+
 def ensure_frontend_build() -> Path:
     """Return a current built frontend, rebuilding it when source changed."""
     frontend_dir = config.PROJECT_ROOT / "src" / "frontend"
@@ -68,8 +91,15 @@ def ensure_frontend_build() -> Path:
             f"{dist_dir}. Install Node.js to build it, or ship a prebuilt dist/ folder."
         )
 
-    print("Production frontend is missing or stale; installing Node dependencies and building it.")
-    subprocess.run([npm, "ci"], cwd=frontend_dir, check=True)
+    if _frontend_dependencies_need_install(frontend_dir):
+        print("Installing Node dependencies before building the production frontend.")
+        subprocess.run(
+            [npm, "ci", "--prefer-offline", "--no-audit", "--no-fund"],
+            cwd=frontend_dir,
+            check=True,
+        )
+    else:
+        print("Node dependencies are already installed; rebuilding the production frontend.")
     subprocess.run([npm, "run", "build"], cwd=frontend_dir, check=True)
     if not (dist_dir / "index.html").is_file():
         raise RuntimeError(f"Frontend build completed without creating {dist_dir}.")

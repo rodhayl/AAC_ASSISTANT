@@ -92,7 +92,7 @@ snapshot.
 
 - Windows 10+ (for the packaged build) or Linux/macOS (source only)
 - Python 3.13 or 3.14
-- [uv](https://docs.astral.sh/uv/)
+- [uv](https://docs.astral.sh/uv/) (the source launchers bootstrap it automatically)
 - Node.js 22.22+ and npm 10+ (to build or run the frontend)
 
 The packaged Windows application requires neither Python nor Node.js.
@@ -129,9 +129,27 @@ Then run:
 start.bat
 ```
 
+`start.bat` also bootstraps `uv` when needed and synchronizes the Python and
+voice dependencies before launching, so `install_dependencies.bat` is an
+optional explicit preparation step rather than a requirement for first run. If
+development dependencies are not already present, it asks whether to install
+them; declining keeps the production environment minimal.
+
 and open `http://127.0.0.1:8086/`.
 
 ### Source checkout (Linux / macOS)
+
+`start.sh` bootstraps `uv` when it is missing, creates/updates `.venv`, installs
+the core and voice dependencies, and then starts the production server. It uses
+the official uv installer, so the first run requires network access plus `curl`
+or `wget`. If development dependencies are not already present, it asks whether
+to install them; non-interactive starts skip them.
+
+```bash
+./start.sh
+```
+
+For a manual development setup:
 
 ```bash
 uv sync --group dev --extra voice --extra tts

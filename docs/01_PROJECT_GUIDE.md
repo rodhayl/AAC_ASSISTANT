@@ -6,7 +6,11 @@ path, see the root [`README.md`](../README.md).
 
 ## 1. Prerequisites and commands
 
-Use Python 3.13 or 3.14, [uv](https://docs.astral.sh/uv/), Node.js 22.22+, and npm 10+.
+Use Python 3.13 or 3.14, Node.js 22.22+, and npm 10+. `start.sh` and
+`start.bat` bootstrap [uv](https://docs.astral.sh/uv/) automatically on a
+source checkout when it is missing; the first run needs network access.
+When the development dependency group is absent, the launchers ask whether to
+install it and otherwise keep the production environment minimal.
 The root scripts are the supported Windows entry points:
 
 ```bat
@@ -119,7 +123,8 @@ supplied for isolated tests, but normal deployments use SQLite at
   faster-whisper speech provider. The source launcher prepares the Kokoro neural
   TTS runtime before starting; the browser remains an explicit alternative in
   Settings → Voice. Kokoro currently requires Python 3.13 because its release
-  declares Python `<3.14` support.
+  declares Python `<3.14` support; Python 3.14 uses the browser/system TTS
+  fallback while retaining faster-whisper voice input.
 - Semantic search uses fastembed embeddings and sqlite-vec in the SQLite
   database. Runtime model caches belong under `data/models/` and are never
   committed. Release builds stage the bundled fastembed and faster-whisper

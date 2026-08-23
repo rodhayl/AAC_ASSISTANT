@@ -7,10 +7,11 @@ engine. The source-checkout launcher prepares both voice runtimes before startin
 uv sync --group dev --extra voice --extra tts
 ```
 
-`start.sh` verifies the packages and downloads the Kokoro model files before launching
-the server. This avoids a first-use model download and prevents an implicit switch to
-the browser voice. In Settings → Voice, select either Kokoro or the browser/system
-voice from the single Voice output engine selector.
+`start.sh` (and `start.bat`) bootstraps `uv` when needed, verifies the packages,
+and downloads the Kokoro model files before launching the server. This avoids a
+first-use model download and prevents an implicit switch to the browser voice.
+In Settings → Voice, select either Kokoro or the browser/system voice from the
+single Voice output engine selector.
 
 Whisper is only for voice input. Install the faster-whisper extra directly when voice
 answers are needed outside the launcher:
