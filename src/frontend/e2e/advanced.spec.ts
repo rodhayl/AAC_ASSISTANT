@@ -141,7 +141,10 @@ test.describe('Advanced Scenarios', () => {
       await page.evaluate(() => window.dispatchEvent(new Event('online')));
       // 5. The conflict panel must expose the failed mutation.
       await expect(page.getByRole('heading', { name: /offline conflicts|conflictos/i })).toBeVisible({ timeout: 10000 });
-      await expect(page.getByRole('button', { name: /retry request|reintentar/i })).toBeVisible();
+      // The localized action is "Retry" in English and "Reintentar" in
+      // Spanish. The panel heading above proves that a real conflict was
+      // recorded; this assertion checks the actionable retry control.
+      await expect(page.getByRole('button', { name: /retry|reintentar/i })).toBeVisible();
     } finally {
       try {
         await page.context().setOffline(false);
