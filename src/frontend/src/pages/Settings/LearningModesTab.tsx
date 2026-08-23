@@ -375,8 +375,9 @@ export function LearningModesTab() {
               {editingModeId === -1 ? t('learningModes.createNew', 'Create New Mode') : t('learningModes.editMode', 'Edit Mode')}
             </h4>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('learningModes.name', 'Name')}</label>
+              <label htmlFor="learning-mode-name" className="block text-sm font-medium text-gray-700 mb-1">{t('learningModes.name', 'Name')}</label>
               <input
+                id="learning-mode-name"
                 value={modeForm.name}
                 onChange={(event) => setModeForm({ ...modeForm, name: event.target.value })}
                 className="w-full p-2 border rounded-lg"
@@ -384,8 +385,9 @@ export function LearningModesTab() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('learningModes.key', 'Key (Internal ID)')}</label>
+              <label htmlFor="learning-mode-key" className="block text-sm font-medium text-gray-700 mb-1">{t('learningModes.key', 'Key (Internal ID)')}</label>
               <input
+                id="learning-mode-key"
                 value={modeForm.key}
                 onChange={(event) => setModeForm({ ...modeForm, key: event.target.value })}
                 className="w-full p-2 border rounded-lg"
@@ -395,8 +397,9 @@ export function LearningModesTab() {
               <p className="text-xs text-gray-500 mt-1">{t('learningModes.keyHelp', 'Unique identifier for this mode.')}</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('learningModes.description', 'Description')}</label>
+              <label htmlFor="learning-mode-description" className="block text-sm font-medium text-gray-700 mb-1">{t('learningModes.description', 'Description')}</label>
               <input
+                id="learning-mode-description"
                 value={modeForm.description}
                 onChange={(event) => setModeForm({ ...modeForm, description: event.target.value })}
                 className="w-full p-2 border rounded-lg"

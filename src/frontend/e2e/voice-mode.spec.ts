@@ -22,7 +22,7 @@ async function toggleAndSave(page: import('@playwright/test').Page) {
   const putResponse = page.waitForResponse(
     (r) => r.url().includes('/api/auth/preferences') && r.request().method() === 'PUT',
   );
-  await page.getByRole('button', { name: /Save Preferences|Guardar preferencias/i }).click();
+  await page.getByRole('button', { name: /Save Voice Settings|Guardar ajustes de voz/i }).click();
   const putBody = await (await putResponse).json();
   expect(putBody.voice_mode_enabled).toBe(target);
 

@@ -123,6 +123,24 @@ const replayControllers = new Set<AbortController>();
 let replayGeneration = 0;
 let activeFlush: Promise<void> | null = null;
 
+function accessTokenIsExpired(token: string | null): boolean {
+  // The server remains the authority for signature validation. This local
+  // check only decides whether a 401 may use the refresh-token flow; an
+  // unexpired token that the server rejected (for example, a forged token)
+  // must log out instead of being silently replaced.
+  if (!token) return true;
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return false;
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    const decoded = JSON.parse(atob(padded));
+    return typeof decoded.exp === 'number' && decoded.exp * 1000 <= Date.now();
+  } catch {
+    return false;
+  }
+}
+
 function persistQueue(): void {
   const durableEntries: Array<{
     item: QueuedRequest;
@@ -248,7 +266,18 @@ function restorePersistedQueue(): void {
 }
 
 function requestQueueFlush(): Promise<void> {
-  if (activeFlush) return activeFlush;
+  if (activeFlush) {
+    // An initial auth-ready flush can observe an empty queue while an offline
+    // mutation is added immediately afterwards. Do not let the online event
+    // return that already-completed flush and leave the new item stuck.
+    if (queue.length === 0 || replayControllers.size > 0 || !getAuthState().user?.id) {
+      return activeFlush;
+    }
+    const pendingFlush = activeFlush;
+    return pendingFlush.then(async () => {
+      if (queue.length > 0 && getAuthState().user?.id) await requestQueueFlush();
+    });
+  }
   const flush = flushQueue().finally(() => {
     if (activeFlush === flush) activeFlush = null;
   });
@@ -375,7 +404,7 @@ api.interceptors.response.use(
     if (status === 401 && !isAuthFlowEndpoint(error.config?.url) && !isOfflineReplay) {
       const alreadyRetried = Boolean(error.config?.[RETRIED_AFTER_REFRESH]);
       const { logout, refreshAccessToken } = getAuthState();
-      if (!alreadyRetried && refreshAccessToken) {
+      if (!alreadyRetried && refreshAccessToken && accessTokenIsExpired(getAuthState().token ?? null)) {
         try {
           // The refresh token outlives the access token (7 days vs 2 hours);
           // silently extending the session keeps long-running users logged in

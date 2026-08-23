@@ -482,8 +482,9 @@ export function Symbols() {
       <div ref={formRef} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 space-y-4">
         <div className="grid gap-4 md:grid-cols-2">
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('label')}</label>
+            <label htmlFor="symbol-label" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('label')}</label>
             <input
+              id="symbol-label"
               value={form.label}
               onChange={(e) => setForm(prev => ({ ...prev, label: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"

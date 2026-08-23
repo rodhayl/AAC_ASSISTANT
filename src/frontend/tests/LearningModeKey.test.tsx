@@ -174,9 +174,8 @@ describe('Learning mode dropdown', () => {
         '/learning/start',
         expect.objectContaining({
           mode_key: 'practice',
-          // The page localizes the default topic via t('topics.general'); the
-          // i18n mock returns the key itself, so assert that it is forwarded.
-          topic: 'topics.general',
+          // Topic is an API contract and remains stable across UI locales.
+          topic: 'general conversation',
           purpose: 'practice',
         }),
         expect.anything(),

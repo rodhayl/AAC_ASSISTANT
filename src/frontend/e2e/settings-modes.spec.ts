@@ -15,14 +15,14 @@ test.describe('Learning Modes Settings', () => {
 
     await openForm(page);
 
-    await page.getByPlaceholder('e.g. Daily Conversation').fill(name);
-    await page.getByPlaceholder('e.g. daily_conversation').fill(key);
-    await page.getByPlaceholder('Brief description for the user').fill('New Desc');
-    await page.getByPlaceholder('Instructions for the AI on how to behave in this mode...').fill('New Prompt');
+    await page.locator('#learning-mode-name').fill(name);
+    await page.locator('#learning-mode-key').fill(key);
+    await page.locator('#learning-mode-description').fill('New Desc');
+    await page.locator('#mode-prompt-instruction').fill('New Prompt');
 
     await page.getByRole('button', { name: /Save Mode|Guardar modo/i }).click();
 
-    await expect(page.getByText('Mode created successfully')).toBeVisible();
+    await expect(page.getByText(/Mode created successfully|Modo creado correctamente/i)).toBeVisible();
     // The freshly created mode is listed (name appears in the row).
     await expect(page.getByText(name, { exact: true })).toBeVisible();
   });
@@ -35,24 +35,24 @@ test.describe('Learning Modes Settings', () => {
 
     // Create a custom mode first so the edit flow has a real row to target.
     await openForm(page);
-    await page.getByPlaceholder('e.g. Daily Conversation').fill(name);
-    await page.getByPlaceholder('e.g. daily_conversation').fill(key);
-    await page.getByPlaceholder('Brief description for the user').fill('Desc');
-    await page.getByPlaceholder('Instructions for the AI on how to behave in this mode...').fill('Prompt');
+    await page.locator('#learning-mode-name').fill(name);
+    await page.locator('#learning-mode-key').fill(key);
+    await page.locator('#learning-mode-description').fill('Desc');
+    await page.locator('#mode-prompt-instruction').fill('Prompt');
     await page.getByRole('button', { name: /Save Mode|Guardar modo/i }).click();
-    await expect(page.getByText('Mode created successfully')).toBeVisible();
+    await expect(page.getByText(/Mode created successfully|Modo creado correctamente/i)).toBeVisible();
 
     const row = page.locator('div.border.border-gray-200').filter({ hasText: name }).first();
     await expect(row).toBeVisible();
-    await row.getByRole('button', { name: `Edit ${name}` }).click();
+    await row.getByRole('button', { name: new RegExp(`(?:Edit|Editar) ${name}`, 'i') }).click();
 
-    await page.getByPlaceholder('e.g. Daily Conversation').fill(updatedName);
-    await page.getByPlaceholder('Brief description for the user').fill('Desc Updated');
+    await page.locator('#learning-mode-name').fill(updatedName);
+    await page.locator('#learning-mode-description').fill('Desc Updated');
 
     // The key is immutable on edit.
-    await expect(page.getByPlaceholder('e.g. daily_conversation')).toBeDisabled();
+    await expect(page.locator('#learning-mode-key')).toBeDisabled();
 
     await page.getByRole('button', { name: /Save Mode|Guardar modo/i }).click();
-    await expect(page.getByText('Mode updated successfully')).toBeVisible();
+    await expect(page.getByText(/Mode updated successfully|Modo actualizado correctamente/i)).toBeVisible();
   });
 });

@@ -47,7 +47,7 @@ test.describe('Extended Features', () => {
 
       // Create a new symbol via the library form.
       await page.getByRole('button', { name: /new symbol|nuevo símbolo/i }).click();
-      await page.getByPlaceholder('e.g., Hola').fill(label);
+      await page.locator('#symbol-label').fill(label);
       await page.getByRole('button', { name: /create symbol|crear símbolo/i }).click();
       await expect(
         page.locator('div.flex.flex-col.gap-2', { hasText: label }).first(),
@@ -57,7 +57,7 @@ test.describe('Extended Features', () => {
       const card = page.locator('div.flex.flex-col.gap-2', { hasText: label }).first();
       await card.getByRole('button', { name: /edit|editar/i }).click();
       const newLabel = `${label} v2`;
-      await page.getByPlaceholder('e.g., Hola').fill(newLabel);
+      await page.locator('#symbol-label').fill(newLabel);
       await page.getByRole('button', { name: /save|guardar/i }).click();
       await expect(
         page.locator('div.flex.flex-col.gap-2', { hasText: newLabel }).first(),

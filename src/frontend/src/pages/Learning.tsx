@@ -230,9 +230,11 @@ export function Learning() {
   }, [addToast, t, user, voiceEnabled]);
 
   const handleNewConversation = useCallback(async () => {
-    await startActivity(t('topics.general'), 'practice');
+    // The topic is an API value, not presentation text. Keep the canonical
+    // backend key stable while the UI remains free to translate its label.
+    await startActivity('general conversation', 'practice');
     setShowHistory(false);
-  }, [startActivity, t]);
+  }, [startActivity]);
   // Submit an answer; the store auto-requests the next adaptive question.
   const answerAndContinue = useCallback(async (answer: string) => {
     if (!currentSession) return;
