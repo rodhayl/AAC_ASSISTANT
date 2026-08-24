@@ -86,7 +86,8 @@ export function Communication() {
   // its welcome message would keep the old topic.
   useEffect(() => {
     if (!currentBoard || currentBoard.id !== activeBoardId) return;
-    if (currentSession?.board_id === currentBoard.id) return;
+    if (!currentSession) return;
+    if (currentSession.board_id === currentBoard.id) return;
     resetSession();
   }, [activeBoardId, currentBoard?.id, currentSession?.board_id, currentSession?.session_id, resetSession]);
 

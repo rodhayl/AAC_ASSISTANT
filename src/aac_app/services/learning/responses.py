@@ -144,15 +144,32 @@ class ResponseProcessingMixin:
 
     Analyze if the student's answer is correct. Consider:
     1. Exact matches
-    2. Semantic similarity
-    3. Partial understanding
+    2. Semantic similarity (accept answers that mean the same thing even when worded differently)
+    3. Partial understanding (give credit for partially correct answers)
 
-    Provide:
-    1. is_correct (true/false)
-    2. confidence (0.0-1.0)
-    3. encouraging_feedback (2 sentences max, be very positive and encouraging)
+    Reply ONLY with a JSON object. No markdown, no explanations.
+    Example: {{"is_correct": true, "confidence": 0.85, "encouraging_feedback": "¡Muy bien! Entendiste el concepto."}}
+    {lang_instruction}"""
 
-    Format as JSON. {lang_instruction}"""
+                    # Schema to guarantee the LLM returns every required field
+                    analysis_schema = {
+                        "type": "object",
+                        "properties": {
+                            "is_correct": {
+                                "type": "boolean",
+                                "description": "Whether the student's answer is correct",
+                            },
+                            "confidence": {
+                                "type": "number",
+                                "description": "Confidence in the assessment (0.0-1.0)",
+                            },
+                            "encouraging_feedback": {
+                                "type": "string",
+                                "description": "Encouraging feedback (1-2 sentences, be very positive)",
+                            },
+                        },
+                        "required": ["is_correct", "confidence", "encouraging_feedback"],
+                    }
 
                     try:
                         # Get personalized system prompt for this user
@@ -165,7 +182,8 @@ class ResponseProcessingMixin:
                             system=system_prompt,
                             # Keep grading deterministic and succinct; use a low temperature
                             temperature=0.3,
-                            max_tokens=150,
+                            max_tokens=200,
+                            json_schema=analysis_schema,
                         )
                     except Exception:
                         analysis = json.dumps(
@@ -179,9 +197,22 @@ class ResponseProcessingMixin:
 
                     # Parse analysis (tolerating markdown fences / prose)
                     analysis_data = extract_json_object(analysis)
-                    if analysis_data is None:
-                        logger.error(f"Failed to parse analysis JSON: {analysis}")
-                        # Fallback analysis
+                    # If the LLM returned malformed JSON or the result is missing
+                    # the required is_correct field, fall back to deterministic
+                    # exact-match grading so the student's answer is never silently
+                    # marked wrong just because the LLM used a different key name.
+                    raw_correct = analysis_data.get("is_correct") if analysis_data else None
+                    if analysis_data is None or (
+                        not isinstance(raw_correct, bool)
+                        and not (isinstance(raw_correct, str) and raw_correct.strip().lower() in ("true", "false"))
+                    ):
+                        if analysis_data is None:
+                            logger.error(f"Failed to parse analysis JSON: {analysis}")
+                        else:
+                            logger.error(
+                                "LLM answer evaluation missing required 'is_correct' field; "
+                                f"got keys: {list(analysis_data.keys())}"
+                            )
                         analysis_data = self._exact_match_analysis(
                             student_response,
                             last_question,
@@ -189,10 +220,10 @@ class ResponseProcessingMixin:
                             user_lang,
                             miss_confidence=0.0,
                         )
+                        raw_correct = analysis_data["is_correct"]
 
                     # LLM JSON is untrusted input. Normalize its fields before
                     # using them for scores, persistence, or the response model.
-                    raw_correct = analysis_data.get("is_correct")
                     if isinstance(raw_correct, bool):
                         normalized_correct = raw_correct
                     elif isinstance(raw_correct, str):

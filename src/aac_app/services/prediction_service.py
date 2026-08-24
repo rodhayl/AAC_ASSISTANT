@@ -15,6 +15,32 @@ from ..services.runtime_translation import normalize_language_code, translate_te
 from ..services.symbol_analytics import SymbolAnalytics
 from ..services.symbol_catalog import category_is_noun, standard_library_labels
 
+# Labels matching these patterns are internal dev artifacts — never suggest them.
+_BAD_LABEL_SUBSTRINGS: tuple[str, ...] = (
+    "frontend-",
+    "comm-",
+    "node_modules",
+    "dist/",
+    "build/",
+    "src-",
+)
+
+
+def _label_looks_bad(label: str) -> bool:
+    """True when a label is clearly an internal path/id, not a real symbol."""
+    lower = (label or "").strip().lower()
+    if not lower:
+        return True
+    if len(lower) > 50:
+        return True
+    if any(p in lower for p in _BAD_LABEL_SUBSTRINGS):
+        return True
+    if "/" in lower or "\\" in lower:
+        return True
+    # More than 3 hyphens is almost certainly a path/id, not a word.
+    return lower.count("-") > 3
+
+
 # Punctuation appended after all real suggestions (only when they fit).
 PUNCTUATION: tuple[str, ...] = (".", ",", "?", "!")
 
@@ -164,6 +190,9 @@ class _PredictionContext:
             and symbol_id > 0
             and symbol_id not in self.allowed_symbol_ids
         ):
+            return
+        # Skip labels that are clearly internal paths/dev artifacts.
+        if _label_looks_bad(label):
             return
         localized_label = self.localize_label(label, symbol_language)
         normalized_label = self.normalize_label(localized_label)

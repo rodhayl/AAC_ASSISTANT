@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Sparkles, Brain, Type, User, Play, FileText, Plus, MapPin, Image as ImageIcon } from 'lucide-react';
+import { Sparkles, Brain, Type, User, Play, FileText, Plus, MapPin } from 'lucide-react';
 import api from '../../lib/api';
 import { SymbolImage } from '../common/SymbolImage';
 import { useLearningStore } from '../../store/learningStore';
@@ -296,17 +296,25 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
                 >
                   <div className={`absolute top-1.5 left-1.5 w-2 h-2 rounded-full ${categoryStyle.dot} opacity-80`} aria-hidden="true" />
                   <div className="h-[60%] w-full flex items-center justify-center mb-1">
-                    {suggestion.image_path ? (
-                      <SymbolImage
-                        imagePath={suggestion.image_path}
-                        alt={suggestion.label}
-                        className="h-full w-auto object-contain"
-                      />
-                    ) : (
-                      <div className={`flex items-center justify-center ${isPunctuation ? 'text-2xl' : 'text-base'} font-bold ${suggestion.color ? 'text-gray-900' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {isPunctuation ? suggestion.label : <ImageIcon className="w-4 h-4 opacity-60" />}
-                      </div>
-                    )}
+                    <SymbolImage
+                      imagePath={suggestion.image_path}
+                      alt={suggestion.label}
+                      className="h-full w-auto object-contain"
+                      fallbackText={isPunctuation ? undefined : suggestion.label}
+                      fallbackBg={
+                        isPunctuation
+                          ? undefined
+                          : suggestion.category === 'verbs'
+                            ? 'bg-emerald-100 dark:bg-emerald-900/40'
+                            : suggestion.category === 'nouns'
+                              ? 'bg-amber-100 dark:bg-amber-900/40'
+                              : suggestion.category === 'pronouns' || suggestion.category === 'social'
+                                ? 'bg-indigo-100 dark:bg-indigo-900/40'
+                                : suggestion.category === 'food' || suggestion.category === 'drinks'
+                                  ? 'bg-orange-100 dark:bg-orange-900/40'
+                                  : undefined
+                      }
+                    />
                   </div>
                   <span className={`text-xs font-bold leading-tight text-center w-full px-1 ${isPunctuation ? 'sr-only' : ''} ${suggestion.color ? 'text-gray-900' : 'text-gray-900 dark:text-gray-100'} line-clamp-2`}>
                     {suggestion.label}

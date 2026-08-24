@@ -42,7 +42,8 @@ a = Analysis(
     + collect_data_files("faster_whisper"),
     hiddenimports=collect_submodules("src.aac_app")
     + collect_submodules("src.api")
-    + collect_submodules("faster_whisper"),
+    + collect_submodules("faster_whisper")
+    + collect_submodules("kokoro_onnx"),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

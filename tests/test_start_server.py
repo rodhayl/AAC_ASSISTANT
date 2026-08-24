@@ -116,24 +116,30 @@ def test_frontend_dependencies_are_missing_without_node_modules(tmp_path):
     assert start_server._frontend_dependencies_need_install(frontend) is True
 
 
-def test_frontend_dependencies_are_reused_until_manifests_change(tmp_path):
+def test_frontend_dependencies_detects_hash_mismatch(tmp_path):
     frontend = tmp_path / "src" / "frontend"
     node_modules = frontend / "node_modules"
     node_modules.mkdir(parents=True)
-    for name in ("package.json", "package-lock.json"):
-        (frontend / name).write_text("{}", encoding="utf-8")
-    stamp = node_modules / ".package-lock.json"
-    stamp.write_text("{}", encoding="utf-8")
-    os.utime(stamp, (1, 1))
+    lockfile = frontend / "package-lock.json"
+    lockfile.write_text('{"dependencies": {"react": "^18"}}', encoding="utf-8")
 
-    assert start_server._frontend_dependencies_need_install(frontend) is True
+    import hashlib
+    hash_a = hashlib.sha256(lockfile.read_bytes()).hexdigest()
+    hash_stamp = node_modules / ".package-lock-hash"
+    hash_stamp.write_text(hash_a)
 
-    current_time = max(
-        (frontend / "package.json").stat().st_mtime,
-        (frontend / "package-lock.json").stat().st_mtime,
-    )
-    os.utime(stamp, (current_time + 1, current_time + 1))
+    # Hash matches → no reinstall needed
     assert start_server._frontend_dependencies_need_install(frontend) is False
 
-    os.utime(frontend / "package-lock.json", (current_time + 2, current_time + 2))
+    # Update lockfile → hash no longer matches → reinstall needed
+    lockfile.write_text('{"dependencies": {"react": "^19"}}', encoding="utf-8")
     assert start_server._frontend_dependencies_need_install(frontend) is True
+
+    # Write new hash → match again
+    hash_b = hashlib.sha256(lockfile.read_bytes()).hexdigest()
+    hash_stamp.write_text(hash_b)
+    assert start_server._frontend_dependencies_need_install(frontend) is False
+
+    # Touching mtime should NOT trigger reinstall (the old bug)
+    os.utime(lockfile, None)
+    assert start_server._frontend_dependencies_need_install(frontend) is False

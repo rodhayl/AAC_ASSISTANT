@@ -218,18 +218,30 @@ def kokoro_import_error() -> str | None:
 
 
 def kokoro_model_dir() -> Path:
-    """Return the directory where Kokoro model files are cached."""
+    """Return the writable directory where Kokoro model files are downloaded."""
     return config.get_data_path("models/kokoro")
+
+
+def _kokoro_model_dir_read() -> Path:
+    """Return the best model directory: bundled first, then writable fallback.
+
+    Packaged releases ship the model under the read-only ``models/kokoro``
+    bundle directory so the application works fully offline.
+    """
+    bundled = config.get_bundled_models_dir()
+    if bundled is not None and (bundled / "kokoro" / KOKORO_MODEL_FILENAME).is_file():
+        return bundled / "kokoro"
+    return kokoro_model_dir()
 
 
 def kokoro_model_path() -> Path:
     """Return the expected path of the ONNX model file."""
-    return kokoro_model_dir() / KOKORO_MODEL_FILENAME
+    return _kokoro_model_dir_read() / KOKORO_MODEL_FILENAME
 
 
 def kokoro_voices_path() -> Path:
     """Return the expected path of the voices file."""
-    return kokoro_model_dir() / KOKORO_VOICES_FILENAME
+    return _kokoro_model_dir_read() / KOKORO_VOICES_FILENAME
 
 
 def model_files_present() -> bool:

@@ -60,6 +60,8 @@ def init_database(*, ensure_schema: bool = True) -> None:
         schema.ensure()
 
     with get_session() as session:
+        _cleanup_corrupted_symbols(session)
+        _deduplicate_case_insensitive_symbols(session)
         _create_sample_symbols(session)
         _create_sample_achievements(session)
         _create_default_learning_modes(session)
@@ -325,6 +327,122 @@ def _create_default_learning_modes(session: Session) -> None:
             )
         )
     logger.info("Seeded %d default learning modes", len(DEFAULT_LEARNING_MODES))
+
+
+# Patterns that identify internal dev artifacts mistaken for real symbols
+# by earlier AI generation code. Cleaned on every startup.
+_CORRUPTED_LABEL_PATTERNS: tuple[str, ...] = (
+    "frontend-",
+    "comm-",
+    "node_modules",
+    "dist/",
+    "build/",
+)
+
+
+def _cleanup_corrupted_symbols(session: Session) -> None:
+    """Delete symbols whose labels are internal dev artifacts.
+
+    Earlier AI-board-generation code could write path-like labels into the
+    symbol table.  Remove them so they stop polluting the catalog, and also
+    remove any board placements that reference them.
+    """
+    from sqlalchemy import or_
+
+    filters = [
+        Symbol.label.ilike(f"%{p}%") for p in _CORRUPTED_LABEL_PATTERNS
+    ]
+    # Also catch labels that are path separators or have excessive hyphens.
+    filters.extend([
+        Symbol.label.like("%/%"),
+        # Label has 4+ hyphens (very unlikely for real words)
+        Symbol.label.like("%-%-%-%-%"),
+    ])
+
+    corrupted = session.query(Symbol).filter(or_(*filters)).all()
+    if not corrupted:
+        return
+
+    corrupted_ids = [sym.id for sym in corrupted]
+    labels_found = [sym.label for sym in corrupted]
+    logger.info(
+        "Cleaning up {} corrupted symbol(s): {}",
+        len(corrupted),
+        labels_found,
+    )
+
+    # Remove board placements first to avoid FK constraint issues.
+    session.query(BoardSymbol).filter(
+        BoardSymbol.symbol_id.in_(corrupted_ids)
+    ).delete(synchronize_session="fetch")
+
+    # Now delete the symbols themselves.
+    for sym in corrupted:
+        session.delete(sym)
+
+    session.flush()
+    logger.info("Corrupted symbols cleaned.")
+
+
+def _deduplicate_case_insensitive_symbols(session: Session) -> None:
+    """Merge symbols whose labels differ only in case (e.g. 'Water' vs 'water').
+
+    Keeps the first symbol and reassigns board placements from duplicates."""
+    from sqlalchemy import func
+
+    rows = (
+        session.query(
+            func.lower(Symbol.label).label("lower_label"),
+            func.min(Symbol.id).label("keep_id"),
+            func.count(Symbol.id).label("cnt"),
+        )
+        .group_by(func.lower(Symbol.label))
+        .having(func.count(Symbol.id) > 1)
+        .all()
+    )
+    if not rows:
+        return
+
+    dupe_ids: set[int] = set()
+    keep_map: dict[str, int] = {}
+    for lower_label, keep_id, _cnt in rows:
+        keep_map[lower_label] = keep_id
+        all_ids = (
+            session.query(Symbol.id)
+            .filter(func.lower(Symbol.label) == lower_label, Symbol.id != keep_id)
+            .all()
+        )
+        dupe_ids.update(row[0] for row in all_ids)
+
+    if not dupe_ids:
+        return
+
+    logger.info(
+        "Merging {} case-insensitive duplicate symbol(s)",
+        len(dupe_ids),
+    )
+
+    # Reassign board placements to the kept symbol.
+    for lower_label, keep_id in keep_map.items():
+        dupes = (
+            session.query(Symbol.id)
+            .filter(func.lower(Symbol.label) == lower_label, Symbol.id != keep_id)
+            .all()
+        )
+        for (dupe_id,) in dupes:
+            session.query(BoardSymbol).filter(
+                BoardSymbol.symbol_id == dupe_id
+            ).update(
+                {BoardSymbol.symbol_id: keep_id},
+                synchronize_session="fetch",
+            )
+
+    # Delete the duplicate rows.
+    session.query(Symbol).filter(Symbol.id.in_(list(dupe_ids))).delete(
+        synchronize_session="fetch"
+    )
+    session.flush()
+    logger.info("Case-insensitive duplicates merged.")
 
 
 def _create_sample_symbols(session: Session) -> None:

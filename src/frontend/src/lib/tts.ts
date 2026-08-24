@@ -222,9 +222,12 @@ class TTSQueue {
     } else if (ttsProvider === 'kokoro' && localTTSAvailable) {
       void this.speakLocal(item, utteranceId)
     } else if (ttsProvider === 'kokoro') {
-      console.error('Kokoro TTS is selected but unavailable; no speech was produced.')
-      this.finishCurrentUtterance(false)
-      Promise.resolve().then(() => this.processNext())
+      // A previous capability check cached an unavailable result, but the
+      // engine may have become available since (model download completed,
+      // server restart, etc.). Re-check once per process so a transient
+      // startup issue does not permanently disable local neural TTS.
+      capabilityChecked = false
+      void this.waitForLocalTTS(item, utteranceId)
     } else {
       this.scheduleNoStartWatchdog(utteranceId)
       this.speakViaBrowser(item, utteranceId)

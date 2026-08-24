@@ -29,6 +29,35 @@ from src.api.routers.board_helpers import SUPPORTED_AI_PROVIDERS
 
 router = APIRouter()
 
+# Labels that match these patterns are internal dev artifacts, not real
+# symbols. Reject them so they never reach the database or suggestions.
+_INVALID_LABEL_PATTERNS: list[str] = [
+    "frontend-",
+    "comm-",
+    "node_modules",
+    "dist/",
+    "build/",
+]
+
+
+def _is_valid_symbol_label(label: str) -> bool:
+    """Return False for labels that are clearly internal paths or IDs."""
+    if not label or not label.strip():
+        return False
+    clean = label.strip()
+    if len(clean) > 50:
+        return False
+    lower = clean.lower()
+    if any(p in lower for p in _INVALID_LABEL_PATTERNS):
+        return False
+    # Reject identifiers that look like file-system paths or internal IDs
+    # (multiple consecutive hyphens, or more than 3 hyphen-delimited segments).
+    if lower.startswith("src-") or "-src-" in lower:
+        return False
+    if lower.count("-") > 3:
+        return False
+    return not ("/" in lower or "\\" in lower)
+
 
 def get_or_create_symbol(
     db: Session, label: str, symbol_key: str
@@ -38,12 +67,26 @@ def get_or_create_symbol(
     Returns ``(symbol, created)`` so callers know whether the symbol is new
     (and therefore needs embedding indexing). Reuse by label keeps AI board
     creation and AI suggestions from duplicating symbols.
+
+    Labels that look like internal dev artifacts are silently rejected
+    to prevent corrupted data from polluting predictions.
     """
-    symbol = db.query(Symbol).filter(Symbol.label == label).first()
-    if symbol is not None:
-        return symbol, False
+    if not _is_valid_symbol_label(label):
+        logger.warning(f"Rejecting invalid symbol label: {label!r}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid symbol label: {label}",
+        )
+    # Case-insensitive dedup: no more "Water" and "water" duplicates.
+    existing = (
+        db.query(Symbol)
+        .filter(func.lower(Symbol.label) == label.strip().lower())
+        .first()
+    )
+    if existing is not None:
+        return existing, False
     created = Symbol(
-        label=label,
+        label=label.strip(),
         keywords=symbol_key,
         image_path=None,  # populated by the opt-in ARASAAC image backfill
         category="generated",

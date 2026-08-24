@@ -59,6 +59,7 @@ class OpenRouterProvider(BaseLLMProvider):
         system: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 500,
+        json_schema: dict | None = None,
         **kwargs,
     ) -> str:
         """
@@ -70,6 +71,7 @@ class OpenRouterProvider(BaseLLMProvider):
             system: System prompt (optional)
             temperature: Sampling temperature
             max_tokens: Maximum tokens to generate
+            json_schema: Optional JSON schema for structured output
             **kwargs: Additional parameters
 
         Returns:
@@ -91,13 +93,26 @@ class OpenRouterProvider(BaseLLMProvider):
                 messages.append({"role": "system", "content": system})
             messages.append({"role": "user", "content": prompt})
 
-            payload = {
+            payload: dict = {
                 "model": model or self.default_model,
                 "messages": messages,
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "stream": False,
             }
+
+            # Enforce structured JSON output when a schema is requested.
+            # OpenRouter forwards response_format to providers that support it
+            # (OpenAI-compatible structured output).
+            if json_schema is not None:
+                payload["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "response",
+                        "strict": True,
+                        "schema": json_schema,
+                    },
+                }
 
             response = await self.client.post(
                 f"{self.base_url}/chat/completions", headers=headers, json=payload
