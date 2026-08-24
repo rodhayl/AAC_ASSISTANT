@@ -28,17 +28,9 @@ def main() -> int:
 
     provider = get_local_tts_provider()
     if not provider.is_installed():
-        if sys.version_info >= (3, 14):
-            # kokoro-onnx currently declares Python <3.14. The project still
-            # supports Python 3.14, where browser/system TTS is the supported
-            # output engine and startup must not fail just because this
-            # optional local provider cannot be installed.
-            print(
-                "Kokoro is unavailable on Python 3.14; browser/system TTS remains available."
-            )
-            return 0
         print(
-            "ERROR: Kokoro is unavailable. Run: uv sync --extra voice --extra tts",
+            "ERROR: Kokoro is unavailable. Run: uv sync --python 3.13 "
+            "--extra voice --extra tts",
             file=sys.stderr,
         )
         return 1

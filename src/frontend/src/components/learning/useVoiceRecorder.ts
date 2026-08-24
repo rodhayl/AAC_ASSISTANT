@@ -5,6 +5,7 @@ import type { LearningSessionResponse } from '../../types';
 interface UseVoiceRecorderOptions {
   currentSession: LearningSessionResponse | null;
   userId?: number;
+  sessionBoardId?: number;
   isLoading: boolean;
   sessionDifficulty: string;
   sessionTopic: string;
@@ -12,6 +13,7 @@ interface UseVoiceRecorderOptions {
     topic: string;
     purpose: string;
     difficulty: string;
+    board_id?: number;
   }, userId: number) => Promise<void>;
   submitVoiceAnswer: (sessionId: number, audioBlob: Blob) => Promise<void>;
   addToast: (message: string, type?: ToastType) => void;
@@ -37,6 +39,7 @@ interface UseVoiceRecorderResult {
 export function useVoiceRecorder({
   currentSession,
   userId,
+  sessionBoardId,
   isLoading,
   sessionDifficulty,
   sessionTopic,
@@ -102,6 +105,7 @@ export function useVoiceRecorder({
             topic: sessionTopic,
             purpose: 'voice',
             difficulty: sessionDifficulty,
+            board_id: sessionBoardId,
           }, userId);
         } catch (error) {
           stopStream(stream);

@@ -10,9 +10,11 @@ import { useToastStore } from '../../store/toastStore';
 interface CommunicationChatProps {
   voiceEnabled: boolean;
   onVoiceToggle: () => void;
+  boardId: number;
+  boardName: string;
 }
 
-export function CommunicationChat({ voiceEnabled, onVoiceToggle }: CommunicationChatProps) {
+export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardName }: CommunicationChatProps) {
   const { t, i18n } = useTranslation('learning');
   const user = useAuthStore((state) => state.user);
   const messages = useLearningStore((state) => state.messages);
@@ -29,6 +31,7 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle }: Communication
   const lastSpokenMessageRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const initAttempted = useRef(false);
+  const topic = boardName.trim() || t('topics.general');
 
   const resolveAssistantText = useCallback((raw: string) => {
     if (!raw) return raw;
@@ -53,15 +56,16 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle }: Communication
     if (!currentSession && user && !isLoading && !error && !initAttempted.current) {
       initAttempted.current = true;
       startSession({
-        topic: t('topics.general'),
+        topic,
         purpose: 'communication board',
-        difficulty: 'adaptive'
+        difficulty: 'adaptive',
+        board_id: boardId,
       }, user.id).catch(err => {
         console.error('Failed to auto-start session:', err);
         initAttempted.current = false;
       });
     }
-  }, [currentSession, user, startSession, isLoading, error, t]);
+  }, [currentSession, user, startSession, isLoading, error, topic, boardId]);
 
   // Auto-speak assistant messages
   useEffect(() => {
@@ -91,9 +95,10 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle }: Communication
     if (!activeSession && user) {
       try {
         await startSession({
-          topic: t('topics.general'),
+          topic,
           purpose: 'communication board',
-          difficulty: 'adaptive'
+          difficulty: 'adaptive',
+          board_id: boardId,
         }, user.id);
         activeSession = useLearningStore.getState().currentSession;
       } catch (err) {
@@ -125,7 +130,8 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle }: Communication
     submitVoiceAnswer,
     addToast,
     microphoneAccessMessage: t('errors.microphoneAccess', 'Microphone access denied'),
-    sessionTopic: t('topics.audioConversation'),
+    sessionTopic: topic,
+    sessionBoardId: boardId,
   });
 
   return (

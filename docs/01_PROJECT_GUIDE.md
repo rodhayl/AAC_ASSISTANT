@@ -123,8 +123,8 @@ supplied for isolated tests, but normal deployments use SQLite at
   faster-whisper speech provider. The source launcher prepares the Kokoro neural
   TTS runtime before starting; the browser remains an explicit alternative in
   Settings → Voice. Kokoro currently requires Python 3.13 because its release
-  declares Python `<3.14` support; Python 3.14 uses the browser/system TTS
-  fallback while retaining faster-whisper voice input.
+  declares Python `<3.14` support; `start.sh` selects Python 3.13 automatically
+  when preparing and launching the source checkout.
 - Semantic search uses fastembed embeddings and sqlite-vec in the SQLite
   database. Runtime model caches belong under `data/models/` and are never
   committed. Release builds stage the bundled fastembed and faster-whisper

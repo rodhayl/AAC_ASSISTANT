@@ -88,7 +88,10 @@ vi.mock('react-i18next', () => {
   };
 });
 
-function renderChat(overrides: Partial<typeof hoisted.learning> = {}) {
+function renderChat(
+  overrides: Partial<typeof hoisted.learning> = {},
+  boardName = 'Practice Board',
+) {
   Object.assign(hoisted.learning, {
     messages: [],
     isLoading: false,
@@ -100,7 +103,14 @@ function renderChat(overrides: Partial<typeof hoisted.learning> = {}) {
     error: null,
     ...overrides,
   });
-  return render(<CommunicationChat voiceEnabled={false} onVoiceToggle={() => {}} />);
+  return render(
+    <CommunicationChat
+      voiceEnabled={false}
+      onVoiceToggle={() => {}}
+      boardId={7}
+      boardName={boardName}
+    />,
+  );
 }
 
 describe('CommunicationChat', () => {
@@ -129,6 +139,24 @@ describe('CommunicationChat', () => {
     await waitFor(() => {
       expect(hoisted.learning.startSession).toHaveBeenCalled();
       expect(hoisted.learning.submitAnswer).toHaveBeenCalledWith('sess-1', 'hola');
+    });
+  });
+
+  it('uses the active board as the conversation topic', async () => {
+    renderChat();
+
+    const input = screen.getByPlaceholderText('Type your answer...');
+    fireEvent.change(input, { target: { value: 'hola' } });
+    fireEvent.submit(input.closest('form')!);
+
+    await waitFor(() => {
+      expect(hoisted.learning.startSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          topic: 'Practice Board',
+          board_id: 7,
+        }),
+        1,
+      );
     });
   });
 

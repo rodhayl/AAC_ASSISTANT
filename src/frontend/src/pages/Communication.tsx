@@ -48,6 +48,7 @@ export function Communication() {
   const user = useAuthStore((state) => state.user);
   const submitSymbolAnswer = useLearningStore((state) => state.submitSymbolAnswer);
   const startSession = useLearningStore((state) => state.startSession);
+  const resetSession = useLearningStore((state) => state.resetSession);
   const currentSession = useLearningStore((state) => state.currentSession);
   const isChatLoading = useLearningStore((state) => state.isLoading);
 
@@ -79,6 +80,15 @@ export function Communication() {
   // does not re-fetch the board when setSearchParams re-renders with the same
   // value (previously every board open fetched twice).
   const syncedBoardIdRef = useRef<number | null>(null);
+
+  // Communication sessions belong to the active board. Do not reuse a
+  // learning session from another board (or from the Learning page), because
+  // its welcome message would keep the old topic.
+  useEffect(() => {
+    if (!currentBoard || currentBoard.id !== activeBoardId) return;
+    if (currentSession?.board_id === currentBoard.id) return;
+    resetSession();
+  }, [activeBoardId, currentBoard?.id, currentSession?.board_id, currentSession?.session_id, resetSession]);
 
   // Helper to start activity from sidebar
   const handleStartActivity = async (topic: string, purpose: string, boardId?: number) => {
@@ -260,10 +270,12 @@ export function Communication() {
     // Start session if none exists
     if (!activeSession && user) {
       try {
+        const boardTopic = currentBoard?.name?.trim() || t('topics.general');
         await startSession({
-          topic: t('topics.general'),
+          topic: boardTopic,
           difficulty: "basic",
-          purpose: "communication board"
+          purpose: "communication board",
+          board_id: currentBoard?.id,
         }, user.id);
 
         // Get the newly created session
@@ -298,7 +310,7 @@ export function Communication() {
         addToast(t('sendToChatFailed', 'Could not send the phrase to the assistant'), 'error');
         setSentence(phrase);
       });
-  }, [sentence, currentSession, isChatLoading, submitSymbolAnswer, isChatOpen, user, startSession, addToast, t]);
+  }, [sentence, currentSession, currentBoard, isChatLoading, submitSymbolAnswer, isChatOpen, user, startSession, addToast, t]);
 
   const handleHome = useCallback(() => {
     setActiveBoardId(null);
@@ -700,6 +712,8 @@ export function Communication() {
         <CommunicationChat
           voiceEnabled={voiceEnabled}
           onVoiceToggle={handleVoiceToggle}
+          boardId={currentBoard.id}
+          boardName={currentBoard.name}
         />
       </div>
 

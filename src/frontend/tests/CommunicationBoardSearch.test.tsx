@@ -56,6 +56,7 @@ vi.mock('../src/store/learningStore', () => {
   const state = {
     submitSymbolAnswer: vi.fn(),
     startSession: vi.fn(),
+    resetSession: vi.fn(),
     currentSession: null,
     isLoading: false,
   };

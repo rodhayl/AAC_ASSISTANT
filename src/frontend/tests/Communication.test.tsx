@@ -35,6 +35,7 @@ const hoisted = vi.hoisted(() => {
   const learning = {
     submitSymbolAnswer: vi.fn(),
     startSession: vi.fn(),
+    resetSession: vi.fn(),
     currentSession: null as { session_id: string } | null,
     isLoading: false,
   };

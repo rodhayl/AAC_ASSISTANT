@@ -8,6 +8,10 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 UV_CMD=""
+# kokoro-onnx currently supports Python 3.13, but its package metadata excludes
+# Python 3.14. Keep the launcher on the compatible interpreter so the local
+# neural voice is installed instead of silently falling back to browser TTS.
+VOICE_PYTHON_VERSION="3.13"
 
 resolve_uv() {
     if command -v uv >/dev/null 2>&1; then
@@ -46,7 +50,7 @@ resolve_uv || {
 
 if [[ -n "$UV_CMD" ]]; then
     UV_SYNC_ARGS=(--no-dev --extra voice --extra tts)
-    if "$UV_CMD" run --no-sync python -m scripts.check_dev_dependencies >/dev/null 2>&1; then
+    if "$UV_CMD" run --python "$VOICE_PYTHON_VERSION" --no-sync python -m scripts.check_dev_dependencies >/dev/null 2>&1; then
         # The check is deliberately before sync: --no-dev would otherwise
         # prune an already-installed dev group before we could avoid asking.
         UV_SYNC_ARGS=(--group dev --extra voice --extra tts)
@@ -59,19 +63,24 @@ if [[ -n "$UV_CMD" ]]; then
         echo "Development dependencies are missing; skipping them in non-interactive mode."
     fi
 
-    echo "Creating/updating the Python environment and installing dependencies..."
-    "$UV_CMD" sync "${UV_SYNC_ARGS[@]}"
+    echo "Creating/updating the Python ${VOICE_PYTHON_VERSION} environment and installing dependencies..."
+    "$UV_CMD" sync --python "$VOICE_PYTHON_VERSION" "${UV_SYNC_ARGS[@]}"
     echo "Preparing voice dependencies and Kokoro model..."
-    "$UV_CMD" run --no-sync python -m scripts.ensure_voice_runtime
-    exec "$UV_CMD" run --no-sync python -m scripts.start_server "$@"
+    "$UV_CMD" run --python "$VOICE_PYTHON_VERSION" --no-sync python -m scripts.ensure_voice_runtime
+    exec "$UV_CMD" run --python "$VOICE_PYTHON_VERSION" --no-sync python -m scripts.start_server "$@"
 fi
 
 if [[ -x ".venv/bin/python" ]]; then
     # Offline fallback for an already provisioned checkout when uv itself is
     # temporarily unavailable. A fresh checkout never reaches this branch.
-    echo "uv is unavailable; using the existing Python environment."
-    ".venv/bin/python" -m scripts.ensure_voice_runtime
-    exec ".venv/bin/python" -m scripts.start_server "$@"
+    if ".venv/bin/python" -c 'import sys; raise SystemExit(sys.version_info[:2] != (3, 13))'; then
+        echo "uv is unavailable; using the existing Python 3.13 environment."
+        ".venv/bin/python" -m scripts.ensure_voice_runtime
+        exec ".venv/bin/python" -m scripts.start_server "$@"
+    fi
+    echo "ERROR: the existing .venv is not Python 3.13, which is required for Kokoro." >&2
+    echo "Install uv or recreate the environment with: uv sync --python 3.13 --extra tts" >&2
+    exit 1
 fi
 
 echo "ERROR: uv could not be installed automatically and no .venv/bin/python exists." >&2
