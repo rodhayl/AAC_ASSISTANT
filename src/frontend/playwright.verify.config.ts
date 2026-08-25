@@ -1,12 +1,14 @@
 import { defineConfig, devices } from '@playwright/test';
 
+/**
+ * Minimal config for standalone verification specs (e.g. groq-verify.spec.ts)
+ * that handle their own login. Unlike playwright.config.ts this has no
+ * `setup` project dependency, so it does not require the student/teacher demo
+ * accounts to exist.
+ */
 export default defineConfig({
   testDir: './e2e',
-  globalSetup: './e2e/global-setup.ts',
-  // groq-verify.spec.ts is a manual browser-verification spec that needs a
-  // real Groq API key (E2E_GROQ_API_KEY) and the local admin account; keep it
-  // out of the standard CI suite. Run it with playwright.verify.config.ts.
-  testIgnore: /groq-verify\.spec\.ts/,
+  testMatch: /groq-verify\.spec\.ts/,
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI,
@@ -22,19 +24,14 @@ export default defineConfig({
     actionTimeout: 15000,
     navigationTimeout: 30000,
   },
-  timeout: 120000,
+  timeout: 240000,
   expect: {
-    timeout: 15000,
+    timeout: 20000,
   },
   projects: [
-    { name: 'setup', testMatch: /.*\.setup\.ts/ },
     {
       name: 'chromium',
-      use: { 
-        ...devices['Desktop Chrome'],
-        storageState: 'playwright/.auth/student.json',
-      },
-      dependencies: ['setup'],
+      use: { ...devices['Desktop Chrome'] },
     },
   ],
 });

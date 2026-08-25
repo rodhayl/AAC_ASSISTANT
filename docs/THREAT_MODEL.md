@@ -20,7 +20,7 @@ AI/voice features may call local or third-party services.
 | User accounts, password hashes, roles | High | SQLite DB |
 | Uploaded images and audio | High | `uploads/` directory |
 | JWT signing secret | High — forges sessions if leaked | `.env` |
-| Optional API keys (OpenRouter) | High | `AppSettings` table / `.env` |
+| Optional API keys (OpenRouter, Groq) | High | `AppSettings` table / `.env` |
 | Learning sessions and achievements | Medium | SQLite DB |
 
 ## 3. Trust boundaries
@@ -35,7 +35,8 @@ flowchart LR
         Launcher["launcher.pyw"] --> API
     end
     API -.->|optional, operator-configured| Ollama["Ollama / LM Studio (local)"]
-    API -.->|optional, operator-configured| OpenRouter["OpenRouter / ARASAAC (internet)"]
+    API -.->|optional, operator-configured| OpenRouter["OpenRouter / Groq (internet)"]
+    API -.->|optional, operator-configured| ARASAAC["ARASAAC (internet)"]
 ```
 
 - **Operator machine** — the machine running the application. The operator is

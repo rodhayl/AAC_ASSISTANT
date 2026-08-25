@@ -63,9 +63,9 @@ One-time onboarding flow restricted to local loopback (`127.0.0.1`) requiring op
   explicit user-selectable alternative.
 - Role-based accounts (student / teacher / admin) with per-endpoint
   authorization.
-- Optional LLM learning questions via local services (Ollama, LM Studio) or an
-  operator-configured OpenRouter key. The core AAC experience never depends on
-  any cloud service.
+- Optional LLM learning questions via local services (Ollama, LM Studio) or a
+  cloud provider (OpenRouter or Groq) configured by the operator. The core AAC
+  experience never depends on any cloud service.
 
 ## Local-first and privacy
 
@@ -240,6 +240,8 @@ Process environment variables take precedence over the file. Key settings:
 | `AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN` | `true` | Enables interactive setup (/setup) or automatic bootstrap when no admin exists. |
 | `AAC_BOOTSTRAP_ADMIN_USERNAME` | `admin1` | Username for the first-run admin. |
 | `AAC_BOOTSTRAP_ADMIN_PASSWORD` | `Admin123` (local example) | Bootstrap password for the local first run; change it immediately after login. Use a unique strong password in shared or production deployments. |
+| `OPENROUTER_API_KEY` | *(empty)* | Optional OpenRouter API key; enables the OpenRouter cloud provider as a fallback when no key is stored in the settings UI. |
+| `GROQ_API_KEY` | *(empty)* | Optional Groq API key; enables the Groq cloud provider as a fallback when no key is stored in the settings UI. |
 
 See `docs/01_PROJECT_GUIDE.md` for the full reference.
 
@@ -251,7 +253,8 @@ flowchart LR
     API --> SQLite[("SQLite")]
     API --> Uploads[("uploads/")]
     API -.->|optional, local| Ollama["Ollama / LM Studio"]
-    API -.->|optional, configured| OpenRouter["OpenRouter / ARASAAC"]
+    API -.->|optional, configured| OpenRouter["OpenRouter / Groq"]
+    API -.->|optional, configured| ARASAAC["ARASAAC"]
 ```
 
 One FastAPI process serves the API and the built SPA. Domain logic lives in

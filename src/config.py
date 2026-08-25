@@ -124,6 +124,7 @@ class Settings(BaseSettings):
     AI_MAX_TOKENS: int = 1024
     AI_TEMPERATURE: float = 0.5
     OPENROUTER_API_KEY: str = ""
+    GROQ_API_KEY: str = ""
 
     APP_NAME: str = "AAC Assistant"
     APP_VERSION: str = "2.0.0"

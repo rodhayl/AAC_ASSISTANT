@@ -119,8 +119,11 @@ supplied for isolated tests, but normal deployments use SQLite at
   session lifecycle, question generation, response handling, summaries, and
   shared prompt helpers into small modules, with
   `LearningCompanionService` as the public service facade.
-- `src/aac_app/providers/` contains optional HTTP AI providers and the lazy
-  faster-whisper speech provider. The source launcher prepares the Kokoro neural
+- `src/aac_app/providers/` contains optional HTTP AI providers (Ollama, LM
+  Studio, OpenRouter, and Groq) and the lazy faster-whisper speech provider.
+  OpenRouter and Groq are OpenAI-compatible cloud APIs; their optional API
+  keys can be configured in Settings → AI Provider or set via
+  `OPENROUTER_API_KEY` / `GROQ_API_KEY`. The source launcher prepares the Kokoro neural
   TTS runtime before starting; the browser remains an explicit alternative in
   Settings → Voice. Kokoro currently requires Python 3.13 because its release
   declares Python `<3.14` support; `start.sh` selects Python 3.13 automatically

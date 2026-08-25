@@ -135,7 +135,9 @@ export function AiProviderTab() {
   const selectedProviderStatusMessage = (() => {
     if (!selectedHealth) return null;
     if (selectedHealth.available) {
-      return t('ai.providerReady', `${selectedProviderLabel} is available and responding.`);
+      return t('ai.providerReady', `${selectedProviderLabel} is available and responding.`, {
+        provider: selectedProviderLabel,
+      });
     }
     if (currentAiProvider === 'openrouter') {
       if (selectedHealth.reason === 'api_key_missing' || !currentOpenRouterApiKey.trim()) {
