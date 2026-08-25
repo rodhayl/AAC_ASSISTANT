@@ -18,6 +18,7 @@ from src.aac_app.models import (
     CommunicationBoard,
     LearningMode,
     Symbol,
+    SymbolUsageLog,
     User,
     UserAchievement,
 )
@@ -371,10 +372,14 @@ def _cleanup_corrupted_symbols(session: Session) -> None:
         labels_found,
     )
 
-    # Remove board placements first to avoid FK constraint issues.
+    # Remove board placements and nullify usage-log references first.
     session.query(BoardSymbol).filter(
         BoardSymbol.symbol_id.in_(corrupted_ids)
     ).delete(synchronize_session="fetch")
+
+    session.query(SymbolUsageLog).filter(
+        SymbolUsageLog.symbol_id.in_(corrupted_ids)
+    ).update({"symbol_id": None}, synchronize_session="fetch")
 
     # Now delete the symbols themselves.
     for sym in corrupted:
@@ -436,6 +441,11 @@ def _deduplicate_case_insensitive_symbols(session: Session) -> None:
                 {BoardSymbol.symbol_id: keep_id},
                 synchronize_session="fetch",
             )
+
+    # Nullify usage-log references to duplicates before deletion.
+    session.query(SymbolUsageLog).filter(
+        SymbolUsageLog.symbol_id.in_(list(dupe_ids))
+    ).update({"symbol_id": None}, synchronize_session="fetch")
 
     # Delete the duplicate rows.
     session.query(Symbol).filter(Symbol.id.in_(list(dupe_ids))).delete(
