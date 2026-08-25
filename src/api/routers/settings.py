@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from src import config
 from src.aac_app.models import AppSettings, User, UserSettings
+from src.aac_app.providers.groq_provider import GroqProvider
 from src.aac_app.providers.lmstudio_provider import LMStudioProvider
 from src.aac_app.providers.ollama_provider import OllamaProvider
 from src.aac_app.providers.openrouter_provider import OpenRouterProvider
@@ -113,6 +114,8 @@ def get_ai_settings(
             "ollama_model",
             "openrouter_model",
             "openrouter_api_key",
+            "groq_model",
+            "groq_api_key",
             "ollama_base_url",
             "lmstudio_base_url",
             "lmstudio_model",
@@ -124,6 +127,8 @@ def get_ai_settings(
     ollama_model = values.get("ollama_model") or ""
     openrouter_model = values.get("openrouter_model") or ""
     openrouter_api_key = values.get("openrouter_api_key") or ""
+    groq_model = values.get("groq_model") or ""
+    groq_api_key = values.get("groq_api_key") or ""
     ollama_base_url = values.get("ollama_base_url") or config.OLLAMA_BASE_URL
     lmstudio_base_url = values.get("lmstudio_base_url") or config.LMSTUDIO_BASE_URL
     lmstudio_model = values.get("lmstudio_model") or ""
@@ -134,19 +139,21 @@ def get_ai_settings(
         values.get("ai_temperature"), config.AI_TEMPERATURE, minimum=0.0, maximum=1.5
     )
 
-    # Mask API key for non-admins or even for admins (usually only show last few chars or empty)
-    # If admin, show full key? Or maybe better to just show it's set.
-    # For now, if admin, return it. If not, mask it.
+    # Mask API keys for non-admins (or any user; admins see the raw value so
+    # the settings form can round-trip unsaved edits).
     if current_user.user_type != "admin":
         openrouter_api_key = (
             "********" if openrouter_api_key else None
         )
+        groq_api_key = "********" if groq_api_key else None
 
     return {
         "provider": provider,
         "ollama_model": ollama_model,
         "openrouter_model": openrouter_model,
         "openrouter_api_key": openrouter_api_key,
+        "groq_model": groq_model,
+        "groq_api_key": groq_api_key,
         "ollama_base_url": ollama_base_url,
         "lmstudio_base_url": lmstudio_base_url,
         "lmstudio_model": lmstudio_model,
@@ -165,7 +172,7 @@ def update_ai_settings(
     """Update AI provider settings (admin only)"""
     # Validate provider
     provider = settings.get("provider")
-    if provider not in ["ollama", "openrouter", "lmstudio"]:
+    if provider not in ["ollama", "openrouter", "lmstudio", "groq"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=get_text(
@@ -182,7 +189,9 @@ def update_ai_settings(
         "ollama_model": 200,
         "openrouter_model": 200,
         "lmstudio_model": 200,
+        "groq_model": 200,
         "openrouter_api_key": 500,
+        "groq_api_key": 500,
         "ollama_base_url": 500,
         "lmstudio_base_url": 500,
     }
@@ -191,7 +200,7 @@ def update_ai_settings(
         if key not in settings:
             continue
         raw_value = settings[key]
-        if raw_value is None and key == "openrouter_api_key":
+        if raw_value is None and key in ("openrouter_api_key", "groq_api_key"):
             value = ""
         elif isinstance(raw_value, str):
             value = raw_value.strip()
@@ -254,10 +263,11 @@ def update_ai_settings(
                 ),
             )
 
-    # Mask API key in log
+    # Mask API keys in log
     log_settings = settings.copy()
-    if "openrouter_api_key" in log_settings:
-        log_settings["openrouter_api_key"] = "********"
+    for secret_key in ("openrouter_api_key", "groq_api_key"):
+        if secret_key in log_settings:
+            log_settings[secret_key] = "********"
 
     set_settings(db, updated_values, current_user.id)
     logger.info(f"Admin {current_user.username} updated AI settings: {log_settings}")
@@ -359,6 +369,58 @@ async def get_openrouter_models(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=get_text(
                 key="errors.provider.fetchOpenRouterModelsFailed",
+                error=str(e),
+                accept_language=(
+                    current_user.settings.ui_language if current_user.settings else None
+                ),
+            ),
+        )
+    finally:
+        await _close_provider(provider)
+
+
+@router.get("/ai/models/groq")
+async def get_groq_models(
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+    request_api_key: str | None = Header(default=None, alias="X-Groq-API-Key"),
+):
+    """Fetch available Groq models (admin only)"""
+    provider: GroqProvider | None = None
+    try:
+        # The settings form may contain a newly entered key that has not been
+        # saved yet. Prefer that request-scoped value, while preserving the
+        # saved setting as the fallback for automatic refreshes.
+        api_key = request_api_key.strip() if request_api_key else None
+        api_key = api_key or get_setting(db, "groq_api_key")
+        if not api_key:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=get_text(
+                    key="errors.provider.groqKeyMissing",
+                    accept_language=(
+                        current_user.settings.ui_language
+                        if current_user.settings
+                        else None
+                    ),
+                ),
+            )
+
+        provider = GroqProvider(api_key=api_key)
+        models_response = await provider.get_available_models()
+
+        # Groq returns {"data": [models]} like OpenRouter.
+        models_list = models_response.get("data", [])
+
+        return {"models": models_list}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching Groq models: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=get_text(
+                key="errors.provider.fetchGroqModelsFailed",
                 error=str(e),
                 accept_language=(
                     current_user.settings.ui_language if current_user.settings else None

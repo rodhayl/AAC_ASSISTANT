@@ -8,8 +8,10 @@ import type { AiOverride, AiProvider } from './types';
 interface AiProviderFieldsProps {
   provider: AiProvider;
   lmStudioModel: string;
+  groqModel: string;
   selectedModel: string;
   openRouterApiKey: string;
+  groqApiKey: string;
   ollamaBaseUrl: string;
   lmStudioBaseUrl: string;
   maxTokens: number;
@@ -17,6 +19,7 @@ interface AiProviderFieldsProps {
   ollamaModels: OllamaModel[];
   openRouterModels: OpenRouterModel[];
   lmStudioModels: OpenRouterModel[];
+  groqModels: OpenRouterModel[];
   loading: boolean;
   setAiOverride: Dispatch<SetStateAction<AiOverride>>;
   modelSearchOpen: boolean;
@@ -29,8 +32,10 @@ interface AiProviderFieldsProps {
 export function AiProviderFields({
   provider,
   lmStudioModel,
+  groqModel,
   selectedModel,
   openRouterApiKey,
+  groqApiKey,
   ollamaBaseUrl,
   lmStudioBaseUrl,
   maxTokens,
@@ -38,6 +43,7 @@ export function AiProviderFields({
   ollamaModels,
   openRouterModels,
   lmStudioModels,
+  groqModels,
   loading,
   setAiOverride,
   modelSearchOpen,
@@ -218,6 +224,101 @@ export function AiProviderFields({
             )}
             {selectedModel && !modelSearchQuery && (
               <div className="mt-1 text-sm text-gray-600">{t('ai.selected')} {selectedModel}</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {provider === 'groq' && (
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="primary-groq-api-key" className="block text-sm font-medium text-gray-700 mb-2">
+              {t('ai.groqApiKey', 'Groq API Key')}
+            </label>
+            <input
+              id="primary-groq-api-key"
+              name="primary_groq_api_key"
+              type="password"
+              value={groqApiKey}
+              onChange={(event) =>
+                setAiOverride((prev) => ({ ...prev, groq_api_key: event.target.value }))
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              placeholder="gsk_..."
+              aria-label={t('ai.groqApiKey')}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              {t('ai.getKey')}{' '}
+              <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
+                {t('ai.groqKeysUrl', 'console.groq.com/keys')}
+              </a>
+            </p>
+          </div>
+          <div className="relative">
+            <div className="flex items-center justify-between mb-2">
+              <label htmlFor="primary-groq-model-search" className="block text-sm font-medium text-gray-700">
+                {t('ai.models', 'Available Models')}
+              </label>
+              <button
+                type="button"
+                onClick={onFetchModels}
+                disabled={loading || !groqApiKey}
+                className="flex items-center space-x-1 text-indigo-600 hover:text-indigo-700 text-sm font-medium disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                <span>{t('ai.refresh', 'Refresh')}</span>
+              </button>
+            </div>
+            <input
+              id="primary-groq-model-search"
+              name="primary_groq_model_search"
+              type="text"
+              value={modelSearchQuery || groqModel}
+              onChange={(event) => {
+                setModelSearchQuery(event.target.value);
+                setModelSearchOpen(true);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                const model = groqModels.find((candidate) => candidate.id === modelSearchQuery.trim());
+                if (model) {
+                  setAiOverride((prev) => ({ ...prev, groq_model: model.id }));
+                  setModelSearchQuery('');
+                  setModelSearchOpen(false);
+                }
+              }}
+              onFocus={() => setModelSearchOpen(true)}
+              placeholder={t('ai.searchModels')}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              aria-label={t('ai.models')}
+            />
+            {modelSearchOpen && groqModels.length > 0 && (
+              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                {groqModels
+                  .filter(
+                    (model) =>
+                      model.name.toLowerCase().includes(modelSearchQuery.toLowerCase()) ||
+                      model.id.toLowerCase().includes(modelSearchQuery.toLowerCase()),
+                  )
+                  .map((model) => (
+                    <button
+                      type="button"
+                      key={model.id}
+                      onClick={() => {
+                        setAiOverride((prev) => ({ ...prev, groq_model: model.id }));
+                        setModelSearchQuery('');
+                        setModelSearchOpen(false);
+                      }}
+                      className="w-full text-left px-4 py-2 hover:bg-indigo-50 transition-colors"
+                    >
+                      <div className="font-medium">{model.name}</div>
+                      <div className="text-xs text-gray-500">{model.id}</div>
+                    </button>
+                  ))}
+              </div>
+            )}
+            {groqModel && !modelSearchQuery && (
+              <div className="mt-1 text-sm text-gray-600">{t('ai.selected')} {groqModel}</div>
             )}
           </div>
         </div>

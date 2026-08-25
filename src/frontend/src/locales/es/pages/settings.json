@@ -101,6 +101,8 @@
     "ollamaDesc": "LLM local",
     "openrouter": "OpenRouter",
     "openrouterDesc": "API en la nube",
+    "groq": "Groq",
+    "groqDesc": "API en la nube",
     "saveOk": "¡Ajustes guardados!",
     "ollamaUrl": "URL base de Ollama",
     "models": "Modelos disponibles",
@@ -157,6 +159,10 @@
       }
     },
     "keysUrl": "openrouter.ai/keys",
+    "groqKeysUrl": "console.groq.com/keys",
+    "groqApiKey": "Clave API de Groq",
+    "groqApiKeyMissing": "Falta la clave API de Groq.",
+    "groqUnavailable": "Groq está configurado pero no respondió. Revisa la clave API, la cuenta o la red.",
     "lmstudioUrl": "URL base de LM Studio",
     "lmstudioDefault": "Predeterminada: {{url}}",
     "selectModel": "Seleccionar modelo",
@@ -179,6 +185,7 @@
     "fetchOllamaFailed": "No se pudieron obtener los modelos de Ollama",
     "fetchOpenRouterFailed": "No se pudieron obtener los modelos de OpenRouter",
     "fetchLmStudioFailed": "No se pudieron obtener los modelos de LM Studio",
+    "fetchGroqFailed": "No se pudieron obtener los modelos de Groq",
     "autoSave": "Los ajustes de IA se guardan automáticamente."
   },
   "learningModes": {

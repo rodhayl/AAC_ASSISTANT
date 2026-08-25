@@ -2,12 +2,16 @@ import { create } from 'zustand';
 import api, { extractError } from '../lib/api';
 import i18n from '../i18n/index';
 
+export type AiProviderId = 'ollama' | 'openrouter' | 'lmstudio' | 'groq';
+
 export interface AISettings {
-  provider: 'ollama' | 'openrouter' | 'lmstudio';
+  provider: AiProviderId;
   ollama_model: string;
   openrouter_model: string;
   lmstudio_model: string;
+  groq_model: string;
   openrouter_api_key?: string;
+  groq_api_key?: string;
   ollama_base_url: string;
   lmstudio_base_url: string;
   // Global LLM behavior controls
@@ -44,6 +48,7 @@ interface SettingsState {
   ollamaModels: OllamaModel[];
   openRouterModels: OpenRouterModel[];
   lmStudioModels: OpenRouterModel[];
+  groqModels: OpenRouterModel[];
   loading: boolean;
   error: string | null;
 
@@ -53,6 +58,7 @@ interface SettingsState {
   fetchOllamaModels: () => Promise<void>;
   fetchOpenRouterModels: (apiKey?: string) => Promise<void>;
   fetchLmStudioModels: () => Promise<void>;
+  fetchGroqModels: (apiKey?: string) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => {
@@ -60,7 +66,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
   // endpoint, state key, and failure message differ.
   const fetchModelList = async (
     endpoint: string,
-    stateKey: 'ollamaModels' | 'openRouterModels' | 'lmStudioModels',
+    stateKey: 'ollamaModels' | 'openRouterModels' | 'lmStudioModels' | 'groqModels',
     failureMessage: string,
     headers?: Record<string, string>
   ) => {
@@ -81,6 +87,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
     ollamaModels: [],
     openRouterModels: [],
     lmStudioModels: [],
+    groqModels: [],
     loading: false,
     error: null,
 
@@ -125,6 +132,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
 
     fetchLmStudioModels: async () => {
       await fetchModelList('/settings/ai/models/lmstudio', 'lmStudioModels', tSettings('settings:ai.fetchLmStudioFailed', 'Failed to fetch LM Studio models'));
+    },
+
+    fetchGroqModels: async (apiKey?: string) => {
+      const headers = apiKey?.trim()
+        ? { 'X-Groq-API-Key': apiKey.trim() }
+        : undefined;
+      await fetchModelList(
+        '/settings/ai/models/groq',
+        'groqModels',
+        tSettings('settings:ai.fetchGroqFailed', 'Failed to fetch Groq models'),
+        headers,
+      );
     },
   };
 });

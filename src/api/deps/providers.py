@@ -13,6 +13,7 @@ from fastapi import Depends
 from loguru import logger
 
 from src import config
+from src.aac_app.providers.groq_provider import GroqProvider
 from src.aac_app.providers.lmstudio_provider import LMStudioProvider
 from src.aac_app.providers.local_speech_provider import (
     DEFAULT_STT_MODEL,
@@ -33,6 +34,7 @@ from src.api import deps as deps_package
 _ollama_provider: OllamaProvider | None = None
 _openrouter_provider: OpenRouterProvider | None = None
 _lmstudio_provider: LMStudioProvider | None = None
+_groq_provider: GroqProvider | None = None
 _speech_provider: LocalSpeechProvider | None = None
 _achievement_system: AchievementSystem | None = None
 _vector_store: LocalVectorStore | None = None
@@ -371,7 +373,34 @@ def get_lmstudio_provider() -> LMStudioProvider:
     return provider
 
 
-def get_llm_provider() -> OllamaProvider | OpenRouterProvider | LMStudioProvider:
+def get_groq_provider() -> GroqProvider:
+    """Return the configured Groq provider singleton."""
+    global _groq_provider
+
+    api_key = _get_setting_value("groq_api_key", "")
+    model = _get_setting_value("groq_model", "")
+    discarded: Any | None = None
+
+    with _provider_lock:
+        if _groq_provider is None:
+            logger.info("Initializing global GroqProvider")
+            _groq_provider = GroqProvider(api_key=api_key, model=model)
+        elif (
+            _groq_provider.api_key != api_key
+            or _groq_provider._configured_model != model
+        ):
+            logger.info("Groq settings changed. Re-initializing provider.")
+            discarded = _groq_provider
+            _groq_provider = GroqProvider(api_key=api_key, model=model)
+        provider = _groq_provider
+
+    _close_llm_provider(discarded)
+    return provider
+
+
+def get_llm_provider() -> (
+    OllamaProvider | OpenRouterProvider | LMStudioProvider | GroqProvider
+):
     """Return the configured primary LLM provider."""
     provider_type = _get_setting_value("ai_provider", "ollama")
 
@@ -379,6 +408,8 @@ def get_llm_provider() -> OllamaProvider | OpenRouterProvider | LMStudioProvider
         provider = get_openrouter_provider()
     elif provider_type == "lmstudio":
         provider = get_lmstudio_provider()
+    elif provider_type == "groq":
+        provider = get_groq_provider()
     else:
         provider = get_ollama_provider()
 
@@ -650,7 +681,7 @@ def _init_speech_provider_sync() -> bool:
 
 def _init_llm_provider_sync() -> bool:
     """Initialize the configured LLM client without making a network call."""
-    global _ollama_provider, _openrouter_provider, _lmstudio_provider
+    global _ollama_provider, _openrouter_provider, _lmstudio_provider, _groq_provider
     try:
         start = time.time()
         provider_type = _get_setting_value("ai_provider", "ollama")
@@ -677,6 +708,12 @@ def _init_llm_provider_sync() -> bool:
                             "lmstudio_base_url", config.LMSTUDIO_BASE_URL
                         ),
                         model=_get_setting_value("lmstudio_model", ""),
+                    )
+                elif provider_type == "groq":
+                    discarded_llm = _groq_provider
+                    _groq_provider = GroqProvider(
+                        api_key=_get_setting_value("groq_api_key", ""),
+                        model=_get_setting_value("groq_model", ""),
                     )
                 else:
                     discarded_llm = _ollama_provider
@@ -931,7 +968,7 @@ def is_ready() -> bool:
 
 def reset_providers() -> None:
     """Reset all provider singletons and warmup state."""
-    global _ollama_provider, _openrouter_provider, _lmstudio_provider
+    global _ollama_provider, _openrouter_provider, _lmstudio_provider, _groq_provider
     global _speech_provider, _achievement_system, _vector_store
     global _startup_state, _startup_generation
 
@@ -941,9 +978,11 @@ def reset_providers() -> None:
             ollama_provider = _ollama_provider
             openrouter_provider = _openrouter_provider
             lmstudio_provider = _lmstudio_provider
+            groq_provider = _groq_provider
             _ollama_provider = None
             _openrouter_provider = None
             _lmstudio_provider = None
+            _groq_provider = None
             speech_provider = _speech_provider
             _speech_provider = None
             _achievement_system = None
@@ -951,7 +990,12 @@ def reset_providers() -> None:
 
     _release_speech_provider(speech_provider)
     _detach_vector_store_for_reset(close=True)
-    for provider in (ollama_provider, openrouter_provider, lmstudio_provider):
+    for provider in (
+        ollama_provider,
+        openrouter_provider,
+        lmstudio_provider,
+        groq_provider,
+    ):
         _close_llm_provider(provider)
     logger.info("All providers reset")
 
@@ -967,12 +1011,18 @@ def reset_speech_provider() -> None:
 
 def reset_llm_providers() -> None:
     """Close and drop cached LLM clients after settings changes."""
-    global _ollama_provider, _openrouter_provider, _lmstudio_provider
+    global _ollama_provider, _openrouter_provider, _lmstudio_provider, _groq_provider
     with _provider_lock:
-        providers = (_ollama_provider, _openrouter_provider, _lmstudio_provider)
+        providers = (
+            _ollama_provider,
+            _openrouter_provider,
+            _lmstudio_provider,
+            _groq_provider,
+        )
         _ollama_provider = None
         _openrouter_provider = None
         _lmstudio_provider = None
+        _groq_provider = None
     for provider in providers:
         _close_llm_provider(provider)
 
@@ -987,18 +1037,24 @@ async def reset_providers_async(
     that store in that case would race the worker; the process is exiting, so
     retaining the store is safer than use-after-close.
     """
-    global _ollama_provider, _openrouter_provider, _lmstudio_provider
+    global _ollama_provider, _openrouter_provider, _lmstudio_provider, _groq_provider
     global _speech_provider, _achievement_system, _vector_store
     global _startup_state, _startup_generation
 
     with _startup_lock:
         _startup_generation += 1
         with _provider_lock:
-            llm_providers = (_ollama_provider, _openrouter_provider, _lmstudio_provider)
+            llm_providers = (
+                _ollama_provider,
+                _openrouter_provider,
+                _lmstudio_provider,
+                _groq_provider,
+            )
             speech_provider = _speech_provider
             _ollama_provider = None
             _openrouter_provider = None
             _lmstudio_provider = None
+            _groq_provider = None
             _speech_provider = None
             _achievement_system = None
         _startup_state = _new_startup_state()

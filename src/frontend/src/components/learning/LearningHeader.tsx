@@ -1,6 +1,6 @@
 import { Cloud, Cpu, Grid as GridIcon, HelpCircle, Sparkles, Volume2, VolumeX } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { DifficultyOverride } from '../../store/learningStore';
+import type { DifficultyOverride, LLMProviderId } from '../../store/learningStore';
 
 interface LearningHeaderProps {
   showHistory: boolean;
@@ -12,7 +12,7 @@ interface LearningHeaderProps {
   availableModes: Array<{ id: number; name: string; key: string; description: string }>;
   difficultyOverride: DifficultyOverride;
   onDifficultyChange: (difficulty: DifficultyOverride) => void;
-  providerInUse?: 'ollama' | 'openrouter' | 'lmstudio';
+  providerInUse?: LLMProviderId;
   providerNotice: string | null;
   voiceEnabled: boolean;
   onToggleVoice: () => void;
@@ -121,8 +121,10 @@ export function LearningHeader({
               ? 'OpenRouter'
               : providerInUse === 'lmstudio'
                 ? 'LM Studio'
-                : 'Ollama';
-          const isCloud = providerInUse === 'openrouter';
+                : providerInUse === 'groq'
+                  ? 'Groq'
+                  : 'Ollama';
+          const isCloud = providerInUse === 'openrouter' || providerInUse === 'groq';
           return (
             <span
               className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border ${

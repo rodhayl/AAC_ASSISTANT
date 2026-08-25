@@ -10,7 +10,9 @@ const settingsState = vi.hoisted(() => ({
     ollama_model: 'qwen:7b-q4_0',
     openrouter_model: '',
     lmstudio_model: '',
+    groq_model: '',
     openrouter_api_key: '',
+    groq_api_key: '',
     ollama_base_url: 'http://localhost:11434',
     lmstudio_base_url: 'http://localhost:1234/v1',
     max_tokens: 1024,
@@ -20,6 +22,7 @@ const settingsState = vi.hoisted(() => ({
   ollamaModels: [],
   openRouterModels: [],
   lmStudioModels: [],
+  groqModels: [],
   loading: false,
   error: null as string | null,
   fetchAISettings: vi.fn(),
@@ -27,6 +30,7 @@ const settingsState = vi.hoisted(() => ({
   fetchOllamaModels: vi.fn(),
   fetchOpenRouterModels: vi.fn(),
   fetchLmStudioModels: vi.fn(),
+  fetchGroqModels: vi.fn(),
 }));
 
 vi.mock('../src/lib/api', () => ({
@@ -157,6 +161,7 @@ describe('AiProviderTab', () => {
         ollama_model: 'student-visible-model',
         openrouter_model: '',
         lmstudio_model: '',
+        groq_model: '',
         ollama_base_url: 'http://localhost:11434',
         lmstudio_base_url: 'http://localhost:1234/v1',
         max_tokens: 512,

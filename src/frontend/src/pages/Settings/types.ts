@@ -24,14 +24,16 @@ export interface LearningMode {
   auto_ask_enabled?: boolean;
 }
 
-export type AiProvider = 'ollama' | 'openrouter' | 'lmstudio';
+export type AiProvider = 'ollama' | 'openrouter' | 'lmstudio' | 'groq';
 
 export interface AiOverride {
   provider?: AiProvider;
   ollama_model?: string;
   openrouter_model?: string;
   lmstudio_model?: string;
+  groq_model?: string;
   openrouter_api_key?: string;
+  groq_api_key?: string;
   ollama_base_url?: string;
   lmstudio_base_url?: string;
   max_tokens?: number;
@@ -83,4 +85,5 @@ export interface ProviderHealth {
   ollama?: { available: boolean; configured?: boolean; reason?: string | null };
   openrouter?: { available: boolean; configured?: boolean; reason?: string | null };
   lmstudio?: { available: boolean; configured?: boolean; reason?: string | null };
+  groq?: { available: boolean; configured?: boolean; reason?: string | null };
 }

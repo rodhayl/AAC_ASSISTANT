@@ -24,12 +24,14 @@ from .auth import (
 )
 from .db import get_db
 from .providers import (
+    GroqProvider,
     LMStudioProvider,
     LocalSpeechProvider,
     OllamaProvider,
     OpenRouterProvider,
     get_achievement_system,
     get_board_generation_service,
+    get_groq_provider,
     get_learning_service,
     get_llm_provider,
     get_lmstudio_provider,
@@ -52,6 +54,7 @@ __all__ = [
     "clear_settings_cache",
     "get_board_or_404",
     "get_learning_session_or_404",
+    "GroqProvider",
     "LMStudioProvider",
     "LocalSpeechProvider",
     "OllamaProvider",
@@ -69,6 +72,7 @@ __all__ = [
     "validate_grid_resize",
     "validate_linked_board",
     "get_db",
+    "get_groq_provider",
     "get_learning_service",
     "get_llm_provider",
     "get_lmstudio_provider",

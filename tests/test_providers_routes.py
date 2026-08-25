@@ -20,8 +20,8 @@ pytestmark = pytest.mark.usefixtures("setup_test_db")
 def test_providers_health_reports_all_providers(
     admin_user, admin_token, monkeypatch
 ):
-    """Health summarizes ollama/openrouter/lmstudio without raising."""
-    for name in ("ollama", "openrouter", "lmstudio"):
+    """Health summarizes ollama/openrouter/lmstudio/groq without raising."""
+    for name in ("ollama", "openrouter", "lmstudio", "groq"):
         mock = MagicMock()
         mock.is_available.return_value = False
         mock.is_configured.return_value = False
@@ -34,9 +34,10 @@ def test_providers_health_reports_all_providers(
     )
     assert response.status_code == 200
     data = response.json()
-    assert set(data) == {"ollama", "openrouter", "lmstudio"}
+    assert set(data) == {"ollama", "openrouter", "lmstudio", "groq"}
     assert data["openrouter"]["reason"] == "api_key_missing"
     assert data["lmstudio"]["reason"] == "base_url_missing"
+    assert data["groq"]["reason"] == "api_key_missing"
 
 
 def test_update_stt_model_rejects_unsupported_model(admin_user, admin_token):

@@ -51,11 +51,13 @@
     "invalidTokenClaims": "Reclamaciones de token inválidas",
     "userNotFound": "Usuario no encontrado",
     "provider": {
-      "invalid": "El proveedor debe ser 'ollama' o 'openrouter'",
+      "invalid": "El proveedor debe ser 'ollama', 'openrouter', 'lmstudio' o 'groq'",
       "unavailable": "El servicio de Ollama no está disponible. Asegúrate de que Ollama se esté ejecutando.",
       "fetchModelsFailed": "Error al obtener modelos de Ollama: {{error}}",
       "openRouterKeyMissing": "Clave API de OpenRouter no configurada. Configúrala en ajustes primero.",
-      "fetchOpenRouterModelsFailed": "Error al obtener modelos de OpenRouter: {{error}}"
+      "fetchOpenRouterModelsFailed": "Error al obtener modelos de OpenRouter: {{error}}",
+      "groqKeyMissing": "Clave API de Groq no configurada. Configúrala en ajustes primero.",
+      "fetchGroqModelsFailed": "Error al obtener modelos de Groq: {{error}}"
     },
     "settings": {
       "maxTokensPositive": "max_tokens debe ser un entero positivo",
@@ -125,7 +127,7 @@
       "unauthorizedAssignments": "No autorizado para ver estas asignaciones",
       "cannotCreateBoardForOther": "No se puede crear tablero para otro usuario",
       "aiProviderRequired": "Se requieren proveedor y modelo de IA cuando la IA está habilitada",
-      "aiProviderInvalid": "El proveedor de IA debe ser 'ollama', 'openrouter' o 'lmstudio'",
+      "aiProviderInvalid": "El proveedor de IA debe ser 'ollama', 'openrouter', 'lmstudio' o 'groq'",
       "boardNotFound": "Tablero no encontrado",
       "invalidPosition": "La posición del símbolo ({{x}}, {{y}}) está fuera de la cuadrícula {{cols}}x{{rows}}",
       "gridTooSmall": "La cuadrícula {{cols}}x{{rows}} es demasiado pequeña para los símbolos existentes",

@@ -51,11 +51,13 @@
     "invalidTokenClaims": "Invalid token claims",
     "userNotFound": "User not found",
     "provider": {
-      "invalid": "Provider must be 'ollama' or 'openrouter'",
+      "invalid": "Provider must be 'ollama', 'openrouter', 'lmstudio', or 'groq'",
       "unavailable": "Ollama service is not available. Please ensure Ollama is running.",
       "fetchModelsFailed": "Failed to fetch Ollama models: {{error}}",
       "openRouterKeyMissing": "OpenRouter API key not configured. Please set it in settings first.",
-      "fetchOpenRouterModelsFailed": "Failed to fetch OpenRouter models: {{error}}"
+      "fetchOpenRouterModelsFailed": "Failed to fetch OpenRouter models: {{error}}",
+      "groqKeyMissing": "Groq API key not configured. Please set it in settings first.",
+      "fetchGroqModelsFailed": "Failed to fetch Groq models: {{error}}"
     },
     "settings": {
       "maxTokensPositive": "max_tokens must be a positive integer",
@@ -125,7 +127,7 @@
       "unauthorizedAssignments": "Not authorized to view these assignments",
       "cannotCreateBoardForOther": "Cannot create board for another user",
       "aiProviderRequired": "AI provider and model are required when AI is enabled",
-      "aiProviderInvalid": "AI provider must be 'ollama', 'openrouter', or 'lmstudio'",
+      "aiProviderInvalid": "AI provider must be 'ollama', 'openrouter', 'lmstudio', or 'groq'",
       "boardNotFound": "Board not found",
       "invalidPosition": "Symbol position ({{x}}, {{y}}) is outside the {{cols}}x{{rows}} board grid",
       "gridTooSmall": "The {{cols}}x{{rows}} grid is too small for the existing symbols",

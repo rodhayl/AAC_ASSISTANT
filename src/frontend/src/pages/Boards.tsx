@@ -116,7 +116,9 @@ export function Boards() {
     ? aiSettings?.openrouter_model
     : primaryProvider === 'lmstudio'
       ? aiSettings?.lmstudio_model
-      : aiSettings?.ollama_model;
+      : primaryProvider === 'groq'
+        ? aiSettings?.groq_model
+        : aiSettings?.ollama_model;
   const primaryReady = Boolean(primaryProvider && primaryModel);
   const resolvedProvider = primaryProvider;
   const resolvedModel = primaryModel;

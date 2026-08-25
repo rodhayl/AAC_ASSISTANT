@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from src import config
 from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol, User
+from src.aac_app.providers.groq_provider import GroqProvider
 from src.aac_app.providers.lmstudio_provider import LMStudioProvider
 from src.aac_app.providers.ollama_provider import OllamaProvider
 from src.aac_app.providers.openrouter_provider import OpenRouterProvider
@@ -368,7 +369,7 @@ async def create_board(
 
 def _resolve_provider_for_board(
     board: CommunicationBoard, db: Session
-) -> OllamaProvider | OpenRouterProvider | LMStudioProvider | None:
+) -> OllamaProvider | OpenRouterProvider | LMStudioProvider | GroqProvider | None:
     """
     Build an LLM provider instance from the board or primary global settings.
     """
@@ -381,6 +382,8 @@ def _resolve_provider_for_board(
             model_name = get_setting_value("openrouter_model", "")
         elif provider_type == "lmstudio":
             model_name = get_setting_value("lmstudio_model", "")
+        elif provider_type == "groq":
+            model_name = get_setting_value("groq_model", "")
         else:
             model_name = get_setting_value("ollama_model", "")
 
@@ -395,6 +398,9 @@ def _resolve_provider_for_board(
     if provider_type == "lmstudio":
         base_url = get_setting_value("lmstudio_base_url", config.LMSTUDIO_BASE_URL)
         return LMStudioProvider(base_url=base_url, model=model_name)
+    if provider_type == "groq":
+        api_key = get_setting_value("groq_api_key", "")
+        return GroqProvider(api_key=api_key, model=model_name)
 
     base_url = get_setting_value("ollama_base_url", config.OLLAMA_BASE_URL)
     return OllamaProvider(base_url=base_url, model=model_name)

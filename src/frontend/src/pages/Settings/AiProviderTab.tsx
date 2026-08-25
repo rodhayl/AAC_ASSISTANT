@@ -17,6 +17,7 @@ export function AiProviderTab() {
   const ollamaModels = useSettingsStore((state) => state.ollamaModels)
   const openRouterModels = useSettingsStore((state) => state.openRouterModels)
   const lmStudioModels = useSettingsStore((state) => state.lmStudioModels)
+  const groqModels = useSettingsStore((state) => state.groqModels)
   const loading = useSettingsStore((state) => state.loading)
   const error = useSettingsStore((state) => state.error)
   const fetchAISettings = useSettingsStore((state) => state.fetchAISettings)
@@ -24,6 +25,7 @@ export function AiProviderTab() {
   const fetchOllamaModels = useSettingsStore((state) => state.fetchOllamaModels)
   const fetchOpenRouterModels = useSettingsStore((state) => state.fetchOpenRouterModels)
   const fetchLmStudioModels = useSettingsStore((state) => state.fetchLmStudioModels)
+  const fetchGroqModels = useSettingsStore((state) => state.fetchGroqModels)
   const isAdmin = user?.user_type === 'admin';
   const [aiOverride, setAiOverride] = useState<AiOverride>({});
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -87,13 +89,17 @@ export function AiProviderTab() {
   const currentOllamaModel = aiOverride.ollama_model ?? aiSettings?.ollama_model ?? '';
   const currentOpenRouterModel = aiOverride.openrouter_model ?? aiSettings?.openrouter_model ?? '';
   const currentLmStudioModel = aiOverride.lmstudio_model ?? aiSettings?.lmstudio_model ?? '';
+  const currentGroqModel = aiOverride.groq_model ?? aiSettings?.groq_model ?? '';
   const currentSelectedModel =
     currentAiProvider === 'ollama'
       ? currentOllamaModel
       : currentAiProvider === 'lmstudio'
         ? currentLmStudioModel
-        : currentOpenRouterModel;
+        : currentAiProvider === 'groq'
+          ? currentGroqModel
+          : currentOpenRouterModel;
   const currentOpenRouterApiKey = aiOverride.openrouter_api_key ?? aiSettings?.openrouter_api_key ?? '';
+  const currentGroqApiKey = aiOverride.groq_api_key ?? aiSettings?.groq_api_key ?? '';
   const currentOllamaBaseUrl = aiOverride.ollama_base_url ?? aiSettings?.ollama_base_url ?? config.OLLAMA_BASE_URL;
   const currentLmStudioBaseUrl =
     aiOverride.lmstudio_base_url ?? aiSettings?.lmstudio_base_url ?? config.LMSTUDIO_BASE_URL;
@@ -114,13 +120,17 @@ export function AiProviderTab() {
       ? health?.ollama
       : currentAiProvider === 'openrouter'
         ? health?.openrouter
-        : health?.lmstudio;
+        : currentAiProvider === 'groq'
+          ? health?.groq
+          : health?.lmstudio;
   const selectedProviderLabel =
     currentAiProvider === 'ollama'
       ? t('ai.ollama')
       : currentAiProvider === 'openrouter'
         ? t('ai.openrouter')
-        : t('ai.lmstudio', 'LM Studio');
+        : currentAiProvider === 'groq'
+          ? t('ai.groq', 'Groq')
+          : t('ai.lmstudio', 'LM Studio');
 
   const selectedProviderStatusMessage = (() => {
     if (!selectedHealth) return null;
@@ -139,6 +149,15 @@ export function AiProviderTab() {
     if (currentAiProvider === 'lmstudio') {
       return t('ai.lmstudioUnavailable', 'LM Studio is not reachable at the configured base URL.');
     }
+    if (currentAiProvider === 'groq') {
+      if (selectedHealth.reason === 'api_key_missing' || !currentGroqApiKey.trim()) {
+        return t('ai.groqApiKeyMissing', 'Groq API key is missing.');
+      }
+      return t(
+        'ai.groqUnavailable',
+        'Groq is configured but did not respond. Check the API key, account, or network.'
+      );
+    }
     return t('ai.ollamaUnavailable', 'Ollama is not reachable at the configured base URL.');
   })();
 
@@ -150,6 +169,8 @@ export function AiProviderTab() {
       fetchOpenRouterModels();
     } else if (currentAiProvider === 'lmstudio' && lmStudioModels.length === 0) {
       fetchLmStudioModels();
+    } else if (currentAiProvider === 'groq' && groqModels.length === 0) {
+      fetchGroqModels(currentGroqApiKey);
     }
   }, [
     isAdmin,
@@ -157,9 +178,12 @@ export function AiProviderTab() {
     ollamaModels.length,
     openRouterModels.length,
     lmStudioModels.length,
+    groqModels.length,
+    currentGroqApiKey,
     fetchOllamaModels,
     fetchOpenRouterModels,
     fetchLmStudioModels,
+    fetchGroqModels,
   ]);
 
   const handleFetchModels = async () => {
@@ -168,6 +192,8 @@ export function AiProviderTab() {
         await fetchOllamaModels();
       } else if (currentAiProvider === 'openrouter') {
         await fetchOpenRouterModels(currentOpenRouterApiKey);
+      } else if (currentAiProvider === 'groq') {
+        await fetchGroqModels(currentGroqApiKey);
       } else {
         await fetchLmStudioModels();
       }
@@ -181,7 +207,9 @@ export function AiProviderTab() {
     ollama_model: overrides.ollama_model ?? aiSettings?.ollama_model ?? '',
     openrouter_model: overrides.openrouter_model ?? aiSettings?.openrouter_model ?? '',
     lmstudio_model: overrides.lmstudio_model ?? aiSettings?.lmstudio_model ?? '',
+    groq_model: overrides.groq_model ?? aiSettings?.groq_model ?? '',
     openrouter_api_key: overrides.openrouter_api_key ?? aiSettings?.openrouter_api_key ?? '',
+    groq_api_key: overrides.groq_api_key ?? aiSettings?.groq_api_key ?? '',
     ollama_base_url: overrides.ollama_base_url ?? aiSettings?.ollama_base_url ?? config.OLLAMA_BASE_URL,
     lmstudio_base_url: overrides.lmstudio_base_url ?? aiSettings?.lmstudio_base_url ?? config.LMSTUDIO_BASE_URL,
     max_tokens: overrides.max_tokens ?? aiSettings?.max_tokens ?? config.AI_MAX_TOKENS,
@@ -269,7 +297,9 @@ export function AiProviderTab() {
                     ? visibleAiSettings.ollama_model
                     : visibleAiSettings.provider === 'lmstudio'
                       ? visibleAiSettings.lmstudio_model
-                      : visibleAiSettings.openrouter_model) || t('ai.notConfigured', 'Not configured')}
+                      : visibleAiSettings.provider === 'groq'
+                        ? visibleAiSettings.groq_model
+                        : visibleAiSettings.openrouter_model) || t('ai.notConfigured', 'Not configured')}
                 </div>
               </div>
             </div>
@@ -352,14 +382,31 @@ export function AiProviderTab() {
                 <div className="text-xs text-gray-600 dark:text-gray-400">{t('ai.localOpenAIAPI', 'Local OpenAI-API')}</div>
               </div>
             </button>
+            <button
+              type="button"
+              onClick={() => setAiOverride((prev) => ({ ...prev, provider: 'groq' }))}
+              className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${
+                currentAiProvider === 'groq'
+                  ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/30'
+                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
+              }`}
+            >
+              <Cloud className="w-6 h-6 text-indigo-600" />
+              <div className="text-left">
+                <div className="font-medium text-gray-900 dark:text-gray-100">{t('ai.groq', 'Groq')}</div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">{t('ai.groqDesc', 'Cloud API')}</div>
+              </div>
+            </button>
           </div>
         </div>
 
         <AiProviderFields
           provider={currentAiProvider}
           lmStudioModel={currentLmStudioModel}
+          groqModel={currentGroqModel}
           selectedModel={currentSelectedModel}
           openRouterApiKey={currentOpenRouterApiKey}
+          groqApiKey={currentGroqApiKey}
           ollamaBaseUrl={currentOllamaBaseUrl}
           lmStudioBaseUrl={currentLmStudioBaseUrl}
           maxTokens={currentMaxTokens}
@@ -367,6 +414,7 @@ export function AiProviderTab() {
           ollamaModels={ollamaModels}
           openRouterModels={openRouterModels}
           lmStudioModels={lmStudioModels}
+          groqModels={groqModels}
           loading={loading}
           setAiOverride={setAiOverride}
           modelSearchOpen={modelSearchOpen}

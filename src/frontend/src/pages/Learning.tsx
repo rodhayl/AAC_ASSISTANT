@@ -395,9 +395,11 @@ export function Learning() {
     const providerName =
       last.provider === 'openrouter'
         ? 'OpenRouter'
-        : last.provider === 'lmstudio'
-          ? 'LM Studio'
-          : 'Ollama';
+        : last.provider === 'groq'
+          ? 'Groq'
+          : last.provider === 'lmstudio'
+            ? 'LM Studio'
+            : 'Ollama';
     setProviderNotice(t('providerSwitched', 'Switched to {{provider}}', { provider: providerName }));
     const timeoutId = setTimeout(() => setProviderNotice(null), 3000);
     return () => clearTimeout(timeoutId);

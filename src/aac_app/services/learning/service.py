@@ -8,6 +8,7 @@ from src import config
 
 from ...db import session_scope
 from ...models import UserSettings
+from ...providers.groq_provider import GroqProvider
 from ...providers.lmstudio_provider import LMStudioProvider
 from ...providers.local_speech_provider import LocalSpeechProvider
 from ...providers.ollama_provider import OllamaProvider
@@ -59,10 +60,13 @@ class LearningCompanionService(
         if self.default_temperature > 1.5:
             self.default_temperature = 1.5
 
-        # Determine provider type. LM Studio must be checked first: its provider
-        # subclasses OpenRouterProvider (OpenAI-compatible API), so an isinstance
-        # check against OpenRouter alone would mislabel LM Studio sessions.
-        if isinstance(llm_provider, LMStudioProvider):
+        # Determine provider type. Subclass providers (LM Studio, Groq) must be
+        # checked before OpenRouterProvider: they share its OpenAI-compatible
+        # API, so an isinstance check against OpenRouter alone would mislabel
+        # them.
+        if isinstance(llm_provider, GroqProvider):
+            self.provider_type = "groq"
+        elif isinstance(llm_provider, LMStudioProvider):
             self.provider_type = "lmstudio"
         elif isinstance(llm_provider, OpenRouterProvider):
             self.provider_type = "openrouter"

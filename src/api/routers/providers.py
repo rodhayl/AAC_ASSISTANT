@@ -28,6 +28,7 @@ from src.api.deps import (
     get_current_active_user,
     get_current_admin_user,
     get_db,
+    get_groq_provider,
     get_lmstudio_provider,
     get_ollama_provider,
     get_openrouter_provider,
@@ -46,6 +47,7 @@ def providers_health(current_user: User = Depends(get_current_active_user)):
     ollama = get_ollama_provider()
     openrouter = get_openrouter_provider()
     lmstudio = get_lmstudio_provider()
+    groq = get_groq_provider()
     return {
         "ollama": {
             "available": ollama.is_available(),
@@ -61,6 +63,11 @@ def providers_health(current_user: User = Depends(get_current_active_user)):
             "available": lmstudio.is_available(),
             "configured": lmstudio.is_configured(),
             "reason": None if lmstudio.is_configured() else "base_url_missing",
+        },
+        "groq": {
+            "available": groq.is_available(),
+            "configured": groq.is_configured(),
+            "reason": None if groq.is_configured() else "api_key_missing",
         },
     }
 

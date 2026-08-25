@@ -78,7 +78,9 @@ class OpenRouterProvider(BaseLLMProvider):
             Generated text
         """
         if not self.is_configured():
-            raise ValueError("OpenRouter not configured. Please provide API key.")
+            raise ValueError(
+                f"{type(self).__name__} not configured. Please provide API key."
+            )
 
         try:
             headers = {
@@ -120,15 +122,17 @@ class OpenRouterProvider(BaseLLMProvider):
 
             if response.status_code != 200:
                 logger.error(
-                    f"OpenRouter API error: {response.status_code} - {response.text}"
+                    f"{type(self).__name__} API error: {response.status_code} - {response.text}"
                 )
-                raise Exception(f"OpenRouter API error: {response.status_code}")
+                raise Exception(
+                    f"{type(self).__name__} API error: {response.status_code}"
+                )
 
             result = response.json()
             return result["choices"][0]["message"]["content"]
 
         except Exception as e:
-            logger.error(f"OpenRouter generation failed: {e}")
+            logger.error(f"{type(self).__name__} generation failed: {e}")
             raise
 
     async def get_available_models(self) -> dict[str, Any]:

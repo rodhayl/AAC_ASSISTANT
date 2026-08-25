@@ -1,7 +1,7 @@
 from src.aac_app.models import BoardSymbol, CommunicationBoard
 from src.aac_app.services.runtime_translation import translate_text as _translate_symbol_text
 
-SUPPORTED_AI_PROVIDERS = ("ollama", "openrouter", "lmstudio")
+SUPPORTED_AI_PROVIDERS = ("ollama", "openrouter", "lmstudio", "groq")
 
 
 def _serialize_symbol(

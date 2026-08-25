@@ -9,8 +9,10 @@ import type {
   AnswerResponse
 } from '../types';
 
+export type LLMProviderId = 'ollama' | 'openrouter' | 'lmstudio' | 'groq';
+
 interface WithProvider {
-  provider_used?: 'ollama' | 'openrouter' | 'lmstudio';
+  provider_used?: LLMProviderId;
 }
 
 export interface SessionHistoryItem {
@@ -72,8 +74,8 @@ interface LearningState {
     content: string;
     symbolImages?: Array<{ label: string; image_path?: string; category?: string }>;
   }>;
-  providerInUse?: 'ollama' | 'openrouter' | 'lmstudio';
-  providerHistory: Array<{ provider: 'ollama' | 'openrouter' | 'lmstudio'; at: number }>;
+  providerInUse?: LLMProviderId;
+  providerHistory: Array<{ provider: LLMProviderId; at: number }>;
   sessionHistory: SessionHistoryItem[];
   isLoadingHistory: boolean;
 
