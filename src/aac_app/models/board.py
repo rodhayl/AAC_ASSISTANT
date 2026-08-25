@@ -43,7 +43,7 @@ class BoardSymbol(Base):
 
     id = Column(Integer, primary_key=True)
     board_id = Column(Integer, ForeignKey("communication_boards.id"), nullable=False)
-    symbol_id = Column(Integer, ForeignKey("symbols.id"), nullable=False)
+    symbol_id = Column(Integer, ForeignKey("symbols.id", ondelete="CASCADE"), nullable=False)
     position_x = Column(Integer, default=0)
     position_y = Column(Integer, default=0)
     size = Column(Integer, default=1)

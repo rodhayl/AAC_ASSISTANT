@@ -206,6 +206,231 @@ def _ensure_sqlite_indexes(engine: Engine) -> None:
             )
 
 
+def _ensure_foreign_key_actions(engine: Engine) -> None:
+    """Rebuild tables whose FK constraints lack ON DELETE actions.
+
+    Older releases created ``board_symbols`` and ``symbol_usage_logs`` without
+    ``ON DELETE CASCADE`` / ``ON DELETE SET NULL`` on ``symbol_id``, so deleting
+    a symbol would fail with a FOREIGN KEY constraint error.  SQLite does not
+    support ``ALTER TABLE ADD CONSTRAINT``, so this migration rebuilds the
+    affected tables with the correct FK actions and performs a one-time
+    cleanup of corrupted / duplicate symbols that accumulated under the old
+    schema.
+    """
+    if engine.dialect.name != "sqlite":
+        return
+
+    with engine.begin() as connection:
+        # Drop stale temp tables from a previous failed/interrupted migration.
+        connection.execute(text("DROP TABLE IF EXISTS _board_symbols_new"))
+        connection.execute(text("DROP TABLE IF EXISTS _symbol_usage_logs_new"))
+
+        def table_exists(table: str) -> bool:
+            row = connection.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name=:t"),
+                {"t": table},
+            ).fetchone()
+            return row is not None
+
+        def _fk_on_delete(table: str, col: str, ref_table: str) -> str | None:
+            """Return the ON DELETE action for FK from *col* → *ref_table*.id."""
+            rows = connection.execute(
+                text(f"PRAGMA foreign_key_list({table})")
+            ).fetchall()
+            # PRAGMA foreign_key_list returns:
+            #   0=id, 1=seq, 2=table, 3=from, 4=to, 5=on_update, 6=on_delete, 7=match
+            for row in rows:
+                if row[3] == col and row[2] == ref_table:
+                    return row[6]  # on_delete
+            return None
+
+        # ── board_symbols: symbol_id → symbols.id needs ON DELETE CASCADE ──
+        if table_exists("board_symbols") and _fk_on_delete(
+            "board_symbols", "symbol_id", "symbols"
+        ) != "CASCADE":
+            # Only rebuild if the legacy table has the minimum required columns.
+            _bs_cols = {
+                r[1]
+                for r in connection.execute(
+                    text("PRAGMA table_info(board_symbols)")
+                ).fetchall()
+            }
+            if {"id", "board_id", "symbol_id"} <= _bs_cols:
+                logger.info(
+                    "Migration: rebuilding board_symbols with ON DELETE CASCADE"
+                )
+                connection.execute(
+                    text(
+                        "CREATE TABLE _board_symbols_new ("
+                        "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                        "  board_id INTEGER NOT NULL REFERENCES communication_boards(id),"
+                        "  symbol_id INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,"
+                        "  position_x INTEGER DEFAULT 0,"
+                        "  position_y INTEGER DEFAULT 0,"
+                        "  size INTEGER DEFAULT 1,"
+                        "  is_visible BOOLEAN DEFAULT 1,"
+                        "  custom_text VARCHAR(100),"
+                        "  linked_board_id INTEGER REFERENCES communication_boards(id),"
+                        "  color VARCHAR(20),"
+                        "  order_index INTEGER DEFAULT 0"
+                        ")"
+                    )
+                )
+                _bs_mapping = [
+                    ("id", "id"),
+                    ("board_id", "board_id"),
+                    ("symbol_id", "symbol_id"),
+                    ("position_x", "0"),
+                    ("position_y", "0"),
+                    ("size", "1"),
+                    ("is_visible", "1"),
+                    ("custom_text", "NULL"),
+                    ("linked_board_id", "NULL"),
+                    ("color", "NULL"),
+                    ("order_index", "0"),
+                ]
+                _bs_sel = ", ".join(
+                    c if c in _bs_cols else f for c, f in _bs_mapping
+                )
+                connection.execute(
+                    text(f"INSERT INTO _board_symbols_new SELECT {_bs_sel} FROM board_symbols")
+                )
+                connection.execute(text("DROP TABLE board_symbols"))
+                connection.execute(text("ALTER TABLE _board_symbols_new RENAME TO board_symbols"))
+
+        # ── symbol_usage_logs: symbol_id → symbols.id needs ON DELETE SET NULL ──
+        if table_exists("symbol_usage_logs") and _fk_on_delete(
+            "symbol_usage_logs", "symbol_id", "symbols"
+        ) != "SET NULL":
+            _sul_cols = {
+                r[1]
+                for r in connection.execute(
+                    text("PRAGMA table_info(symbol_usage_logs)")
+                ).fetchall()
+            }
+            if {"id", "user_id", "symbol_label", "position_in_utterance",
+                 "utterance_length", "timestamp"} <= _sul_cols:
+                logger.info(
+                    "Migration: rebuilding symbol_usage_logs with ON DELETE SET NULL"
+                )
+                connection.execute(
+                    text(
+                        "CREATE TABLE _symbol_usage_logs_new ("
+                        "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                        "  user_id INTEGER NOT NULL REFERENCES users(id),"
+                        "  session_id INTEGER REFERENCES learning_sessions(id),"
+                        "  symbol_id INTEGER REFERENCES symbols(id) ON DELETE SET NULL,"
+                        "  symbol_label VARCHAR(50) NOT NULL,"
+                        "  symbol_category VARCHAR(50),"
+                        "  position_in_utterance INTEGER NOT NULL,"
+                        "  utterance_length INTEGER NOT NULL,"
+                        "  semantic_intent VARCHAR(20),"
+                        "  timestamp DATETIME NOT NULL,"
+                        "  context_topic VARCHAR(100)"
+                        ")"
+                    )
+                )
+                _sul_mapping = [
+                    ("id", "id"),
+                    ("user_id", "user_id"),
+                    ("session_id", "NULL"),
+                    ("symbol_id", "symbol_id"),
+                    ("symbol_label", "symbol_label"),
+                    ("symbol_category", "NULL"),
+                    ("position_in_utterance", "position_in_utterance"),
+                    ("utterance_length", "utterance_length"),
+                    ("semantic_intent", "NULL"),
+                    ("timestamp", "timestamp"),
+                    ("context_topic", "NULL"),
+                ]
+                _sul_sel = ", ".join(
+                    c if c in _sul_cols else f for c, f in _sul_mapping
+                )
+                connection.execute(
+                    text(
+                        f"INSERT INTO _symbol_usage_logs_new "
+                        f"SELECT {_sul_sel} FROM symbol_usage_logs"
+                    )
+                )
+                connection.execute(text("DROP TABLE symbol_usage_logs"))
+                connection.execute(
+                    text("ALTER TABLE _symbol_usage_logs_new RENAME TO symbol_usage_logs")
+                )
+
+        # ── One-time cleanup: remove symbols with corrupted labels ──
+        _corrupted_patterns = [
+            "%frontend-%",
+            "%comm-%",
+            "%node_modules%",
+            "%dist/%",
+            "%build/%",
+            "%/%/",
+            "%-%-%-%-%",
+        ]
+        pattern_clauses = " OR ".join(
+            [f"label LIKE '{p}'" for p in _corrupted_patterns]
+        )
+        result = connection.execute(
+            text(f"SELECT id, label FROM symbols WHERE {pattern_clauses}")
+        ).fetchall()
+        if result:
+            corrupted_ids = [row[0] for row in result]
+            logger.info(
+                "Migration: removing {} corrupted symbol(s): {}",
+                len(corrupted_ids),
+                [row[1] for row in result],
+            )
+            # With ON DELETE CASCADE now active, deleting the symbol
+            # automatically removes board_symbols rows.  symbol_usage_logs
+            # has ON DELETE SET NULL so those become NULL automatically.
+            id_list = ",".join(str(i) for i in corrupted_ids)
+            connection.execute(
+                text(f"DELETE FROM symbols WHERE id IN ({id_list})")
+            )
+
+        # ── One-time cleanup: merge case-insensitive duplicate symbols ──
+        dupe_rows = connection.execute(
+            text(
+                "SELECT LOWER(label), MIN(id), COUNT(*) FROM symbols "
+                "GROUP BY LOWER(label) HAVING COUNT(*) > 1"
+            )
+        ).fetchall()
+        if dupe_rows:
+            total_dupes = sum(r[2] - 1 for r in dupe_rows)
+            logger.info(
+                "Migration: merging {} case-insensitive duplicate symbol(s)",
+                total_dupes,
+            )
+            for _lower_label, keep_id, _cnt in dupe_rows:
+                dupe_ids = [
+                    row[0]
+                    for row in connection.execute(
+                        text(
+                            "SELECT id FROM symbols "
+                            "WHERE LOWER(label) = :ll AND id != :k"
+                        ),
+                        {"ll": _lower_label, "k": keep_id},
+                    ).fetchall()
+                ]
+                if not dupe_ids:
+                    continue
+                # Reassign board_symbols.symbol_id → keep_id
+                for did in dupe_ids:
+                    connection.execute(
+                        text(
+                            "UPDATE board_symbols SET symbol_id = :k "
+                            "WHERE symbol_id = :d"
+                        ),
+                        {"k": keep_id, "d": did},
+                    )
+                # Delete the duplicates (CASCADE handles board_symbols that
+                # we already reassigned; SET NULL handles usage logs).
+                id_list = ",".join(str(i) for i in dupe_ids)
+                connection.execute(
+                    text(f"DELETE FROM symbols WHERE id IN ({id_list})")
+                )
+
+
 def ensure(engine: Engine | None = None) -> Engine:
     """Create the current schema and apply all known legacy upgrades.
 
@@ -216,5 +441,6 @@ def ensure(engine: Engine | None = None) -> Engine:
     engine = engine or create_engine_instance()
     create_tables(engine)
     _ensure_sqlite_columns(engine)
+    _ensure_foreign_key_actions(engine)
     _ensure_sqlite_indexes(engine)
     return engine
