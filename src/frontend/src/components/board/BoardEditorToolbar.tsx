@@ -53,8 +53,8 @@ export function BoardEditorToolbar({
           {status.playable ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
           <span className="text-xs font-bold uppercase tracking-wider">
             {status.playable
-              ? t('boardReady', 'Board Ready')
-              : t('boardIncomplete', '{{count}}/{{total}} Symbols', {
+              ? t('boardReady')
+              : t('boardIncomplete', {
                 count: status.count,
                 total: status.threshold,
               })}
@@ -103,11 +103,11 @@ export function BoardEditorToolbar({
             onChange={(event) => onGridChange(event.target.value)}
             className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
           >
-            <option value="2x2">{t('grid2x2', '2x2')}</option>
-            <option value="3x3">{t('grid3x3', '3x3')}</option>
-            <option value="4x4">{t('grid4x4', '4x4')}</option>
-            <option value="2x6">{t('grid2x6', '2x6')}</option>
-            <option value="4x5">{t('grid4x5', '4x5')}</option>
+            <option value="2x2">{t('grid2x2')}</option>
+            <option value="3x3">{t('grid3x3')}</option>
+            <option value="4x4">{t('grid4x4')}</option>
+            <option value="2x6">{t('grid2x6')}</option>
+            <option value="4x5">{t('grid4x5')}</option>
             {!GRID_PRESETS.includes(gridPreset) && (
               <option value={gridPreset}>{gridPreset}</option>
             )}

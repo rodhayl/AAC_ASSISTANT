@@ -63,9 +63,9 @@ export function BoardsAndTopicsSidebar({
         if (!topicName) return;
         if (!user?.id) return;
 
-        let boardName = t('boardNameDefault', 'General');
+        let boardName = t('boardNameDefault');
         if (selectedBoardId === 'custom') {
-            boardName = customPurpose.trim() || t('boardNameDefault', 'General');
+            boardName = customPurpose.trim() || t('boardNameDefault');
         } else if (selectedBoardId) {
             const board = boards.find(b => b.id.toString() === selectedBoardId);
             if (board) boardName = board.name;
@@ -75,7 +75,7 @@ export function BoardsAndTopicsSidebar({
             id: Date.now(),
             board: boardName,
             topic: topicName,
-            createdBy: user?.display_name || user?.username || t('teacherDefault', 'Teacher'),
+            createdBy: user?.display_name || user?.username || t('teacherDefault'),
         };
         addTopicHelper(user.id, topic);
         setTopicsRevision((value) => value + 1);
@@ -110,7 +110,7 @@ export function BoardsAndTopicsSidebar({
                 <button
                     onClick={onToggle}
                     className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                    title={isOpen ? t('collapseSidebar', 'Collapse sidebar') : t('expandSidebar', 'Expand sidebar')}
+                    title={isOpen ? t('collapseSidebar') : t('expandSidebar')}
                 >
                     {isOpen ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
                 </button>
@@ -123,7 +123,7 @@ export function BoardsAndTopicsSidebar({
                             <div className="space-y-3 mt-3">
                                 {/* Board Selection */}
                                 <div>
-                                    <label htmlFor="comp-board-select" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('selectBoard') || 'Board / Context'}</label>
+                                    <label htmlFor="comp-board-select" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('selectBoard')}</label>
                                     <select
                                         id="comp-board-select"
                                         value={selectedBoardId}
@@ -147,7 +147,7 @@ export function BoardsAndTopicsSidebar({
 
                                 {/* Topic Selection */}
                                 <div>
-                                    <label htmlFor="comp-topic-select" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('topics.label', { defaultValue: 'Topic' })}</label>
+                                    <label htmlFor="comp-topic-select" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('topics.label')}</label>
                                     <select
                                         id="comp-topic-select"
                                         value={topicMode === 'custom' ? 'custom' : customTopic}

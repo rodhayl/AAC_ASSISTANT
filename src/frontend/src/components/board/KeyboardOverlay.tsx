@@ -117,12 +117,12 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h3 id="keyboard-overlay-title" className="text-lg font-bold text-primary flex items-center gap-2">
-            {t('typeToSpeak', 'Type to Speak')}
+            {t('typeToSpeak')}
           </h3>
           <button 
             onClick={onClose}
             className="modal-close p-2 rounded-lg text-secondary hover:bg-surface-hover transition-colors"
-            aria-label={t('close', 'Close')}
+            aria-label={t('close')}
             data-touch-target="true"
           >
             <X className="w-6 h-6" />
@@ -133,11 +133,11 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
         <div className="p-4 flex-1 flex flex-col min-h-0">
           <textarea
             ref={inputRef}
-            aria-label={t('typeHere', 'Type something here...')}
+            aria-label={t('typeHere')}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={t('typeHere', 'Type something here...')}
+            placeholder={t('typeHere')}
             className="w-full flex-1 p-4 text-lg sm:text-2xl rounded-xl border-2 border-border focus:border-indigo-500 focus:ring-0 bg-background text-primary resize-none"
           />
           
@@ -165,7 +165,7 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
                 <div className="mb-4">
                     <div className="text-xs font-semibold text-muted uppercase mb-2 flex items-center gap-1">
                         <History className="w-3 h-3" />
-                        {t('recent', 'Recent')}
+                        {t('recent')}
                     </div>
                     <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                         {history.map((phrase, i) => (
@@ -187,7 +187,7 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
 
             <div className="flex justify-between items-center">
                 <div className="text-sm text-muted hidden sm:block">
-                    {t('pressEnterToSpeak', 'Press Enter to speak')}
+                    {t('pressEnterToSpeak')}
                 </div>
                 <div className="flex gap-3 ml-auto w-full sm:w-auto">
                     <button
@@ -195,7 +195,7 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
                         className="flex-1 sm:flex-none px-4 py-2 text-secondary hover:bg-surface-hover rounded-lg font-medium transition-colors"
                         data-touch-target="true"
                     >
-                        {t('clear', 'Clear')}
+                        {t('clear')}
                     </button>
                     <button
                         onClick={handleSpeak}
@@ -204,7 +204,7 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
                         data-touch-target="true"
                     >
                         <Volume2 className="w-5 h-5" />
-                        {t('speak', 'Speak')}
+                        {t('speak')}
                     </button>
                 </div>
             </div>

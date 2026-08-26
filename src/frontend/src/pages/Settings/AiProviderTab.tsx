@@ -129,38 +129,32 @@ export function AiProviderTab() {
       : currentAiProvider === 'openrouter'
         ? t('ai.openrouter')
         : currentAiProvider === 'groq'
-          ? t('ai.groq', 'Groq')
-          : t('ai.lmstudio', 'LM Studio');
+          ? t('ai.groq')
+          : t('ai.lmstudio');
 
   const selectedProviderStatusMessage = (() => {
     if (!selectedHealth) return null;
     if (selectedHealth.available) {
-      return t('ai.providerReady', `${selectedProviderLabel} is available and responding.`, {
+      return t('ai.providerReady', {
         provider: selectedProviderLabel,
       });
     }
     if (currentAiProvider === 'openrouter') {
       if (selectedHealth.reason === 'api_key_missing' || !currentOpenRouterApiKey.trim()) {
-        return t('ai.openrouterApiKeyMissing', 'OpenRouter API key is missing.');
+        return t('ai.openrouterApiKeyMissing');
       }
-      return t(
-        'ai.openrouterUnavailable',
-        'OpenRouter is configured but did not respond. Check the API key, account, or network.'
-      );
+      return t('ai.openrouterUnavailable');
     }
     if (currentAiProvider === 'lmstudio') {
-      return t('ai.lmstudioUnavailable', 'LM Studio is not reachable at the configured base URL.');
+      return t('ai.lmstudioUnavailable');
     }
     if (currentAiProvider === 'groq') {
       if (selectedHealth.reason === 'api_key_missing' || !currentGroqApiKey.trim()) {
-        return t('ai.groqApiKeyMissing', 'Groq API key is missing.');
+        return t('ai.groqApiKeyMissing');
       }
-      return t(
-        'ai.groqUnavailable',
-        'Groq is configured but did not respond. Check the API key, account, or network.'
-      );
+      return t('ai.groqUnavailable');
     }
-    return t('ai.ollamaUnavailable', 'Ollama is not reachable at the configured base URL.');
+    return t('ai.ollamaUnavailable');
   })();
 
   useEffect(() => {
@@ -266,12 +260,12 @@ export function AiProviderTab() {
       >
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
           <h3 id="settings-ai-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            {t('ai.readOnlyTitle', 'AI Configuration')}
+            {t('ai.readOnlyTitle')}
           </h3>
-          <p className="text-sm text-gray-500 mt-1">{t('ai.viewOnly', 'Current AI settings (View only - contact admin to change)')}</p>
+          <p className="text-sm text-gray-500 mt-1">{t('ai.viewOnly')}</p>
         </div>
         {readOnlyLoading && (
-          <div className="p-6 text-sm text-gray-500">{t('ai.loading', 'Loading AI settings...')}</div>
+          <div className="p-6 text-sm text-gray-500">{t('ai.loading')}</div>
         )}
         {readOnlyError && (
           <div className="p-6 text-sm text-red-600" role="alert">
@@ -282,7 +276,7 @@ export function AiProviderTab() {
           <div className="p-6 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <p className="block text-sm font-medium text-gray-700 mb-1">{t('ai.primaryProvider', 'Primary Provider')}</p>
+                <p className="block text-sm font-medium text-gray-700 mb-1">{t('ai.primaryProvider')}</p>
                 <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg capitalize flex items-center">
                   {visibleAiSettings.provider === 'ollama' ? (
                     <Cpu className="w-4 h-4 mr-2 text-indigo-600" />
@@ -293,7 +287,7 @@ export function AiProviderTab() {
                 </div>
               </div>
               <div>
-                <p className="block text-sm font-medium text-gray-700 mb-1">{t('ai.primaryModel', 'Primary Model')}</p>
+                <p className="block text-sm font-medium text-gray-700 mb-1">{t('ai.primaryModel')}</p>
                 <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
                   {(visibleAiSettings.provider === 'ollama'
                     ? visibleAiSettings.ollama_model
@@ -301,7 +295,7 @@ export function AiProviderTab() {
                       ? visibleAiSettings.lmstudio_model
                       : visibleAiSettings.provider === 'groq'
                         ? visibleAiSettings.groq_model
-                        : visibleAiSettings.openrouter_model) || t('ai.notConfigured', 'Not configured')}
+                        : visibleAiSettings.openrouter_model) || t('ai.notConfigured')}
                 </div>
               </div>
             </div>
@@ -380,8 +374,8 @@ export function AiProviderTab() {
             >
               <Cpu className="w-6 h-6 text-indigo-600" />
               <div className="text-left">
-                <div className="font-medium text-gray-900 dark:text-gray-100">{t('ai.lmstudio', 'LM Studio')}</div>
-                <div className="text-xs text-gray-600 dark:text-gray-400">{t('ai.localOpenAIAPI', 'Local OpenAI-API')}</div>
+                <div className="font-medium text-gray-900 dark:text-gray-100">{t('ai.lmstudio')}</div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">{t('ai.localOpenAIAPI')}</div>
               </div>
             </button>
             <button
@@ -395,8 +389,8 @@ export function AiProviderTab() {
             >
               <Cloud className="w-6 h-6 text-indigo-600" />
               <div className="text-left">
-                <div className="font-medium text-gray-900 dark:text-gray-100">{t('ai.groq', 'Groq')}</div>
-                <div className="text-xs text-gray-600 dark:text-gray-400">{t('ai.groqDesc', 'Cloud API')}</div>
+                <div className="font-medium text-gray-900 dark:text-gray-100">{t('ai.groq')}</div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">{t('ai.groqDesc')}</div>
               </div>
             </button>
           </div>
@@ -442,7 +436,7 @@ export function AiProviderTab() {
             <div className="font-medium">
               {selectedProviderLabel}:{' '}
               <span className={selectedHealth.available ? 'text-green-700' : 'text-red-700'}>
-                {selectedHealth.available ? t('ai.statusUp', 'ok') : t('ai.statusDown', 'down')}
+                {selectedHealth.available ? t('ai.statusUp') : t('ai.statusDown')}
               </span>
             </div>
             {selectedProviderStatusMessage && (
@@ -455,7 +449,7 @@ export function AiProviderTab() {
 
         <div className="flex justify-end pt-6 border-t border-gray-200">
           <p className="text-sm text-gray-500">
-            {t('ai.autoSave', 'AI settings are saved automatically.')}
+            {t('ai.autoSave')}
           </p>
         </div>
       </div>

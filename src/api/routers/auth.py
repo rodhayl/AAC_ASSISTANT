@@ -69,14 +69,20 @@ def initial_admin_setup(
     if not _is_loopback_client(client_ip):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Initial administrator setup is only permitted from local loopback (127.0.0.1 / ::1).",
+            detail=get_text(
+                accept_language=request.headers.get("accept-language"),
+                key="errors.setup.localOnly",
+            ),
         )
 
     existing_admin = db.query(User).filter(User.user_type == "admin").first()
     if existing_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Initial administrator setup has already been completed.",
+            detail=get_text(
+                accept_language=request.headers.get("accept-language"),
+                key="errors.setup.alreadyCompleted",
+            ),
         )
 
     if payload.password != payload.confirm_password:
@@ -91,7 +97,10 @@ def initial_admin_setup(
     if payload.password.strip().lower() == config.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD.lower():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The development default password is not permitted for administrator setup.",
+            detail=get_text(
+                accept_language=request.headers.get("accept-language"),
+                key="errors.setup.defaultPasswordForbidden",
+            ),
         )
 
     validate_password_strength(
@@ -151,7 +160,10 @@ def initial_admin_setup(
 
     logger.info("Initial administrator setup completed for username '{}'", admin.username)
     return schemas.SetupResponse(
-        message="Administrator account created successfully",
+        message=get_text(
+            accept_language=request.headers.get("accept-language"),
+            key="errors.setup.adminCreated",
+        ),
         user=schemas.UserResponse.model_validate(admin),
         access_token=access_token,
         token_type="bearer",

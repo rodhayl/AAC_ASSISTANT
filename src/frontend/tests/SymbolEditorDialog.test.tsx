@@ -59,7 +59,7 @@ describe('SymbolEditorDialog', () => {
     expect(screen.queryByRole('option', { name: 'Current board' })).not.toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Linked board' })).toBeInTheDocument()
     expect(screen.getByLabelText('customLabel')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'close' })).toBeInTheDocument()
     expect(fetchBoards).toHaveBeenCalledTimes(1)
   })
 })

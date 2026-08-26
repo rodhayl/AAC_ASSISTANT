@@ -38,11 +38,11 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
     if (i18n.exists(raw, { ns: 'learning' })) {
       return t(raw, {
         name: user?.display_name || user?.username || '',
-        topic: currentSession?.topic || 'general'
+        topic,
       });
     }
     return raw;
-  }, [currentSession?.topic, i18n, t, user?.display_name, user?.username]);
+  }, [i18n, t, topic, user?.display_name, user?.username]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -103,7 +103,7 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
         activeSession = useLearningStore.getState().currentSession;
       } catch (err) {
         console.error('Failed to start session for chat message:', err);
-        addToast(t('errors.sessionStartFailed', 'Could not start the conversation session'), 'error');
+        addToast(t('common:sessionStartFailed'), 'error');
         return;
       }
     }
@@ -129,7 +129,7 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
     startSession,
     submitVoiceAnswer,
     addToast,
-    microphoneAccessMessage: t('errors.microphoneAccess', 'Microphone access denied'),
+    microphoneAccessMessage: t('errors.microphoneAccess'),
     sessionTopic: topic,
     sessionBoardId: boardId,
   });
@@ -143,9 +143,9 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
             <Bot className="w-4 h-4" />
           </div>
           <div>
-            <div className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{t('aiAssistant', 'AI Assistant')}</div>
+            <div className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{t('aiAssistant')}</div>
             <div className="text-xs text-gray-500 dark:text-gray-400">
-              {t('conversationPartner', 'Conversation Partner')}
+              {t('conversationPartner')}
             </div>
           </div>
         </div>
@@ -155,7 +155,7 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
               ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
               : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
             }`}
-          title={voiceEnabled ? t('voiceOn', 'Voice On') : t('voiceOff', 'Voice Off')}
+          title={voiceEnabled ? t('voiceOn') : t('voiceOff')}
         >
           <Volume2 className={`w-4 h-4 ${!voiceEnabled && 'opacity-50'}`} />
         </button>
@@ -165,17 +165,17 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {error && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300" role="alert">
-            {t('errorPrefix', 'Error: {{message}}', { message: error })}
+            {t('errorPrefix', { message: error })}
           </div>
         )}
         {messages.length === 0 && (
           <div className="text-center text-gray-500 dark:text-gray-400 mt-10 text-sm">
-            <p>{t('startChatting', 'Start chatting using the board or type here.')}</p>
+            <p>{t('startChatting')}</p>
           </div>
         )}
 
         {messages.map((message, index) => (
-          // If the backend returns a translation key (e.g. fallbackConversation.goodMessage),
+          // Resolve backend translation keys through the active locale.
           // resolve it for display using the learning namespace.
           <div
             key={index}

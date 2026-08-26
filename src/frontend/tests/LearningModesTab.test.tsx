@@ -2,6 +2,80 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LearningModesTab } from '../src/pages/Settings/LearningModesTab';
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => {
+      const table: Record<string, string> = {
+        'tabs.learningModes': 'Learning Modes',
+        'learningModes.subtitle': 'Configure learning modes',
+        'learningModes.addNew': 'Add New Learning Mode',
+        'learningModes.createNew': 'Create New Learning Mode',
+        'learningModes.editMode': 'Edit Learning Mode',
+        'learningModes.name': 'Name',
+        'learningModes.key': 'Key',
+        'learningModes.description': 'Description',
+        'learningModes.promptInstruction': 'Prompt instruction',
+        'learningModes.namePlaceholder': 'e.g. Daily Conversation',
+        'learningModes.keyPlaceholder': 'e.g. daily_conversation',
+        'learningModes.descriptionPlaceholder': 'Description',
+        'learningModes.promptPlaceholder': 'Instructions for the AI',
+        'learningModes.promptRequired': 'System prompt instruction is required',
+        'learningModes.saveMode': 'Save Mode',
+        'learningModes.cancel': 'Cancel',
+        'learningModes.previewSystemPrompt': 'Preview System Prompt',
+        'learningModes.preview': 'Preview',
+        'learningModes.closePreview': 'Close',
+        'learningModes.student': 'Student',
+        'learningModes.noStudent': 'No student',
+        'learningModes.previewWithSample': 'Preview with sample question',
+        'learningModes.sampleQuestion': 'Sample student question',
+        'learningModes.samplePlaceholder': 'Ask a question',
+        'learningModes.run': 'Run',
+        'learningModes.fullRequest': 'Full LLM request',
+        'learningModes.systemPrompt': 'System prompt',
+        'learningModes.template': 'Template',
+        'learningModes.guardianIncluded': 'Guardian profile included',
+        'learningModes.noGuardian': 'No guardian profile',
+        'learningModes.userMessage': 'User message',
+        'learningModes.userMessageHelp': '',
+        'learningModes.temperature': 'temperature',
+        'learningModes.maxTokens': 'max_tokens',
+        'learningModes.loading': 'Loading',
+        'learningModes.buildingPrompt': 'Building prompt',
+        'learningModes.copy': 'Copy',
+        'learningModes.copied': 'Copied',
+        'learningModes.previewingForm': 'Previewing form',
+        'learningModes.previewingSaved': 'Previewing saved mode',
+        'learningModes.autoAsk': 'Auto-ask questions',
+        'learningModes.autoAskHelp': 'Automatically ask questions',
+        'learningModes.autoAskLabel': 'Auto-ask',
+        'learningModes.on': 'On',
+        'learningModes.off': 'Off',
+        'learningModes.systemDefault': 'System default',
+        'learningModes.autoAskTitle': 'Auto ask enabled',
+        'learningModes.manualAskTitle': 'Manual ask',
+        'learningModes.edit': 'Edit',
+        'learningModes.delete': 'Delete',
+        'learningModes.deleteModeTitle': 'Delete learning mode',
+        'learningModes.confirmDelete': 'Are you sure?',
+        'learningModes.nameRequired': 'Name is required',
+        'learningModes.keyRequired': 'Key is required',
+        'learningModes.previewFailed': 'Preview failed',
+        'learningModes.updated': 'Updated',
+        'learningModes.created': 'Created',
+        'learningModes.deleted': 'Deleted',
+        'learningModes.saveFailed': 'Save failed',
+        'learningModes.deleteFailed': 'Delete failed',
+      };
+      let value = table[key] ?? key;
+      for (const [name, replacement] of Object.entries(options ?? {})) {
+        value = value.replace(`{{${name}}}`, String(replacement));
+      }
+      return value;
+    },
+  }),
+}));
+
 const { get, post, delete: deleteApi } = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
@@ -379,7 +453,7 @@ describe('LearningModesTab delete', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /^Delete Andaluz$/ }));
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText(/delete this learning mode/i)).toBeInTheDocument();
+    expect(within(dialog).getByText('Are you sure?')).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 

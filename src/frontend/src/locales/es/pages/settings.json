@@ -140,6 +140,12 @@
     "sttModelHelp": "Whisper-tiny es el valor predeterminado rápido de 39M de parámetros. Tiny viene incluido en el instalador; los demás tamaños se descargan al usarlos por primera vez.",
     "sttModelSaved": "Modelo de voz a texto actualizado.",
     "sttModelSaveFailed": "No se pudo actualizar el modelo de voz a texto.",
+    "ttsWarmupInProgress": "Precargando el modelo de voz neuronal en segundo plano…",
+    "ttsWarmupReady": "Modelo de voz neuronal listo (precargado en segundo plano).",
+    "speechWarmupInProgress": "Precargando el modelo de voz a texto en segundo plano…",
+    "speechWarmupReady": "Modelo de voz a texto listo (precargado en segundo plano).",
+    "vectorWarmupInProgress": "Precargando el modelo de búsqueda semántica en segundo plano…",
+    "vectorWarmupReady": "Modelo de búsqueda semántica listo (precargado en segundo plano).",
     "dependencies": {
       "ffmpeg": {
         "label": "ffmpeg (opcional)",

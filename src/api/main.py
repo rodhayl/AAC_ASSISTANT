@@ -17,6 +17,7 @@ from src.aac_app import schema
 from src.aac_app.seed import init_database
 from src.aac_app.services.arasaac_library_import import import_arasaac_library_if_needed
 from src.aac_app.services.ngram_builder import run_periodic_ngram_rebuild
+from src.aac_app.services.prediction_service import prediction_service
 from src.aac_app.services.symbol_image_backfill import backfill_missing_symbol_images
 from src.aac_app.services.vector_utils import index_all_symbols
 from src.api.deps import (
@@ -222,6 +223,33 @@ async def lifespan(app: FastAPI):
         name="ngram-model-rebuild",
     )
 
+    # Preload the prediction symbol catalog in the background so the first
+    # Smartbar suggestion does not pay the one-time catalog scan. It is a
+    # cheap read of the symbols table (no model, no network), so it is safe
+    # to run eagerly; n-gram JSON files are left lazy on purpose (see
+    # PredictionService.warmup).
+    async def warmup_prediction_in_background() -> None:
+        try:
+            if not app.state.database_ready:
+                logger.warning(
+                    "Skipping prediction warmup because database initialization failed"
+                )
+                return
+            if os.environ.get("TESTING") == "1":
+                logger.info("Skipping prediction warmup during tests")
+                return
+            await asyncio.to_thread(prediction_service.warmup)
+            logger.info("Prediction warmup complete")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Prediction warmup failed: {e}")
+
+    prediction_warmup_task = asyncio.create_task(
+        warmup_prediction_in_background(),
+        name="prediction-warmup",
+    )
+
     startup_time_ms = (time.perf_counter() - startup_started) * 1000
     logger.info(f"Startup timing: initialization completed in {startup_time_ms:.0f}ms")
     display_host = (
@@ -254,6 +282,7 @@ async def lifespan(app: FastAPI):
             image_backfill_task,
             arasaac_import_task,
             ngram_rebuild_task,
+            prediction_warmup_task,
         )
         pending_tasks = [task for task in startup_tasks if not task.done()]
         for task in pending_tasks:

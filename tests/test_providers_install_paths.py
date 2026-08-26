@@ -246,7 +246,7 @@ def test_tts_synthesize_503_with_install_hints(admin_headers, monkeypatch):
         headers=admin_headers,
     )
     assert res.status_code == 503
-    assert "Install the 'tts' extra" in res.json()["detail"]
+    assert "Install the TTS extra" in res.json()["detail"]
 
     provider.is_installed.return_value = True
     monkeypatch.setattr(

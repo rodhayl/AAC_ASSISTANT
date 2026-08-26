@@ -196,7 +196,7 @@ export function useBoardAISuggestions({
           successCount += 1;
         } catch (error: unknown) {
           if (!isCurrentApply()) return;
-          failures.push(`${item.label}: ${extractError(error, t('unknownError', 'Unknown error'))}`);
+          failures.push(`${item.label}: ${extractError(error, t('unknownError'))}`);
         }
       }
       if (!isCurrentApply()) return;

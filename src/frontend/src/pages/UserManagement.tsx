@@ -253,7 +253,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
                         disabled={role === 'admin' && item.id === user?.id}
                         className="rounded px-3 py-1 text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
                         aria-label={t('actions.resetPasswordAria', { name: item.username })}
-                        title={role === 'admin' && item.id === user?.id ? t('actions.resetSelfTitle', { defaultValue: 'Use Change Password in Settings' }) : t('actions.resetPasswordTitle')}
+                        title={role === 'admin' && item.id === user?.id ? t('actions.resetSelfTitle') : t('actions.resetPasswordTitle')}
                       >{t('actions.resetPassword')}</button>
                       <button
                         onClick={() => setDeleteState({ isOpen: true, user: item })}

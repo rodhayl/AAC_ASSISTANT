@@ -140,6 +140,12 @@
     "sttModelHelp": "Whisper-tiny is the fast 39M-parameter default. Tiny is bundled with the installer; other sizes download on first use.",
     "sttModelSaved": "Speech-to-text model updated.",
     "sttModelSaveFailed": "Could not update the speech-to-text model.",
+    "ttsWarmupInProgress": "Pre-loading the local neural voice model in the background…",
+    "ttsWarmupReady": "Local neural voice model ready (pre-loaded in the background).",
+    "speechWarmupInProgress": "Pre-loading the speech-to-text model in the background…",
+    "speechWarmupReady": "Speech-to-text model ready (pre-loaded in the background).",
+    "vectorWarmupInProgress": "Pre-loading the semantic search model in the background…",
+    "vectorWarmupReady": "Semantic search model ready (pre-loaded in the background).",
     "dependencies": {
       "ffmpeg": {
         "label": "ffmpeg (optional)",

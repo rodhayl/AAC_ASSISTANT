@@ -11,9 +11,12 @@ const user = {
   user_type: 'student',
 } as User;
 
-const t = ((key: string, options?: { defaultValue?: string; name?: string }) => {
-  if (key === 'resetPasswordTitle') return `Reset Password for ${options?.name}`;
-  return options?.defaultValue ?? key;
+const t = ((rawKey: string, options?: { defaultValue?: string; name?: string; ns?: string }) => {
+  const [namespace, key] = rawKey.includes(':') ? rawKey.split(':', 2) : ['students', rawKey];
+  const translator = (globalThis as typeof globalThis & {
+    __aacTestTranslation?: (namespace: string, key: string, options?: Record<string, unknown>) => string;
+  }).__aacTestTranslation;
+  return translator?.(options?.ns === 'settings' ? 'settings' : namespace, key, options) ?? rawKey;
 }) as never;
 
 function renderModal(overrides: Partial<ComponentProps<typeof ResetPasswordModal>> = {}) {
@@ -39,7 +42,7 @@ describe('ResetPasswordModal', () => {
     const dialog = screen.getByRole('dialog', { name: 'Reset Password for Student One' });
     expect(dialog).toBeInTheDocument();
     expect(screen.getByLabelText('New Password')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'cancel' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
   });
 
   it('renders errors as an alert associated with the password field', () => {
@@ -58,8 +61,8 @@ describe('ResetPasswordModal', () => {
     renderModal({ onChange, onSubmit, onClose });
 
     fireEvent.change(screen.getByLabelText('New Password'), { target: { value: 'NewPass123!' } });
-    fireEvent.submit(screen.getByRole('button', { name: 'Reset Password' }).closest('form')!);
-    fireEvent.click(screen.getByRole('button', { name: 'cancel' }));
+    fireEvent.submit(screen.getByRole('button', { name: 'Reset Pwd' }).closest('form')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(onChange).toHaveBeenCalledWith('NewPass123!');
     expect(onSubmit).toHaveBeenCalledTimes(1);
@@ -69,7 +72,7 @@ describe('ResetPasswordModal', () => {
   it('disables actions while saving', () => {
     renderModal({ loading: true });
 
-    expect(screen.getByRole('button', { name: 'cancel' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Saving...' })).toBeDisabled();
   });
 });

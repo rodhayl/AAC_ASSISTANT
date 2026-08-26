@@ -207,19 +207,31 @@ def update_ai_settings(
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="AI setting values must be text.",
+                detail=get_text(
+                    user=current_user,
+                    key="errors.settings.aiValuesMustBeText",
+                ),
             )
         if len(value) > maximum:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"{key} exceeds the maximum length of {maximum} characters.",
+                detail=get_text(
+                    user=current_user,
+                    key="errors.settings.settingTooLong",
+                    setting=key,
+                    maximum=maximum,
+                ),
             )
         if key.endswith("_base_url") and value:
             parsed_url = urlparse(value)
             if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"{key} must be a valid HTTP or HTTPS URL.",
+                    detail=get_text(
+                        user=current_user,
+                        key="errors.settings.settingUrlInvalid",
+                        setting=key,
+                    ),
                 )
         updated_values[key] = value
     updated_values["ai_provider"] = provider
@@ -278,7 +290,10 @@ def update_ai_settings(
     db.commit()
     provider_deps.reset_llm_providers()
 
-    return {"message": "Settings updated successfully", "settings": settings}
+    return {
+        "message": get_text(user=current_user, key="errors.settings.updated"),
+        "settings": settings,
+    }
 
 
 @router.get("/ai/models/ollama")
@@ -514,4 +529,7 @@ def update_ui_language(
     db.refresh(settings)
     clear_settings_cache()
     logger.info(f"User {current_user.username} updated UI language to {lang}")
-    return {"message": "UI language updated", "ui_language": settings.ui_language}
+    return {
+        "message": get_text(user=current_user, key="errors.settings.uiLanguageUpdated"),
+        "ui_language": settings.ui_language,
+    }

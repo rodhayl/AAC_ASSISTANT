@@ -77,9 +77,20 @@ export function LearningChatPanel({
 }: LearningChatPanelProps) {
   const { t } = useTranslation('learning');
   const [showEndConfirmation, setShowEndConfirmation] = useState(false);
+  const conversationRef = useRef<HTMLDivElement | null>(null);
   const endSessionRef = useRef<HTMLDivElement | null>(null);
   const endSessionButtonRef = useRef<HTMLButtonElement | null>(null);
   const cancelEndRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    const conversation = conversationRef.current;
+    if (!conversation) return;
+    if (typeof conversation.scrollTo === 'function') {
+      conversation.scrollTo({ top: conversation.scrollHeight, behavior: 'smooth' });
+    } else {
+      conversation.scrollTop = conversation.scrollHeight;
+    }
+  }, [messages.length, isLoading, error, sessionStartError]);
 
   useEffect(() => {
     if (!showEndConfirmation) return;
@@ -115,9 +126,9 @@ export function LearningChatPanel({
   };
 
   const difficultyLabels: Record<string, string> = {
-    basic: t('difficulty.basic', 'Basic'),
-    intermediate: t('difficulty.intermediate', 'Intermediate'),
-    advanced: t('difficulty.advanced', 'Advanced'),
+    basic: t('difficulty.basic'),
+    intermediate: t('difficulty.intermediate'),
+    advanced: t('difficulty.advanced'),
   };
   const progressPercent =
     progress?.comprehensionScore !== undefined
@@ -126,21 +137,21 @@ export function LearningChatPanel({
 
   return (
     <div className="flex-1 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
-        <div className="flex items-center gap-2">
+      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex flex-wrap items-start gap-3 bg-gray-50 dark:bg-gray-900/50">
+        <div className="min-w-0 flex flex-1 items-start gap-2">
           <div className="p-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">
             <Bot className="w-4 h-4" />
           </div>
-          <div>
-            <div className="font-semibold text-gray-900 dark:text-gray-100 text-sm">
-              {t('title', 'Learning Companion')}
+          <div className="min-w-0">
+            <div className="font-semibold text-gray-900 dark:text-gray-100 text-sm break-words">
+              {t('title')}
             </div>
             <div className="text-xs text-gray-500 dark:text-gray-400">
-              {t('panelSubtitle', 'Practice questions, explanations, and conversational support')}
+              {t('panelSubtitle')}
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
           {currentSession && progress && (progressPercent !== undefined || progress.difficulty) && (
             <div className="flex items-center gap-2" data-testid="progress-chips">
               {progressPercent !== undefined && (
@@ -161,7 +172,7 @@ export function LearningChatPanel({
             </div>
           )}
           {isAdmin && (
-            <label className="flex items-center gap-1 cursor-pointer select-none text-xs text-gray-500 dark:text-gray-400">
+            <label className="flex max-w-full items-center gap-1 cursor-pointer select-none text-xs text-gray-500 dark:text-gray-400">
               <input
                 id="show-admin-reasoning"
                 name="show_admin_reasoning"
@@ -170,7 +181,7 @@ export function LearningChatPanel({
                 checked={showAdminReasoning}
                 onChange={(event) => onShowAdminReasoningChange(event.target.checked)}
               />
-              <span>{t('showThinking', 'Show thinking')}</span>
+              <span>{t('showThinking')}</span>
             </label>
           )}
           {currentSession && (
@@ -185,10 +196,10 @@ export function LearningChatPanel({
                 aria-controls="end-session-confirmation"
                 data-testid="learning-session-active"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                title={t('endSessionTitle', 'End this session and see a summary')}
+                title={t('endSessionTitle')}
               >
                 <LogOut className="w-3.5 h-3.5" />
-                {t('endSession', 'End Session')}
+                {t('endSession')}
               </button>
               {showEndConfirmation && (
                 <div
@@ -203,13 +214,13 @@ export function LearningChatPanel({
                     id="end-session-confirmation-title"
                     className="text-sm font-semibold text-gray-900 dark:text-gray-100"
                   >
-                    {t('endSessionConfirmTitle', 'End this session?')}
+                    {t('endSessionConfirmTitle')}
                   </p>
                   <p
                     id="end-session-confirmation-description"
                     className="mt-1 text-xs leading-relaxed text-gray-600 dark:text-gray-300"
                   >
-                    {t('endSessionConfirm', 'Your progress will be saved and a summary will appear.')}
+                    {t('endSessionConfirm')}
                   </p>
                   <div className="mt-3 flex justify-end gap-2">
                     <button
@@ -218,14 +229,14 @@ export function LearningChatPanel({
                       onClick={() => setShowEndConfirmation(false)}
                       className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
                     >
-                      {t('cancel', 'Cancel')}
+                      {t('cancel')}
                     </button>
                     <button
                       type="button"
                       onClick={confirmEndSession}
                       className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
                     >
-                      {t('endSession', 'End Session')}
+                      {t('endSession')}
                     </button>
                   </div>
                 </div>
@@ -236,9 +247,10 @@ export function LearningChatPanel({
       </div>
 
       <div
+        ref={conversationRef}
         className="flex-1 overflow-y-auto p-4 space-y-4"
         role="log"
-        aria-label={t('conversationHistory', 'Conversation history')}
+        aria-label={t('conversationHistory')}
         tabIndex={0}
       >
         {isStartingSession && (
@@ -263,7 +275,7 @@ export function LearningChatPanel({
 
         {error && (
           <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
-            <p className="font-medium">{t('errorPrefix', 'Error: {{message}}', { message: error })}</p>
+            <p className="font-medium">{t('errorPrefix', { message: error })}</p>
           </div>
         )}
 
@@ -273,7 +285,7 @@ export function LearningChatPanel({
             <p>{t('promptStart')}</p>
             <button
               onClick={onStartSession}
-              aria-label={t('startSessionLabel', 'Start Session')}
+              aria-label={t('startSessionLabel')}
               data-testid="learning-session-start"
               className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
               disabled={isStartingSession}

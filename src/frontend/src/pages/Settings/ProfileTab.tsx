@@ -34,7 +34,7 @@ export function ProfileTab() {
       // blocks saving even when the user only changed their display name.
       const displayName = profileForm.display_name.trim();
       if (!displayName) {
-        setProfileError(t('profile.displayNameRequired', 'Display name is required'));
+        setProfileError(t('profile.displayNameRequired'));
         return;
       }
       const res = await api.put('/auth/profile', {

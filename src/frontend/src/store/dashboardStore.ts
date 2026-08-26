@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import api, { extractError } from '../lib/api';
+import i18n from '../i18n/index';
 
 interface DashboardStats {
   learningStreak: number;
@@ -80,7 +81,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
         isLoading: false
       });
     } catch (error: unknown) {
-      set({ error: extractError(error, 'Failed to load dashboard data'), isLoading: false });
+      set({ error: extractError(error, i18n.t('dashboard:errors.loadFailed')), isLoading: false });
     }
   }
 }));

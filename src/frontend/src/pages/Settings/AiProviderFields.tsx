@@ -155,14 +155,14 @@ export function AiProviderFields({
             <p className="text-xs text-gray-500 mt-1">
               {t('ai.getKey')}{' '}
               <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
-                {t('ai.keysUrl', 'openrouter.ai/keys')}
+                {t('ai.keysUrl')}
               </a>
             </p>
           </div>
           <div className="relative">
             <div className="flex items-center justify-between mb-2">
               <label htmlFor="primary-openrouter-model-search" className="block text-sm font-medium text-gray-700">
-                {t('ai.models', 'Available Models')}
+                {t('ai.models')}
               </label>
               <button
                 type="button"
@@ -171,7 +171,7 @@ export function AiProviderFields({
                 className="flex items-center space-x-1 text-indigo-600 hover:text-indigo-700 text-sm font-medium disabled:opacity-50"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                <span>{t('ai.refresh', 'Refresh')}</span>
+                <span>{t('ai.refresh')}</span>
               </button>
             </div>
             <input
@@ -233,7 +233,7 @@ export function AiProviderFields({
         <div className="space-y-4">
           <div>
             <label htmlFor="primary-groq-api-key" className="block text-sm font-medium text-gray-700 mb-2">
-              {t('ai.groqApiKey', 'Groq API Key')}
+              {t('ai.groqApiKey')}
             </label>
             <input
               id="primary-groq-api-key"
@@ -250,14 +250,14 @@ export function AiProviderFields({
             <p className="text-xs text-gray-500 mt-1">
               {t('ai.getKey')}{' '}
               <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
-                {t('ai.groqKeysUrl', 'console.groq.com/keys')}
+                {t('ai.groqKeysUrl')}
               </a>
             </p>
           </div>
           <div className="relative">
             <div className="flex items-center justify-between mb-2">
               <label htmlFor="primary-groq-model-search" className="block text-sm font-medium text-gray-700">
-                {t('ai.models', 'Available Models')}
+                {t('ai.models')}
               </label>
               <button
                 type="button"
@@ -266,7 +266,7 @@ export function AiProviderFields({
                 className="flex items-center space-x-1 text-indigo-600 hover:text-indigo-700 text-sm font-medium disabled:opacity-50"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                <span>{t('ai.refresh', 'Refresh')}</span>
+                <span>{t('ai.refresh')}</span>
               </button>
             </div>
             <input
@@ -327,7 +327,7 @@ export function AiProviderFields({
       {provider === 'lmstudio' && (
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">{t('ai.lmstudioUrl', 'LM Studio Base URL')}</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{t('ai.lmstudioUrl')}</label>
             <input
               id="primary-lmstudio-base-url"
               name="primary_lmstudio_base_url"
@@ -338,7 +338,7 @@ export function AiProviderFields({
               placeholder={config.LMSTUDIO_BASE_URL}
               aria-label={t('ai.lmstudioUrl')}
             />
-            <p className="text-xs text-gray-500 mt-1">{t('ai.lmstudioDefault', 'Default: {{url}}', { url: config.LMSTUDIO_BASE_URL })}</p>
+            <p className="text-xs text-gray-500 mt-1">{t('ai.lmstudioDefault', { url: config.LMSTUDIO_BASE_URL })}</p>
           </div>
           <div className="relative">
             <div className="flex items-center justify-between mb-2">
@@ -353,7 +353,7 @@ export function AiProviderFields({
                 <span>{t('ai.refresh')}</span>
               </button>
             </div>
-            <label className="block text-sm font-medium text-gray-700">{t('ai.selectModel', 'Select Model')}</label>
+            <label className="block text-sm font-medium text-gray-700">{t('ai.selectModel')}</label>
             <select
               id="primary-lmstudio-model"
               name="primary_lmstudio_model"
@@ -362,7 +362,7 @@ export function AiProviderFields({
               className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
               aria-label={t('ai.selectModel')}
             >
-              <option value="">{t('ai.selectModelPlaceholder', 'Select a model...')}</option>
+              <option value="">{t('ai.selectModelPlaceholder')}</option>
               {lmStudioModels.length > 0 ? (
                 lmStudioModels.map((model) => (
                   <option key={model.id} value={model.id}>
@@ -370,7 +370,7 @@ export function AiProviderFields({
                   </option>
                 ))
               ) : (
-                <option value="local-model">{t('ai.localModelDefault', 'local-model (Default)')}</option>
+                <option value="local-model">{t('ai.localModelDefault')}</option>
               )}
             </select>
           </div>

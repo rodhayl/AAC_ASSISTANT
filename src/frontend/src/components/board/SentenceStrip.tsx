@@ -138,7 +138,7 @@ export const SentenceStrip = memo(function SentenceStrip({
           <div className="flex-1 min-h-[5rem] bg-gray-50 dark:bg-white/5 rounded-xl border border-border dark:border-white/5 p-2 flex items-center gap-2 overflow-x-auto hide-scrollbar touch-pan-x">
             {symbols.length === 0 ? (
               <span data-testid="sentence-empty" className="text-gray-600 dark:text-gray-400 px-2 italic select-none">
-                {t('tapSymbolsToSpeak', 'Tap symbols to create a sentence...')}
+                {t('tapSymbolsToSpeak')}
               </span>
             ) : (
               <DndContext
@@ -198,7 +198,7 @@ export const SentenceStrip = memo(function SentenceStrip({
                 disabled={symbols.length === 0}
                 data-testid="sentence-backspace"
                 className="p-3 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                aria-label={t('backspace', 'Backspace')}
+                aria-label={t('backspace')}
               >
                 <Delete className="w-6 h-6" />
               </button>
@@ -209,7 +209,7 @@ export const SentenceStrip = memo(function SentenceStrip({
               disabled={symbols.length === 0}
               data-testid="sentence-clear"
               className="p-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              aria-label={t('clearSentence', 'Clear sentence')}
+              aria-label={t('clearSentence')}
             >
               <Trash2 className="w-6 h-6" />
             </button>
@@ -226,7 +226,7 @@ export const SentenceStrip = memo(function SentenceStrip({
                 }
                 ${symbols.length === 0 ? 'opacity-50 cursor-not-allowed bg-gray-400 dark:bg-gray-600' : ''}
               `}
-              aria-label={t('speakSentence', 'Speak sentence')}
+              aria-label={t('speakSentence')}
             >
               {isSpeaking ? (
                 <Volume2 className="w-6 h-6 animate-pulse" />
@@ -241,7 +241,7 @@ export const SentenceStrip = memo(function SentenceStrip({
                 disabled={symbols.length === 0}
                 data-testid="sentence-ask-ai"
                 className="p-3 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                title={t('askAI', 'Ask AI')}
+                title={t('askAI')}
               >
                 <MessageSquare className="w-6 h-6" />
               </button>

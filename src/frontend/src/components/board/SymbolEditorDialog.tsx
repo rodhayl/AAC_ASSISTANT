@@ -79,7 +79,7 @@ export function SymbolEditorDialog({
           <button
             onClick={onClose}
             className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-700"
-            aria-label={t('close', 'Close')}
+            aria-label={t('close')}
           >
             <X className="h-5 w-5 text-gray-500" />
           </button>

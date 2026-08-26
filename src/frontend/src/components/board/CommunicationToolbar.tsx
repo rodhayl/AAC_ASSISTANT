@@ -42,47 +42,47 @@ export function CommunicationToolbar({
           <AccessibleButton
             onClick={onHome}
             className="p-3 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex flex-col items-center min-w-[4rem]"
-            title={t('home', 'Home')}
+            title={t('home')}
           >
             <Home className="w-6 h-6 mb-1" />
-            <span className="text-[10px] font-medium uppercase">{t('home', 'Home')}</span>
+            <span className="text-[10px] font-medium uppercase">{t('home')}</span>
           </AccessibleButton>
 
           <AccessibleButton
             onClick={onBack}
             disabled={!canGoBack}
             className={`p-3 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex flex-col items-center min-w-[4rem] ${!canGoBack ? 'opacity-50 cursor-not-allowed' : ''}`}
-            title={t('back', 'Back')}
+            title={t('back')}
           >
             <ArrowLeft className="w-6 h-6 mb-1" />
-            <span className="text-[10px] font-medium uppercase">{t('back', 'Back')}</span>
+            <span className="text-[10px] font-medium uppercase">{t('back')}</span>
           </AccessibleButton>
         </div>
 
         {/* Quick Responses Group */}
         <div className="flex items-center gap-2 flex-1 justify-center min-w-max">
           <AccessibleButton
-            onClick={() => onQuickResponse(t('yes', 'Yes'), 'positive')}
+            onClick={() => onQuickResponse(t('yes'), 'positive')}
             className="p-3 rounded-xl bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors flex flex-col items-center min-w-[4rem]"
           >
             <ThumbsUp className="w-6 h-6 mb-1" />
-            <span className="text-[10px] font-medium uppercase">{t('yes', 'Yes')}</span>
+            <span className="text-[10px] font-medium uppercase">{t('yes')}</span>
           </AccessibleButton>
 
           <AccessibleButton
-            onClick={() => onQuickResponse(t('no', 'No'), 'negative')}
+            onClick={() => onQuickResponse(t('no'), 'negative')}
             className="p-3 rounded-xl bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors flex flex-col items-center min-w-[4rem]"
           >
             <ThumbsDown className="w-6 h-6 mb-1" />
-            <span className="text-[10px] font-medium uppercase">{t('no', 'No')}</span>
+            <span className="text-[10px] font-medium uppercase">{t('no')}</span>
           </AccessibleButton>
 
           <AccessibleButton
-            onClick={() => onQuickResponse(t('thanks', 'Thanks'), 'neutral')}
+            onClick={() => onQuickResponse(t('thanks'), 'neutral')}
             className="p-3 rounded-xl bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-200 dark:hover:bg-yellow-900/50 transition-colors flex flex-col items-center min-w-[4rem]"
           >
             <Heart className="w-6 h-6 mb-1" />
-            <span className="text-[10px] font-medium uppercase">{t('thanks', 'Thanks')}</span>
+            <span className="text-[10px] font-medium uppercase">{t('thanks')}</span>
           </AccessibleButton>
         </div>
 
@@ -91,55 +91,55 @@ export function CommunicationToolbar({
           <AccessibleButton
             onClick={onPartnerMic}
             className="p-3 rounded-xl bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors flex flex-col items-center min-w-[4rem]"
-            title={t('listen', 'Listen')}
+            title={t('listen')}
           >
             <Ear className="w-6 h-6 mb-1" />
-            <span className="text-[10px] font-medium uppercase">{t('listen', 'Listen')}</span>
+            <span className="text-[10px] font-medium uppercase">{t('listen')}</span>
           </AccessibleButton>
 
           <AccessibleButton
             onClick={onSearch}
             className="p-3 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex flex-col items-center min-w-[4rem]"
-            title={t('search', 'Search')}
+            title={t('search')}
           >
             <Search className="w-6 h-6 mb-1" />
-            <span className="text-[10px] font-medium uppercase">{t('search', 'Search')}</span>
+            <span className="text-[10px] font-medium uppercase">{t('search')}</span>
           </AccessibleButton>
 
           <AccessibleButton
             onClick={onContext}
             className="p-3 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex flex-col items-center min-w-[4rem]"
-            title={t('context', 'Context')}
+            title={t('context')}
           >
             <BookOpen className="w-6 h-6 mb-1" />
-            <span className="text-[10px] font-medium uppercase">{t('topic', 'Topic')}</span>
+            <span className="text-[10px] font-medium uppercase">{t('topic')}</span>
           </AccessibleButton>
 
           <AccessibleButton
             onClick={onToggleChat}
             className={`p-3 rounded-xl transition-colors flex flex-col items-center min-w-[4rem] ${isChatOpen ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
-            title={t('chat', 'Chat')}
+            title={t('chat')}
           >
             <MessageSquare className="w-6 h-6 mb-1" />
-            <span className="text-[10px] font-medium uppercase">{t('chat', 'Chat')}</span>
+            <span className="text-[10px] font-medium uppercase">{t('chat')}</span>
           </AccessibleButton>
 
           <AccessibleButton
             onClick={onToggleKeyboard}
             className={`p-3 rounded-xl transition-colors flex flex-col items-center min-w-[4rem] ${isKeyboardOpen ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
-            title={t('keyboard', 'Keyboard')}
+            title={t('keyboard')}
           >
             <Keyboard className="w-6 h-6 mb-1" />
-            <span className="text-[10px] font-medium uppercase">{t('type', 'Type')}</span>
+            <span className="text-[10px] font-medium uppercase">{t('type')}</span>
           </AccessibleButton>
 
           <AccessibleButton
             onClick={onAttention}
             className="p-3 rounded-xl bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors flex flex-col items-center min-w-[4rem]"
-            title={t('attention', 'Attention')}
+            title={t('attention')}
           >
             <Bell className="w-6 h-6 mb-1" />
-            <span className="text-[10px] font-medium uppercase">{t('alert', 'Alert')}</span>
+            <span className="text-[10px] font-medium uppercase">{t('alert')}</span>
           </AccessibleButton>
         </div>
       </div>

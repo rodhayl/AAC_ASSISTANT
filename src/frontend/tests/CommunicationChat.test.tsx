@@ -71,14 +71,16 @@ vi.mock('react-i18next', () => {
     startChatting: 'Start chatting using the board or type here.',
     voiceOn: 'Voice On',
     voiceOff: 'Voice Off',
-    errorPrefix: 'Error: {{message}}',
+    errorPrefix: 'Error: {{message}}',        'common:sessionStartFailed': 'Could not start the conversation session',
+
   };
   return {
     useTranslation: () => ({
-      t: (key: string, defaultValue?: string, options?: Record<string, string>) => {
-        const base = table[key] ?? defaultValue ?? key;
+      t: (key: string, defaultValue?: string | Record<string, string>, options?: Record<string, string>) => {
+        const interpolation = typeof defaultValue === 'object' ? defaultValue : options;
+        const base = table[key] ?? (typeof defaultValue === 'string' ? defaultValue : undefined) ?? key;
         let text = base;
-        for (const [name, value] of Object.entries(options || {})) {
+        for (const [name, value] of Object.entries(interpolation || {})) {
           text = text.replace(`{{${name}}}`, value);
         }
         return text;

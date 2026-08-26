@@ -170,7 +170,7 @@ class _PredictionContext:
     def localize_label(self, label: str, symbol_language: str | None) -> str:
         if normalize_language_code(symbol_language) == self.lang:
             return label
-        return translate_text(label, self.lang) or label
+        return translate_text(label, self.lang)
 
     def add_symbol(
         self,
@@ -382,38 +382,27 @@ class _PredictionContext:
                     symbol_language=symbol_obj.language,
                 )
 
-    def suggest_fallbacks(self) -> None:
+    def suggest_popular_symbols(self) -> None:
         """Tier 3: most-popular global symbols, interleaving nouns and others."""
         if len(self.suggestions) >= self.base_limit:
             return
         try:
-            fallback_suggestions = self.analytics_service.suggest_next_symbol(
+            popular_suggestions = self.analytics_service.suggest_next_symbol(
                 user_id=self.user_id,
                 symbols=[],
                 limit=max(self.base_limit * 2, 10),  # Request more to filter
                 db=self.db,
             )
 
-            # If analytics has no usage data yet, fall back to standard-library
-            # symbols but keep the `fallback` source so tier-4 behavior is explicit.
-            if not fallback_suggestions:
-                resolved = self.resolve_symbols_by_labels(
-                    standard_library_labels(self.lang)
-                )
-                fallback_suggestions = [
-                    {
-                        "symbol_id": sym.id,
-                        "label": sym.label,
-                        "category": sym.category,
-                        "image_path": sym.image_path,
-                    }
-                    for sym, _ in resolved[: max(self.base_limit * 2, 10)]
-                ]
+            # An empty analytics result is a valid cold-start result; the
+            # standard library is handled by its own explicit tier below.
+            if not popular_suggestions:
+                return
 
-            # Split fallbacks into nouns and others to mix them.
+            # Split popular candidates into nouns and others to mix them.
             noun_candidates = []
             other_candidates = []
-            for suggestion in fallback_suggestions:
+            for suggestion in popular_suggestions:
                 if category_is_noun(suggestion.get("category")):
                     noun_candidates.append(suggestion)
                 else:
@@ -431,7 +420,7 @@ class _PredictionContext:
                         category=suggestion.get("category"),
                         image_path=suggestion.get("image_path"),
                         confidence=0.15,
-                        source="fallback",
+                        source="popular",
                         symbol_language=suggestion.get("language"),
                     )
                 if len(self.suggestions) >= self.base_limit:
@@ -444,11 +433,11 @@ class _PredictionContext:
                         category=suggestion.get("category"),
                         image_path=suggestion.get("image_path"),
                         confidence=0.1,
-                        source="fallback",
+                        source="popular",
                         symbol_language=suggestion.get("language"),
                     )
         except Exception as exc:
-            logger.error("Fallback prediction failed: {}", exc)
+            raise RuntimeError("Popular symbol prediction failed") from exc
 
     def suggest_standard_library(self) -> None:
         """Tier 4 (cold start): standard-library labels from the catalog."""
@@ -491,11 +480,7 @@ class _PredictionContext:
                 with get_session() as session:
                     fill_board_library(session)
         except Exception as exc:
-            logger.warning(
-                "Board library fallback failed (board_id={}): {}",
-                self.board_id,
-                exc,
-            )
+            raise RuntimeError("Board symbol prediction failed") from exc
 
     def _board_usage_symbols(
         self,
@@ -643,6 +628,33 @@ class PredictionService:
             cls._instance.analytics_service = SymbolAnalytics()
         return cls._instance
 
+    def warmup(self, db: Session | None = None) -> None:
+        """Build the symbol catalog off the request path.
+
+        The first prediction request otherwise pays a one-time full-catalog
+        scan (the result is cached per engine afterwards). Warming it in the
+        background at startup makes Smartbar suggestions start instantly.
+        N-gram JSON models are deliberately left lazy: they are small, and
+        loading them here could race the periodic rebuild (which writes the
+        files in place) and permanently cache an empty model. Safe to call
+        repeatedly: the catalog is cached after the first build.
+        """
+        try:
+            _PredictionContext(
+                user_id=0,
+                current_symbols=[],
+                language="en",
+                offset=0,
+                base_limit=1,
+                limit=1,
+                board_id=None,
+                db=db,
+                analytics_service=self.analytics_service,
+                load_model=self._load_model,
+            ).get_symbol_buckets()
+        except Exception as exc:
+            logger.warning("Prediction warmup failed to build symbol catalog: {}", exc)
+
     def _load_model(self, language_code: str) -> dict:
         """Load static N-gram model for the given language."""
         lang = normalize_language_code(language_code) or "en"
@@ -724,7 +736,7 @@ class PredictionService:
 
         context.suggest_history()
         context.suggest_ngrams()
-        context.suggest_fallbacks()
+        context.suggest_popular_symbols()
         context.suggest_standard_library()
         context.suggest_board_library()
         context.suggest_punctuation()

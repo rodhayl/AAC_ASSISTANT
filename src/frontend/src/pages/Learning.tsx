@@ -64,7 +64,9 @@ export function Learning() {
   const [symbolView, setSymbolView] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState('');
   const [symbolItems, setSymbolItems] = useState<SymbolItem[]>([]);
+  const [symbolLang, setSymbolLang] = useState('');
   const [symbolLoading, setSymbolLoading] = useState(false);
+  const symbolViewWasOpenRef = useRef(false);
   const [symbolUtterance, setSymbolUtterance] = useState<SymbolItem[]>([]);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -73,6 +75,8 @@ export function Learning() {
   const [sessionStartError, setSessionStartError] = useState<string | null>(null);
   const [providerNotice, setProviderNotice] = useState<string | null>(null);
   const lastSpokenMessageRef = useRef<string | null>(null);
+  const speechSessionKeyRef = useRef<number | null>(null);
+  const welcomeToSpeakRef = useRef<{ sessionId: number; text: string } | null>(null);
   const lastProviderHistoryLengthRef = useRef(0);
   const sessionStartErrorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -186,8 +190,15 @@ export function Learning() {
     setSessionStartError(null);
     try {
       await startSession({ topic, purpose, difficulty: sessionDifficulty, board_id: boardId, mode_key: selectedModeKey }, user.id);
+      const startedSession = useLearningStore.getState().currentSession;
+      const welcomeText = stripReasoning(startedSession?.welcome_message || '');
+      if (startedSession && welcomeText) {
+        welcomeToSpeakRef.current = { sessionId: startedSession.session_id, text: welcomeText };
+        tts.enqueue(welcomeText, { rate: 0.9 });
+      }
       await fetchSessionHistory(user.id);
-      // Auto-request the first adaptive question now that the session is active
+      // Auto-request the first adaptive question now that the session is active.
+      // The welcome is enqueued explicitly above, so this cannot make it disappear.
       void askNextQuestion();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : t('errors.unknownError');
@@ -225,7 +236,7 @@ export function Learning() {
       })
       .catch(() => {
         setVoiceEnabled(!next);
-        addToast(t('voiceSaveFailed', 'Could not save voice preference'), 'error');
+        addToast(t('learning:voiceSaveFailed'), 'error');
       });
   }, [addToast, t, user, voiceEnabled]);
 
@@ -325,6 +336,7 @@ export function Learning() {
         params: { limit: 1000, language: currentLang },
       });
       setSymbolItems(dedupeLearningSymbols(response.data || []));
+      setSymbolLang(currentLang);
     } catch {
       setSymbolItems([]);
     } finally {
@@ -332,11 +344,31 @@ export function Learning() {
     }
   }, [currentLang]);
 
+  // Prefetch the symbol library in the background as soon as the page
+  // mounts so opening the symbol view never waits for the full fetch.
+  // Re-runs on language change to keep the library aligned with the
+  // active language.
   useEffect(() => {
-    if (!symbolView) return;
-    fetchSymbols();
+    void fetchSymbols();
+  }, [fetchSymbols]);
+
+  useEffect(() => {
+    if (!symbolView) {
+      symbolViewWasOpenRef.current = false;
+      return;
+    }
+    const justOpened = !symbolViewWasOpenRef.current;
+    symbolViewWasOpenRef.current = true;
     setIsBoardsOpen(false);
-  }, [fetchSymbols, symbolView]);
+    // The library is prefetched on mount; only fetch here once, when the
+    // view opens and the data is missing for the current language (first
+    // open before the prefetch finished, or a failed prefetch), and no
+    // request is already in flight. Gating on the open transition prevents
+    // a retry loop while the view stays open.
+    if (justOpened && !symbolLoading && symbolLang !== currentLang) {
+      void fetchSymbols();
+    }
+  }, [fetchSymbols, symbolLoading, symbolLang, currentLang, symbolView]);
 
   const filteredSymbols = useMemo(() => {
     let items = symbolItems;
@@ -400,22 +432,34 @@ export function Learning() {
           : last.provider === 'lmstudio'
             ? 'LM Studio'
             : 'Ollama';
-    setProviderNotice(t('providerSwitched', 'Switched to {{provider}}', { provider: providerName }));
+    setProviderNotice(t('providerSwitched', { provider: providerName }));
     const timeoutId = setTimeout(() => setProviderNotice(null), 3000);
     return () => clearTimeout(timeoutId);
   }, [providerHistory, t]);
 
   useEffect(() => {
+    const sessionKey = currentSession?.session_id ?? null;
+    if (sessionKey !== speechSessionKeyRef.current) {
+      speechSessionKeyRef.current = sessionKey;
+      lastSpokenMessageRef.current = null;
+    }
+
     if (!voiceEnabled || messages.length === 0) return;
+    const explicitWelcome = welcomeToSpeakRef.current;
+    if (explicitWelcome && explicitWelcome.sessionId === sessionKey) {
+      welcomeToSpeakRef.current = null;
+      lastSpokenMessageRef.current = messages[0]?.content ?? explicitWelcome.text;
+      return;
+    }
     const lastMessage = messages[messages.length - 1];
     if (lastMessage.role !== 'assistant' || lastMessage.content === lastSpokenMessageRef.current) return;
 
-    lastSpokenMessageRef.current = lastMessage.content;
     const textToSpeak = stripReasoning(lastMessage.content);
     if (textToSpeak) {
+      lastSpokenMessageRef.current = lastMessage.content;
       tts.enqueue(textToSpeak, { rate: 0.9 });
     }
-  }, [messages, voiceEnabled]);
+  }, [currentSession?.session_id, messages, voiceEnabled]);
 
   const updateSymbolMessage = async (symbols: Array<{
     id: number;

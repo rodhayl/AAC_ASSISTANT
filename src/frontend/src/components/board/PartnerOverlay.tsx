@@ -36,7 +36,7 @@ export function PartnerOverlay({ isOpen, onClose }: PartnerOverlayProps) {
 
   const startListening = useCallback(() => {
     if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-      setTranscript(t('speechNotSupported', 'Speech recognition not supported in this browser.'));
+      setTranscript(t('speechNotSupported'));
       return;
     }
 
@@ -58,7 +58,7 @@ export function PartnerOverlay({ isOpen, onClose }: PartnerOverlayProps) {
     recognition.onerror = () => {
       if (isMounted.current) {
         setIsListening(false);
-        setTranscript(t('speechNotAvailable', 'Speech recognition is not available.'));
+        setTranscript(t('speechNotAvailable'));
       }
     };
     
@@ -108,7 +108,7 @@ export function PartnerOverlay({ isOpen, onClose }: PartnerOverlayProps) {
         <button 
             onClick={onClose}
             className="absolute top-4 right-4 p-2 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600"
-            aria-label={t('close', 'Close')}
+            aria-label={t('close')}
         >
             <X className="w-6 h-6" />
         </button>
@@ -118,7 +118,7 @@ export function PartnerOverlay({ isOpen, onClose }: PartnerOverlayProps) {
                 <Mic className="w-12 h-12" />
             </div>
             <h2 id="partner-overlay-title" className="mt-4 text-xl font-semibold text-gray-900 dark:text-gray-100">
-                {isListening ? t('listening', 'Listening to partner...') : t('paused', 'Paused')}
+                {isListening ? t('listening') : t('paused')}
             </h2>
         </div>
 
@@ -129,7 +129,7 @@ export function PartnerOverlay({ isOpen, onClose }: PartnerOverlayProps) {
                 </p>
             ) : (
                 <p className="text-gray-400 italic text-xl">
-                    {t('waitingForSpeech', 'Waiting for speech...')}
+                    {t('waitingForSpeech')}
                 </p>
             )}
         </div>
@@ -139,7 +139,7 @@ export function PartnerOverlay({ isOpen, onClose }: PartnerOverlayProps) {
                 onClick={isListening ? stopListening : startListening}
                 className={`px-6 py-3 rounded-xl text-white font-medium transition-colors ${isListening ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
              >
-                {isListening ? t('stopListening', 'Stop Listening') : t('startListening', 'Start Listening')}
+                {isListening ? t('stopListening') : t('startListening')}
              </button>
         </div>
       </div>

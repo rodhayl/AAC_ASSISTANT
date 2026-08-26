@@ -402,7 +402,11 @@ def get_llm_provider() -> (
     OllamaProvider | OpenRouterProvider | LMStudioProvider | GroqProvider
 ):
     """Return the configured primary LLM provider."""
-    provider_type = _get_setting_value("ai_provider", "ollama")
+    provider_type = (
+        "groq"
+        if config.ENVIRONMENT.strip().casefold() == "production"
+        else _get_setting_value("ai_provider", "ollama")
+    )
 
     if provider_type == "openrouter":
         provider = get_openrouter_provider()
@@ -620,13 +624,18 @@ def _get_llm_settings() -> tuple[int, float]:
 
 
 def get_learning_service(
-    llm: OllamaProvider | OpenRouterProvider | LMStudioProvider = Depends(
+    llm: OllamaProvider | OpenRouterProvider | LMStudioProvider | GroqProvider = Depends(
         get_llm_provider
     ),
     speech: LocalSpeechProvider = Depends(get_speech_provider),
 ) -> LearningCompanionService:
     """Build a learning service with the configured provider defaults."""
     max_tokens, temperature = _get_llm_settings()
+    if (
+        config.ENVIRONMENT.strip().casefold() == "production"
+        and not isinstance(llm, GroqProvider)
+    ):
+        raise RuntimeError("Production learning requires the configured Groq provider")
     return LearningCompanionService(
         llm,
         speech,
@@ -636,11 +645,16 @@ def get_learning_service(
 
 
 def get_board_generation_service(
-    llm: OllamaProvider | OpenRouterProvider | LMStudioProvider = Depends(
+    llm: OllamaProvider | OpenRouterProvider | LMStudioProvider | GroqProvider = Depends(
         get_llm_provider
     ),
 ) -> BoardGenerationService:
     """Build a board-generation service with the configured LLM."""
+    if (
+        config.ENVIRONMENT.strip().casefold() == "production"
+        and not isinstance(llm, GroqProvider)
+    ):
+        raise RuntimeError("Production board generation requires the configured Groq provider")
     return BoardGenerationService(llm)
 
 
@@ -684,7 +698,11 @@ def _init_llm_provider_sync() -> bool:
     global _ollama_provider, _openrouter_provider, _lmstudio_provider, _groq_provider
     try:
         start = time.time()
-        provider_type = _get_setting_value("ai_provider", "ollama")
+        provider_type = (
+            "groq"
+            if config.ENVIRONMENT.strip().casefold() == "production"
+            else _get_setting_value("ai_provider", "ollama")
+        )
         logger.info(f"Warmup: Initializing {provider_type} LLM provider...")
 
         with _startup_lock:
@@ -710,10 +728,15 @@ def _init_llm_provider_sync() -> bool:
                         model=_get_setting_value("lmstudio_model", ""),
                     )
                 elif provider_type == "groq":
+                    configured_model = _get_setting_value("groq_model", "")
+                    if not configured_model:
+                        raise RuntimeError(
+                            "Groq provider requires an explicitly configured model"
+                        )
                     discarded_llm = _groq_provider
                     _groq_provider = GroqProvider(
                         api_key=_get_setting_value("groq_api_key", ""),
-                        model=_get_setting_value("groq_model", ""),
+                        model=configured_model,
                     )
                 else:
                     discarded_llm = _ollama_provider

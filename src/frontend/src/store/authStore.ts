@@ -5,6 +5,7 @@ import { registerAuthStateReader } from '../lib/authState';
 import type { User } from '../types';
 import { useLocaleStore } from './localeStore';
 import { useThemeStore } from './themeStore';
+import i18n from '../i18n/index';
 
 interface AuthState {
   user: User | null;
@@ -152,7 +153,7 @@ export const useAuthStore = create<AuthState>()(
             error: null,
           });
         } catch (e: unknown) {
-          set({ error: extractError(e, 'Login failed'), isLoading: false });
+          set({ error: extractError(e, i18n.t('common:errors.loginFailed')), isLoading: false });
           throw e;
         }
       },
@@ -178,7 +179,7 @@ export const useAuthStore = create<AuthState>()(
             error: null,
           });
         } catch (e: unknown) {
-          set({ error: extractError(e, 'Initial setup failed'), isLoading: false });
+          set({ error: extractError(e, i18n.t('common:errors.setupFailed')), isLoading: false });
           throw e;
         }
       },
@@ -190,7 +191,7 @@ export const useAuthStore = create<AuthState>()(
           await api.post('/auth/register', userData);
           set({ isLoading: false });
         } catch (error: unknown) {
-          set({ error: extractError(error, 'Registration failed'), isLoading: false });
+          set({ error: extractError(error, i18n.t('common:errors.registrationFailed')), isLoading: false });
           throw error;
         }
       },

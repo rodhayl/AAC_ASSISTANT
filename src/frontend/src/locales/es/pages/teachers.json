@@ -50,6 +50,7 @@
     "passwordsDoNotMatch": "Las contraseñas no coinciden"
   },
   "actions": {
+    "resetSelfTitle": "Usa Cambiar contraseña en Ajustes",
     "editAria": "Editar {{name}}",
     "editTitle": "Editar profesor",
     "deleteAria": "Eliminar {{name}}",

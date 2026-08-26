@@ -1,4 +1,4 @@
-"""Question generation and deterministic fallback questions."""
+"""Strict LLM-backed question generation."""
 
 import json
 import re
@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 
 from ...models import LearningSession
 from ...services.learning.history import append_history_entry
-from ...services.translation_service import TranslationService
 
 
 def extract_json_object(text: str | None) -> dict | None:
@@ -126,8 +125,9 @@ class QuestionGenerationMixin:
                     session.conversation_history[-3:] if session.conversation_history else []
                 )
 
-                # Generate the question (LLM with a strict-JSON retry, then a
-                # translated fallback) and validate its shape.
+                # Generate and validate the question using the configured LLM.
+                # Invalid provider output is an explicit failure; never invent
+                # a deterministic question in production.
                 question_data, response = await self._generate_question_data(
                     session, difficulty, recent_history, db
                 )
@@ -182,12 +182,11 @@ class QuestionGenerationMixin:
         recent_history: list,
         db: Session | None,
     ) -> tuple[dict | None, str]:
-        """Produce adaptive question data: LLM, strict-JSON retry, fallback.
+        """Produce adaptive question data from the configured LLM.
 
         Returns ``(question_data, response)`` where ``response`` is the last
-        raw LLM reply (empty when generation never reached the model) so the
-        caller can log diagnostics. ``question_data`` is ``None`` only when
-        generation itself raised before assigning a value.
+        raw LLM reply. Invalid output or provider failures raise explicitly;
+        this method never fabricates a question.
         """
         response = ""
         try:
@@ -260,40 +259,10 @@ class QuestionGenerationMixin:
                         f"Question JSON recovered after strict-JSON retry "
                         f"(session {session.id})"
                     )
-        except Exception:
-            question_data = None
+        except Exception as exc:
+            raise RuntimeError("LLM question generation failed") from exc
 
         if question_data is None:
-            if response:
-                logger.error(f"Failed to parse question JSON: {response}")
-            else:
-                logger.error(
-                    "LLM question generation failed; using fallback question"
-                )
-            # Fallback to translated question
-            user_lang = self._get_user_language(session.user_id, db)
-            translation_service = TranslationService()
-
-            question_text = translation_service.get(
-                user_lang,
-                "pages/learning",
-                "fallbackQuestion.question",
-                topic=session.topic_name,
-            )
-            choice1 = translation_service.get(
-                user_lang, "pages/learning", "fallbackQuestion.choice1"
-            )
-            choice2 = translation_service.get(
-                user_lang, "pages/learning", "fallbackQuestion.choice2"
-            )
-            choice3 = translation_service.get(
-                user_lang, "pages/learning", "fallbackQuestion.choice3"
-            )
-
-            question_data = {
-                "question": question_text,
-                "choices": [choice1, choice2, choice3],
-                "correct": 0,
-            }
+            raise ValueError("LLM returned invalid question JSON after retry")
 
         return question_data, response

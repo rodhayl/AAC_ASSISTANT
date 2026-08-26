@@ -19,10 +19,37 @@ class GroqProvider(OpenRouterProvider):
         # environment variable when no explicit key is passed.
         super().__init__(api_key=api_key or os.getenv("GROQ_API_KEY"), model=model)
         self.base_url = "https://api.groq.com/openai/v1"
-        if not model:
-            self.default_model = "openai/gpt-oss-20b"
-            self._model = self.default_model
 
     def is_configured(self) -> bool:
         """Groq is configured when an API key is present."""
         return self.api_key is not None and len(self.api_key.strip()) > 0
+
+    async def generate(
+        self,
+        prompt: str,
+        model: str | None = None,
+        system: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 500,
+        json_schema: dict | None = None,
+        **kwargs,
+    ) -> str:
+        """Generate with Groq, requiring an explicitly configured model.
+
+        The model requirement lives here instead of ``__init__`` so the
+        model-listing endpoint (``/api/settings/ai/models/groq``) can build a
+        client from an API key alone. Generation must never fall back to the
+        parent's default model silently, so an empty configured model fails
+        explicitly.
+        """
+        if not (model or self._configured_model):
+            raise ValueError("Groq model must be configured explicitly")
+        return await super().generate(
+            prompt=prompt,
+            model=model,
+            system=system,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            json_schema=json_schema,
+            **kwargs,
+        )

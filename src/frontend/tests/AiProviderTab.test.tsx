@@ -72,6 +72,13 @@ const tMock = vi.hoisted(() => {
     'ai.openrouter': 'OpenRouter',
     'ai.openrouterDesc': 'Cloud API',
     'ai.health': 'Check Provider Health',
+    'ai.lmstudio': 'LM Studio',
+    'ai.localOpenAIAPI': 'Local OpenAI-API',
+    'ai.groq': 'Groq',
+    'ai.groqDesc': 'Cloud API',
+    'ai.statusDown': 'down',
+    'ai.lmstudioUnavailable': 'LM Studio is not reachable at the configured base URL.',
+    'ai.openrouterApiKeyMissing': 'OpenRouter API key is missing.',
   };
   return (key: string, defaultValue?: string | { defaultValue?: string }, options?: Record<string, string>) => {
     if (typeof defaultValue === 'string') {

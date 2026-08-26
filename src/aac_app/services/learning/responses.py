@@ -1,7 +1,6 @@
 """Text, voice, and AAC symbol response processing."""
 
 import contextlib
-import json
 import os
 import tempfile
 from datetime import datetime
@@ -13,7 +12,6 @@ from sqlalchemy.orm.attributes import flag_modified
 from ...models import LearningSession
 from ...services.achievement_system import AchievementSystem
 from ...services.translation_service import TranslationService
-from .common import _strip_reasoning
 from .history import append_history_entry
 from .questions import extract_json_object
 
@@ -32,7 +30,6 @@ class ResponseProcessingMixin:
         """Analyze response and provide feedback"""
 
         logger.info(f"Processing response for session {session_id}")
-        transcription_failed = False
         is_symbol = bool(symbols)
 
         try:
@@ -44,7 +41,7 @@ class ResponseProcessingMixin:
 
                 # If voice response, transcribe with local Whisper
                 if is_voice and (audio_data or audio_path):
-                    student_response, transcription_failed = self._transcribe_voice_response(
+                    student_response = self._transcribe_voice_response(
                         audio_data, audio_path
                     )
                 elif is_voice and not audio_data:
@@ -88,38 +85,6 @@ class ResponseProcessingMixin:
                 # Get user language for localization
                 user_lang = self._get_user_language(session.user_id, db)
                 translation_service = TranslationService()
-
-                # If transcription failed, return a graceful message without erroring
-                if is_voice and transcription_failed:
-                    feedback_text = translation_service.get(
-                        user_lang, "pages/learning", "errors.transcriptionFailed"
-                    )
-                    session.conversation_history = append_history_entry(
-                        session.conversation_history,
-                        {
-                            "type": "response",
-                            "student_answer": student_response,
-                            "is_correct": None,
-                            "feedback": feedback_text,
-                            "confidence": 0.0,
-                            "timestamp": datetime.now().isoformat(),
-                        },
-                    )
-                    self._persist_history(session, db)
-                    return {
-                        "success": True,
-                        "is_correct": None,
-                        "transcription": (
-                            None if student_response == "[voice message]" else student_response
-                        ),
-                        "feedback_message": feedback_text,
-                        "confidence": 0.0,
-                        "comprehension_score": session.comprehension_score,
-                        "next_action": "continue_questions",
-                        "questions_answered": session.questions_answered,
-                        "correct_answers": session.correct_answers,
-                        "provider_used": self.provider_type,
-                    }
 
                 # If there's a specific question, evaluate the answer
                 if last_question and (
@@ -169,6 +134,7 @@ class ResponseProcessingMixin:
                             },
                         },
                         "required": ["is_correct", "confidence", "encouraging_feedback"],
+                        "additionalProperties": False,
                     }
 
                     try:
@@ -185,42 +151,21 @@ class ResponseProcessingMixin:
                             max_tokens=200,
                             json_schema=analysis_schema,
                         )
-                    except Exception:
-                        analysis = json.dumps(
-                            self._exact_match_analysis(
-                                student_response,
-                                last_question,
-                                translation_service,
-                                user_lang,
-                            )
-                        )
+                    except Exception as exc:
+                        raise RuntimeError("LLM answer evaluation failed") from exc
 
-                    # Parse analysis (tolerating markdown fences / prose)
+                    # Parse the strict JSON response. Malformed or incomplete
+                    # provider output is an explicit failure, never a deterministic
+                    # grading fallback.
                     analysis_data = extract_json_object(analysis)
-                    # If the LLM returned malformed JSON or the result is missing
-                    # the required is_correct field, fall back to deterministic
-                    # exact-match grading so the student's answer is never silently
-                    # marked wrong just because the LLM used a different key name.
                     raw_correct = analysis_data.get("is_correct") if analysis_data else None
                     if analysis_data is None or (
                         not isinstance(raw_correct, bool)
                         and not (isinstance(raw_correct, str) and raw_correct.strip().lower() in ("true", "false"))
                     ):
-                        if analysis_data is None:
-                            logger.error(f"Failed to parse analysis JSON: {analysis}")
-                        else:
-                            logger.error(
-                                "LLM answer evaluation missing required 'is_correct' field; "
-                                f"got keys: {list(analysis_data.keys())}"
-                            )
-                        analysis_data = self._exact_match_analysis(
-                            student_response,
-                            last_question,
-                            translation_service,
-                            user_lang,
-                            miss_confidence=0.0,
+                        raise ValueError(
+                            "LLM answer evaluation returned incomplete JSON"
                         )
-                        raw_correct = analysis_data["is_correct"]
 
                     # LLM JSON is untrusted input. Normalize its fields before
                     # using them for scores, persistence, or the response model.
@@ -230,10 +175,9 @@ class ResponseProcessingMixin:
                         normalized_correct = raw_correct.strip().lower() == "true"
                     else:
                         normalized_correct = False
-                    try:
-                        normalized_confidence = float(analysis_data.get("confidence", 0.5))
-                    except (TypeError, ValueError):
-                        normalized_confidence = 0.5
+                    normalized_confidence = float(analysis_data["confidence"])
+                    if not 0.0 <= normalized_confidence <= 1.0:
+                        raise ValueError("LLM confidence must be between 0 and 1")
                     analysis_data["is_correct"] = normalized_correct
                     analysis_data["confidence"] = min(max(normalized_confidence, 0.0), 1.0)
 
@@ -337,6 +281,7 @@ class ResponseProcessingMixin:
                                 }
                             },
                             "required": ["response"],
+                            "additionalProperties": False,
                         }
 
                         # Use personalized system prompt from guardian profile
@@ -369,25 +314,13 @@ class ResponseProcessingMixin:
                         if response_data is not None:
                             response = response_data.get("response", "").strip()
                         else:
-                            # Fallback if JSON parsing fails - use the raw response
-                            logger.warning("Failed to parse JSON response, using raw text")
-                            response = _strip_reasoning(response_raw.strip())
+                            raise ValueError("LLM conversational response was not valid JSON")
 
-                    except Exception as e:
-                        logger.warning(f"LLM generation error: {e}")
-                        response = translation_service.get(
-                            user_lang,
-                            "pages/learning",
-                            "fallbackConversation.goodMessage",
-                        )
+                    except Exception as exc:
+                        raise RuntimeError("LLM conversational response failed") from exc
 
-                    # Validate we have content
                     if not response or len(response.strip()) < 5:
-                        response = translation_service.get(
-                            user_lang,
-                            "pages/learning",
-                            "fallbackConversation.interesting",
-                        )
+                        raise ValueError("LLM conversational response was empty")
 
                     analysis_data = {
                         "is_correct": None,
@@ -535,7 +468,7 @@ class ResponseProcessingMixin:
         user_lang: str,
         miss_confidence: float = 0.5,
     ) -> dict:
-        """Grade by exact match when the LLM is unavailable or its output is unparseable."""
+        """Legacy deterministic grading helper retained for data migration only."""
         is_correct = (
             student_response.lower().strip()
             == last_question["choices"][last_question["correct"]].lower().strip()
@@ -551,17 +484,17 @@ class ResponseProcessingMixin:
 
     def _transcribe_voice_response(
         self, audio_data: bytes | None, audio_path: str | None
-    ) -> tuple[str, bool]:
+    ) -> str:
         """Transcribe an audio response with local Whisper.
 
-        Returns (transcription, transcription_failed). Failures degrade to
-        "[voice message]" so callers can still return graceful feedback.
+        Unavailable or invalid speech raises explicitly so callers cannot
+        mistake an untranscribed upload for a real student response.
         """
         logger.info("Transcribing voice response")
         temp_path: str | None = None
         try:
             if not self.speech.is_available():
-                return "[voice message]", True
+                raise RuntimeError("Speech recognition provider unavailable")
             # Reuse a streamed request temp file when provided; otherwise
             # retain the internal byte-based compatibility path.
             if audio_path:
@@ -573,11 +506,11 @@ class ResponseProcessingMixin:
             transcription = self.speech.recognize_from_file(temp_path)
             logger.info(f"Voice transcription: {transcription}")
             if not transcription or not transcription.strip():
-                return "[voice message]", True
-            return transcription, False
+                raise RuntimeError("Speech recognition returned no transcription")
+            return transcription
         except Exception as transcribe_error:
             logger.warning(f"Voice transcription failed: {transcribe_error}")
-            return "[voice message]", True
+            raise RuntimeError("Voice transcription failed") from transcribe_error
         finally:
             if temp_path and audio_path is None and os.path.exists(temp_path):
                 with contextlib.suppress(Exception):

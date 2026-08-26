@@ -49,9 +49,9 @@ export function SymbolGrid({
                   onChange={(e) => onToggleSelection(sym.id, e.target.checked)}
                 />
                 <Button variant="secondary" size="sm" onClick={() => onEdit(sym)}>
-                  <Edit className="w-4 h-4 mr-1" /> {t('edit', 'Edit')}
+                  <Edit className="w-4 h-4 mr-1" /> {t('edit')}
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => onDelete(sym.id)} aria-label={t('deleteSymbol', 'Delete Symbol')}>
+                <Button variant="ghost" size="sm" onClick={() => onDelete(sym.id)} aria-label={t('deleteSymbol')}>
                   <Trash2 className="w-4 h-4" />
                 </Button>
               </div>
@@ -74,7 +74,7 @@ export function SymbolGrid({
         >
           {t('previous')}
         </Button>
-        <span className="flex items-center px-2 text-sm text-gray-500">{t('page', 'Page {{n}}', { n: page + 1 })}</span>
+        <span className="flex items-center px-2 text-sm text-gray-500">{t('page', { n: page + 1 })}</span>
         <Button
           variant="secondary"
           disabled={!hasMore}

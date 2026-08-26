@@ -69,16 +69,39 @@ test.describe('Groq provider end-to-end', () => {
     await expect(modelOption).toBeVisible({ timeout: 20000 });
     await modelOption.click();
 
-    // Wait for the auto-save (500ms debounce) to persist groq settings.
-    const putResponse = page.waitForResponse(
-      (r) => r.url().includes('/api/settings/ai') && r.request().method() === 'PUT',
-      { timeout: 15000 },
-    );
-    await putResponse;
-    const putBody = (await (await putResponse).json()) as Record<string, unknown>;
-    const echoed = (putBody.settings ?? {}) as Record<string, unknown>;
-    expect(echoed.provider).toBe('groq');
-    expect(echoed.groq_model).toBe(GROQ_MODEL);
+    // Wait for the auto-save (500ms debounce) to persist groq settings. The
+    // PUT only fires when a value actually changed: on a server that already
+    // has this exact key+model persisted, the auto-save is a no-op. Verify
+    // the persisted state either through the PUT echo or by polling the
+    // settings endpoint, so the spec works in both fresh and pre-configured
+    // environments.
+    const putPromise = page
+      .waitForResponse(
+        (r) => r.url().includes('/api/settings/ai') && r.request().method() === 'PUT',
+        { timeout: 15000 },
+      )
+      .catch(() => null);
+    const putResponse = await putPromise;
+
+    let persisted: Record<string, unknown> = {};
+    if (putResponse) {
+      const putBody = (await putResponse.json()) as Record<string, unknown>;
+      persisted = (putBody.settings ?? putBody) as Record<string, unknown>;
+    } else {
+      // No PUT happened (values already persisted); confirm by GET using the
+      // token the auth store keeps in localStorage.
+      const getResponse = await page.evaluate(async () => {
+        const raw = localStorage.getItem('auth-storage');
+        const token = raw ? (JSON.parse(raw).state?.token as string) : '';
+        const res = await fetch('/api/settings/ai', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        return res.json();
+      });
+      persisted = (getResponse.settings ?? getResponse) as Record<string, unknown>;
+    }
+    expect(persisted.provider).toBe('groq');
+    expect(persisted.groq_model).toBe(GROQ_MODEL);
 
     // Check Provider Health: the real key must report Groq available. The UI
     // language follows the admin's persisted preference (may be es-ES), so

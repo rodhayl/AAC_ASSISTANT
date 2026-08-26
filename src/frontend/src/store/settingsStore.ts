@@ -36,11 +36,8 @@ export interface OpenRouterModel {
   context_length?: number;
 }
 
-// Translate a settings-namespace fallback string. Guards on i18n being
-// initialized so the store's failure messages are localized in the app while
-// staying deterministic (literal fallback) in tests that do not init i18n.
-function tSettings(key: string, fallback: string): string {
-  return i18n.isInitialized ? i18n.t(key, fallback) : fallback;
+function tSettings(key: string): string {
+  return i18n.isInitialized ? i18n.t(key) : key;
 }
 
 interface SettingsState {
@@ -97,7 +94,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
         const response = await api.get('/settings/ai');
         set({ aiSettings: response.data, loading: false });
       } catch (error: unknown) {
-        const message = extractError(error, tSettings('settings:ai.fetchFailed', 'Failed to fetch AI settings'));
+        const message = extractError(error, tSettings('settings:ai.fetchFailed'));
         set({ error: message, loading: false });
       }
     },
@@ -108,14 +105,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
         await api.put('/settings/ai', settings);
         await get().fetchAISettings();
       } catch (error: unknown) {
-        const message = extractError(error, tSettings('settings:ai.updateFailed', 'Failed to update settings'));
+        const message = extractError(error, tSettings('settings:ai.updateFailed'));
         set({ error: message, loading: false });
         throw error;
       }
     },
 
     fetchOllamaModels: async () => {
-      await fetchModelList('/settings/ai/models/ollama', 'ollamaModels', tSettings('settings:ai.fetchOllamaFailed', 'Failed to fetch Ollama models'));
+      await fetchModelList('/settings/ai/models/ollama', 'ollamaModels', tSettings('settings:ai.fetchOllamaFailed'));
     },
 
     fetchOpenRouterModels: async (apiKey?: string) => {
@@ -125,13 +122,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
       await fetchModelList(
         '/settings/ai/models/openrouter',
         'openRouterModels',
-        tSettings('settings:ai.fetchOpenRouterFailed', 'Failed to fetch OpenRouter models'),
+        tSettings('settings:ai.fetchOpenRouterFailed'),
         headers,
       );
     },
 
     fetchLmStudioModels: async () => {
-      await fetchModelList('/settings/ai/models/lmstudio', 'lmStudioModels', tSettings('settings:ai.fetchLmStudioFailed', 'Failed to fetch LM Studio models'));
+      await fetchModelList('/settings/ai/models/lmstudio', 'lmStudioModels', tSettings('settings:ai.fetchLmStudioFailed'));
     },
 
     fetchGroqModels: async (apiKey?: string) => {
@@ -141,7 +138,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
       await fetchModelList(
         '/settings/ai/models/groq',
         'groqModels',
-        tSettings('settings:ai.fetchGroqFailed', 'Failed to fetch Groq models'),
+        tSettings('settings:ai.fetchGroqFailed'),
         headers,
       );
     },

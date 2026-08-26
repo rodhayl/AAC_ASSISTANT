@@ -38,6 +38,16 @@ describe('LearningHeader difficulty override', () => {
     expect(baseProps.onDifficultyChange).toHaveBeenCalledWith('advanced');
   });
 
+  it('keeps the header controls available when the layout wraps', () => {
+    render(<LearningHeader {...baseProps} />);
+
+    expect(screen.getByRole('button', { name: /Show History/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Symbol-first/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /New question/i })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /Mode/i })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /Difficulty/i })).toBeInTheDocument();
+  });
+
   it('offers adaptive, basic, intermediate, and advanced options', () => {
     render(<LearningHeader {...baseProps} />);
 

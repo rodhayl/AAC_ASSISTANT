@@ -336,11 +336,11 @@ def test_voice_answer_gate_uses_availability_before_lazy_model_load(
 
 
 @pytest.mark.usefixtures("setup_test_db")
-def test_voice_answer_is_graceful_when_provider_is_unavailable(
+def test_voice_answer_reports_provider_unavailable(
     regular_user,
     user_token,
 ):
-    """Core-only installs return a normal voice-unavailable answer."""
+    """Core-only installs reject voice answers when speech recognition is unavailable."""
     llm = Mock()
     llm.generate = AsyncMock(side_effect=RuntimeError("LLM unavailable"))
     speech = Mock()
@@ -364,11 +364,8 @@ def test_voice_answer_is_graceful_when_provider_is_unavailable(
         )
 
         data = response.json()
-        assert response.status_code == 200
-        assert data["success"] is True
-        assert data["transcription"] is None
-        assert data["is_correct"] is None
-        assert data["feedback_message"]
+        assert response.status_code == 400
+        assert data["detail"] == "Voice transcription failed"
     finally:
         app.dependency_overrides.clear()
 
@@ -391,6 +388,7 @@ def test_voice_status_reports_faster_whisper_and_browser_tts(monkeypatch, admin_
         "provider": "faster-whisper",
         "installed": True,
         "available": True,
+        "model_loaded": False,
         "model": "tiny",
         "models": {
             name: {**details, "selected": name == "tiny"}

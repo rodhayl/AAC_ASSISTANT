@@ -25,7 +25,7 @@ def reset_database(user=Depends(get_current_admin_user)):
         )
         raise HTTPException(
             status_code=403,
-            detail="Database reset is disabled. Set ALLOW_DB_RESET=true in .env to enable.",
+            detail=get_text(user=user, key="errors.admin.databaseResetDisabled"),
         )
 
     # Additional production environment check
@@ -35,7 +35,7 @@ def reset_database(user=Depends(get_current_admin_user)):
         )
         raise HTTPException(
             status_code=403,
-            detail="Database reset is blocked in production environments.",
+            detail=get_text(user=user, key="errors.admin.databaseResetProduction"),
         )
 
     try:

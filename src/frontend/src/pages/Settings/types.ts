@@ -45,6 +45,7 @@ export interface VoiceStatus {
     provider?: string;
     installed: boolean;
     model?: string;
+    model_loaded?: boolean;
     models?: Record<string, { size: string; description: string; selected?: boolean }>;
   };
   whisper?: { provider?: string; installed: boolean };
@@ -55,6 +56,7 @@ export interface VoiceStatus {
     installed?: boolean;
     model_present?: boolean;
     available?: boolean;
+    model_loaded?: boolean;
     model_size_mb?: number;
     import_error?: string | null;
     download_in_progress?: boolean;

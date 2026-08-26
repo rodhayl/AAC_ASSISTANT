@@ -5,7 +5,10 @@ import { NotFound } from '../src/pages/NotFound';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, defaultValue?: string) => defaultValue ?? key,
+    t: (key: string, arg2?: string | Record<string, unknown>, arg3?: Record<string, unknown>) =>
+      (globalThis as typeof globalThis & {
+        __aacTestTranslation?: (namespace: string, key: string, arg2?: string | Record<string, unknown>, arg3?: Record<string, unknown>) => string;
+      }).__aacTestTranslation?.('error', key, arg2, arg3) ?? key,
   }),
 }));
 
@@ -24,7 +27,7 @@ describe('NotFound page', () => {
       screen.getByText(/The page you are looking for doesn't exist/),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('link', { name: 'Go Back Home' }),
+      screen.getByRole('link', { name: 'Dashboard' }),
     ).toHaveAttribute('href', '/');
   });
 });

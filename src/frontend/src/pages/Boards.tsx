@@ -266,7 +266,7 @@ export function Boards() {
       await fetchBoards(effectiveUserId, searchQuery, true, 1);
       setSelectedBoardIds(new Set(failedIds));
       if (failedIds.length > 0) {
-        setBulkDeleteError(t('bulkDeleteFailed', 'Some boards could not be deleted. The failed boards remain selected.'));
+        setBulkDeleteError(t('bulkDeleteFailed'));
       }
     } finally {
       setBulkDeleting(false);
@@ -288,9 +288,9 @@ export function Boards() {
         isOpen={!!deleteBoardId}
         onClose={() => setDeleteBoardId(null)}
         onConfirm={confirmDeleteBoard}
-        title={t('deleteBoardTitle', 'Delete Board')}
+        title={t('deleteBoardTitle')}
         description={t('deleteConfirm')}
-        confirmText={t('delete', 'Delete')}
+        confirmText={t('delete')}
         cancelText={t('cancel')}
         variant="danger"
       />
@@ -298,9 +298,9 @@ export function Boards() {
         isOpen={bulkDeleteOpen}
         onClose={() => setBulkDeleteOpen(false)}
         onConfirm={confirmBulkDelete}
-        title={t('bulkDeleteTitle', 'Delete Selected Boards')}
-        description={t('bulkDeleteConfirm', 'Are you sure you want to delete the {{count}} selected boards?', { count: selectedBoardIds.size })}
-        confirmText={t('delete', 'Delete')}
+        title={t('bulkDeleteTitle')}
+        description={t('bulkDeleteConfirm', { count: selectedBoardIds.size })}
+        confirmText={t('delete')}
         cancelText={t('cancel')}
         variant="danger"
       />
@@ -425,12 +425,12 @@ export function Boards() {
                   className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
                 />
                 <label htmlFor="isLanguageLearning" className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {t('languageLearning', 'Language Learning Board')}
+                  {t('languageLearning')}
                 </label>
               </div>
               {isLanguageLearning && (
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 ml-6">
-                  {t('languageLearningDesc', 'Symbols will always be displayed in their original language.')}
+                  {t('languageLearningDesc')}
                 </p>
               )}
               <div className="flex items-center mb-3">
@@ -500,7 +500,7 @@ export function Boards() {
                       <button
                         onClick={() => duplicateBoard(board.id, user.id)}
                         className="p-2 text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
-                        aria-label={t('duplicateBoard', 'Duplicate board')}
+                        aria-label={t('duplicateBoard')}
                       >
                         <Copy className="w-4 h-4" />
                       </button>
@@ -509,8 +509,8 @@ export function Boards() {
                       <button
                         onClick={() => openAssign(board.id)}
                         className="p-2 text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
-                        title={t('assignToStudentTitle', 'Assign to Student')}
-                        aria-label={t('assignToStudent', 'Assign to student')}
+                        title={t('assignToStudentTitle')}
+                        aria-label={t('assignToStudent')}
                       >
                         <UserPlus className="w-4 h-4" />
                       </button>

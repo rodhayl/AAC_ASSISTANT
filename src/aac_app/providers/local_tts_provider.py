@@ -316,6 +316,10 @@ class LocalTTSProvider:
         """Return whether the kokoro-onnx package is installed (model may be absent)."""
         return _module_available()
 
+    def is_ready(self) -> bool:
+        """Return whether the Kokoro model is loaded in memory (post-warmup)."""
+        return self._kokoro is not None
+
     def _ensure_loaded(self):
         if self._kokoro is not None:
             return self._kokoro
@@ -331,6 +335,16 @@ class LocalTTSProvider:
             )
             logger.info("LocalTTSProvider loaded Kokoro model")
         return self._kokoro
+
+    def warmup(self) -> bool:
+        """Load the Kokoro model now so the first synthesis is fast.
+
+        The model is normally loaded lazily on the first ``synthesize`` call;
+        warming it moves that one-time cost off the critical path so a page's
+        first utterance does not wait for the ~325 MB ONNX model to be read.
+        Safe to call repeatedly: the load is guarded by a lock and runs once.
+        """
+        return self._ensure_loaded() is not None
 
     def synthesize(
         self,
@@ -361,10 +375,7 @@ class LocalTTSProvider:
         else:
             voice_info = _voice_info_from_name(resolved_voice)
             if voice_info is None or resolved_voice not in _known_voice_names():
-                # Unknown voice (e.g. a browser voiceURI leaking through the
-                # settings): fall back to the language default instead of failing.
-                female, _male = DEFAULT_VOICES.get(base_lang, DEFAULT_VOICES["es"])
-                resolved_voice = female
+                raise ValueError(f"Unknown Kokoro voice: {resolved_voice}")
             else:
                 # A specific voice drives the spoken language so the Settings
                 # picker works regardless of the current UI language.

@@ -42,14 +42,9 @@
   "by": "Por",
   "removeTopic": "Eliminar tema",
   "showThinking": "Mostrar razonamiento",
-  "welcomeMessage": "¡Hola {{name}}! ¡Vamos a aprender sobre {{topic}} juntos!",
-  "welcomeMessageSymbol": "¡Hola {{name}}!",
-  "fallbackQuestion": {
-    "question": "¿Qué sabes sobre {{topic}}?",
-    "choice1": "Es interesante",
-    "choice2": "Quiero aprender más",
-    "choice3": "Sé algunas cosas"
-  },
+  "welcomeMessage": "Hola, {{name}}. Hoy vamos a practicar {{topic}}.",
+  "welcomeContext": "Hola, {{name}}. Hoy vamos a practicar {{topic}} con el tablero {{board}}.",
+  "welcomeMessageSymbol": "Hola, {{name}}.",
   "topics": {
     "label": "Tema",
     "general": "Conversación General",
@@ -98,17 +93,14 @@
     "sessionNotActive": "Esta sesión de aprendizaje ya no está activa.",
     "unauthorized": "No autorizado",
     "noSymbolsProvided": "No se proporcionaron símbolos",
-    "transcriptionFailed": "Recibí tu audio pero no pude transcribirlo. Por favor intenta de nuevo o usa texto por ahora."
+    "submitAnswerFailed": "No se pudo enviar la respuesta.",
+    "submitVoiceAnswerFailed": "No se pudo enviar la respuesta de voz.",
+    "submitSymbolAnswerFailed": "No se pudo enviar la respuesta con símbolos."
   },
   "feedback": {
     "goodTry": "¡Buen intento! Sigue practicando y mejorarás."
   },
   "startChatting": "Empieza a chatear usando el tablero o escribe aquí.",
-  "fallbackConversation": {
-    "goodMessage": "¡Buen mensaje! ¡Sigamos adelante juntos!",
-    "interesting": "¡Eso es interesante! Cuéntame más."
-  },
-  "fallbackSummary": "¡Buen trabajo al completar tu sesión sobre {{topic}}! Respondiste {{questions}} preguntas y acertaste {{correct}}.",
   "endSession": "Finalizar sesión",
   "endSessionConfirmTitle": "¿Finalizar esta sesión?",
   "endSessionConfirm": "Tu progreso se guardará y aparecerá un resumen.",

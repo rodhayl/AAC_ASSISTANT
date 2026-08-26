@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from ...models import LearningSession
 from ...services.achievement_system import AchievementSystem
-from ...services.translation_service import TranslationService
 from .common import _strip_reasoning
 
 
@@ -40,27 +39,17 @@ Be very positive and encouraging. Keep it to 2-3 sentences."""
                     session.user_id, db, mode_key=session.mode_key
                 )
 
-                try:
-                    if self.llm is None:
-                        raise RuntimeError("LLM provider unavailable")
-                    summary_raw = await self.llm.generate(
-                        prompt=summary_prompt,
-                        system=system_prompt,
-                        max_tokens=100,
-                        temperature=0.7,
-                    )
-                    summary = _strip_reasoning(summary_raw)
-                except Exception:
-                    translation_service = TranslationService()
-                    user_lang = self._get_user_language(session.user_id, db)
-                    summary = translation_service.get(
-                        user_lang,
-                        "pages/learning",
-                        "fallbackSummary",
-                        topic=session.topic_name,
-                        questions=session.questions_answered,
-                        correct=session.correct_answers,
-                    )
+                if self.llm is None:
+                    raise RuntimeError("LLM provider unavailable")
+                summary_raw = await self.llm.generate(
+                    prompt=summary_prompt,
+                    system=system_prompt,
+                    max_tokens=100,
+                    temperature=0.7,
+                )
+                summary = _strip_reasoning(summary_raw)
+                if not summary.strip():
+                    raise ValueError("LLM returned an empty session summary")
 
                 db.add(session)
                 db.commit()

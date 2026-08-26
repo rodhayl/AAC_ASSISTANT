@@ -18,7 +18,18 @@ vi.mock('../src/store/learningStore', () => {
 });
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (_key: string, fallback: string) => fallback }),
+  useTranslation: () => ({
+    t: (key: string, arg2?: string | Record<string, unknown>) => {
+      if (typeof arg2 === 'string') return arg2;
+      const labels: Record<string, string> = {
+        more: 'More',
+        moreSuggestions: 'More suggestions',
+        suggestions: 'Suggestions',
+      };
+      return labels[key] ?? key;
+    },
+    i18n: { language: 'en' },
+  }),
 }));
 
 function word(label: string) {

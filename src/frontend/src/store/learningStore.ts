@@ -103,12 +103,8 @@ interface LearningState {
   resetSession: () => void;
 }
 
-// Translate a learning-namespace fallback string. Guards on i18n being
-// initialized: before init (e.g. unit tests that import the store directly)
-// i18next returns the raw key instead of the default value, so fall back to
-// the caller-provided text to keep messages deterministic.
-function tLearning(key: string, fallback: string): string {
-  return i18n.isInitialized ? i18n.t(key, fallback) : fallback;
+function tLearning(key: string): string {
+  return i18n.isInitialized ? i18n.t(key) : key;
 }
 
 // Strip model reasoning from text - lightweight fallback for legacy data
@@ -147,7 +143,7 @@ function buildAssistantReply(
     '';
 
   if (includeReasoning) {
-    const base = primaryRaw || tLearning('learning:answerReceived', 'Answer received');
+    const base = primaryRaw || tLearning('learning:answerReceived');
     if (payload.full_thinking) {
       return `${base}\n\n[debug] ${payload.full_thinking}`.trim();
     }
@@ -155,7 +151,7 @@ function buildAssistantReply(
   }
 
   const cleaned = stripReasoning(primaryRaw);
-  return cleaned || tLearning('learning:answerReceived', 'Answer received');
+  return cleaned || tLearning('learning:answerReceived');
 }
 
 function formatAssistantContent(content: string | undefined, includeReasoning: boolean): string {
@@ -437,7 +433,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
             ...(get().progressStats ?? {}),
             difficulty: question.difficulty ?? get().progressStats?.difficulty,
           },
-          messages: [...prev, { role: 'assistant' as const, content: formatAssistantContent(question.question_text || tLearning('learning:questionReady', 'Question ready'), showReasoning) }],
+          messages: [...prev, { role: 'assistant' as const, content: formatAssistantContent(question.question_text || tLearning('learning:questionReady'), showReasoning) }],
           isLoading: false
         });
         const questionWithProvider = question as QuestionResponse & WithProvider
@@ -488,7 +484,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
       );
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-      set({ error: extractError(error, 'Failed to submit answer'), isLoading: false });
+      set({ error: extractError(error, tLearning('learning:errors.submitAnswerFailed')), isLoading: false });
     }
   },
 
@@ -511,11 +507,11 @@ export const useLearningStore = create<LearningState>((set, get) => {
         result,
         'Failed to submit voice answer',
         result.transcription || '[voice]',
-        `[voice] ${result.transcription || tLearning('learning:audioMessage', 'Audio message')}`,
+        `[voice] ${result.transcription || tLearning('learning:audioMessage')}`,
       );
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-      set({ error: extractError(error, 'Failed to submit voice answer'), isLoading: false });
+      set({ error: extractError(error, tLearning('learning:errors.submitVoiceAnswerFailed')), isLoading: false });
     }
   },
 
@@ -547,7 +543,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
       );
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-      set({ error: extractError(error, 'Failed to submit symbol answer'), isLoading: false });
+      set({ error: extractError(error, tLearning('learning:errors.submitSymbolAnswerFailed')), isLoading: false });
     }
   },
 

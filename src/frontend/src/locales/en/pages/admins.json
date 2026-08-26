@@ -51,6 +51,7 @@
     "passwordsDoNotMatch": "Passwords do not match"
   },
   "actions": {
+    "resetSelfTitle": "Use Change Password in Settings",
     "editAria": "Edit {{name}}",
     "editTitle": "Edit admin",
     "deleteAria": "Delete {{name}}",

@@ -32,7 +32,18 @@ vi.mock('react-i18next', () => ({
             return text;
         }
         if (arg2 && typeof arg2 === 'object' && 'defaultValue' in arg2) return arg2.defaultValue;
-        return key;
+        const values: Record<string, string> = {
+          'symbolHunt.title': 'Symbol Hunt',
+          'symbolHunt.selectBoard': 'Select a board to play',
+          'symbolHunt.playNow': 'Play Now',
+          'symbolHunt.find': 'Find {{label}}',
+        };
+        let text = values[key] || key;
+        const options = (arg2 && typeof arg2 === 'object' ? arg2 : arg3) || {};
+        Object.keys(options).forEach((k) => {
+          text = text.replace(`{{${k}}}`, String(options[k]));
+        });
+        return text;
     },
     i18n: {
       changeLanguage: () => new Promise<void>((resolve) => resolve()),
@@ -56,6 +67,7 @@ const mockTTSState = {
   setSelectedVoice: vi.fn(),
   localVoice: 'default',
   setLocalVoice: vi.fn(),
+  setTTSProvider: vi.fn(),
 };
 vi.mock('../src/store/ttsStore', () => ({
   useTTSStore: Object.assign(() => mockTTSState, { getState: () => mockTTSState }),

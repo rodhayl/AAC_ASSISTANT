@@ -91,8 +91,8 @@ export function LearningMessageList({
                   <button
                     onClick={() => onEditMessage(index)}
                     className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-white/20 rounded"
-                    title={t('editSymbols', 'Edit symbols')}
-                    aria-label={t('editSymbolMessage', 'Edit symbol message')}
+                    title={t('editSymbols')}
+                    aria-label={t('editSymbolMessage')}
                   >
                     <Edit className="w-3 h-3" />
                   </button>

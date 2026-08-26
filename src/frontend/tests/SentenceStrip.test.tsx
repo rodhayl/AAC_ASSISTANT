@@ -45,14 +45,14 @@ vi.mock('../src/lib/symbolCategoryStyle', () => ({
 // Mock SymbolImage
 vi.mock('../src/components/common/SymbolImage', () => ({
   SymbolImage: ({ imagePath }: { imagePath: string }) => (
-    <img data-testid="symbol-image" src={imagePath} alt="" />
+    imagePath ? <img data-testid="symbol-image" src={imagePath} alt="" /> : null
   ),
 }));
 
 // Mock react-i18next
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (_key: string, fallback: string) => fallback,
+    t: (key: string) => key === 'tapSymbolsToSpeak' ? 'Tap symbols to create a sentence...' : key,
   }),
 }));
 

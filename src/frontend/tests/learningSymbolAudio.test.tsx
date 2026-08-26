@@ -359,6 +359,21 @@ describe('Learning symbol-first and audio-first flows', () => {
     expect(await screen.findByText('providerSwitched')).toBeInTheDocument();
   });
 
+  it('voice: explicitly speaks the welcome message returned when starting a session', async () => {
+    const store = (await import('../src/store/learningStore')).__mockStore;
+    const welcome = 'Hola, Admin 1787327487883. Hoy vamos a practicar Conversación General.';
+    store.startSession.mockImplementation(async () => {
+      store.currentSession = { session_id: 12, success: true, welcome_message: welcome };
+      store.messages = [{ role: 'assistant', content: welcome }];
+    });
+
+    render(<Learning />);
+    fireEvent.click(screen.getByTestId('learning-session-start'));
+
+    await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledWith(welcome, { rate: 0.9 }));
+    expect(screen.getByText(welcome)).toBeInTheDocument();
+  });
+
   it('voice: speaks the last assistant message through the TTS queue', async () => {
     const store = (await import('../src/store/learningStore')).__mockStore;
     store.messages = [{ role: 'assistant', content: 'Hello there' }];
@@ -366,6 +381,19 @@ describe('Learning symbol-first and audio-first flows', () => {
     render(<Learning />);
 
     await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledWith('Hello there', { rate: 0.9 }));
+  });
+
+  it('voice: replays the first message when a new session has the same greeting', async () => {
+    const store = (await import('../src/store/learningStore')).__mockStore;
+    store.currentSession = { session_id: 1, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
+    store.messages = [{ role: 'assistant', content: 'Hello there' }];
+
+    const { rerender } = render(<Learning />);
+    await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledTimes(1));
+
+    store.currentSession = { session_id: 2, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
+    rerender(<Learning />);
+    await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledTimes(2));
   });
 
   it('voice: ignores non-assistant messages for TTS', async () => {
@@ -527,6 +555,56 @@ describe('Learning symbol-first and audio-first flows', () => {
     await waitFor(() => expect(screen.queryByText('Hello')).not.toBeInTheDocument());
     expect(screen.getByText('Apple')).toBeInTheDocument();
     expect(screen.getByText('Water')).toBeInTheDocument();
+  });
+
+  it('symbol-first: prefetches the library on page load without opening the view', async () => {
+    const api = await getMockedApi();
+    api.get.mockImplementation((url: string) => {
+      if (url === '/boards/symbols') {
+        return Promise.resolve({
+          data: [{ id: 10, label: 'Hello', category: 'greeting', image_path: '/uploads/symbols/test.png' }],
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    render(<Learning />);
+
+    // The library is fetched in the background as soon as the page mounts,
+    // before the symbol view is ever opened.
+    await waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith(
+        '/boards/symbols',
+        expect.objectContaining({ params: expect.objectContaining({ limit: 1000 }) }),
+      ),
+    );
+    // The view is still closed; the data is simply ready for when it opens.
+    expect(screen.queryByPlaceholderText('search')).not.toBeInTheDocument();
+    expect(screen.queryByText('Hello')).not.toBeInTheDocument();
+  });
+
+  it('symbol-first: opening the view does not refetch an already loaded library', async () => {
+    const api = await getMockedApi();
+    api.get.mockImplementation((url: string) => {
+      if (url === '/boards/symbols') {
+        return Promise.resolve({
+          data: [{ id: 10, label: 'Hello', category: 'greeting', image_path: '/uploads/symbols/test.png' }],
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    render(<Learning />);
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/boards/symbols', expect.anything()));
+
+    // Opening the view uses the prefetched data: the library is requested
+    // exactly once (by the mount prefetch), never again on open.
+    await act(async () => {
+      fireEvent.click(screen.getByTitle('toggleSymbolView'));
+    });
+    expect(await screen.findByText('Hello')).toBeInTheDocument();
+    const symbolFetches = api.get.mock.calls.filter((call) => call[0] === '/boards/symbols');
+    expect(symbolFetches).toHaveLength(1);
   });
 
   it('symbol-first: orders core words by priority', async () => {

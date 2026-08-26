@@ -181,7 +181,7 @@ export const useBoardStore = create<BoardState>((set, get) => {
     } catch (error: unknown) {
       console.error('Fetch board error:', error);
       if (requestId === boardRequestSequence) {
-        set({ error: extractError(error, 'Failed to fetch board'), isBoardLoading: false });
+        set({ error: extractError(error, i18n.t('boards:boardLoadFailed')), isBoardLoading: false });
       }
     }
   },
@@ -249,10 +249,7 @@ export const useBoardStore = create<BoardState>((set, get) => {
     try {
       if (apiOffline.isOffline()) {
         throw new Error(
-          i18n.t(
-            'boards:offlineDuplicateUnsupported',
-            'Board duplication requires an internet connection.',
-          ),
+          i18n.t('boards:offlineDuplicateUnsupported'),
         );
       }
       const base: Board = (await api.get(`/boards/${id}`)).data
@@ -261,7 +258,7 @@ export const useBoardStore = create<BoardState>((set, get) => {
       // on duplicate: the board is created with AI disabled, its symbols are
       // copied manually, and AI settings are restored via the update endpoint.
       const createRes = await api.post('/boards/', {
-        name: `${base.name}${i18n.t('boards:copySuffix', ' (Copy)')}`,
+        name: `${base.name}${i18n.t('boards:copySuffix')}`,
         description: base.description,
         category: base.category,
         is_public: base.is_public,
@@ -466,8 +463,8 @@ export const useBoardStore = create<BoardState>((set, get) => {
       }));
       try {
         useNotificationsStore.getState().add({
-          title: i18n.t('boards:boardAssigned', 'Board assigned'),
-          message: i18n.t('boards:boardAssignedTo', 'Board {{boardId}} assigned to student {{studentId}}', { boardId, studentId }),
+          title: i18n.t('boards:boardAssigned'),
+          message: i18n.t('boards:boardAssignedTo', { boardId, studentId }),
         })
       } catch { /* notification optional */ }
       finishMutation();

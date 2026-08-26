@@ -37,6 +37,42 @@ vi.mock('../src/lib/format', () => ({
 }));
 
 const tFn = (key: string, defaultValue?: string | { defaultValue?: string }) => {
+  const values: Record<string, string> = {
+    title: 'Communication Boards',
+    subtitle: 'Manage your communication boards',
+    searchPlaceholder: 'Search boards...',
+    newBoard: 'New Board',
+    createTitle: 'Create New Board',
+    boardName: 'Board Name',
+    description: 'Description',
+    placeholderName: 'e.g., Daily Activities',
+    optionalDescription: 'Optional description',
+    languageLearning: 'Language Learning Board',
+    languageLearningDesc: 'Symbols will always be displayed in their original language.',
+    enableAI: 'Enable AI-Powered Symbol Suggestions',
+    aiSettingsMissing: 'AI settings are missing a configured provider/model. Update them in Settings first.',
+    cancel: 'Cancel',
+    create: 'Create Board',
+    refresh: 'Refresh',
+    selectAll: 'Select All',
+    deleteSelected: 'Delete Selected',
+    delete: 'Delete',
+    deleteBoardTitle: 'Delete Board',
+    deleteConfirm: 'Are you sure you want to delete this board?',
+    bulkDeleteTitle: 'Delete Selected Boards',
+    bulkDeleteConfirm: 'Are you sure you want to delete the selected boards?',
+    duplicateBoard: 'Duplicate board',
+    assignToStudent: 'Assign to student',
+    assignToStudentTitle: 'Assign to Student',
+    close: 'Close',
+    assign: 'Assign',
+    loadStudentsError: 'Failed to load students',
+    assignBoardError: 'Failed to assign board',
+    loadMore: 'Load More',
+    retry: 'Retry',
+    bulkDeleteFailed: 'Some boards could not be deleted. The failed boards remain selected.',
+  };
+  if (values[key]) return values[key];
   if (typeof defaultValue === 'string') return defaultValue;
   return defaultValue?.defaultValue ?? key;
 };
@@ -155,12 +191,12 @@ describe('Boards page management', () => {
 
   it('creates a board with the given name and description', async () => {
     renderBoards();
-    await screen.findByText('title');
+    await screen.findByText('Communication Boards');
 
-    fireEvent.click(screen.getByText('newBoard'));
-    fireEvent.change(screen.getByLabelText('boardName'), { target: { value: 'Colors' } });
-    fireEvent.change(screen.getByLabelText('description'), { target: { value: 'Learn colors' } });
-    fireEvent.click(screen.getByText('create'));
+    fireEvent.click(screen.getByText('New Board'));
+    fireEvent.change(screen.getByLabelText('Board Name'), { target: { value: 'Colors' } });
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Learn colors' } });
+    fireEvent.click(screen.getByText('Create Board'));
 
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith(
@@ -190,14 +226,14 @@ describe('Boards page management', () => {
           : { aiSettings, fetchAISettings: vi.fn().mockResolvedValue(undefined) },
     );
     renderBoards();
-    await screen.findByText('title');
+    await screen.findByText('Communication Boards');
 
-    fireEvent.click(screen.getByText('newBoard'));
-    fireEvent.change(screen.getByLabelText('boardName'), { target: { value: 'Bilingual' } });
+    fireEvent.click(screen.getByText('New Board'));
+    fireEvent.change(screen.getByLabelText('Board Name'), { target: { value: 'Bilingual' } });
     fireEvent.click(screen.getByLabelText('Language Learning Board'));
-    fireEvent.click(screen.getByLabelText('enableAI'));
+    fireEvent.click(screen.getByLabelText('Enable AI-Powered Symbol Suggestions'));
     await screen.findByText('openrouter - gpt-4o-mini');
-    fireEvent.click(screen.getByText('create'));
+    fireEvent.click(screen.getByText('Create Board'));
 
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith(
@@ -221,14 +257,14 @@ describe('Boards page management', () => {
 
   it('blocks AI-enabled creation when no provider is configured', async () => {
     renderBoards();
-    await screen.findByText('title');
+    await screen.findByText('Communication Boards');
 
-    fireEvent.click(screen.getByText('newBoard'));
-    fireEvent.change(screen.getByLabelText('boardName'), { target: { value: 'AI Board' } });
-    fireEvent.click(screen.getByLabelText('enableAI'));
+    fireEvent.click(screen.getByText('New Board'));
+    fireEvent.change(screen.getByLabelText('Board Name'), { target: { value: 'AI Board' } });
+    fireEvent.click(screen.getByLabelText('Enable AI-Powered Symbol Suggestions'));
 
     expect(
-      await screen.findByText('aiSettingsMissing'),
+      await screen.findByText('AI settings are missing a configured provider/model. Update them in Settings first.'),
     ).toBeInTheDocument();
     expect(api.post).not.toHaveBeenCalled();
   });
@@ -238,7 +274,7 @@ describe('Boards page management', () => {
     renderBoards();
     await screen.findByText('Morning Routine');
 
-    fireEvent.click(screen.getByLabelText('delete'));
+    fireEvent.click(screen.getByLabelText('Delete'));
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByText('Delete'));
 
@@ -391,7 +427,7 @@ describe('Boards page management', () => {
     fireEvent.click(screen.getByLabelText('Assign to student'));
     const select = await screen.findByRole('combobox');
     fireEvent.change(select, { target: { value: '20' } });
-    fireEvent.click(screen.getByText('assign'));
+    fireEvent.click(screen.getByText('Assign'));
 
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/boards/1/assign', {
@@ -410,8 +446,8 @@ describe('Boards page management', () => {
     renderBoards();
     await screen.findByText('Morning Routine');
 
-    fireEvent.click(screen.getByLabelText('selectAll'));
-    fireEvent.click(screen.getByText(/deleteSelected/));
+    fireEvent.click(screen.getByLabelText('Select All'));
+    fireEvent.click(screen.getByRole('button', { name: /Delete Selected/ }));
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByText('Delete'));
 
@@ -434,7 +470,7 @@ describe('Boards page management', () => {
       }),
     );
 
-    fireEvent.click(screen.getByText('loadMore'));
+    fireEvent.click(screen.getByText('Load More'));
     await waitFor(() =>
       expect(api.get).toHaveBeenCalledWith('/boards/', {
         params: { user_id: 10, skip: 100, limit: 100 },
@@ -451,7 +487,7 @@ describe('Boards page management', () => {
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(screen.getByText('server exploded')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('retry'));
+    fireEvent.click(screen.getByText('Retry'));
     await waitFor(() =>
       expect(api.get).toHaveBeenCalledWith('/boards/', {
         params: { user_id: 10, skip: 0, limit: 100 },
@@ -466,9 +502,9 @@ describe('Boards page management', () => {
         selector ? selector({ user: admin }) : { user: admin },
     );
     renderBoards();
-    await screen.findByText('title');
+    await screen.findByText('Communication Boards');
 
-    fireEvent.change(screen.getByLabelText('searchPlaceholder'), { target: { value: 'morn' } });
+    fireEvent.change(screen.getByLabelText('Search boards...'), { target: { value: 'morn' } });
 
     await waitFor(() =>
       expect(api.get).toHaveBeenCalledWith('/boards/', {
@@ -499,7 +535,7 @@ describe('Boards page management', () => {
 
     fireEvent.click(screen.getByLabelText('Assign to student'));
 
-    expect(await screen.findByText('loadStudentsError')).toBeInTheDocument();
+    expect(await screen.findByText('Failed to load students')).toBeInTheDocument();
   });
 
   it('shows an error when assigning a board fails', async () => {
@@ -516,9 +552,9 @@ describe('Boards page management', () => {
     fireEvent.click(screen.getByLabelText('Assign to student'));
     const select = await screen.findByRole('combobox');
     fireEvent.change(select, { target: { value: '20' } });
-    fireEvent.click(screen.getByText('assign'));
+    fireEvent.click(screen.getByText('Assign'));
 
-    expect(await screen.findByText('assignBoardError')).toBeInTheDocument();
+    expect(await screen.findByText('Failed to assign board')).toBeInTheDocument();
   });
 
   it('cancels the create form and closes the assign panel', async () => {
@@ -531,14 +567,14 @@ describe('Boards page management', () => {
     renderBoards();
     await screen.findByText('Morning Routine');
 
-    fireEvent.click(screen.getByText('newBoard'));
-    expect(screen.getByText('createTitle')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('cancel'));
-    expect(screen.queryByText('createTitle')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('New Board'));
+    expect(screen.getByText('Create New Board')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(screen.queryByText('Create New Board')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText('Assign to student'));
     await screen.findByRole('combobox');
-    fireEvent.click(screen.getByText('close'));
+    fireEvent.click(screen.getByText('Close'));
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   });
 
@@ -547,15 +583,15 @@ describe('Boards page management', () => {
     renderBoards();
     await screen.findByText('Morning Routine');
 
-    fireEvent.click(screen.getByLabelText('delete'));
+    fireEvent.click(screen.getByLabelText('Delete'));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByText('cancel'));
+    fireEvent.click(within(dialog).getByText('Cancel'));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByLabelText('selectAll'));
-    fireEvent.click(screen.getByText(/deleteSelected/));
+    fireEvent.click(screen.getByLabelText('Select All'));
+    fireEvent.click(screen.getByRole('button', { name: /Delete Selected/ }));
     const bulkDialog = await screen.findByRole('dialog');
-    fireEvent.click(within(bulkDialog).getByText('cancel'));
+    fireEvent.click(within(bulkDialog).getByText('Cancel'));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
@@ -564,17 +600,17 @@ describe('Boards page management', () => {
     renderBoards();
     await screen.findByText('Morning Routine');
 
-    fireEvent.click(screen.getByLabelText('selectAll'));
-    expect(screen.getByText(/deleteSelected/)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Select All'));
+    expect(screen.getByRole('button', { name: /Delete Selected/ })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByLabelText('selectAll'));
-    expect(screen.queryByText(/deleteSelected/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Select All'));
+    expect(screen.queryByText('Delete Selected')).not.toBeInTheDocument();
   });
 
   it('ignores an empty board name on submit', async () => {
     renderBoards();
-    await screen.findByText('title');
-    fireEvent.click(screen.getByText('newBoard'));
+    await screen.findByText('Communication Boards');
+    fireEvent.click(screen.getByText('New Board'));
 
     fireEvent.submit(document.querySelector('form') as HTMLFormElement);
 

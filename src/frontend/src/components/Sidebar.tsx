@@ -25,11 +25,11 @@ export function Sidebar({ className, isOpen = true, onNavigate }: SidebarProps) 
 
   const links = [
     { href: '/', label: t('links.dashboard'), icon: LayoutDashboard, roles: ['admin', 'teacher', 'student'] },
-    { href: '/communication', label: t('links.communication', 'Communication'), icon: MessageSquare, roles: ['admin', 'teacher', 'student'] },
+    { href: '/communication', label: t('links.communication'), icon: MessageSquare, roles: ['admin', 'teacher', 'student'] },
     { href: '/boards', label: t('links.boards'), icon: Grid, roles: ['admin', 'teacher', 'student'] },
     { href: '/symbols', label: t('links.symbols'), icon: ImageIcon, roles: ['admin', 'teacher'] },
     { href: '/learning', label: t('links.learning'), icon: BookOpen, roles: ['admin', 'teacher', 'student'] },
-    { href: '/symbol-hunt', label: t('links.symbolHunt', 'Symbol Hunt'), icon: Gamepad2, roles: ['admin', 'teacher', 'student'] },
+    { href: '/symbol-hunt', label: t('links.symbolHunt'), icon: Gamepad2, roles: ['admin', 'teacher', 'student'] },
     { href: '/achievements', label: t('links.achievements'), icon: Trophy, roles: ['admin', 'teacher', 'student'] },
     { href: '/students', label: t('links.students'), icon: BookOpen, roles: ['admin', 'teacher'] },
     { href: '/teachers', label: t('links.teachers'), icon: Users, roles: ['admin'] },

@@ -32,7 +32,7 @@ import { BoardsAndTopicsSidebar } from '../components/learning/BoardsAndTopicsSi
 const EMPTY_BOARD_SYMBOLS: BoardSymbol[] = [];
 
 export function Communication() {
-  const { t } = useTranslation(['boards', 'learning']);
+  const { t } = useTranslation(['boards', 'learning', 'common']);
   const [searchParams, setSearchParams] = useSearchParams();
   const boards = useBoardStore((state) => state.boards);
   const currentBoard = useBoardStore((state) => state.currentBoard);
@@ -89,7 +89,7 @@ export function Communication() {
     if (!currentSession) return;
     if (currentSession.board_id === currentBoard.id) return;
     resetSession();
-  }, [activeBoardId, currentBoard?.id, currentSession?.board_id, currentSession?.session_id, resetSession]);
+  }, [activeBoardId, currentBoard, currentSession, resetSession]);
 
   // Helper to start activity from sidebar
   const handleStartActivity = async (topic: string, purpose: string, boardId?: number) => {
@@ -104,7 +104,7 @@ export function Communication() {
         difficulty: 'basic',
         board_id: boardId
       }, user.id);
-      addToast(t('sessionStarted', 'Session started'), 'success');
+      addToast(t('common:sessionStarted'), 'success');
       // If a board was selected, we might want to switch to it? 
       // Current behavior: The sidebar allows selecting a board for the SESSION context.
       // If we want to VISUALLY switch to that board, we should:
@@ -113,7 +113,7 @@ export function Communication() {
       }
     } catch (err) {
       console.error("Failed to start session", err);
-      addToast(t('sessionStartFailed', 'Failed to start session'), 'error');
+      addToast(t('common:sessionStartFailed'), 'error');
     } finally {
       setIsStartingSession(false);
     }
@@ -283,7 +283,7 @@ export function Communication() {
         activeSession = useLearningStore.getState().currentSession;
       } catch (e) {
         console.error("Failed to start session for chat", e);
-        addToast(t('sessionStartFailed'), 'error');
+        addToast(t('common:sessionStartFailed'), 'error');
         return;
       }
     }
@@ -308,7 +308,7 @@ export function Communication() {
     submitSymbolAnswer(activeSession.session_id, symbolsForChat, enriched_gloss, raw_gloss)
       .catch(err => {
         console.error('Failed to send to chat:', err);
-        addToast(t('sendToChatFailed', 'Could not send the phrase to the assistant'), 'error');
+        addToast(t('common:sendToChatFailed'), 'error');
         setSentence(phrase);
       });
   }, [sentence, currentSession, currentBoard, isChatLoading, submitSymbolAnswer, isChatOpen, user, startSession, addToast, t]);
@@ -344,7 +344,7 @@ export function Communication() {
   );
 
   const handleAttention = useCallback(() => {
-    speakText(t('attentionPhrase', 'Excuse me!'));
+    speakText(t('common:attentionPhrase'));
   }, [speakText, t]);
 
   const handleSpeakText = useCallback(
@@ -372,7 +372,7 @@ export function Communication() {
       })
       .catch(() => {
         setVoiceEnabled(!next);
-        addToast(t('voiceSaveFailed', 'Could not save voice preference'), 'error');
+        addToast(t('common:voiceSaveFailed'), 'error');
       });
   }, [addToast, t, user, voiceEnabled]);
 
@@ -435,10 +435,10 @@ export function Communication() {
           <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-8">
             <div>
               <h1 className="text-2xl font-bold text-primary">
-                {t('communication', 'Communication')}
+                {t('common:communication')}
               </h1>
               <p className="text-gray-500 dark:text-gray-400 mt-1">
-                {t('selectBoardToStart', 'Select a board to start communicating')}
+                {t('common:selectBoardToStart')}
               </p>
             </div>
 
@@ -448,7 +448,7 @@ export function Communication() {
                 id="board-search"
                 name="board_search"
                 type="text"
-                placeholder={t('searchBoards', 'Search boards...')}
+                placeholder={t('common:searchBoards')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
@@ -464,19 +464,19 @@ export function Communication() {
             <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
               <LayoutGrid className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
-                {t('noBoardsMatchSearch', 'No boards match your search')}
+                {t('common:noBoardsMatchSearch')}
               </h3>
             </div>
           ) : !hasActiveSearch && availableBoards.length === 0 ? (
             <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
               <LayoutGrid className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
-                {t('noBoardsFound', 'No boards found')}
+                {t('common:noBoardsFound')}
               </h3>
               <p className="text-gray-500 dark:text-gray-400 mt-2">
                 {user?.user_type === 'student'
-                  ? t('askTeacherForBoards', 'Ask your teacher to assign you a board.')
-                  : t('createBoardFirst', 'Create a board in the Boards section first.')}
+                  ? t('common:askTeacherForBoards')
+                  : t('common:createBoardFirst')}
               </p>
             </div>
           ) : (
@@ -504,7 +504,7 @@ export function Communication() {
                       }`}
                   >
                     {!playable && (
-                      <div className="absolute top-4 right-4 text-amber-600 dark:text-amber-400 z-10 flex flex-col items-end gap-1" title={t('boardTooEmpty', 'Board needs at least 50% symbols to be used')}>
+                      <div className="absolute top-4 right-4 text-amber-600 dark:text-amber-400 z-10 flex flex-col items-end gap-1" title={t('common:boardTooEmpty')}>
                         <Lock className="w-5 h-5 drop-shadow-sm" />
                         <span className="text-xs font-bold bg-amber-100 dark:bg-amber-900/60 px-2 py-0.5 rounded shadow-sm border border-amber-200 dark:border-amber-800/50">
                           {progress}%
@@ -533,8 +533,8 @@ export function Communication() {
                         <p className="text-xs text-amber-600 dark:text-amber-500 font-bold mb-2 flex items-center gap-1">
                           <PlusCircle className="w-3 h-3" />
                           {needed === 1
-                            ? t('addOneMoreSymbol', 'Add 1 more symbol to unlock')
-                            : t('addMoreSymbolsToUnlock', 'Add {{count}} more symbols to unlock', { count: needed })}
+                            ? t('common:addOneMoreSymbol')
+                            : t('common:addMoreSymbolsToUnlock', { count: needed })}
                         </p>
                         <div className="h-1.5 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden shadow-inner">
                           <div
@@ -547,11 +547,11 @@ export function Communication() {
 
                     <div className="mt-auto pt-4 border-t border-gray-100 dark:border-gray-700 w-full flex justify-between items-center">
                       <span className={`text-sm font-medium flex items-center ${playable ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>
-                        {playable ? t('openBoard', 'Open Board') : t('boardLocked', 'Board Locked')}
+                        {playable ? t('common:openBoard') : t('common:boardLocked')}
                         {playable && <ArrowLeft className="w-4 h-4 ml-1 rotate-180" />}
                       </span>
                       <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-                        {symbolCount} {symbolCount === 1 ? t('symbol', 'symbol') : t('symbols', 'symbols')}
+                        {symbolCount} {symbolCount === 1 ? t('common:symbol') : t('common:symbols')}
                       </span>
                     </div>
                   </button>
@@ -565,7 +565,7 @@ export function Communication() {
                     onClick={loadMore}
                     className="px-6 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                   >
-                    {t('loadMore', 'Load More')}
+                    {t('common:loadMore')}
                   </button>
                 </div>
               )}
@@ -590,7 +590,7 @@ export function Communication() {
         <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900 p-4">
           <div className="max-w-md w-full text-center bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-900/60 p-8 shadow-lg">
             <div className="text-red-600 dark:text-red-400 text-lg font-bold mb-2">
-              {t('boardLoadFailed', 'Could not load this board')}
+              {t('common:boardLoadFailed')}
             </div>
             <p className="text-sm text-gray-600 dark:text-gray-300 mb-6 break-words">{boardError}</p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -598,13 +598,13 @@ export function Communication() {
                 onClick={() => fetchBoard(activeBoardId, true)}
                 className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors"
               >
-                {t('retry', 'Retry')}
+                {t('common:retry')}
               </button>
               <button
                 onClick={handleHome}
                 className="px-5 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
               >
-                {t('backToBoards', 'Back to boards')}
+                {t('common:backToBoards')}
               </button>
             </div>
           </div>

@@ -90,7 +90,7 @@ export function Symbols() {
       setSymbols(items.slice(0, pageSize));
     } catch (e: unknown) {
       if (seq !== fetchSeqRef.current) return;
-      setError(extractError(e, t('loadFailed', 'Failed to load symbols')));
+      setError(extractError(e, t('loadFailed')));
     } finally {
       if (seq === fetchSeqRef.current) setIsLoading(false);
     }
@@ -177,7 +177,7 @@ export function Symbols() {
       resetForm();
       await fetchSymbols();
     } catch (e: unknown) {
-      setError(extractError(e, t('updateFailed', 'Failed to update symbol')));
+      setError(extractError(e, t('updateFailed')));
     } finally {
       setCreating(false);
     }
@@ -208,7 +208,7 @@ export function Symbols() {
       resetForm();
       await fetchSymbols();
     } catch (e: unknown) {
-      setError(extractError(e, t('createFailed', 'Failed to create symbol')));
+      setError(extractError(e, t('createFailed')));
     } finally {
       setCreating(false);
     }
@@ -220,8 +220,8 @@ export function Symbols() {
       mode: 'single',
       id,
       force: false,
-      title: t('deleteSymbol') || 'Delete Symbol',
-      description: t('deleteSymbolConfirm') || 'Delete this symbol?',
+      title: t('deleteSymbol'),
+      description: t('deleteSymbolConfirm'),
       isLoading: false
     });
   };
@@ -231,8 +231,8 @@ export function Symbols() {
       isOpen: true,
       mode: 'batch',
       force: false,
-      title: t('deleteSymbols') || 'Delete Symbols',
-      description: t('deleteSelectedConfirm', { count: selectedIds.size }) || `Delete ${selectedIds.size} selected symbols?`,
+      title: t('deleteSymbols'),
+      description: t('deleteSelectedConfirm', { count: selectedIds.size }),
       isLoading: false
     });
   };
@@ -262,7 +262,7 @@ export function Symbols() {
             deletedIds.push(id);
           } catch (e: unknown) {
             const err = e as { response?: { status?: number } };
-            const detail = extractError(e, t('failed', 'Failed'));
+            const detail = extractError(e, t('failed'));
             // The backend error text is localized, but always mentions the
             // force=true escape hatch, so that marker is the stable signal
             // that the symbol is in use on boards. Never force-delete in a
@@ -283,16 +283,16 @@ export function Symbols() {
         });
 
         if (inUseCount.length) {
-          setError(t('batchDeleteInUseSkipped', '{{count}} selected symbols are in use on boards and were not deleted. Delete them individually to force removal.', { count: inUseCount.length }));
+          setError(t('batchDeleteInUseSkipped', { count: inUseCount.length }));
         } else if (failures.length) {
-          setError(t('someDeletionsFailed', 'Some deletions failed: {{details}}', { details: failures.join('; ') }));
+          setError(t('someDeletionsFailed', { details: failures.join('; ') }));
         }
         setDeleteState(prev => ({ ...prev, isOpen: false }));
       }
     } catch (e: unknown) {
       if (deleteState.mode === 'single') {
         const err = e as { response?: { status?: number } };
-        const detail = extractError(e, t('deleteFailed', 'Failed to delete symbol'));
+        const detail = extractError(e, t('deleteFailed'));
         // Backend error text is localized but always mentions force=true when
         // the symbol is in use on boards (e.g. en: "...use force=true",
         // es: "...use force=true"), so that is the language-independent signal.
@@ -301,7 +301,7 @@ export function Symbols() {
             ...prev,
             force: true,
             isLoading: false,
-            description: t('symbolInUseForceDelete') || 'Symbol is in use on boards. Remove it from all boards and delete?'
+            description: t('symbolInUseForceDelete')
           }));
           return;
         }
@@ -322,7 +322,7 @@ export function Symbols() {
     }
     const maxSizeMb = MAX_IMAGE_FILE_BYTES / (1024 * 1024);
     if (!isValidImageFile(file)) {
-      setError(t('invalidFile', 'Invalid file. Must be an image under {{size}}MB.', { size: maxSizeMb }));
+      setError(t('invalidFile', { size: maxSizeMb }));
       setNewFile(null);
       setNewPreview(null);
       return;
@@ -359,7 +359,7 @@ export function Symbols() {
     } catch (e: unknown) {
       if (searchSeq === arasaacSearchSeqRef.current) {
         console.error(e);
-        setError(t('arasaacSearchFailed', 'Failed to search ARASAAC'));
+        setError(t('arasaacSearchFailed'));
       }
     } finally {
       if (searchSeq === arasaacSearchSeqRef.current) setIsSearchingArasaac(false);
@@ -379,10 +379,10 @@ export function Symbols() {
       await fetchSymbols();
       // Confirm the import so the user isn't left guessing whether the click
       // did anything (the library is behind this view).
-      addToast(t('importSuccess', 'Symbol imported'), 'success');
+      addToast(t('importSuccess'), 'success');
     } catch (e: unknown) {
       console.error(e);
-      setError(t('importFailed', 'Failed to import symbol'));
+      setError(t('importFailed'));
     } finally {
       setImportingId(null);
     }
@@ -396,7 +396,7 @@ export function Symbols() {
         onConfirm={confirmDelete}
         title={deleteState.title}
         description={deleteState.description}
-        confirmText={deleteState.force ? (t('forceDelete') || 'Force Delete') : (t('delete') || 'Delete')}
+        confirmText={deleteState.force ? t('forceDelete') : t('delete')}
         cancelText={t('cancel')}
         variant="danger"
         isLoading={deleteState.isLoading}
@@ -488,7 +488,7 @@ export function Symbols() {
               value={form.label}
               onChange={(e) => setForm(prev => ({ ...prev, label: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-              placeholder={t('labelPlaceholder', 'e.g., Hello')}
+              placeholder={t('labelPlaceholder')}
             />
           </div>
           <div>
@@ -532,7 +532,7 @@ export function Symbols() {
               <ImageIcon className="w-4 h-4" /> {newFile ? newFile.name : t('upload')}
             </label>
           {newPreview && newPreview.startsWith('data:image/') && (
-            <img src={newPreview} alt={t('previewAlt', 'preview')} className="w-12 h-12 rounded object-cover border" />
+            <img src={newPreview} alt={t('previewAlt')} className="w-12 h-12 rounded object-cover border" />
           )}
           <div className="flex gap-2">
             <Button

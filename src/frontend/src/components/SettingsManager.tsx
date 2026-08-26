@@ -4,6 +4,7 @@ import { useLocaleStore } from '../store/localeStore';
 import { useThemeStore } from '../store/themeStore';
 import { useTTSStore } from '../store/ttsStore';
 import { normalizeUILanguage } from '../lib/utils';
+import { warmup } from '../lib/tts';
 
 export function SettingsManager() {
   const user = useAuthStore(state => state.user);
@@ -41,6 +42,11 @@ export function SettingsManager() {
       if (user.settings.tts_local_voice) {
         setLocalVoice(user.settings.tts_local_voice);
       }
+      // Warm every lazy model (browser voice list, capability check, and the
+      // backend Kokoro + faster-whisper models) in one batched background
+      // request so the first spoken message and the first microphone answer
+      // in a conversation are not delayed.
+      warmup();
     }
   }, [user?.settings, setLocale, setDarkMode, setSelectedVoice, setTTSProvider, setLocalVoice]);
 

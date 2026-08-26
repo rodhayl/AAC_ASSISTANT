@@ -33,12 +33,12 @@ export function LearningQuestionCard({
 
   const caption = isAnswered
     ? revealedIsCorrect === true
-      ? t('correctAnswer', 'Correct!')
+      ? t('correctAnswer')
       : revealedIsCorrect === false
-        ? t('notQuite', 'Not quite — the correct answer is "{{answer}}"', {
+        ? t('notQuite', {
             answer: correctLabel ?? revealed?.choice ?? '',
           })
-        : t('answerReceived', 'Answer received')
+        : t('answerReceived')
     : null;
 
   return (
@@ -56,7 +56,7 @@ export function LearningQuestionCard({
       >
         <div className="flex items-center justify-between mb-2">
           <div className="text-xs font-medium text-purple-700 dark:text-purple-300">
-            {t('chooseAnswer', 'Choose an answer')}
+            {t('chooseAnswer')}
           </div>
           {caption && (
             <div

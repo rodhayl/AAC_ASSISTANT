@@ -110,6 +110,98 @@ async function refreshLocalTTSCapability() {
   capabilityChecked = true
 }
 
+// ---------------------------------------------------------------------------
+// Lazy background warm-up
+// ---------------------------------------------------------------------------
+// The first utterance pays two one-time costs: the voice-status capability
+// round-trip and, with local neural TTS, the backend Kokoro model load. The
+// first voice answer additionally pays the faster-whisper model load. Warm
+// every lazy backend model in one batched request when the authenticated app
+// shell mounts so the first spoken message in a conversation (and the first
+// microphone answer) starts immediately.
+let warmupStarted = false
+
+function setWarmupStatus(kind: 'tts' | 'speech' | 'vector', status: WarmupStatus) {
+  const store = useTTSStore.getState()
+  const setter = kind === 'tts'
+    ? store.setTTSWarmupStatus
+    : kind === 'speech'
+      ? store.setSpeechWarmupStatus
+      : store.setVectorWarmupStatus
+  // Defensive: some tests/exports may provide a partial store mock.
+  if (typeof setter === 'function') setter(status)
+}
+
+export function warmup() {
+  // Prepare browser voices early: Chrome/Edge populate getVoices() asynchron-
+  // ously, so starting the listener now avoids an empty voice list on first
+  // use of the browser speech path too.
+  ensureVoicesListener()
+  if (warmupStarted) return
+  warmupStarted = true
+  void (async () => {
+    // Browser-only speech users skip the Kokoro model load (a ~325MB
+    // resident model they would never use), but faster-whisper still
+    // pre-loads: the microphone path is independent of the TTS provider.
+    // The fastembed semantic index pre-loads for everyone because the
+    // symbol search does not depend on the TTS provider setting.
+    let targets = useTTSStore.getState().ttsProvider === 'kokoro'
+      ? ['tts', 'speech', 'vector']
+      : ['speech', 'vector']
+    try {
+      if (targets.includes('tts')) {
+        if (!capabilityChecked) {
+          await refreshLocalTTSCapability()
+        }
+        if (!useTTSStore.getState().localTTSAvailable) {
+          // The TTS engine is unavailable: drop the target instead of
+          // returning, so the batch still pre-loads the other lazy models
+          // (the standalone speech warm-up used to run regardless).
+          setWarmupStatus('tts', 'unavailable')
+          targets = targets.filter((target) => target !== 'tts')
+        } else {
+          setWarmupStatus('tts', 'warming')
+        }
+      }
+      setWarmupStatus('speech', 'warming')
+      setWarmupStatus('vector', 'warming')
+      // One batched request pre-loads every lazy backend model; each target
+      // reports independently so an unavailable target never hides another.
+      // The request completes once each model is resident (or unavailable),
+      // so it doubles as the pre-load status signal; nothing blocks on it
+      // from the caller's side.
+      const res = await fetch(`${config.API_BASE_URL}/providers/warmup`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${useAuthStore.getState().token || ''}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ targets }),
+      })
+      let data: Record<string, { warmed?: boolean }> = {}
+      try {
+        data = (await res.json()) as Record<string, { warmed?: boolean }>
+      } catch { /* non-JSON body */ }
+      if (res.ok) {
+        if (targets.includes('tts')) {
+          setWarmupStatus('tts', data.tts?.warmed ? 'ready' : 'unavailable')
+        }
+        setWarmupStatus('speech', data.speech?.warmed ? 'ready' : 'unavailable')
+        setWarmupStatus('vector', data.vector?.warmed ? 'ready' : 'unavailable')
+      } else {
+        if (targets.includes('tts')) setWarmupStatus('tts', 'unavailable')
+        setWarmupStatus('speech', 'unavailable')
+        setWarmupStatus('vector', 'unavailable')
+      }
+    } catch {
+      // Best-effort: the first enqueue re-checks capability as usual.
+      if (targets.includes('tts')) setWarmupStatus('tts', 'unavailable')
+      setWarmupStatus('speech', 'unavailable')
+      setWarmupStatus('vector', 'unavailable')
+    }
+  })()
+}
+
 class TTSQueue {
   private queue: Array<{ text: string; opts: EnqueueOptions }>
   private status: Status
@@ -583,7 +675,7 @@ class TTSQueue {
 }
 
 export const tts = new TTSQueue()
-import { useTTSStore } from '../store/ttsStore'
+import { useTTSStore, type WarmupStatus } from '../store/ttsStore'
 import { useAuthStore } from '../store/authStore'
 import i18n from '../i18n/index'
 import { config } from '../config'

@@ -1,5 +1,7 @@
 """Tests for the optional local neural TTS (Kokoro) provider and endpoint."""
 
+from unittest.mock import Mock
+
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
@@ -69,6 +71,36 @@ def test_provider_reports_unavailable_without_dependency(monkeypatch):
     assert provider.synthesize("hola", lang="es") is None
 
 
+def test_provider_warmup_loads_model_when_available(monkeypatch):
+    """warmup() loads the model when the engine is available and is idempotent."""
+    from src.aac_app.providers import local_tts_provider as mod
+
+    fake = _FakeKokoro()
+    calls: list[bool] = []
+    monkeypatch.setattr(
+        mod.LocalTTSProvider,
+        "_ensure_loaded",
+        lambda self: (calls.append(True), fake)[1],
+    )
+
+    provider = mod.LocalTTSProvider()
+    assert provider.warmup() is True
+    assert provider.warmup() is True  # repeated warmup is safe
+    assert calls == [True, True]
+
+
+def test_provider_warmup_reports_unavailable(monkeypatch):
+    """warmup() returns False without touching the model when unavailable."""
+    from src.aac_app.providers import local_tts_provider as mod
+
+    monkeypatch.setattr(mod, "_available", False)
+    monkeypatch.setattr(mod, "_import_attempted", True)
+    monkeypatch.setattr(mod, "model_files_present", lambda: True)
+
+    provider = mod.get_local_tts_provider()
+    assert provider.warmup() is False
+
+
 def test_provider_voice_resolution_and_wav_encoding(monkeypatch):
     """Voice style resolution and WAV encoding work with a fake kokoro model."""
     from src.aac_app.providers import local_tts_provider as mod
@@ -126,8 +158,8 @@ def test_list_kokoro_voices_returns_catalog(monkeypatch):
     assert languages == sorted(languages)
 
 
-def test_synthesize_voice_drives_language_and_unknown_voice_falls_back(monkeypatch):
-    """A specific voice selects its own language; unknown names degrade safely."""
+def test_synthesize_voice_drives_language_and_unknown_voice_fails(monkeypatch):
+    """A specific voice selects its own language; unknown names fail explicitly."""
     from src.aac_app.providers import local_tts_provider as mod
 
     fake = _FakeKokoro()
@@ -144,11 +176,9 @@ def test_synthesize_voice_drives_language_and_unknown_voice_falls_back(monkeypat
     assert fake.calls[-1]["voice"] == "am_michael"
     assert fake.calls[-1]["lang"] == "en-us"
 
-    # An unknown name (e.g. a browser voiceURI leaking through) degrades to
-    # the requested language's default instead of failing synthesis.
-    provider.synthesize("hola", lang="es", voice="Google US English")
-    assert fake.calls[-1]["voice"] == "ef_dora"
-    assert fake.calls[-1]["lang"] == "es"
+    # A browser voiceURI is not a Kokoro voice and must fail explicitly.
+    with pytest.raises(ValueError, match="Unknown Kokoro voice"):
+        provider.synthesize("hola", lang="es", voice="Google US English")
 
 
 @pytest.mark.usefixtures("setup_test_db")
@@ -200,6 +230,244 @@ def test_tts_synthesize_endpoint_returns_wav(admin_token, monkeypatch):
 
 
 @pytest.mark.usefixtures("setup_test_db")
+def test_warmup_endpoint_requires_auth():
+    """The batched warmup endpoint requires authentication."""
+    response = client.post("/api/providers/warmup")
+    assert response.status_code == 401
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_warmup_endpoint_noop_when_unavailable(admin_token, monkeypatch):
+    """Unavailable targets report not warmed and never load their models."""
+    from src.aac_app.providers import local_tts_provider as mod
+    from src.api.routers import providers
+
+    loaded: list[bool] = []
+    monkeypatch.setattr(mod, "model_files_present", lambda: False)
+    monkeypatch.setattr(
+        mod.LocalTTSProvider,
+        "_ensure_loaded",
+        lambda self: (loaded.append(True), None)[1],
+    )
+    mod.reset_local_tts_provider()
+    monkeypatch.setattr(providers, "is_faster_whisper_available", lambda: False)
+    monkeypatch.setattr(
+        providers.provider_deps,
+        "get_speech_provider",
+        lambda: Mock(force_load=lambda: loaded.append(True)),
+    )
+    monkeypatch.setattr(
+        providers.provider_deps,
+        "get_vector_store",
+        lambda: Mock(
+            is_available=lambda: False,
+            force_load=lambda: loaded.append(True),
+            is_ready=lambda: False,
+        ),
+    )
+
+    response = client.post(
+        "/api/providers/warmup",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "tts": {"warmed": False},
+        "speech": {"warmed": False},
+        "vector": {"warmed": False},
+    }
+    assert loaded == []
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_warmup_endpoint_loads_both_models(admin_token, monkeypatch):
+    """Healthy engines are loaded eagerly by the batched warmup endpoint."""
+    from src.aac_app.providers import local_tts_provider as mod
+    from src.api.routers import providers
+
+    loaded: list[bool] = []
+    monkeypatch.setattr(mod, "_available", True)
+    monkeypatch.setattr(mod, "_import_attempted", True)
+    monkeypatch.setattr(mod, "model_files_present", lambda: True)
+    monkeypatch.setattr(
+        mod.LocalTTSProvider,
+        "_ensure_loaded",
+        lambda self: (loaded.append(True), _FakeKokoro())[1],
+    )
+    mod.reset_local_tts_provider()
+    monkeypatch.setattr(providers, "is_faster_whisper_available", lambda: True)
+    monkeypatch.setattr(
+        providers.provider_deps,
+        "get_speech_provider",
+        lambda: Mock(force_load=lambda: loaded.append(True)),
+    )
+    monkeypatch.setattr(
+        providers.provider_deps,
+        "get_vector_store",
+        lambda: Mock(
+            is_available=lambda: True,
+            force_load=lambda: loaded.append(True),
+            is_ready=lambda: True,
+        ),
+    )
+
+    response = client.post(
+        "/api/providers/warmup",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "tts": {"warmed": True},
+        "speech": {"warmed": True},
+        "vector": {"warmed": True},
+    }
+    assert loaded == [True, True, True]
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_warmup_endpoint_reports_targets_independently(admin_token, monkeypatch):
+    """An unavailable target never hides a healthy one."""
+    from src.aac_app.providers import local_tts_provider as mod
+    from src.api.routers import providers
+
+    loaded: list[bool] = []
+    monkeypatch.setattr(mod, "_available", True)
+    monkeypatch.setattr(mod, "_import_attempted", True)
+    monkeypatch.setattr(mod, "model_files_present", lambda: True)
+    monkeypatch.setattr(
+        mod.LocalTTSProvider,
+        "_ensure_loaded",
+        lambda self: (loaded.append(True), _FakeKokoro())[1],
+    )
+    mod.reset_local_tts_provider()
+    monkeypatch.setattr(providers, "is_faster_whisper_available", lambda: False)
+    monkeypatch.setattr(
+        providers.provider_deps,
+        "get_vector_store",
+        lambda: Mock(
+            is_available=lambda: False,
+            force_load=lambda: loaded.append(True),
+            is_ready=lambda: False,
+        ),
+    )
+
+    response = client.post(
+        "/api/providers/warmup",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "tts": {"warmed": True},
+        "speech": {"warmed": False},
+        "vector": {"warmed": False},
+    }
+    assert loaded == [True]
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_warmup_endpoint_targets_filter(admin_token, monkeypatch):
+    """The request body can select a subset of targets."""
+    from src.aac_app.providers import local_tts_provider as mod
+    from src.api.routers import providers
+
+    loaded: list[bool] = []
+    monkeypatch.setattr(mod, "_available", True)
+    monkeypatch.setattr(mod, "_import_attempted", True)
+    monkeypatch.setattr(mod, "model_files_present", lambda: True)
+    monkeypatch.setattr(
+        mod.LocalTTSProvider,
+        "_ensure_loaded",
+        lambda self: (loaded.append(True), _FakeKokoro())[1],
+    )
+    mod.reset_local_tts_provider()
+    monkeypatch.setattr(providers, "is_faster_whisper_available", lambda: True)
+    monkeypatch.setattr(
+        providers.provider_deps,
+        "get_speech_provider",
+        lambda: Mock(force_load=lambda: loaded.append(True)),
+    )
+
+    response = client.post(
+        "/api/providers/warmup",
+        json={"targets": ["speech"]},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"speech": {"warmed": True}}
+    assert loaded == [True]  # only the speech provider loaded
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_warmup_endpoint_failure_isolation(admin_token, monkeypatch):
+    """A failing target is reported with an error and does not break the rest."""
+    from src.aac_app.providers import local_tts_provider as mod
+    from src.api.routers import providers
+
+    loaded: list[bool] = []
+
+    def boom(self):
+        raise RuntimeError("model exploded")
+
+    monkeypatch.setattr(mod, "_available", True)
+    monkeypatch.setattr(mod, "_import_attempted", True)
+    monkeypatch.setattr(mod, "model_files_present", lambda: True)
+    monkeypatch.setattr(mod.LocalTTSProvider, "_ensure_loaded", boom)
+    mod.reset_local_tts_provider()
+    monkeypatch.setattr(providers, "is_faster_whisper_available", lambda: True)
+    monkeypatch.setattr(
+        providers.provider_deps,
+        "get_speech_provider",
+        lambda: Mock(force_load=lambda: loaded.append(True)),
+    )
+    monkeypatch.setattr(
+        providers.provider_deps,
+        "get_vector_store",
+        lambda: Mock(
+            is_available=lambda: False,
+            force_load=lambda: loaded.append(True),
+            is_ready=lambda: False,
+        ),
+    )
+
+    response = client.post(
+        "/api/providers/warmup",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tts"] == {"warmed": False, "error": "model exploded"}
+    assert body["speech"] == {"warmed": True}
+    assert body["vector"] == {"warmed": False}
+    assert loaded == [True]
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_warmup_endpoint_vector_reports_ready_state(admin_token, monkeypatch):
+    """The vector target reports the model's real ready state, not the call."""
+    from src.api.routers import providers
+
+    loaded: list[bool] = []
+    monkeypatch.setattr(
+        providers.provider_deps,
+        "get_vector_store",
+        lambda: Mock(
+            is_available=lambda: True,
+            force_load=lambda: loaded.append(True),
+            is_ready=lambda: False,  # fastembed model failed to load
+        ),
+    )
+
+    response = client.post(
+        "/api/providers/warmup",
+        json={"targets": ["vector"]},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"vector": {"warmed": False}}
+    assert loaded == [True]
+
+
+@pytest.mark.usefixtures("setup_test_db")
 def test_voice_status_reports_local_tts(admin_token):
     """voice-status exposes the local TTS capability block."""
     response = client.get(
@@ -210,6 +478,8 @@ def test_voice_status_reports_local_tts(admin_token):
     data = response.json()
     assert "tts_local" in data
     assert data["tts_local"]["provider"] == "kokoro"
+    # The model is lazy: nothing has warmed it, so it is not loaded yet.
+    assert data["tts_local"]["model_loaded"] is False
     assert "actions" in data
     assert "install_tts" in data["actions"]
     # The per-language voice catalog is exposed for the Settings picker.

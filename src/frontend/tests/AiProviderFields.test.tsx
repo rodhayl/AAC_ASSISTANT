@@ -4,7 +4,7 @@ import { AiProviderFields } from '../src/pages/Settings/AiProviderFields';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, defaultValue?: string) => {
+    t: (key: string, defaultValue?: string | Record<string, unknown>) => {
       const table: Record<string, string> = {
         'ai.ollamaUrl': 'Ollama Base URL',
         'ai.models': 'Available Models',
@@ -17,7 +17,8 @@ vi.mock('react-i18next', () => ({
         'ai.searchModels': 'Search models...',
         'ai.selected': 'Selected:',
       };
-      return table[key] ?? defaultValue ?? key;
+      if (key === 'ai.lmstudioDefault') return `Default: http://localhost:1234/v1`;
+      return table[key] ?? (typeof defaultValue === 'string' ? defaultValue : key);
     },
   }),
 }));

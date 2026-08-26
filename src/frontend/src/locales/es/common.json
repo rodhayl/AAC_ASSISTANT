@@ -1,5 +1,32 @@
 {
   "close": "Cerrar",
+  "sessionStarted": "Sesión iniciada",
+  "sessionStartFailed": "No se pudo iniciar la sesión",
+  "assignmentAlreadyExists": "El estudiante ya está asignado",
+  "studentAssigned": "Estudiante asignado correctamente",
+  "assignmentRemoved": "Asignación eliminada correctamente",
+  "passwordResetSuccessfully": "Contraseña restablecida correctamente",
+  "sendToChatFailed": "No se pudo enviar la frase al asistente",
+  "attentionPhrase": "Disculpa",
+  "voiceSaveFailed": "No se pudo guardar la preferencia de voz",
+  "communication": "Comunicación",
+  "selectBoardToStart": "Selecciona un tablero para empezar a comunicarte",
+  "searchBoards": "Buscar tableros...",
+  "noBoardsMatchSearch": "Ningún tablero coincide con la búsqueda",
+  "noBoardsFound": "No se encontraron tableros",
+  "askTeacherForBoards": "Pide a tu profesor que te asigne un tablero.",
+  "createBoardFirst": "Crea primero un tablero en la sección Tableros.",
+  "boardTooEmpty": "El tablero necesita al menos un 50 % de símbolos para usarse",
+  "addOneMoreSymbol": "Añade 1 símbolo más para desbloquearlo",
+  "addMoreSymbolsToUnlock": "Añade {{count}} símbolos más para desbloquearlo",
+  "openBoard": "Abrir tablero",
+  "boardLocked": "Tablero bloqueado",
+  "symbol": "símbolo",
+  "symbols": "símbolos",
+  "loadMore": "Cargar más",
+  "boardLoadFailed": "No se pudo cargar este tablero",
+  "retry": "Reintentar",
+  "backToBoards": "Volver a los tableros",
   "navbar": {
     "welcome": "¡Bienvenido de nuevo, {{name}}!",
     "apiDocs": "Documentación API",
@@ -37,6 +64,9 @@
     "unknown": "Error desconocido",
     "validation": "Error de validación",
     "credentialsInvalid": "No se pudieron validar las credenciales",
+    "loginFailed": "No se pudo iniciar sesión",
+    "setupFailed": "No se pudo completar la configuración inicial",
+    "registrationFailed": "No se pudo completar el registro",
     "inactiveAccount": "La cuenta de usuario está inactiva. Por favor contacte a un administrador.",
     "insufficientPrivileges": "El usuario no tiene suficientes privilegios",
     "passwordRequired": "Se requiere contraseña",
@@ -62,7 +92,12 @@
     "settings": {
       "maxTokensPositive": "max_tokens debe ser un entero positivo",
       "temperatureRange": "temperature debe ser un número entre 0.0 y 1.5",
-      "unsupportedLanguage": "Idioma no soportado"
+      "unsupportedLanguage": "Idioma no soportado",
+      "aiValuesMustBeText": "Los valores de configuración de IA deben ser texto.",
+      "settingTooLong": "{{setting}} supera la longitud máxima de {{maximum}} caracteres.",
+      "settingUrlInvalid": "{{setting}} debe ser una URL HTTP o HTTPS válida.",
+      "updated": "Ajustes actualizados correctamente",
+      "uiLanguageUpdated": "Idioma de la interfaz actualizado"
     },
     "notifications": {
       "invalidToken": "Token inválido",
@@ -85,7 +120,8 @@
       "noChanges": "No se proporcionaron cambios",
       "onlyAdminsDelete": "Solo los administradores pueden eliminar perfiles de tutor",
       "noProfile": "No existe perfil para este estudiante",
-      "studentNotAssigned": "Este estudiante no está asignado a este profesor"
+      "studentNotAssigned": "Este estudiante no está asignado a este profesor",
+      "profileDeleted": "Perfil eliminado"
     },
     "auth": {
       "emailInvalid": "Formato de correo electrónico inválido",
@@ -104,7 +140,10 @@
       "displayNameRequired": "El nombre para mostrar es obligatorio",
       "invalidUserType": "Tipo de usuario inválido. Debe ser uno de: {{types}}",
       "cannotDeleteOwnAccount": "No puedes eliminar tu propia cuenta",
-      "lastAdminRequired": "Debe quedar al menos un administrador activo. Crea otro administrador antes de eliminar este."
+      "lastAdminRequired": "Debe quedar al menos un administrador activo. Crea otro administrador antes de eliminar este.",
+      "invalidUserTypeFilter": "El filtro de tipo de usuario no es válido",
+      "activeMustBeBoolean": "is_active debe ser un valor booleano",
+      "accountUnlocked": "La cuenta '{{username}}' se desbloqueó correctamente"
     },
     "export": {
       "unauthorizedExport": "No autorizado para exportar datos de este usuario",
@@ -146,7 +185,8 @@
       "unauthorizedAssign": "No autorizado para asignar este tablero",
       "unauthorizedUnassign": "No autorizado para desasignar este tablero",
       "suggestionsFailed": "Error al generar sugerencias: {{error}}",
-      "reorderFailed": "Error al reordenar símbolos: {{error}}"
+      "reorderFailed": "Error al reordenar símbolos: {{error}}",
+      "invalidSymbolLabel": "Etiqueta de símbolo no válida: {{label}}"
     },
     "analytics": {
       "logSymbolFailed": "Error al registrar uso de símbolo",
@@ -157,6 +197,7 @@
       "logFailed": "Error al registrar uso de símbolo: {{error}}"
     },
     "achievements": {
+      "notFound": "Logro no encontrado",
       "unauthorizedView": "No autorizado para ver estos logros",
       "viewCategories": "Solo profesores y administradores pueden ver categorías",
       "viewCriteriaTypes": "Solo profesores y administradores pueden ver tipos de criterio",
@@ -181,7 +222,9 @@
       "deleteForbidden": "No tienes autorización para eliminar este modo de aprendizaje"
     },
     "admin": {
-      "databaseResetFailed": "Error al restablecer la base de datos: {{error}}"
+      "databaseResetFailed": "Error al restablecer la base de datos: {{error}}",
+      "databaseResetDisabled": "El restablecimiento de la base de datos está desactivado. Define ALLOW_DB_RESET=true en .env para activarlo.",
+      "databaseResetProduction": "El restablecimiento de la base de datos está bloqueado en entornos de producción."
     },
     "collab": {
       "policyViolation": "Violación de política de conexión",
@@ -203,6 +246,35 @@
       "unauthorizedView": "No autorizado para acceder a las preferencias",
       "mustBeNonNegative": "{{field}} debe ser >= 0",
       "unsupportedTtsProvider": "Proveedor de texto a voz no compatible"
+    },
+    "providers": {
+      "unsupportedSttModel": "Modelo de faster-whisper no compatible.",
+      "voiceInstallWindowsOnly": "La instalación automática de voz solo está disponible en Windows.",
+      "voiceInstallUnavailable": "La instalación automática de voz no está disponible.",
+      "voiceInstallFrozen": "La aplicación de Windows empaquetada no puede modificar las dependencias de Python durante la ejecución.",
+      "voiceInstallSourceOnly": "La instalación automática de voz requiere una copia del código fuente.",
+      "ttsNotInstalled": "El TTS neuronal local no está instalado. Instala la dependencia TTS para habilitarlo.",
+      "ttsModelMissing": "El modelo Kokoro aún no se ha descargado.",
+      "ttsUnavailable": "El TTS neuronal local no está disponible.",
+      "ttsSynthesisFailed": "No se pudo sintetizar el audio con TTS neuronal local.",
+      "ttsInstallUnavailable": "La instalación automática de TTS no está disponible.",
+      "ttsInstallInProgress": "Ya hay una instalación de TTS en curso.",
+      "ttsInstallFailed": "La instalación automática de TTS falló. Consulta los registros del servidor.",
+      "ttsInstallFailedWithError": "La instalación automática de TTS falló: {{error}}",
+      "ttsInstalled": "TTS neuronal local instalado correctamente.",
+      "voiceAlreadyInstalled": "Las dependencias de voz ya están instaladas.",
+      "voiceInstallInProgress": "Ya hay una instalación de dependencias de voz en curso.",
+      "uvUnavailable": "uv no está disponible en PATH para la instalación automática.",
+      "voiceInstallFailed": "La instalación automática de voz falló. Consulta los registros del servidor.",
+      "voiceInstalled": "Dependencias de voz instaladas correctamente.",
+      "lmstudioUnavailable": "LM Studio no está disponible",
+      "providerResponseError": "No se pudo consultar el proveedor: {{error}}"
+    },
+    "setup": {
+      "localOnly": "La configuración inicial del administrador solo está permitida desde la dirección local (127.0.0.1 / ::1).",
+      "alreadyCompleted": "La configuración inicial del administrador ya se ha completado.",
+      "defaultPasswordForbidden": "No se permite usar la contraseña predeterminada de desarrollo para configurar el administrador.",
+      "adminCreated": "Cuenta de administrador creada correctamente"
     }
   },
   "symbolEditor": {
@@ -216,9 +288,6 @@
     "removeSymbolTitle": "Quitar símbolo",
     "saveResendTitle": "Guardar y reenviar mensaje",
     "cancelTitle": "Cancelar edición"
-  },
-  "actions": {
-    "backHome": "Volver al inicio"
   },
   "offline": {
     "conflictsHint": "Estas solicitudes fallaron al volver a estar en línea. Puedes reintentarlas o descartarlas.",

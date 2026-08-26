@@ -1,5 +1,32 @@
 {
   "close": "Close",
+  "sessionStarted": "Session started",
+  "sessionStartFailed": "Failed to start session",
+  "assignmentAlreadyExists": "Student is already assigned",
+  "studentAssigned": "Student assigned successfully",
+  "assignmentRemoved": "Assignment removed successfully",
+  "passwordResetSuccessfully": "Password reset successfully",
+  "sendToChatFailed": "Could not send the phrase to the assistant",
+  "attentionPhrase": "Excuse me",
+  "voiceSaveFailed": "Could not save voice preference",
+  "communication": "Communication",
+  "selectBoardToStart": "Select a board to start communicating",
+  "searchBoards": "Search boards...",
+  "noBoardsMatchSearch": "No boards match your search",
+  "noBoardsFound": "No boards found",
+  "askTeacherForBoards": "Ask your teacher to assign you a board.",
+  "createBoardFirst": "Create a board in the Boards section first.",
+  "boardTooEmpty": "A board needs at least 50% symbols to be used",
+  "addOneMoreSymbol": "Add 1 more symbol to unlock",
+  "addMoreSymbolsToUnlock": "Add {{count}} more symbols to unlock",
+  "openBoard": "Open Board",
+  "boardLocked": "Board Locked",
+  "symbol": "symbol",
+  "symbols": "symbols",
+  "loadMore": "Load More",
+  "boardLoadFailed": "Could not load this board",
+  "retry": "Retry",
+  "backToBoards": "Back to boards",
   "navbar": {
     "welcome": "Welcome back, {{name}}!",
     "apiDocs": "API Docs",
@@ -37,6 +64,9 @@
     "unknown": "Unknown error",
     "validation": "Validation error",
     "credentialsInvalid": "Could not validate credentials",
+    "loginFailed": "Login failed",
+    "setupFailed": "Initial setup failed",
+    "registrationFailed": "Registration failed",
     "inactiveAccount": "User account is inactive. Please contact an administrator.",
     "insufficientPrivileges": "The user doesn't have enough privileges",
     "passwordRequired": "Password is required",
@@ -62,7 +92,12 @@
     "settings": {
       "maxTokensPositive": "max_tokens must be a positive integer",
       "temperatureRange": "temperature must be a number between 0.0 and 1.5",
-      "unsupportedLanguage": "Unsupported language"
+      "unsupportedLanguage": "Unsupported language",
+      "aiValuesMustBeText": "AI setting values must be text.",
+      "settingTooLong": "{{setting}} exceeds the maximum length of {{maximum}} characters.",
+      "settingUrlInvalid": "{{setting}} must be a valid HTTP or HTTPS URL.",
+      "updated": "Settings updated successfully",
+      "uiLanguageUpdated": "UI language updated"
     },
     "notifications": {
       "invalidToken": "Invalid token",
@@ -85,7 +120,8 @@
       "noChanges": "No changes provided",
       "onlyAdminsDelete": "Only admins can delete guardian profiles",
       "noProfile": "No profile exists for this student",
-      "studentNotAssigned": "This student is not assigned to this teacher"
+      "studentNotAssigned": "This student is not assigned to this teacher",
+      "profileDeleted": "Profile deleted"
     },
     "auth": {
       "emailInvalid": "Invalid email format",
@@ -104,7 +140,10 @@
       "displayNameRequired": "Display name is required",
       "invalidUserType": "Invalid user type. Must be one of: {{types}}",
       "cannotDeleteOwnAccount": "Cannot delete your own account",
-      "lastAdminRequired": "At least one active administrator must remain. Create another admin before removing this one."
+      "lastAdminRequired": "At least one active administrator must remain. Create another admin before removing this one.",
+      "invalidUserTypeFilter": "Invalid user type filter",
+      "activeMustBeBoolean": "is_active must be a boolean",
+      "accountUnlocked": "Account '{{username}}' unlocked successfully"
     },
     "export": {
       "unauthorizedExport": "Not authorized to export data for this user",
@@ -146,7 +185,8 @@
       "unauthorizedAssign": "Not authorized to assign this board",
       "unauthorizedUnassign": "Not authorized to unassign this board",
       "suggestionsFailed": "Failed to generate suggestions: {{error}}",
-      "reorderFailed": "Failed to reorder symbols: {{error}}"
+      "reorderFailed": "Failed to reorder symbols: {{error}}",
+      "invalidSymbolLabel": "Invalid symbol label: {{label}}"
     },
     "analytics": {
       "logSymbolFailed": "Failed to log symbol usage",
@@ -157,6 +197,7 @@
       "logFailed": "Failed to log symbol usage: {{error}}"
     },
     "achievements": {
+      "notFound": "Achievement not found",
       "unauthorizedView": "Not authorized to view these achievements",
       "viewCategories": "Only teachers and admins can view categories",
       "viewCriteriaTypes": "Only teachers and admins can view criteria types",
@@ -181,7 +222,9 @@
       "deleteForbidden": "You are not authorized to delete this learning mode"
     },
     "admin": {
-      "databaseResetFailed": "Failed to reset database: {{error}}"
+      "databaseResetFailed": "Failed to reset database: {{error}}",
+      "databaseResetDisabled": "Database reset is disabled. Set ALLOW_DB_RESET=true in .env to enable it.",
+      "databaseResetProduction": "Database reset is blocked in production environments."
     },
     "collab": {
       "policyViolation": "Connection policy violation",
@@ -203,6 +246,35 @@
       "unauthorizedView": "Not authorized to access preferences",
       "mustBeNonNegative": "{{field}} must be >= 0",
       "unsupportedTtsProvider": "Unsupported text-to-speech provider"
+    },
+    "providers": {
+      "unsupportedSttModel": "Unsupported faster-whisper model.",
+      "voiceInstallWindowsOnly": "Automatic voice installation is only available on Windows.",
+      "voiceInstallUnavailable": "Automatic voice installation is unavailable.",
+      "voiceInstallFrozen": "The packaged Windows app cannot modify Python dependencies at runtime.",
+      "voiceInstallSourceOnly": "Automatic voice installation requires a source checkout.",
+      "ttsNotInstalled": "Local neural TTS is not installed. Install the TTS extra to enable it.",
+      "ttsModelMissing": "The Kokoro model has not been downloaded yet.",
+      "ttsUnavailable": "Local neural TTS is not available.",
+      "ttsSynthesisFailed": "Local neural TTS synthesis failed.",
+      "ttsInstallUnavailable": "Automatic TTS installation is unavailable.",
+      "ttsInstallInProgress": "A TTS installation is already in progress.",
+      "ttsInstallFailed": "Automatic TTS installation failed. Check the server logs.",
+      "ttsInstallFailedWithError": "Automatic TTS installation failed: {{error}}",
+      "ttsInstalled": "Local neural TTS installed successfully.",
+      "voiceAlreadyInstalled": "Voice dependencies are already installed.",
+      "voiceInstallInProgress": "A voice dependency installation is already in progress.",
+      "uvUnavailable": "uv is not available on PATH for automatic installation.",
+      "voiceInstallFailed": "Automatic voice installation failed. Check the server logs for details.",
+      "voiceInstalled": "Voice dependencies installed successfully.",
+      "lmstudioUnavailable": "LM Studio is not available",
+      "providerResponseError": "Could not query the provider: {{error}}"
+    },
+    "setup": {
+      "localOnly": "Initial administrator setup is only permitted from local loopback (127.0.0.1 / ::1).",
+      "alreadyCompleted": "Initial administrator setup has already been completed.",
+      "defaultPasswordForbidden": "The development default password is not permitted for administrator setup.",
+      "adminCreated": "Administrator account created successfully"
     }
   },
   "symbolEditor": {
@@ -216,9 +288,6 @@
     "removeSymbolTitle": "Remove symbol",
     "saveResendTitle": "Save and resend message",
     "cancelTitle": "Cancel editing"
-  },
-  "actions": {
-    "backHome": "Go Back Home"
   },
   "offline": {
     "conflictsHint": "These requests failed after coming back online. You can retry or dismiss them.",

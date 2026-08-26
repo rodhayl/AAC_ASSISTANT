@@ -35,10 +35,10 @@ vi.mock('../src/lib/api', () => ({
   },
 }));
 
-const tFn = (key: string, defaultValue?: string | { defaultValue?: string }) => {
-  if (typeof defaultValue === 'string') return defaultValue;
-  return defaultValue?.defaultValue ?? key;
-};
+const tFn = (key: string, arg2?: string | Record<string, unknown>, arg3?: Record<string, unknown>) =>
+  (globalThis as typeof globalThis & {
+    __aacTestTranslation?: (namespace: string, key: string, arg2?: string | Record<string, unknown>, arg3?: Record<string, unknown>) => string;
+  }).__aacTestTranslation?.('achievements', key, arg2, arg3) ?? key;
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: tFn }),
@@ -166,7 +166,7 @@ describe('Achievements page', () => {
     render(<Achievements />);
     await screen.findByText('First Steps');
 
-    await user.click(screen.getByRole('button', { name: 'check' }));
+    await user.click(screen.getByRole('button', { name: 'Check for new' }));
 
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/achievements/user/1/check'),
@@ -295,10 +295,10 @@ describe('Achievements page', () => {
     const user = userEvent.setup();
     render(<Achievements />);
 
-    expect(screen.getByRole('button', { name: 'check' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Check for new' })).toBeInTheDocument();
     expect(api.get).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: 'check' }));
+    await user.click(screen.getByRole('button', { name: 'Check for new' }));
     expect(api.post).not.toHaveBeenCalled();
   });
 
@@ -432,7 +432,7 @@ describe('Achievements page', () => {
     render(<Achievements />);
     await screen.findByText('First Steps');
 
-    await user.click(screen.getByRole('button', { name: 'check' }));
+    await user.click(screen.getByRole('button', { name: 'Check for new' }));
 
     expect(await screen.findByText('check failed')).toBeInTheDocument();
   });

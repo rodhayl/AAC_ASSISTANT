@@ -179,6 +179,7 @@ export function useVoiceRecorder({
     stopStream,
     sessionDifficulty,
     sessionTopic,
+    sessionBoardId,
     startSession,
     userId,
   ]);

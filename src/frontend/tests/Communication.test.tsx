@@ -98,7 +98,24 @@ vi.mock('../src/lib/tts', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback ?? key,
+    t: (key: string) => ({
+      'common:noBoardsFound': 'No boards found',
+      'common:askTeacherForBoards': 'Ask your teacher to assign you a board.',
+      'common:boardLocked': 'Board Locked',
+      'common:addOneMoreSymbol': 'Add 1 more symbol to unlock',
+      'common:loadMore': 'Load More',
+      'common:boardLoadFailed': 'Could not load this board',
+      'common:retry': 'Retry',
+      'common:selectBoardToStart': 'Select a board to start communicating',
+      'common:communication': 'Communication',
+      'common:openBoard': 'Open Board',
+      'common:symbols': 'symbols',
+      'common:backToBoards': 'Back to boards',
+      'common:sessionStarted': 'Session started',
+      'common:sessionStartFailed': 'Failed to start session',
+      'common:sendToChatFailed': 'Could not send the phrase to the assistant',
+      'common:attentionPhrase': 'Excuse me!',
+    }[key] ?? key),
   }),
 }));
 
@@ -145,7 +162,7 @@ vi.mock('../src/components/board/SentenceStrip', () => ({
   }) => (
     <div data-testid="sentence-strip">
       {symbols.map((s, i) => (
-        <span key={s.id} data-testid={`sentence-item-${i}`}>
+        <span key={`${s.id}-${i}`} data-testid={`sentence-item-${i}`}>
           {s.custom_text || s.symbol.label}
         </span>
       ))}

@@ -6,31 +6,15 @@ interface SymbolImageProps {
   imagePath?: string | null;
   alt?: string;
   className?: string;
-  /** First letter(s) fallback shown when no image is available. */
-  fallbackText?: string;
-  /** Category-derived background when using the text fallback. */
-  fallbackBg?: string;
-}
-
-function _fallbackInitials(text: string): string {
-  // Take first 1-2 chars for avatar-style text fallback.
-  const clean = text.trim();
-  if (!clean) return '?';
-  if (clean.length <= 2) return clean.toUpperCase();
-  // Multi-word: first char of first two words.
-  const words = clean.split(/\s+/);
-  if (words.length >= 2) {
-    return (words[0][0] + words[1][0]).toUpperCase();
-  }
-  return clean.slice(0, 2).toUpperCase();
+  /** Explicit status label shown when the configured image cannot be loaded. */
+  missingImageLabel?: string;
 }
 
 export function SymbolImage({
   imagePath,
   alt,
   className = '',
-  fallbackText,
-  fallbackBg,
+  missingImageLabel = 'Image unavailable',
 }: SymbolImageProps) {
   const [error, setError] = useState(false);
   const normalizedPath = imagePath?.trim();
@@ -44,20 +28,16 @@ export function SymbolImage({
   );
 
   if (!isSafePath || error) {
-    const initials = fallbackText ? _fallbackInitials(fallbackText) : null;
-    const bg = fallbackBg || 'bg-indigo-100 dark:bg-indigo-900/40';
-    const fg = 'text-indigo-600 dark:text-indigo-300';
+    const bg = 'bg-gray-100 dark:bg-gray-800';
+    const fg = 'text-gray-500 dark:text-gray-400';
     return (
       <div
         className={`flex items-center justify-center rounded-lg ${bg} ${className}`}
       >
-        {initials ? (
-          <span className={`text-sm font-bold leading-none ${fg}`}>
-            {initials}
-          </span>
-        ) : (
-          <ImageIcon className="w-1/2 h-1/2 text-gray-400" />
-        )}
+        <span className={`flex flex-col items-center gap-1 text-center text-[10px] font-medium leading-tight ${fg}`}>
+          <ImageIcon className="h-1/2 w-1/2" aria-hidden="true" />
+          {missingImageLabel}
+        </span>
       </div>
     );
   }
@@ -65,7 +45,7 @@ export function SymbolImage({
   return (
     <img
       src={assetUrl(normalizedPath)}
-      alt={alt || ''}
+      alt={alt ?? ''}
       className={className}
       onError={() => setError(true)}
     />

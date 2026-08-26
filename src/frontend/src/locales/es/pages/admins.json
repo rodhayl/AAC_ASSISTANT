@@ -51,6 +51,7 @@
     "passwordsDoNotMatch": "Las contraseñas no coinciden"
   },
   "actions": {
+    "resetSelfTitle": "Usa Cambiar contraseña en Ajustes",
     "editAria": "Editar {{name}}",
     "editTitle": "Editar administrador",
     "deleteAria": "Eliminar {{name}}",

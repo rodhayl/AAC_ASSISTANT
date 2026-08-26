@@ -76,7 +76,7 @@ export function Achievements() {
       setAchievements(achRes.data)
       setPoints(ptsRes.data)
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.loadFailed', { defaultValue: 'Failed to load achievements' })))
+      setError(extractError(e, t('errors.loadFailed')))
     } finally {
       setLoading(false)
     }
@@ -97,9 +97,7 @@ export function Achievements() {
     if (failed?.status === 'rejected') {
       const failedIndex = results.indexOf(failed)
       console.error(`Failed to load ${labels[failedIndex]}`, failed.reason)
-      setError(t('errors.managementLoadFailed', {
-        defaultValue: 'Some management data could not be loaded. Please try again.',
-      }))
+      setError(t('errors.managementLoadFailed'))
     }
   }, [t])
 
@@ -121,7 +119,7 @@ export function Achievements() {
       await api.post(`/achievements/user/${user.id}/check`)
       await loadData()
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.checkFailed', { defaultValue: 'Failed to check achievements' })))
+      setError(extractError(e, t('errors.checkFailed')))
     } finally {
       setLoading(false)
     }
@@ -134,7 +132,7 @@ export function Achievements() {
       resetForm()
       void loadManagementData()
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.createFailed', { defaultValue: 'Failed to create achievement' })))
+      setError(extractError(e, t('errors.createFailed')))
     }
   }
 
@@ -156,7 +154,7 @@ export function Achievements() {
       resetForm()
       void loadManagementData()
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.updateFailed', { defaultValue: 'Failed to update achievement' })))
+      setError(extractError(e, t('errors.updateFailed')))
     }
   }
 
@@ -171,7 +169,7 @@ export function Achievements() {
       setPendingDeleteId(null)
       void loadManagementData()
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.deleteFailed', { defaultValue: 'Failed to delete achievement' })))
+      setError(extractError(e, t('errors.deleteFailed')))
       setPendingDeleteId(null)
     } finally {
       setIsDeleting(false)
@@ -192,7 +190,7 @@ export function Achievements() {
     } catch (e: unknown) {
       // Surface the failure in the shared error banner instead of a native
       // alert() so the experience matches the rest of the app.
-      setError(extractError(e, t('errors.awardFailed', { defaultValue: 'Failed to award achievement' })))
+      setError(extractError(e, t('errors.awardFailed')))
     }
   }
 
@@ -259,7 +257,7 @@ export function Achievements() {
               className={`px-4 py-2 rounded-lg flex items-center gap-2 ${showManage ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300' : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}
             >
               <Settings className="w-4 h-4" />
-              {t('manage', 'Manage')}
+              {t('manage')}
             </button>
           )}
           <button
@@ -290,10 +288,10 @@ export function Achievements() {
       {showManage && isTeacherOrAdmin && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('manageTitle', 'Manage Achievements')}</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('manageTitle')}</h2>
             <button onClick={openCreateModal} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2">
               <Plus className="w-4 h-4" />
-              {t('create', 'Create')}
+              {t('create')}
             </button>
           </div>
 
@@ -301,12 +299,12 @@ export function Achievements() {
             <table className="w-full text-left">
               <thead className="text-xs uppercase text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
                 <tr>
-                  <th className="px-4 py-3">{t('icon', 'Icon')}</th>
-                  <th className="px-4 py-3">{t('name', 'Name')}</th>
-                  <th className="px-4 py-3">{t('category', 'Category')}</th>
-                  <th className="px-4 py-3">{t('points', 'Points')}</th>
-                  <th className="px-4 py-3">{t('type', 'Type')}</th>
-                  <th className="px-4 py-3">{t('actions', 'Actions')}</th>
+                  <th className="px-4 py-3">{t('icon')}</th>
+                  <th className="px-4 py-3">{t('name')}</th>
+                  <th className="px-4 py-3">{t('category')}</th>
+                  <th className="px-4 py-3">{t('points')}</th>
+                  <th className="px-4 py-3">{t('type')}</th>
+                  <th className="px-4 py-3">{t('actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -318,27 +316,27 @@ export function Achievements() {
                     <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{a.points}</td>
                     <td className="px-4 py-3">
                       <span className={`text-xs px-2 py-1 rounded ${a.created_by ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}>
-                        {a.created_by ? t('custom', 'Custom') : t('system', 'System')}
+                        {a.created_by ? t('custom') : t('system')}
                       </span>
                       {a.is_manual ? (
-                        <span className="ml-2 text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300">{t('manual', 'Manual')}</span>
+                        <span className="ml-2 text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300">{t('manual')}</span>
                       ) : (
                         <span className="ml-2 text-xs px-2 py-1 rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300" title={`${t(`criteria.${a.criteria_type}`, a.criteria_type ?? '')}: ${a.criteria_value}`}>
-                          {t('auto', 'Auto')}
+                          {t('auto')}
                         </span>
                       )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
-                        <button onClick={() => openAwardModal(a.id)} className="p-2 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded" title={t('award', 'Award')}>
+                        <button onClick={() => openAwardModal(a.id)} className="p-2 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded" title={t('award')}>
                           <Award className="w-4 h-4" />
                         </button>
                         {a.created_by && (a.created_by === user?.id || user?.user_type === 'admin') && (
                           <>
-                            <button onClick={() => openEditModal(a)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded" title={t('edit', 'Edit')}>
+                            <button onClick={() => openEditModal(a)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded" title={t('edit')}>
                               <Pencil className="w-4 h-4" />
                             </button>
-                            <button onClick={() => handleDelete(a.id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded" title={t('delete', 'Delete')}>
+                            <button onClick={() => handleDelete(a.id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded" title={t('delete')}>
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </>
@@ -427,16 +425,16 @@ export function Achievements() {
           >
             <div className="flex justify-between items-center mb-4">
               <h3 id="achievement-editor-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                {editingAchievement ? t('editTitle', 'Edit Achievement') : t('createTitle', 'Create Achievement')}
+                {editingAchievement ? t('editTitle') : t('createTitle')}
               </h3>
-              <button onClick={() => { setShowModal(false); setEditingAchievement(null); resetForm(); }} className="text-gray-400 hover:text-gray-600" aria-label={t('close', 'Close')}>
+              <button onClick={() => { setShowModal(false); setEditingAchievement(null); resetForm(); }} className="text-gray-400 hover:text-gray-600" aria-label={t('close')}>
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('icon', 'Icon')}</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('icon')}</label>
                 <div className="flex flex-wrap gap-2">
                   {EMOJI_OPTIONS.map(emoji => (
                     <button key={emoji} type="button" onClick={() => setFormData({ ...formData, icon: emoji })}
@@ -448,20 +446,20 @@ export function Achievements() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('name', 'Name')}</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('name')}</label>
                 <input type="text" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('description', 'Description')}</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('description')}</label>
                 <textarea value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" rows={2} />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('category', 'Category')}</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('category')}</label>
                   <select value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
                     {categories.map(cat => (
@@ -470,33 +468,33 @@ export function Achievements() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('points', 'Points')}</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('points')}</label>
                   <input type="number" min={0} value={formData.points} onChange={e => setFormData({ ...formData, points: parseInt(e.target.value) || 0 })}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
                 </div>
               </div>
 
               <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('awardType', 'Award Type')}</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('awardType')}</label>
                 <div className="flex gap-4 mb-3">
                   <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
                     <input type="radio" name="awardType" checked={!formData.criteria_type}
                       onChange={() => setFormData({ ...formData, criteria_type: null, criteria_value: null })}
                       className="text-indigo-600 focus:ring-indigo-500" />
-                    {t('manualAward', 'Manual Award')}
+                    {t('manualAward')}
                   </label>
                   <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
                     <input type="radio" name="awardType" checked={!!formData.criteria_type}
                       onChange={() => setFormData({ ...formData, criteria_type: 'sessions_completed', criteria_value: 10 })}
                       className="text-indigo-600 focus:ring-indigo-500" />
-                    {t('automaticAward', 'Automatic Criteria')}
+                    {t('automaticAward')}
                   </label>
                 </div>
 
                 {formData.criteria_type && (
                   <div className="grid grid-cols-2 gap-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
                     <div>
-                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t('criteriaType', 'Criteria')}</label>
+                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t('criteriaType')}</label>
                       <select value={formData.criteria_type} onChange={e => setFormData({ ...formData, criteria_type: e.target.value })}
                         className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
                         {criteriaTypes.map(ct => (
@@ -505,7 +503,7 @@ export function Achievements() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t('targetValue', 'Target Value')}</label>
+                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t('targetValue')}</label>
                       <input type="number" min={0} value={formData.criteria_value ?? ''} onChange={e => setFormData({ ...formData, criteria_value: parseFloat(e.target.value) || 0 })}
                         className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
                     </div>
@@ -517,11 +515,11 @@ export function Achievements() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     <Users className="w-4 h-4 inline mr-1" />
-                    {t('targetUser', 'For specific student (optional)')}
+                    {t('targetUser')}
                   </label>
                   <select value={formData.target_user_id ?? ''} onChange={e => setFormData({ ...formData, target_user_id: e.target.value ? parseInt(e.target.value) : null })}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
-                    <option value="">{t('allStudents', 'All students')}</option>
+                    <option value="">{t('allStudents')}</option>
                     {students.map(s => <option key={s.id} value={s.id}>{s.display_name} ({s.username})</option>)}
                   </select>
                 </div>
@@ -531,12 +529,12 @@ export function Achievements() {
             <div className="mt-6 flex justify-end gap-3">
               <button onClick={() => { setShowModal(false); setEditingAchievement(null); resetForm(); }}
                 className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
-                {t('cancel', 'Cancel')}
+                {t('cancel')}
               </button>
               <button onClick={editingAchievement ? handleUpdate : handleCreate}
                 disabled={nameIsEmpty}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                {editingAchievement ? t('save', 'Save') : t('create', 'Create')}
+                {editingAchievement ? t('save') : t('create')}
               </button>
             </div>
           </div>
@@ -554,8 +552,8 @@ export function Achievements() {
             aria-labelledby="achievement-award-title"
           >
             <div className="flex justify-between items-center mb-4">
-              <h3 id="achievement-award-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('awardTitle', 'Award Achievement')}</h3>
-              <button onClick={() => { setShowAwardModal(false); setAwardingAchievementId(null); }} className="text-gray-400 hover:text-gray-600" aria-label={t('close', 'Close')}>
+              <h3 id="achievement-award-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('awardTitle')}</h3>
+              <button onClick={() => { setShowAwardModal(false); setAwardingAchievementId(null); }} className="text-gray-400 hover:text-gray-600" aria-label={t('close')}>
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -567,10 +565,10 @@ export function Achievements() {
             )}
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('selectStudent', 'Select Student')}</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('selectStudent')}</label>
               <input
                 type="text"
-                placeholder={t('searchStudent', 'Search student...')}
+                placeholder={t('searchStudent')}
                 value={studentSearch}
                 onChange={e => setStudentSearch(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-t-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -578,7 +576,7 @@ export function Achievements() {
               <div className="max-h-60 overflow-y-auto border-x border-b border-gray-300 dark:border-gray-600 rounded-b-lg bg-white dark:bg-gray-700">
                 {filteredStudents.length === 0 ? (
                   <div className="p-3 text-sm text-gray-500 dark:text-gray-400 text-center">
-                    {t('noStudents', 'No students found')}
+                    {t('noStudents')}
                   </div>
                 ) : (
                   filteredStudents.map(s => (
@@ -601,11 +599,11 @@ export function Achievements() {
             <div className="flex justify-end gap-3">
               <button onClick={() => { setShowAwardModal(false); setAwardingAchievementId(null); }}
                 className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
-                {t('cancel', 'Cancel')}
+                {t('cancel')}
               </button>
               <button onClick={handleAward} disabled={!selectedStudentId}
                 className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50">
-                {t('award', 'Award')}
+                {t('award')}
               </button>
             </div>
           </div>
@@ -624,14 +622,14 @@ export function Achievements() {
           >
             <div className="flex justify-between items-center mb-4">
               <h3 id="achievement-delete-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                {t('deleteTitle', 'Delete Achievement')}
+                {t('deleteTitle')}
               </h3>
-              <button onClick={() => setPendingDeleteId(null)} className="text-gray-400 hover:text-gray-600" aria-label={t('close', 'Close')}>
+              <button onClick={() => setPendingDeleteId(null)} className="text-gray-400 hover:text-gray-600" aria-label={t('close')}>
                 <X className="w-5 h-5" />
               </button>
             </div>
             <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
-              {t('confirmDelete', 'Are you sure you want to delete this achievement?')}
+              {t('confirmDelete')}
             </p>
             {allAchievements.find((a) => a.id === pendingDeleteId) && (
               <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
@@ -645,14 +643,14 @@ export function Achievements() {
                 disabled={isDeleting}
                 className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
               >
-                {t('cancel', 'Cancel')}
+                {t('cancel')}
               </button>
               <button
                 onClick={confirmDeleteAchievement}
                 disabled={isDeleting}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
               >
-                {t('delete', 'Delete')}
+                {t('delete')}
               </button>
             </div>
           </div>

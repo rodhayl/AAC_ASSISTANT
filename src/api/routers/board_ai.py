@@ -1,8 +1,6 @@
-import random
-
 from fastapi import APIRouter, Body, Depends, HTTPException
 from loguru import logger
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src import config
@@ -61,7 +59,10 @@ def _is_valid_symbol_label(label: str) -> bool:
 
 
 def get_or_create_symbol(
-    db: Session, label: str, symbol_key: str
+    db: Session,
+    label: str,
+    symbol_key: str,
+    user: User | None = None,
 ) -> tuple[Symbol, bool]:
     """Return the symbol matching ``label``, creating it when absent.
 
@@ -76,7 +77,11 @@ def get_or_create_symbol(
         logger.warning(f"Rejecting invalid symbol label: {label!r}")
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid symbol label: {label}",
+            detail=get_text(
+                user=user,
+                key="errors.boards.invalidSymbolLabel",
+                label=label,
+            ),
         )
     # Case-insensitive dedup: no more "Water" and "water" duplicates.
     existing = (
@@ -97,84 +102,6 @@ def get_or_create_symbol(
     db.flush()
     return created, True
 
-
-def _fallback_board_suggestions(
-    db: Session, *, board: CommunicationBoard, item_count: int
-) -> list[dict]:
-    """
-    Best-effort, offline-friendly suggestions that do not depend on an external LLM.
-
-    Used in non-production environments when an AI provider is unavailable.
-    """
-    existing_symbol_ids = {bs.symbol_id for bs in (board.symbols or [])}
-
-    query = db.query(Symbol).filter(Symbol.label.isnot(None))
-    if existing_symbol_ids:
-        query = query.filter(~Symbol.id.in_(existing_symbol_ids))
-
-    cat = (board.category or "").strip()
-    apply_cat_filter = bool(cat) and cat.lower() not in {"general"}
-    if apply_cat_filter:
-        query = query.filter(
-            or_(
-                Symbol.category.ilike(f"%{cat}%"),
-                Symbol.category.ilike("%general%"),
-            )
-        )
-
-    # Sample from the indexed primary key instead of sorting the whole symbol
-    # table with ORDER BY RANDOM().  The cyclic second query handles sparse IDs
-    # and keeps the candidate set bounded for this development fallback.
-    def sample_candidates(candidate_query):
-        candidate_limit = max(item_count * 5, 25)
-        max_id = candidate_query.with_entities(func.max(Symbol.id)).scalar()
-        if not max_id:
-            return []
-
-        anchor = random.randint(1, max_id)
-        candidates = (
-            candidate_query.filter(Symbol.id >= anchor)
-            .order_by(Symbol.id)
-            .limit(candidate_limit)
-            .all()
-        )
-        if len(candidates) < candidate_limit:
-            candidates.extend(
-                candidate_query.filter(Symbol.id < anchor)
-                .order_by(Symbol.id)
-                .limit(candidate_limit - len(candidates))
-                .all()
-            )
-        return candidates
-
-    candidates = sample_candidates(query)
-    if not candidates and apply_cat_filter:
-        # Category filters can be too strict for our built-in symbol sets; retry unfiltered.
-        query = db.query(Symbol).filter(Symbol.label.isnot(None))
-        if existing_symbol_ids:
-            query = query.filter(~Symbol.id.in_(existing_symbol_ids))
-        candidates = sample_candidates(query)
-
-    seen: set[str] = set()
-    items: list[dict] = []
-    for sym in candidates:
-        label = (sym.label or "").strip()
-        if not label:
-            continue
-        norm = label.lower()
-        if norm in seen:
-            continue
-        seen.add(norm)
-
-        keyword = (sym.keywords or "").split(",")[0].strip() if sym.keywords else ""
-        if not keyword:
-            keyword = norm.replace(" ", "_")
-
-        items.append({"label": label, "symbol_key": keyword, "color": "#E8F5E9"})
-        if len(items) >= item_count:
-            break
-
-    return items
 
 
 @router.post("", response_model=schemas.BoardResponse)
@@ -283,24 +210,18 @@ async def create_board(
                 if board.grid_rows and board.grid_cols:
                     item_count = min(board.grid_rows * board.grid_cols, 100)
 
-                # Pass fail_silently=False to catch errors and abort board creation
-                items = await ai_service.generate_board_items(
+                    items = await ai_service.generate_board_items(
                     board.name,
                     board.description,
                     item_count=item_count,
-                    fail_silently=False
                 )
 
                 logger.info(f"AI generated {len(items)} items")
 
                 for idx, item in enumerate(items):
                     symbol_key = item["symbol_key"]
-                    # Use label as fallback if symbol_key is empty
-                    if not symbol_key:
-                        symbol_key = item["label"].lower().replace(" ", "_")
-
                     symbol, is_new = get_or_create_symbol(
-                        db, item["label"], symbol_key
+                        db, item["label"], symbol_key, current_user
                     )
                     if is_new:
                         created_symbols.append(symbol)
@@ -373,37 +294,33 @@ def _resolve_provider_for_board(
     """
     Build an LLM provider instance from the board or primary global settings.
     """
-    provider_type = board.ai_provider or get_setting_value("ai_provider", "ollama")
+    provider_type = board.ai_provider or get_setting_value("ai_provider", "")
     model_name = board.ai_model
 
-    # The primary marker and older source markers use the current global primary model.
-    if not model_name or model_name.startswith("@"):
-        if provider_type == "openrouter":
-            model_name = get_setting_value("openrouter_model", "")
-        elif provider_type == "lmstudio":
-            model_name = get_setting_value("lmstudio_model", "")
-        elif provider_type == "groq":
-            model_name = get_setting_value("groq_model", "")
-        else:
-            model_name = get_setting_value("ollama_model", "")
-
+    if config.ENVIRONMENT.strip().casefold() == "production":
+        provider_type = "groq"
+        model_name = get_setting_value("groq_model", "")
+    elif model_name == "@primary":
+        model_name = get_setting_value(f"{provider_type}_model", "")
     if not provider_type or not model_name:
         return None
-    if provider_type not in SUPPORTED_AI_PROVIDERS:
-        return None
-
-    if provider_type == "openrouter":
-        api_key = get_setting_value("openrouter_api_key", "")
-        return OpenRouterProvider(api_key=api_key, model=model_name)
-    if provider_type == "lmstudio":
-        base_url = get_setting_value("lmstudio_base_url", config.LMSTUDIO_BASE_URL)
-        return LMStudioProvider(base_url=base_url, model=model_name)
     if provider_type == "groq":
         api_key = get_setting_value("groq_api_key", "")
+        if not api_key:
+            return None
         return GroqProvider(api_key=api_key, model=model_name)
-
-    base_url = get_setting_value("ollama_base_url", config.OLLAMA_BASE_URL)
-    return OllamaProvider(base_url=base_url, model=model_name)
+    if provider_type == "ollama":
+        return OllamaProvider(
+            base_url=get_setting_value("ollama_base_url", ""), model=model_name
+        )
+    if provider_type == "openrouter":
+        api_key = get_setting_value("openrouter_api_key", "")
+        return OpenRouterProvider(api_key=api_key, model=model_name) if api_key else None
+    if provider_type == "lmstudio":
+        return LMStudioProvider(
+            base_url=get_setting_value("lmstudio_base_url", ""), model=model_name
+        )
+    return None
 
 
 @router.post("/{board_id}/ai/suggestions")
@@ -453,7 +370,6 @@ async def generate_ai_suggestions(
             board.name,
             board.description or "",
             item_count=item_count,
-            fail_silently=False,
             refine_prompt=payload.refine_prompt if payload else "",
             regenerate=payload.regenerate if payload else False,
             language=lang,
@@ -463,11 +379,6 @@ async def generate_ai_suggestions(
         return {"items": items}
     except Exception as e:
         logger.error(f"Failed to generate AI suggestions for board {board_id}: {e}")
-        if config.ENVIRONMENT != "production":
-            fallback_items = _fallback_board_suggestions(db, board=board, item_count=item_count)
-            if fallback_items:
-                logger.warning(f"Using fallback suggestions for board {board_id} (provider unavailable)")
-                return {"items": fallback_items}
         detail_msg = get_text(
             user=current_user, key="errors.boards.suggestionsFailed", error=str(e)
         )
@@ -507,7 +418,9 @@ def apply_ai_suggestion(
     symbol_key = item.symbol_key or item.label.lower().replace(" ", "_")
 
     # Try to reuse existing symbol by label to avoid duplicates
-    symbol, was_created = get_or_create_symbol(db, item.label, symbol_key)
+    symbol, was_created = get_or_create_symbol(
+        db, item.label, symbol_key, current_user
+    )
     created_symbol = symbol if was_created else None
     if created_symbol is None:
         # Avoid duplicate symbol entries per board

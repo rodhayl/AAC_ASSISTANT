@@ -23,9 +23,11 @@ const api = vi.hoisted(() => ({
   patch: vi.fn(),
 }));
 
-const tFn = (key: string, defaultValue?: string | { defaultValue?: string }) => {
-  if (typeof defaultValue === 'string') return defaultValue;
-  return defaultValue?.defaultValue ?? key;
+const tFn = (rawKey: string, arg2?: string | Record<string, unknown>, arg3?: Record<string, unknown>) => {
+  const [prefix, key] = rawKey.includes(':') ? rawKey.split(':', 2) : ['students', rawKey];
+  return (globalThis as typeof globalThis & {
+    __aacTestTranslation?: (namespace: string, key: string, arg2?: string | Record<string, unknown>, arg3?: Record<string, unknown>) => string;
+  }).__aacTestTranslation?.(prefix === 'common' ? 'common' : 'students', key, arg2, arg3) ?? rawKey;
 };
 
 vi.mock('../src/store/authStore', () => ({
@@ -107,7 +109,7 @@ describe('Students page', () => {
 
     expect(await screen.findByText('Leo')).toBeInTheDocument();
     expect(screen.getByText('student10')).toBeInTheDocument();
-    expect(screen.getByText('noneAssigned')).toBeInTheDocument();
+    expect(screen.getByText('No boards assigned')).toBeInTheDocument();
   });
 
   it('shows the assigned board badge and unassigns it', async () => {
@@ -115,13 +117,13 @@ describe('Students page', () => {
     render(<Students />);
 
     expect(await screen.findByText('Morning Routine')).toBeInTheDocument();
-    await user.click(screen.getByLabelText('actions.unassignAria'));
+    await user.click(screen.getByLabelText(/Unassign Morning Routine/));
 
     await waitFor(() =>
       expect(api.delete).toHaveBeenCalledWith('/boards/42/assign/10'),
     );
     await waitFor(() =>
-      expect(screen.getByText('noneAssigned')).toBeInTheDocument(),
+      expect(screen.getByText('No boards assigned')).toBeInTheDocument(),
     );
   });
 
@@ -131,10 +133,10 @@ describe('Students page', () => {
     await screen.findByText('Leo');
 
     await user.click(screen.getByRole('button', { name: /create/i }));
-    await user.type(screen.getByLabelText('labels.username'), 'new_student');
-    await user.type(screen.getByLabelText('labels.displayName'), 'New Student');
-    await user.type(screen.getByLabelText('labels.password'), 'StudentPass123');
-    await user.click(screen.getByText('createBtn'));
+    await user.type(screen.getByLabelText('Username *'), 'new_student');
+    await user.type(screen.getByLabelText('Display Name *'), 'New Student');
+    await user.type(screen.getByLabelText('Password *'), 'StudentPass123');
+    await user.click(screen.getByText('Create Student'));
 
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/users/students', {
@@ -157,11 +159,11 @@ describe('Students page', () => {
     await screen.findByText('Leo');
 
     await user.click(screen.getByRole('button', { name: /create/i }));
-    await user.type(screen.getByLabelText('labels.username'), 'new_student');
-    await user.type(screen.getByLabelText('labels.displayName'), 'New Student');
-    await user.type(screen.getByLabelText('labels.password'), 'StudentPass123');
+    await user.type(screen.getByLabelText('Username *'), 'new_student');
+    await user.type(screen.getByLabelText('Display Name *'), 'New Student');
+    await user.type(screen.getByLabelText('Password *'), 'StudentPass123');
     await user.type(screen.getByLabelText('Confirm Password'), 'Different123');
-    await user.click(screen.getByText('createBtn'));
+    await user.click(screen.getByText('Create Student'));
 
     await waitFor(() =>
       expect(screen.getAllByText('Passwords do not match').length).toBeGreaterThan(0),
@@ -175,9 +177,9 @@ describe('Students page', () => {
     render(<Students />);
     await screen.findByText('Leo');
 
-    await user.click(screen.getByLabelText('actions.deleteAria'));
+    await user.click(screen.getByLabelText(/Delete student10/));
     const dialog = await screen.findByRole('dialog');
-    await user.click(within(dialog).getByText('delete'));
+    await user.click(within(dialog).getByText('Delete'));
 
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/auth/users/10'));
     expect(screen.queryByText('Leo')).not.toBeInTheDocument();
@@ -188,12 +190,12 @@ describe('Students page', () => {
     render(<Students />);
     await screen.findByText('Leo');
 
-    await user.click(screen.getByLabelText('actions.assignAria'));
+    await user.click(screen.getByLabelText(/Assign board to student10/));
 
     const dialog = await screen.findByRole('dialog');
     const boardButton = within(dialog).getByRole('button', { name: /Morning Routine/ });
     expect(boardButton).toBeDisabled();
-    expect(within(dialog).getByText('alreadyAssigned')).toBeInTheDocument();
+    expect(within(dialog).getByText('Already assigned')).toBeInTheDocument();
   });
 
   it('opens the preferences modal, toggles voice mode and saves', async () => {
@@ -208,7 +210,7 @@ describe('Students page', () => {
     expect(toggle.checked).toBe(true);
     await user.click(toggle);
 
-    await user.click(screen.getByText('save'));
+    await user.click(screen.getByText('Save'));
     await waitFor(() =>
       expect(api.put).toHaveBeenCalledWith('/auth/users/10/preferences', {
         voice_mode_enabled: false,
@@ -225,7 +227,7 @@ describe('Students page', () => {
     const dialog = await screen.findByRole('dialog');
     const input = within(dialog).getByLabelText('New Password');
     await user.type(input, 'NewPass123');
-    await user.click(within(dialog).getByRole('button', { name: 'Reset Password' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Reset Pwd' }));
 
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/users/reset-password', {
@@ -239,7 +241,7 @@ describe('Students page', () => {
     api.get.mockRejectedValue(new Error('offline'));
     render(<Students />);
 
-    expect(await screen.findByText('errors.loadFailed')).toBeInTheDocument();
+    expect(await screen.findByText('Failed to load students')).toBeInTheDocument();
   });
 
   it('edits a student display name and role as admin', async () => {
@@ -249,12 +251,12 @@ describe('Students page', () => {
     render(<Students />);
     await screen.findByText('Leo');
 
-    await user.click(screen.getByLabelText('actions.editAria'));
+    await user.click(screen.getByLabelText(/Edit student10/));
     const dialog = await screen.findByRole('dialog');
-    await user.clear(within(dialog).getByLabelText('labels.displayName'));
-    await user.type(within(dialog).getByLabelText('labels.displayName'), 'Renamed');
+    await user.clear(within(dialog).getByLabelText('Display Name *'));
+    await user.type(within(dialog).getByLabelText('Display Name *'), 'Renamed');
     await user.selectOptions(within(dialog).getByLabelText('Role'), 'teacher');
-    await user.click(within(dialog).getByText('profile.save'));
+    await user.click(within(dialog).getByText('Save'));
 
     await waitFor(() =>
       expect(api.put).toHaveBeenCalledWith('/auth/users/10', {
@@ -272,17 +274,17 @@ describe('Students page', () => {
     render(<Students />);
     await screen.findByText('Morning Routine');
 
-    await user.click(screen.getByLabelText('actions.editAria'));
+    await user.click(screen.getByLabelText(/Edit student10/));
     const dialog = await screen.findByRole('dialog');
-    await user.clear(within(dialog).getByLabelText('labels.displayName'));
-    await user.type(within(dialog).getByLabelText('labels.displayName'), 'Renamed');
-    await user.click(within(dialog).getByText('profile.save'));
+    await user.clear(within(dialog).getByLabelText('Display Name *'));
+    await user.type(within(dialog).getByLabelText('Display Name *'), 'Renamed');
+    await user.click(within(dialog).getByText('Save'));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     // The PUT response is a bare User; the row must keep the board chip it
     // already had instead of dropping to the empty-assignment placeholder.
     expect(screen.getByText('Morning Routine')).toBeInTheDocument();
-    expect(screen.queryByText('noneAssigned')).not.toBeInTheDocument();
+    expect(screen.queryByText('No boards assigned')).not.toBeInTheDocument();
   });
 
   it('shows an error when updating a student fails', async () => {
@@ -292,11 +294,11 @@ describe('Students page', () => {
     render(<Students />);
     await screen.findByText('Leo');
 
-    await user.click(screen.getByLabelText('actions.editAria'));
+    await user.click(screen.getByLabelText(/Edit student10/));
     const dialog = await screen.findByRole('dialog');
-    await user.click(within(dialog).getByText('profile.save'));
+    await user.click(within(dialog).getByText('Save'));
 
-    expect((await screen.findAllByText('errors.updateFailed')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Failed to update')).length).toBeGreaterThan(0);
   });
 
   it('cancels editing a student', async () => {
@@ -305,9 +307,9 @@ describe('Students page', () => {
     render(<Students />);
     await screen.findByText('Leo');
 
-    await user.click(screen.getByLabelText('actions.editAria'));
+    await user.click(screen.getByLabelText(/Edit student10/));
     const dialog = await screen.findByRole('dialog');
-    await user.click(within(dialog).getByText('cancel'));
+    await user.click(within(dialog).getByText('Cancel'));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(api.put).not.toHaveBeenCalled();
@@ -320,12 +322,12 @@ describe('Students page', () => {
     await screen.findByText('Leo');
 
     await user.click(screen.getByRole('button', { name: /create/i }));
-    await user.type(screen.getByLabelText('labels.username'), 'new_student');
-    await user.type(screen.getByLabelText('labels.displayName'), 'New Student');
-    await user.type(screen.getByLabelText('labels.email'), 'new@example.com');
-    await user.type(screen.getByLabelText('labels.password'), 'StudentPass123');
+    await user.type(screen.getByLabelText('Username *'), 'new_student');
+    await user.type(screen.getByLabelText('Display Name *'), 'New Student');
+    await user.type(screen.getByLabelText('Email (optional)'), 'new@example.com');
+    await user.type(screen.getByLabelText('Password *'), 'StudentPass123');
     await user.type(screen.getByLabelText('Confirm Password'), 'StudentPass123');
-    await user.click(screen.getByText('createBtn'));
+    await user.click(screen.getByText('Create Student'));
 
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/auth/admin/create-user', {
@@ -346,7 +348,7 @@ describe('Students page', () => {
 
     await user.click(screen.getByRole('button', { name: /create/i }));
     const dialog = await screen.findByRole('dialog');
-    await user.click(within(dialog).getByText('cancel'));
+    await user.click(within(dialog).getByText('Cancel'));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(api.post).not.toHaveBeenCalled();
@@ -366,7 +368,7 @@ describe('Students page', () => {
     render(<Students />);
     await screen.findByText('Leo');
 
-    await user.click(screen.getByLabelText('actions.assignAria'));
+    await user.click(screen.getByLabelText(/Assign board to student10/));
     const dialog = await screen.findByRole('dialog');
     await user.click(within(dialog).getByRole('button', { name: /Evening Routine/ }));
 
@@ -381,9 +383,9 @@ describe('Students page', () => {
     render(<Students />);
     await screen.findByText('Leo');
 
-    await user.click(screen.getByLabelText('actions.assignAria'));
+    await user.click(screen.getByLabelText(/Assign board to student10/));
     const dialog = await screen.findByRole('dialog');
-    await user.click(within(dialog).getByText('close'));
+    await user.click(within(dialog).getByText('Close'));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(api.post).not.toHaveBeenCalled();
@@ -404,11 +406,11 @@ describe('Students page', () => {
     render(<Students />);
     await screen.findByText('Leo');
 
-    await user.click(screen.getByLabelText('actions.assignAria'));
+    await user.click(screen.getByLabelText(/Assign board to student10/));
     const dialog = await screen.findByRole('dialog');
     await user.click(within(dialog).getByRole('button', { name: /Evening Routine/ }));
 
-    expect(await screen.findByText('errors.assignFailed')).toBeInTheDocument();
+    expect(await screen.findByText('Failed to assign board')).toBeInTheDocument();
   });
 
   it('shows an error when unassigning a board fails', async () => {
@@ -417,9 +419,9 @@ describe('Students page', () => {
     render(<Students />);
     await screen.findByText('Morning Routine');
 
-    await user.click(screen.getByLabelText('actions.unassignAria'));
+    await user.click(screen.getByLabelText(/Unassign Morning Routine/));
 
-    expect(await screen.findByText('errors.unassignFailed')).toBeInTheDocument();
+    expect(await screen.findByText('Failed to unassign board')).toBeInTheDocument();
   });
 
   it('falls back to default preferences when loading them fails', async () => {
@@ -453,9 +455,9 @@ describe('Students page', () => {
 
     await user.click(screen.getByTitle('Preferences'));
     await screen.findByText(/Preferences for/);
-    await user.click(screen.getByText('save'));
+    await user.click(screen.getByText('Save'));
 
-    expect(await screen.findByText('errors.updateFailed')).toBeInTheDocument();
+    expect(await screen.findByText('Failed to update')).toBeInTheDocument();
   });
 
   it('closes the preferences modal without saving', async () => {
@@ -465,7 +467,7 @@ describe('Students page', () => {
 
     await user.click(screen.getByTitle('Preferences'));
     const dialog = await screen.findByRole('dialog');
-    await user.click(within(dialog).getByText('cancel'));
+    await user.click(within(dialog).getByText('Cancel'));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(api.put).not.toHaveBeenCalled();
@@ -480,7 +482,7 @@ describe('Students page', () => {
     await user.click(screen.getByLabelText(/Reset password for student10/));
     const dialog = await screen.findByRole('dialog');
     await user.type(within(dialog).getByLabelText('New Password'), 'NewPass123');
-    await user.click(within(dialog).getByRole('button', { name: 'Reset Password' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Reset Pwd' }));
 
     expect((await screen.findAllByText('Failed to reset password')).length).toBeGreaterThan(0);
   });
@@ -492,7 +494,7 @@ describe('Students page', () => {
 
     await user.click(screen.getByLabelText(/Reset password for student10/));
     const dialog = await screen.findByRole('dialog');
-    await user.click(within(dialog).getByText('cancel'));
+    await user.click(within(dialog).getByText('Cancel'));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(api.post).not.toHaveBeenCalled();
@@ -504,9 +506,9 @@ describe('Students page', () => {
     render(<Students />);
     await screen.findByText('Leo');
 
-    await user.click(screen.getByLabelText('actions.deleteAria'));
+    await user.click(screen.getByLabelText(/Delete student10/));
     const dialog = await screen.findByRole('dialog');
-    await user.click(within(dialog).getByText('cancel'));
+    await user.click(within(dialog).getByText('Cancel'));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(api.delete).not.toHaveBeenCalled();
@@ -519,11 +521,11 @@ describe('Students page', () => {
     render(<Students />);
     await screen.findByText('Leo');
 
-    await user.click(screen.getByLabelText('actions.deleteAria'));
+    await user.click(screen.getByLabelText(/Delete student10/));
     const dialog = await screen.findByRole('dialog');
-    await user.click(within(dialog).getByText('delete'));
+    await user.click(within(dialog).getByText('Delete'));
 
-    expect(await screen.findByText('errors.deleteFailed')).toBeInTheDocument();
+    expect(await screen.findByText('Failed to delete')).toBeInTheDocument();
   });
 
   it('opens and closes the guardian profile modal', async () => {
@@ -548,12 +550,12 @@ describe('Students page', () => {
     await screen.findByText('Leo');
 
     await user.click(screen.getByRole('button', { name: /create/i }));
-    await user.type(screen.getByLabelText('labels.username'), 'new_student');
-    await user.type(screen.getByLabelText('labels.displayName'), 'New Student');
-    await user.type(screen.getByLabelText('labels.password'), 'StudentPass123');
-    await user.click(screen.getByText('createBtn'));
+    await user.type(screen.getByLabelText('Username *'), 'new_student');
+    await user.type(screen.getByLabelText('Display Name *'), 'New Student');
+    await user.type(screen.getByLabelText('Password *'), 'StudentPass123');
+    await user.click(screen.getByText('Create Student'));
 
-    expect((await screen.findAllByText('errors.createFailed')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Failed to create student')).length).toBeGreaterThan(0);
   });
 
   it('shows an error when creating a student fails', async () => {
@@ -563,12 +565,12 @@ describe('Students page', () => {
     await screen.findByText('Leo');
 
     await user.click(screen.getByRole('button', { name: /create/i }));
-    await user.type(screen.getByLabelText('labels.username'), 'new_student');
-    await user.type(screen.getByLabelText('labels.displayName'), 'New Student');
-    await user.type(screen.getByLabelText('labels.password'), 'StudentPass123');
-    await user.click(screen.getByText('createBtn'));
+    await user.type(screen.getByLabelText('Username *'), 'new_student');
+    await user.type(screen.getByLabelText('Display Name *'), 'New Student');
+    await user.type(screen.getByLabelText('Password *'), 'StudentPass123');
+    await user.click(screen.getByText('Create Student'));
 
-    expect((await screen.findAllByText('errors.createFailed')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Failed to create student')).length).toBeGreaterThan(0);
   });
 
   it('handles a failure loading the available boards', async () => {
@@ -586,9 +588,9 @@ describe('Students page', () => {
     render(<Students />);
     await screen.findByText('Leo');
 
-    await user.click(screen.getByLabelText('actions.assignAria'));
+    await user.click(screen.getByLabelText(/Assign board to student10/));
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText('noBoardsAvail')).toBeInTheDocument();
+    expect(within(dialog).getByText('No boards available')).toBeInTheDocument();
     expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();
   });
@@ -635,7 +637,7 @@ describe('Students page', () => {
 
     await user.click(screen.getByTitle('Guardian Profile'));
     expect(await screen.findByText('Guardian Profile: Leo')).toBeInTheDocument();
-    await user.click(screen.getByText('save'));
+    await user.click(screen.getByText('Save'));
     expect(await screen.findByText('Profile saved successfully')).toBeInTheDocument();
 
     // Close and reopen: the stale success toast must not come back.

@@ -32,15 +32,10 @@ vi.mock('../src/store/authStore', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string, options?: Record<string, unknown>) => {
-      let text = fallback ?? key;
-      if (options) {
-        for (const [name, value] of Object.entries(options)) {
-          text = text.replace(`{{${name}}}`, String(value));
-        }
-      }
-      return text;
-    },
+    t: (key: string, arg2?: string | Record<string, unknown>, arg3?: Record<string, unknown>) =>
+      (globalThis as typeof globalThis & {
+        __aacTestTranslation?: (namespace: string, key: string, arg2?: string | Record<string, unknown>, arg3?: Record<string, unknown>) => string;
+      }).__aacTestTranslation?.('games', key, arg2, arg3) ?? key,
   }),
 }));
 
@@ -156,7 +151,7 @@ describe('useSymbolHunt game logic', () => {
     });
 
     expect(result.current.gameState).toBe('selecting');
-    expect(addToast).toHaveBeenCalledWith(expect.stringContaining('2'), 'error');
+    expect(addToast).toHaveBeenCalledWith('This board needs at least 2 symbols to play.', 'error');
   });
 
   it('shows an error toast when the board fails to load', async () => {

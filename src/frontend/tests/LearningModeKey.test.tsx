@@ -56,15 +56,22 @@ vi.mock('../src/lib/tts', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, defaultValue?: string | { defaultValue?: string }, options?: Record<string, string>) => {
-      if (typeof defaultValue === 'string') {
-        let text = defaultValue
-        for (const [name, value] of Object.entries(options || {})) {
-          text = text.replace(`{{${name}}}`, value)
-        }
-        return text
+    t: (key: string, arg2?: string | Record<string, unknown>, arg3?: Record<string, string>) => {
+      const options = typeof arg2 === 'object' ? arg2 : arg3;
+      const defaults: Record<string, string> = {
+        modeLabel: 'Mode',
+        difficultyLabel: 'Difficulty',
+        difficultyHelp: 'Difficulty selection',
+        'difficulty.adaptive': 'Adaptive',
+        'difficulty.basic': 'Basic',
+        'difficulty.intermediate': 'Intermediate',
+        'difficulty.advanced': 'Advanced',
+      };
+      let text = typeof arg2 === 'string' ? arg2 : defaults[key] ?? key;
+      for (const [name, value] of Object.entries(options || {})) {
+        text = text.replace(`{{${name}}}`, String(value));
       }
-      return defaultValue?.defaultValue ?? key
+      return text;
     },
     i18n: { language: 'en' },
   }),

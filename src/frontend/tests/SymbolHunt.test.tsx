@@ -38,15 +38,10 @@ vi.mock('../src/components/board/SymbolCard', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string, options?: Record<string, unknown>) => {
-      let text = fallback ?? key;
-      if (options) {
-        for (const [k, v] of Object.entries(options)) {
-          text = text.replace(`{{${k}}}`, String(v));
-        }
-      }
-      return text;
-    },
+    t: (key: string, arg2?: string | Record<string, unknown>, arg3?: Record<string, unknown>) =>
+      (globalThis as typeof globalThis & {
+        __aacTestTranslation?: (namespace: string, key: string, arg2?: string | Record<string, unknown>, arg3?: Record<string, unknown>) => string;
+      }).__aacTestTranslation?.('games', key, arg2, arg3) ?? key,
   }),
 }));
 

@@ -174,7 +174,7 @@ export function BoardSettingsDialog({
             disabled={saving}
             className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {saving ? t('saving', 'Saving...') : t('saveSettings')}
+            {saving ? t('saving') : t('saveSettings')}
           </button>
         </div>
       </div>

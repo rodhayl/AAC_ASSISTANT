@@ -196,7 +196,10 @@ def get_users(
 
     allowed_types = {"student", "teacher", "admin"}
     if user_type is not None and user_type not in allowed_types:
-        raise HTTPException(status_code=400, detail="Invalid user_type filter")
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(user=current_user, key="errors.auth.invalidUserTypeFilter"),
+        )
 
     # Teachers can only view their assigned students
     if current_user.user_type == "teacher":
@@ -521,7 +524,10 @@ def update_user(
                 )
 
     if 'is_active' in payload and not isinstance(payload['is_active'], bool):
-        raise HTTPException(status_code=400, detail="is_active must be a boolean")
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(user=current_user, key="errors.auth.activeMustBeBoolean"),
+        )
 
     # Allowed fields
     for key in ["display_name", "user_type", "email", "is_active"]:
@@ -785,7 +791,14 @@ def admin_unlock_account(
     )
 
     logger.info(f"Admin '{current_user.username}' unlocked account for '{username}'")
-    return {"ok": True, "message": f"Account '{username}' unlocked successfully"}
+    return {
+        "ok": True,
+        "message": get_text(
+            user=current_user,
+            key="errors.auth.accountUnlocked",
+            username=username,
+        ),
+    }
 
 @router.put("/profile", response_model=schemas.UserResponse)
 def update_profile(

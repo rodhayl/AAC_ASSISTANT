@@ -25,7 +25,7 @@ def override_learning_service():
     don't require real providers.
     """
     llm = Mock()
-    llm.generate = AsyncMock(return_value="Mock tutor reply.")
+    llm.generate = AsyncMock(return_value='{"response": "Mock tutor reply."}')
     speech = Mock()
 
     service = LearningCompanionService(

@@ -79,6 +79,7 @@
     "profileLoadFailed": "No se pudieron cargar los datos del perfil"
   },
   "actions": {
+    "resetSelfTitle": "Usa Cambiar contraseña en Ajustes",
     "unassignAria": "Desasignar {{board}}",
     "unassignTitle": "Desasignar tablero",
     "assignAria": "Asignar tablero a {{student}}",

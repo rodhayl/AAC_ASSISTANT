@@ -37,9 +37,7 @@ class TemplateManager:
     def _load_templates(self) -> None:
         """Load all YAML templates from the templates directory."""
         if not self.template_dir.exists():
-            logger.warning(f"Template directory not found: {self.template_dir}")
-            self._cache = {"default": self._get_hardcoded_default()}
-            return
+            raise RuntimeError(f"Template directory not found: {self.template_dir}")
 
         for yaml_file in self.template_dir.glob("*.yaml"):
             try:
@@ -52,15 +50,13 @@ class TemplateManager:
             except Exception as e:
                 logger.error(f"Failed to load template {yaml_file}: {e}")
 
-        # Ensure default template exists
         if "default" not in self._cache:
-            logger.warning("No default template found, using hardcoded default")
-            self._cache["default"] = self._get_hardcoded_default()
+            raise RuntimeError("Required default companion template is missing")
 
         logger.info(f"TemplateManager initialized with {len(self._cache)} templates")
 
     def _get_hardcoded_default(self) -> dict:
-        """Fallback default template if YAML files are missing."""
+        """Return the legacy template shape for migration tooling only."""
         return {
             "name": "Default Companion",
             "description": "Balanced, friendly learning companion",
@@ -116,12 +112,14 @@ class TemplateManager:
             name: Template name (without .yaml extension)
 
         Returns:
-            Template dict, or default if not found
+            A copy of the requested template.
+
+        Raises:
+            KeyError: If the requested production template does not exist.
         """
         template = self._cache.get(name)
         if template is None:
-            logger.warning(f"Template '{name}' not found, using default")
-            template = self._cache.get("default", self._get_hardcoded_default())
+            raise KeyError(f"Unknown companion template: {name}")
         return copy.deepcopy(template)
 
     def template_exists(self, name: str) -> bool:

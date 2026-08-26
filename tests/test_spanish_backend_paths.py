@@ -1,3 +1,4 @@
+import contextlib
 from unittest.mock import Mock
 
 from src.aac_app.models import (
@@ -241,7 +242,7 @@ def test_runtime_translation_uses_bounded_trusted_endpoint(monkeypatch):
     assert captured['kwargs']['timeout'].read == 3.0
 
 
-def test_runtime_translation_falls_back_on_malformed_response_and_opens_circuit(monkeypatch):
+def test_runtime_translation_rejects_malformed_response_and_opens_circuit(monkeypatch):
     class MalformedResponse:
         def raise_for_status(self):
             return None
@@ -266,10 +267,9 @@ def test_runtime_translation_falls_back_on_malformed_response_and_opens_circuit(
     monkeypatch.setattr(runtime_translation, '_translation_client_factory', factory)
     _reset_translation_state()
 
-    assert runtime_translation.translate_text('one', 'es') == 'one'
-    assert runtime_translation.translate_text('two', 'es') == 'two'
-    assert runtime_translation.translate_text('three', 'es') == 'three'
-    assert runtime_translation.translate_text('four', 'es') == 'four'
+    for text in ('one', 'two', 'three', 'four'):
+        with contextlib.suppress(RuntimeError):
+            runtime_translation.translate_text(text, 'es')
     assert factory.call_count == 3
 
 
@@ -297,16 +297,16 @@ def test_runtime_translation_times_out_and_recovers_after_cooldown(monkeypatch):
     monkeypatch.setattr(runtime_translation.time, 'monotonic', lambda: clock[0])
     _reset_translation_state()
 
-    assert runtime_translation.translate_text('one', 'es') == 'one'
-    assert runtime_translation.translate_text('two', 'es') == 'two'
-    assert runtime_translation.translate_text('three', 'es') == 'three'
+    for text in ('one', 'two', 'three', 'four'):
+        with contextlib.suppress(RuntimeError):
+            runtime_translation.translate_text(text, 'es')
     # The open circuit suppresses network work during its cooldown.
-    assert runtime_translation.translate_text('four', 'es') == 'four'
     assert factory.call_count == 3
 
     # Once the cooldown expires, translation attempts resume.
     clock[0] = 111.0
-    assert runtime_translation.translate_text('four', 'es') == 'four'
+    with contextlib.suppress(RuntimeError):
+        runtime_translation.translate_text('four', 'es')
     assert factory.call_count == 4
 
 

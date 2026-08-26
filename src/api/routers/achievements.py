@@ -222,7 +222,10 @@ def update_achievement(
     with nullcontext(db) as session:
         achievement = session.get(Achievement, achievement_id)
         if not achievement:
-            raise HTTPException(status_code=404, detail="Achievement not found")
+            raise HTTPException(
+                status_code=404,
+                detail=get_text(user=current_user, key="errors.achievements.notFound"),
+            )
 
         # Only creator or admin can update. System achievements have
         # created_by=None, so they always fail the ownership check for
@@ -321,7 +324,10 @@ def delete_achievement(
     with nullcontext(db) as session:
         achievement = session.get(Achievement, achievement_id)
         if not achievement:
-            raise HTTPException(status_code=404, detail="Achievement not found")
+            raise HTTPException(
+                status_code=404,
+                detail=get_text(user=current_user, key="errors.achievements.notFound"),
+            )
 
         # System achievements cannot be deleted
         if achievement.created_by is None:
@@ -380,7 +386,10 @@ def award_achievement(
     with nullcontext(db) as session:
         achievement = session.get(Achievement, achievement_id)
         if not achievement:
-            raise HTTPException(status_code=404, detail="Achievement not found")
+            raise HTTPException(
+                status_code=404,
+                detail=get_text(user=current_user, key="errors.achievements.notFound"),
+            )
 
         # Only award achievements to an existing student the actor can access.
         # This prevents teachers from targeting unrelated users or non-students.

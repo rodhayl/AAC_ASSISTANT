@@ -385,7 +385,10 @@ def delete_student_profile(
     logger.info(
         f"Guardian profile deleted for student {student_id} by {current_user.username}"
     )
-    return {"success": True, "message": "Profile deleted"}
+    return {
+        "success": True,
+        "message": get_text(user=current_user, key="errors.guardian.profileDeleted"),
+    }
 
 
 # --- History and Preview Endpoints ---

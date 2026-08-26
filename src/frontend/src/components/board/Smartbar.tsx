@@ -161,7 +161,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
         <div className="flex items-center gap-1.5 shrink-0">
           <Sparkles className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
           <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-300 uppercase tracking-wider hidden sm:inline">
-            {t('suggestions', 'Suggestions')}
+            {t('suggestions')}
           </span>
         </div>
 
@@ -174,7 +174,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
               }`}
           >
             <Brain className="w-3 h-3" />
-            <span className="hidden sm:inline">{t('ai', 'AI')}</span>
+            <span className="hidden sm:inline">{t('ai')}</span>
           </button>
           <button
             onClick={() => handleIntentChange('pronouns')}
@@ -184,7 +184,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
               }`}
           >
             <User className="w-3 h-3" />
-            <span className="hidden sm:inline">{t('pronouns', 'Pronouns')}</span>
+            <span className="hidden sm:inline">{t('pronouns')}</span>
           </button>
           <button
             onClick={() => handleIntentChange('verbs')}
@@ -194,7 +194,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
               }`}
           >
             <Play className="w-3 h-3" />
-            <span className="hidden sm:inline">{t('verbs', 'Verbs')}</span>
+            <span className="hidden sm:inline">{t('verbs')}</span>
           </button>
           <button
             onClick={() => handleIntentChange('nouns')}
@@ -204,7 +204,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
               }`}
           >
             <Type className="w-3 h-3" />
-            <span className="hidden sm:inline">{t('nouns', 'Nouns')}</span>
+            <span className="hidden sm:inline">{t('nouns')}</span>
           </button>
           <button
             onClick={() => handleIntentChange('articles')}
@@ -214,7 +214,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
               }`}
           >
             <FileText className="w-3 h-3" />
-            <span className="hidden sm:inline">{t('articles', 'Articles')}</span>
+            <span className="hidden sm:inline">{t('articles')}</span>
           </button>
 
           <button
@@ -225,7 +225,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
               }`}
           >
             <MapPin className="w-3 h-3" />
-            <span className="hidden sm:inline">{t('places', 'Places')}</span>
+            <span className="hidden sm:inline">{t('places')}</span>
           </button>
 
           {/* More Button */}
@@ -233,10 +233,10 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
             onClick={handleMore}
             disabled={isLoading || !hasMore}
             className="px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/50 transition-colors flex items-center gap-1 border border-indigo-100 dark:border-indigo-800 disabled:opacity-50"
-            title={t('moreSuggestions', 'More suggestions')}
+            title={t('moreSuggestions')}
           >
             <Plus className="w-3 h-3" />
-            <span className="hidden sm:inline">{t('more', 'More')}</span>
+            <span className="hidden sm:inline">{t('more')}</span>
           </button>
         </div>
       </div>
@@ -300,20 +300,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
                       imagePath={suggestion.image_path}
                       alt={suggestion.label}
                       className="h-full w-auto object-contain"
-                      fallbackText={isPunctuation ? undefined : suggestion.label}
-                      fallbackBg={
-                        isPunctuation
-                          ? undefined
-                          : suggestion.category === 'verbs'
-                            ? 'bg-emerald-100 dark:bg-emerald-900/40'
-                            : suggestion.category === 'nouns'
-                              ? 'bg-amber-100 dark:bg-amber-900/40'
-                              : suggestion.category === 'pronouns' || suggestion.category === 'social'
-                                ? 'bg-indigo-100 dark:bg-indigo-900/40'
-                                : suggestion.category === 'food' || suggestion.category === 'drinks'
-                                  ? 'bg-orange-100 dark:bg-orange-900/40'
-                                  : undefined
-                      }
+                      missingImageLabel={t('imageUnavailable')}
                     />
                   </div>
                   <span className={`text-xs font-bold leading-tight text-center w-full px-1 ${isPunctuation ? 'sr-only' : ''} ${suggestion.color ? 'text-gray-900' : 'text-gray-900 dark:text-gray-100'} line-clamp-2`}>
@@ -322,7 +309,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
                 </button>
 
                 {isAI && (
-                  <div className="absolute -top-1 -right-1 bg-purple-500 text-white rounded-full p-0.5 shadow-sm z-10 pointer-events-none" title={t('aiSuggestionTitle', 'AI Suggestion')}>
+                  <div className="absolute -top-1 -right-1 bg-purple-500 text-white rounded-full p-0.5 shadow-sm z-10 pointer-events-none" title={t('aiSuggestionTitle')}>
                     <Brain className="w-2.5 h-2.5" />
                   </div>
                 )}
@@ -332,7 +319,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
         </div>
       ) : (
         <div className="text-center py-2 text-gray-400 text-xs">
-          {t('noSuggestions', 'No suggestions found')}
+          {t('noSuggestions')}
         </div>
       )}
     </div>

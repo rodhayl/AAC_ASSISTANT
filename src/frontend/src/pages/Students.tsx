@@ -89,7 +89,7 @@ export function Students() {
       const res = await api.get('/boards/', { params })
       setAvailableBoards(res.data)
     } catch (e) {
-      setError(extractError(e, t('errors.loadBoardsFailed', { defaultValue: 'Failed to load boards' })))
+      setError(extractError(e, t('errors.loadBoardsFailed')))
       console.error('Failed to load boards:', e)
     }
   }
@@ -193,7 +193,7 @@ export function Students() {
     setError(null)
 
     if (user?.user_type === 'admin' && newPassword !== confirmPassword) {
-      setError(t('errors.passwordsDoNotMatch', { defaultValue: 'Passwords do not match' }))
+      setError(t('errors.passwordsDoNotMatch'))
       setCreateLoading(false)
       return
     }
@@ -253,7 +253,7 @@ export function Students() {
       setResetPasswordStudent(null)
       addToast(t('success.passwordReset'), 'success')
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.resetPasswordFailed', { defaultValue: 'Failed to reset password' })))
+      setError(extractError(e, t('errors.resetPasswordFailed')))
     } finally {
       setResetPasswordLoading(false)
     }
@@ -298,7 +298,7 @@ export function Students() {
       )}
 
       {loading ? (
-        <LoadingState label={t('loading', { defaultValue: 'Loading students' })} />
+        <LoadingState label={t('loading')} />
       ) : (
         <div className="glass-panel rounded-xl overflow-hidden">
           <table className="min-w-full divide-y divide-border dark:divide-white/5">
@@ -344,16 +344,16 @@ export function Students() {
                       <button
                         onClick={() => { setSelectedGuardianStudent(s); setGuardianModalOpen(true); }}
                         className="px-3 py-1 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded flex items-center gap-1"
-                        title={t('guardianProfile', { defaultValue: 'Guardian Profile' })}
-                        aria-label={t('guardianProfile', { defaultValue: 'Guardian Profile' })}
+                        title={t('guardianProfile')}
+                        aria-label={t('guardianProfile')}
                       >
                         <Sparkles className="w-4 h-4" />
-                        <span className="hidden sm:inline">{t('ai', 'AI')}</span>
+                        <span className="hidden sm:inline">{t('ai')}</span>
                       </button>
                       <button
                         onClick={() => openPreferencesModal(s)}
                         className="px-3 py-1 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center gap-1"
-                        title={t('preferences.title', { defaultValue: 'Preferences' })}
+                        title={t('preferences.title')}
                       >
                         <Volume2 className="w-4 h-4" />
                       </button>
@@ -373,9 +373,9 @@ export function Students() {
                           setError(null);
                         }}
                         className="px-3 py-1 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded"
-                        aria-label={t('actions.resetPasswordAria', { student: s.username, defaultValue: `Reset password for ${s.username}` })}
-                        title={t('actions.resetPasswordTitle', { defaultValue: 'Reset Password' })}
-                      >{t('actions.resetPassword', { defaultValue: 'Reset Pwd' })}</button>
+                        aria-label={t('actions.resetPasswordAria', { student: s.username })}
+                        title={t('actions.resetPasswordTitle')}
+                      >{t('actions.resetPassword')}</button>
                       {user?.user_type === 'admin' && (
                         <button
                           onClick={() => setDeleteState({ isOpen: true, student: s })}
@@ -417,7 +417,7 @@ export function Students() {
                     </label>
                     <input id="edit-student-display-name" type="text" value={editDisplayName} onChange={(e) => setEditDisplayName(e.target.value)} required className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
                     <label htmlFor="edit-student-role" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                      {t('role', { defaultValue: 'Role' })}
+                      {t('role')}
                     </label>
                     <select id="edit-student-role" value={editUserType} onChange={(e) => setEditUserType(e.target.value as 'student' | 'teacher' | 'admin')} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
                       <option value="student">{t('roles.student')}</option>
@@ -574,7 +574,7 @@ export function Students() {
 
                     {user?.user_type === 'admin' && (
                       <div>
-                        <label htmlFor="create-student-confirm-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.confirmPassword', { defaultValue: 'Confirm Password' })}</label>
+                        <label htmlFor="create-student-confirm-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.confirmPassword')}</label>
                         <input
                           id="create-student-confirm-password"
                           type="password"
@@ -651,11 +651,11 @@ export function Students() {
           >
             <div className="glass-card w-full max-w-md p-6">
               <h3 id="student-preferences-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                {t('preferencesTitle', { defaultValue: 'Preferences for' })} {preferencesStudent.display_name}
+                {t('preferencesTitle')} {preferencesStudent.display_name}
               </h3>
 
               {preferencesLoading ? (
-                <LoadingState size="sm" label={t('loading', { defaultValue: 'Loading preferences' })} className="h-auto p-4" />
+                <LoadingState size="sm" label={t('loading')} className="h-auto p-4" />
               ) : (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
@@ -664,13 +664,13 @@ export function Students() {
                         <Volume2 className="w-5 h-5 text-purple-600" />
                       </div>
                       <div>
-                        <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.voiceMode', { defaultValue: 'Voice Mode' })}</p>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.voiceModeHelp', { defaultValue: 'Enable/disable voice features' })}</p>
+                        <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.voiceMode')}</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.voiceModeHelp')}</p>
                       </div>
                     </div>
                     <Toggle
                       checked={studentPreferences.voice_mode_enabled}
-                      label={t('preferences.voiceMode', { defaultValue: 'Voice Mode' })}
+                      label={t('preferences.voiceMode')}
                       onChange={(checked) => setStudentPreferences({ ...studentPreferences, voice_mode_enabled: checked })}
                     />
                   </div>

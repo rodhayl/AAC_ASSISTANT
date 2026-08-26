@@ -457,4 +457,145 @@ describe('tts queue local neural path', () => {
     )
     errorSpy.mockRestore()
   })
+
+  it('warmup pre-checks capability and pre-loads both models in one batch request', async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/providers/voice-status')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ tts_local: { available: true } }),
+        })
+      }
+      if (url.includes('/providers/warmup')) {
+        const body = JSON.parse(String(init?.body)) as { targets: string[] }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            tts: { warmed: body.targets.includes('tts') },
+            speech: { warmed: body.targets.includes('speech') },
+            vector: { warmed: body.targets.includes('vector') },
+          }),
+        })
+      }
+      return Promise.resolve({ ok: true, blob: async () => new Blob(['fake-wav']) })
+    })
+    const { tts, warmup } = await import('../src/lib/tts')
+    const { useTTSStore } = await import('../src/store/ttsStore')
+    useTTSStore.getState().setTTSProvider('kokoro')
+
+    warmup()
+    await flush()
+    await flush()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/providers/voice-status'),
+      expect.anything(),
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/providers/warmup'),
+      expect.objectContaining({ method: 'POST' }),
+    )
+    // All lazy models pre-load in a single batched request.
+    const warmupCall = fetchMock.mock.calls.find(
+      (call) => String(call[0]).includes('/providers/warmup'),
+    )
+    const body = JSON.parse(String(warmupCall?.[1]?.body)) as { targets: string[] }
+    expect(body.targets).toEqual(['tts', 'speech', 'vector'])
+
+    // All three report ready for the settings indicators.
+    expect(useTTSStore.getState().ttsWarmupStatus).toBe('ready')
+    expect(useTTSStore.getState().speechWarmupStatus).toBe('ready')
+    expect(useTTSStore.getState().vectorWarmupStatus).toBe('ready')
+
+    // The warm-up is fire-and-forget: repeating it does not fire again.
+    warmup()
+    await flush()
+    const warmups = fetchMock.mock.calls.filter(
+      (call) => String(call[0]).includes('/providers/warmup'),
+    )
+    expect(warmups).toHaveLength(1)
+
+    // The capability is now cached: the first enqueue skips the voice-status
+    // round-trip and synthesizes directly.
+    tts.enqueue('Hola', { key: 'local-warmup', lang: 'es' })
+    await flush()
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]))
+    expect(urls.filter((url) => url.includes('/providers/voice-status'))).toHaveLength(1)
+    expect(urls.filter((url) => url.includes('/providers/tts/synthesize'))).toHaveLength(1)
+    expect(speechSynthesis.speak).not.toHaveBeenCalled()
+  })
+
+  it('warmup with the browser TTS provider skips the Kokoro target', async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/providers/warmup')) {
+        const body = JSON.parse(String(init?.body)) as { targets: string[] }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            speech: { warmed: body.targets.includes('speech') },
+            vector: { warmed: body.targets.includes('vector') },
+          }),
+        })
+      }
+      return Promise.resolve({ ok: true, blob: async () => new Blob(['fake-wav']) })
+    })
+    const { warmup } = await import('../src/lib/tts')
+    const { useTTSStore } = await import('../src/store/ttsStore')
+    useTTSStore.getState().setTTSProvider('browser')
+
+    warmup()
+    await flush()
+    await flush()
+
+    // No Kokoro load for a browser-only speech user (and no capability
+    // round-trip either), but the microphone and semantic search models are
+    // still pre-loaded.
+    const warmupCall = fetchMock.mock.calls.find(
+      (call) => String(call[0]).includes('/providers/warmup'),
+    )
+    const body = JSON.parse(String(warmupCall?.[1]?.body)) as { targets: string[] }
+    expect(body.targets).toEqual(['speech', 'vector'])
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]))
+    expect(urls.filter((url) => url.includes('/providers/voice-status'))).toHaveLength(0)
+    expect(useTTSStore.getState().ttsWarmupStatus).toBe('idle')
+    expect(useTTSStore.getState().speechWarmupStatus).toBe('ready')
+    expect(useTTSStore.getState().vectorWarmupStatus).toBe('ready')
+  })
+
+  it('warmup still pre-loads speech and vector when the local TTS engine is unavailable', async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/providers/voice-status')) {
+        return Promise.resolve({ ok: true, json: async () => ({ tts_local: { available: false } }) })
+      }
+      if (url.includes('/providers/warmup')) {
+        const body = JSON.parse(String(init?.body)) as { targets: string[] }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            speech: { warmed: body.targets.includes('speech') },
+            vector: { warmed: body.targets.includes('vector') },
+          }),
+        })
+      }
+      return Promise.resolve({ ok: true, blob: async () => new Blob(['fake-wav']) })
+    })
+    const { warmup } = await import('../src/lib/tts')
+    const { useTTSStore } = await import('../src/store/ttsStore')
+    useTTSStore.getState().setTTSProvider('kokoro')
+
+    warmup()
+    await flush()
+    await flush()
+
+    // The TTS target is dropped (engine unavailable) but the batched request
+    // still fires for the other lazy models.
+    const warmupCall = fetchMock.mock.calls.find(
+      (call) => String(call[0]).includes('/providers/warmup'),
+    )
+    const body = JSON.parse(String(warmupCall?.[1]?.body)) as { targets: string[] }
+    expect(body.targets).toEqual(['speech', 'vector'])
+    expect(useTTSStore.getState().ttsWarmupStatus).toBe('unavailable')
+    expect(useTTSStore.getState().speechWarmupStatus).toBe('ready')
+    expect(useTTSStore.getState().vectorWarmupStatus).toBe('ready')
+  })
 })

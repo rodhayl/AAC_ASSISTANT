@@ -50,7 +50,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                 }
             }
         } catch {
-            setError(t('errors.profileLoadFailed', 'Failed to load profile data'));
+            setError(t('students:errors.profileLoadFailed'));
         } finally {
             setLoading(false);
         }
@@ -89,9 +89,9 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
             } else {
                 await api.post(`/guardian-profiles/students/${student.id}`, data);
             }
-            setSuccess(t('success.saved', 'Profile saved successfully'));
+            setSuccess(t('students:success.saved'));
         } catch (e: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
-            setError(extractError(e, t('errors.saveFailed', 'Failed to save profile')));
+            setError(extractError(e, t('students:errors.saveFailed')));
         } finally {
             setLoading(false);
         }
@@ -115,9 +115,9 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                 <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
                     <h2 id="guardian-profile-title" className="text-xl font-bold flex items-center gap-2">
                         <Sparkles className="w-5 h-5 text-indigo-500" />
-                        {t('guardianProfile', 'Guardian Profile')}: {student?.display_name}
+                        {t('students:guardianProfile')}: {student?.display_name}
                     </h2>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full" aria-label={t('close', 'Close')}><X className="w-6 h-6" /></button>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full" aria-label={t('common:close')}><X className="w-6 h-6" /></button>
                 </div>
 
                 {/* Content */}
@@ -138,12 +138,12 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                         ))}
                     </div>
 
-                    {loading && <div className="text-center py-8">{t('loading', 'Loading...')}</div>}
+                    {loading && <div className="text-center py-8">{t('students:loading')}</div>}
 
                     {!loading && activeTab === 'general' && (
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium mb-1">{t('template', 'Template')}</label>
+                                <label className="block text-sm font-medium mb-1">{t('students:template')}</label>
                                 <select
                                     value={selectedTemplate}
                                     onChange={(e) => setSelectedTemplate(e.target.value)}
@@ -160,7 +160,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label htmlFor="age" className="block text-sm font-medium mb-1">{t('age', 'Age')}</label>
+                                    <label htmlFor="age" className="block text-sm font-medium mb-1">{t('students:age')}</label>
                                     <input
                                         id="age"
                                         type="number"
@@ -170,17 +170,17 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                                     />
                                 </div>
                                 <div>
-                                    <label htmlFor="gender" className="block text-sm font-medium mb-1">{t('gender', 'Gender')}</label>
+                                    <label htmlFor="gender" className="block text-sm font-medium mb-1">{t('students:gender')}</label>
                                     <select
                                         id="gender"
                                         value={profile.gender || ''}
                                         onChange={e => setProfile({ ...profile, gender: e.target.value })}
                                         className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
                                     >
-                                        <option value="">{t('select', 'Select...')}</option>
-                                        <option value="male">{t('male', 'Male')}</option>
-                                        <option value="female">{t('female', 'Female')}</option>
-                                        <option value="non-binary">{t('nonBinary', 'Non-binary')}</option>
+                                        <option value="">{t('students:select')}</option>
+                                        <option value="male">{t('students:male')}</option>
+                                        <option value="female">{t('students:female')}</option>
+                                        <option value="non-binary">{t('students:nonBinary')}</option>
                                     </select>
                                 </div>
                             </div>
@@ -190,7 +190,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                     {!loading && activeTab === 'persona' && (
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium mb-1">{t('companionName', 'Companion Name')}</label>
+                                <label className="block text-sm font-medium mb-1">{t('students:companionName')}</label>
                                 <input
                                     type="text"
                                     value={profile.companion_persona?.name || ''}
@@ -203,7 +203,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium mb-1">{t('role', 'Role')}</label>
+                                <label className="block text-sm font-medium mb-1">{t('students:role')}</label>
                                 <input
                                     type="text"
                                     value={profile.companion_persona?.role || ''}
@@ -221,7 +221,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                     {!loading && activeTab === 'safety' && (
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium mb-1">{t('contentFilterLevel', 'Content Filter Level')}</label>
+                                <label className="block text-sm font-medium mb-1">{t('students:contentFilterLevel')}</label>
                                 <select
                                     value={profile.safety_constraints?.content_filter_level || 'standard'}
                                     onChange={e => setProfile({
@@ -230,9 +230,9 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                                     })}
                                     className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
                                 >
-                                    <option value="strict">{t('strict', 'Strict')}</option>
-                                    <option value="standard">{t('standard', 'Standard')}</option>
-                                    <option value="relaxed">{t('relaxed', 'Relaxed')}</option>
+                                    <option value="strict">{t('students:strict')}</option>
+                                    <option value="standard">{t('students:standard')}</option>
+                                    <option value="relaxed">{t('students:relaxed')}</option>
                                 </select>
                             </div>
                         </div>
@@ -259,7 +259,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                         onClick={onClose}
                         className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
                     >
-                        {t('cancel', 'Cancel')}
+                        {t('students:cancel')}
                     </button>
                     <button
                         onClick={handleSave}

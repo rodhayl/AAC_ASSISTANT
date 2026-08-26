@@ -39,3 +39,23 @@ Always run `git diff --check` and inspect production references separately from 
 ## Task and process lifecycle
 
 Never leave background tasks, orphaned servers, subagents, or dangling test runners running when completing a turn or validation pass. Always audit active tasks (`manage_task` list) and kill unneeded background processes immediately.
+
+## Runtime and provider configuration
+
+- The canonical config file is `.env` (loaded by `src/config.py` via pydantic-settings); a legacy `env.properties` is migrated on first run. `.env` is gitignored; never commit it.
+- **Groq is the production LLM provider.** In `ENVIRONMENT=production`, `get_llm_provider` and warmup (`_init_llm_provider_sync` in `src/api/deps/providers.py`) always select Groq and ignore a persisted `ai_provider=ollama`; `get_learning_service`/`get_board_generation_service` raise `RuntimeError` for a non-Groq provider in production. Warmup fails explicitly when Groq is selected without a configured model, so `/ready` reports `degraded` instead of silently passing.
+- **`GroqProvider` model contract**: the explicit-model requirement lives in `generate()` (never fall back to the parent default model), not in `__init__`. The model-listing endpoint `GET /api/settings/ai/models/groq` constructs a client with an API key alone (request-scoped `X-Groq-API-Key` header wins over the saved setting). Do not re-add a constructor check that breaks model listing.
+- The working dev/admin database (`.env` key, `admin1` credentials, Groq model `openai/gpt-oss-120b`) lives in `data/aac_assistant.db`, which is gitignored. Do not commit it, `.env`, or `src/frontend/playwright/.auth/*.json` (persisted JWT tokens) — all are ignored; keep it that way.
+- Secrets audit (2026-08-26): no API keys, JWT tokens, or private keys exist in tracked files or in git history. Demo credentials (`Admin123`/`Student123`/`Teacher123`) appear only in CI, docs, and E2E specs and operate only in explicit test environments.
+- Auth for API smokes: the JWT endpoint is `POST /api/auth/token` with OAuth2 **form-data** (`username`/`password`), not JSON. The JSON `POST /api/auth/login` is deprecated and returns the user profile, not a token.
+
+## Live-server and Groq E2E verification
+
+- To verify Groq against a real server: start `uv run python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8086`, wait for `/api/health` 200 and `/ready` `"ready":true` (4/4 providers), then run `E2E_GROQ_API_KEY=... PLAYWRIGHT_BASE_URL=http://127.0.0.1:8086 npx playwright test --config=playwright.verify.config.ts` from `src/frontend`.
+- The E2E Groq spec uses `E2E_GROQ_MODEL`; the locally persisted model is `openai/gpt-oss-120b` (the spec default `openai/gpt-oss-20b` is also valid but not what admin1 uses). The spec tolerates a pre-configured server (no PUT is emitted when values are unchanged; it verifies persisted settings via GET in that case).
+- Background servers started for verification are killed at the end of the same command (the environment reaps background processes between commands; start and validate in one shell invocation).
+
+## Coverage measurement
+
+- Combined coverage runs with multiple `--cov=` targets can fail with a `KeyError` caused by instrumenting several API modules together (dynamic imports). Measure **one domain at a time** with a single `--cov` target and `coverage erase` between runs; sequential single-target runs are reproducible.
+- Measured domain coverage (2026-08-26, single-target runs): learning services ~88% (`common.py` 100%, `responses.py` 86%), prediction `prediction_service.py` 87%, board generation ~89%, providers ~62%. The overall 95% target is not met; report real numbers, never inflate them.

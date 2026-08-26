@@ -80,7 +80,7 @@ export function LearningSymbolPanel({
                     type="button"
                     onClick={() => onRemoveSymbol(index)}
                     className="hover:opacity-70 ml-1"
-                    aria-label={t('removeSymbolLabel', 'Remove symbol')}
+                    aria-label={t('removeSymbolLabel')}
                   >
                     <X className="w-3 h-3" />
                   </button>

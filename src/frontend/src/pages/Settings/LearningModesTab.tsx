@@ -137,7 +137,7 @@ export function LearningModesTab() {
         });
       } catch (err) {
         if (requestId !== previewRequestIdRef.current) return;
-        setPreviewError(extractError(err, t('learningModes.previewFailed', 'Failed to preview system prompt')));
+        setPreviewError(extractError(err, t('learningModes.previewFailed')));
       } finally {
         if (requestId === previewRequestIdRef.current) setPreviewLoading(false);
       }
@@ -217,15 +217,15 @@ export function LearningModesTab() {
     // Client-side validation keeps required fields from reaching the backend
     // (which would otherwise surface raw English Pydantic 422 messages).
     if (!modeForm.name.trim()) {
-      setModeError(t('learningModes.nameRequired', 'Name is required'));
+      setModeError(t('learningModes.nameRequired'));
       return;
     }
     if (editingModeId === -1 && !modeForm.key.trim()) {
-      setModeError(t('learningModes.keyRequired', 'Key is required'));
+      setModeError(t('learningModes.keyRequired'));
       return;
     }
     if (!modeForm.prompt_instruction.trim()) {
-      setModeError(t('learningModes.promptRequired', 'System prompt instruction is required'));
+      setModeError(t('learningModes.promptRequired'));
       return;
     }
     setModeError(null);
@@ -237,15 +237,15 @@ export function LearningModesTab() {
           prompt_instruction: modeForm.prompt_instruction,
           auto_ask_enabled: modeForm.auto_ask_enabled,
         });
-        setModeSuccess(t('learningModes.updated', 'Mode updated successfully'));
+        setModeSuccess(t('learningModes.updated'));
       } else {
         await api.post('/learning-modes/', modeForm);
-        setModeSuccess(t('learningModes.created', 'Mode created successfully'));
+        setModeSuccess(t('learningModes.created'));
       }
       fetchLearningModes();
       handleCancelModeEdit();
     } catch (err: unknown) {
-      setModeError(extractError(err, t('learningModes.saveFailed', 'Failed to save mode')));
+      setModeError(extractError(err, t('learningModes.saveFailed')));
     }
   };
 
@@ -261,9 +261,9 @@ export function LearningModesTab() {
       await api.delete(`/learning-modes/${pendingDeleteMode.id}`);
       setPendingDeleteMode(null);
       fetchLearningModes();
-      setModeSuccess(t('learningModes.deleted', 'Mode deleted'));
+      setModeSuccess(t('learningModes.deleted'));
     } catch (err: unknown) {
-      setModeError(extractError(err, t('learningModes.deleteFailed', 'Failed to delete mode')));
+      setModeError(extractError(err, t('learningModes.deleteFailed')));
       setPendingDeleteMode(null);
     } finally {
       setDeletingMode(false);
@@ -283,9 +283,9 @@ export function LearningModesTab() {
               id="settings-learning-modes-heading"
               className="text-lg font-semibold text-gray-900 dark:text-gray-100"
             >
-              {t('tabs.learningModes', 'Learning Modes')}
+              {t('tabs.learningModes')}
             </h3>
-            <p className="text-sm text-gray-500 mt-1">{t('learningModes.subtitle', 'Configure smart learning modes and prompts')}</p>
+            <p className="text-sm text-gray-500 mt-1">{t('learningModes.subtitle')}</p>
           </div>
           {modeSuccess && (
             <div className="flex items-center text-green-600 text-sm font-medium">
@@ -313,7 +313,7 @@ export function LearningModesTab() {
                     <div className="text-sm text-gray-500">{mode.description}</div>
                     <div className="flex gap-2 mt-1.5">
                       {!mode.is_custom && (
-                        <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded">{t('learningModes.systemDefault', 'System Default')}</span>
+                        <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded">{t('learningModes.systemDefault')}</span>
                       )}
                       <span
                         className={`text-xs px-2 py-0.5 rounded ${
@@ -321,9 +321,9 @@ export function LearningModesTab() {
                             ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'
                             : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'
                         }`}
-                        title={mode.auto_ask_enabled !== false ? t('learningModes.autoAskTitle', 'Auto-asks adaptive questions') : t('learningModes.manualAskTitle', 'Adaptive questions must be requested manually')}
+                        title={mode.auto_ask_enabled !== false ? t('learningModes.autoAskTitle') : t('learningModes.manualAskTitle')}
                       >
-                        {t('learningModes.autoAskLabel', 'Auto-ask')}: {mode.auto_ask_enabled !== false ? t('learningModes.on', 'On') : t('learningModes.off', 'Off')}
+                        {t('learningModes.autoAskLabel')}: {mode.auto_ask_enabled !== false ? t('learningModes.on') : t('learningModes.off')}
                       </span>
                     </div>
                   </div>
@@ -331,15 +331,15 @@ export function LearningModesTab() {
                     <button
                       type="button"
                       onClick={() => { void openPreview(mode); }}
-                      aria-label={`${t('learningModes.preview', 'Preview')} ${mode.name}`}
-                      title={t('learningModes.previewSystemPrompt', 'Preview System Prompt')}
+                      aria-label={`${t('learningModes.preview')} ${mode.name}`}
+                      title={t('learningModes.previewSystemPrompt')}
                       className="p-2 text-indigo-600 hover:bg-indigo-50 rounded"
                     >
                       <Eye className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => handleEditMode(mode)}
-                      aria-label={`${t('learningModes.edit', 'Edit')} ${mode.name}`}
+                      aria-label={`${t('learningModes.edit')} ${mode.name}`}
                       className="p-2 text-indigo-600 hover:bg-indigo-50 rounded"
                     >
                       <Edit2 className="w-4 h-4" />
@@ -348,8 +348,8 @@ export function LearningModesTab() {
                       <button
                         type="button"
                         onClick={() => handleDeleteMode(mode.id)}
-                        aria-label={`${t('learningModes.delete', 'Delete')} ${mode.name}`}
-                        title={t('learningModes.deleteModeTitle', 'Delete learning mode')}
+                        aria-label={`${t('learningModes.delete')} ${mode.name}`}
+                        title={t('learningModes.deleteModeTitle')}
                         className="p-2 text-red-600 hover:bg-red-50 rounded"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -366,50 +366,50 @@ export function LearningModesTab() {
               }}
               className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-indigo-500 hover:text-indigo-500 flex items-center justify-center"
             >
-              <Plus className="w-4 h-4 mr-2" /> {t('learningModes.addNew', 'Add New Learning Mode')}
+              <Plus className="w-4 h-4 mr-2" /> {t('learningModes.addNew')}
             </button>
           </div>
         ) : (
           <div className="space-y-4">
             <h4 className="font-medium text-gray-900">
-              {editingModeId === -1 ? t('learningModes.createNew', 'Create New Mode') : t('learningModes.editMode', 'Edit Mode')}
+              {editingModeId === -1 ? t('learningModes.createNew') : t('learningModes.editMode')}
             </h4>
             <div>
-              <label htmlFor="learning-mode-name" className="block text-sm font-medium text-gray-700 mb-1">{t('learningModes.name', 'Name')}</label>
+              <label htmlFor="learning-mode-name" className="block text-sm font-medium text-gray-700 mb-1">{t('learningModes.name')}</label>
               <input
                 id="learning-mode-name"
                 value={modeForm.name}
                 onChange={(event) => setModeForm({ ...modeForm, name: event.target.value })}
                 className="w-full p-2 border rounded-lg"
-                placeholder={t('learningModes.namePlaceholder', 'e.g. Daily Conversation')}
+                placeholder={t('learningModes.namePlaceholder')}
               />
             </div>
             <div>
-              <label htmlFor="learning-mode-key" className="block text-sm font-medium text-gray-700 mb-1">{t('learningModes.key', 'Key (Internal ID)')}</label>
+              <label htmlFor="learning-mode-key" className="block text-sm font-medium text-gray-700 mb-1">{t('learningModes.key')}</label>
               <input
                 id="learning-mode-key"
                 value={modeForm.key}
                 onChange={(event) => setModeForm({ ...modeForm, key: event.target.value })}
                 className="w-full p-2 border rounded-lg"
-                placeholder={t('learningModes.keyPlaceholder', 'e.g. daily_conversation')}
+                placeholder={t('learningModes.keyPlaceholder')}
                 disabled={editingModeId !== -1}
               />
-              <p className="text-xs text-gray-500 mt-1">{t('learningModes.keyHelp', 'Unique identifier for this mode.')}</p>
+              <p className="text-xs text-gray-500 mt-1">{t('learningModes.keyHelp')}</p>
             </div>
             <div>
-              <label htmlFor="learning-mode-description" className="block text-sm font-medium text-gray-700 mb-1">{t('learningModes.description', 'Description')}</label>
+              <label htmlFor="learning-mode-description" className="block text-sm font-medium text-gray-700 mb-1">{t('learningModes.description')}</label>
               <input
                 id="learning-mode-description"
                 value={modeForm.description}
                 onChange={(event) => setModeForm({ ...modeForm, description: event.target.value })}
                 className="w-full p-2 border rounded-lg"
-                placeholder={t('learningModes.descriptionPlaceholder', 'Brief description for the user')}
+                placeholder={t('learningModes.descriptionPlaceholder')}
               />
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label htmlFor="mode-prompt-instruction" className="block text-sm font-medium text-gray-700">
-                  {t('learningModes.promptInstruction', 'System Prompt Instruction')}
+                  {t('learningModes.promptInstruction')}
                 </label>
                 <button
                   type="button"
@@ -417,7 +417,7 @@ export function LearningModesTab() {
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors"
                 >
                   <Eye className="w-3.5 h-3.5" />
-                  {t('learningModes.previewSystemPrompt', 'Preview System Prompt')}
+                  {t('learningModes.previewSystemPrompt')}
                 </button>
               </div>
               <textarea
@@ -425,10 +425,10 @@ export function LearningModesTab() {
                 value={modeForm.prompt_instruction}
                 onChange={(event) => setModeForm({ ...modeForm, prompt_instruction: event.target.value })}
                 className="w-full p-2 border rounded-lg h-32 font-mono text-sm"
-                placeholder={t('learningModes.promptPlaceholder', 'Instructions for the AI on how to behave in this mode...')}
+                placeholder={t('learningModes.promptPlaceholder')}
               />
               <p className="text-xs text-gray-500 mt-1">
-                {t('learningModes.promptHelp', 'This text is appended to the AI system prompt. It is not visible to the student.')}
+                {t('learningModes.promptHelp')}
               </p>
             </div>
             <label className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer pt-1">
@@ -441,9 +441,9 @@ export function LearningModesTab() {
                 className="mt-0.5 w-4 h-4 accent-indigo-600"
               />
               <span className="leading-tight">
-                <span className="font-medium">{t('learningModes.autoAsk', 'Auto-ask questions')}</span>
+                <span className="font-medium">{t('learningModes.autoAsk')}</span>
                 <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  {t('learningModes.autoAskHelp', 'Automatically ask adaptive questions during sessions. Turn off for conversational modes (e.g. roleplay); the "New question" button in the Learning tab still works.')}
+                  {t('learningModes.autoAskHelp')}
                 </span>
               </span>
             </label>
@@ -452,13 +452,13 @@ export function LearningModesTab() {
                 onClick={handleCancelModeEdit}
                 className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
               >
-                {t('learningModes.cancel', 'Cancel')}
+                {t('learningModes.cancel')}
               </button>
               <button
                 onClick={handleSaveMode}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
               >
-                {t('learningModes.saveMode', 'Save Mode')}
+                {t('learningModes.saveMode')}
               </button>
             </div>
           </div>
@@ -482,18 +482,18 @@ export function LearningModesTab() {
             <div className="flex items-start justify-between p-5 border-b border-gray-200 dark:border-gray-700">
               <div>
                 <h4 id="preview-prompt-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                  {t('learningModes.previewSystemPrompt', 'Preview System Prompt')}
+                  {t('learningModes.previewSystemPrompt')}
                 </h4>
                 <p className="text-sm text-gray-500 mt-1">
                   {previewMode
-                    ? t('learningModes.previewingSaved', 'Previewing saved mode "{{name}}" — the exact prompt sent to the LLM (guardian profile + mode instruction).', { name: previewMode.name })
-                    : t('learningModes.previewingForm', "The exact prompt sent to the LLM: the student's guardian profile (or the default prompt) plus this mode's instruction.")}
+                    ? t('learningModes.previewingSaved', { name: previewMode.name })
+                    : t('learningModes.previewingForm')}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={closePreview}
-                aria-label={t('learningModes.closePreview', 'Close preview')}
+                aria-label={t('learningModes.closePreview')}
                 className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
               >
                 <X className="w-5 h-5" />
@@ -504,7 +504,7 @@ export function LearningModesTab() {
               <div className="flex flex-wrap items-end gap-3">
                 <div className="flex-1 min-w-48">
                   <label htmlFor="preview-student" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    {t('learningModes.student', 'Student')}
+                    {t('learningModes.student')}
                   </label>
                   <select
                     id="preview-student"
@@ -516,10 +516,10 @@ export function LearningModesTab() {
                     }}
                     className="w-full p-2 border rounded-lg text-sm"
                   >
-                    <option value="">{t('learningModes.noStudent', 'No student (default prompt)')}</option>
+                    <option value="">{t('learningModes.noStudent')}</option>
                     {previewStudents.map((student) => (
                       <option key={student.id} value={student.id}>
-                        {student.display_name}{student.has_profile ? ` • ${t('learningModes.guardianProfile', 'guardian profile')}` : ''}
+                        {student.display_name}{student.has_profile ? ` • ${t('learningModes.guardianProfile')}` : ''}
                       </option>
                     ))}
                   </select>
@@ -530,7 +530,7 @@ export function LearningModesTab() {
                   disabled={previewLoading}
                   className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-60"
                 >
-                  {previewLoading ? t('learningModes.loading', 'Loading...') : t('learningModes.preview', 'Preview')}
+                  {previewLoading ? t('learningModes.loading') : t('learningModes.preview')}
                 </button>
                 <button
                   type="button"
@@ -539,7 +539,7 @@ export function LearningModesTab() {
                   className="inline-flex items-center gap-1.5 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-60"
                 >
                   <Copy className="w-4 h-4" />
-                  {copied ? t('learningModes.copied', 'Copied') : t('learningModes.copy', 'Copy')}
+                  {copied ? t('learningModes.copied') : t('learningModes.copy')}
                 </button>
               </div>
 
@@ -560,9 +560,9 @@ export function LearningModesTab() {
                   className="mt-0.5 w-4 h-4 accent-indigo-600"
                 />
                 <span className="leading-tight">
-                  <span className="font-medium">{t('learningModes.previewWithSample', 'Preview with sample question')}</span>
+                  <span className="font-medium">{t('learningModes.previewWithSample')}</span>
                   <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                    {t('learningModes.sampleHelp', 'Show the exact LLM request (system prompt + user message) for a realistic student question.')}
+                    {t('learningModes.sampleHelp')}
                   </span>
                 </span>
               </label>
@@ -570,7 +570,7 @@ export function LearningModesTab() {
                 <div className="flex items-end gap-2">
                   <div className="flex-1">
                     <label htmlFor="preview-sample-question" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      {t('learningModes.sampleQuestion', 'Sample student question')}
+                      {t('learningModes.sampleQuestion')}
                     </label>
                     <input
                       id="preview-sample-question"
@@ -581,7 +581,7 @@ export function LearningModesTab() {
                           void runPreview();
                         }
                       }}
-                      placeholder={t('learningModes.samplePlaceholder', 'e.g. Why does it rain?')}
+                      placeholder={t('learningModes.samplePlaceholder')}
                       className="w-full p-2 border rounded-lg text-sm"
                     />
                   </div>
@@ -591,7 +591,7 @@ export function LearningModesTab() {
                     disabled={previewLoading || !sampleQuestion.trim()}
                     className="px-3 py-2 border border-indigo-200 text-indigo-600 rounded-lg text-sm font-medium hover:bg-indigo-50 disabled:opacity-50"
                   >
-                    {t('learningModes.run', 'Run')}
+                    {t('learningModes.run')}
                   </button>
                 </div>
               )}
@@ -600,10 +600,10 @@ export function LearningModesTab() {
             <div className="flex-1 overflow-auto p-5">
               {previewMeta && (
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                  {t('learningModes.template', 'Template:')} <span className="font-medium">{previewMeta.template_name}</span> ·{' '}
+                  {t('learningModes.template')} <span className="font-medium">{previewMeta.template_name}</span> ·{' '}
                   {previewMeta.has_guardian_profile
-                    ? t('learningModes.guardianIncluded', 'Guardian profile included')
-                    : t('learningModes.noGuardian', 'No guardian profile (default prompt)')}
+                    ? t('learningModes.guardianIncluded')
+                    : t('learningModes.noGuardian')}
                 </div>
               )}
               {previewError && (
@@ -613,24 +613,24 @@ export function LearningModesTab() {
                 </div>
               )}
               {previewLoading ? (
-                <div className="text-sm text-gray-500">{t('learningModes.buildingPrompt', 'Building prompt...')}</div>
+                <div className="text-sm text-gray-500">{t('learningModes.buildingPrompt')}</div>
               ) : previewPrompt ? (
                 <div className="space-y-3">
                   {previewUserMessage && (
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                        {t('learningModes.fullRequest', 'Full LLM request')}
+                        {t('learningModes.fullRequest')}
                       </span>
                       {previewParams && (
                         <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">
-                          {t('learningModes.temperature', 'temperature')} {previewParams.temperature ?? '—'} · {t('learningModes.maxTokens', 'max_tokens')} {previewParams.max_tokens ?? '—'}
+                          {t('learningModes.temperature')} {previewParams.temperature ?? '—'} · {t('learningModes.maxTokens')} {previewParams.max_tokens ?? '—'}
                         </span>
                       )}
                     </div>
                   )}
                   <div>
                     <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                      {t('learningModes.systemPrompt', 'System prompt')}
+                      {t('learningModes.systemPrompt')}
                     </div>
                     <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-gray-800 dark:text-gray-200 bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
                       {previewPrompt}
@@ -639,7 +639,7 @@ export function LearningModesTab() {
                   {previewUserMessage && (
                     <div>
                       <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                        {t('learningModes.userMessage', 'User message')} <span className="font-normal">{t('learningModes.userMessageHelp', "(what the student's question becomes)")}</span>
+                        {t('learningModes.userMessage')} <span className="font-normal">{t('learningModes.userMessageHelp')}</span>
                       </div>
                       <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-gray-800 dark:text-gray-200 bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-indigo-100 dark:border-indigo-900">
                         {previewUserMessage}
@@ -657,10 +657,10 @@ export function LearningModesTab() {
         isOpen={pendingDeleteMode != null}
         onClose={() => setPendingDeleteMode(null)}
         onConfirm={confirmDeleteMode}
-        title={t('learningModes.deleteModeTitle', 'Delete learning mode')}
-        description={t('learningModes.confirmDelete', 'Are you sure you want to delete this learning mode?')}
-        confirmText={t('learningModes.delete', 'Delete')}
-        cancelText={t('learningModes.cancel', 'Cancel')}
+        title={t('learningModes.deleteModeTitle')}
+        description={t('learningModes.confirmDelete')}
+        confirmText={t('learningModes.delete')}
+        cancelText={t('learningModes.cancel')}
         variant="danger"
         isLoading={deletingMode}
       />

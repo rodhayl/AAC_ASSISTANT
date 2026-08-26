@@ -7,8 +7,18 @@ import { SymbolCard } from '../src/components/board/SymbolCard';
 // Mock useTranslation
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (_key: string, fallback: string, options?: Record<string, string>) =>
-      (options ? fallback.replace('{{label}}', options.label) : fallback),
+    t: (key: string, arg2?: string | Record<string, string>, arg3?: Record<string, string>) => {
+      const options = typeof arg2 === 'object' ? arg2 : arg3;
+      const defaults: Record<string, string> = {
+        addToSentence: 'Add {{label}} to sentence',
+        openFolder: 'Open folder {{label}}',
+      };
+      let text = typeof arg2 === 'string' ? arg2 : defaults[key] ?? key;
+      for (const [name, value] of Object.entries(options || {})) {
+        text = text.replace(`{{${name}}}`, value);
+      }
+      return text;
+    },
   }),
 }));
 

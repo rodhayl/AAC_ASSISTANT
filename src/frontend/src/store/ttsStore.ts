@@ -11,6 +11,8 @@ function readStoredLocalVoice(): string {
   }
 }
 
+export type WarmupStatus = 'idle' | 'warming' | 'ready' | 'unavailable'
+
 interface TTSState {
   ttsProvider: 'kokoro' | 'browser'
   setTTSProvider: (provider: 'kokoro' | 'browser') => void
@@ -26,6 +28,15 @@ interface TTSState {
    */
   localVoice: string
   setLocalVoice: (v: string) => void
+  /** Background pre-load status of the backend Kokoro TTS model. */
+  ttsWarmupStatus: WarmupStatus
+  setTTSWarmupStatus: (v: WarmupStatus) => void
+  /** Background pre-load status of the backend faster-whisper STT model. */
+  speechWarmupStatus: WarmupStatus
+  setSpeechWarmupStatus: (v: WarmupStatus) => void
+  /** Background pre-load status of the fastembed semantic search index. */
+  vectorWarmupStatus: WarmupStatus
+  setVectorWarmupStatus: (v: WarmupStatus) => void
 }
 
 export const useTTSStore = create<TTSState>((set) => ({
@@ -44,4 +55,10 @@ export const useTTSStore = create<TTSState>((set) => ({
     }
     set({ localVoice: v })
   },
+  ttsWarmupStatus: 'idle',
+  setTTSWarmupStatus: (v) => set({ ttsWarmupStatus: v }),
+  speechWarmupStatus: 'idle',
+  setSpeechWarmupStatus: (v) => set({ speechWarmupStatus: v }),
+  vectorWarmupStatus: 'idle',
+  setVectorWarmupStatus: (v) => set({ vectorWarmupStatus: v }),
 }))

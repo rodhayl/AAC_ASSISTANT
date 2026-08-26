@@ -165,7 +165,18 @@ def mock_llm_provider():
     Returns predictable responses without making real API calls.
     """
     mock_provider = Mock()
-    mock_provider.generate = AsyncMock(return_value="This is a test response from the mock LLM.")
+
+    async def generate(**kwargs):
+        prompt = kwargs.get("prompt", "")
+        if "Create a brief, encouraging summary" in prompt:
+            return "{\"response\": \"Great work completing this learning session.\"}"
+        if "Analyze if the student's answer is correct" in prompt:
+            return "{\"is_correct\": false, \"confidence\": 0.5, \"encouraging_feedback\": \"Keep practicing.\"}"
+        if "Generate a " in prompt and "level question about" in prompt:
+            return "{\"question\": \"What is a useful AAC word?\", \"choices\": [\"Help\", \"Blue\", \"Round\"], \"correct\": 0}"
+        return "{\"response\": \"Thanks for sharing. What would you like to practice next?\"}"
+
+    mock_provider.generate = AsyncMock(side_effect=generate)
     mock_provider.is_available = Mock(return_value=True)
     return mock_provider
 

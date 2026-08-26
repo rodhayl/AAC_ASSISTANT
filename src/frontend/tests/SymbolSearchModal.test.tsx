@@ -9,7 +9,10 @@ vi.mock('../src/lib/api', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (_key: string, fallback: string) => fallback,
+    t: (key: string, arg2?: string | Record<string, unknown>, arg3?: Record<string, unknown>) =>
+      (globalThis as typeof globalThis & {
+        __aacTestTranslation?: (namespace: string, key: string, arg2?: string | Record<string, unknown>, arg3?: Record<string, unknown>) => string;
+      }).__aacTestTranslation?.('boards', key, arg2, arg3) ?? key,
     i18n: { language: 'en-US' },
   }),
 }));

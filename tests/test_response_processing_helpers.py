@@ -8,7 +8,7 @@ fallback grading, Whisper voice transcription, and history persistence.
 from __future__ import annotations
 
 import os
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from sqlalchemy.orm import Session
@@ -111,10 +111,9 @@ def test_transcribe_voice_success() -> None:
     speech.recognize_from_file.return_value = "hola"
     harness = _Harness(speech)
 
-    transcription, failed = harness._transcribe_voice_response(b"audio", None)
+    transcription = harness._transcribe_voice_response(b"audio", None)
 
     assert transcription == "hola"
-    assert failed is False
     speech.recognize_from_file.assert_called_once()
 
 
@@ -123,35 +122,29 @@ def test_transcribe_voice_unavailable_speech() -> None:
     speech.is_available.return_value = False
     harness = _Harness(speech)
 
-    transcription, failed = harness._transcribe_voice_response(b"audio", None)
-
-    assert transcription == "[voice message]"
-    assert failed is True
+    with pytest.raises(RuntimeError, match="Voice transcription failed"):
+        harness._transcribe_voice_response(b"audio", None)
     speech.recognize_from_file.assert_not_called()
 
 
-def test_transcribe_voice_empty_transcription_marks_failure() -> None:
+def test_transcribe_voice_empty_transcription_fails_explicitly() -> None:
     speech = Mock()
     speech.is_available.return_value = True
     speech.recognize_from_file.return_value = "   "
     harness = _Harness(speech)
 
-    transcription, failed = harness._transcribe_voice_response(b"audio", None)
-
-    assert transcription == "[voice message]"
-    assert failed is True
+    with pytest.raises(RuntimeError, match="Voice transcription failed"):
+        harness._transcribe_voice_response(b"audio", None)
 
 
-def test_transcribe_voice_exception_marks_failure() -> None:
+def test_transcribe_voice_exception_fails_explicitly() -> None:
     speech = Mock()
     speech.is_available.return_value = True
     speech.recognize_from_file.side_effect = RuntimeError("whisper crashed")
     harness = _Harness(speech)
 
-    transcription, failed = harness._transcribe_voice_response(b"audio", None)
-
-    assert transcription == "[voice message]"
-    assert failed is True
+    with pytest.raises(RuntimeError, match="Voice transcription failed"):
+        harness._transcribe_voice_response(b"audio", None)
 
 
 def test_transcribe_voice_reuses_audio_path_without_cleanup() -> None:
@@ -160,10 +153,9 @@ def test_transcribe_voice_reuses_audio_path_without_cleanup() -> None:
     speech.recognize_from_file.return_value = "hola"
     harness = _Harness(speech)
 
-    transcription, failed = harness._transcribe_voice_response(None, "/tmp/streamed.wav")
+    transcription = harness._transcribe_voice_response(None, "/tmp/streamed.wav")
 
     assert transcription == "hola"
-    assert failed is False
     # The streamed request temp file must NOT be removed by the helper.
     speech.recognize_from_file.assert_called_once_with("/tmp/streamed.wav")
 
@@ -180,10 +172,9 @@ def test_transcribe_voice_writes_and_cleans_temporary_file() -> None:
     speech.recognize_from_file.side_effect = _fake_recognize
     harness = _Harness(speech)
 
-    transcription, failed = harness._transcribe_voice_response(b"wav-bytes", None)
+    transcription = harness._transcribe_voice_response(b"wav-bytes", None)
 
     assert transcription == "hola"
-    assert failed is False
     temp_path = captured["path"]
     assert temp_path.endswith(".wav")
     assert not os.path.exists(temp_path), "temporary audio file must be cleaned up"
@@ -216,3 +207,286 @@ def test_persist_history_commits_and_flags_json_column(
     assert stored.conversation_history == [
         {"type": "response", "student_answer": "blue"}
     ]
+
+
+# ---------------------------------------------------------------------------
+# _build_recent_symbol_context
+# ---------------------------------------------------------------------------
+
+
+def test_recent_symbol_context_extracts_patterns() -> None:
+    history = [
+        {
+            "type": "response",
+            "mode": "symbol",
+            "symbols": [{"label": "I", "category": "pronouns"}],
+        },
+        {"type": "feedback", "message": "Great!"},
+        {
+            "type": "response",
+            "mode": "symbol",
+            "symbols": [
+                {"label": "want", "category": "actions"},
+                {"label": "juice", "category": "food"},
+            ],
+        },
+    ]
+    context = _Harness()._build_recent_symbol_context(history)
+    assert context == "I (pronouns); want + juice (actions/food)"
+
+
+def test_recent_symbol_context_ignores_non_symbol_entries() -> None:
+    history = [
+        {"type": "response", "mode": "text", "student_answer": "hi"},
+        {"type": "feedback", "message": "Hello!"},
+    ]
+    assert _Harness()._build_recent_symbol_context(history) == ""
+
+
+def test_recent_symbol_context_empty_history() -> None:
+    assert _Harness()._build_recent_symbol_context([]) == ""
+    assert _Harness()._build_recent_symbol_context(None) == ""
+
+
+# ---------------------------------------------------------------------------
+# process_response question-answer branch
+# ---------------------------------------------------------------------------
+
+
+def _question_session(
+    test_db_session: Session, user_id: int, question: dict | None = None
+) -> LearningSession:
+    """Create a session whose history ends with a question entry."""
+    default_question = {
+        "question": "What color is the sky?",
+        "choices": ["Green", "Blue", "Red"],
+        "correct": 1,
+    }
+    session = LearningSession(
+        user_id=user_id,
+        topic_name="Weather",
+        status="active",
+        conversation_history=[
+            {
+                "type": "question",
+                "data": question if question is not None else default_question,
+            }
+        ],
+    )
+    test_db_session.add(session)
+    test_db_session.flush()
+    return session
+
+
+class _FullHarness(ResponseProcessingMixin):
+    """Harness with mocks for every collaborator process_response touches."""
+
+    def __init__(
+        self,
+        llm=None,
+        speech=None,
+        symbol_semantics=None,
+        aac_expander=None,
+        aac_prompt_profile=None,
+        symbol_analytics=None,
+        guardian_profile_service=None,
+        provider_type="groq",
+    ):
+        from src.aac_app.services.aac_expander_service import AACExpanderService
+        from src.aac_app.services.learning.common import AACPromptProfile
+        from src.aac_app.services.symbol_semantics import SymbolSemantics
+
+        self.llm = llm or Mock()
+        self.speech = speech or Mock()
+        self.symbol_semantics = symbol_semantics or SymbolSemantics()
+        self.aac_expander = aac_expander or AACExpanderService()
+        self.aac_prompt_profile = aac_prompt_profile or AACPromptProfile()
+        self.symbol_analytics = symbol_analytics or Mock()
+        self.guardian_profile_service = guardian_profile_service or Mock()
+        self.provider_type = provider_type
+        self.default_max_tokens = 256
+        self.default_temperature = 0.4
+
+    def _get_system_prompt(self, *args, **kwargs) -> str:
+        return "system prompt"
+
+    def _get_user_language(self, *args, **kwargs) -> str:
+        return "en"
+
+    def _session_scope(self, db):
+        from src.aac_app.db import session_scope
+
+        return session_scope(db)
+
+    def build_conversation_user_prompt(
+        self, student_message: str, topic: str, context: str, lang: str
+    ) -> str:
+        return f"Previous conversation:\n{context}\nStudent: {student_message}\nTopic: {topic}"
+
+
+@pytest.mark.anyio
+async def test_process_response_grades_correct_answer_via_llm(
+    regular_user, test_db_session: Session
+) -> None:
+    """A valid question is graded through the LLM and increments stats."""
+    session = _question_session(test_db_session, regular_user.id)
+    llm = Mock()
+    llm.generate = AsyncMock(
+        return_value='{"is_correct": true, "confidence": 0.95, "encouraging_feedback": "Great job!"}'
+    )
+    harness = _FullHarness(llm=llm)
+
+    result = await harness.process_response(
+        session_id=session.id, student_response="blue", db=test_db_session
+    )
+
+    assert result["success"] is True
+    assert result["is_correct"] is True
+    assert result["feedback_message"] == "Great job!"
+    assert result["provider_used"] == "groq"
+    test_db_session.refresh(session)
+    assert session.questions_answered == 1
+    assert session.correct_answers == 1
+    assert session.comprehension_score == 1.0
+    assert result["next_action"] == "continue_questions"
+
+
+@pytest.mark.anyio
+async def test_process_response_grades_incorrect_answer(
+    regular_user, test_db_session: Session
+) -> None:
+    session = _question_session(test_db_session, regular_user.id)
+    llm = Mock()
+    llm.generate = AsyncMock(
+        return_value='{"is_correct": false, "confidence": 0.4, "encouraging_feedback": "Almost!"}'
+    )
+    harness = _FullHarness(llm=llm)
+
+    result = await harness.process_response(
+        session_id=session.id, student_response="green", db=test_db_session
+    )
+
+    assert result["success"] is True
+    assert result["is_correct"] is False
+    test_db_session.refresh(session)
+    assert session.questions_answered == 1
+    assert session.correct_answers == 0
+
+
+@pytest.mark.anyio
+async def test_process_response_accepts_string_boolean(
+    regular_user, test_db_session: Session
+) -> None:
+    """LLM JSON booleans may arrive as strings and are normalized to real bools."""
+    session = _question_session(test_db_session, regular_user.id)
+    llm = Mock()
+    llm.generate = AsyncMock(
+        return_value=(
+            '{"is_correct": "true", "confidence": 0.85, '
+            '"encouraging_feedback": "Nice work!"}'
+        )
+    )
+    harness = _FullHarness(llm=llm)
+
+    result = await harness.process_response(
+        session_id=session.id, student_response="blue", db=test_db_session
+    )
+
+    assert result["success"] is True
+    assert result["is_correct"] is True
+    assert result["confidence"] == 0.85
+
+
+@pytest.mark.anyio
+async def test_process_response_rejects_invalid_confidence(
+    regular_user, test_db_session: Session
+) -> None:
+    """Confidence outside [0,1] is an explicit failure, never clamped silently."""
+    session = _question_session(test_db_session, regular_user.id)
+    llm = Mock()
+    llm.generate = AsyncMock(
+        return_value=(
+            '{"is_correct": true, "confidence": 3.0, '
+            '"encouraging_feedback": "Good"}'
+        )
+    )
+    harness = _FullHarness(llm=llm)
+
+    result = await harness.process_response(
+        session_id=session.id, student_response="blue", db=test_db_session
+    )
+
+    assert result["success"] is False
+    assert "confidence must be between 0 and 1" in result["error"]
+
+
+@pytest.mark.anyio
+async def test_process_response_rejects_incomplete_llm_json(
+    regular_user, test_db_session: Session
+) -> None:
+    """A grading JSON missing the boolean is an explicit failure, not a guess."""
+    session = _question_session(test_db_session, regular_user.id)
+    llm = Mock()
+    llm.generate = AsyncMock(
+        return_value='{"confidence": 0.8, "encouraging_feedback": "Good"}'
+    )
+    harness = _FullHarness(llm=llm)
+
+    result = await harness.process_response(
+        session_id=session.id, student_response="blue", db=test_db_session
+    )
+
+    assert result["success"] is False
+    assert "incomplete JSON" in result["error"]
+
+
+@pytest.mark.anyio
+async def test_process_response_skips_evaluation_for_malformed_question(
+    regular_user, test_db_session: Session
+) -> None:
+    """A malformed persisted question falls back to conversational handling,
+    not a deterministic grade."""
+    session = _question_session(
+        test_db_session, regular_user.id, question={"question": "", "choices": [], "correct": 5}
+    )
+    llm = Mock()
+    llm.generate = AsyncMock(
+        return_value='{"response": "Let us talk about the weather!"}'
+    )
+    harness = _FullHarness(llm=llm)
+
+    result = await harness.process_response(
+        session_id=session.id, student_response="hello", db=test_db_session
+    )
+
+    assert result["success"] is True
+    assert result["feedback_message"] == "Let us talk about the weather!"
+    # Conversational responses carry is_correct=None
+    assert result["is_correct"] is None
+
+
+@pytest.mark.anyio
+async def test_process_response_missing_session_is_explicit_error(
+    test_db_session: Session,
+) -> None:
+    harness = _FullHarness()
+    result = await harness.process_response(
+        session_id=999_999, student_response="hello", db=test_db_session
+    )
+    assert result == {"success": False, "error": "Session not found"}
+
+
+@pytest.mark.anyio
+async def test_process_response_voice_without_audio_is_explicit_error(
+    regular_user, test_db_session: Session
+) -> None:
+    session = _question_session(test_db_session, regular_user.id)
+    harness = _FullHarness()
+
+    result = await harness.process_response(
+        session_id=session.id,
+        student_response="",
+        is_voice=True,        db=test_db_session,
+    )
+
+    assert result == {"success": False, "error": "No audio data received."}

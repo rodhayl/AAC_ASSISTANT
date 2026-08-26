@@ -79,6 +79,7 @@
     "profileLoadFailed": "Failed to load profile data"
   },
   "actions": {
+    "resetSelfTitle": "Use Change Password in Settings",
     "unassignAria": "Unassign {{board}}",
     "unassignTitle": "Unassign board",
     "assignAria": "Assign board to {{student}}",

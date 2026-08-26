@@ -43,8 +43,8 @@ export const SymbolCard = memo(function SymbolCard({ boardSymbol, onClick, disab
         ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
       `}
       aria-label={ariaLabel ?? (boardSymbol.linked_board_id
-        ? t('openFolder', 'Open folder {{label}}', { label })
-        : t('addToSentence', 'Add {{label}} to sentence', { label }))}
+        ? t('openFolder', { label })
+        : t('addToSentence', { label }))}
     >
       <div className={`absolute top-2 left-2 w-2.5 h-2.5 rounded-full ${categoryStyle.dot} opacity-80`} aria-hidden="true" />
       {boardSymbol.linked_board_id && (

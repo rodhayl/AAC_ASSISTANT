@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -13,6 +14,17 @@ from src.api.main import app
 client = TestClient(app)
 
 
+def _mock_items(prefix: str, count: int = 20) -> list[dict[str, str]]:
+    return [
+        {
+            "label": f"{prefix} {index}",
+            "symbol_key": f"{prefix.lower().replace(' ', '_')}_{index}",
+            "color": "#FFFFFF",
+        }
+        for index in range(1, count + 1)
+    ]
+
+
 def test_ai_parsing_logic(
     test_db_session: Session, setup_test_db, admin_token, admin_user
 ):
@@ -22,18 +34,15 @@ def test_ai_parsing_logic(
     """
 
     # Define the messy LLM response that includes markdown and extra text
-    messy_response_content = """
-    Here are the requested symbols for the Daily Routine board.
-
-    ```json
-    [
-        {"label": "Wake Up", "symbol_key": "alarm_clock", "color": "#FFCCBC"},
-        {"label": "Brush Teeth", "symbol_key": "toothbrush", "color": "#B3E5FC"}
-    ]
-    ```
-
-    I hope this helps!
-    """
+    messy_items = _mock_items("Daily Routine")
+    messy_items[0].update(label="Wake Up", symbol_key="alarm_clock", color="#FFCCBC")
+    messy_items[1].update(label="Brush Teeth", symbol_key="toothbrush", color="#B3E5FC")
+    messy_response_content = (
+        "Here are the requested symbols for the Daily Routine board.\n\n"
+        "```json\n"
+        f"{json.dumps(messy_items)}\n"
+        "```\n\nI hope this helps!"
+    )
 
     # Mock response structure for Ollama
     mock_response_data = {
@@ -83,9 +92,9 @@ def test_ai_parsing_logic(
             .all()
         )
 
-        assert len(board_symbols) == 2
-        labels = sorted([bs.custom_text for bs in board_symbols])
-        assert labels == ["Brush Teeth", "Wake Up"]
+        assert len(board_symbols) == 20
+        labels = {bs.custom_text for bs in board_symbols}
+        assert {"Brush Teeth", "Wake Up"}.issubset(labels)
 
         # Verify that we actually called the mock with the correct model
         mock_post.assert_called_once()
@@ -178,15 +187,11 @@ async def test_ai_real_integration(
         # Mock the AI response
         print("Ollama not reachable. Mocking response to verify integration flow...")
 
-        mock_response_content = """
-        Here are the symbols:
-        ```json
-        [
-            {"label": "Mock Symbol 1", "symbol_key": "mock1", "color": "#FFFFFF"},
-            {"label": "Mock Symbol 2", "symbol_key": "mock2", "color": "#FFFFFF"}
-        ]
-        ```
-        """
+        mock_response_content = (
+            "Here are the symbols:\n```json\n"
+            f"{json.dumps(_mock_items('Mock Symbol'))}\n"
+            "```"
+        )
 
         mock_response_data = {
             "model": ollama_model,
@@ -218,5 +223,5 @@ async def test_ai_real_integration(
                 .filter(BoardSymbol.board_id == board_id)
                 .all()
             )
-            assert len(board_symbols) == 2
+            assert len(board_symbols) == 20
             print("Mocked AI integration successful.")

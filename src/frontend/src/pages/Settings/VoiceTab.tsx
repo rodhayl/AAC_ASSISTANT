@@ -1,10 +1,10 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Check, Circle, Volume2 } from 'lucide-react';
+import { AlertCircle, Check, Circle, Loader2, Volume2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import api, { extractError } from '../../lib/api';
-import { useTTSStore } from '../../store/ttsStore';
+import { useTTSStore, type WarmupStatus } from '../../store/ttsStore';
 import type { Preferences, VoiceStatus } from './types';
 
 interface VoiceTabProps {
@@ -41,14 +41,44 @@ function languageLabel(code: string): string {
 
 function localVoiceLabel(voice: LocalVoiceEntry, t: TFunction): string {
   const parts = [voice.name];
-  if (voice.region === 'american') parts.push(t('voice.americanEnglish', 'American English'));
-  else if (voice.region === 'british') parts.push(t('voice.britishEnglish', 'British English'));
+  if (voice.region === 'american') parts.push(t('voice.americanEnglish'));
+  else if (voice.region === 'british') parts.push(t('voice.britishEnglish'));
   parts.push(
     voice.gender === 'female'
-      ? t('voice.female', 'Female')
-      : t('voice.male', 'Male'),
+      ? t('voice.female')
+      : t('voice.male'),
   );
   return parts.join(' · ');
+}
+
+interface WarmupIndicatorProps {
+  status: WarmupStatus;
+  inProgressText: string;
+  readyText: string;
+  testId: string;
+}
+
+/** Inline badge showing the background pre-load status of a voice model. */
+function WarmupIndicator({ status, inProgressText, readyText, testId }: WarmupIndicatorProps) {
+  if (status !== 'warming' && status !== 'ready') return null;
+  return (
+    <div
+      data-testid={testId}
+      className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300"
+    >
+      {status === 'warming' ? (
+        <>
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />
+          <span>{inProgressText}</span>
+        </>
+      ) : (
+        <>
+          <Check className="h-3.5 w-3.5 text-green-600" />
+          <span>{readyText}</span>
+        </>
+      )}
+    </div>
+  );
 }
 
 export function VoiceTab({
@@ -69,6 +99,11 @@ export function VoiceTab({
   const [sttModelSaving, setSttModelSaving] = useState(false);
   const setTTSProvider = useTTSStore((state) => state.setTTSProvider);
   const setLocalVoice = useTTSStore((state) => state.setLocalVoice);
+  const ttsWarmupStatus = useTTSStore((state) => state.ttsWarmupStatus);
+  const speechWarmupStatus = useTTSStore((state) => state.speechWarmupStatus);
+  const vectorWarmupStatus = useTTSStore((state) => state.vectorWarmupStatus);
+  const setTTSWarmupStatus = useTTSStore((state) => state.setTTSWarmupStatus);
+  const setSpeechWarmupStatus = useTTSStore((state) => state.setSpeechWarmupStatus);
 
   const fetchVoiceStatus = useCallback(async () => {
     const res = await api.get('/providers/voice-status');
@@ -85,6 +120,26 @@ export function VoiceTab({
     };
     loadVoiceStatus();
   }, [fetchVoiceStatus, showStatus]);
+
+  // Keep the pre-load badges honest: voice-status reports the model's real
+  // in-memory state, so align the badges with it. A model released after
+  // warm-up (server restart / provider reset) drops a stale "ready" back to
+  // idle instead of claiming the model is resident.
+  useEffect(() => {
+    if (!voiceStatus) return;
+    const ttsLoaded = voiceStatus.tts_local?.model_loaded;
+    if (typeof ttsLoaded === 'boolean') {
+      const current = useTTSStore.getState().ttsWarmupStatus;
+      if (ttsLoaded && current !== 'ready') setTTSWarmupStatus('ready');
+      else if (!ttsLoaded && current === 'ready') setTTSWarmupStatus('idle');
+    }
+    const sttLoaded = voiceStatus.stt?.model_loaded;
+    if (typeof sttLoaded === 'boolean') {
+      const current = useTTSStore.getState().speechWarmupStatus;
+      if (sttLoaded && current !== 'ready') setSpeechWarmupStatus('ready');
+      else if (!sttLoaded && current === 'ready') setSpeechWarmupStatus('idle');
+    }
+  }, [voiceStatus, setTTSWarmupStatus, setSpeechWarmupStatus]);
 
   // Both "install" flows share the same shape: flag the busy state, clear
   // prior messages, POST to the installer, then refresh the dependency status.
@@ -112,8 +167,8 @@ export function VoiceTab({
     await runInstall(
       '/providers/voice/install',
       10 * 60 * 1000,
-      t('ai.installComplete', 'Voice dependencies installed.'),
-      t('ai.installFailed', 'Automatic voice installation failed.'),
+      t('ai.installComplete'),
+      t('ai.installFailed'),
     );
   };
 
@@ -121,8 +176,8 @@ export function VoiceTab({
     await runInstall(
       '/providers/tts/install',
       30 * 60 * 1000,
-      t('ai.installComplete', 'Local neural TTS installed.'),
-      t('ai.installFailed', 'Automatic TTS installation failed.'),
+      t('ai.installComplete'),
+      t('ai.installFailed'),
     );
   };
 
@@ -136,9 +191,9 @@ export function VoiceTab({
     try {
       await api.put('/providers/stt/model', { model });
       await fetchVoiceStatus();
-      setInstallMessage(t('ai.sttModelSaved', 'Speech-to-text model updated.'));
+      setInstallMessage(t('ai.sttModelSaved'));
     } catch (err) {
-      setInstallError(extractError(err, t('ai.sttModelSaveFailed', 'Could not update the speech-to-text model.')));
+      setInstallError(extractError(err, t('ai.sttModelSaveFailed')));
     } finally {
       setSttModelSaving(false);
     }
@@ -157,16 +212,16 @@ export function VoiceTab({
     <div className="flex items-center justify-between gap-4">
           <div>
         <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-          {t('ai.localVoice', 'Local neural voice')}
+          {t('ai.localVoice')}
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          {t('ai.localVoiceHelp', 'Pick a specific Kokoro voice. Its language is used for synthesis, so choose one matching the language you speak.')}
+          {t('ai.localVoiceHelp')}
         </p>
       </div>
       <select
         id="pref-local-tts-voice"
         name="local_tts_voice"
-        aria-label={t('ai.localVoice', 'Local neural voice')}
+        aria-label={t('ai.localVoice')}
         value={preferences.tts_local_voice}
         disabled={!localTTSAvailable}
         onChange={(event) => {
@@ -175,7 +230,7 @@ export function VoiceTab({
         }}
         className="block w-72 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md disabled:cursor-not-allowed disabled:opacity-60"
       >
-        <option value="default">{t('ai.voiceDefault', 'Default (auto)')}</option>
+        <option value="default">{t('ai.voiceDefault')}</option>
         {groupedLocalVoices.map(([language, voices]) => (
           <optgroup key={language} label={`${languageLabel(language)} (${language})`}>
             {voices.map((voice) => (
@@ -216,8 +271,8 @@ export function VoiceTab({
     },
     {
       key: 'tts_local',
-      label: t('ai.dependencies.localTts.label', 'Local neural voice (Kokoro)'),
-      help: t('ai.dependencies.localTts.help', 'Natural multi-language speech that runs locally on your computer.'),
+      label: t('ai.dependencies.localTts.label'),
+      help: t('ai.dependencies.localTts.help'),
       link: 'https://github.com/thewh1teagle/kokoro-onnx',
       status: localTTSAvailable,
       optional: false,
@@ -268,16 +323,16 @@ export function VoiceTab({
               <Volume2 className="h-5 w-5 text-indigo-600" />
             </div>
             <div className="min-w-0 flex-1">
-              <h4 className="font-semibold text-gray-900 dark:text-gray-100">{t('preferences.ttsEngine', 'Voice output engine')}</h4>
-              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{t('preferences.ttsEngineHelp', 'Choose one engine for spoken panels and messages.')}</p>
+              <h4 className="font-semibold text-gray-900 dark:text-gray-100">{t('preferences.ttsEngine')}</h4>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{t('preferences.ttsEngineHelp')}</p>
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <label htmlFor="pref-tts-provider" className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                  {t('preferences.selectedEngine', 'Selected engine')}
+                  {t('preferences.selectedEngine')}
                 </label>
                 <select
                   id="pref-tts-provider"
                   name="tts_provider"
-                  aria-label={t('preferences.ttsEngine', 'Voice output engine')}
+                  aria-label={t('preferences.ttsEngine')}
                   value={preferences.tts_provider}
                   onChange={(event) => {
                     const provider = event.target.value as Preferences['tts_provider'];
@@ -286,11 +341,11 @@ export function VoiceTab({
                   }}
                   className="block w-72 rounded-md border-gray-300 bg-white py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm dark:bg-gray-800"
                 >
-                  <option value="kokoro">{t('preferences.ttsProviders.kokoro', 'Kokoro (local neural voice)')} — {t('preferences.defaultEngine', 'default')}</option>
-                  <option value="browser">{t('preferences.ttsProviders.browser', 'Browser / system voice')}</option>
+                  <option value="kokoro">{t('preferences.ttsProviders.kokoro')} — {t('preferences.defaultEngine')}</option>
+                  <option value="browser">{t('preferences.ttsProviders.browser')}</option>
                 </select>
               </div>
-              <p className="mt-2 text-xs text-indigo-800 dark:text-indigo-200">{t('preferences.engineSingleChoiceHelp', 'Only this engine speaks. Browser voice is used only when you explicitly select it.')}</p>
+              <p className="mt-2 text-xs text-indigo-800 dark:text-indigo-200">{t('preferences.engineSingleChoiceHelp')}</p>
             </div>
           </div>
         </div>
@@ -298,13 +353,13 @@ export function VoiceTab({
         {preferences.tts_provider === 'browser' && (
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('preferences.browserVoice', 'Browser voice')}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{t('preferences.browserVoiceHelp', 'Uses voices installed by your browser or operating system.')}</p>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('preferences.browserVoice')}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{t('preferences.browserVoiceHelp')}</p>
             </div>
             <select
               id="pref-tts-voice"
               name="tts_voice"
-              aria-label={t('preferences.browserVoice', 'Browser voice')}
+              aria-label={t('preferences.browserVoice')}
               value={preferences.tts_voice}
               onChange={(event) => setPreferences((prev) => ({ ...prev, tts_voice: event.target.value }))}
               className="block w-56 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
@@ -324,10 +379,16 @@ export function VoiceTab({
           <>
             {!localTTSAvailable && (
               <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-                {t('preferences.kokoroUnavailable', 'Kokoro is not ready. Restart start.sh to install and prepare the local voice runtime.')}
+                {t('preferences.kokoroUnavailable')}
               </div>
             )}
             {localVoicePicker}
+            <WarmupIndicator
+              status={ttsWarmupStatus}
+              inProgressText={t('ai.ttsWarmupInProgress')}
+              readyText={t('ai.ttsWarmupReady')}
+              testId="tts-warmup-indicator"
+            />
           </>
         )}
 
@@ -336,16 +397,16 @@ export function VoiceTab({
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {t('ai.sttModel', 'Speech-to-text model')}
+                  {t('ai.sttModel')}
                 </p>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                {t('ai.sttModelHelp', 'Whisper-tiny is the fast 39M-parameter default. Tiny is bundled with the installer; other sizes download on first use.')}
+                {t('ai.sttModelHelp')}
               </p>
               </div>
               <select
                 id="stt-model"
                 name="stt_model"
-                aria-label={t('ai.sttModel', 'Speech-to-text model')}
+                aria-label={t('ai.sttModel')}
                 value={sttModel}
                 disabled={Object.keys(sttModels).length === 0 || sttModelSaving}
                 onChange={(event) => { void saveSttModel(event.target.value); }}
@@ -357,6 +418,20 @@ export function VoiceTab({
                   </option>
                 ))}
               </select>
+            </div>
+            <WarmupIndicator
+              status={speechWarmupStatus}
+              inProgressText={t('ai.speechWarmupInProgress')}
+              readyText={t('ai.speechWarmupReady')}
+              testId="speech-warmup-indicator"
+            />
+            <div className="mt-4">
+              <WarmupIndicator
+                status={vectorWarmupStatus}
+                inProgressText={t('ai.vectorWarmupInProgress')}
+                readyText={t('ai.vectorWarmupReady')}
+                testId="vector-warmup-indicator"
+              />
             </div>
           </div>
         )}
@@ -405,8 +480,8 @@ export function VoiceTab({
                       title={item.help}
                     >
                       {installingVoiceDeps || voiceStatus.actions.install_voice.in_progress
-                        ? t('ai.installing', 'Installing...')
-                        : t('ai.installAutomatically', 'Install automatically')}
+                        ? t('ai.installing')
+                        : t('ai.installAutomatically')}
                     </button>
                   ) : !ok && item.key === 'tts_local' && voiceStatus?.actions?.install_tts?.supported ? (
                     <button
@@ -417,8 +492,8 @@ export function VoiceTab({
                       title={item.help}
                     >
                       {installingVoiceDeps || voiceStatus.actions.install_tts.in_progress
-                        ? t('ai.installing', 'Installing...')
-                        : t('ai.installAutomatically', 'Install automatically')}
+                        ? t('ai.installing')
+                        : t('ai.installAutomatically')}
                     </button>
                   ) : (
                     <a

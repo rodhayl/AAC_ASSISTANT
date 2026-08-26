@@ -195,7 +195,7 @@ export function BoardEditor() {
       setHasChanges(true);
     } catch (error) {
       console.error('Failed to add symbol:', error);
-      addToast(extractError(error, t('failedToAddSymbol', 'Failed to add symbol')), 'error');
+      addToast(extractError(error, t('failedToAddSymbol')), 'error');
     }
   }, [currentBoard, selectedPosition, addSymbolToBoard, fetchBoard, id, localSymbols, setHasChanges, addToast, t]);
 
@@ -241,7 +241,7 @@ export function BoardEditor() {
     if (!currentBoard) return;
     const trimmedBoardName = boardName.trim();
     if (!trimmedBoardName) {
-      addToast(t('boardNameRequired', 'Board name is required'), 'error');
+      addToast(t('boardNameRequired'), 'error');
       return;
     }
     if (aiEnabled && (!resolvedProvider || !resolvedModel)) {
@@ -317,7 +317,7 @@ export function BoardEditor() {
 
   if (isBoardLoading && !currentBoard) {
     return (
-      <LoadingState label={t('loadingBoard', { defaultValue: 'Loading board' })} />
+      <LoadingState label={t('loadingBoard')} />
     );
   }
 

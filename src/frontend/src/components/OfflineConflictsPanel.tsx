@@ -103,7 +103,7 @@ export function OfflineConflictsPanel() {
         </div>
 
         <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 text-xs text-gray-600 dark:text-gray-400">
-          {t('offline.conflictsHint', 'These requests failed after coming back online. You can retry or dismiss them.')}
+          {t('offline.conflictsHint')}
         </div>
       </div>
     </div>

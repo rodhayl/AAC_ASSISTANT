@@ -75,7 +75,7 @@ function DraggableSymbolInner({ boardSymbol, isOverlay, onRemove, onEdit }: Drag
               type="button"
               onClick={(e) => { e.stopPropagation(); onEdit(boardSymbol); }}
               className="p-1 rounded-md bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800"
-              aria-label={t('editSymbol', 'Edit symbol')}
+              aria-label={t('editSymbol')}
             >
               <Pencil className="w-4 h-4" />
             </button>
@@ -85,7 +85,7 @@ function DraggableSymbolInner({ boardSymbol, isOverlay, onRemove, onEdit }: Drag
               type="button"
               onClick={(e) => { e.stopPropagation(); onRemove(boardSymbol.id); }}
               className="p-1 rounded-md bg-red-50 dark:bg-red-900/40 text-red-600 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-800"
-              aria-label={t('removeSymbol', 'Remove symbol')}
+              aria-label={t('removeSymbol')}
             >
               <X className="w-4 h-4" />
             </button>
@@ -105,7 +105,7 @@ function DraggableSymbolInner({ boardSymbol, isOverlay, onRemove, onEdit }: Drag
         type="button"
         onClick={speak}
         className="absolute top-1 left-1 p-1 rounded-md bg-indigo-50 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900"
-        aria-label={t('speakLabel', 'Speak label')}
+        aria-label={t('speakLabel')}
       >
         <Volume2 className="w-4 h-4" />
       </button>

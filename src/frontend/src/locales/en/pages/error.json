@@ -2,5 +2,7 @@
   "title": "Something went wrong",
   "subtitle": "Please try again or go back to the dashboard.",
   "retry": "Retry",
-  "dashboard": "Dashboard"
+  "dashboard": "Dashboard",
+  "notFoundTitle": "Page Not Found",
+  "notFoundMessage": "The page you are looking for doesn't exist or has been moved."
 }

@@ -87,7 +87,21 @@ vi.mock('../src/lib/tts', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback ?? key,
+    t: (key: string, arg2?: string | Record<string, unknown>) => {
+      if (typeof arg2 === 'string') return arg2;
+      const values: Record<string, string> = {
+        'common:communication': 'Communication',
+        'common:selectBoardToStart': 'Select a board to start communicating',
+        'common:searchBoards': 'Search boards...',
+        'common:noBoardsMatchSearch': 'No boards match your search',
+        'common:noBoardsFound': 'No boards found',
+        'common:createBoardFirst': 'Create a board in the Boards section first.',
+        'common:askTeacherForBoards': 'Ask your teacher to assign you a board.',
+        'common:openBoard': 'Open Board',
+        'common:symbols': 'symbols',
+      };
+      return values[key] ?? key;
+    },
   }),
 }));
 

@@ -105,7 +105,7 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
     if (user?.settings?.voice_mode_enabled !== false) {
       schedule(() => {
         if (generation === gameGenerationRef.current) {
-          tts.enqueue(t('symbolHunt.find', 'Find {{label}}', { label }));
+          tts.enqueue(t('symbolHunt.find', { label }));
         }
       }, 500);
     }
@@ -122,7 +122,7 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
       const uniqueSymbols = getUniquePlayableSymbols(fullBoard.symbols);
       if (uniqueSymbols.length < 2) {
         addToast(
-          t('symbolHunt.notEnoughSymbols', 'This board needs at least 2 unique symbols to play.'),
+          t('symbolHunt.notEnoughSymbols'),
           'error',
         );
         return;
@@ -138,7 +138,7 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
       if (generation === gameGenerationRef.current) {
         console.error('Failed to start game:', error);
         addToast(
-          t('symbolHunt.loadError', 'Failed to load the board. Please try again.'),
+          t('symbolHunt.loadError'),
           'error',
         );
       }
@@ -156,7 +156,7 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
       setFeedback('incorrect');
       setIncorrectSymbolId(symbol.id);
       if (user?.settings?.voice_mode_enabled !== false) {
-        tts.enqueue(t('symbolHunt.tryAgain', 'Try again'));
+        tts.enqueue(t('symbolHunt.tryAgain'));
       }
       const generation = gameGenerationRef.current;
       schedule(() => {
@@ -181,7 +181,7 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
     })).catch((error) => console.error('Failed to log symbol usage:', error));
 
     if (user?.settings?.voice_mode_enabled !== false) {
-      tts.enqueue(t('symbolHunt.correct', 'Correct!'));
+      tts.enqueue(t('symbolHunt.correct'));
     }
 
     const generation = gameGenerationRef.current;
@@ -199,7 +199,7 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
   const repeatInstruction = useCallback(() => {
     if (!targetSymbol || user?.settings?.voice_mode_enabled === false) return;
     const label = targetSymbol.custom_text || targetSymbol.symbol.label;
-    tts.enqueue(t('symbolHunt.find', 'Find {{label}}', { label }));
+    tts.enqueue(t('symbolHunt.find', { label }));
   }, [t, targetSymbol, user?.settings?.voice_mode_enabled]);
 
   const playAgain = useCallback(() => {

@@ -273,10 +273,10 @@ def test_suggestions_success_with_mocked_generation(
     assert test_db_session.query(BoardSymbol).count() == 0
 
 
-def test_suggestions_offline_fallback_used_when_provider_fails(
+def test_suggestions_fail_explicitly_when_provider_fails(
     setup_test_db, test_db_session: Session, admin_user: User, admin_token, ai_board
 ):
-    """In non-production, a failing provider falls back to offline suggestions."""
+    """A provider failure is surfaced instead of replaced by offline suggestions."""
     test_db_session.add_all(
         [
             Symbol(label="Cup", keywords="cup,drink", category="general"),
@@ -294,9 +294,8 @@ def test_suggestions_offline_fallback_used_when_provider_fails(
             headers={"Authorization": f"Bearer {admin_token}"},
             json={"item_count": 2},
         )
-    assert response.status_code == 200
-    labels = {item["label"] for item in response.json()["items"]}
-    assert labels == {"Cup", "Walk"}
+    assert response.status_code == 502
+    assert "timeout" in response.json()["detail"]
 
 
 def test_suggestions_502_when_no_offline_fallback_available(

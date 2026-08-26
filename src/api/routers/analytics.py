@@ -37,7 +37,7 @@ def _log_usage_request(
     request: SymbolUsageRequest,
     current_user: User,
     db: Session,
-    failure_detail: str = "Failed to log usage",
+    failure_detail: str | None = None,
 ) -> int:
     """Persist one analytics write request and return its symbol count."""
     symbols = [symbol.model_dump() for symbol in request.symbols]
@@ -49,7 +49,11 @@ def _log_usage_request(
         semantic_intent=request.semantic_intent,
         db=db,
     ):
-        raise HTTPException(status_code=500, detail=failure_detail)
+        raise HTTPException(
+            status_code=500,
+            detail=failure_detail
+            or get_text(user=current_user, key="errors.analytics.logSymbolFailed"),
+        )
 
     # Commit before responding: the UI requests next-symbol predictions right
     # after logging usage, and the request dependency's teardown commit runs
@@ -76,7 +80,10 @@ def log_symbol_usage(
         raise
     except Exception as e:
         logger.error(f"Failed to log usage: {e}")
-        raise HTTPException(status_code=500, detail="Failed to log usage")
+        raise HTTPException(
+            status_code=500,
+            detail=get_text(user=current_user, key="errors.analytics.logSymbolFailed"),
+        )
 
 
 @router.get("/frequent-sequences", response_model=list[dict])
@@ -197,7 +204,10 @@ def get_next_symbol_suggestions_post(
                 def localized_label(sym: Symbol) -> str:
                     if language_rank(sym) == 0:
                         return sym.label
-                    return translate_text(sym.label, normalized_user_lang) or sym.label
+                    translated = translate_text(sym.label, normalized_user_lang)
+                    if not translated:
+                        raise RuntimeError("Required symbol translation returned no text")
+                    return translated
 
                 def apply_intent_filter(q):
                     if intent == "pronouns":

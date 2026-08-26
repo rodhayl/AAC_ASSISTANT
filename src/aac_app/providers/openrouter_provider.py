@@ -95,13 +95,24 @@ class OpenRouterProvider(BaseLLMProvider):
                 messages.append({"role": "system", "content": system})
             messages.append({"role": "user", "content": prompt})
 
+            selected_model = model or self.default_model
             payload: dict = {
-                "model": model or self.default_model,
+                "model": selected_model,
                 "messages": messages,
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "stream": False,
             }
+
+            # Groq's GPT-OSS models may spend the entire completion budget in
+            # reasoning tokens unless the API is told to return only the final
+            # answer. Keep reasoning out of user-facing content and structured
+            # parsers while leaving other OpenAI-compatible models unchanged.
+            if type(self).__name__ == "GroqProvider" and selected_model.startswith(
+                "openai/gpt-oss-"
+            ):
+                payload["reasoning_format"] = "hidden"
+                payload["reasoning_effort"] = "low"
 
             # Enforce structured JSON output when a schema is requested.
             # OpenRouter forwards response_format to providers that support it
@@ -129,7 +140,12 @@ class OpenRouterProvider(BaseLLMProvider):
                 )
 
             result = response.json()
-            return result["choices"][0]["message"]["content"]
+            content = result["choices"][0]["message"].get("content")
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError(
+                    f"{type(self).__name__} returned an empty assistant response"
+                )
+            return content
 
         except Exception as e:
             logger.error(f"{type(self).__name__} generation failed: {e}")

@@ -42,14 +42,9 @@
   "by": "By",
   "removeTopic": "Remove topic",
   "showThinking": "Show thinking",
-  "welcomeMessage": "Hello {{name}}! Let's learn about {{topic}} together!",
-  "welcomeMessageSymbol": "Hi {{name}}!",
-  "fallbackQuestion": {
-    "question": "What do you know about {{topic}}?",
-    "choice1": "It's interesting",
-    "choice2": "I want to learn more",
-    "choice3": "I know some things"
-  },
+  "welcomeMessage": "Hello, {{name}}. Today we'll practice {{topic}}.",
+  "welcomeContext": "Hello, {{name}}. Today we'll practice {{topic}} using the {{board}} board.",
+  "welcomeMessageSymbol": "Hello, {{name}}.",
   "topics": {
     "label": "Topic",
     "general": "General Conversation",
@@ -98,17 +93,14 @@
     "sessionNotActive": "This learning session is no longer active.",
     "unauthorized": "Not authorized",
     "noSymbolsProvided": "No symbols provided",
-    "transcriptionFailed": "I received your audio but couldn't transcribe it. Please try again or switch to text for now."
+    "submitAnswerFailed": "Could not submit the answer.",
+    "submitVoiceAnswerFailed": "Could not submit the voice answer.",
+    "submitSymbolAnswerFailed": "Could not submit the symbol answer."
   },
   "feedback": {
     "goodTry": "Good try! Keep practicing and you will improve."
   },
   "startChatting": "Start chatting using the board or type here.",
-  "fallbackConversation": {
-    "goodMessage": "Good message! Let's keep going together!",
-    "interesting": "That's interesting! Tell me more."
-  },
-  "fallbackSummary": "Great work completing your {{topic}} session! You answered {{questions}} questions and got {{correct}} correct.",
   "endSession": "End Session",
   "endSessionConfirmTitle": "End this session?",
   "endSessionConfirm": "Your progress will be saved and a summary will appear.",

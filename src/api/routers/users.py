@@ -128,7 +128,10 @@ def assign_student(
 ):
     """Assign a student to a teacher (Admin/Teacher only)"""
     if current_user.user_type not in ["admin", "teacher"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(user=current_user, key="errors.unauthorized"),
+        )
 
     # If teacher, can only assign to self
     target_teacher_id = data.teacher_id
@@ -166,7 +169,7 @@ def assign_student(
         .first()
     )
     if exists:
-        return {"message": "Already assigned", "status": "exists"}
+        return {"message": get_text(user=current_user, key="assignmentAlreadyExists"), "status": "exists"}
 
     # Create assignment
     assignment = StudentTeacher(student_id=data.student_id, teacher_id=target_teacher_id)
@@ -174,7 +177,7 @@ def assign_student(
     db.commit()
     return JSONResponse(
         status_code=201,
-        content={"message": "Student assigned successfully", "status": "created"}
+        content={"message": get_text(user=current_user, key="studentAssigned"), "status": "created"}
     )
 
 
@@ -188,7 +191,10 @@ def unassign_student(
 ):
     """Unassign a student from a teacher (Admin/Teacher only)"""
     if current_user.user_type not in ["admin", "teacher"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(user=current_user, key="errors.unauthorized"),
+        )
 
     if current_user.user_type == "teacher" and teacher_id != current_user.id:
         raise HTTPException(
@@ -216,7 +222,7 @@ def unassign_student(
 
     db.delete(assignment)
     db.commit()
-    return {"message": "Assignment removed successfully"}
+    return {"message": get_text(user=current_user, key="assignmentRemoved")}
 
 
 @router.post("/reset-password")
@@ -228,7 +234,10 @@ def reset_user_password(
 ):
     """Reset user password (Admin can reset any, Teacher can reset assigned students)"""
     if current_user.user_type not in ["admin", "teacher"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(user=current_user, key="errors.unauthorized"),
+        )
 
     # Determine user_id from payload (support both user_id and legacy student_id)
     target_user_id = data.user_id if data.user_id is not None else data.student_id
@@ -303,4 +312,4 @@ def reset_user_password(
     # Commit before responding so a login with the new password (which
     # follows this response in the UI flow) cannot read the old hash.
     db.commit()
-    return {"message": "Password reset successfully"}
+    return {"message": get_text(user=current_user, key="passwordResetSuccessfully")}

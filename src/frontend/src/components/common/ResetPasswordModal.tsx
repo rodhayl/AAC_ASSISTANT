@@ -35,12 +35,12 @@ export function ResetPasswordModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <div ref={dialogRef} className="glass-card w-full max-w-md p-6" role="document">
         <h3 id={titleId} className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
-          {t('resetPasswordTitle', { name: user.display_name, defaultValue: `Reset Password for ${user.display_name}` })}
+          {t('resetPasswordTitle', { name: user.display_name })}
         </h3>
         {error && <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/30 dark:text-red-400" id={errorId} role="alert">{error}</div>}
         <form onSubmit={onSubmit} className="space-y-4">
           <label htmlFor={inputId} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            {t('labels.newPassword', { defaultValue: 'New Password' })}
+            {t('labels.newPassword')}
             <input
               id={inputId}
               aria-describedby={error ? errorId : undefined}
@@ -51,7 +51,7 @@ export function ResetPasswordModal({
               minLength={8}
               autoComplete="new-password"
               className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-              placeholder={t('labels.passwordHint', { defaultValue: 'Min 8 chars, 1 uppercase, 1 lowercase, 1 number' })}
+              placeholder={t('labels.passwordHint')}
             />
           </label>
           <div className="mt-6 flex justify-end gap-3">
@@ -59,7 +59,7 @@ export function ResetPasswordModal({
               {t('cancel')}
             </button>
             <button type="submit" disabled={loading} className="rounded-lg bg-amber-600 px-4 py-2 text-white hover:bg-amber-700 disabled:opacity-50">
-              {loading ? t('security.saving', { ns: 'settings', defaultValue: 'Saving...' }) : t('actions.resetPassword', { defaultValue: 'Reset Password' })}
+              {loading ? t('security.saving', { ns: 'settings' }) : t('actions.resetPassword')}
             </button>
           </div>
         </form>

@@ -1,14 +1,26 @@
 """Session lifecycle and persistence operations."""
 
 import contextlib
+import re
 from datetime import datetime
 
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from ...models import LearningPlan, LearningSession, LearningTask, User
+from ...models import CommunicationBoard, LearningPlan, LearningSession, LearningTask, User
 from ...services.achievement_system import AchievementSystem
 from .history import append_history_entry
+
+# A display name may carry a machine-generated suffix (e.g. "Admin
+# 1787688161578") from older seeding. Reading that 13-digit number aloud adds
+# seconds of TTS to the first spoken message for zero value, so strip a
+# trailing whitespace-separated numeric token of 4+ digits before greeting.
+_TIMESTAMP_SUFFIX_RE = re.compile(r"\s+\d{4,}$")
+
+
+def _speakable_display_name(display_name: str) -> str:
+    """Return a greeting-friendly name without a trailing timestamp suffix."""
+    return _TIMESTAMP_SUFFIX_RE.sub("", display_name).strip()
 
 
 class SessionLifecycleMixin:
@@ -73,51 +85,9 @@ class SessionLifecycleMixin:
                 plan_id = plan.id
                 task_id = task.id
 
-                # Generate welcome message with local LLM
-                welcome = ""
+                # Generate the same localized welcome for new and legacy sessions.
+                welcome = self._build_welcome_message(user_id, topic, purpose, db, board_id)
 
-                # Use existing translation system
-                from src.aac_app.services.translation_service import (
-                    get_translation_service,
-                )
-
-                user_lang = self._get_user_language(user_id, db)
-                logger.debug(f"user_lang resolved to: {user_lang}")
-                ts = get_translation_service()
-
-                # Check if it's a symbol-first session
-                if purpose and purpose.lower() == "aac symbols":
-                    # For Symbol First, we want a minimal greeting or instruction
-                    # Currently using welcomeMessageShort if available, or just a simple "Hi"
-                    # But user said: "Just hardcode a welcome message instead of sending a message to the LLM to say just 'hi'"
-                    # And "make sure this message is translated"
-
-                    # We will use a specific key for symbol-first greeting
-                    welcome = ts.get(
-                        user_lang,
-                        "pages/learning",
-                        "welcomeMessageSymbol",  # New key we should add
-                        name=user.display_name,
-                    )
-
-                    # Fallback if key doesn't exist yet (safeguard)
-                    if not welcome or welcome == "welcomeMessageSymbol":
-                        welcome = ts.get(
-                            user_lang,
-                            "pages/learning",
-                            "welcomeMessage",
-                            name=user.display_name,
-                            topic=topic,
-                        )
-                else:
-                    # Standard welcome message
-                    welcome = ts.get(
-                        user_lang,
-                        "pages/learning",
-                        "welcomeMessage",
-                        name=user.display_name,
-                        topic=topic,
-                    )
 
                 # Add welcome message to conversation history if it exists
                 if welcome:
@@ -153,6 +123,60 @@ class SessionLifecycleMixin:
             logger.error(f"Failed to start learning session: {e}")
             return {"success": False, "error": str(e)}
 
+    def _build_welcome_message(
+        self,
+        user_id: int,
+        topic: str,
+        purpose: str | None,
+        db: Session,
+        board_id: int | None = None,
+    ) -> str:
+        """Build the localized welcome used for new and legacy sessions."""
+        from src.aac_app.services.translation_service import get_translation_service
+
+        user = db.get(User, user_id)
+        if not user:
+            return ""
+        user_lang = self._get_user_language(user_id, db)
+        translation_service = get_translation_service()
+        topic_labels = {
+            "general conversation": "general",
+            "daily routines": "daily",
+            "food and dining": "food",
+            "school and education": "school",
+            "emotions and feelings": "emotions",
+            "travel and transport": "travel",
+            "hobbies and play": "hobbies",
+            "health and body": "health",
+            "shopping": "shopping",
+        }
+        topic_key = topic_labels.get(topic.strip().lower(), topic.strip().lower())
+        topic_label = translation_service.get(
+            user_lang, "pages/learning", f"topics.{topic_key}"
+        )
+        if topic_label == f"topics.{topic_key}":
+            topic_label = topic.strip() or translation_service.get(
+                user_lang, "pages/learning", "topics.general"
+            )
+        board = db.get(CommunicationBoard, board_id) if board_id else None
+        board_label = board.name if board else ""
+        # Greet with a name that does not force the TTS to read a long
+        # machine-generated number aloud (see _speakable_display_name).
+        display_name = _speakable_display_name(user.display_name)
+        if (purpose or "").lower() == "aac symbols":
+            return translation_service.get(
+                user_lang, "pages/learning", "welcomeMessageSymbol", name=display_name
+            )
+        key = "welcomeContext" if board_label else "welcomeMessage"
+        return translation_service.get(
+            user_lang,
+            "pages/learning",
+            key,
+            name=display_name,
+            topic=topic_label,
+            board=board_label,
+        )
+
     def get_session_progress(self, session_id: int, db: Session | None = None) -> dict:
         """Get current progress for a learning session"""
 
@@ -161,6 +185,28 @@ class SessionLifecycleMixin:
                 session = db.get(LearningSession, session_id)
                 if not session:
                     return {"success": False, "error": "Session not found"}
+
+                history = session.conversation_history or []
+                if history and history[0].get("type") == "question":
+                    first_question = history[0].get("data", {}).get("question")
+                    if isinstance(first_question, str) and (
+                        "Vamos a aprender sobre" in first_question
+                        or "Let's learn about" in first_question
+                    ):
+                        history = [*history]
+                        history[0] = {
+                            **history[0],
+                            "data": {
+                                **history[0].get("data", {}),
+                                "question": self._build_welcome_message(
+                                    session.user_id,
+                                    session.topic_name,
+                                    session.purpose,
+                                    db,
+                                    getattr(session, "board_id", None),
+                                ),
+                            },
+                        }
 
                 return {
                     "success": True,
@@ -173,7 +219,7 @@ class SessionLifecycleMixin:
                     "questions_answered": session.questions_answered,
                     "correct_answers": session.correct_answers,
                     "started_at": (session.started_at.isoformat() if session.started_at else None),
-                    "conversation_history": session.conversation_history or [],
+                    "conversation_history": history,
                 }
 
         except Exception as e:

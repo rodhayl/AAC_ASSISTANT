@@ -18,7 +18,14 @@ vi.mock('../src/components/board/Smartbar', () => ({
 // Mock react-i18next
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback ?? key,
+    t: (key: string) => ({
+      startRecordingLabel: 'Start recording',
+      stopRecordingLabel: 'Stop recording',
+      sendRecordingLabel: 'Send recording',
+      discardRecordingLabel: 'Discard recording',
+      sendMessage: 'Send message',
+      typeAnswer: 'Type your answer...',
+    }[key] ?? key),
     i18n: { language: 'en' },
   }),
 }));
