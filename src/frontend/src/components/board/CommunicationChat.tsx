@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { tts } from '../../lib/tts';
 import { useVoiceRecorder } from '../learning/useVoiceRecorder';
 import { useToastStore } from '../../store/toastStore';
+import { Button } from '../ui/button';
 
 interface CommunicationChatProps {
   voiceEnabled: boolean;
@@ -232,18 +233,19 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
             </button>
           ) : hasRecording ? (
             <>
-              <button
+              <Button
                 type="button"
+                variant="success"
+                size="icon"
                 onClick={sendRecording}
-                className="p-2 bg-green-600 text-white rounded-lg"
                 disabled={isLoading}
               >
-                <Send className="w-5 h-5" />
-              </button>
+                <Send />
+              </Button>
               <button
                 type="button"
                 onClick={discardRecording}
-                className="p-2 bg-gray-200 dark:bg-gray-700 text-gray-600 rounded-lg"
+                className="p-2 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-200 rounded-lg"
               >
                 <Trash2 className="w-5 h-5" />
               </button>
@@ -259,13 +261,9 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
             </button>
           )}
 
-          <button
-            type="submit"
-            disabled={isLoading || (!input.trim() && !isRecording)}
-            className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-          >
+          <Button type="submit" disabled={isLoading || (!input.trim() && !isRecording)} className="p-2" >
             <Send className="w-5 h-5" />
-          </button>
+          </Button>
         </form>
       </div>
     </div>

@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
 @theme inline {
   --font-sans: Inter, system-ui, sans-serif;
@@ -12,6 +14,39 @@
   --color-brand: rgb(var(--brand-rgb));
   --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
   --shadow-neon: 0 0 10px rgb(var(--brand-rgb) / 0.5), 0 0 20px rgb(var(--brand-rgb) / 0.3);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 /* Enable dark mode via class */
@@ -33,14 +68,78 @@
   /* gray-900 */
   --text-secondary: 55 65 81;
   /* gray-700 */
-  --text-muted: 107 114 128;
-  /* gray-500 */
+  --text-muted: 75 85 99;
+  /* gray-600 - readable muted text (AA on white) */
   --brand-rgb: 79 70 229;
   /* indigo-600 */
   --color-brand-light: 129 140 248;
   /* indigo-400 */
 
   color-scheme: light;
+
+  --background: oklch(1 0 0);
+
+  --foreground: oklch(0.145 0 0);
+
+  --card: oklch(1 0 0);
+
+  --card-foreground: oklch(0.145 0 0);
+
+  --popover: oklch(1 0 0);
+
+  --popover-foreground: oklch(0.145 0 0);
+
+  --primary: rgb(var(--brand-rgb));
+
+  --primary-foreground: var(--color-white);
+
+  --secondary: oklch(0.97 0 0);
+
+  --secondary-foreground: oklch(0.205 0 0);
+
+  --muted: oklch(0.97 0 0);
+
+  --muted-foreground: oklch(0.556 0 0);
+
+  --accent: oklch(0.97 0 0);
+
+  --accent-foreground: oklch(0.205 0 0);
+
+  --destructive: oklch(0.577 0.245 27.325);
+
+  --border: oklch(0.922 0 0);
+
+  --input: oklch(0.922 0 0);
+
+  --ring: oklch(0.708 0 0);
+
+  --chart-1: oklch(0.87 0 0);
+
+  --chart-2: oklch(0.556 0 0);
+
+  --chart-3: oklch(0.439 0 0);
+
+  --chart-4: oklch(0.371 0 0);
+
+  --chart-5: oklch(0.269 0 0);
+
+  --radius: 0.625rem;
+
+  --sidebar: oklch(0.985 0 0);
+
+  --sidebar-foreground: oklch(0.145 0 0);
+
+  --sidebar-primary: oklch(0.205 0 0);
+
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+
+  --sidebar-accent: oklch(0.97 0 0);
+
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+
+  --sidebar-border: oklch(0.922 0 0);
+
+  --sidebar-ring: oklch(0.708 0 0);
 }
 
 .dark {
@@ -58,16 +157,78 @@
   /* #EDEDEF - Off-white */
   --text-secondary: 161 161 170;
   /* #A1A1AA - Zinc-400 */
-  --text-muted: 82 82 91;
-  /* #52525B - Zinc-600 */
+  --text-muted: 161 161 170;
+  /* #A1A1AA - Zinc-400 */
 
   /* Brand/Accent */
-  --brand-rgb: 99 102 241;
-  /* indigo-500 - Brighter for dark mode */
+  --brand-rgb: 79 70 229;
+  /* indigo-600 */
   --color-brand-light: 165 180 252;
   /* indigo-300 */
 
   color-scheme: dark;
+
+  --background: oklch(0.145 0 0);
+
+  --foreground: oklch(0.985 0 0);
+
+  --card: oklch(0.205 0 0);
+
+  --card-foreground: oklch(0.985 0 0);
+
+  --popover: oklch(0.205 0 0);
+
+  --popover-foreground: oklch(0.985 0 0);
+
+  --primary: rgb(var(--brand-rgb));
+
+  --primary-foreground: var(--color-white);
+
+  --secondary: oklch(0.269 0 0);
+
+  --secondary-foreground: oklch(0.985 0 0);
+
+  --muted: oklch(0.269 0 0);
+
+  --muted-foreground: oklch(0.708 0 0);
+
+  --accent: oklch(0.269 0 0);
+
+  --accent-foreground: oklch(0.985 0 0);
+
+  --destructive: oklch(0.704 0.191 22.216);
+
+  --border: oklch(1 0 0 / 10%);
+
+  --input: oklch(1 0 0 / 15%);
+
+  --ring: oklch(0.556 0 0);
+
+  --chart-1: oklch(0.87 0 0);
+
+  --chart-2: oklch(0.556 0 0);
+
+  --chart-3: oklch(0.439 0 0);
+
+  --chart-4: oklch(0.371 0 0);
+
+  --chart-5: oklch(0.269 0 0);
+
+  --sidebar: oklch(0.205 0 0);
+
+  --sidebar-foreground: oklch(0.985 0 0);
+
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+
+  --sidebar-accent: oklch(0.269 0 0);
+
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+
+  --sidebar-border: oklch(1 0 0 / 10%);
+
+  --sidebar-ring: oklch(0.556 0 0);
 }
 
 body {
@@ -179,6 +340,152 @@ html.high-contrast {
   --brand-rgb: 0 0 0;
   --color-brand-light: 0 0 0;
   color-scheme: light;
+
+  --color-white: #ffffff;
+  --color-black: #000000;
+  --color-gray-50: #ffffff;
+  --color-gray-100: #ffffff;
+  --color-gray-200: #000000;
+  --color-gray-300: #000000;
+  --color-gray-400: #000000;
+  --color-gray-500: #000000;
+  --color-gray-600: #000000;
+  --color-gray-700: #000000;
+  --color-gray-800: #000000;
+  --color-gray-900: #000000;
+  --color-gray-950: #000000;
+  --color-indigo-50: #ffffff;
+  --color-indigo-100: #ffffff;
+  --color-indigo-200: #000000;
+  --color-indigo-300: #000000;
+  --color-indigo-400: #000000;
+  --color-indigo-500: #000000;
+  --color-indigo-600: #000000;
+  --color-indigo-700: #000000;
+  --color-indigo-800: #000000;
+  --color-indigo-900: #000000;
+  --color-indigo-950: #000000;
+  --color-red-50: #ffffff;
+  --color-red-100: #ffffff;
+  --color-red-200: #000000;
+  --color-red-300: #000000;
+  --color-red-400: #000000;
+  --color-red-500: #000000;
+  --color-red-600: #000000;
+  --color-red-700: #000000;
+  --color-red-800: #000000;
+  --color-red-900: #000000;
+  --color-red-950: #000000;
+  --color-green-50: #ffffff;
+  --color-green-100: #ffffff;
+  --color-green-200: #000000;
+  --color-green-300: #000000;
+  --color-green-400: #000000;
+  --color-green-500: #000000;
+  --color-green-600: #000000;
+  --color-green-700: #000000;
+  --color-green-800: #000000;
+  --color-green-900: #000000;
+  --color-green-950: #000000;
+  --color-amber-50: #ffffff;
+  --color-amber-100: #ffffff;
+  --color-amber-200: #000000;
+  --color-amber-300: #000000;
+  --color-amber-400: #000000;
+  --color-amber-500: #000000;
+  --color-amber-600: #000000;
+  --color-amber-700: #000000;
+  --color-amber-800: #000000;
+  --color-amber-900: #000000;
+  --color-amber-950: #000000;
+  --color-purple-50: #ffffff;
+  --color-purple-100: #ffffff;
+  --color-purple-200: #000000;
+  --color-purple-300: #000000;
+  --color-purple-400: #000000;
+  --color-purple-500: #000000;
+  --color-purple-600: #000000;
+  --color-purple-700: #000000;
+  --color-purple-800: #000000;
+  --color-purple-900: #000000;
+  --color-purple-950: #000000;
+  --color-yellow-50: #ffffff;
+  --color-yellow-100: #ffffff;
+  --color-yellow-200: #000000;
+  --color-yellow-300: #000000;
+  --color-yellow-400: #000000;
+  --color-yellow-500: #000000;
+  --color-yellow-600: #000000;
+  --color-yellow-700: #000000;
+  --color-yellow-800: #000000;
+  --color-yellow-900: #000000;
+  --color-yellow-950: #000000;
+  --color-blue-50: #ffffff;
+  --color-blue-100: #ffffff;
+  --color-blue-200: #000000;
+  --color-blue-300: #000000;
+  --color-blue-400: #000000;
+  --color-blue-500: #000000;
+  --color-blue-600: #000000;
+  --color-blue-700: #000000;
+  --color-blue-800: #000000;
+  --color-blue-900: #000000;
+  --color-blue-950: #000000;
+  --color-orange-50: #ffffff;
+  --color-orange-100: #ffffff;
+  --color-orange-200: #000000;
+  --color-orange-300: #000000;
+  --color-orange-400: #000000;
+  --color-orange-500: #000000;
+  --color-orange-600: #000000;
+  --color-orange-700: #000000;
+  --color-orange-800: #000000;
+  --color-orange-900: #000000;
+  --color-orange-950: #000000;
+  --color-emerald-50: #ffffff;
+  --color-emerald-100: #ffffff;
+  --color-emerald-200: #000000;
+  --color-emerald-300: #000000;
+  --color-emerald-400: #000000;
+  --color-emerald-500: #000000;
+  --color-emerald-600: #000000;
+  --color-emerald-700: #000000;
+  --color-emerald-800: #000000;
+  --color-emerald-900: #000000;
+  --color-emerald-950: #000000;
+  --color-pink-50: #ffffff;
+  --color-pink-100: #ffffff;
+  --color-pink-200: #000000;
+  --color-pink-300: #000000;
+  --color-pink-400: #000000;
+  --color-pink-500: #000000;
+  --color-pink-600: #000000;
+  --color-pink-700: #000000;
+  --color-pink-800: #000000;
+  --color-pink-900: #000000;
+  --color-pink-950: #000000;
+  --color-slate-50: #ffffff;
+  --color-slate-100: #ffffff;
+  --color-slate-200: #000000;
+  --color-slate-300: #000000;
+  --color-slate-400: #000000;
+  --color-slate-500: #000000;
+  --color-slate-600: #000000;
+  --color-slate-700: #000000;
+  --color-slate-800: #000000;
+  --color-slate-900: #000000;
+  --color-slate-950: #000000;
+  --color-rose-50: #ffffff;
+  --color-rose-100: #ffffff;
+  --color-rose-200: #000000;
+  --color-rose-300: #000000;
+  --color-rose-400: #000000;
+  --color-rose-500: #000000;
+  --color-rose-600: #000000;
+  --color-rose-700: #000000;
+  --color-rose-800: #000000;
+  --color-rose-900: #000000;
+  --color-rose-950: #000000;
 }
 
 html.high-contrast.dark {
@@ -192,6 +499,170 @@ html.high-contrast.dark {
   --brand-rgb: 255 255 255;
   --color-brand-light: 255 255 255;
   color-scheme: dark;
+
+  /* True monochrome dark HCM: white and black swap so solid buttons
+     (`bg-indigo-600 text-white`) become white surfaces with black text.
+     Accents 200-800 -> white (icons, solid buttons, text). Accent 900/950
+     -> black so category badges (`dark:bg-*-900/60 dark:text-*-200`) and
+     achievement chips stay white-on-black. gray-100 stays white because it
+     is the main light-on-dark text color (dark:text-gray-100). */
+  --color-white: #000000;
+  --color-black: #ffffff;
+  --color-gray-50: #000000;
+  --color-gray-100: #ffffff;
+  --color-gray-200: #ffffff;
+  --color-gray-300: #ffffff;
+  --color-gray-400: #ffffff;
+  --color-gray-500: #ffffff;
+  --color-gray-600: #ffffff;
+  --color-gray-700: #000000;
+  --color-gray-800: #000000;
+  --color-gray-900: #000000;
+  --color-gray-950: #000000;
+
+  --color-indigo-50: #000000;
+  --color-indigo-100: #000000;
+  --color-indigo-200: #ffffff;
+  --color-indigo-300: #ffffff;
+  --color-indigo-400: #ffffff;
+  --color-indigo-500: #ffffff;
+  --color-indigo-600: #ffffff;
+  --color-indigo-700: #ffffff;
+  --color-indigo-800: #ffffff;
+  --color-indigo-900: #000000;
+  --color-indigo-950: #000000;
+
+  --color-red-50: #000000;
+  --color-red-100: #000000;
+  --color-red-200: #ffffff;
+  --color-red-300: #ffffff;
+  --color-red-400: #ffffff;
+  --color-red-500: #ffffff;
+  --color-red-600: #ffffff;
+  --color-red-700: #ffffff;
+  --color-red-800: #ffffff;
+  --color-red-900: #000000;
+  --color-red-950: #000000;
+
+  --color-green-50: #000000;
+  --color-green-100: #000000;
+  --color-green-200: #ffffff;
+  --color-green-300: #ffffff;
+  --color-green-400: #ffffff;
+  --color-green-500: #ffffff;
+  --color-green-600: #ffffff;
+  --color-green-700: #ffffff;
+  --color-green-800: #ffffff;
+  --color-green-900: #000000;
+  --color-green-950: #000000;
+
+  --color-amber-50: #000000;
+  --color-amber-100: #000000;
+  --color-amber-200: #ffffff;
+  --color-amber-300: #ffffff;
+  --color-amber-400: #ffffff;
+  --color-amber-500: #ffffff;
+  --color-amber-600: #ffffff;
+  --color-amber-700: #ffffff;
+  --color-amber-800: #ffffff;
+  --color-amber-900: #000000;
+  --color-amber-950: #000000;
+
+  --color-purple-50: #000000;
+  --color-purple-100: #000000;
+  --color-purple-200: #ffffff;
+  --color-purple-300: #ffffff;
+  --color-purple-400: #ffffff;
+  --color-purple-500: #ffffff;
+  --color-purple-600: #ffffff;
+  --color-purple-700: #ffffff;
+  --color-purple-800: #ffffff;
+  --color-purple-900: #000000;
+  --color-purple-950: #000000;
+
+  --color-yellow-50: #000000;
+  --color-yellow-100: #000000;
+  --color-yellow-200: #ffffff;
+  --color-yellow-300: #ffffff;
+  --color-yellow-400: #ffffff;
+  --color-yellow-500: #ffffff;
+  --color-yellow-600: #ffffff;
+  --color-yellow-700: #ffffff;
+  --color-yellow-800: #ffffff;
+  --color-yellow-900: #000000;
+  --color-yellow-950: #000000;
+
+  --color-blue-50: #000000;
+  --color-blue-100: #000000;
+  --color-blue-200: #ffffff;
+  --color-blue-300: #ffffff;
+  --color-blue-400: #ffffff;
+  --color-blue-500: #ffffff;
+  --color-blue-600: #ffffff;
+  --color-blue-700: #ffffff;
+  --color-blue-800: #ffffff;
+  --color-blue-900: #000000;
+  --color-blue-950: #000000;
+
+  --color-orange-50: #000000;
+  --color-orange-100: #000000;
+  --color-orange-200: #ffffff;
+  --color-orange-300: #ffffff;
+  --color-orange-400: #ffffff;
+  --color-orange-500: #ffffff;
+  --color-orange-600: #ffffff;
+  --color-orange-700: #ffffff;
+  --color-orange-800: #ffffff;
+  --color-orange-900: #000000;
+  --color-orange-950: #000000;
+
+  --color-emerald-50: #000000;
+  --color-emerald-100: #000000;
+  --color-emerald-200: #ffffff;
+  --color-emerald-300: #ffffff;
+  --color-emerald-400: #ffffff;
+  --color-emerald-500: #ffffff;
+  --color-emerald-600: #ffffff;
+  --color-emerald-700: #ffffff;
+  --color-emerald-800: #ffffff;
+  --color-emerald-900: #000000;
+  --color-emerald-950: #000000;
+
+  --color-pink-50: #000000;
+  --color-pink-100: #000000;
+  --color-pink-200: #ffffff;
+  --color-pink-300: #ffffff;
+  --color-pink-400: #ffffff;
+  --color-pink-500: #ffffff;
+  --color-pink-600: #ffffff;
+  --color-pink-700: #ffffff;
+  --color-pink-800: #ffffff;
+  --color-pink-900: #000000;
+  --color-pink-950: #000000;
+
+  --color-slate-50: #000000;
+  --color-slate-100: #000000;
+  --color-slate-200: #ffffff;
+  --color-slate-300: #ffffff;
+  --color-slate-400: #ffffff;
+  --color-slate-500: #ffffff;
+  --color-slate-600: #ffffff;
+  --color-slate-700: #ffffff;
+  --color-slate-800: #ffffff;
+  --color-slate-900: #000000;
+  --color-slate-950: #000000;
+
+  --color-rose-50: #000000;
+  --color-rose-100: #000000;
+  --color-rose-200: #ffffff;
+  --color-rose-300: #ffffff;
+  --color-rose-400: #ffffff;
+  --color-rose-500: #ffffff;
+  --color-rose-600: #ffffff;
+  --color-rose-700: #ffffff;
+  --color-rose-800: #ffffff;
+  --color-rose-900: #000000;
+  --color-rose-950: #000000;
 }
 
 html.high-contrast * {
@@ -214,6 +685,27 @@ html.high-contrast *:focus-visible {
   outline-offset: 2px !important;
 }
 
+.skip-to-main {
+  position: absolute;
+  left: -9999px;
+  z-index: 999;
+  padding: 1rem;
+  background-color: rgb(var(--brand-rgb));
+  color: #fff;
+  text-decoration: none;
+}
+
+.skip-to-main:focus {
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+html.high-contrast .skip-to-main {
+  background-color: rgb(var(--text-primary));
+  color: rgb(var(--bg-background));
+}
+
 /* Reduced Motion Accessibility */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -224,4 +716,40 @@ html.high-contrast *:focus-visible {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* Toast palette (sonner via .aac-toast, mounted by <AppToaster />).
+   Same classes the hand-rolled ToastContainer was audited with
+   (light / dark / high-contrast), applied at a specificity that beats
+   sonner's [data-sonner-toast] defaults. */
+[data-sonner-toast].aac-toast {
+  @apply rounded-lg border p-4 shadow-lg max-w-md text-sm font-medium;
+}
+
+[data-sonner-toast].aac-toast[data-type='success'] {
+  @apply bg-green-50 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800;
+}
+
+[data-sonner-toast].aac-toast[data-type='error'] {
+  @apply bg-red-50 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800;
+}
+
+[data-sonner-toast].aac-toast[data-type='info'] {
+  @apply bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800;
+}
+
+[data-sonner-toast].aac-toast[data-type='warning'] {
+  @apply bg-yellow-50 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800;
 }

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { SymbolImage } from './common/SymbolImage';
 import { glossSymbolUtterance } from '../lib/gloss';
 import { getCategoryStyle } from '../lib/symbolCategoryStyle';
+import { Button } from './ui/button';
 
 interface SymbolItem {
   id: number;
@@ -81,21 +82,16 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
 
           <div className="text-sm text-gray-700 dark:text-gray-300 mb-3 p-2 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
             <span className="text-xs text-gray-500 dark:text-gray-400 mr-2">{t('symbolEditor.preview')}</span>
-            {glossSymbols() || <span className="italic text-gray-400">{t('symbolEditor.emptyMessage')}</span>}
+            {glossSymbols() || <span className="italic text-gray-400 dark:text-gray-500">{t('symbolEditor.emptyMessage')}</span>}
           </div>
         </>
       )}
 
       <div className="flex gap-2">
-        <button
-          onClick={handleSave}
-          disabled={editedSymbols.length === 0}
-          className="px-3 py-1.5 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
-          title={t('symbolEditor.saveResendTitle')}
-        >
+        <Button onClick={handleSave} disabled={editedSymbols.length === 0} className="flex items-center gap-1 transition-colors" title={t('symbolEditor.saveResendTitle')} >
           <Check className="w-4 h-4" />
           {t('symbolEditor.saveResend')}
-        </button>
+        </Button>
         <button
           onClick={onCancel}
           className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"

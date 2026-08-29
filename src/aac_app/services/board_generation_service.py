@@ -3,9 +3,9 @@ import re
 
 from loguru import logger
 
+from ..providers.base_provider import BaseLLMProvider
 from ..providers.groq_provider import GroqProvider
 from ..providers.lmstudio_provider import LMStudioProvider
-from ..providers.ollama_provider import OllamaProvider
 from ..providers.openrouter_provider import OpenRouterProvider
 
 
@@ -58,7 +58,7 @@ class BoardGenerationService:
 
     def __init__(
         self,
-        llm_provider: OllamaProvider | OpenRouterProvider | LMStudioProvider,
+        llm_provider: BaseLLMProvider,
     ):
         self.llm = llm_provider
         if isinstance(llm_provider, GroqProvider):

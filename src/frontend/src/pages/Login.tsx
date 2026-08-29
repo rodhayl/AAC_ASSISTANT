@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/authStore';
 import { User, Lock, Loader2, ShieldAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import api from '../lib/api';
+import { Button } from '../components/ui/button';
 
 export function Login() {
   const [username, setUsername] = useState('');
@@ -118,10 +119,10 @@ export function Login() {
             </div>
           </div>
 
-          <button
+          <Button
             type="submit"
-            disabled={isLoading}
-            className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            loading={isLoading}
+            className="w-full shadow-sm"
             aria-label={t('login')}
           >
             {isLoading ? (
@@ -129,7 +130,7 @@ export function Login() {
             ) : (
               t('login')
             )}
-          </button>
+          </Button>
           
           <div className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
             <p>{t('defaults.title')}</p>

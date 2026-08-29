@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Search, Trash2, Image as ImageIcon, Globe, Download } from 'lucide-react';
 import api, { extractError } from '../lib/api';
-import { Button } from '../components/ui/Button';
+import { Button } from '../components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { SymbolGrid } from '../components/symbols/SymbolGrid';
 import type { Symbol as SymbolType } from '../types';
@@ -408,7 +409,7 @@ export function Symbols() {
         </div>
         <div className="flex gap-2">
           <Button 
-            variant={showArasaac ? "primary" : "secondary"}
+            variant={showArasaac ? "default" : "outline"}
             onClick={() => setShowArasaac(!showArasaac)}
           >
             <Globe className="w-4 h-4 mr-2" /> 
@@ -435,7 +436,7 @@ export function Symbols() {
           
           <form onSubmit={searchArasaac} className="flex gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
               <input
                 value={arasaacQuery}
                 onChange={(e) => setArasaacQuery(e.target.value)}
@@ -471,7 +472,7 @@ export function Symbols() {
               </div>
             ))}
             {!isSearchingArasaac && arasaacResults.length === 0 && arasaacQuery && (
-              <div className="col-span-full text-center py-8 text-gray-500">
+              <div className="col-span-full text-center py-8 text-gray-500 dark:text-gray-400">
                 {t('noResults', { query: arasaacQuery })}
               </div>
             )}
@@ -493,15 +494,16 @@ export function Symbols() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('category')}</label>
-            <select
-              value={form.category}
-              onChange={(e) => setForm(prev => ({ ...prev, category: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-            >
-              {availableCategories.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+            <Select value={form.category} onValueChange={(next) => { if (next != null) setForm(prev => ({ ...prev, category: next })); }}>
+              <SelectTrigger aria-label={t('category')} className="w-full text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {availableCategories.map(c => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('description')}</label>
@@ -536,7 +538,7 @@ export function Symbols() {
           )}
           <div className="flex gap-2">
             <Button
-              variant="primary"
+              variant="default"
               onClick={editingId ? submitEdit : submitCreate}
               loading={creating}
               disabled={!form.label}
@@ -555,7 +557,7 @@ export function Symbols() {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 space-y-4">
         <div className="flex flex-wrap gap-3 items-center">
           <div className="relative flex-1 min-w-[200px] md:min-w-[280px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
             <input
               value={search}
               onChange={(e) => {
@@ -570,7 +572,7 @@ export function Symbols() {
             {['all', 'in_use', 'unused'].map(u => (
               <Button
                 key={u}
-                variant={usage === u ? 'primary' : 'secondary'}
+                variant={usage === u ? 'default' : 'outline'}
                 onClick={() => { setUsage(u as UsageFilter); setPage(0); }}
                 size="sm"
               >
@@ -578,27 +580,42 @@ export function Symbols() {
               </Button>
             ))}
           </div>
-          <select
+          <Select
             value={sort}
-            onChange={(e) => { setSort(e.target.value); setPage(0); }}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            onValueChange={(next) => { if (next != null) { setSort(next); setPage(0); } }}
+            items={[
+              { value: 'default', label: t('filters.default') },
+              { value: 'newest', label: t('filters.newest') },
+              { value: 'oldest', label: t('filters.oldest') },
+              { value: 'alpha', label: t('filters.alpha') },
+            ]}
           >
-            <option value="default">{t('filters.default')}</option>
-            <option value="newest">{t('filters.newest')}</option>
-            <option value="oldest">{t('filters.oldest')}</option>
-            <option value="alpha">{t('filters.alpha')}</option>
-          </select>
-          <select
+            <SelectTrigger aria-label={t('filters.sort')} className="w-36 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="default">{t('filters.default')}</SelectItem>
+              <SelectItem value="newest">{t('filters.newest')}</SelectItem>
+              <SelectItem value="oldest">{t('filters.oldest')}</SelectItem>
+              <SelectItem value="alpha">{t('filters.alpha')}</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
             value={category}
-            onChange={(e) => { setCategory(e.target.value); setPage(0); }}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            onValueChange={(next) => { if (next != null) { setCategory(next); setPage(0); } }}
+            items={categories.map(c => ({ value: c, label: c === 'all' ? t('filters.all') : c }))}
           >
-            {categories.map(c => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
+            <SelectTrigger aria-label={t('filters.category')} className="w-36 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {categories.map(c => (
+                <SelectItem key={c} value={c}>{c === 'all' ? t('filters.all') : c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
-            variant="danger"
+            variant="destructive"
             size="sm"
             onClick={deleteSelected}
             disabled={selectedIds.size === 0}

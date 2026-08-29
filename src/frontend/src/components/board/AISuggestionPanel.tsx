@@ -1,6 +1,7 @@
 import { ArrowLeftRight, PlusCircle, RefreshCcw, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { BoardPosition } from '../../hooks/useBoardCollab';
+import { Button } from '../ui/button';
 
 export type AISuggestion = {
   label: string;
@@ -56,15 +57,10 @@ export function AISuggestionPanel({
           <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{t('aiSuggestionsTitle')}</h3>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={onApplyAll}
-            disabled={aiLoading || applyAllLoading || !suggestions.length}
-            className="flex items-center text-sm px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-            title={t('addAllTitle')}
-          >
+          <Button onClick={onApplyAll} disabled={aiLoading || applyAllLoading || !suggestions.length} className="flex items-center" title={t('addAllTitle')} >
             <PlusCircle className="w-4 h-4 mr-1" />
             {applyAllLoading ? t('addingAll') : t('addAll')}
-          </button>
+          </Button>
           <button
             onClick={onRefresh}
             className="flex items-center text-sm text-indigo-600 hover:text-indigo-700"
@@ -93,13 +89,9 @@ export function AISuggestionPanel({
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900/40 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
           />
         </div>
-        <button
-          onClick={onRefine}
-          disabled={aiLoading}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60"
-        >
+        <Button onClick={onRefine} disabled={aiLoading}  >
           {aiLoading ? t('refining') : t('sendRefinePrompt')}
-        </button>
+        </Button>
         <button
           onClick={onRegenerate}
           disabled={aiLoading}
@@ -116,19 +108,19 @@ export function AISuggestionPanel({
             <div className="flex items-center justify-between">
               <div>
                 <div className="font-semibold text-gray-900 dark:text-gray-100">{item.label}</div>
-                {item.symbol_key && <div className="text-xs text-gray-500">{t('keyword', { key: item.symbol_key })}</div>}
+                {item.symbol_key && <div className="text-xs text-gray-500 dark:text-gray-400">{t('keyword', { key: item.symbol_key })}</div>}
               </div>
               {item.color && <span className="w-4 h-4 rounded-full border" style={{ background: item.color }} />}
             </div>
-            {item.description && <div className="text-xs text-gray-500">{item.description}</div>}
-            <button
+            {item.description && <div className="text-xs text-gray-500 dark:text-gray-400">{item.description}</div>}
+            <Button
+              size="sm"
               onClick={() => onApply(item)}
               disabled={applyId === item.label}
-              className="inline-flex items-center justify-center px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
             >
-              <PlusCircle className="w-4 h-4 mr-1" />
+              <PlusCircle />
               {applyId === item.label ? t('adding') : t('addToBoard')}
-            </button>
+            </Button>
             <button
               onClick={() => onApply(item, selectedPosition || undefined)}
               disabled={applyId === item.label || !selectedPosition}

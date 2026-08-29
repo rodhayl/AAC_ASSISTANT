@@ -1,6 +1,7 @@
 import { Lock, Play, Save, Settings, Sparkles, Trash2, Unlock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { BoardPlayabilityStatus } from '../../pages/boardEditorUtils';
+import { Button } from '../ui/button';
 
 interface BoardEditorToolbarProps {
   boardName: string;
@@ -79,14 +80,15 @@ export function BoardEditorToolbar({
             {aiLoading ? t('fetchingIdeas') : t('getSuggestions')}
           </button>
         )}
-        <button
+        <Button
+          variant="success"
           onClick={onSpeakMode}
-          className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-sm transition-colors"
+          className="shadow-sm"
           title={t('enterSpeakMode')}
         >
-          <Play className="w-4 h-4 mr-2 fill-current" />
+          <Play className="fill-current" />
           {t('speakMode')}
-        </button>
+        </Button>
         <button
           onClick={onOpenSettings}
           className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"

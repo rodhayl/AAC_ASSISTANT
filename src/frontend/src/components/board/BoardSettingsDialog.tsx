@@ -1,5 +1,19 @@
-import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '../ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '../ui/dialog';
 
 interface BoardSettingsDialogProps {
   isOpen: boolean;
@@ -42,31 +56,16 @@ export function BoardSettingsDialog({
 }: BoardSettingsDialogProps) {
   const { t } = useTranslation('boards');
 
-  // Close on Escape so keyboard users are never trapped in the modal.
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center z-50">
-      <div
-        className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="board-settings-title"
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent
+        className="max-w-2xl max-h-[90vh] overflow-y-auto"
       >
-        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-          <h2 id="board-settings-title" className="text-xl font-semibold text-gray-900 dark:text-gray-100">{t('boardSettings')}</h2>
-        </div>
+        <DialogHeader>
+          <DialogTitle>{t('boardSettings')}</DialogTitle>
+        </DialogHeader>
 
-        <div className="p-6 space-y-4">
+        <div className="space-y-4">
           {saveSuccess && (
             <div className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 px-4 py-3 rounded-lg">
               {t('settingsSaved')}
@@ -104,23 +103,22 @@ export function BoardSettingsDialog({
           </div>
 
           <div>
-            <label htmlFor="board-settings-category" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               {t('category')}
             </label>
-            <select
-              id="board-settings-category"
-              name="board_category"
-              value={boardCategory}
-              onChange={(event) => onBoardCategoryChange(event.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-            >
-              <option value="general">{t('categories.general')}</option>
-              <option value="daily">{t('categories.daily')}</option>
-              <option value="social">{t('categories.social')}</option>
-              <option value="education">{t('categories.education')}</option>
-              <option value="medical">{t('categories.medical')}</option>
-              <option value="food">{t('categories.food')}</option>
-            </select>
+            <Select value={boardCategory} onValueChange={(next) => { if (next != null) onBoardCategoryChange(next); }}>
+              <SelectTrigger aria-label={t('category')} name="board_category" className="w-full text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="general">{t('categories.general')}</SelectItem>
+                <SelectItem value="daily">{t('categories.daily')}</SelectItem>
+                <SelectItem value="social">{t('categories.social')}</SelectItem>
+                <SelectItem value="education">{t('categories.education')}</SelectItem>
+                <SelectItem value="medical">{t('categories.medical')}</SelectItem>
+                <SelectItem value="food">{t('categories.food')}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
@@ -160,24 +158,19 @@ export function BoardSettingsDialog({
           </div>
         </div>
 
-        <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
-          <button
+        <DialogFooter>
+          <Button
             type="button"
+            variant="ghost"
             onClick={onClose}
-            className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
           >
             {t('cancel')}
-          </button>
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={saving}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
+          </Button>
+          <Button type="button" onClick={onSave} loading={saving}>
             {saving ? t('saving') : t('saveSettings')}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

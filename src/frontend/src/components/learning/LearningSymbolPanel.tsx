@@ -5,6 +5,7 @@ import { glossSymbolUtterance } from '../../lib/gloss';
 import { getCategoryStyle } from '../../lib/symbolCategoryStyle';
 import { LEARNING_SYMBOL_CATEGORY_IDS } from '../../lib/symbolCategories';
 import type { LearningSymbolItem } from '../../types';
+import { Button } from '../ui/button';
 
 export type { LearningSymbolItem } from '../../types';
 
@@ -98,14 +99,9 @@ export function LearningSymbolPanel({
                 <Volume2 className="w-4 h-4" />
                 {t('speakOnly')}
               </button>
-              <button
-                type="button"
-                onClick={onSendSymbols}
-                className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs hover:bg-indigo-700 disabled:opacity-50"
-                disabled={isLoading || symbolUtterance.length === 0 || isStartingSession}
-              >
+              <Button type="button" onClick={onSendSymbols} className="text-xs" disabled={isLoading || symbolUtterance.length === 0 || isStartingSession} >
                 {isStartingSession ? t('startingSession') : t('sendSymbols')}
-              </button>
+              </Button>
               <button
                 type="button"
                 onClick={onClearSymbols}
@@ -120,7 +116,7 @@ export function LearningSymbolPanel({
 
         <div className="mt-3 flex gap-2">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+            <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400 dark:text-gray-500" />
             <input
               id="learning-symbol-search"
               name="learning_symbol_search"
@@ -151,7 +147,7 @@ export function LearningSymbolPanel({
 
       <div className="flex-1 flex overflow-hidden">
         <div className="w-24 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-2 space-y-2">
-          <div className="text-xs font-semibold text-gray-500 uppercase mb-2 text-center">
+          <div className="text-xs font-semibold text-gray-500 uppercase mb-2 text-center dark:text-gray-400">
             {t('categories.core')}
           </div>
           {coreWords.map((symbol) => (
@@ -167,9 +163,9 @@ export function LearningSymbolPanel({
 
         <div className="flex-1 overflow-y-auto p-3 grid grid-cols-3 gap-2 content-start">
           {symbolLoading ? (
-            <div className="col-span-3 text-center text-gray-500 py-8">{t('loading')}</div>
+            <div className="col-span-3 text-center text-gray-500 py-8 dark:text-gray-400">{t('loading')}</div>
           ) : filteredSymbols.length === 0 ? (
-            <div className="col-span-3 text-center text-gray-500 py-8">{t('noSymbols')}</div>
+            <div className="col-span-3 text-center text-gray-500 py-8 dark:text-gray-400">{t('noSymbols')}</div>
           ) : (
             filteredSymbols.map((symbol) => (
               <button

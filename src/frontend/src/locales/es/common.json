@@ -193,8 +193,7 @@
       "frequentSequencesFailed": "Error al recuperar secuencias frecuentes: {{error}}",
       "suggestionsFailed": "Error al generar sugerencias: {{error}}",
       "preferencesFailed": "Error al recuperar preferencias de categoría: {{error}}",
-      "statsFailed": "Error al recuperar estadísticas de uso: {{error}}",
-      "logFailed": "Error al registrar uso de símbolo: {{error}}"
+      "statsFailed": "Error al recuperar estadísticas de uso: {{error}}"
     },
     "achievements": {
       "notFound": "Logro no encontrado",
@@ -267,8 +266,7 @@
       "uvUnavailable": "uv no está disponible en PATH para la instalación automática.",
       "voiceInstallFailed": "La instalación automática de voz falló. Consulta los registros del servidor.",
       "voiceInstalled": "Dependencias de voz instaladas correctamente.",
-      "lmstudioUnavailable": "LM Studio no está disponible",
-      "providerResponseError": "No se pudo consultar el proveedor: {{error}}"
+      "lmstudioUnavailable": "LM Studio no está disponible"
     },
     "setup": {
       "localOnly": "La configuración inicial del administrador solo está permitida desde la dirección local (127.0.0.1 / ::1).",

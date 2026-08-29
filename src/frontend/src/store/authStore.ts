@@ -64,6 +64,10 @@ function syncUserPreferences(user: User | null | undefined) {
   if (user?.settings?.dark_mode !== undefined) {
     useThemeStore.getState().setDarkMode(user.settings.dark_mode);
   }
+
+  if (user?.settings?.high_contrast !== undefined) {
+    useThemeStore.getState().setHighContrast(user.settings.high_contrast);
+  }
 }
 
 export const useAuthStore = create<AuthState>()(

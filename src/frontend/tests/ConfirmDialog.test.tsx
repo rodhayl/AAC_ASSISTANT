@@ -22,7 +22,8 @@ describe('ConfirmDialog', () => {
       />,
     );
 
-    expect(screen.getByRole('dialog', { name: 'Delete board' })).toBeVisible();
+    // Base UI AlertDialog exposes the more specific role="alertdialog".
+    expect(screen.getByRole('alertdialog', { name: 'Delete board' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Close' })).toBeVisible();
 
     fireEvent.keyDown(document, { key: 'Escape' });

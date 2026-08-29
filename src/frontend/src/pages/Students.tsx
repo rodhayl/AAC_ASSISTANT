@@ -1,16 +1,23 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useAuthStore } from '../store/authStore'
 import api, { extractError } from '../lib/api'
 import type { Board, StudentBoardSummary, User, UserPreferences } from '../types'
 import { useTranslation } from 'react-i18next'
-import { useModalFocusTrap } from '../hooks/useModalFocusTrap'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { Toggle } from '../components/ui/Toggle'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { ResetPasswordModal } from '../components/common/ResetPasswordModal'
 import { GuardianProfileModal } from '../components/students/GuardianProfileModal'
 import { Sparkles, Volume2 } from 'lucide-react'
 import { LoadingState } from '../components/ui/LoadingState'
 import { useToastStore } from '../store/toastStore'
+import { Button } from '../components/ui/button';
 
 
 export function Students() {
@@ -259,38 +266,20 @@ export function Students() {
     }
   }
 
-  const createDialogRef = useRef<HTMLDivElement | null>(null)
-  const editDialogRef = useRef<HTMLDivElement | null>(null)
-  const assignDialogRef = useRef<HTMLDivElement | null>(null)
-  const preferencesDialogRef = useRef<HTMLDivElement | null>(null)
-
-  useModalFocusTrap(createDialogRef, createModalOpen, () => {
-    setCreateModalOpen(false)
-    setNewUsername('')
-    setNewDisplayName('')
-    setNewEmail('')
-    setNewPassword('')
-    setConfirmPassword('')
-    setError(null)
-  })
-  useModalFocusTrap(editDialogRef, editId != null, () => setEditId(null))
-  useModalFocusTrap(assignDialogRef, assignModalOpen, () => setAssignModalOpen(false))
-  useModalFocusTrap(preferencesDialogRef, preferencesModalOpen, () => setPreferencesModalOpen(false))
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400 tracking-tight">{t('title')}</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 font-medium">{t('subtitle')}</p>
+          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400 font-medium">{t('subtitle')}</p>
         </div>
-        <button
+        <Button
           onClick={() => { setCreateModalOpen(true); setError(null); }}
-          className="inline-flex items-center px-5 py-2.5 rounded-xl bg-brand text-white shadow-lg shadow-brand/25 hover:shadow-brand/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 font-medium"
+          className="shadow-lg shadow-brand/25 hover:shadow-brand/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 font-medium"
         >
           <span className="mr-2">+</span>
           {t('create')}
-        </button>
+        </Button>
       </div>
 
       {error && (
@@ -304,40 +293,40 @@ export function Students() {
           <table className="min-w-full divide-y divide-border dark:divide-white/5">
             <thead className="bg-gray-50/50 dark:bg-white/5 border-b border-border/50 dark:border-white/5">
               <tr>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('table.name')}</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('table.username')}</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('table.assigned')}</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('table.actions')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">{t('table.name')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">{t('table.username')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">{t('table.assigned')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">{t('table.actions')}</th>
               </tr >
             </thead >
             <tbody className="divide-y divide-border dark:divide-white/5 bg-transparent">
               {students.map(s => (
                 <tr key={s.id}>
                   <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">{s.display_name}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{s.username}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                  <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{s.username}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
                     <div className="flex flex-wrap gap-2">
                       {(assignedBoards[s.id] || []).map(board => (
                         <span key={board.id} className="inline-flex items-center px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 text-xs">
                           {board.name}
                           <button
                             onClick={() => handleUnassignBoard(s.id, board.id)}
-                            className="ml-1 text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                            className="ml-1 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300"
                             aria-label={t('actions.unassignAria', { board: board.name })}
                             title={t('actions.unassignTitle')}
                           >×</button>
                         </span>
                       ))}
                       {(assignedBoards[s.id] || []).length === 0 && (
-                        <span className="text-gray-400 dark:text-gray-500 text-xs">{t('noneAssigned')}</span>
+                        <span className="text-gray-600 dark:text-gray-400 text-xs">{t('noneAssigned')}</span>
                       )}
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                  <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
                     <div className="flex gap-2">
                       <button
                         onClick={() => openAssignModal(s)}
-                        className="px-3 py-1 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded"
+                        className="px-3 py-1 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded"
                         aria-label={t('actions.assignAria', { student: s.username })}
                         title={t('actions.assignTitle')}
                       >{t('assign')}</button>
@@ -354,6 +343,7 @@ export function Students() {
                         onClick={() => openPreferencesModal(s)}
                         className="px-3 py-1 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center gap-1"
                         title={t('preferences.title')}
+                        aria-label={t('preferences.title')}
                       >
                         <Volume2 className="w-4 h-4" />
                       </button>
@@ -372,14 +362,14 @@ export function Students() {
                           setResetPasswordValue('');
                           setError(null);
                         }}
-                        className="px-3 py-1 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded"
+                        className="px-3 py-1 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded"
                         aria-label={t('actions.resetPasswordAria', { student: s.username })}
                         title={t('actions.resetPasswordTitle')}
                       >{t('actions.resetPassword')}</button>
                       {user?.user_type === 'admin' && (
                         <button
                           onClick={() => setDeleteState({ isOpen: true, student: s })}
-                          className="px-3 py-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
+                          className="px-3 py-1 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
                           aria-label={t('actions.deleteAria', { student: s.username })}
                           title={t('actions.deleteTitle')}
                         >{t('delete')}</button>
@@ -392,20 +382,16 @@ export function Students() {
           </table >
           {
             students.length === 0 && (
-              <div className="p-6 text-center text-gray-500 dark:text-gray-400">{t('noStudents')}</div>
+              <div className="p-6 text-center text-gray-600 dark:text-gray-400">{t('noStudents')}</div>
             )
           }
           {
             editId != null && (
-              <div
-                className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-                ref={editDialogRef}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="edit-student-title"
-              >
-                <div className="glass-card w-full max-w-md p-6">
-                  <h3 id="edit-student-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">{t('edit')}</h3>
+              <Dialog open onOpenChange={(open) => { if (!open) setEditId(null) }}>
+                <DialogContent showCloseButton={false} className="max-w-md p-6">
+                  <DialogHeader>
+                    <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('edit')}</DialogTitle>
+                  </DialogHeader>
                   {error && (
                     <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm mb-4">
                       {error}
@@ -416,18 +402,23 @@ export function Students() {
                       {t('labels.displayName')}
                     </label>
                     <input id="edit-student-display-name" type="text" value={editDisplayName} onChange={(e) => setEditDisplayName(e.target.value)} required className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
-                    <label htmlFor="edit-student-role" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                       {t('role')}
                     </label>
-                    <select id="edit-student-role" value={editUserType} onChange={(e) => setEditUserType(e.target.value as 'student' | 'teacher' | 'admin')} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
-                      <option value="student">{t('roles.student')}</option>
-                      <option value="teacher">{t('roles.teacher')}</option>
-                      <option value="admin">{t('roles.admin')}</option>
-                    </select>
+                    <Select value={editUserType} onValueChange={(next) => { if (next != null) setEditUserType(next as 'student' | 'teacher' | 'admin'); }}>
+                      <SelectTrigger aria-label={t('role')} name="edit_student_role" className="w-full text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="student">{t('roles.student')}</SelectItem>
+                        <SelectItem value="teacher">{t('roles.teacher')}</SelectItem>
+                        <SelectItem value="admin">{t('roles.admin')}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="mt-4 flex justify-end gap-2">
-                    <button onClick={() => setEditId(null)} className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">{t('cancel')}</button>
-                    <button
+                    <Button onClick={() => setEditId(null)} variant="ghost">{t('cancel')}</Button>
+                    <Button
                       onClick={async () => {
                         try {
                           const res = await api.put(`/auth/users/${editId}`, { display_name: editDisplayName, user_type: editUserType })
@@ -441,30 +432,25 @@ export function Students() {
                           setError(extractError(e, t('errors.updateFailed')))
                         }
                       }}
-                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-                    >{t('profile.save', { ns: 'settings' })}</button>
+                    >{t('profile.save', { ns: 'settings' })}</Button>
                   </div>
-                </div>
-              </div>
+                </DialogContent>
+              </Dialog>
             )
           }
 
           {
             assignModalOpen && selectedStudent && (
-              <div
-                className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-                ref={assignDialogRef}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="assign-student-title"
-              >
-                <div className="glass-card w-full max-w-md p-6">
-                  <h3 id="assign-student-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                    {t('assignTitle', { name: selectedStudent.display_name })}
-                  </h3>
+              <Dialog open onOpenChange={(open) => { if (!open) setAssignModalOpen(false) }}>
+                <DialogContent showCloseButton={false} className="max-w-md p-6">
+                  <DialogHeader>
+                    <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                      {t('assignTitle', { name: selectedStudent.display_name })}
+                    </DialogTitle>
+                  </DialogHeader>
                   <div className="space-y-2 max-h-96 overflow-y-auto">
                     {availableBoards.length === 0 ? (
-                      <p className="text-gray-500 dark:text-gray-400 text-sm">{t('noBoardsAvail')}</p>
+                      <p className="text-gray-600 dark:text-gray-400 text-sm">{t('noBoardsAvail')}</p>
                     ) : (
                       availableBoards.map(board => {
                         const isAssigned = (assignedBoards[selectedStudent.id] || []).some(b => b.id === board.id)
@@ -480,7 +466,7 @@ export function Students() {
                           >
                             <div className="font-medium text-gray-900 dark:text-gray-100">{board.name}</div>
                             {board.description && (
-                              <div className="text-sm text-gray-500 dark:text-gray-400">{board.description}</div>
+                              <div className="text-sm text-gray-600 dark:text-gray-400">{board.description}</div>
                             )}
                             {isAssigned && (
                               <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">{t('alreadyAssigned')}</div>
@@ -496,24 +482,33 @@ export function Students() {
                       className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
                     >{t('close')}</button>
                   </div>
-                </div>
-              </div>
+                </DialogContent>
+              </Dialog>
             )
           }
 
           {
             createModalOpen && (
-              <div
-                className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-                ref={createDialogRef}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="create-student-title"
+              <Dialog
+                open
+                onOpenChange={(open) => {
+                  if (!open) {
+                    setCreateModalOpen(false)
+                    setNewUsername('')
+                    setNewDisplayName('')
+                    setNewEmail('')
+                    setNewPassword('')
+                    setConfirmPassword('')
+                    setError(null)
+                  }
+                }}
               >
-                <div className="glass-card w-full max-w-md p-6">
-                  <h3 id="create-student-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                    {t('createTitle')}
-                  </h3>
+                <DialogContent showCloseButton={false} className="max-w-md p-6">
+                  <DialogHeader>
+                    <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                      {t('createTitle')}
+                    </DialogTitle>
+                  </DialogHeader>
                   {error && (
                     <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm mb-4">
                       {error}
@@ -604,17 +599,13 @@ export function Students() {
                       >
                         {t('cancel')}
                       </button>
-                      <button
-                        type="submit"
-                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-                        disabled={createLoading}
-                      >
+                      <Button type="submit" disabled={createLoading}>
                         {createLoading ? t('security.saving', { ns: 'settings' }) : t('createBtn')}
-                      </button>
+                      </Button>
                     </div>
                   </form>
-                </div>
-              </div>
+                </DialogContent>
+              </Dialog>
             )
           }
         </div >
@@ -642,17 +633,13 @@ export function Students() {
 
       {
         preferencesModalOpen && preferencesStudent && (
-          <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-            ref={preferencesDialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="student-preferences-title"
-          >
-            <div className="glass-card w-full max-w-md p-6">
-              <h3 id="student-preferences-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                {t('preferencesTitle')} {preferencesStudent.display_name}
-              </h3>
+          <Dialog open onOpenChange={(open) => { if (!open) setPreferencesModalOpen(false) }}>
+            <DialogContent showCloseButton={false} className="max-w-md p-6">
+              <DialogHeader>
+                <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  {t('preferencesTitle')} {preferencesStudent.display_name}
+                </DialogTitle>
+              </DialogHeader>
 
               {preferencesLoading ? (
                 <LoadingState size="sm" label={t('loading')} className="h-auto p-4" />
@@ -665,7 +652,7 @@ export function Students() {
                       </div>
                       <div>
                         <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.voiceMode')}</p>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.voiceModeHelp')}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">{t('preferences.voiceModeHelp')}</p>
                       </div>
                     </div>
                     <Toggle
@@ -682,17 +669,14 @@ export function Students() {
                     >
                       {t('cancel')}
                     </button>
-                    <button
-                      onClick={saveStudentPreferences}
-                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-                    >
+                    <Button onClick={saveStudentPreferences}>
                       {t('save')}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
-            </div>
-          </div>
+            </DialogContent>
+          </Dialog>
         )
       }
 

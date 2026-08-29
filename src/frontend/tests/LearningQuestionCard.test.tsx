@@ -88,7 +88,7 @@ describe('LearningQuestionCard', () => {
 
     const correct = screen.getByRole('button', { name: 'Cat' });
     expect(correct.getAttribute('data-correct')).toBe('true');
-    expect(correct.className).toContain('bg-green-600');
+    expect(correct.className).toContain('bg-green-700');
     expect(screen.getByTestId('reveal-caption').textContent).toContain('Correct');
     // All buttons are disabled once the answer is revealed
     screen.getAllByRole('button').forEach((button) => expect(button).toBeDisabled());
@@ -110,7 +110,7 @@ describe('LearningQuestionCard', () => {
     );
 
     expect(screen.getByRole('button', { name: 'Dog' }).className).toContain('bg-red-600');
-    expect(screen.getByRole('button', { name: 'Cat' }).className).toContain('bg-green-600');
+    expect(screen.getByRole('button', { name: 'Cat' }).className).toContain('bg-green-700');
     expect(screen.getByTestId('reveal-caption').textContent).toContain('Cat');
   });
 

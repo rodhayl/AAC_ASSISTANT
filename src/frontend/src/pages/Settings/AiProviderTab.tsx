@@ -262,10 +262,10 @@ export function AiProviderTab() {
           <h3 id="settings-ai-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             {t('ai.readOnlyTitle')}
           </h3>
-          <p className="text-sm text-gray-500 mt-1">{t('ai.viewOnly')}</p>
+          <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">{t('ai.viewOnly')}</p>
         </div>
         {readOnlyLoading && (
-          <div className="p-6 text-sm text-gray-500">{t('ai.loading')}</div>
+          <div className="p-6 text-sm text-gray-500 dark:text-gray-400">{t('ai.loading')}</div>
         )}
         {readOnlyError && (
           <div className="p-6 text-sm text-red-600" role="alert">
@@ -276,8 +276,7 @@ export function AiProviderTab() {
           <div className="p-6 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <p className="block text-sm font-medium text-gray-700 mb-1">{t('ai.primaryProvider')}</p>
-                <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg capitalize flex items-center">
+                <p className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ai.primaryProvider')}</p>                    <div className="px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg capitalize flex items-center">
                   {visibleAiSettings.provider === 'ollama' ? (
                     <Cpu className="w-4 h-4 mr-2 text-indigo-600" />
                   ) : (
@@ -287,8 +286,8 @@ export function AiProviderTab() {
                 </div>
               </div>
               <div>
-                <p className="block text-sm font-medium text-gray-700 mb-1">{t('ai.primaryModel')}</p>
-                <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
+                <p className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ai.primaryModel')}</p>
+                <div className="px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg">
                   {(visibleAiSettings.provider === 'ollama'
                     ? visibleAiSettings.ollama_model
                     : visibleAiSettings.provider === 'lmstudio'
@@ -317,7 +316,7 @@ export function AiProviderTab() {
             <h3 id="settings-ai-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
               {t('ai.title')}
             </h3>
-            <p className="text-sm text-gray-500 mt-1">{t('ai.subtitle')}</p>
+            <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">{t('ai.subtitle')}</p>
           </div>
           {saveSuccess && <div className="text-green-600 text-sm font-medium">{t('ai.saveOk')}</div>}
         </div>
@@ -331,7 +330,7 @@ export function AiProviderTab() {
           </div>
         )}
         <div>
-          <p className="block text-sm font-medium text-gray-700 mb-3">{t('ai.primary')}</p>
+          <p className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">{t('ai.primary')}</p>
           <div className="grid grid-cols-2 gap-4">
             <button
               type="button"
@@ -418,10 +417,8 @@ export function AiProviderTab() {
           modelSearchQuery={modelSearchQuery}
           setModelSearchQuery={setModelSearchQuery}
           onFetchModels={handleFetchModels}
-        />
-
-        <div className="flex items-center gap-2 pt-4 border-t border-gray-200">
-          <button type="button" onClick={checkHealth} className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg">
+        />          <div className="flex items-center gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <button type="button" onClick={checkHealth} className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
             {t('ai.health')}
           </button>
         </div>
@@ -447,8 +444,8 @@ export function AiProviderTab() {
           </div>
         )}
 
-        <div className="flex justify-end pt-6 border-t border-gray-200">
-          <p className="text-sm text-gray-500">
+        <div className="flex justify-end pt-6 border-t border-gray-200 dark:border-gray-700">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
             {t('ai.autoSave')}
           </p>
         </div>

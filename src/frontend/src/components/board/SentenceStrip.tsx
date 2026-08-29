@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { Play, Delete, Trash2, X, Volume2, MessageSquare } from 'lucide-react';
+import { IconButton } from '../ui/icon-button';
 import type { BoardSymbol } from '../../types';
 import { useTranslation } from 'react-i18next';
 import { SymbolImage } from '../common/SymbolImage';
@@ -58,6 +59,7 @@ function SortableSymbol({ symbol, index, onRemove, onSpeakItem }: {
       style={style}
       {...attributes}
       {...listeners}
+      data-testid="sentence-chip"
       className="flex-shrink-0 flex flex-col items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-1.5 min-w-[4rem] relative group cursor-grab active:cursor-grabbing hover:border-indigo-500 transition-colors"
       onClick={() => {
         // If we are dragging, don't trigger speak
@@ -236,15 +238,15 @@ export const SentenceStrip = memo(function SentenceStrip({
             </button>
 
             {onAskAI && (
-              <button
+              <IconButton
+                label={t('askAI')}
                 onClick={onAskAI}
                 disabled={symbols.length === 0}
                 data-testid="sentence-ask-ai"
-                className="p-3 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                title={t('askAI')}
+                className="p-3 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors size-11"
               >
                 <MessageSquare className="w-6 h-6" />
-              </button>
+              </IconButton>
             )}
           </div>
         </div>

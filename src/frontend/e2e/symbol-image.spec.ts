@@ -42,6 +42,9 @@ test.describe('Symbol image rendering', () => {
       await page.goto('/symbols');
       await expect(page.locator('.animate-spin')).not.toBeVisible({ timeout: 20000 });
 
+      // The default sort orders by id ascending, so a freshly created symbol
+      // sits on the last page of the 17k-symbol library; search for it.
+      await page.getByPlaceholder(/buscar símbolos|search symbols/i).fill(label);
       const card = page.locator('div.flex.flex-col.gap-2', { hasText: label }).first();
       await expect(card).toBeVisible({ timeout: 15000 });
 

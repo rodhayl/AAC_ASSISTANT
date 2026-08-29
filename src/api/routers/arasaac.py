@@ -50,8 +50,11 @@ async def search_arasaac(
                 settings = current_user.settings
                 if settings and settings.ui_language:
                     effective_locale = settings.ui_language
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "Failed to read UI language for ARASAAC search: {}",
+                exc,
+            )
         results = await service.search_symbols(q, effective_locale)
         return results
     finally:
@@ -123,7 +126,11 @@ async def import_arasaac_symbol(
             # Store the base code (e.g. "es") so it matches the language
             # filter used by the symbol search (exact match against "es"/"en").
             user_lang = normalize_language_code(settings.ui_language) if settings else None
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "Failed to read UI language for ARASAAC import: {}",
+                exc,
+            )
             user_lang = None
 
         db_symbol = Symbol(

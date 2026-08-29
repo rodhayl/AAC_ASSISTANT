@@ -80,6 +80,7 @@ vi.mock('../src/lib/api', () => ({
 vi.mock('../src/lib/tts', () => ({
   tts: {
     onStatusChange: vi.fn(() => () => {}),
+    getStatus: vi.fn(() => 'idle'),
     enqueue: vi.fn(),
     cancelAll: vi.fn(),
   },

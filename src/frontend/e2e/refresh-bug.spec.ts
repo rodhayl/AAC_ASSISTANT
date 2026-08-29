@@ -47,7 +47,7 @@ test.describe('Board Refresh Bug', () => {
     if (createdBoardName) {
       const card = page.locator('.grid > div.relative').filter({ hasText: createdBoardName });
       await card.getByRole('button', { name: /delete|eliminar/i }).click();
-      await page.locator('div[role="dialog"]').getByRole('button', { name: /delete|eliminar/i }).click();
+      await page.locator('div[role="alertdialog"]').getByRole('button', { name: /delete|eliminar/i }).click();
     }
   });
 });

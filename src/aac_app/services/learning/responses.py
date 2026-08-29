@@ -421,8 +421,13 @@ class ResponseProcessingMixin:
                             db=db,
                         )
                     ach.check_achievements(session.user_id, db=db)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "Achievement update failed for learning session {} / user {}: {}",
+                        session.id,
+                        session.user_id,
+                        exc,
+                    )
 
                 # Determine next action
                 if session.comprehension_score >= 0.8 and session.questions_answered >= 5:

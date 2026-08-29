@@ -15,6 +15,7 @@ from src.api.deps import (
     get_learning_service,
     get_learning_session_or_404,
     require_board_view_access,
+    verify_student_access,
 )
 from src.api.deps import (
     get_text as get_shared_text,
@@ -297,6 +298,7 @@ def get_progress(
         session_id,
         current_user,
         message=lambda key: get_text(current_user, key),
+        allow_teacher=True,
     )
 
     result = service.get_session_progress(session_id, db=db)
@@ -320,9 +322,12 @@ def get_history(
 ):
     """Get user learning history"""
     if user_id != current_user.id and current_user.user_type != "admin":
-        raise HTTPException(
-            status_code=403, detail=get_text(current_user, "errors.unauthorized")
-        )
+        if current_user.user_type == "teacher":
+            verify_student_access(user_id, current_user, db)
+        else:
+            raise HTTPException(
+                status_code=403, detail=get_text(current_user, "errors.unauthorized")
+            )
 
     result = service.get_user_history(user_id, limit, db=db)
 

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Download, Upload } from 'lucide-react';
 import api from '../../lib/api';
 import { downloadJson } from '../../lib/download';
+import { Button } from '../../components/ui/button';
 
 export function DataManagementTab() {
   const user = useAuthStore(state => state.user);
@@ -53,18 +54,17 @@ export function DataManagementTab() {
         <h3 id="settings-data-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
           {t('data.title')}
         </h3>
-        <p className="text-sm text-gray-500 mt-1">{t('data.subtitle')}</p>
+        <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">{t('data.subtitle')}</p>
       </div>
       <div className="p-6 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <button
+          <Button
             onClick={() => void handleExportData()}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center justify-center"
             title={t('data.exportClientTitle')}
           >
-            <Download className="w-4 h-4 mr-2" />
+            <Download />
             {t('data.exportClient')}
-          </button>
+          </Button>
           {isTeacherOrAdmin && (
             <button
               onClick={() => void handleExportData(true)}

@@ -86,7 +86,7 @@ test.describe('Boards - Student', () => {
     await boardCard.getByRole('button', { name: /delete|eliminar/i }).click({ force: true });
     
     // Confirm dialog
-    await page.locator('div[role="dialog"]').getByRole('button', { name: /delete|eliminar/i }).click({ force: true });
+    await page.locator('div[role="alertdialog"]').getByRole('button', { name: /delete|eliminar/i }).click({ force: true });
     
     // Verify disappearance
     await expect(page.getByText(boardName)).not.toBeVisible({ timeout: 30000 });
@@ -281,8 +281,8 @@ test.describe('Boards - Pagination & Bulk (Real)', () => {
       
       // Delete them
       await bulkDeleteBtn.click();
-      await expect(page.locator('div[role=\"dialog\"]')).toBeVisible();
-      await page.locator('div[role="dialog"]').getByRole('button', { name: /delete|eliminar/i }).click();
+      await expect(page.locator('div[role=\"alertdialog\"]')).toBeVisible();
+      await page.locator('div[role="alertdialog"]').getByRole('button', { name: /delete|eliminar/i }).click();
       
       // Wait for deletion
       await expect(page.locator('.animate-spin')).not.toBeVisible();
@@ -352,7 +352,7 @@ async function deleteBoard(page: any, name: string) {
     const card = page.locator('.grid > div.relative').filter({ hasText: name }).first();
     if (await card.isVisible()) {
         await card.getByRole('button', { name: /delete|eliminar/i }).click({ force: true });
-        await page.locator('div[role="dialog"]').getByRole('button', { name: /delete|eliminar/i }).click({ force: true });
+        await page.locator('div[role="alertdialog"]').getByRole('button', { name: /delete|eliminar/i }).click({ force: true });
         await expect(page.getByText(name)).not.toBeVisible();
     }
     

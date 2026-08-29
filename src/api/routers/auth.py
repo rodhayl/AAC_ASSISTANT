@@ -322,6 +322,14 @@ def login_for_access_token(
         user_type=user.user_type,
         ip_address=client_ip
     )
+    # Commit the lockout reset and audit entry before issuing the token.
+    # The request session holds SQLite's single write lock from its first
+    # write until commit; deferring this to the get_db teardown kept the
+    # transaction open across token generation and could deadlock against
+    # long-running background writers (e.g. the ARASAAC library import) that
+    # block holding a read snapshot while waiting for the write lock. The
+    # failure path above already commits inline for the same reason.
+    db.commit()
 
     # Create JWT token with user information
     access_token = create_access_token(

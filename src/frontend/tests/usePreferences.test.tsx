@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { usePreferences } from '../src/pages/Settings/usePreferences';
 import { useAuthStore } from '../src/store/authStore';
+import { useThemeStore } from '../src/store/themeStore';
 
 const { get, put } = vi.hoisted(() => ({
   get: vi.fn(),
@@ -102,6 +103,11 @@ describe('usePreferences', () => {
     expect(result.current.preferences.voice_mode_enabled).toBe(false);
     expect(result.current.preferences.ui_language).toBe('en-US');
     expect(result.current.preferences.dark_mode).toBe(true);
+    expect(result.current.preferences.high_contrast).toBe(true);
+    // The server-side appearance must be pushed into the theme store so the
+    // document classes follow the logged-in user's persisted settings.
+    expect(useThemeStore.getState().darkMode).toBe(true);
+    expect(useThemeStore.getState().highContrast).toBe(true);
   });
 
   it('surfaces a translated error when saving preferences fails', async () => {
@@ -114,6 +120,8 @@ describe('usePreferences', () => {
         settings: {},
       },
     });
+    useThemeStore.getState().setDarkMode(false);
+    useThemeStore.getState().setHighContrast(false);
     get.mockResolvedValue({ data: {} });
     put.mockRejectedValue(new Error('network down'));
 
@@ -125,6 +133,38 @@ describe('usePreferences', () => {
 
     // The error must be the translated message, never the raw key.
     expect(result.current.prefsSaveError).toBe('Failed to save preferences');
+  });
+
+  it('pushes the saved appearance flags into the theme store', async () => {
+    get.mockResolvedValue({ data: {} });
+    put.mockResolvedValue({ data: { dark_mode: true, high_contrast: true } });
+    useAuthStore.setState({
+      user: {
+        id: 1,
+        username: 'student1',
+        display_name: 'Student',
+        user_type: 'student',
+        settings: {},
+      },
+    });
+
+    const { result } = renderHook(() => usePreferences());
+
+    // Toggle both appearance preferences as the user would in the UI.
+    act(() => {
+      result.current.setPreferences((prev) => ({ ...prev, dark_mode: true, high_contrast: true }));
+    });
+
+    await act(async () => {
+      await result.current.handleSavePreferences();
+    });
+
+    expect(useThemeStore.getState().darkMode).toBe(true);
+    expect(useThemeStore.getState().highContrast).toBe(true);
+    expect(put).toHaveBeenCalledWith(
+      '/auth/preferences',
+      expect.objectContaining({ dark_mode: true, high_contrast: true }),
+    );
   });
 
   it('discards a preferences response that resolves after the user switched accounts', async () => {

@@ -6,7 +6,15 @@ import { useBoardStore } from '../store/boardStore';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
 import api from '../lib/api';
-import { Button } from '../components/ui/Button';
+import { Button } from '../components/ui/button';
+import { IconButton } from '../components/ui/icon-button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 import type { User } from '../types';
 import { useTranslation } from 'react-i18next';
 import { formatDate } from '../lib/format';
@@ -311,7 +319,7 @@ export function Boards() {
         </div>
         <div className="flex gap-4 w-full md:w-auto">
           <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />              <input
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 dark:text-gray-500" />              <input
                 id="boards-search"
                 name="boards_search"
                 type="text"
@@ -348,7 +356,7 @@ export function Boards() {
         </label>
         <div className="flex items-center gap-3">
           {selectedBoardIds.size > 0 && (
-            <Button variant="danger" onClick={() => setBulkDeleteOpen(true)} disabled={bulkDeleting}>
+            <Button variant="destructive" onClick={() => setBulkDeleteOpen(true)} disabled={bulkDeleting}>
               {t('deleteSelected')} ({selectedBoardIds.size})
             </Button>
           )}
@@ -374,14 +382,16 @@ export function Boards() {
           <h2 className="font-semibold">{tError('title')}</h2>
           <p className="text-sm mt-1">{tError('subtitle')}</p>
           <p className="text-sm mt-2">{error}</p>
-          <button
+          <Button
             type="button"
+            variant="default"
+            size="sm"
+            className="mt-3"
             onClick={() => void handleForceRefresh()}
-            className="mt-3 px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
             disabled={isListLoading}
           >
             {tError('retry')}
-          </button>
+          </Button>
         </div>
       )}
 
@@ -506,14 +516,14 @@ export function Boards() {
                       </button>
                     )}
                     {user && (user.user_type === 'admin' || board.user_id === user.id) && (
-                      <button
+                      <IconButton
+                        label={t('assignToStudent')}
+                        title={t('assignToStudentTitle')}
                         onClick={() => openAssign(board.id)}
                         className="p-2 text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
-                        title={t('assignToStudentTitle')}
-                        aria-label={t('assignToStudent')}
                       >
                         <UserPlus className="w-4 h-4" />
-                      </button>
+                      </IconButton>
                     )}
                   </div>
                 </div>
@@ -528,7 +538,7 @@ export function Boards() {
                 <div className="flex items-center gap-3">
                   <Link
                     to={`/play/${board.id}`}
-                    className="flex items-center text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 font-medium"
+                    className="flex items-center text-green-700 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 font-medium"
                     title={t('enterSpeakMode')}
                   >
                     <Play className="w-4 h-4 mr-1 fill-current" />
@@ -548,18 +558,26 @@ export function Boards() {
               {assignOpenId === board.id && (
                 <div className="mt-4 p-4 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-800 rounded-lg">
                   <div className="flex items-center space-x-3">
-                    <select
-                      value={selectedStudentId ?? ''}
-                      onChange={(e) => setSelectedStudentId(parseInt(e.target.value))}
-                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    <Select
+                      value={selectedStudentId == null ? 'none' : String(selectedStudentId)}
+                      onValueChange={(value) => setSelectedStudentId(value === 'none' || value == null ? null : parseInt(value, 10))}
                       disabled={studentsLoading}
+                      items={[
+                        { value: 'none', label: t('selectStudent') },
+                        ...students.map((s) => ({ value: String(s.id), label: s.display_name || s.username })),
+                      ]}
                     >
-                      <option value="">{t('selectStudent')}</option>
-                      {students.map(s => (
-                        <option key={s.id} value={s.id}>{s.display_name || s.username}</option>
-                      ))}
-                    </select>
-                    <Button variant="primary" size="sm" onClick={() => submitAssign(board.id)} loading={assignLoading} disabled={!selectedStudentId}>
+                      <SelectTrigger aria-label={t('selectStudent')} className="flex-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">{t('selectStudent')}</SelectItem>
+                        {students.map(s => (
+                          <SelectItem key={s.id} value={String(s.id)}>{s.display_name || s.username}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button variant="default" size="sm" onClick={() => submitAssign(board.id)} loading={assignLoading} disabled={!selectedStudentId}>
                       {t('assign')}
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => setAssignOpenId(null)}>

@@ -182,11 +182,12 @@ describe('Boards page management', () => {
     });
   };
 
-  it('shows a spinner while the board list is loading', () => {
+  it('shows a spinner while the board list is loading', async () => {
     useBoardStore.setState({ isListLoading: true });
     renderBoards();
 
     expect(document.querySelector('.animate-spin')).toBeInTheDocument();
+    await waitFor(() => expect(api.get).toHaveBeenCalled());
   });
 
   it('creates a board with the given name and description', async () => {
@@ -275,7 +276,7 @@ describe('Boards page management', () => {
     await screen.findByText('Morning Routine');
 
     fireEvent.click(screen.getByLabelText('Delete'));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     fireEvent.click(within(dialog).getByText('Delete'));
 
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/boards/1'));
@@ -426,7 +427,11 @@ describe('Boards page management', () => {
 
     fireEvent.click(screen.getByLabelText('Assign to student'));
     const select = await screen.findByRole('combobox');
-    fireEvent.change(select, { target: { value: '20' } });
+    fireEvent.pointerDown(select, { button: 0, ctrlKey: false });
+    fireEvent.click(select);
+    const leoOption = await screen.findByRole('option', { name: 'Leo' });
+    fireEvent.pointerDown(leoOption, { button: 0, ctrlKey: false });
+    fireEvent.click(leoOption);
     fireEvent.click(screen.getByText('Assign'));
 
     await waitFor(() =>
@@ -448,7 +453,7 @@ describe('Boards page management', () => {
 
     fireEvent.click(screen.getByLabelText('Select All'));
     fireEvent.click(screen.getByRole('button', { name: /Delete Selected/ }));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     fireEvent.click(within(dialog).getByText('Delete'));
 
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/boards/1'));
@@ -551,7 +556,11 @@ describe('Boards page management', () => {
 
     fireEvent.click(screen.getByLabelText('Assign to student'));
     const select = await screen.findByRole('combobox');
-    fireEvent.change(select, { target: { value: '20' } });
+    fireEvent.pointerDown(select, { button: 0, ctrlKey: false });
+    fireEvent.click(select);
+    const leoOption = await screen.findByRole('option', { name: 'Leo' });
+    fireEvent.pointerDown(leoOption, { button: 0, ctrlKey: false });
+    fireEvent.click(leoOption);
     fireEvent.click(screen.getByText('Assign'));
 
     expect(await screen.findByText('Failed to assign board')).toBeInTheDocument();
@@ -584,15 +593,15 @@ describe('Boards page management', () => {
     await screen.findByText('Morning Routine');
 
     fireEvent.click(screen.getByLabelText('Delete'));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     fireEvent.click(within(dialog).getByText('Cancel'));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText('Select All'));
     fireEvent.click(screen.getByRole('button', { name: /Delete Selected/ }));
-    const bulkDialog = await screen.findByRole('dialog');
+    const bulkDialog = await screen.findByRole('alertdialog');
     fireEvent.click(within(bulkDialog).getByText('Cancel'));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 
   it('unselects all boards and hides the bulk delete action', async () => {

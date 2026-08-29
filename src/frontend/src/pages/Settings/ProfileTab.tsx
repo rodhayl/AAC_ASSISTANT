@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
 import { useAutoHide } from '../../hooks/useAutoHide';
 import api, { extractError } from '../../lib/api';
+import { Button } from '../../components/ui/button';
 
 export function ProfileTab() {
   const user = useAuthStore(state => state.user);
@@ -73,16 +74,16 @@ export function ProfileTab() {
               <User className="h-8 w-8 text-indigo-600" />
             </div>
             <div>
-              <h2 id="settings-profile-heading" className="text-xl font-bold text-gray-900">
+              <h2 id="settings-profile-heading" className="text-xl font-bold text-gray-900 dark:text-gray-100">
                 {user?.display_name}
               </h2>
-              <p className="text-gray-500 capitalize">{user?.user_type}</p>
+              <p className="text-gray-500 capitalize dark:text-gray-400">{user?.user_type}</p>
             </div>
           </div>
           {!editingProfile ? (
             <button
               onClick={() => setEditingProfile(true)}
-              className="flex items-center text-indigo-600 hover:text-indigo-700"
+              className="flex items-center text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
             >
               <Edit2 className="w-4 h-4 mr-1" />
               {t('profile.edit')}
@@ -95,14 +96,10 @@ export function ProfileTab() {
               >
                 {t('profile.cancel')}
               </button>
-              <button
-                onClick={handleSaveProfile}
-                disabled={profileSaving}
-                className="flex items-center px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
-              >
+              <Button onClick={handleSaveProfile} disabled={profileSaving} className="flex items-center" >
                 <Save className="w-4 h-4 mr-1" />
                 {profileSaving ? t('security.saving') : t('profile.save')}
-              </button>
+              </Button>
             </div>
           )}
         </div>
@@ -119,7 +116,7 @@ export function ProfileTab() {
       </div>
       <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label htmlFor="profile-username" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="profile-username" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             {t('profile.username')}
           </label>
           <input
@@ -133,7 +130,7 @@ export function ProfileTab() {
           />
         </div>
         <div className="md:col-span-2">
-          <label htmlFor="profile-display-name" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="profile-display-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             {t('profile.displayName')}
           </label>
           <input
@@ -144,13 +141,13 @@ export function ProfileTab() {
             onChange={(event) => setProfileForm((prev) => ({ ...prev, display_name: event.target.value }))}
             disabled={!editingProfile}
             autoComplete="name"
-            className={`w-full px-3 py-2 border border-gray-300 rounded-lg ${
-              !editingProfile ? 'bg-gray-50 text-gray-500' : 'bg-white'
+            className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg ${
+              !editingProfile ? 'bg-gray-50 text-gray-500 dark:bg-gray-700 dark:text-gray-300' : 'bg-white dark:bg-gray-800'
             }`}
           />
         </div>
         <div className="md:col-span-2">
-          <label htmlFor="profile-email" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="profile-email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             {t('profile.email')}
           </label>
           <input
@@ -162,8 +159,8 @@ export function ProfileTab() {
             disabled={!editingProfile}
             autoComplete="email"
             placeholder={editingProfile ? t('profile.emailPlaceholder') : t('profile.noEmail')}
-            className={`w-full px-3 py-2 border border-gray-300 rounded-lg ${
-              !editingProfile ? 'bg-gray-50 text-gray-500' : 'bg-white'
+            className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg ${
+              !editingProfile ? 'bg-gray-50 text-gray-500 dark:bg-gray-700 dark:text-gray-300' : 'bg-white dark:bg-gray-800'
             }`}
           />
         </div>

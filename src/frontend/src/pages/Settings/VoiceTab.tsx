@@ -4,6 +4,7 @@ import { AlertCircle, Check, Circle, Loader2, Volume2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import api, { extractError } from '../../lib/api';
+import { Button } from '../../components/ui/button';
 import { useTTSStore, type WarmupStatus } from '../../store/ttsStore';
 import type { Preferences, VoiceStatus } from './types';
 
@@ -291,7 +292,7 @@ export function VoiceTab({
         <h3 id="settings-voice-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
           {t('preferences.tts')}
         </h3>
-        <p className="text-sm text-gray-500 mt-1">{t('preferences.ttsHelp')}</p>
+        <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">{t('preferences.ttsHelp')}</p>
         </div>
         {onSave && (
           <div className="flex shrink-0 items-center gap-3">
@@ -305,14 +306,13 @@ export function VoiceTab({
                 <AlertCircle className="mr-1 h-4 w-4" /> {prefsSaveError}
               </span>
             )}
-            <button
+            <Button
               type="button"
               onClick={() => { void onSave(); }}
-              disabled={prefsLoading}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              loading={prefsLoading}
             >
               {prefsLoading ? t('security.saving') : t('preferences.saveVoice')}
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -472,29 +472,29 @@ export function VoiceTab({
                     </div>
                   </div>
                   {!ok && item.key === 'stt' && voiceStatus?.actions?.install_voice?.supported ? (
-                    <button
+                    <Button
                       type="button"
+                      size="sm"
                       onClick={installVoiceDependencies}
                       disabled={installingVoiceDeps || voiceStatus.actions.install_voice.in_progress}
-                      className="rounded-md bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
                       title={item.help}
                     >
                       {installingVoiceDeps || voiceStatus.actions.install_voice.in_progress
                         ? t('ai.installing')
                         : t('ai.installAutomatically')}
-                    </button>
+                    </Button>
                   ) : !ok && item.key === 'tts_local' && voiceStatus?.actions?.install_tts?.supported ? (
-                    <button
+                    <Button
                       type="button"
+                      size="sm"
                       onClick={installTTS}
                       disabled={installingVoiceDeps || voiceStatus.actions.install_tts.in_progress}
-                      className="rounded-md bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
                       title={item.help}
                     >
                       {installingVoiceDeps || voiceStatus.actions.install_tts.in_progress
                         ? t('ai.installing')
                         : t('ai.installAutomatically')}
-                    </button>
+                    </Button>
                   ) : (
                     <a
                       href={item.link}

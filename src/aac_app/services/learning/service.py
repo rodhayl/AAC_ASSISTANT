@@ -217,6 +217,6 @@ class LearningCompanionService(
                 )
                 if settings and settings.ui_language:
                     return settings.ui_language
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to read user language for user {}: {}", user_id, exc)
         return "es"

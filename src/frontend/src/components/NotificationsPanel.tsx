@@ -39,7 +39,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
             <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{displayTitle(n)}</span>
             <span className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{displayMessage(n)}</span>
             {n.type && (
-              <span className="text-xs text-gray-500 dark:text-gray-400 mt-1 capitalize">{n.type}</span>
+              <span className="text-xs text-gray-600 dark:text-gray-400 mt-1 capitalize">{n.type}</span>
             )}
           </button>
         ))}

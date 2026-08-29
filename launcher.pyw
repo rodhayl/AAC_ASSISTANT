@@ -38,10 +38,12 @@ def _startup_log_directories() -> list[Path]:
         from src import config
 
         add_candidate(config.RUNTIME_ROOT / "logs")
-    except Exception:
+    except Exception as exc:
         # The config import may be the original startup failure. Do not use the
         # read-only Program Files directory as the first fallback.
-        pass
+        sys.stderr.write(
+            f"Failed to import configuration while resolving log directories: {exc}\n"
+        )
 
     appdata = os.environ.get("APPDATA")
     if appdata:

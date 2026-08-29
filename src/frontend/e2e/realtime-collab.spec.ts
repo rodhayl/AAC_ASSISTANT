@@ -73,7 +73,9 @@ test.describe('Realtime board collaboration', () => {
 
       // 3. The admin drags the symbol from cell (0,0) onto cell (1,1).
       const source = page.locator('.grid').locator('div.group').first();
-      const target = page.getByRole('gridcell', { name: 'Cell 1, 1' });
+      // Accessible name is localized ("Cell"/"Celda"), so match both.
+      const cellLabel = (x: number, y: number) => new RegExp(`(?:Cell|Celda) ${x}, ${y}$`);
+      const target = page.getByRole('gridcell', { name: cellLabel(1, 1) });
       const sourceBox = await source.boundingBox();
       const targetBox = await target.boundingBox();
       if (!sourceBox || !targetBox) throw new Error('missing bounding boxes for drag');
@@ -84,14 +86,14 @@ test.describe('Realtime board collaboration', () => {
 
       // 4. The admin's own editor reflects the move locally.
       await expect(target.locator('div.group')).toBeVisible({ timeout: 10000 });
-      await expect(page.getByRole('gridcell', { name: 'Cell 0, 0' }).locator('div.group')).toHaveCount(0, { timeout: 10000 });
+      await expect(page.getByRole('gridcell', { name: cellLabel(0, 0) }).locator('div.group')).toHaveCount(0, { timeout: 10000 });
 
       // 5. The student's editor receives the move over the WebSocket and
       // repositions the symbol without a reload.
-      const studentTarget = studentPage.getByRole('gridcell', { name: 'Cell 1, 1' });
+      const studentTarget = studentPage.getByRole('gridcell', { name: cellLabel(1, 1) });
       await expect(studentTarget.locator('div.group')).toBeVisible({ timeout: 15000 });
       await expect(
-        studentPage.getByRole('gridcell', { name: 'Cell 0, 0' }).locator('div.group'),
+        studentPage.getByRole('gridcell', { name: cellLabel(0, 0) }).locator('div.group'),
       ).toHaveCount(0, { timeout: 10000 });
 
       // Sanity: both collaboration sockets remained open throughout.

@@ -59,26 +59,26 @@ export function AiProviderFields({
       {provider === 'ollama' && (
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">{t('ai.ollamaUrl')}</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('ai.ollamaUrl')}</label>
             <input
               id="primary-ollama-base-url"
               name="primary_ollama_base_url"
               type="text"
               value={ollamaBaseUrl}
               onChange={(event) => setAiOverride((prev) => ({ ...prev, ollama_base_url: event.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               placeholder={config.OLLAMA_BASE_URL}
               aria-label={t('ai.ollamaUrl')}
             />
           </div>
           <div className="relative">
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">{t('ai.models')}</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{t('ai.models')}</label>
               <button
                 type="button"
                 onClick={onFetchModels}
                 disabled={loading}
-                className="flex items-center space-x-1 text-indigo-600 hover:text-indigo-700 text-sm font-medium disabled:opacity-50"
+                className="flex items-center space-x-1 text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 text-sm font-medium disabled:opacity-50"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 <span>{t('ai.refresh')}</span>
@@ -104,11 +104,11 @@ export function AiProviderFields({
               }}
               onFocus={() => setModelSearchOpen(true)}
               placeholder={t('ai.searchModels')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               aria-label={t('ai.models')}
             />
             {modelSearchOpen && ollamaModels.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                 {ollamaModels
                   .filter((model) => model.name.toLowerCase().includes(modelSearchQuery.toLowerCase()))
                   .map((model) => (
@@ -120,7 +120,7 @@ export function AiProviderFields({
                         setModelSearchQuery('');
                         setModelSearchOpen(false);
                       }}
-                      className="w-full text-left px-4 py-2 hover:bg-indigo-50 transition-colors"
+                      className="w-full text-left px-4 py-2 hover:bg-indigo-50 dark:hover:bg-gray-700 transition-colors"
                     >
                       {model.name}
                     </button>
@@ -128,7 +128,7 @@ export function AiProviderFields({
               </div>
             )}
             {selectedModel && !modelSearchQuery && (
-              <div className="mt-1 text-sm text-gray-600">{t('ai.selected')} {selectedModel}</div>
+              <div className="mt-1 text-sm text-gray-600 dark:text-gray-300">{t('ai.selected')} {selectedModel}</div>
             )}
           </div>
         </div>
@@ -137,7 +137,7 @@ export function AiProviderFields({
       {provider === 'openrouter' && (
         <div className="space-y-4">
           <div>
-            <label htmlFor="primary-openrouter-api-key" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="primary-openrouter-api-key" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               {t('ai.apiKey')}
             </label>
             <input
@@ -148,27 +148,27 @@ export function AiProviderFields({
               onChange={(event) =>
                 setAiOverride((prev) => ({ ...prev, openrouter_api_key: event.target.value }))
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               placeholder="sk-or-..."
               aria-label={t('ai.apiKey')}
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               {t('ai.getKey')}{' '}
-              <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
+              <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">
                 {t('ai.keysUrl')}
               </a>
             </p>
           </div>
           <div className="relative">
             <div className="flex items-center justify-between mb-2">
-              <label htmlFor="primary-openrouter-model-search" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="primary-openrouter-model-search" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                 {t('ai.models')}
               </label>
               <button
                 type="button"
                 onClick={onFetchModels}
                 disabled={loading || !openRouterApiKey}
-                className="flex items-center space-x-1 text-indigo-600 hover:text-indigo-700 text-sm font-medium disabled:opacity-50"
+                className="flex items-center space-x-1 text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 text-sm font-medium disabled:opacity-50"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 <span>{t('ai.refresh')}</span>
@@ -194,11 +194,11 @@ export function AiProviderFields({
               }}
               onFocus={() => setModelSearchOpen(true)}
               placeholder={t('ai.searchModels')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               aria-label={t('ai.models')}
             />
             {modelSearchOpen && openRouterModels.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                 {openRouterModels
                   .filter(
                     (model) =>
@@ -214,16 +214,16 @@ export function AiProviderFields({
                         setModelSearchQuery('');
                         setModelSearchOpen(false);
                       }}
-                      className="w-full text-left px-4 py-2 hover:bg-indigo-50 transition-colors"
+                      className="w-full text-left px-4 py-2 hover:bg-indigo-50 dark:hover:bg-gray-700 transition-colors"
                     >
                       <div className="font-medium">{model.name}</div>
-                      <div className="text-xs text-gray-500">{model.id}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{model.id}</div>
                     </button>
                   ))}
               </div>
             )}
             {selectedModel && !modelSearchQuery && (
-              <div className="mt-1 text-sm text-gray-600">{t('ai.selected')} {selectedModel}</div>
+              <div className="mt-1 text-sm text-gray-600 dark:text-gray-300">{t('ai.selected')} {selectedModel}</div>
             )}
           </div>
         </div>
@@ -232,7 +232,7 @@ export function AiProviderFields({
       {provider === 'groq' && (
         <div className="space-y-4">
           <div>
-            <label htmlFor="primary-groq-api-key" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="primary-groq-api-key" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               {t('ai.groqApiKey')}
             </label>
             <input
@@ -243,27 +243,27 @@ export function AiProviderFields({
               onChange={(event) =>
                 setAiOverride((prev) => ({ ...prev, groq_api_key: event.target.value }))
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               placeholder="gsk_..."
               aria-label={t('ai.groqApiKey')}
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               {t('ai.getKey')}{' '}
-              <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
+              <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">
                 {t('ai.groqKeysUrl')}
               </a>
             </p>
           </div>
           <div className="relative">
             <div className="flex items-center justify-between mb-2">
-              <label htmlFor="primary-groq-model-search" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="primary-groq-model-search" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                 {t('ai.models')}
               </label>
               <button
                 type="button"
                 onClick={onFetchModels}
                 disabled={loading || !groqApiKey}
-                className="flex items-center space-x-1 text-indigo-600 hover:text-indigo-700 text-sm font-medium disabled:opacity-50"
+                className="flex items-center space-x-1 text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 text-sm font-medium disabled:opacity-50"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 <span>{t('ai.refresh')}</span>
@@ -289,11 +289,11 @@ export function AiProviderFields({
               }}
               onFocus={() => setModelSearchOpen(true)}
               placeholder={t('ai.searchModels')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               aria-label={t('ai.models')}
             />
             {modelSearchOpen && groqModels.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                 {groqModels
                   .filter(
                     (model) =>
@@ -309,16 +309,16 @@ export function AiProviderFields({
                         setModelSearchQuery('');
                         setModelSearchOpen(false);
                       }}
-                      className="w-full text-left px-4 py-2 hover:bg-indigo-50 transition-colors"
+                      className="w-full text-left px-4 py-2 hover:bg-indigo-50 dark:hover:bg-gray-700 transition-colors"
                     >
                       <div className="font-medium">{model.name}</div>
-                      <div className="text-xs text-gray-500">{model.id}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{model.id}</div>
                     </button>
                   ))}
               </div>
             )}
             {groqModel && !modelSearchQuery && (
-              <div className="mt-1 text-sm text-gray-600">{t('ai.selected')} {groqModel}</div>
+              <div className="mt-1 text-sm text-gray-600 dark:text-gray-300">{t('ai.selected')} {groqModel}</div>
             )}
           </div>
         </div>
@@ -327,39 +327,39 @@ export function AiProviderFields({
       {provider === 'lmstudio' && (
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">{t('ai.lmstudioUrl')}</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('ai.lmstudioUrl')}</label>
             <input
               id="primary-lmstudio-base-url"
               name="primary_lmstudio_base_url"
               type="text"
               value={lmStudioBaseUrl}
               onChange={(event) => setAiOverride((prev) => ({ ...prev, lmstudio_base_url: event.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               placeholder={config.LMSTUDIO_BASE_URL}
               aria-label={t('ai.lmstudioUrl')}
             />
-            <p className="text-xs text-gray-500 mt-1">{t('ai.lmstudioDefault', { url: config.LMSTUDIO_BASE_URL })}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{t('ai.lmstudioDefault', { url: config.LMSTUDIO_BASE_URL })}</p>
           </div>
           <div className="relative">
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">{t('ai.models')}</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{t('ai.models')}</label>
               <button
                 type="button"
                 onClick={onFetchModels}
                 disabled={loading}
-                className="flex items-center space-x-1 text-indigo-600 hover:text-indigo-700 text-sm font-medium disabled:opacity-50"
+                className="flex items-center space-x-1 text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 text-sm font-medium disabled:opacity-50"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 <span>{t('ai.refresh')}</span>
               </button>
             </div>
-            <label className="block text-sm font-medium text-gray-700">{t('ai.selectModel')}</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{t('ai.selectModel')}</label>
             <select
               id="primary-lmstudio-model"
               name="primary_lmstudio_model"
               value={lmStudioModel}
               onChange={(event) => setAiOverride((prev) => ({ ...prev, lmstudio_model: event.target.value }))}
-              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
               aria-label={t('ai.selectModel')}
             >
               <option value="">{t('ai.selectModelPlaceholder')}</option>
@@ -379,7 +379,7 @@ export function AiProviderFields({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
         <div>
-          <label htmlFor="primary-max-tokens" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="primary-max-tokens" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             {t('ai.maxTokens')}
           </label>
           <input
@@ -395,22 +395,22 @@ export function AiProviderFields({
             aria-label={t('ai.maxTokens')}
           />
           <div className="mt-1 flex flex-wrap gap-2 text-xs">
-            <span className="text-gray-500 mr-1">{t('ai.presets')}</span>
+            <span className="text-gray-500 mr-1 dark:text-gray-400">{t('ai.presets')}</span>
             {[256, 512, 1024].map((value, index) => (
               <button
                 key={value}
                 type="button"
                 onClick={() => setAiOverride((prev) => ({ ...prev, max_tokens: value }))}
-                className="px-2 py-1 rounded border border-gray-300 hover:border-indigo-500 hover:text-indigo-600"
+                className="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:border-indigo-500 hover:text-indigo-600 dark:hover:border-indigo-400 dark:hover:text-indigo-300"
               >
                 {index === 0 ? t('ai.short') : index === 1 ? t('ai.medium') : t('ai.long')}
               </button>
             ))}
           </div>
-          <p className="mt-1 text-xs text-gray-500">{t('ai.maxTokensHelp')}</p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t('ai.maxTokensHelp')}</p>
         </div>
         <div>
-          <label htmlFor="primary-temperature" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="primary-temperature" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             {t('ai.temperature')}
           </label>
           <input
@@ -425,7 +425,7 @@ export function AiProviderFields({
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
             aria-label={t('ai.temperature')}
           />
-          <p className="mt-1 text-xs text-gray-500">{t('ai.temperatureHelp')}</p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t('ai.temperatureHelp')}</p>
         </div>
       </div>
     </>

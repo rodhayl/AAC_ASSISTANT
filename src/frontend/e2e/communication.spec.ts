@@ -120,11 +120,14 @@ test.describe('Communication', () => {
     await grid.getByRole('button', { name: symbolLabel(second) }).click();
     await expect(preview).toHaveText(`${first} ${second}`);
 
-    // The remove ("X") button is the only button nested inside the strip that
-    // is not one of the named controls. It is scoped to the chip showing the
-    // symbol label, so remove the second symbol and confirm only the first remains.
+    // The remove ("X") button is the only button nested inside the chip that
+    // is not one of the named controls. The chip carries a stable testid
+    // (sentence-chip), so the locator does not depend on Tailwind class
+    // names. The chip's text also carries the image-fallback copy, so match
+    // the label as a substring rather than an anchored pattern. Remove the
+    // second symbol and confirm only the first remains.
     const chip = page.getByTestId('sentence-strip')
-      .locator('div.flex-shrink-0', { hasText: new RegExp(`^${second}$`) })
+      .locator('[data-testid="sentence-chip"]', { hasText: second })
       .first();
     await chip.hover();
     await chip.locator('button').first().click();

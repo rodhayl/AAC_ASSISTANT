@@ -46,8 +46,10 @@ test.describe('Advanced Scenarios', () => {
 
   test('should view notifications', async ({ page }) => {
     await page.goto('/');
-    // Click bell icon
-    await page.getByLabel(/notifications|notificaciones/i).click();
+    // Click bell icon. The bell button is the only aria-label match that is a
+    // button — sonner's Toaster also renders a live region labeled
+    // "Notifications alt+T", which made the bare getByLabel ambiguous.
+    await page.getByRole('button', { name: /notifications|notificaciones/i }).click();
 
     // Verify panel
     await expect(page.getByRole('button', { name: /mark all|marcar/i })).toBeVisible();
@@ -56,7 +58,7 @@ test.describe('Advanced Scenarios', () => {
   test('receives a notification via SSE without reload', async ({ page, playwright }) => {
     // Open the panel; the Navbar's SSE stream subscribes on mount.
     await page.goto('/');
-    await page.getByLabel(/notifications|notificaciones/i).click();
+    await page.getByRole('button', { name: /notifications|notificaciones/i }).click();
     await expect(page.getByRole('button', { name: /mark all|marcar/i })).toBeVisible();
 
     // The admin's own token lives in localStorage (zustand persist), not a
@@ -93,7 +95,10 @@ test.describe('Advanced Scenarios', () => {
 
   test('should handle 404', async ({ page }) => {
     await page.goto('/non-existent-page');
-    await expect(page.getByText(/page not found/i)).toBeVisible();
+    // The 404 copy is localized (en: "Page Not Found", es: "Página no encontrada").
+    await expect(
+      page.getByText(/page not found|p.*gina no encontrada|no encontrado/i),
+    ).toBeVisible();
   });
 
   test('should handle offline conflicts', async ({ page }) => {

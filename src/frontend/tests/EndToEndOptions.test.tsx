@@ -76,7 +76,9 @@ vi.mock('../src/store/ttsStore', () => ({
 // Mock Theme
 const mockThemeState = {
   darkMode: false,
+  highContrast: false,
   setDarkMode: vi.fn(),
+  setHighContrast: vi.fn(),
 };
 vi.mock('../src/store/themeStore', () => ({
   useThemeStore: Object.assign(() => mockThemeState, { getState: () => mockThemeState }),

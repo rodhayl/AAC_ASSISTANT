@@ -175,7 +175,7 @@ async def read_image_upload(
 
 
 def remove_owned_upload(public_path: str | None, uploads_dir: Path) -> None:
-    """Delete a file only when its public path resolves inside uploads_dir."""
+    """Delete a file only when its public path resolves inside the target upload subdirectory (e.g. config.UPLOADS_DIR / 'symbols')."""
     if not public_path or not public_path.startswith("/uploads/"):
         return
     relative = public_path.removeprefix("/uploads/")

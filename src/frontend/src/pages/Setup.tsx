@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/authStore';
 import { User, Lock, Mail, Shield, Check, X, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import api from '../lib/api';
+import { Button } from '../components/ui/button';
 
 export function Setup() {
   const [username, setUsername] = useState('admin1');
@@ -211,15 +212,15 @@ export function Setup() {
           <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg space-y-1 text-xs text-gray-600 dark:text-gray-300">
             <p className="font-semibold text-gray-700 dark:text-gray-200 mb-1">{t('requirements.title')}</p>
             <div className="flex items-center gap-1.5">
-              {hasMinLength ? <Check className="w-3.5 h-3.5 text-green-500" /> : <X className="w-3.5 h-3.5 text-gray-400" />}
+              {hasMinLength ? <Check className="w-3.5 h-3.5 text-green-500" /> : <X className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />}
               <span>{t('requirements.minChars')}</span>
             </div>
             <div className="flex items-center gap-1.5">
-              {hasUpper && hasLower ? <Check className="w-3.5 h-3.5 text-green-500" /> : <X className="w-3.5 h-3.5 text-gray-400" />}
+              {hasUpper && hasLower ? <Check className="w-3.5 h-3.5 text-green-500" /> : <X className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />}
               <span>{t('requirements.upperLower')}</span>
             </div>
             <div className="flex items-center gap-1.5">
-              {hasNumber ? <Check className="w-3.5 h-3.5 text-green-500" /> : <X className="w-3.5 h-3.5 text-gray-400" />}
+              {hasNumber ? <Check className="w-3.5 h-3.5 text-green-500" /> : <X className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />}
               <span>{t('requirements.number')}</span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -234,17 +235,18 @@ export function Setup() {
             )}
           </div>
 
-          <button
+          <Button
             type="submit"
-            disabled={isLoading || !hasMinLength || !hasUpper || !hasLower || !hasNumber || !notDefault || !passwordsMatch}
-            className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            loading={isLoading}
+            disabled={!hasMinLength || !hasUpper || !hasLower || !hasNumber || !notDefault || !passwordsMatch}
+            className="w-full shadow-sm"
           >
             {isLoading ? (
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
               t('submit')
             )}
-          </button>
+          </Button>
 
           <div className="text-center pt-2">
             <a href="/login" className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">

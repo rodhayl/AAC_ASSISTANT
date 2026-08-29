@@ -89,7 +89,7 @@ export function LearningQuestionCard({
                 'bg-white dark:bg-gray-800 border-purple-300 dark:border-purple-700 text-gray-800 dark:text-gray-100 hover:bg-purple-100 dark:hover:bg-purple-900/40 hover:border-purple-400';
             } else if (isCorrectChoice) {
               buttonClass +=
-                'bg-green-600 dark:bg-green-500 text-white border-green-600 dark:border-green-500 font-medium';
+                'bg-green-700 dark:bg-green-700 text-white border-green-700 dark:border-green-700 font-medium';
             } else if (isPicked) {
               buttonClass +=
                 'bg-red-600 dark:bg-red-500 text-white border-red-600 dark:border-red-500';

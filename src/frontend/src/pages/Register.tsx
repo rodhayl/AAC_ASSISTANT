@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router'
 import { useAuthStore } from '../store/authStore'
 import { User, Lock, IdCard, CheckCircle2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Button } from '../components/ui/button'
 
 export function Register() {
   const [username, setUsername] = useState('')
@@ -103,14 +104,14 @@ export function Register() {
             {t('teacherNote')}
           </p>
 
-          <button
+          <Button
             type="submit"
-            disabled={isLoading}
-            className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+            loading={isLoading}
+            className="w-full justify-center shadow-sm"
           >
-            <CheckCircle2 className="w-5 h-5 mr-2" />
+            <CheckCircle2 />
             {t('create')}
-          </button>
+          </Button>
         </form>
 
         <div className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">

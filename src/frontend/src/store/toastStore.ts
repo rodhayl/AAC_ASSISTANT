@@ -1,31 +1,29 @@
 import { create } from 'zustand';
+import { toast } from 'sonner';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
-export interface Toast {
-  id: string;
-  message: string;
-  type: ToastType;
-  duration?: number;
-}
+const DEFAULT_DURATION_MS = 3000;
 
 interface ToastState {
-  toasts: Toast[];
   addToast: (message: string, type?: ToastType, duration?: number) => void;
-  removeToast: (id: string) => void;
 }
 
-export const useToastStore = create<ToastState>((set) => ({
-  toasts: [],
-  addToast: (message, type = 'info', duration = 3000) => {
-    const id = Math.random().toString(36).substring(2, 9);
-    set((state) => ({ toasts: [...state.toasts, { id, message, type, duration }] }));
-    
-    if (duration > 0) {
-      setTimeout(() => {
-        set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }));
-      }, duration);
-    }
+/**
+ * Thin facade over sonner so existing call sites keep `addToast(message, type)`.
+ * Rendering, stacking, and dismissal are owned by sonner (mounted as
+ * <AppToaster /> in App); the store only maps our `ToastType`/sticky-duration
+ * contract onto sonner's API (`duration: Infinity` = sticky toast).
+ */
+export const useToastStore = create<ToastState>(() => ({
+  addToast: (message, type = 'info', duration = DEFAULT_DURATION_MS) => {
+    const emit = {
+      success: toast.success,
+      error: toast.error,
+      warning: toast.warning,
+      info: toast.info,
+    }[type];
+
+    emit(message, { duration: duration > 0 ? duration : Infinity });
   },
-  removeToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
 }));

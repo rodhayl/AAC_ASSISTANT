@@ -7,6 +7,7 @@ import { test, expect } from '@playwright/test';
 const KNOWN_SOURCES = new Set([
   'history',
   'general_model',
+  'popular',
   'fallback',
   'standard_library',
   'board_personal',
@@ -19,9 +20,41 @@ const KNOWN_SOURCES = new Set([
 test.describe('Prediction tiers', () => {
   test.use({ storageState: 'playwright/.auth/student.json' });
 
+  test.beforeEach(async ({ page }) => {
+    // Only the LLM-backed question generation is mocked. Boards, learning
+    // modes, session persistence, and predictions all hit the real backend.
+    await page.route('**/api/learning/*/ask', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          question_id: 1,
+          question_text: 'Mock question',
+          choices: ['Choice A', 'Choice B', 'Choice C'],
+          correct_answer_index: 0,
+        }),
+      });
+    });
+  });
+
   test('typing in learning produces predictions in the smartbar', async ({ page }) => {
     await page.goto('/learning');
 
+    // Create this spec's own session instead of relying on one planted by
+    // another spec or by manual setup.
+    const startButton = page.getByTestId('learning-session-start');
+    await expect(startButton).toBeVisible({ timeout: 30000 });
+    const startRequest = page.waitForRequest(
+      (request) =>
+        request.url().includes('/api/learning/start') && request.method() === 'POST',
+    );
+    await startButton.click();
+    await startRequest;
+    await expect(page.getByTestId('learning-session-active')).toBeVisible();
+
+    // The auto-ask populates the first question; the free-text input becomes
+    // interactive once the session is active.
     const input = page.locator('#learning-text-input');
     await expect(input).toBeVisible({ timeout: 30000 });
 

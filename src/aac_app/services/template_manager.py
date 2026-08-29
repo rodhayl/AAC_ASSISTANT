@@ -55,34 +55,6 @@ class TemplateManager:
 
         logger.info(f"TemplateManager initialized with {len(self._cache)} templates")
 
-    def _get_hardcoded_default(self) -> dict:
-        """Return the legacy template shape for migration tooling only."""
-        return {
-            "name": "Default Companion",
-            "description": "Balanced, friendly learning companion",
-            "version": "1.0",
-            "communication_style": {
-                "tone": "encouraging",
-                "complexity": "moderate",
-                "sentence_length": "medium",
-                "use_emojis": False,
-                "avoid_idioms": False,
-                "avoid_sarcasm": True,
-            },
-            "safety": {
-                "content_filter_level": "standard",
-                "forbidden_topics": [],
-                "trigger_words": [],
-                "max_response_length": 150,
-            },
-            "companion": {
-                "name": None,
-                "role": "learning companion",
-                "personality": ["friendly", "patient", "encouraging"],
-            },
-            "custom_instructions": "Be warm, patient, and encouraging.",
-        }
-
     def list_templates(self) -> list[dict[str, str]]:
         """
         List all available templates with their metadata.

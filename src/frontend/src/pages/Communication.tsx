@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/authStore';
+import { Button } from '../components/ui/button';
 import { useToastStore } from '../store/toastStore';
 import { BoardsAndTopicsSidebar } from '../components/learning/BoardsAndTopicsSidebar';
 
@@ -159,11 +160,16 @@ export function Communication() {
     }
   }, [activeBoardId, fetchBoard, setSearchParams, searchParams]);
 
-  // TTS Status listener
+  // TTS Status listener. The TTS queue is a module singleton that may already
+  // be speaking when this page mounts (e.g. a symbol was tapped just before
+  // navigating away and back). Initialize the local state from the queue's
+  // current status and reset it together with the queue when a session closes
+  // so `isSpeaking` can never be left stuck on `true`.
   useEffect(() => {
     const updateStatus = (status: 'idle' | 'speaking') => {
       setIsSpeaking(status === 'speaking');
     };
+    setIsSpeaking(tts.getStatus() === 'speaking');
     const unsubscribe = tts.onStatusChange(updateStatus);
     return () => unsubscribe();
   }, []);
@@ -443,7 +449,7 @@ export function Communication() {
             </div>
 
             <div className="relative w-full md:w-64">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 dark:text-gray-500" />
               <input
                 id="board-search"
                 name="board_search"
@@ -504,7 +510,7 @@ export function Communication() {
                       }`}
                   >
                     {!playable && (
-                      <div className="absolute top-4 right-4 text-amber-600 dark:text-amber-400 z-10 flex flex-col items-end gap-1" title={t('common:boardTooEmpty')}>
+                      <div className="absolute top-4 right-4 text-amber-700 dark:text-amber-400 z-10 flex flex-col items-end gap-1" title={t('common:boardTooEmpty')}>
                         <Lock className="w-5 h-5 drop-shadow-sm" />
                         <span className="text-xs font-bold bg-amber-100 dark:bg-amber-900/60 px-2 py-0.5 rounded shadow-sm border border-amber-200 dark:border-amber-800/50">
                           {progress}%
@@ -530,7 +536,7 @@ export function Communication() {
 
                     {!playable && (
                       <div className="mt-auto mb-4">
-                        <p className="text-xs text-amber-600 dark:text-amber-500 font-bold mb-2 flex items-center gap-1">
+                        <p className="text-xs text-amber-700 dark:text-amber-400 font-bold mb-2 flex items-center gap-1">
                           <PlusCircle className="w-3 h-3" />
                           {needed === 1
                             ? t('common:addOneMoreSymbol')
@@ -546,7 +552,7 @@ export function Communication() {
                     )}
 
                     <div className="mt-auto pt-4 border-t border-gray-100 dark:border-gray-700 w-full flex justify-between items-center">
-                      <span className={`text-sm font-medium flex items-center ${playable ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>
+                      <span className={`text-sm font-medium flex items-center ${playable ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400'}`}>
                         {playable ? t('common:openBoard') : t('common:boardLocked')}
                         {playable && <ArrowLeft className="w-4 h-4 ml-1 rotate-180" />}
                       </span>
@@ -594,18 +600,17 @@ export function Communication() {
             </div>
             <p className="text-sm text-gray-600 dark:text-gray-300 mb-6 break-words">{boardError}</p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <button
+              <Button
                 onClick={() => fetchBoard(activeBoardId, true)}
-                className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors"
               >
                 {t('common:retry')}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="outline"
                 onClick={handleHome}
-                className="px-5 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
               >
                 {t('common:backToBoards')}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

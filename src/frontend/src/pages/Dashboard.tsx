@@ -33,7 +33,7 @@ export function Dashboard() {
     <div className="space-y-8">
       <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-8 text-white">
         <h1 className="text-3xl font-bold mb-2">{t('hero.welcome', { name: user?.display_name })}</h1>
-        <p className="text-indigo-100">{t('hero.subtitle')}</p>
+        <p className="text-white">{t('hero.subtitle')}</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

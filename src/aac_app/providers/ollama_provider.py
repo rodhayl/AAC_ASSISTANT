@@ -34,7 +34,8 @@ class OllamaProvider(BaseLLMProvider):
             import os
 
             env_model = os.getenv("OLLAMA_MODEL")
-        except Exception:
+        except Exception as exc:
+            logger.debug("Could not read OLLAMA_MODEL: {}", exc)
             env_model = None
         self._configured_model = model or ""
         self.recommended_model = (
@@ -186,7 +187,3 @@ class OllamaProvider(BaseLLMProvider):
         except Exception as e:
             logger.debug(f"Ollama not available: {e}")
             return False
-
-    def close(self):
-        """Backward-compatible synchronous close alias."""
-        self.close_sync()

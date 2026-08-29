@@ -419,12 +419,14 @@ test.describe('LLM Integration (Mocked)', () => {
         });
     });
 
-    // Mock Start Session (needed for Ask AI)
+    // Mock Start Session (needed for Ask AI). Include board_id so the
+    // Communication page's board-mismatch effect doesn't resetSession()
+    // and drop the in-flight answer.
     await page.route(/\/api\/learning\/start/, async route => {
          await route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify({ id: 123, session_id: 123, success: true })
+            body: JSON.stringify({ id: 123, session_id: 123, success: true, board_id: 1 })
         });
     });
 

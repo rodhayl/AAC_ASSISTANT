@@ -1,9 +1,22 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { X, Save, Sparkles, AlertTriangle, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import api, { extractError } from '../../lib/api';
 import type { User, GuardianProfile, TemplateInfo } from '../../types';
-import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
+import { Button } from '../ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../ui/select';
 
 interface GuardianProfileModalProps {
     isOpen: boolean;
@@ -97,28 +110,22 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
         }
     };
 
-    const dialogRef = useRef<HTMLDivElement | null>(null);
-    useModalFocusTrap(dialogRef, isOpen, onClose);
-
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" role="presentation">
-            <div
-                ref={dialogRef}
-                className="glass-card w-full max-w-md max-h-[90vh] overflow-y-auto"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="guardian-profile-title"
+        <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+            <DialogContent
+                showCloseButton={false}
+                className="max-w-md p-0 max-h-[90vh] overflow-hidden"
             >
                 {/* Header */}
-                <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-                    <h2 id="guardian-profile-title" className="text-xl font-bold flex items-center gap-2">
+                <DialogHeader className="flex-row items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                    <DialogTitle className="text-xl font-bold flex items-center gap-2">
                         <Sparkles className="w-5 h-5 text-indigo-500" />
                         {t('students:guardianProfile')}: {student?.display_name}
-                    </h2>
+                    </DialogTitle>
                     <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full" aria-label={t('common:close')}><X className="w-6 h-6" /></button>
-                </div>
+                </DialogHeader>
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-6">
@@ -144,16 +151,21 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium mb-1">{t('students:template')}</label>
-                                <select
+                                <Select
                                     value={selectedTemplate}
-                                    onChange={(e) => setSelectedTemplate(e.target.value)}
-                                    className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+                                    onValueChange={(value) => setSelectedTemplate(value ?? selectedTemplate)}
+                                    items={templates.map((tpl) => ({ value: tpl.name, label: tpl.display_name }))}
                                 >
-                                    {templates.map(t => (
-                                        <option key={t.name} value={t.name}>{t.display_name}</option>
-                                    ))}
-                                </select>
-                                <p className="text-xs text-gray-500 mt-1">
+                                    <SelectTrigger aria-label={t('students:template')} className="w-full">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {templates.map(tpl => (
+                                            <SelectItem key={tpl.name} value={tpl.name}>{tpl.display_name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                                     {templates.find(t => t.name === selectedTemplate)?.description}
                                 </p>
                             </div>
@@ -261,16 +273,12 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                     >
                         {t('students:cancel')}
                     </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={loading}
-                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
-                    >
+                    <Button onClick={handleSave} disabled={loading} className="flex items-center gap-2" >
                         <Save className="w-4 h-4" />
                         {t('save')}
-                    </button>
+                    </Button>
                 </div>
-            </div>
-        </div>
+            </DialogContent>
+        </Dialog>
     );
 }

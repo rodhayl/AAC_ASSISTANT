@@ -2,6 +2,7 @@ import { Bot, Edit, Grid as GridIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SymbolMessageEditor } from '../SymbolMessageEditor';
 import { SymbolImage } from '../common/SymbolImage';
+import { IconButton } from '../ui/icon-button';
 
 export interface LearningMessage {
   role: 'user' | 'assistant';
@@ -88,14 +89,14 @@ export function LearningMessageList({
                   <span>{message.role === 'user' ? t('messageRole.user') : t('messageRole.assistant')}</span>
                 </div>
                 {message.role === 'user' && isSymbolMessage && (
-                  <button
+                  <IconButton
+                    label={t('editSymbols')}
+                    aria-label={t('editSymbolMessage')}
                     onClick={() => onEditMessage(index)}
                     className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-white/20 rounded"
-                    title={t('editSymbols')}
-                    aria-label={t('editSymbolMessage')}
                   >
                     <Edit className="w-3 h-3" />
-                  </button>
+                  </IconButton>
                 )}
               </div>
 

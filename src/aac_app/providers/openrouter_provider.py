@@ -174,7 +174,3 @@ class OpenRouterProvider(BaseLLMProvider):
         except Exception as e:
             logger.error(f"Failed to get OpenRouter models: {e}")
             return {}
-
-    async def close(self):
-        """Backward-compatible async close alias."""
-        await self.close_async()

@@ -39,7 +39,12 @@ class ConnectionManager:
                 continue
             try:
                 await ws.send_json(message)
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "WebSocket send failed for board {}; disconnecting client: {}",
+                    board_id,
+                    exc,
+                )
                 self.disconnect(board_id, ws)
 
 

@@ -1,4 +1,3 @@
-from contextlib import nullcontext
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -100,30 +99,30 @@ def list_all_achievements(
             ),
         )
 
-    with nullcontext(db) as session:
-        achievements = (
-            session.query(Achievement)
-            .filter(Achievement.is_active)
-            .all()
+    session = db
+    achievements = (
+        session.query(Achievement)
+        .filter(Achievement.is_active)
+        .all()
+    )
+    return [
+        schemas.AchievementFullResponse(
+            id=a.id,
+            name=a.name,
+            description=a.description or "",
+            category=a.category or "general",
+            points=a.points or 10,
+            icon=a.icon or "🏆",
+            is_manual=a.is_manual if hasattr(a, 'is_manual') and a.is_manual else False,
+            created_by=a.created_by,
+            target_user_id=a.target_user_id if hasattr(a, 'target_user_id') else None,
+            is_active=a.is_active,
+            created_at=a.created_at,
+            criteria_type=a.criteria_type,
+            criteria_value=a.criteria_value,
         )
-        return [
-            schemas.AchievementFullResponse(
-                id=a.id,
-                name=a.name,
-                description=a.description or "",
-                category=a.category or "general",
-                points=a.points or 10,
-                icon=a.icon or "🏆",
-                is_manual=a.is_manual if hasattr(a, 'is_manual') and a.is_manual else False,
-                created_by=a.created_by,
-                target_user_id=a.target_user_id if hasattr(a, 'target_user_id') else None,
-                is_active=a.is_active,
-                created_at=a.created_at,
-                criteria_type=a.criteria_type,
-                criteria_value=a.criteria_value,
-            )
-            for a in achievements
-        ]
+        for a in achievements
+    ]
 
 
 @router.post("", response_model=schemas.AchievementFullResponse, status_code=201)
@@ -158,46 +157,46 @@ def create_achievement(
             db,
         )
 
-    with nullcontext(db) as session:
-        # If criteria is provided, it's not manual. If no criteria, it's manual.
-        has_criteria = (
-            data.criteria_type is not None and data.criteria_value is not None
-        )
+    session = db
+    # If criteria is provided, it's not manual. If no criteria, it's manual.
+    has_criteria = (
+        data.criteria_type is not None and data.criteria_value is not None
+    )
 
-        achievement = Achievement(
-            name=data.name,
-            description=data.description,
-            category=data.category,
-            points=data.points,
-            icon=data.icon,
-            created_by=current_user.id,
-            target_user_id=data.target_user_id,
-            is_manual=not has_criteria,
-            criteria_type=data.criteria_type,
-            criteria_value=data.criteria_value,
-            is_active=True,
-        )
-        session.add(achievement)
-        session.commit()
-        session.refresh(achievement)
+    achievement = Achievement(
+        name=data.name,
+        description=data.description,
+        category=data.category,
+        points=data.points,
+        icon=data.icon,
+        created_by=current_user.id,
+        target_user_id=data.target_user_id,
+        is_manual=not has_criteria,
+        criteria_type=data.criteria_type,
+        criteria_value=data.criteria_value,
+        is_active=True,
+    )
+    session.add(achievement)
+    session.commit()
+    session.refresh(achievement)
 
-        logger.info(f"Created custom achievement '{data.name}' by user {current_user.id}")
+    logger.info(f"Created custom achievement '{data.name}' by user {current_user.id}")
 
-        return schemas.AchievementFullResponse(
-            id=achievement.id,
-            name=achievement.name,
-            description=achievement.description or "",
-            category=achievement.category or "custom",
-            points=achievement.points or 10,
-            icon=achievement.icon or "🏆",
-            is_manual=achievement.is_manual,
-            created_by=achievement.created_by,
-            target_user_id=achievement.target_user_id,
-            is_active=achievement.is_active,
-            created_at=achievement.created_at,
-            criteria_type=achievement.criteria_type,
-            criteria_value=achievement.criteria_value,
-        )
+    return schemas.AchievementFullResponse(
+        id=achievement.id,
+        name=achievement.name,
+        description=achievement.description or "",
+        category=achievement.category or "custom",
+        points=achievement.points or 10,
+        icon=achievement.icon or "🏆",
+        is_manual=achievement.is_manual,
+        created_by=achievement.created_by,
+        target_user_id=achievement.target_user_id,
+        is_active=achievement.is_active,
+        created_at=achievement.created_at,
+        criteria_type=achievement.criteria_type,
+        criteria_value=achievement.criteria_value,
+    )
 
 
 @router.put("/{achievement_id}", response_model=schemas.AchievementFullResponse)
@@ -219,88 +218,88 @@ def update_achievement(
             ),
         )
 
-    with nullcontext(db) as session:
-        achievement = session.get(Achievement, achievement_id)
-        if not achievement:
-            raise HTTPException(
-                status_code=404,
-                detail=get_text(user=current_user, key="errors.achievements.notFound"),
-            )
-
-        # Only creator or admin can update. System achievements have
-        # created_by=None, so they always fail the ownership check for
-        # teachers and are effectively admin-only; no separate branch needed.
-        if achievement.created_by != current_user.id and current_user.user_type != "admin":
-            raise HTTPException(
-                status_code=403,
-                detail=get_text(
-                    user=current_user,
-                    accept_language=request.headers.get("accept-language"),
-                    key="errors.achievements.updateOwnOnly",
-                ),
-            )
-
-        if "target_user_id" in data.model_fields_set:
-            if data.target_user_id is not None:
-                verify_student_access(data.target_user_id, current_user, session)
-            achievement.target_user_id = data.target_user_id
-
-        # Update fields
-        if data.name is not None:
-            achievement.name = data.name
-        if data.description is not None:
-            achievement.description = data.description
-        if data.category is not None:
-            achievement.category = data.category
-        if data.points is not None:
-            achievement.points = data.points
-        if data.icon is not None:
-            achievement.icon = data.icon
-        if data.is_active is not None:
-            achievement.is_active = data.is_active
-
-        # Update criteria when the client explicitly sends the fields. Checking
-        # model_fields_set preserves the ability to clear an automatic
-        # achievement back to a manual one by sending null values.
-        if "criteria_type" in data.model_fields_set:
-            achievement.criteria_type = data.criteria_type
-        if "criteria_value" in data.model_fields_set:
-            achievement.criteria_value = data.criteria_value
-
-        # Recalculate is_manual based on presence of criteria. Reject a
-        # partially specified pair rather than silently changing the award
-        # type based on whichever field happened to be sent.
-        _validate_criteria_pair(
-            achievement.criteria_type,
-            achievement.criteria_value,
-            user=current_user,
+    session = db
+    achievement = session.get(Achievement, achievement_id)
+    if not achievement:
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.achievements.notFound"),
         )
-        has_criteria = (
-            achievement.criteria_type is not None
-            and achievement.criteria_value is not None
+
+    # Only creator or admin can update. System achievements have
+    # created_by=None, so they always fail the ownership check for
+    # teachers and are effectively admin-only; no separate branch needed.
+    if achievement.created_by != current_user.id and current_user.user_type != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+                key="errors.achievements.updateOwnOnly",
+            ),
         )
-        achievement.is_manual = not has_criteria
 
-        session.commit()
-        session.refresh(achievement)
+    if "target_user_id" in data.model_fields_set:
+        if data.target_user_id is not None:
+            verify_student_access(data.target_user_id, current_user, session)
+        achievement.target_user_id = data.target_user_id
 
-        logger.info(f"Updated achievement {achievement_id} by user {current_user.id}")
+    # Update fields
+    if data.name is not None:
+        achievement.name = data.name
+    if data.description is not None:
+        achievement.description = data.description
+    if data.category is not None:
+        achievement.category = data.category
+    if data.points is not None:
+        achievement.points = data.points
+    if data.icon is not None:
+        achievement.icon = data.icon
+    if data.is_active is not None:
+        achievement.is_active = data.is_active
 
-        return schemas.AchievementFullResponse(
-            id=achievement.id,
-            name=achievement.name,
-            description=achievement.description or "",
-            category=achievement.category or "general",
-            points=achievement.points or 10,
-            icon=achievement.icon or "🏆",
-            is_manual=achievement.is_manual if hasattr(achievement, 'is_manual') else False,
-            created_by=achievement.created_by,
-            target_user_id=achievement.target_user_id if hasattr(achievement, 'target_user_id') else None,
-            is_active=achievement.is_active,
-            created_at=achievement.created_at,
-            criteria_type=achievement.criteria_type,
-            criteria_value=achievement.criteria_value,
-        )
+    # Update criteria when the client explicitly sends the fields. Checking
+    # model_fields_set preserves the ability to clear an automatic
+    # achievement back to a manual one by sending null values.
+    if "criteria_type" in data.model_fields_set:
+        achievement.criteria_type = data.criteria_type
+    if "criteria_value" in data.model_fields_set:
+        achievement.criteria_value = data.criteria_value
+
+    # Recalculate is_manual based on presence of criteria. Reject a
+    # partially specified pair rather than silently changing the award
+    # type based on whichever field happened to be sent.
+    _validate_criteria_pair(
+        achievement.criteria_type,
+        achievement.criteria_value,
+        user=current_user,
+    )
+    has_criteria = (
+        achievement.criteria_type is not None
+        and achievement.criteria_value is not None
+    )
+    achievement.is_manual = not has_criteria
+
+    session.commit()
+    session.refresh(achievement)
+
+    logger.info(f"Updated achievement {achievement_id} by user {current_user.id}")
+
+    return schemas.AchievementFullResponse(
+        id=achievement.id,
+        name=achievement.name,
+        description=achievement.description or "",
+        category=achievement.category or "general",
+        points=achievement.points or 10,
+        icon=achievement.icon or "🏆",
+        is_manual=achievement.is_manual if hasattr(achievement, 'is_manual') else False,
+        created_by=achievement.created_by,
+        target_user_id=achievement.target_user_id if hasattr(achievement, 'target_user_id') else None,
+        is_active=achievement.is_active,
+        created_at=achievement.created_at,
+        criteria_type=achievement.criteria_type,
+        criteria_value=achievement.criteria_value,
+    )
 
 
 @router.delete("/{achievement_id}", status_code=204)
@@ -321,45 +320,45 @@ def delete_achievement(
             ),
         )
 
-    with nullcontext(db) as session:
-        achievement = session.get(Achievement, achievement_id)
-        if not achievement:
-            raise HTTPException(
-                status_code=404,
-                detail=get_text(user=current_user, key="errors.achievements.notFound"),
-            )
+    session = db
+    achievement = session.get(Achievement, achievement_id)
+    if not achievement:
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.achievements.notFound"),
+        )
 
-        # System achievements cannot be deleted
-        if achievement.created_by is None:
-            raise HTTPException(
-                status_code=403,
-                detail=get_text(
-                    user=current_user,
-                    accept_language=request.headers.get("accept-language"),
-                    key="errors.achievements.cannotDeleteSystem",
-                ),
-            )
+    # System achievements cannot be deleted
+    if achievement.created_by is None:
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+                key="errors.achievements.cannotDeleteSystem",
+            ),
+        )
 
-        # Only creator or admin can delete
-        if achievement.created_by != current_user.id and current_user.user_type != "admin":
-            raise HTTPException(
-                status_code=403,
-                detail=get_text(
-                    user=current_user,
-                    accept_language=request.headers.get("accept-language"),
-                    key="errors.achievements.deleteOwnOnly",
-                ),
-            )
+    # Only creator or admin can delete
+    if achievement.created_by != current_user.id and current_user.user_type != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+                key="errors.achievements.deleteOwnOnly",
+            ),
+        )
 
-        # Delete associated user achievements first
-        session.query(UserAchievement).filter(
-            UserAchievement.achievement_id == achievement_id
-        ).delete()
+    # Delete associated user achievements first
+    session.query(UserAchievement).filter(
+        UserAchievement.achievement_id == achievement_id
+    ).delete()
 
-        session.delete(achievement)
-        session.commit()
+    session.delete(achievement)
+    session.commit()
 
-        logger.info(f"Deleted achievement {achievement_id} by user {current_user.id}")
+    logger.info(f"Deleted achievement {achievement_id} by user {current_user.id}")
 
     return None
 
@@ -383,60 +382,60 @@ def award_achievement(
             ),
         )
 
-    with nullcontext(db) as session:
-        achievement = session.get(Achievement, achievement_id)
-        if not achievement:
-            raise HTTPException(
-                status_code=404,
-                detail=get_text(user=current_user, key="errors.achievements.notFound"),
-            )
-
-        # Only award achievements to an existing student the actor can access.
-        # This prevents teachers from targeting unrelated users or non-students.
-        verify_student_access(data.user_id, current_user, session)
-
-        # Check if user already has this achievement
-        existing = (
-            session.query(UserAchievement)
-            .filter(
-                UserAchievement.user_id == data.user_id,
-                UserAchievement.achievement_id == achievement_id,
-            )
-            .first()
-        )
-        if existing:
-            raise HTTPException(
-                status_code=400,
-                detail=get_text(
-                    user=current_user,
-                    accept_language=request.headers.get("accept-language"),
-                    key="errors.achievements.alreadyAwarded",
-                ),
-            )
-
-        # Award the achievement
-        user_achievement = UserAchievement(
-            user_id=data.user_id,
-            achievement_id=achievement_id,
-            earned_at=datetime.now(),
-            progress=1.0,
-        )
-        session.add(user_achievement)
-        session.commit()
-
-        logger.info(
-            f"Awarded achievement {achievement_id} to user {data.user_id} by {current_user.id}"
+    session = db
+    achievement = session.get(Achievement, achievement_id)
+    if not achievement:
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.achievements.notFound"),
         )
 
-        return schemas.AchievementResponse(
-            name=achievement.name,
-            description=achievement.description or "",
-            category=achievement.category or "general",
-            points=achievement.points or 10,
-            icon=achievement.icon or "🏆",
-            earned_at=user_achievement.earned_at.isoformat(),
-            progress=1.0,
+    # Only award achievements to an existing student the actor can access.
+    # This prevents teachers from targeting unrelated users or non-students.
+    verify_student_access(data.user_id, current_user, session)
+
+    # Check if user already has this achievement
+    existing = (
+        session.query(UserAchievement)
+        .filter(
+            UserAchievement.user_id == data.user_id,
+            UserAchievement.achievement_id == achievement_id,
         )
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+                key="errors.achievements.alreadyAwarded",
+            ),
+        )
+
+    # Award the achievement
+    user_achievement = UserAchievement(
+        user_id=data.user_id,
+        achievement_id=achievement_id,
+        earned_at=datetime.now(),
+        progress=1.0,
+    )
+    session.add(user_achievement)
+    session.commit()
+
+    logger.info(
+        f"Awarded achievement {achievement_id} to user {data.user_id} by {current_user.id}"
+    )
+
+    return schemas.AchievementResponse(
+        name=achievement.name,
+        description=achievement.description or "",
+        category=achievement.category or "general",
+        points=achievement.points or 10,
+        icon=achievement.icon or "🏆",
+        earned_at=user_achievement.earned_at.isoformat(),
+        progress=1.0,
+    )
 
 
 # ============== Existing User Achievement Endpoints ==============

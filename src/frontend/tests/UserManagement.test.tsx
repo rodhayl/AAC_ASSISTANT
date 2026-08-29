@@ -246,7 +246,7 @@ describe('UserManagementPage', () => {
     await screen.findByText('Teacher One');
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete teacher1' }));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/auth/users/2'));
@@ -321,7 +321,7 @@ describe('UserManagementPage', () => {
     await screen.findByText('Teacher One');
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete teacher1' }));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     expect(await screen.findByText('Failed to delete')).toBeInTheDocument();

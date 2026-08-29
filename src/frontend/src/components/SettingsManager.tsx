@@ -10,22 +10,21 @@ export function SettingsManager() {
   const user = useAuthStore(state => state.user);
   const setLocale = useLocaleStore((state) => state.setLocale);
   const setDarkMode = useThemeStore((state) => state.setDarkMode);
+  const setHighContrast = useThemeStore((state) => state.setHighContrast);
   const setSelectedVoice = useTTSStore((state) => state.setSelectedVoice);
   const setTTSProvider = useTTSStore((state) => state.setTTSProvider);
   const setLocalVoice = useTTSStore((state) => state.setLocalVoice);
 
   useEffect(() => {
     if (user?.settings) {
-      // Apply High Contrast
-      if (user.settings.high_contrast) {
-        document.documentElement.classList.add('high-contrast');
-      } else {
-        document.documentElement.classList.remove('high-contrast');
-      }
-
-      // Apply Dark Mode
+      // Apply appearance flags (the store owns the `dark` / `high-contrast`
+      // document classes). Absent legacy fields fall back to the current
+      // local appearance instead of forcing light mode.
       if (user.settings.dark_mode !== undefined) {
-         setDarkMode(user.settings.dark_mode);
+        setDarkMode(user.settings.dark_mode);
+      }
+      if (user.settings.high_contrast !== undefined) {
+        setHighContrast(user.settings.high_contrast);
       }
 
       // Apply Locale (normalize legacy short codes so the switcher select
@@ -48,7 +47,7 @@ export function SettingsManager() {
       // in a conversation are not delayed.
       warmup();
     }
-  }, [user?.settings, setLocale, setDarkMode, setSelectedVoice, setTTSProvider, setLocalVoice]);
+  }, [user?.settings, setLocale, setDarkMode, setHighContrast, setSelectedVoice, setTTSProvider, setLocalVoice]);
 
   return null;
 }

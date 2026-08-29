@@ -1,8 +1,18 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Students } from '../src/pages/Students';
+
+async function pickRole(dialog: HTMLElement, label: string, option: string) {
+  const trigger = within(dialog).getByRole('combobox', { name: label });
+  fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+  fireEvent.click(trigger);
+  const item = await screen.findByRole('option', { name: option });
+  fireEvent.pointerDown(item, { button: 0, ctrlKey: false });
+  fireEvent.click(item);
+  await act(async () => {});
+}
 
 const authState = vi.hoisted(() => ({
   user: {
@@ -178,7 +188,7 @@ describe('Students page', () => {
     await screen.findByText('Leo');
 
     await user.click(screen.getByLabelText(/Delete student10/));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     await user.click(within(dialog).getByText('Delete'));
 
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/auth/users/10'));
@@ -206,8 +216,8 @@ describe('Students page', () => {
     await user.click(screen.getByTitle('Preferences'));
     expect(await screen.findByText(/Preferences for/)).toBeInTheDocument();
 
-    const toggle = screen.getByLabelText('Voice Mode') as HTMLInputElement;
-    expect(toggle.checked).toBe(true);
+    const toggle = screen.getByLabelText('Voice Mode');
+    expect(toggle).toBeChecked(); // role=switch + aria-checked
     await user.click(toggle);
 
     await user.click(screen.getByText('Save'));
@@ -255,7 +265,7 @@ describe('Students page', () => {
     const dialog = await screen.findByRole('dialog');
     await user.clear(within(dialog).getByLabelText('Display Name *'));
     await user.type(within(dialog).getByLabelText('Display Name *'), 'Renamed');
-    await user.selectOptions(within(dialog).getByLabelText('Role'), 'teacher');
+    await pickRole(dialog, 'Role', 'Teacher');
     await user.click(within(dialog).getByText('Save'));
 
     await waitFor(() =>
@@ -441,8 +451,8 @@ describe('Students page', () => {
 
     await user.click(screen.getByTitle('Preferences'));
 
-    const toggle = (await screen.findByLabelText('Voice Mode')) as HTMLInputElement;
-    expect(toggle.checked).toBe(true);
+    const toggle = await screen.findByLabelText('Voice Mode');
+    expect(toggle).toBeChecked(); // role=switch + aria-checked
     expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();
   });
@@ -507,10 +517,10 @@ describe('Students page', () => {
     await screen.findByText('Leo');
 
     await user.click(screen.getByLabelText(/Delete student10/));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     await user.click(within(dialog).getByText('Cancel'));
 
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
     expect(api.delete).not.toHaveBeenCalled();
   });
 
@@ -522,7 +532,7 @@ describe('Students page', () => {
     await screen.findByText('Leo');
 
     await user.click(screen.getByLabelText(/Delete student10/));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     await user.click(within(dialog).getByText('Delete'));
 
     expect(await screen.findByText('Failed to delete')).toBeInTheDocument();

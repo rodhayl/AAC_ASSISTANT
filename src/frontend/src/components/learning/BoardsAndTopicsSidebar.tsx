@@ -3,6 +3,8 @@ import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
 import { useBoardStore } from '../../store/boardStore';
+import { Button } from '../ui/button';
+import { IconButton } from '../ui/icon-button';
 import {
     loadTopicsForUser,
     addTopic as addTopicHelper,
@@ -177,13 +179,9 @@ export function BoardsAndTopicsSidebar({
                                     )}
                                 </div>
 
-                                <button
-                                    type="button"
-                                    onClick={addSavedTopic}
-                                    className="w-full inline-flex items-center justify-center px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-sm"
-                                >
+                                <Button type="button" onClick={addSavedTopic} className="w-full inline-flex items-center justify-center" >
                                     <Plus className="w-4 h-4 mr-1" /> {t('saveTopic')}
-                                </button>
+                                </Button>
                             </div>
                         </div>
                     )}
@@ -196,27 +194,27 @@ export function BoardsAndTopicsSidebar({
                                     <div className="flex-1">
                                         <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">{topic.topic}</div>
                                         <div className="text-xs text-gray-500 dark:text-gray-400">{topic.board}</div>
-                                        <div className="text-[11px] text-gray-400">{t('by')} {topic.createdBy}</div>
+                                        <div className="text-[11px] text-gray-400 dark:text-gray-500">{t('by')} {topic.createdBy}</div>
                                         <div className="mt-2 flex gap-2">
-                                            <button
+                                            <Button
                                                 type="button"
+                                                size="xs"
                                                 onClick={() => user && handleStart(topic.topic, topic.board || 'practice')}
-                                                className="px-3 py-1 bg-indigo-600 text-white text-xs rounded-lg hover:bg-indigo-700 disabled:opacity-50"
                                                 disabled={isStartingSession}
                                             >
                                                 {isStartingSession ? t('startingSession') : t('startStudy')}
-                                            </button>
+                                            </Button>
                                         </div>
                                     </div>
                                     {canManageTopics && (
-                                        <button
+                                        <IconButton
+                                            label={t('removeTopic')}
                                             type="button"
                                             onClick={() => removeSavedTopic(topic.id)}
-                                            className="text-gray-400 hover:text-red-600"
-                                            title={t('removeTopic')}
+                                            className="text-gray-400 hover:text-red-600 dark:text-gray-500"
                                         >
                                             <Trash2 className="w-4 h-4" />
-                                        </button>
+                                        </IconButton>
                                     )}
                                 </div>
                             ))

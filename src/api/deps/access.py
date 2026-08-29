@@ -23,12 +23,15 @@ def get_learning_session_or_404(
     *,
     message: Callable[[str], str] | None = None,
     require_active: bool = False,
+    allow_teacher: bool = False,
 ) -> LearningSession:
-    """Load a learning session and enforce its owner/admin access rule.
+    """Load a learning session and enforce its owner/admin (or teacher read) access rule.
 
     ``message`` lets routers retain their domain-specific translation namespace.
     """
-    message = message or (lambda key: get_text(current_user, key))
+    message = message or (
+        lambda key: get_text(current_user, key, namespace="pages/learning")
+    )
     session = db.query(LearningSession).filter(LearningSession.id == session_id).first()
     if session is None:
         raise HTTPException(
@@ -36,10 +39,13 @@ def get_learning_session_or_404(
             detail=message("errors.sessionNotFound"),
         )
     if session.user_id != current_user.id and current_user.user_type != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail=message("errors.unauthorized"),
-        )
+        if allow_teacher and current_user.user_type == "teacher":
+            verify_student_access(session.user_id, current_user, db)
+        else:
+            raise HTTPException(
+                status_code=403,
+                detail=message("errors.unauthorized"),
+            )
     if require_active and session.status != "active":
         raise HTTPException(
             status_code=409,

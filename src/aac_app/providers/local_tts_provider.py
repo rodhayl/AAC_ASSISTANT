@@ -118,7 +118,8 @@ def _pack_voice_names() -> list[str] | None:
 
         with np.load(kokoro_voices_path(), allow_pickle=True) as data:
             return sorted(data.files)
-    except Exception:  # pragma: no cover - environment dependent
+    except Exception as exc:  # pragma: no cover - environment dependent
+        logger.debug("Failed to load Kokoro voice catalog: {}", exc)
         return None
 
 
@@ -208,6 +209,7 @@ def _module_available() -> bool:
         except Exception as exc:  # pragma: no cover - environment dependent
             _import_error = str(exc)
             _available = False
+            logger.debug("Kokoro import unavailable: {}", exc)
     return _available
 
 

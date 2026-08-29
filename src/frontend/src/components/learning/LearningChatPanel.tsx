@@ -6,6 +6,7 @@ import { LearningMessageList, type LearningMessage } from './LearningMessageList
 import { LearningQuestionCard } from './LearningQuestionCard';
 import type { LearningSessionResponse, QuestionResponse } from '../../types';
 import type { LearningProgress, RevealedAnswer } from '../../store/learningStore';
+import { Button } from '../ui/button';
 
 interface LearningChatPanelProps {
   messages: LearningMessage[];
@@ -231,13 +232,14 @@ export function LearningChatPanel({
                     >
                       {t('cancel')}
                     </button>
-                    <button
+                    <Button
                       type="button"
+                      variant="danger"
+                      size="xs"
                       onClick={confirmEndSession}
-                      className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
                     >
                       {t('endSession')}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
@@ -283,15 +285,9 @@ export function LearningChatPanel({
           <div className="text-center text-gray-500 dark:text-gray-400 mt-10">
             <Bot className="w-12 h-12 mx-auto mb-4 text-gray-300 dark:text-gray-600" />
             <p>{t('promptStart')}</p>
-            <button
-              onClick={onStartSession}
-              aria-label={t('startSessionLabel')}
-              data-testid="learning-session-start"
-              className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-              disabled={isStartingSession}
-            >
+            <Button onClick={onStartSession} aria-label={t('startSessionLabel')} data-testid="learning-session-start" className="mt-4" disabled={isStartingSession} >
               {isStartingSession ? t('startingSession') : t('startSession')}
-            </button>
+            </Button>
           </div>
         )}
 

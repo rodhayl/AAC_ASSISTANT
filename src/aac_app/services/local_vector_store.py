@@ -474,7 +474,8 @@ class LocalVectorStore:
                     }
                     for row in rows
                 ]
-        except Exception:
+        except Exception as exc:
+            logger.error("Could not load vector-store metadata: {}", exc)
             self.metadata = []
 
     def search(self, query: str, k: int = 5) -> list[dict[str, Any]]:

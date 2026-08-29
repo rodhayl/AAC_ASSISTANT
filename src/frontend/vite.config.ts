@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -8,6 +9,11 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
   build: {
     // Use esbuild for faster minification
     minify: 'esbuild',
@@ -19,6 +25,10 @@ export default defineConfig({
           'ui-vendor': ['lucide-react'],
           'dnd-vendor': ['@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
           'state-vendor': ['zustand', 'axios'],
+          // Headless primitives + toast layer added by the 2026-08 shadcn/Base
+          // UI migration; kept as a separate cacheable chunk so the app's own
+          // index chunk stays under the bundle-size budget.
+          'base-ui-vendor': ['@base-ui/react', 'sonner'],
         },
       },
     },

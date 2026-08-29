@@ -1,12 +1,37 @@
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.aac_app.utils.jwt_utils import create_access_token
+from src.api.deps.access import get_learning_session_or_404
 from src.api.main import app
 
 client = TestClient(app)
+
+
+def test_learning_session_lookup_default_uses_learning_namespace(
+    regular_user, test_db_session: Session, monkeypatch
+):
+    captured = {}
+
+    def fake_get_text(user, key, **kwargs):
+        captured.update(user=user, key=key, namespace=kwargs.get("namespace"))
+        return "localized session missing"
+
+    monkeypatch.setattr("src.api.deps.access.get_text", fake_get_text)
+
+    with pytest.raises(Exception) as raised:
+        get_learning_session_or_404(test_db_session, 999999, regular_user)
+
+    assert raised.value.status_code == 404
+    assert raised.value.detail == "localized session missing"
+    assert captured == {
+        "user": regular_user,
+        "key": "errors.sessionNotFound",
+        "namespace": "pages/learning",
+    }
 
 
 def get_auth_header(user):

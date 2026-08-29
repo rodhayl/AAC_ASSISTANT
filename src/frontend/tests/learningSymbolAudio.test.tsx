@@ -521,9 +521,7 @@ describe('Learning symbol-first and audio-first flows', () => {
   it('header: toggles voice input', async () => {
     render(<Learning />);
 
-    await act(async () => {
-      fireEvent.click(await screen.findByTitle('disableVoice'));
-    });
+    fireEvent.click(await screen.findByTitle('disableVoice'));
 
     expect(await screen.findByTitle('enableVoice')).toBeInTheDocument();
   });

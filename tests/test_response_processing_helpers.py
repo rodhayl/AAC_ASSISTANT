@@ -11,9 +11,11 @@ import os
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from loguru import logger
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import LearningSession
+from src.aac_app.services.learning import responses as responses_module
 from src.aac_app.services.learning.responses import ResponseProcessingMixin
 
 
@@ -322,6 +324,37 @@ class _FullHarness(ResponseProcessingMixin):
         self, student_message: str, topic: str, context: str, lang: str
     ) -> str:
         return f"Previous conversation:\n{context}\nStudent: {student_message}\nTopic: {topic}"
+
+
+@pytest.mark.anyio
+async def test_process_response_logs_achievement_update_failure(
+    regular_user, test_db_session: Session, monkeypatch, caplog
+) -> None:
+    session = _question_session(test_db_session, regular_user.id)
+    llm = Mock()
+    llm.generate = AsyncMock(
+        return_value='{"is_correct": true, "confidence": 0.95, "encouraging_feedback": "Great job!"}'
+    )
+
+    class FailingAchievementSystem:
+        def check_achievements(self, *_args, **_kwargs):
+            raise RuntimeError("achievement backend unavailable")
+
+    monkeypatch.setattr(responses_module, "AchievementSystem", FailingAchievementSystem)
+    harness = _FullHarness(llm=llm)
+
+    captured: list[str] = []
+    sink_id = logger.add(lambda message: captured.append(str(message)), level="WARNING")
+    try:
+        result = await harness.process_response(
+            session_id=session.id, student_response="blue", db=test_db_session
+        )
+    finally:
+        logger.remove(sink_id)
+
+    assert result["success"] is True
+    assert any("Achievement update failed" in message for message in captured)
+    assert any("achievement backend unavailable" in message for message in captured)
 
 
 @pytest.mark.anyio

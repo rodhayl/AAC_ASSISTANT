@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { SessionHistoryItem } from '../../store/learningStore';
+import { Button } from '../ui/button';
 
 interface LearningHistoryPanelProps {
   sessionHistory: SessionHistoryItem[];
@@ -24,12 +25,9 @@ export function LearningHistoryPanel({
         <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
           {t('conversationHistory')}
         </h3>
-        <button
-          onClick={onNewConversation}
-          className="mt-2 w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium"
-        >
+        <Button onClick={onNewConversation} className="mt-2 w-full font-medium" >
           {t('newConversation')}
-        </button>
+        </Button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">

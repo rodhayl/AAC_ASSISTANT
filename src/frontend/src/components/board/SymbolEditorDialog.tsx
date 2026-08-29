@@ -3,6 +3,14 @@ import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { BoardSymbol } from '../../types';
 import { useBoardStore } from '../../store/boardStore';
+import { Button } from '../ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog';
 
 interface SymbolEditorDialogProps {
   isOpen: boolean;
@@ -13,15 +21,15 @@ interface SymbolEditorDialogProps {
 }
 
 const COLORS = [
-  { key: 'white', name: 'White', value: '#ffffff', class: 'bg-white' },
-  { key: 'red', name: 'Red', value: '#fee2e2', class: 'bg-red-100' },
-  { key: 'orange', name: 'Orange', value: '#ffedd5', class: 'bg-orange-100' },
-  { key: 'yellow', name: 'Yellow', value: '#fef9c3', class: 'bg-yellow-100' },
-  { key: 'green', name: 'Green', value: '#dcfce7', class: 'bg-green-100' },
-  { key: 'blue', name: 'Blue', value: '#dbeafe', class: 'bg-blue-100' },
-  { key: 'purple', name: 'Purple', value: '#f3e8ff', class: 'bg-purple-100' },
-  { key: 'pink', name: 'Pink', value: '#fce7f3', class: 'bg-pink-100' },
-  { key: 'gray', name: 'Gray', value: '#f3f4f6', class: 'bg-gray-100' },
+  { key: 'white', name: 'White', value: '#ffffff' },
+  { key: 'red', name: 'Red', value: '#fee2e2' },
+  { key: 'orange', name: 'Orange', value: '#ffedd5' },
+  { key: 'yellow', name: 'Yellow', value: '#fef9c3' },
+  { key: 'green', name: 'Green', value: '#dcfce7' },
+  { key: 'blue', name: 'Blue', value: '#dbeafe' },
+  { key: 'purple', name: 'Purple', value: '#f3e8ff' },
+  { key: 'pink', name: 'Pink', value: '#fce7f3' },
+  { key: 'gray', name: 'Gray', value: '#f3f4f6' },
 ];
 
 export function SymbolEditorDialog({
@@ -45,16 +53,6 @@ export function SymbolEditorDialog({
     }
   }, [isOpen, fetchBoards]);
 
-  // Close on Escape so keyboard users are never trapped in the modal.
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
   if (!isOpen || !symbol) return null;
 
   const handleSave = () => {
@@ -67,23 +65,18 @@ export function SymbolEditorDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="presentation">
-      <div
-        className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-gray-800"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="symbol-editor-title"
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 id="symbol-editor-title" className="text-xl font-bold text-gray-900 dark:text-white">{t('editSymbol')}</h2>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent showCloseButton={false} className="max-w-md p-6">
+        <DialogHeader className="flex-row items-center justify-between">
+          <DialogTitle className="text-xl font-bold text-gray-900 dark:text-white">{t('editSymbol')}</DialogTitle>
           <button
             onClick={onClose}
             className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-700"
             aria-label={t('close')}
           >
-            <X className="h-5 w-5 text-gray-500" />
+            <X className="h-5 w-5 text-gray-500 dark:text-gray-400" />
           </button>
-        </div>
+        </DialogHeader>
 
         <div className="space-y-4">
           {/* Custom Text */}
@@ -112,11 +105,12 @@ export function SymbolEditorDialog({
                   key={c.value}
                   type="button"
                   onClick={() => setColor(c.value)}
-                  className={`h-8 w-8 rounded-full border-2 ${c.class} ${
+                  className={`h-8 w-8 rounded-full border-2 ${
                     color === c.value
                       ? 'border-indigo-600 ring-2 ring-indigo-600 ring-offset-2 dark:ring-offset-gray-800'
                       : 'border-gray-200 dark:border-gray-600'
                   }`}
+                  style={{ backgroundColor: c.value }}
                   aria-label={t(`colors.${c.key}`, c.name)}
                   title={t(`colors.${c.key}`, c.name)}
                 />
@@ -126,45 +120,57 @@ export function SymbolEditorDialog({
 
           {/* Linked Board */}
           <div>
-            <label htmlFor="symbol-editor-linked-board" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
               {t('linkToBoard')}
             </label>
-            <select
-              id="symbol-editor-linked-board"
-              value={linkedBoardId || ''}
-              onChange={(e) => setLinkedBoardId(e.target.value ? Number(e.target.value) : null)}
-              className="w-full rounded-lg border border-gray-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+            <Select
+              value={linkedBoardId != null ? String(linkedBoardId) : 'none'}
+              onValueChange={(next) => {
+                // Base UI Select cannot commit an empty-string item value, so
+                // the "none" option uses a sentinel mapped back to null.
+                setLinkedBoardId(next === 'none' || next == null ? null : Number(next));
+              }}
+              items={[
+                { value: 'none', label: t('none') },
+                ...boards
+                  .filter((b) => b.id !== currentBoardId)
+                  .map((board) => ({ value: String(board.id), label: board.name })),
+              ]}
             >
-              <option value="">{t('none')}</option>
-              {boards
-                .filter((b) => b.id !== currentBoardId)
-                .map((board) => (
-                  <option key={board.id} value={board.id}>
-                    {board.name}
-                  </option>
-                ))}
-            </select>
+              <SelectTrigger aria-label={t('linkToBoard')} className="w-full text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">{t('none')}</SelectItem>
+                {boards
+                  .filter((b) => b.id !== currentBoardId)
+                  .map((board) => (
+                    <SelectItem key={board.id} value={String(board.id)}>
+                      {board.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               {t('linkToBoardHelp')}
             </p>
           </div>
 
-          <div className="mt-6 flex justify-end gap-3">
+          <div className="flex justify-end gap-3">
             <button
               onClick={onClose}
               className="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
             >
               {t('cancel')}
             </button>
-            <button
+            <Button
               onClick={handleSave}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
             >
               {t('save')}
-            </button>
+            </Button>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

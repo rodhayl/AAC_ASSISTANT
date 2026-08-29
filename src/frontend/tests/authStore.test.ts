@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import api from '../src/lib/api';
 import { useAuthStore } from '../src/store/authStore';
+import { useThemeStore } from '../src/store/themeStore';
 
 const user = {
   id: 7,
@@ -50,6 +51,28 @@ describe('auth session refresh robustness', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('syncs the persisted dark mode and high contrast flags into the theme store on login', async () => {
+    const nextUser = {
+      ...user,
+      settings: { dark_mode: true, high_contrast: true },
+    };
+    const token = makeJwt(Math.floor(Date.now() / 1000) + 3600);
+    vi.spyOn(api, 'post').mockResolvedValue({
+      data: { access_token: token, refresh_token: 'next-refresh-token' },
+    } as never);
+    vi.spyOn(api, 'get').mockResolvedValue({ data: nextUser } as never);
+
+    useThemeStore.getState().setDarkMode(false);
+    useThemeStore.getState().setHighContrast(false);
+
+    await useAuthStore.getState().login(nextUser.username, 'password');
+
+    expect(useThemeStore.getState().darkMode).toBe(true);
+    expect(useThemeStore.getState().highContrast).toBe(true);
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.classList.contains('high-contrast')).toBe(true);
   });
 
   it('dispatches an auth-context event before switching users on login', async () => {

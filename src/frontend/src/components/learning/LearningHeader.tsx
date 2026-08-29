@@ -1,5 +1,6 @@
 import { Cloud, Cpu, Grid as GridIcon, HelpCircle, Sparkles, Volume2, VolumeX } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '../ui/button';
 import type { DifficultyOverride, LLMProviderId } from '../../store/learningStore';
 
 interface LearningHeaderProps {
@@ -68,15 +69,16 @@ export function LearningHeader({
             <GridIcon className="w-4 h-4 inline-block mr-2" />
             {symbolView ? t('textChat') : t('symbolFirst')}
           </button>
-          <button
+          <Button
+            variant="accent"
+            size="sm"
             onClick={onNewQuestion}
             disabled={!canAskQuestion}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 transition-colors flex items-center gap-1.5"
             title={t('newQuestionTitle')}
           >
-            <HelpCircle className="w-4 h-4" />
+            <HelpCircle />
             {t('newQuestion')}
-          </button>
+          </Button>
           <div className="flex items-center gap-2 border-l border-gray-200 dark:border-gray-600 pl-3 ml-1 max-sm:border-l-0 max-sm:pl-0">
             <label htmlFor="learning-mode" className="text-xs font-medium text-gray-500 dark:text-gray-400">
               {t('modeLabel')}:

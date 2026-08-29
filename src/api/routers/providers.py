@@ -522,22 +522,10 @@ async def get_lmstudio_models(
     try:
         provider = get_lmstudio_provider()
         if not await asyncio.to_thread(provider.is_available):
-            return {
-                "models": [],
-                "error": get_text(
-                    user=current_user, key="errors.providers.lmstudioUnavailable"
-                ),
-            }
+            return {"models": [], "error": "LM Studio is not available"}
 
         models_response = await provider.get_available_models()
         models_list = models_response.get("data", [])
         return {"models": models_list}
     except Exception as e:
-        return {
-            "models": [],
-            "error": get_text(
-                user=current_user,
-                key="errors.providers.providerResponseError",
-                error=str(e),
-            ),
-        }
+        return {"models": [], "error": str(e)}

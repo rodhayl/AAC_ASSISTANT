@@ -1,6 +1,7 @@
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle } from 'lucide-react';
+import { buttonVariants } from '../components/ui/button';
 
 export function NotFound() {
   const { t } = useTranslation('error');
@@ -22,9 +23,9 @@ export function NotFound() {
           {t('notFoundMessage')}
         </p>
 
-        <Link 
-          to="/" 
-          className="inline-block px-6 py-3 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+        <Link
+          to="/"
+          className={buttonVariants({ variant: 'default', className: 'px-6' })}
         >
           {t('dashboard')}
         </Link>

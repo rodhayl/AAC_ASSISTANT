@@ -107,8 +107,16 @@ describe('SymbolSearchModal request lifecycle', () => {
 
     // Picking a category must trigger a new search with the new filter,
     // not leave stale results on screen (regression: the change only set
-    // state and never re-queried).
-    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'animals' } });
+    // state and never re-queried). The Base UI select opens on pointer down
+    // (userEvent's full pointer sequence hangs in jsdom, so drive it with
+    // fireEvent directly).
+    const categoryTrigger = screen.getByRole('combobox', { name: 'All Categories' });
+    fireEvent.pointerDown(categoryTrigger, { button: 0, ctrlKey: false });
+    fireEvent.click(categoryTrigger);
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    const animalsOption = screen.getByRole('option', { name: 'Animals' });
+    fireEvent.pointerDown(animalsOption, { button: 0, ctrlKey: false });
+    fireEvent.click(animalsOption);
     await act(() => vi.advanceTimersByTimeAsync(200));
     await act(async () => { await Promise.resolve(); });
     expect(api.get).toHaveBeenCalledTimes(2);
@@ -125,7 +133,13 @@ describe('SymbolSearchModal request lifecycle', () => {
     await act(() => vi.advanceTimersByTimeAsync(200));
     await act(async () => { await Promise.resolve(); });
 
-    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: 'es' } });
+    const languageTrigger = screen.getByRole('combobox', { name: 'All' });
+    fireEvent.pointerDown(languageTrigger, { button: 0, ctrlKey: false });
+    fireEvent.click(languageTrigger);
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    const spanishOption = screen.getByRole('option', { name: 'Spanish' });
+    fireEvent.pointerDown(spanishOption, { button: 0, ctrlKey: false });
+    fireEvent.click(spanishOption);
     await act(() => vi.advanceTimersByTimeAsync(200));
     await act(async () => { await Promise.resolve(); });
     expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', expect.objectContaining({

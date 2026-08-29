@@ -1,13 +1,19 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { ResetPasswordModal } from '../components/common/ResetPasswordModal'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog'
 import api, { extractError } from '../lib/api'
 import type { User } from '../types'
 import { useAuthStore } from '../store/authStore'
-import { useModalFocusTrap } from '../hooks/useModalFocusTrap'
 import { useToastStore } from '../store/toastStore'
+import { Button } from '../components/ui/button'
 
 export type ManagedUserRole = 'teacher' | 'admin'
 
@@ -176,22 +182,12 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     }
   }
 
-  const editDialogRef = useRef<HTMLDivElement | null>(null)
-  const createDialogRef = useRef<HTMLDivElement | null>(null)
-
-  useModalFocusTrap(editDialogRef, editId != null, () => setEditId(null))
-  useModalFocusTrap(createDialogRef, createModalOpen, () => {
-    setCreateModalOpen(false)
-    clearCreateForm()
-    setError(null)
-  })
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400">{t('title')}</h1>
-          <p className="mt-1 text-sm font-medium text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
+          <p className="mt-1 text-sm font-medium text-gray-600 dark:text-gray-400">{t('subtitle')}</p>
         </div>
         <button
           onClick={() => { setCreateModalOpen(true); setError(null) }}
@@ -213,10 +209,10 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
           <table className="min-w-full divide-y divide-border dark:divide-white/5">
             <thead className="border-b border-border/50 bg-gray-50/50 dark:border-white/5 dark:bg-white/5">
               <tr>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{t('table.name')}</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{t('table.username')}</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{t('table.email')}</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{t('table.actions')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">{t('table.name')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">{t('table.username')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">{t('table.email')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">{t('table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border bg-transparent dark:divide-white/5">
@@ -228,9 +224,9 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
                       <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-800">{t('you')}</span>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{item.username}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{item.email || '-'}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                  <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{item.username}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{item.email || '-'}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
                     <div className="flex gap-2">
                       <button
                         onClick={() => {
@@ -251,14 +247,14 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
                           setError(null)
                         }}
                         disabled={role === 'admin' && item.id === user?.id}
-                        className="rounded px-3 py-1 text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                        className="rounded px-3 py-1 text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
                         aria-label={t('actions.resetPasswordAria', { name: item.username })}
                         title={role === 'admin' && item.id === user?.id ? t('actions.resetSelfTitle') : t('actions.resetPasswordTitle')}
                       >{t('actions.resetPassword')}</button>
                       <button
                         onClick={() => setDeleteState({ isOpen: true, user: item })}
                         disabled={role === 'admin' && item.id === user?.id}
-                        className="rounded px-3 py-1 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                        className="rounded px-3 py-1 text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
                         aria-label={t('actions.deleteAria', { name: item.username })}
                         title={role === 'admin' && item.id === user?.id ? t('actions.deleteSelfTitle') : t('actions.deleteTitle')}
                       >{t('delete')}</button>
@@ -269,7 +265,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
             </tbody>
           </table>
           {managedUsers.length === 0 && (
-            <div className="p-6 text-center text-gray-500 dark:text-gray-400">
+            <div className="p-6 text-center text-gray-600 dark:text-gray-400">
               {t(role === 'teacher' ? 'noTeachers' : 'noAdmins')}
             </div>
           )}
@@ -277,15 +273,11 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       )}
 
       {editId != null && (
-        <div
-          ref={editDialogRef}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="edit-managed-user-title"
-        >
-          <div className="glass-card w-full max-w-md p-6">
-            <h3 id="edit-managed-user-title" className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">{t('edit')}</h3>
+        <Dialog open onOpenChange={(open) => { if (!open) setEditId(null) }}>
+          <DialogContent showCloseButton={false} className="max-w-md p-6">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('edit')}</DialogTitle>
+            </DialogHeader>
             <div className="space-y-3">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                 {t('labels.displayName')}
@@ -297,23 +289,28 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
               </label>
             </div>
             <div className="mt-4 flex justify-end gap-2">
-              <button onClick={() => setEditId(null)} disabled={updateLoading} className="rounded-lg px-4 py-2 text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700">{t('cancel')}</button>
-              <button onClick={handleUpdate} disabled={updateLoading} className="rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:opacity-50">{updateLoading ? t('security.saving', { ns: 'settings' }) : t('profile.save', { ns: 'settings' })}</button>
+              <Button variant="ghost" onClick={() => setEditId(null)} disabled={updateLoading}>{t('cancel')}</Button>
+              <Button onClick={handleUpdate} loading={updateLoading}>{updateLoading ? t('security.saving', { ns: 'settings' }) : t('profile.save', { ns: 'settings' })}</Button>
             </div>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       {createModalOpen && (
-        <div
-          ref={createDialogRef}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="create-managed-user-title"
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) {
+              setCreateModalOpen(false)
+              clearCreateForm()
+              setError(null)
+            }
+          }}
         >
-          <div className="glass-card w-full max-w-md p-6">
-            <h3 id="create-managed-user-title" className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">{t('createTitle')}</h3>
+          <DialogContent showCloseButton={false} className="max-w-md p-6">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('createTitle')}</DialogTitle>
+            </DialogHeader>
             {error && <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/30 dark:text-red-400">{error}</div>}
             <form onSubmit={handleCreate} className="space-y-4">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -337,12 +334,12 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
                 <input id="confirmPassword" name="confirmPassword" type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} required minLength={8} autoComplete="new-password" className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:bg-gray-700 dark:text-gray-100" />
               </label>
               <div className="mt-6 flex justify-end gap-3">
-                <button type="button" onClick={() => { setCreateModalOpen(false); clearCreateForm(); setError(null) }} disabled={createLoading} className="rounded-lg px-4 py-2 text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700">{t('cancel')}</button>
-                <button type="submit" disabled={createLoading} className="rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:opacity-50">{createLoading ? t('security.saving', { ns: 'settings' }) : t('createBtn')}</button>
+                <Button type="button" variant="ghost" onClick={() => { setCreateModalOpen(false); clearCreateForm(); setError(null) }} disabled={createLoading}>{t('cancel')}</Button>
+                <Button type="submit" loading={createLoading}>{createLoading ? t('security.saving', { ns: 'settings' }) : t('createBtn')}</Button>
               </div>
             </form>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       {resetPasswordModalOpen && resetPasswordUser && (

@@ -329,12 +329,12 @@ def log_symbol_usage_legacy(
         return {"status": "success"}
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Failed to log symbol usage: {e}")
+    except Exception as exc:
+        logger.error("Failed to log symbol usage: {}", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=get_text(
-                user=current_user, key="errors.analytics.logFailed", error=str(e)
+                user=current_user, key="errors.analytics.logSymbolFailed"
             ),
         )
 

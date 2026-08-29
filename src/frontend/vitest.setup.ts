@@ -1,4 +1,49 @@
 import '@testing-library/jest-dom'
+
+// React 19 gates act()-wrapped updates on this global. Without it, tests that
+// drive async state updates through act() emit "The current testing
+// environment is not configured to support act(...)" noise even though the
+// assertions pass.
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+// Base UI's anchored overlays (Select, Popover, Tooltip) position through
+// @floating-ui/dom, which needs browser APIs jsdom does not implement. Without
+// these polyfills the open handler hangs in an internal retry loop.
+class ResizeObserverPolyfill {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  (globalThis as typeof globalThis & { ResizeObserver?: unknown }).ResizeObserver =
+    ResizeObserverPolyfill;
+}
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
+}
+if (typeof Element !== 'undefined' && !Element.prototype.hasPointerCapture) {
+  Element.prototype.hasPointerCapture = () => false;
+  Element.prototype.setPointerCapture = () => {};
+  Element.prototype.releasePointerCapture = () => {};
+}
+if (typeof window !== 'undefined' && typeof window.PointerEvent === 'undefined') {
+  // Base UI's switch/select re-dispatch clicks via `new PointerEvent(...)`,
+  // which jsdom does not implement; without this polyfill the constructor
+  // throws and the interaction silently does nothing.
+  class PointerEventPolyfill extends MouseEvent {
+    pointerId: number;
+    pointerType: string;
+    isPrimary: boolean;
+    constructor(type: string, params: PointerEventInit = {}) {
+      super(type, params);
+      this.pointerId = params.pointerId ?? 0;
+      this.pointerType = params.pointerType ?? '';
+      this.isPrimary = params.isPrimary ?? false;
+    }
+  }
+  (window as typeof window & { PointerEvent?: unknown }).PointerEvent = PointerEventPolyfill;
+}
+
 import common from './src/locales/en/common.json'
 import dashboard from './src/locales/en/pages/dashboard.json'
 import learning from './src/locales/en/pages/learning.json'

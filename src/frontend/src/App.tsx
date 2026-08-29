@@ -6,7 +6,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Login } from './pages/Login';
 import { useAuthStore } from './store/authStore';
 import { apiOffline } from './lib/api';
-import { ToastContainer } from './components/ui/ToastContainer';
+import { AppToaster } from './components/ui/AppToaster';
 import { SettingsManager } from './components/SettingsManager';
 import { lazyWithRetry } from './lib/lazyWithRetry';
 import { LoadingState } from './components/ui/LoadingState';
@@ -90,7 +90,7 @@ function RootLayout() {
   return (
     <>
       <SettingsManager />
-      <ToastContainer />
+      <AppToaster />
       <Outlet />
     </>
   );

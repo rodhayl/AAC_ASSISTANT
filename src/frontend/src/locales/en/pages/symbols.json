@@ -23,6 +23,8 @@
     "all": "All",
     "inUse": "In Use",
     "unused": "Unused",
+    "sort": "Sort",
+    "category": "Category",
     "default": "Default",
     "newest": "Newest",
     "oldest": "Oldest",

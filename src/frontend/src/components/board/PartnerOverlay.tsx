@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Mic } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '../ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from '../ui/dialog';
 
 interface PartnerOverlayProps {
   isOpen: boolean;
@@ -85,25 +91,13 @@ export function PartnerOverlay({ isOpen, onClose }: PartnerOverlayProps) {
     return () => cleanupRecognition();
   }, [isOpen, startListening, stopListening, cleanupRecognition]);
 
-  // Close on Escape so keyboard users are never trapped in the modal.
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" role="presentation">
-      <div
-        className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl p-6 flex flex-col items-center text-center relative"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="partner-overlay-title"
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        className="max-w-3xl p-6 text-center"
       >
         <button 
             onClick={onClose}
@@ -117,9 +111,9 @@ export function PartnerOverlay({ isOpen, onClose }: PartnerOverlayProps) {
             <div className={`p-4 rounded-full inline-flex items-center justify-center ${isListening ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-gray-100 text-gray-500'}`}>
                 <Mic className="w-12 h-12" />
             </div>
-            <h2 id="partner-overlay-title" className="mt-4 text-xl font-semibold text-gray-900 dark:text-gray-100">
+            <DialogTitle className="mt-4 text-xl font-semibold text-gray-900 dark:text-gray-100">
                 {isListening ? t('listening') : t('paused')}
-            </h2>
+            </DialogTitle>
         </div>
 
         <div className="w-full min-h-[200px] bg-gray-50 dark:bg-gray-900/50 rounded-xl p-6 flex items-center justify-center border-2 border-dashed border-gray-200 dark:border-gray-700 overflow-y-auto max-h-[60vh]">
@@ -128,21 +122,22 @@ export function PartnerOverlay({ isOpen, onClose }: PartnerOverlayProps) {
                     "{transcript}"
                 </p>
             ) : (
-                <p className="text-gray-400 italic text-xl">
+                <p className="text-gray-400 italic text-xl dark:text-gray-500">
                     {t('waitingForSpeech')}
                 </p>
             )}
         </div>
         
         <div className="mt-6 flex gap-4">
-             <button
+             <Button
                 onClick={isListening ? stopListening : startListening}
-                className={`px-6 py-3 rounded-xl text-white font-medium transition-colors ${isListening ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                className="px-6"
+                variant={isListening ? 'destructive' : 'default'}
              >
                 {isListening ? t('stopListening') : t('startListening')}
-             </button>
+             </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

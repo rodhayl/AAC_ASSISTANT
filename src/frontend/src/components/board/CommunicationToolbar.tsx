@@ -63,7 +63,7 @@ export function CommunicationToolbar({
         <div className="flex items-center gap-2 flex-1 justify-center min-w-max">
           <AccessibleButton
             onClick={() => onQuickResponse(t('yes'), 'positive')}
-            className="p-3 rounded-xl bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors flex flex-col items-center min-w-[4rem]"
+            className="p-3 rounded-xl bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors flex flex-col items-center min-w-[4rem]"
           >
             <ThumbsUp className="w-6 h-6 mb-1" />
             <span className="text-[10px] font-medium uppercase">{t('yes')}</span>

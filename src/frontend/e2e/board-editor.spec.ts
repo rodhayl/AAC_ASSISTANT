@@ -49,14 +49,14 @@ test.describe('Board Editor', () => {
     // button and its confirmation dialog across English and Spanish.
     const clearBoardButton = page.getByRole('button', { name: /clear board|limpiar tablero/i });
     await clearBoardButton.click();
-    const clearDialog = page.getByRole('dialog', { name: /remove all symbols|eliminar todos los símbolos/i });
+    const clearDialog = page.getByRole('alertdialog', { name: /remove all symbols|eliminar todos los símbolos/i });
     await expect(clearDialog).toBeVisible();
     await clearDialog.getByRole('button', { name: /cancel|cancelar/i }).click();
     await expect(clearDialog).not.toBeVisible();
     await expect(page.locator('.grid').getByText('cow', { exact: true })).toBeVisible();
 
     await clearBoardButton.click();
-    await page.getByRole('dialog', { name: /remove all symbols|eliminar todos los símbolos/i })
+    await page.getByRole('alertdialog', { name: /remove all symbols|eliminar todos los símbolos/i })
       .getByRole('button', { name: /clear board|limpiar tablero/i }).click();
     await expect(page.locator('.grid').getByText('cow', { exact: true })).not.toBeVisible({ timeout: 10000 });
   });

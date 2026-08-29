@@ -1,53 +1,40 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const toast = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  warning: vi.fn(),
+  info: vi.fn(),
+}));
+
+vi.mock('sonner', () => ({ toast }));
+
 import { useToastStore } from '../src/store/toastStore';
 
-describe('toast store', () => {
+describe('toastStore (sonner facade)', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
-    useToastStore.setState({ toasts: [] });
+    vi.clearAllMocks();
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
+  it('maps ToastType onto the matching sonner emitter', () => {
+    useToastStore.getState().addToast('ok', 'success');
+    useToastStore.getState().addToast('bad', 'error');
+    useToastStore.getState().addToast('careful', 'warning');
+    useToastStore.getState().addToast('fyi');
+
+    expect(toast.success).toHaveBeenCalledWith('ok', { duration: 3000 });
+    expect(toast.error).toHaveBeenCalledWith('bad', { duration: 3000 });
+    expect(toast.warning).toHaveBeenCalledWith('careful', { duration: 3000 });
+    expect(toast.info).toHaveBeenCalledWith('fyi', { duration: 3000 });
   });
 
-  it('adds a toast with default type and duration', () => {
-    useToastStore.getState().addToast('Hello');
-
-    const [toast] = useToastStore.getState().toasts;
-    expect(toast.message).toBe('Hello');
-    expect(toast.type).toBe('info');
-    expect(toast.duration).toBe(3000);
-    expect(toast.id).toBeTruthy();
+  it('passes a custom duration through', () => {
+    useToastStore.getState().addToast('slow', 'info', 8000);
+    expect(toast.info).toHaveBeenCalledWith('slow', { duration: 8000 });
   });
 
-  it('auto-removes the toast when the duration elapses', () => {
-    useToastStore.getState().addToast('Transient', 'success', 500);
-    expect(useToastStore.getState().toasts).toHaveLength(1);
-
-    vi.advanceTimersByTime(499);
-    expect(useToastStore.getState().toasts).toHaveLength(1);
-
-    vi.advanceTimersByTime(1);
-    expect(useToastStore.getState().toasts).toHaveLength(0);
-  });
-
-  it('does not schedule auto-removal for a zero duration', () => {
-    useToastStore.getState().addToast('Sticky', 'warning', 0);
-
-    vi.advanceTimersByTime(10_000);
-    expect(useToastStore.getState().toasts).toHaveLength(1);
-  });
-
-  it('removes a toast manually by id', () => {
-    useToastStore.getState().addToast('First');
-    useToastStore.getState().addToast('Second', 'error', 0);
-    const [first, second] = useToastStore.getState().toasts;
-
-    useToastStore.getState().removeToast(first.id);
-
-    const remaining = useToastStore.getState().toasts;
-    expect(remaining).toHaveLength(1);
-    expect(remaining[0].id).toBe(second.id);
+  it('treats duration 0 as sticky (Infinity, the old sticky contract)', () => {
+    useToastStore.getState().addToast('sticky', 'warning', 0);
+    expect(toast.warning).toHaveBeenCalledWith('sticky', { duration: Infinity });
   });
 });

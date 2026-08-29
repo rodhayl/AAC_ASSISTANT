@@ -76,6 +76,7 @@ export function usePreferences() {
         useTTSStore.getState().setTTSProvider(res.data.tts_provider === 'browser' ? 'browser' : 'kokoro');
         useTTSStore.getState().setLocalVoice(res.data.tts_local_voice || 'default');
         useThemeStore.getState().setDarkMode(darkMode);
+        useThemeStore.getState().setHighContrast(res.data.high_contrast ?? false);
         await useLocaleStore.getState().setLocale(language);
       } catch (err) {
         if (active) console.error('Failed to load preferences:', err);
@@ -127,12 +128,13 @@ export function usePreferences() {
     try {
       if (user) {
         const res = await api.put('/auth/preferences', preferences);
-        const { setDarkMode } = useThemeStore.getState();
+        const { setDarkMode, setHighContrast } = useThemeStore.getState();
         const { setLocale } = useLocaleStore.getState();
         const { setSelectedVoice } = useTTSStore.getState();
         const { setTTSProvider, setLocalVoice } = useTTSStore.getState();
 
         setDarkMode(preferences.dark_mode);
+        setHighContrast(preferences.high_contrast);
         await setLocale(preferences.ui_language);
         setSelectedVoice(preferences.tts_voice);
         setTTSProvider(preferences.tts_provider);

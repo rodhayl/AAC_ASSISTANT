@@ -193,8 +193,7 @@
       "frequentSequencesFailed": "Failed to retrieve frequent sequences: {{error}}",
       "suggestionsFailed": "Failed to generate suggestions: {{error}}",
       "preferencesFailed": "Failed to retrieve category preferences: {{error}}",
-      "statsFailed": "Failed to retrieve usage statistics: {{error}}",
-      "logFailed": "Failed to log symbol usage: {{error}}"
+      "statsFailed": "Failed to retrieve usage statistics: {{error}}"
     },
     "achievements": {
       "notFound": "Achievement not found",
@@ -267,8 +266,7 @@
       "uvUnavailable": "uv is not available on PATH for automatic installation.",
       "voiceInstallFailed": "Automatic voice installation failed. Check the server logs for details.",
       "voiceInstalled": "Voice dependencies installed successfully.",
-      "lmstudioUnavailable": "LM Studio is not available",
-      "providerResponseError": "Could not query the provider: {{error}}"
+      "lmstudioUnavailable": "LM Studio is not available"
     },
     "setup": {
       "localOnly": "Initial administrator setup is only permitted from local loopback (127.0.0.1 / ::1).",

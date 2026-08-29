@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { VoiceTab } from '../src/pages/Settings/VoiceTab';
 
@@ -241,7 +241,9 @@ describe('VoiceTab', () => {
 
   it('shows a spinner while the Kokoro model is pre-loading in the background', async () => {
     const { useTTSStore } = await import('../src/store/ttsStore');
-    useTTSStore.setState({ ttsWarmupStatus: 'warming' });
+    act(() => {
+      useTTSStore.setState({ ttsWarmupStatus: 'warming' });
+    });
     try {
       render(
         <VoiceTab
@@ -266,13 +268,17 @@ describe('VoiceTab', () => {
       expect(indicator).toBeInTheDocument();
       expect(screen.getByText(/pre-loading the local neural voice model in the background/i)).toBeInTheDocument();
     } finally {
-      useTTSStore.setState({ ttsWarmupStatus: 'idle' });
+      act(() => {
+        useTTSStore.setState({ ttsWarmupStatus: 'idle' });
+      });
     }
   });
 
   it('reports when the Kokoro model finished pre-loading', async () => {
     const { useTTSStore } = await import('../src/store/ttsStore');
-    useTTSStore.setState({ ttsWarmupStatus: 'ready' });
+    act(() => {
+      useTTSStore.setState({ ttsWarmupStatus: 'ready' });
+    });
     try {
       render(
         <VoiceTab
@@ -297,13 +303,17 @@ describe('VoiceTab', () => {
       expect(screen.getByText(/local neural voice model ready/i)).toBeInTheDocument();
       expect(indicator.querySelector('.text-green-600')).not.toBeNull();
     } finally {
-      useTTSStore.setState({ ttsWarmupStatus: 'idle' });
+      act(() => {
+        useTTSStore.setState({ ttsWarmupStatus: 'idle' });
+      });
     }
   });
 
   it('shows the speech-to-text pre-load status in the admin status section', async () => {
     const { useTTSStore } = await import('../src/store/ttsStore');
-    useTTSStore.setState({ speechWarmupStatus: 'warming' });
+    act(() => {
+      useTTSStore.setState({ speechWarmupStatus: 'warming' });
+    });
     try {
       render(
         <VoiceTab
@@ -329,13 +339,17 @@ describe('VoiceTab', () => {
       expect(indicator).toBeInTheDocument();
       expect(screen.getByText(/pre-loading the speech-to-text model in the background/i)).toBeInTheDocument();
     } finally {
-      useTTSStore.setState({ speechWarmupStatus: 'idle' });
+      act(() => {
+        useTTSStore.setState({ speechWarmupStatus: 'idle' });
+      });
     }
   });
 
   it('shows the semantic search pre-load status in the admin status section', async () => {
     const { useTTSStore } = await import('../src/store/ttsStore');
-    useTTSStore.setState({ vectorWarmupStatus: 'warming' });
+    act(() => {
+      useTTSStore.setState({ vectorWarmupStatus: 'warming' });
+    });
     try {
       render(
         <VoiceTab
@@ -361,13 +375,17 @@ describe('VoiceTab', () => {
       expect(indicator).toBeInTheDocument();
       expect(screen.getByText(/pre-loading the semantic search model in the background/i)).toBeInTheDocument();
     } finally {
-      useTTSStore.setState({ vectorWarmupStatus: 'idle' });
+      act(() => {
+        useTTSStore.setState({ vectorWarmupStatus: 'idle' });
+      });
     }
   });
 
   it('drops a stale ready badge when the backend reports the model is no longer loaded', async () => {
     const { useTTSStore } = await import('../src/store/ttsStore');
-    useTTSStore.setState({ ttsWarmupStatus: 'ready' });
+    act(() => {
+      useTTSStore.setState({ ttsWarmupStatus: 'ready' });
+    });
     get.mockResolvedValue({
       data: {
         tts_local: { provider: 'kokoro', installed: true, model_present: true, available: true, model_loaded: false },
@@ -401,7 +419,9 @@ describe('VoiceTab', () => {
       });
       expect(useTTSStore.getState().ttsWarmupStatus).toBe('idle');
     } finally {
-      useTTSStore.setState({ ttsWarmupStatus: 'idle' });
+      act(() => {
+        useTTSStore.setState({ ttsWarmupStatus: 'idle' });
+      });
     }
   });
 
@@ -429,5 +449,8 @@ describe('VoiceTab', () => {
     expect(screen.queryByTestId('tts-warmup-indicator')).not.toBeInTheDocument();
     expect(screen.queryByTestId('speech-warmup-indicator')).not.toBeInTheDocument();
     expect(screen.queryByTestId('vector-warmup-indicator')).not.toBeInTheDocument();
+    // Flush the mount fetch inside act so its state update is not reported as
+    // an un-acted update after the test body finishes.
+    await waitFor(() => expect(get).toHaveBeenCalled());
   });
 });

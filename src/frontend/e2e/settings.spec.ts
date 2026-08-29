@@ -26,8 +26,11 @@ async function toggleAndPersist(
   const putResponse = page.waitForResponse(
     (r) => r.url().includes('/api/auth/preferences') && r.request().method() === 'PUT',
   );
-  if (target) await toggle.check({ force: true });
-  else await toggle.uncheck({ force: true });
+  // React-controlled checkbox: force-clicking the visually hidden input can
+  // miss React's onChange, so dispatch the native click directly.
+  await toggle.evaluate((el) => (el as HTMLInputElement).click());
+  if (target) await expect(toggle).toBeChecked();
+  else await expect(toggle).not.toBeChecked();
   await savePrefs(page).click();
 
   const putBody = (await (await putResponse).json()) as Record<string, unknown>;

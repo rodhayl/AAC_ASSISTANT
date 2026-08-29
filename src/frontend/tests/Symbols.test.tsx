@@ -3,6 +3,24 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Symbols } from '../src/pages/Symbols';
+import { act } from 'react';
+
+const t = (key: string) => key;
+
+// Base UI Select jsdom interaction: open via pointerDown+click, commit an
+// option the same way (see SymbolSearchModal.test.tsx for the proven pattern).
+// After committing, wait until the popup has fully closed so the next
+// select's trigger click is not swallowed by the closing popup.
+async function pickSelectOption(triggerName: string, optionName: string) {
+  const trigger = screen.getByRole('combobox', { name: triggerName });
+  fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+  fireEvent.click(trigger);
+  const option = await screen.findByRole('option', { name: optionName });
+  fireEvent.pointerDown(option, { button: 0, ctrlKey: false });
+  fireEvent.click(option);
+  await act(async () => {});
+  await waitFor(() => expect(screen.queryByRole('option')).not.toBeInTheDocument());
+}
 
 const api = vi.hoisted(() => ({
   get: vi.fn(),
@@ -169,14 +187,14 @@ describe('Symbols page', () => {
 
     const card = screen.getByText('Hello').closest('.p-4') as HTMLElement;
     await user.click(within(card).getByRole('button', { name: 'deleteSymbol' }));
-    let dialog = await screen.findByRole('dialog');
+    let dialog = await screen.findByRole('alertdialog');
     await user.click(within(dialog).getByText('delete'));
 
     await waitFor(() =>
       expect(api.delete).toHaveBeenCalledWith('/boards/symbols/1'),
     );
     expect(await screen.findByText('symbolInUseForceDelete')).toBeInTheDocument();
-    dialog = await screen.findByRole('dialog');
+    dialog = await screen.findByRole('alertdialog');
     await user.click(within(dialog).getByText('forceDelete'));
 
     await waitFor(() =>
@@ -205,7 +223,7 @@ describe('Symbols page', () => {
     await user.click(checkboxes[1]);
     await user.click(screen.getByRole('button', { name: /deleteSelected/ }));
 
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     await user.click(within(dialog).getByText('delete'));
 
     await waitFor(() => {
@@ -255,19 +273,18 @@ describe('Symbols page', () => {
   });
 
   it('filters by category and changes the sort order', async () => {
-    const user = userEvent.setup();
     render(<Symbols />);
     await screen.findByText('Hello');
 
-    const combos = screen.getAllByRole('combobox');
-    await user.selectOptions(combos[2], 'greeting');
+    await pickSelectOption(t('filters.category'), 'greeting');
     await waitFor(() =>
       expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', {
         params: { skip: 0, limit: 101, category: 'greeting' },
       }),
     );
 
-    await user.selectOptions(combos[1], 'newest');
+    // Options are named by their (mocked, key-returning) translated labels.
+    await pickSelectOption(t('filters.sort'), t('filters.newest'));
     await waitFor(() =>
       expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', {
         params: { skip: 0, limit: 101, category: 'greeting', sort: 'newest' },
@@ -361,7 +378,7 @@ describe('Symbols page', () => {
     await user.type(labelInput, 'Adiós');
     await user.type(screen.getByPlaceholderText('optionalDesc'), 'A farewell');
     await user.type(screen.getByPlaceholderText('commaSeparated'), 'bye, adios');
-    await user.selectOptions(screen.getAllByRole('combobox')[0], 'greeting');
+    await pickSelectOption(t('category'), 'greeting');
     const fileInput = screen.getByLabelText('upload');
     await user.upload(fileInput, new File(['image-bytes'], 'pic.png', { type: 'image/png' }));
 
@@ -489,10 +506,10 @@ describe('Symbols page', () => {
 
     const card = screen.getByText('Hello').closest('.p-4') as HTMLElement;
     await user.click(within(card).getByRole('button', { name: 'deleteSymbol' }));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     await user.click(within(dialog).getByText('cancel'));
 
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
     expect(api.delete).not.toHaveBeenCalled();
   });
 
@@ -508,7 +525,7 @@ describe('Symbols page', () => {
     const checkboxes = screen.getAllByRole('checkbox');
     await user.click(checkboxes[0]);
     await user.click(screen.getByRole('button', { name: /deleteSelected/ }));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     await user.click(within(dialog).getByText('delete'));
 
     expect(api.delete).toHaveBeenCalledWith('/boards/symbols/1');
@@ -528,7 +545,7 @@ describe('Symbols page', () => {
     const checkboxes = screen.getAllByRole('checkbox');
     await user.click(checkboxes[0]);
     await user.click(screen.getByRole('button', { name: /deleteSelected/ }));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     await user.click(within(dialog).getByText('delete'));
 
     expect(await screen.findByText(/someDeletionsFailed/)).toBeInTheDocument();
@@ -542,11 +559,11 @@ describe('Symbols page', () => {
 
     const card = screen.getByText('Hello').closest('.p-4') as HTMLElement;
     await user.click(within(card).getByRole('button', { name: 'deleteSymbol' }));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     await user.click(within(dialog).getByText('delete'));
 
     expect(await screen.findByText('offline')).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
   });
 
   it('deselects a symbol when its checkbox is toggled off', async () => {

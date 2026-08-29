@@ -1,10 +1,16 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { Trophy, Star, Lock, CheckCircle, Settings, Plus, Pencil, Trash2, Award, X, Users } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import api, { extractError } from '../lib/api'
 import type { Achievement, AchievementFull, User } from '../types'
 import { useTranslation } from 'react-i18next'
-import { useModalFocusTrap } from '../hooks/useModalFocusTrap'
+import { Button } from '../components/ui/button';
+import { IconButton } from '../components/ui/icon-button';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from '../components/ui/dialog';
 import {
   localizeAchievementDescription,
   localizeAchievementName,
@@ -226,21 +232,6 @@ export function Achievements() {
     setFormData({ name: '', description: '', category: 'custom', points: 10, icon: '🏆', target_user_id: null, criteria_type: null, criteria_value: null })
   }
 
-  const editorDialogRef = useRef<HTMLDivElement | null>(null)
-  const awardDialogRef = useRef<HTMLDivElement | null>(null)
-  const deleteDialogRef = useRef<HTMLDivElement | null>(null)
-
-  useModalFocusTrap(editorDialogRef, showModal, () => {
-    setShowModal(false)
-    setEditingAchievement(null)
-    resetForm()
-  })
-  useModalFocusTrap(awardDialogRef, showAwardModal, () => {
-    setShowAwardModal(false)
-    setAwardingAchievementId(null)
-  })
-  useModalFocusTrap(deleteDialogRef, pendingDeleteId != null, () => setPendingDeleteId(null))
-
   const nameIsEmpty = !formData.name.trim()
 
   return (
@@ -260,13 +251,9 @@ export function Achievements() {
               {t('manage')}
             </button>
           )}
-          <button
-            onClick={handleCheck}
-            disabled={loading}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-          >
+          <Button onClick={handleCheck} disabled={loading}  >
             {t('check')}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -289,10 +276,10 @@ export function Achievements() {
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('manageTitle')}</h2>
-            <button onClick={openCreateModal} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2">
-              <Plus className="w-4 h-4" />
+            <Button variant="success" onClick={openCreateModal}>
+              <Plus />
               {t('create')}
-            </button>
+            </Button>
           </div>
 
           <div className="overflow-x-auto">
@@ -328,17 +315,17 @@ export function Achievements() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
-                        <button onClick={() => openAwardModal(a.id)} className="p-2 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded" title={t('award')}>
+                        <IconButton label={t('award')} onClick={() => openAwardModal(a.id)} className="p-2 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded">
                           <Award className="w-4 h-4" />
-                        </button>
+                        </IconButton>
                         {a.created_by && (a.created_by === user?.id || user?.user_type === 'admin') && (
                           <>
-                            <button onClick={() => openEditModal(a)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded" title={t('edit')}>
+                            <IconButton label={t('edit')} onClick={() => openEditModal(a)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded">
                               <Pencil className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => handleDelete(a.id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded" title={t('delete')}>
+                            </IconButton>
+                            <IconButton label={t('delete')} onClick={() => handleDelete(a.id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded">
                               <Trash2 className="w-4 h-4" />
-                            </button>
+                            </IconButton>
                           </>
                         )}
                       </div>
@@ -393,16 +380,18 @@ export function Achievements() {
                 <p className="text-gray-700 dark:text-gray-300 text-sm mb-4">{localizeAchievementDescription(a.name, a.description, t)}</p>
 
                 {isUnlocked ? (
-                  <p className="text-xs text-green-600 dark:text-green-400 font-medium">
+                  <p className="text-xs text-green-700 dark:text-green-400 font-medium">
                     {t('earnedAt', { date: new Date(a.earned_at!).toLocaleDateString() })}
                   </p>
                 ) : (
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mt-2">
-                    <div
-                      className="bg-indigo-600 h-2.5 rounded-full"
-                      style={{ width: `${Math.min(a.progress || 0, 100)}%` }}
-                    ></div>
-                    <p className="text-xs text-right mt-1 text-gray-500">
+                  <div className="mt-2">
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                      <div
+                        className="bg-indigo-600 h-2.5 rounded-full"
+                        style={{ width: `${Math.min(a.progress || 0, 100)}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-right mt-1 text-gray-500 dark:text-gray-400">
                       {a.progress || 0}%
                     </p>
                   </div>
@@ -415,19 +404,13 @@ export function Achievements() {
 
       {/* Create/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation">
-          <div
-            ref={editorDialogRef}
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-md mx-4"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="achievement-editor-title"
-          >
+        <Dialog open onOpenChange={(open) => { if (!open) { setShowModal(false); setEditingAchievement(null); resetForm(); } }}>
+          <DialogContent showCloseButton={false} className="max-w-md p-6">
             <div className="flex justify-between items-center mb-4">
-              <h3 id="achievement-editor-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                 {editingAchievement ? t('editTitle') : t('createTitle')}
-              </h3>
-              <button onClick={() => { setShowModal(false); setEditingAchievement(null); resetForm(); }} className="text-gray-400 hover:text-gray-600" aria-label={t('close')}>
+              </DialogTitle>
+              <button onClick={() => { setShowModal(false); setEditingAchievement(null); resetForm(); }} className="text-gray-400 hover:text-gray-600 dark:text-gray-300" aria-label={t('close')}>
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -531,29 +514,21 @@ export function Achievements() {
                 className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
                 {t('cancel')}
               </button>
-              <button onClick={editingAchievement ? handleUpdate : handleCreate}
-                disabled={nameIsEmpty}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
+              <Button onClick={editingAchievement ? handleUpdate : handleCreate} disabled={nameIsEmpty} >
                 {editingAchievement ? t('save') : t('create')}
-              </button>
+              </Button>
             </div>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* Award Modal */}
       {showAwardModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation">
-          <div
-            ref={awardDialogRef}
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-sm mx-4"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="achievement-award-title"
-          >
+        <Dialog open onOpenChange={(open) => { if (!open) { setShowAwardModal(false); setAwardingAchievementId(null); } }}>
+          <DialogContent showCloseButton={false} className="max-w-sm p-6">
             <div className="flex justify-between items-center mb-4">
-              <h3 id="achievement-award-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('awardTitle')}</h3>
-              <button onClick={() => { setShowAwardModal(false); setAwardingAchievementId(null); }} className="text-gray-400 hover:text-gray-600" aria-label={t('close')}>
+              <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('awardTitle')}</DialogTitle>
+              <button onClick={() => { setShowAwardModal(false); setAwardingAchievementId(null); }} className="text-gray-400 hover:text-gray-600 dark:text-gray-300" aria-label={t('close')}>
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -601,30 +576,23 @@ export function Achievements() {
                 className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
                 {t('cancel')}
               </button>
-              <button onClick={handleAward} disabled={!selectedStudentId}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50">
+              <Button variant="accent" onClick={handleAward} disabled={!selectedStudentId}>
                 {t('award')}
-              </button>
+              </Button>
             </div>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* Delete Confirmation Modal */}
       {pendingDeleteId != null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="presentation">
-          <div
-            ref={deleteDialogRef}
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-sm mx-4"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="achievement-delete-title"
-          >
+        <Dialog open onOpenChange={(open) => { if (!open) setPendingDeleteId(null) }}>
+          <DialogContent showCloseButton={false} className="max-w-sm p-6">
             <div className="flex justify-between items-center mb-4">
-              <h3 id="achievement-delete-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                 {t('deleteTitle')}
-              </h3>
-              <button onClick={() => setPendingDeleteId(null)} className="text-gray-400 hover:text-gray-600" aria-label={t('close')}>
+              </DialogTitle>
+              <button onClick={() => setPendingDeleteId(null)} className="text-gray-400 hover:text-gray-600 dark:text-gray-300" aria-label={t('close')}>
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -645,16 +613,12 @@ export function Achievements() {
               >
                 {t('cancel')}
               </button>
-              <button
-                onClick={confirmDeleteAchievement}
-                disabled={isDeleting}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
-              >
+              <Button variant="danger" onClick={confirmDeleteAchievement} disabled={isDeleting}>
                 {t('delete')}
-              </button>
+              </Button>
             </div>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   )

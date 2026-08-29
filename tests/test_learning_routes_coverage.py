@@ -206,3 +206,116 @@ def test_get_history_failure_maps_to_400(admin_headers, mock_learning_service):
         "/api/learning/history/1", headers=admin_headers
     )
     assert response.status_code == 400
+
+
+def test_teacher_rbac_learning_access(test_db_session, mock_learning_service):
+    """Verify teachers cannot start sessions or mutate them, but assigned teachers can read progress and history."""
+    from src.aac_app.models import LearningSession, StudentTeacher, User
+    from src.aac_app.services.auth_service import get_password_hash
+    from tests.auth_helpers import create_test_headers
+
+    # Create student
+    student = User(
+        username="rbac_student",
+        display_name="RBAC Student",
+        email="rbac_student@test.com",
+        password_hash=get_password_hash("Student123!"),
+        user_type="student",
+        is_active=True,
+    )
+    # Create assigned teacher
+    assigned_teacher = User(
+        username="rbac_assigned_teacher",
+        display_name="RBAC Assigned Teacher",
+        email="assigned@test.com",
+        password_hash=get_password_hash("Teacher123!"),
+        user_type="teacher",
+        is_active=True,
+    )
+    # Create unassigned teacher
+    unassigned_teacher = User(
+        username="rbac_unassigned_teacher",
+        display_name="RBAC Unassigned Teacher",
+        email="unassigned@test.com",
+        password_hash=get_password_hash("Teacher123!"),
+        user_type="teacher",
+        is_active=True,
+    )
+    test_db_session.add_all([student, assigned_teacher, unassigned_teacher])
+    test_db_session.commit()
+    test_db_session.refresh(student)
+    test_db_session.refresh(assigned_teacher)
+    test_db_session.refresh(unassigned_teacher)
+
+    # Assign student to assigned_teacher
+    assignment = StudentTeacher(student_id=student.id, teacher_id=assigned_teacher.id)
+    test_db_session.add(assignment)
+
+    # Create active session for student
+    session = LearningSession(user_id=student.id, topic_name="Colors", status="active")
+    test_db_session.add(session)
+    test_db_session.commit()
+    test_db_session.refresh(session)
+
+    assigned_headers = create_test_headers(assigned_teacher.id, assigned_teacher.username, "teacher")
+    unassigned_headers = create_test_headers(unassigned_teacher.id, unassigned_teacher.username, "teacher")
+    student_headers = create_test_headers(student.id, student.username, "student")
+
+    # 1. Start session: only student/admin allowed; teachers cannot start sessions for students (403)
+    res_teacher_start = client.post(
+        f"/api/learning/start?user_id={student.id}",
+        headers=assigned_headers,
+        json={"topic": "Colors"},
+    )
+    assert res_teacher_start.status_code == 403
+
+    mock_learning_service.start_learning_session.return_value = {"success": True, "session_id": session.id}
+    res_student_start = client.post(
+        f"/api/learning/start?user_id={student.id}",
+        headers=student_headers,
+        json={"topic": "Colors"},
+    )
+    assert res_student_start.status_code == 200
+
+    # 2. Session mutation: teachers cannot submit answers or end student's session (403)
+    mock_learning_service.process_response.return_value = {"success": True}
+    res_teacher_answer = client.post(
+        f"/api/learning/{session.id}/answer",
+        headers=assigned_headers,
+        json={"answer": "blue"},
+    )
+    assert res_teacher_answer.status_code == 403
+
+    res_teacher_end = client.post(
+        f"/api/learning/{session.id}/end",
+        headers=assigned_headers,
+    )
+    assert res_teacher_end.status_code == 403
+
+    # 3. Read progress: assigned teacher allowed (200), unassigned teacher forbidden (403)
+    mock_learning_service.get_session_progress.return_value = {"success": True, "progress": 80}
+    res_prog_ok = client.get(
+        f"/api/learning/{session.id}/progress",
+        headers=assigned_headers,
+    )
+    assert res_prog_ok.status_code == 200
+
+    res_prog_denied = client.get(
+        f"/api/learning/{session.id}/progress",
+        headers=unassigned_headers,
+    )
+    assert res_prog_denied.status_code == 403
+
+    # 4. Read history: assigned teacher allowed (200), unassigned teacher forbidden (403)
+    mock_learning_service.get_user_history.return_value = {"success": True, "sessions": []}
+    res_hist_ok = client.get(
+        f"/api/learning/history/{student.id}",
+        headers=assigned_headers,
+    )
+    assert res_hist_ok.status_code == 200
+
+    res_hist_denied = client.get(
+        f"/api/learning/history/{student.id}",
+        headers=unassigned_headers,
+    )
+    assert res_hist_denied.status_code == 403

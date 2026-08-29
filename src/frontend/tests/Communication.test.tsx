@@ -39,7 +39,10 @@ const hoisted = vi.hoisted(() => {
     currentSession: null as { session_id: string } | null,
     isLoading: false,
   };
-  const ttsHandlers: { cb: ((s: 'idle' | 'speaking') => void) | null } = { cb: null };
+  const ttsHandlers: {
+    cb: ((s: 'idle' | 'speaking') => void) | null;
+    status: 'idle' | 'speaking';
+  } = { cb: null, status: 'idle' };
   const api = { get: vi.fn(), post: vi.fn(), put: vi.fn() };
   return { boardStore, auth, learning, ttsHandlers, api, addToast: vi.fn() };
 });
@@ -91,6 +94,7 @@ vi.mock('../src/lib/tts', () => ({
         hoisted.ttsHandlers.cb = null;
       };
     }),
+    getStatus: vi.fn(() => hoisted.ttsHandlers.status),
     enqueue: vi.fn(),
     cancelAll: vi.fn(),
   },
@@ -337,6 +341,7 @@ const getTts = async () => (await import('../src/lib/tts')).tts as {
   enqueue: ReturnType<typeof vi.fn>;
   cancelAll: ReturnType<typeof vi.fn>;
   onStatusChange: ReturnType<typeof vi.fn>;
+  getStatus: ReturnType<typeof vi.fn>;
 };
 
 describe('Communication page', () => {
@@ -644,6 +649,26 @@ describe('Communication page', () => {
         hoisted.ttsHandlers.cb?.('speaking');
       });
       expect(screen.getByText('is-speaking')).toBeInTheDocument();
+    });
+
+    it('initializes the speaking state from the TTS queue on mount (no stale stuck state)', async () => {
+      // Simulate the module-singleton TTS queue already speaking when the page
+      // mounts (e.g. a symbol was tapped just before navigating back to this
+      // page). The page must reflect `speaking` immediately instead of waiting
+      // for a later status transition, so the speak control is never left
+      // enabled while speech is (or was just) in flight.
+      hoisted.ttsHandlers.status = 'speaking';
+      renderCommunication();
+      // The sentence strip (and therefore the speaking indicator) renders
+      // once a board is selected.
+      fireEvent.click(screen.getByRole('button', { name: /Morning Routine/i }));
+      expect(screen.getByText('is-speaking')).toBeInTheDocument();
+
+      // The queue later reports idle; the page follows and the control unlocks.
+      act(() => {
+        hoisted.ttsHandlers.cb?.('idle');
+      });
+      expect(screen.queryByText('is-speaking')).not.toBeInTheDocument();
     });
 
     it('requests fullscreen and updates on fullscreenchange', () => {

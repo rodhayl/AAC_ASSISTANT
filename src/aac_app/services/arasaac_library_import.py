@@ -23,6 +23,7 @@ import asyncio
 from pathlib import Path
 
 from loguru import logger
+from sqlalchemy.exc import OperationalError
 
 from src import config
 from src.aac_app.db import get_session
@@ -31,6 +32,17 @@ from src.aac_app.services.arasaac import ArasaacService
 
 MAX_CONCURRENCY = 10
 COMMIT_BATCH = 200
+# A concurrent request (e.g. a login) holds SQLite's single write lock for a
+# few milliseconds while it commits; the bulk import retries a batch instead
+# of aborting the whole 17k-row import on a transient collision.
+_LOCK_RETRY_ATTEMPTS = 3
+_LOCK_RETRY_DELAY_SECONDS = 0.5
+
+
+def _is_locked_error(exc: OperationalError) -> bool:
+    """Return True when the failure is SQLite write-lock contention."""
+    message = str(exc.orig if exc.orig is not None else exc)
+    return "locked" in message.lower()
 
 
 def _imported_key(locale: str) -> str:
@@ -124,34 +136,63 @@ async def import_arasaac_library(locale: str = "es") -> dict[str, int]:
             batch = chosen[offset : offset + COMMIT_BATCH]
             results = await asyncio.gather(*(download(entry) for entry, _ in batch))
 
-            with get_session() as db:
-                for (entry, label), (_, content) in zip(batch, results, strict=True):
-                    path = image_path(entry)
-                    if content is None and not path.exists():
-                        failed += 1
-                        continue
-                    if content is not None and not path.exists():
-                        path.write_bytes(content)
+            # Write one batch inside a single transaction. A concurrent request
+            # may hold the SQLite write lock for a few milliseconds; retry a
+            # bounded number of times instead of letting one collision abort
+            # the entire library import. File writes are idempotent (skipped
+            # when the file exists), so a retried batch cannot duplicate rows
+            # or files. Counters are updated only after the commit succeeds.
+            batch_imported = 0
+            batch_failed = 0
+            for attempt in range(_LOCK_RETRY_ATTEMPTS):
+                try:
+                    with get_session() as db:
+                        for (entry, label), (_, content) in zip(
+                            batch, results, strict=True
+                        ):
+                            path = image_path(entry)
+                            if content is None and not path.exists():
+                                batch_failed += 1
+                                continue
+                            if content is not None and not path.exists():
+                                path.write_bytes(content)
 
-                    all_keywords = ", ".join(
-                        k.get("keyword", "")
-                        for k in (entry.get("keywords") or [])
-                        if k.get("keyword")
+                            all_keywords = ", ".join(
+                                k.get("keyword", "")
+                                for k in (entry.get("keywords") or [])
+                                if k.get("keyword")
+                            )
+                            categories = entry.get("categories") or []
+                            meaning = (entry.get("keywords") or [{}])[0].get("meaning")
+                            db.add(
+                                Symbol(
+                                    label=label,
+                                    description=meaning or None,
+                                    category=categories[0] if categories else "general",
+                                    keywords=all_keywords or None,
+                                    language=locale,
+                                    image_path=f"/uploads/symbols/{path.name}",
+                                    is_builtin=False,
+                                )
+                            )
+                            batch_imported += 1
+                    break
+                except OperationalError as exc:
+                    if not _is_locked_error(exc) or attempt == _LOCK_RETRY_ATTEMPTS - 1:
+                        raise
+                    logger.warning(
+                        "ARASAAC import batch {} hit a transient write lock; "
+                        "retrying (attempt {}/{})",
+                        offset // COMMIT_BATCH + 1,
+                        attempt + 1,
+                        _LOCK_RETRY_ATTEMPTS,
                     )
-                    categories = entry.get("categories") or []
-                    meaning = (entry.get("keywords") or [{}])[0].get("meaning")
-                    db.add(
-                        Symbol(
-                            label=label,
-                            description=meaning or None,
-                            category=categories[0] if categories else "general",
-                            keywords=all_keywords or None,
-                            language=locale,
-                            image_path=f"/uploads/symbols/{path.name}",
-                            is_builtin=False,
-                        )
-                    )
-                    imported += 1
+                    await asyncio.sleep(_LOCK_RETRY_DELAY_SECONDS * (attempt + 1))
+                    batch_imported = 0
+                    batch_failed = 0
+
+            imported += batch_imported
+            failed += batch_failed
 
             logger.info(
                 "progress: {} imported / {} total, {} failed",

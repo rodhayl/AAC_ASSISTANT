@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { X, Volume2, History, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '../ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from '../ui/dialog';
 
 interface KeyboardOverlayProps {
   isOpen: boolean;
@@ -62,16 +68,6 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
     return () => window.clearTimeout(focusTimer);
   }, [isOpen]);
 
-  // Close on Escape so keyboard users are never trapped in the modal.
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
   const handleSpeak = () => {
     if (text.trim()) {
       onSpeak(text);
@@ -106,19 +102,17 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200" role="presentation">
-      <div
-        className="w-full max-w-2xl bg-surface rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom-10 duration-300 h-[80vh] sm:h-auto"
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent
+        showCloseButton={false}
         data-mobile-dialog="true"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="keyboard-overlay-title"
+        className="max-w-2xl h-[80vh] sm:h-auto p-0 max-sm:top-auto max-sm:bottom-0 max-sm:translate-y-0 max-sm:rounded-b-none"
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <h3 id="keyboard-overlay-title" className="text-lg font-bold text-primary flex items-center gap-2">
+          <DialogTitle className="text-lg font-bold text-primary flex items-center gap-2">
             {t('typeToSpeak')}
-          </h3>
+          </DialogTitle>
           <button 
             onClick={onClose}
             className="modal-close p-2 rounded-lg text-secondary hover:bg-surface-hover transition-colors"
@@ -197,19 +191,19 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
                     >
                         {t('clear')}
                     </button>
-                    <button
+                    <Button
                         onClick={handleSpeak}
                         disabled={!text.trim()}
-                        className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 transition-all transform active:scale-95 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed"
+                        className="flex-1 sm:flex-none gap-2 px-6 font-bold shadow-lg shadow-indigo-500/30 active:scale-95"
                         data-touch-target="true"
                     >
-                        <Volume2 className="w-5 h-5" />
+                        <Volume2 />
                         {t('speak')}
-                    </button>
+                    </Button>
                 </div>
             </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

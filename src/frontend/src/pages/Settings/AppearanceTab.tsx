@@ -3,6 +3,7 @@ import { AlertCircle, Bell, Check, Clock, Eye, Globe, Moon, MousePointer, Volume
 import { useTranslation } from 'react-i18next';
 import { Toggle } from '../../components/ui/Toggle';
 import type { Preferences } from './types';
+import { Button } from '../../components/ui/button';
 
 interface AppearanceTabProps {
   preferences: Preferences;
@@ -44,24 +45,20 @@ export function AppearanceTab({
               <AlertCircle className="w-4 h-4 mr-1" /> {prefsSaveError}
             </span>
           )}
-          <button
-            onClick={onSave}
-            disabled={prefsLoading}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium"
-          >
+          <Button onClick={onSave} disabled={prefsLoading} className="font-medium" >
             {prefsLoading ? t('security.saving') : t('preferences.saveAppearance')}
-          </button>
+          </Button>
         </div>
       </div>
-      <div className="divide-y divide-gray-200">
+      <div className="divide-y divide-gray-200 dark:divide-gray-700">
         <div className="p-6 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-indigo-50 rounded-lg">
               <Globe className="w-5 h-5 text-indigo-600" />
             </div>
             <div>
-              <p className="font-medium text-gray-900">{t('preferences.language')}</p>
-              <p className="text-sm text-gray-500">{t('preferences.languageHelp')}</p>
+              <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.language')}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.languageHelp')}</p>
             </div>
           </div>
           <select
@@ -83,8 +80,8 @@ export function AppearanceTab({
               <Volume2 className="w-5 h-5 text-purple-600" />
             </div>
             <div>
-              <p className="font-medium text-gray-900">{t('preferences.voiceMode')}</p>
-              <p className="text-sm text-gray-500">{t('preferences.voiceModeHelp')}</p>
+              <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.voiceMode')}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.voiceModeHelp')}</p>
             </div>
           </div>
           <Toggle
@@ -102,8 +99,8 @@ export function AppearanceTab({
               <Bell className="w-5 h-5 text-purple-600" />
             </div>
             <div>
-              <p className="font-medium text-gray-900">{t('preferences.notifications')}</p>
-              <p className="text-sm text-gray-500">{t('preferences.notificationsHelp')}</p>
+              <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.notifications')}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.notificationsHelp')}</p>
             </div>
           </div>
           <Toggle
@@ -118,11 +115,11 @@ export function AppearanceTab({
         <div className="p-6 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-gray-100 rounded-lg">
-              <Moon className="w-5 h-5 text-gray-600" />
+              <Moon className="w-5 h-5 text-gray-600 dark:text-gray-300" />
             </div>
             <div>
-              <p className="font-medium text-gray-900">{t('preferences.dark')}</p>
-              <p className="text-sm text-gray-500">{t('preferences.darkHelp')}</p>
+              <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.dark')}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.darkHelp')}</p>
             </div>
           </div>
           <Toggle
@@ -140,8 +137,8 @@ export function AppearanceTab({
               <Clock className="w-5 h-5 text-green-600" />
             </div>
             <div>
-              <p className="font-medium text-gray-900">{t('preferences.dwellTime')}</p>
-              <p className="text-sm text-gray-500">{t('preferences.dwellTimeHelp')}</p>
+              <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.dwellTime')}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.dwellTimeHelp')}</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -159,7 +156,7 @@ export function AppearanceTab({
               className="w-32"
               aria-label={t('preferences.dwellTime')}
             />
-            <span className="text-sm text-gray-600 w-16 text-right">{preferences.dwell_time}ms</span>
+            <span className="text-sm text-gray-600 dark:text-gray-300 w-16 text-right">{preferences.dwell_time}ms</span>
           </div>
         </div>
 
@@ -169,8 +166,8 @@ export function AppearanceTab({
               <MousePointer className="w-5 h-5 text-orange-600" />
             </div>
             <div>
-              <p className="font-medium text-gray-900">{t('preferences.ignoreRepeats')}</p>
-              <p className="text-sm text-gray-500">{t('preferences.ignoreRepeatsHelp')}</p>
+              <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.ignoreRepeats')}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.ignoreRepeatsHelp')}</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -188,7 +185,7 @@ export function AppearanceTab({
               className="w-32"
               aria-label={t('preferences.ignoreRepeats')}
             />
-            <span className="text-sm text-gray-600 w-16 text-right">{preferences.ignore_repeats}ms</span>
+            <span className="text-sm text-gray-600 dark:text-gray-300 w-16 text-right">{preferences.ignore_repeats}ms</span>
           </div>
         </div>
 
@@ -198,8 +195,8 @@ export function AppearanceTab({
               <Eye className="w-5 h-5 text-yellow-600" />
             </div>
             <div>
-              <p className="font-medium text-gray-900">{t('preferences.highContrast')}</p>
-              <p className="text-sm text-gray-500">{t('preferences.highContrastHelp')}</p>
+              <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.highContrast')}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.highContrastHelp')}</p>
             </div>
           </div>
           <Toggle

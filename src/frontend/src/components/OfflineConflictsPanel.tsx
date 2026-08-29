@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useOfflineStore } from '../store/offlineStore'
 import api, { apiOffline } from '../lib/api'
 import { formatTime } from '../lib/format'
+import { IconButton } from './ui/icon-button'
 
 export function OfflineConflictsPanel() {
   const { t } = useTranslation('common');
@@ -45,14 +46,13 @@ export function OfflineConflictsPanel() {
               {t('offline.title', { count: conflicts.length })}
             </h3>
           </div>
-          <button
+          <IconButton
+            label={t('offline.clearAll')}
             onClick={() => clearConflicts()}
             className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200"
-            aria-label={t('offline.clearAll')}
-            title={t('offline.clearAll')}
           >
             <X className="w-5 h-5" />
-          </button>
+          </IconButton>
         </div>
 
         <div className="max-h-96 overflow-y-auto">
@@ -80,22 +80,20 @@ export function OfflineConflictsPanel() {
                 </div>
 
                 <div className="flex gap-1 flex-shrink-0">
-                  <button
+                  <IconButton
+                    label={t('offline.retry')}
                     onClick={() => handleRetry(conflict.id)}
                     className="p-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded"
-                    aria-label={t('offline.retry')}
-                    title={t('offline.retry')}
                   >
                     <RefreshCw className="w-4 h-4" />
-                  </button>
-                  <button
+                  </IconButton>
+                  <IconButton
+                    label={t('offline.dismiss')}
                     onClick={() => handleDismiss(conflict.id)}
                     className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                    aria-label={t('offline.dismiss')}
-                    title={t('offline.dismiss')}
                   >
                     <X className="w-4 h-4" />
-                  </button>
+                  </IconButton>
                 </div>
               </div>
             </div>

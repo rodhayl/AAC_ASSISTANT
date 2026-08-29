@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BoardSymbol } from '../src/types'
 import { SymbolEditorDialog } from '../src/components/board/SymbolEditorDialog'
@@ -39,27 +39,50 @@ const symbol: BoardSymbol = {
   },
 }
 
+// Base UI Select needs the jsdom polyfills from vitest.setup.ts; options are
+// activated with pointerDown+click (userEvent/click-only hang or fail).
+async function openSelectAndPick(triggerName: string, optionName: string) {
+  const trigger = screen.getByRole('combobox', { name: triggerName })
+  fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
+  fireEvent.click(trigger)
+  await act(async () => {})
+  const option = screen.getByRole('option', { name: optionName })
+  fireEvent.pointerDown(option, { button: 0, ctrlKey: false })
+  fireEvent.click(option)
+  await act(async () => {})
+}
+
 describe('SymbolEditorDialog', () => {
   beforeEach(() => {
     fetchBoards.mockReset()
   })
 
-  it('excludes the current board from link targets and exposes dialog semantics', () => {
+  it('excludes the current board from link targets and exposes dialog semantics', async () => {
+    const onSave = vi.fn()
     render(
       <SymbolEditorDialog
         isOpen
         onClose={vi.fn()}
-        onSave={vi.fn()}
+        onSave={onSave}
         symbol={symbol}
         currentBoardId={42}
       />,
     )
 
     expect(screen.getByRole('dialog', { name: 'editSymbol' })).toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: 'Current board' })).not.toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Linked board' })).toBeInTheDocument()
     expect(screen.getByLabelText('customLabel')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'close' })).toBeInTheDocument()
     expect(fetchBoards).toHaveBeenCalledTimes(1)
+
+    // The trigger shows the current value (none); opening the popup lists only
+    // the non-current boards.
+    await openSelectAndPick('linkToBoard', 'Linked board')
+
+    expect(screen.getByRole('dialog', { name: 'editSymbol' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Current board' })).not.toBeInTheDocument()
+
+    // Selecting a board then saving passes its id to onSave.
+    fireEvent.click(screen.getByRole('button', { name: 'save' }))
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ linked_board_id: 43 }))
   })
 })

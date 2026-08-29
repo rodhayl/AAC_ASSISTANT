@@ -106,3 +106,7 @@ class BaseLLMProvider(ABC):
                 if self.client is not None:
                     self._pending_close_task = loop.create_task(self.client.aclose())
                     self._pending_close_task.add_done_callback(self._consume_close_task)
+
+    async def close(self) -> None:
+        """Backward-compatible async close alias."""
+        await self.close_async()
