@@ -16,7 +16,7 @@
 | Targeted re-run of the 4 affected specs after root-cause fixes | 12 passed (26.5s) |
 | Full suite after the voice-mode fix | 243 passed (8.4m) |
 | Targeted re-run after final locator hardening | 10 passed (24.7s) |
-| Final full suite (clean tree) | 243 passed (8.4m / 9.0m) |
+| Final full suite (clean tree) | 243 passed (8.4m / 9.0m / 8.4m) |
 
 ### E2E failures found and fixed during this pass
 
@@ -53,6 +53,7 @@
 ## Full non-E2E frontend suite
 
 - **80 test files, 649 tests — all passing** (`npm test -- --run`)
+- Full backend suite: **924 tests — all passing** (`uv run pytest`, 3m13s)
 - TypeScript: pass (`npm run typecheck`)
 - ESLint: pass (`npm run lint`)
 - Production build: pass (`npm run build`), bundle within budget
