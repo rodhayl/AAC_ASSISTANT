@@ -309,7 +309,72 @@ Precise ledger-range count for the 16 destructive operations: **58 sites** — d
 
 ---
 
-## 10. Repository Modification Confirmation
+## 10. Post-Audit GUI/E2E Validation & Production Robustness Fix (2026-08-29)
+
+After the audit chain was consolidated, a GUI/E2E validation pass exercised the
+production build against a live server and surfaced one genuine production
+robustness defect, which was remediated and regression-tested.
+
+### 10.1 Production defect: login/ARASAAC-import SQLite write-lock contention
+
+**Discovery**: during the first authenticated E2E run, the admin login timed out
+(20s) while the startup ARASAAC import held the SQLite write lock; a controlled
+reproduction on a fresh DB with the import enabled showed 1 of 4 successful
+logins stalling the full 30s `busy_timeout` and the import dying with
+`sqlite3.OperationalError: database is locked`. The failed-login path committed
+inline and never stalled — only the success path did.
+
+**Root cause**: the login success path flushed its writes (lockout reset + audit
+INSERT) but deferred the commit to `get_db` teardown, which runs *after* token
+generation. The request session therefore held the SQLite RESERVED lock across
+token generation; the import's next batch blocked holding SHARED, and the
+login's COMMIT needed EXCLUSIVE — a circular wait that only broke when one
+side's 30s timeout fired. Empirically proven with a minimal two-connection
+SQLAlchemy test.
+
+**Remediation**:
+- `src/api/routers/auth.py`: the success path now commits its writes inline
+  before issuing tokens (mirroring the failed path), closing the write
+  transaction promptly.
+- `src/aac_app/services/arasaac_library_import.py`: a transient
+  `OperationalError("database is locked")` on a batch commit is retried instead
+  of aborting the whole ~17k-row import (no double-counting: the retry re-flushes
+  the same batch).
+
+**Regression tests**: `tests/test_login_write_lock_contention.py` (4 tests):
+durability of the success-path writes independent of `get_db` teardown, and
+import-batch retry without duplication. **Stress verification**: with the import
+enabled (`es,en`), 10/10 successful logins completed in ≤0.37s (previously one
+took 30.44s) and the import finished 9093/9093 with zero failures.
+
+### 10.2 Full E2E suite (real browser, production build, seeded backend)
+
+Final result: **243 passed** (run twice for stability). Five spec-level defects
+were root-caused and fixed (details in `MANUAL_GUI_SMOKE_RESULTS.md`):
+
+1. `AppToaster` sonner `containerAriaLabel="Alerts"` — removed the live-region
+   label collision with the Navbar bell (production a11y fix).
+2. `SentenceStrip` chips: stable `data-testid="sentence-chip"` (production test
+   affordance).
+3. `contrast-interactive` symbol-search step made conditional on fully-populated
+   boards (spec fix).
+4. `llm-integration` Ask AI mock now returns `board_id: 1` (mock fidelity).
+5. `voice-mode` persistence clicks the visible `[role="switch"]` instead of the
+   hidden mirror input (spec fix).
+
+### 10.3 Complete validation state at consolidation
+
+| Suite | Result |
+| :--- | :--- |
+| Backend pytest (full, first complete run) | **924 passed** (3m13s) |
+| Frontend Vitest (full) | **649 passed** (80 files) |
+| Frontend Playwright E2E (full, ×2) | **243 passed** each run |
+| TypeScript / ESLint / Vite build | pass; bundles within budget |
+| Ruff (`src tests scripts`) / `git diff --check` | pass / clean |
+
+---
+
+## 11. Repository Modification Confirmation
 
 `Production backend modified by the no-log remediation: YES — 9 narrowly scoped logging additions`
 `Backend tests modified by the no-log remediation: YES — focused P1/P2 log-emission regression tests`
@@ -322,7 +387,7 @@ Historical disposition remains unchanged: the prior verifier's gratuitous 2-line
 
 ---
 
-## 11. Artifact Index
+## 12. Artifact Index
 
 | Artifact | Content |
 | :--- | :--- |
@@ -345,3 +410,5 @@ Historical disposition remains unchanged: the prior verifier's gratuitous 2-line
 | `BACKEND_EVIDENCE_CHALLENGE_FINAL.md` | Final verdict: PRIOR_AUDIT_EVIDENCE_HAS_MATERIAL_GAPS |
 | `BACKEND_VERIFIER_PRIOR_MUTATION_DISCLOSURE.md` | Unauthorized `analytics.py` modification disclosure |
 | `BACKEND_REMAINING_WORK_CLOSURE.md` | Closed-item register, targeted validation evidence, and scope qualifications |
+| `MANUAL_GUI_SMOKE_RESULTS.md` | GUI/E2E validation results: 243 E2E + 649 Vitest passing, spec-fix root causes, backend smoke evidence |
+| `tests/test_login_write_lock_contention.py` | Regression tests for the login inline-commit fix and ARASAAC import batch retry |
