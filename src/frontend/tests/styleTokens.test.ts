@@ -18,7 +18,9 @@ function productionSources(): Array<{ file: string; src: string }> {
       for (const entry of readdirSync(path, { withFileTypes: true })) {
         const fullPath = resolve(path, entry.name);
         if (entry.isDirectory()) visit(fullPath);
-        else if (entry.name.endsWith('.tsx')) {
+        else if (entry.name.endsWith('.tsx') || entry.name.endsWith('.ts')) {
+          // Only production sources: skip tests and type declarations.
+          if (/\.test\.(ts|tsx)$/.test(entry.name) || entry.name.endsWith('.d.ts')) continue;
           output.push({ file: fullPath, src: readFileSync(fullPath, 'utf8') });
         }
       }
