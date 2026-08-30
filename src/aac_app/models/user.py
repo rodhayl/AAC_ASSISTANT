@@ -1,6 +1,6 @@
 """User accounts, preferences, and teacher/student relationships."""
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -41,6 +41,7 @@ class UserSettings(Base):
     tts_provider = Column(String(20), default="kokoro", server_default="kokoro")
     tts_voice = Column(String(20), default="default")
     tts_local_voice = Column(String(40), default="default", server_default="default")
+    tts_local_speed = Column(Float, default=1.0, server_default="1.0")
     tts_language = Column(String(10), default="en")
     ui_language = Column(String(10), default="es-ES")
     notifications_enabled = Column(Boolean, default=True)

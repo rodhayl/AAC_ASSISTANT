@@ -102,6 +102,7 @@ export function VoiceTab({
   const [sttModelSaving, setSttModelSaving] = useState(false);
   const setTTSProvider = useTTSStore((state) => state.setTTSProvider);
   const setLocalVoice = useTTSStore((state) => state.setLocalVoice);
+  const setLocalSpeed = useTTSStore((state) => state.setLocalSpeed);
   const ttsWarmupStatus = useTTSStore((state) => state.ttsWarmupStatus);
   const speechWarmupStatus = useTTSStore((state) => state.speechWarmupStatus);
   const vectorWarmupStatus = useTTSStore((state) => state.vectorWarmupStatus);
@@ -247,6 +248,40 @@ export function VoiceTab({
     </div>
   );
 
+  const LOCAL_SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+
+  const localSpeedPicker = (
+    <div className="flex items-center justify-between gap-4">
+      <div>
+        <p className="text-sm font-medium text-foreground">
+          {t('ai.localSpeed')}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {t('ai.localSpeedHelp')}
+        </p>
+      </div>
+      <select
+        id="pref-local-tts-speed"
+        name="local_tts_speed"
+        aria-label={t('ai.localSpeed')}
+        value={String(preferences.tts_local_speed)}
+        disabled={!localTTSAvailable}
+        onChange={(event) => {
+          const speed = parseFloat(event.target.value);
+          setLocalSpeed(speed);
+          setPreferences((prev) => ({ ...prev, tts_local_speed: speed }));
+        }}
+        className="block w-72 pl-3 pr-10 py-2 text-base border-border focus:outline-none focus:ring-brand focus:border-brand sm:text-sm rounded-md disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {LOCAL_SPEED_OPTIONS.map((speed) => (
+          <option key={speed} value={String(speed)}>
+            {speed}×{speed === 1.0 ? ` (${t('ai.speedNormal')})` : ''}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+
   const voiceStatusItems = [
     {
       key: 'ffmpeg',
@@ -385,6 +420,7 @@ export function VoiceTab({
               </div>
             )}
             {localVoicePicker}
+            {localSpeedPicker}
             <WarmupIndicator
               status={ttsWarmupStatus}
               inProgressText={t('ai.ttsWarmupInProgress')}

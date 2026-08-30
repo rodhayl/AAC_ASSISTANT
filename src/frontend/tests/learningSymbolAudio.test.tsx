@@ -374,6 +374,29 @@ describe('Learning symbol-first and audio-first flows', () => {
     expect(screen.getByText(welcome)).toBeInTheDocument();
   });
 
+  it('voice: speaks the first question when it arrives with the welcome message', async () => {
+    const store = (await import('../src/store/learningStore')).__mockStore;
+    const welcome = 'Hola, Admin. Hoy vamos a practicar Conversación General.';
+    const question = '¿Qué dices cuando llegas a casa de un amigo?';
+    store.startSession.mockImplementation(async () => {
+      store.currentSession = { session_id: 12, success: true, welcome_message: welcome };
+      store.messages = [{ role: 'assistant', content: welcome }];
+    });
+    store.askNextQuestion.mockImplementation(async () => {
+      store.messages = [
+        { role: 'assistant', content: welcome },
+        { role: 'assistant', content: question },
+      ];
+    });
+
+    render(<Learning />);
+
+    fireEvent.click(screen.getByTestId('learning-session-start'));
+
+    await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledWith(welcome, { rate: 0.9 }));
+    await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledWith(question, { rate: 0.9 }));
+  });
+
   it('voice: speaks the last assistant message through the TTS queue', async () => {
     const store = (await import('../src/store/learningStore')).__mockStore;
     store.messages = [{ role: 'assistant', content: 'Hello there' }];
@@ -381,6 +404,27 @@ describe('Learning symbol-first and audio-first flows', () => {
     render(<Learning />);
 
     await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledWith('Hello there', { rate: 0.9 }));
+  });
+
+  it('voice: speaks feedback when the answer appends user and assistant messages together', async () => {
+    const store = (await import('../src/store/learningStore')).__mockStore;
+    store.currentSession = { session_id: 12, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
+    store.messages = [{ role: 'assistant', content: 'Question' }];
+
+    const { rerender } = render(<Learning />);
+    await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledWith('Question', { rate: 0.9 }));
+    mockTtsEnqueue.mockReset();
+
+    store.messages = [
+      { role: 'assistant', content: 'Question' },
+      { role: 'user', content: 'Gracias' },
+      { role: 'assistant', content: '¡Gracias por intentar comunicarte!' },
+    ];
+    rerender(<Learning />);
+
+    await waitFor(() => {
+      expect(mockTtsEnqueue).toHaveBeenCalledWith('¡Gracias por intentar comunicarte!', { rate: 0.9 });
+    });
   });
 
   it('voice: replays the first message when a new session has the same greeting', async () => {

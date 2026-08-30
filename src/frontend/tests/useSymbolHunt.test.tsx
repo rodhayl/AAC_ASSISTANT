@@ -136,6 +136,25 @@ describe('useSymbolHunt game logic', () => {
     expect(result.current.targetSymbol).not.toBeNull();
   });
 
+  it('speaks each round instruction through TTS after the round is ready', async () => {
+    vi.useFakeTimers();
+    getApi
+      .mockResolvedValueOnce({ data: [makeBoard(1, 'Board', [makeSymbol(1, 'A'), makeSymbol(2, 'B')])] })
+      .mockResolvedValueOnce({
+        data: makeBoard(1, 'Board', [makeSymbol(1, 'Dog'), makeSymbol(2, 'Cat')]),
+      });
+
+    const { result } = renderHook(() => useSymbolHunt({ addToast }));
+    await flushMicrotasks();
+    await act(async () => {
+      await result.current.startGame(result.current.playableBoards[0]);
+    });
+
+    expect(enqueue).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(500));
+    expect(enqueue).toHaveBeenCalledWith(expect.stringMatching(/^Find (Dog|Cat)$/));
+  });
+
   it('rejects a board with fewer than two unique symbols', async () => {
     getApi
       .mockResolvedValueOnce({ data: [makeBoard(1, 'Board', [makeSymbol(1, 'A'), makeSymbol(2, 'B')])] })

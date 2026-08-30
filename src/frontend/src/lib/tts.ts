@@ -9,8 +9,10 @@ interface EnqueueOptions {
 
 const NO_START_WATCHDOG_MS = 1_500
 const SPEAKING_WATCHDOG_MS = 15_000
-// Allow extra time for the first local synthesis (model warm-up + network).
-const LOCAL_START_WINDOW_MS = 12_000
+// Allow local synthesis enough time for a cold model load plus generation.
+const LOCAL_START_WINDOW_MS = 60_000
+const SILENT_AUDIO_DATA_URI =
+  'data:audio/wav;base64,UklGRsQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
 
 // Voices load asynchronously in Chrome/Edge; cache them and refresh on the
 // voiceschanged event so speech never uses an empty voice list on first use.
@@ -209,6 +211,7 @@ class TTSQueue {
   private lastSpokenAt: Map<string | number, number>
   private debounceMs: number
   private activeUtteranceId: number | null
+  private activeIsLocal: boolean
   private nextUtteranceId: number
   private speakingRequestedAt: number | null
   private speakingStartedAt: number | null
@@ -216,8 +219,10 @@ class TTSQueue {
   private speakingWatchdog: ReturnType<typeof setTimeout> | null
   private localAudio: HTMLAudioElement | null
   private localAudioUrl: string | null
+  private localAudioElement: HTMLAudioElement | null
   private localStartWatchdog: ReturnType<typeof setTimeout> | null
   private localSynthesisCleanup: (() => void) | null
+  private unlockedAudio: HTMLAudioElement | null
 
   constructor() {
     this.queue = []
@@ -226,6 +231,7 @@ class TTSQueue {
     this.lastSpokenAt = new Map()
     this.debounceMs = 250
     this.activeUtteranceId = null
+    this.activeIsLocal = false
     this.nextUtteranceId = 0
     this.speakingRequestedAt = null
     this.speakingStartedAt = null
@@ -233,11 +239,27 @@ class TTSQueue {
     this.speakingWatchdog = null
     this.localAudio = null
     this.localAudioUrl = null
+    this.localAudioElement = null
     this.localStartWatchdog = null
     this.localSynthesisCleanup = null
+    this.unlockedAudio = null
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel()
     }
+  }
+
+  unlock() {
+    if (this.unlockedAudio || typeof window === 'undefined' || typeof window.Audio === 'undefined') return
+
+    const audio = new window.Audio(SILENT_AUDIO_DATA_URI)
+    audio.muted = true
+    audio.volume = 0
+    this.unlockedAudio = audio
+    void audio.play().catch(() => {
+      if (this.unlockedAudio === audio) {
+        this.unlockedAudio = null
+      }
+    })
   }
 
   onStatusChange(cb: (s: Status) => void) {
@@ -260,6 +282,7 @@ class TTSQueue {
     this.queue = []
     this.clearWatchdogs()
     this.activeUtteranceId = null
+    this.activeIsLocal = false
     this.speakingRequestedAt = null
     this.speakingStartedAt = null
     this.clearLocalSynthesisAttempt()
@@ -285,7 +308,10 @@ class TTSQueue {
 
   private processNext() {
     if (this.activeUtteranceId !== null) {
-      if (this.status !== 'speaking' || !this.isWatchdogExpired()) return
+      // Local Kokoro utterances run their own watchdogs (cold-synthesis
+      // window, playback-duration watchdog). The browser no-start watchdog
+      // must never kill a slow-but-healthy synthesis when new items arrive.
+      if (this.activeIsLocal || this.status !== 'speaking' || !this.isWatchdogExpired()) return
       this.finishCurrentUtterance(true)
     }
 
@@ -309,6 +335,7 @@ class TTSQueue {
     this.setStatus('speaking')
 
     const { ttsProvider, localTTSAvailable } = useTTSStore.getState()
+    this.activeIsLocal = ttsProvider === 'kokoro'
     if (ttsProvider === 'kokoro' && !capabilityChecked) {
       void this.waitForLocalTTS(item, utteranceId)
     } else if (ttsProvider === 'kokoro' && localTTSAvailable) {
@@ -381,6 +408,7 @@ class TTSQueue {
       this.clearLocalStartWatchdog(localStartWatchdog)
       clearSynthesisRequest()
       this.stopLocalAudio()
+      this.localAudioElement = null
       this.clearNoStartWatchdog()
       console.error('Kokoro TTS could not synthesize the utterance.')
       this.finishCurrentUtterance(false)
@@ -401,7 +429,7 @@ class TTSQueue {
       // The local engine uses its own voice selection (specific Kokoro voice
       // names); `selectedVoice` remains the browser voice used by
       // speakViaBrowser so the two paths never interfere.
-      const voicePref = useTTSStore.getState().localVoice
+      const { localVoice: voicePref, localSpeed } = useTTSStore.getState()
       const token = useAuthStore.getState().token || ''
 
       const controller = new AbortController()
@@ -421,7 +449,9 @@ class TTSQueue {
           text: item.text,
           lang: baseLang,
           voice: voicePref || 'default',
-          speed: item.opts.rate || 1.0,
+          // The user's base speed (Settings) is scaled by the per-message
+          // rate modifier and clamped to the range the backend accepts.
+          speed: clampLocalSpeed(localSpeed * (item.opts.rate || 1.0)),
         }),
         signal: controller.signal,
       })
@@ -446,7 +476,15 @@ class TTSQueue {
       if (localAbandoned || !this.isActiveUtterance(utteranceId)) return
 
       const url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
+      const audio = this.localAudioElement ?? this.unlockedAudio ?? new window.Audio()
+      if (this.unlockedAudio === audio) {
+        audio.pause()
+        this.unlockedAudio = null
+      }
+      this.localAudioElement = audio
+      audio.muted = false
+      audio.volume = 1
+      audio.src = url
       this.localAudio = audio
       this.localAudioUrl = url
 
@@ -661,6 +699,7 @@ class TTSQueue {
   private finishCurrentUtterance(cancelSpeech: boolean) {
     this.clearWatchdogs()
     this.activeUtteranceId = null
+    this.activeIsLocal = false
     this.speakingRequestedAt = null
     this.speakingStartedAt = null
     this.clearLocalSynthesisAttempt()
@@ -675,7 +714,13 @@ class TTSQueue {
 }
 
 export const tts = new TTSQueue()
-import { useTTSStore, type WarmupStatus } from '../store/ttsStore'
+
+if (typeof document !== 'undefined') {
+  const unlockAudio = () => tts.unlock()
+  document.addEventListener('pointerdown', unlockAudio, { capture: true, passive: true })
+  document.addEventListener('keydown', unlockAudio, { capture: true })
+}
+import { clampLocalSpeed, useTTSStore, type WarmupStatus } from '../store/ttsStore'
 import { useAuthStore } from '../store/authStore'
 import i18n from '../i18n/index'
 import { config } from '../config'

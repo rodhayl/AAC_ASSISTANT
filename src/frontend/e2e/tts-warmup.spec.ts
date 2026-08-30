@@ -45,6 +45,10 @@ function audioPlayCalls(page: Page): Promise<AudioPlayCall[]> {
   });
 }
 
+async function spokenAudioPlayCalls(page: Page): Promise<AudioPlayCall[]> {
+  return (await audioPlayCalls(page)).filter((call) => call.src.startsWith('blob:'));
+}
+
 /** A minimal valid 16-bit mono WAV so the synthesized audio has a duration. */
 function minimalWav(): Buffer {
   const sampleRate = 8000;
@@ -68,12 +72,7 @@ function minimalWav(): Buffer {
 }
 
 const WELCOME_MESSAGE = 'Welcome! Let us practice speaking together.';
-
-// The synthesized audio is played on a detached <audio> element without a
-// user gesture; headless Chromium's autoplay policy would reject play()
-// with NotAllowedError. This flag only lifts the browser's gesture
-// requirement so playback can start in the automated run.
-test.use({ launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] } });
+const FEEDBACK_MESSAGE = 'Great answer!';
 
 test.describe('TTS warm-up', () => {
   test.use({ storageState: 'playwright/.auth/admin.json' });
@@ -161,16 +160,31 @@ test.describe('TTS warm-up', () => {
         }),
       });
     });
+    let questionNumber = 0;
     await page.route('**/api/learning/*/ask', async (route) => {
+      questionNumber += 1;
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
           success: true,
           question_id: 1,
-          question_text: 'What is your name?',
+          question_text: questionNumber === 1 ? 'What is your name?' : 'What is your favorite color?',
           choices: ['A', 'B', 'C'],
           provider_used: 'groq',
+        }),
+      });
+    });
+    await page.route('**/api/learning/*/answer', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          is_correct: true,
+          feedback_message: FEEDBACK_MESSAGE,
+          questions_answered: 1,
+          correct_answers: 1,
         }),
       });
     });
@@ -204,14 +218,17 @@ test.describe('TTS warm-up', () => {
     // promise settles as resolved (playback started). Wait for the promise
     // to settle rather than asserting right after the call is recorded.
     await expect.poll(async () => {
-      const calls = await audioPlayCalls(page);
+      const calls = await spokenAudioPlayCalls(page);
       const first = calls[0];
       return first && (first.resolved || first.rejected !== null) ? first : null;
     }, { timeout: 15000 }).not.toBeNull();
-    const playCalls = await audioPlayCalls(page);
+    const playCalls = await spokenAudioPlayCalls(page);
     expect(playCalls[0].src.startsWith('blob:')).toBe(true);
     expect(playCalls[0].rejected).toBeNull();
     expect(playCalls[0].resolved).toBe(true);
+    await expect.poll(async () => (await spokenAudioPlayCalls(page)).length, {
+      timeout: 15000,
+    }).toBe(2);
 
     const startAt = requests.find((r) => r.url.includes('/api/learning/start'))!.at;
     const synth = requests.find((r) => r.url.includes('/providers/tts/synthesize'))!;
@@ -248,5 +265,30 @@ test.describe('TTS warm-up', () => {
     // and the fastembed semantic index.
     const warmupBody = JSON.parse(warmupCalls[0].postData ?? '{}') as { targets?: string[] };
     expect(warmupBody.targets?.slice().sort()).toEqual(['speech', 'tts', 'vector']);
+
+    // Answer the first question and verify that the feedback is synthesized
+    // before the automatically requested next question.
+    await page.getByRole('button', { name: 'A', exact: true }).click();
+    await expect(page.getByText(FEEDBACK_MESSAGE)).toBeVisible({ timeout: 15000 });
+    await expect.poll(() => requests.filter((r) => r.url.includes('/providers/tts/synthesize')).length, {
+      timeout: 15000,
+    }).toBe(3);
+    await expect(page.getByText('What is your favorite color?')).toBeVisible({ timeout: 15000 });
+    await expect.poll(() => requests.filter((r) => r.url.includes('/providers/tts/synthesize')).length, {
+      timeout: 15000,
+    }).toBe(4);
+
+    const synthesisTexts = requests
+      .filter((r) => r.url.includes('/providers/tts/synthesize'))
+      .map((request) => (JSON.parse(request.postData ?? '{}') as { text?: string }).text);
+    expect(synthesisTexts).toEqual([
+      expect.stringContaining(WELCOME_MESSAGE),
+      'What is your name?',
+      FEEDBACK_MESSAGE,
+      'What is your favorite color?',
+    ]);
+    await expect.poll(async () => (await spokenAudioPlayCalls(page)).length, {
+      timeout: 15000,
+    }).toBe(4);
   });
 });

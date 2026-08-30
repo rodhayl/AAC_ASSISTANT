@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { CommunicationChat } from '../src/components/board/CommunicationChat';
 
@@ -93,6 +93,7 @@ vi.mock('react-i18next', () => {
 function renderChat(
   overrides: Partial<typeof hoisted.learning> = {},
   boardName = 'Practice Board',
+  voiceEnabled = false,
 ) {
   Object.assign(hoisted.learning, {
     messages: [],
@@ -107,7 +108,7 @@ function renderChat(
   });
   return render(
     <CommunicationChat
-      voiceEnabled={false}
+      voiceEnabled={voiceEnabled}
       onVoiceToggle={() => {}}
       boardId={7}
       boardName={boardName}
@@ -115,7 +116,16 @@ function renderChat(
   );
 }
 
+const getTts = async () => (await import('../src/lib/tts')).tts as {
+  enqueue: ReturnType<typeof vi.fn>;
+  cancelAll: ReturnType<typeof vi.fn>;
+};
+
 describe('CommunicationChat', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('shows the store error so a failed exchange is not silent', () => {
     renderChat({ error: 'The provider did not respond' });
     expect(screen.getByText('Error: The provider did not respond')).toBeInTheDocument();
@@ -177,5 +187,55 @@ describe('CommunicationChat', () => {
       );
     });
     expect(hoisted.learning.submitAnswer).not.toHaveBeenCalled();
+  });
+
+  it('speaks feedback appended after a user message', async () => {
+    const { rerender } = renderChat({
+      currentSession: { session_id: 'sess-1' },
+      messages: [{ role: 'assistant', content: 'Welcome' }],
+    }, 'Practice Board', true);
+    const tts = await getTts();
+
+    expect(tts.enqueue).toHaveBeenCalledWith('Welcome', { rate: 0.9 });
+    tts.enqueue.mockClear();
+
+    hoisted.learning.messages = [
+      { role: 'assistant', content: 'Welcome' },
+      { role: 'user', content: 'Hola' },
+      { role: 'assistant', content: 'Good answer' },
+    ];
+    rerender(
+      <CommunicationChat
+        voiceEnabled={true}
+        onVoiceToggle={() => {}}
+        boardId={7}
+        boardName="Practice Board"
+      />,
+    );
+
+    expect(tts.enqueue).toHaveBeenCalledWith('Good answer', { rate: 0.9 });
+  });
+
+  it('restarts speech tracking for a new session with the same first message', async () => {
+    const { rerender } = renderChat({
+      currentSession: { session_id: 'sess-1' },
+      messages: [{ role: 'assistant', content: 'Welcome' }],
+    }, 'Practice Board', true);
+    const tts = await getTts();
+
+    expect(tts.enqueue).toHaveBeenCalledWith('Welcome', { rate: 0.9 });
+    tts.enqueue.mockClear();
+
+    hoisted.learning.currentSession = { session_id: 'sess-2' };
+    rerender(
+      <CommunicationChat
+        voiceEnabled
+        onVoiceToggle={() => {}}
+        boardId={7}
+        boardName="Practice Board"
+      />,
+    );
+
+    expect(tts.enqueue).toHaveBeenCalledWith('Welcome', { rate: 0.9 });
   });
 });

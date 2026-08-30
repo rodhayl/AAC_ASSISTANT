@@ -14,6 +14,7 @@ export function SettingsManager() {
   const setSelectedVoice = useTTSStore((state) => state.setSelectedVoice);
   const setTTSProvider = useTTSStore((state) => state.setTTSProvider);
   const setLocalVoice = useTTSStore((state) => state.setLocalVoice);
+  const setLocalSpeed = useTTSStore((state) => state.setLocalSpeed);
 
   useEffect(() => {
     if (user?.settings) {
@@ -41,13 +42,16 @@ export function SettingsManager() {
       if (user.settings.tts_local_voice) {
         setLocalVoice(user.settings.tts_local_voice);
       }
+      if (user.settings.tts_local_speed !== undefined) {
+        setLocalSpeed(user.settings.tts_local_speed);
+      }
       // Warm every lazy model (browser voice list, capability check, and the
       // backend Kokoro + faster-whisper models) in one batched background
       // request so the first spoken message and the first microphone answer
       // in a conversation are not delayed.
       warmup();
     }
-  }, [user?.settings, setLocale, setDarkMode, setHighContrast, setSelectedVoice, setTTSProvider, setLocalVoice]);
+  }, [user?.settings, setLocale, setDarkMode, setHighContrast, setSelectedVoice, setTTSProvider, setLocalVoice, setLocalSpeed]);
 
   return null;
 }

@@ -78,6 +78,10 @@ interface LearningState {
   providerHistory: Array<{ provider: LLMProviderId; at: number }>;
   sessionHistory: SessionHistoryItem[];
   isLoadingHistory: boolean;
+  // True when the messages already present at session activation are loaded
+  // history that must not be spoken again (loadSession). New sessions speak
+  // their welcome, so they keep this false.
+  skipInitialSpeech: boolean;
 
    // Admin-only toggle: whether to show full reasoning / <think> content
    showAdminReasoning: boolean;
@@ -275,7 +279,10 @@ export const useLearningStore = create<LearningState>((set, get) => {
   ): void => {
     if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
     if (!result.success) {
-      set({ error: result.error || failureMessage, isLoading: false });
+      // The optimistic user message was already rendered. Keep the answer
+      // flow recoverable: unblock the composer, but do not schedule a next
+      // question or expose a stale reveal state.
+      set({ error: result.error || failureMessage, isLoading: false, revealedAnswer: null });
       return;
     }
 
@@ -318,6 +325,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
   providerHistory: [],
   sessionHistory: [],
   isLoadingHistory: false,
+  skipInitialSpeech: false,
   autoAskEnabled: true,
   setAutoAskEnabled: (enabled: boolean) => set({ autoAskEnabled: enabled }),
   difficultyOverride: 'adaptive',
@@ -349,6 +357,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
       providerHistory: [],
       sessionHistory: [],
       isLoadingHistory: false,
+      skipInitialSpeech: false,
     });
   },
 
@@ -382,7 +391,8 @@ export const useLearningStore = create<LearningState>((set, get) => {
         set({
           currentSession: session,
           messages,
-          isLoading: false
+          isLoading: false,
+          skipInitialSpeech: false
         });
         const sessionWithProvider = session as LearningSessionResponse & WithProvider
         if (sessionWithProvider.provider_used) {
@@ -442,14 +452,14 @@ export const useLearningStore = create<LearningState>((set, get) => {
           setProviderState(set, get, provider)
         }
       } else {
-        set({ error: question.error || 'Failed to get question', isLoading: false });
+        set({ error: question.error || 'Failed to get question', isLoading: false, currentQuestion: null, revealedAnswer: null });
       }
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, questionRequestId, sessionId, get)) return;
       const detail = (() => {
         return extractError(error, 'Failed to get question');
       })();
-      set({ error: detail, isLoading: false });
+      set({ error: detail, isLoading: false, currentQuestion: null, revealedAnswer: null });
     }
   },
 
@@ -484,7 +494,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
       );
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-      set({ error: extractError(error, tLearning('learning:errors.submitAnswerFailed')), isLoading: false });
+      set({ error: extractError(error, tLearning('learning:errors.submitAnswerFailed')), isLoading: false, revealedAnswer: null });
     }
   },
 
@@ -511,7 +521,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
       );
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-      set({ error: extractError(error, tLearning('learning:errors.submitVoiceAnswerFailed')), isLoading: false });
+      set({ error: extractError(error, tLearning('learning:errors.submitVoiceAnswerFailed')), isLoading: false, revealedAnswer: null });
     }
   },
 
@@ -543,7 +553,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
       );
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-      set({ error: extractError(error, tLearning('learning:errors.submitSymbolAnswerFailed')), isLoading: false });
+      set({ error: extractError(error, tLearning('learning:errors.submitSymbolAnswerFailed')), isLoading: false, revealedAnswer: null });
     }
   },
 
@@ -645,7 +655,10 @@ export const useLearningStore = create<LearningState>((set, get) => {
           welcome_message: messages[0]?.content || ''
         },
         messages,
-        isLoading: false
+        isLoading: false,
+        // Loaded history was already spoken when it happened; replaying it
+        // would read the whole past conversation aloud.
+        skipInitialSpeech: true
       });
     } catch (error: unknown) {
       if (!isCurrentContextRequest(requestEpoch)) return;

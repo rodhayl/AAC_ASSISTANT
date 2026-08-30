@@ -162,9 +162,9 @@ describe('tts queue watchdog', () => {
 // ---------------------------------------------------------------------------
 // Local neural TTS path (backend Kokoro synthesis without implicit fallback)
 // ---------------------------------------------------------------------------
-// LOCAL_START_WINDOW_MS in ../src/lib/tts is 12_000; the race-guard test
+// LOCAL_START_WINDOW_MS in ../src/lib/tts is 60_000; the race-guard test
 // relies on the watchdog stopping the utterance after that window.
-const LOCAL_START_WINDOW_MS = 12_000
+const LOCAL_START_WINDOW_MS = 60_000
 
 describe('tts queue local neural path', () => {
   let speechSynthesis: {
@@ -183,6 +183,7 @@ describe('tts queue local neural path', () => {
   }>
   let fetchMock: ReturnType<typeof vi.fn>
   let originalSpeechSynthesis: PropertyDescriptor | undefined
+  let originalWindowAudio: typeof Audio
   const originalCreateObjectURL = URL.createObjectURL
   const originalRevokeObjectURL = URL.revokeObjectURL
 
@@ -199,6 +200,7 @@ describe('tts queue local neural path', () => {
       getVoices: vi.fn(() => []),
     }
     originalSpeechSynthesis = Object.getOwnPropertyDescriptor(window, 'speechSynthesis')
+    originalWindowAudio = window.Audio
     Object.defineProperty(window, 'speechSynthesis', {
       configurable: true,
       value: speechSynthesis,
@@ -236,6 +238,10 @@ describe('tts queue local neural path', () => {
       }
     }
     vi.stubGlobal('Audio', TestAudio)
+    Object.defineProperty(window, 'Audio', {
+      configurable: true,
+      value: TestAudio,
+    })
 
     fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
@@ -249,6 +255,10 @@ describe('tts queue local neural path', () => {
     } else {
       delete (window as Window & { speechSynthesis?: unknown }).speechSynthesis
     }
+    Object.defineProperty(window, 'Audio', {
+      configurable: true,
+      value: originalWindowAudio,
+    })
     URL.createObjectURL = originalCreateObjectURL
     URL.revokeObjectURL = originalRevokeObjectURL
     vi.unstubAllGlobals()
@@ -312,6 +322,64 @@ describe('tts queue local neural path', () => {
     expect(tts.getStatus()).toBe('idle')
   })
 
+  it('applies the configured Kokoro speed to synthesis requests', async () => {
+    fetchMock.mockImplementation((url: string) =>
+      url.includes('/providers/voice-status')
+        ? Promise.resolve({ ok: true, json: async () => ({ tts_local: { available: true } }) })
+        : Promise.resolve({ ok: true, blob: async () => new Blob(['fake-wav']) }),
+    )
+    const tts = await loadLocalTTS()
+    const { useTTSStore } = await import('../src/store/ttsStore')
+    useTTSStore.getState().setLocalSpeed(1.5)
+
+    tts.enqueue('Más rápido', { key: 'local-speed', lang: 'es' })
+    await flush()
+
+    const synthesisBodies = () =>
+      (fetchMock.mock.calls as Array<[unknown, { body: string }]>)
+        .filter((call) => call[1]?.body)
+        .map((call) => JSON.parse(call[1].body) as { speed: number })
+    expect(synthesisBodies()[0].speed).toBe(1.5)
+
+    // Per-message rate modifiers multiply the base speed, clamped to the
+    // range the Kokoro endpoint accepts.
+    audioInstances[0].onended?.()
+    await flush()
+    tts.enqueue('Demasiado rápido', { key: 'local-speed-clamped', lang: 'es', rate: 2 })
+    await flush()
+    expect(synthesisBodies().at(-1)!.speed).toBe(2.0)
+
+    useTTSStore.getState().setLocalSpeed(1.0)
+    localStorage.removeItem('aac_local_speed')
+  })
+
+  it('reuses audio unlocked by a user gesture for synthesized playback', async () => {
+    fetchMock.mockImplementation((url: string) =>
+      url.includes('/providers/voice-status')
+        ? Promise.resolve({ ok: true, json: async () => ({ tts_local: { available: true } }) })
+        : Promise.resolve({ ok: true, blob: async () => new Blob(['fake-wav']) }),
+    )
+    const tts = await loadLocalTTS()
+
+    tts.unlock()
+    expect(audioInstances).toHaveLength(1)
+    tts.enqueue('Respuesta después de un clic', { key: 'local-unlocked', lang: 'es' })
+    await flush()
+
+    expect(audioInstances).toHaveLength(1)
+    expect(audioInstances[0].play).toHaveBeenCalledTimes(2)
+    expect(audioInstances[0].src).toBe('blob:fake')
+    expect(speechSynthesis.speak).not.toHaveBeenCalled()
+
+    audioInstances[0].onended?.()
+    await flush()
+    tts.enqueue('La siguiente respuesta', { key: 'local-unlocked-next', lang: 'es' })
+    await flush()
+
+    expect(audioInstances).toHaveLength(1)
+    expect(audioInstances[0].play).toHaveBeenCalledTimes(3)
+  })
+
   it('does not abort a successful WAV response before reading its body', async () => {
     let synthesisSignal: AbortSignal | undefined
     let blobRead = false
@@ -339,6 +407,82 @@ describe('tts queue local neural path', () => {
 
     expect(blobRead).toBe(true)
     expect(audioInstances[0].play).toHaveBeenCalled()
+  })
+
+  it('keeps the first queued response pending during a cold synthesis', async () => {
+    let resolveFirstSynthesis: ((value: unknown) => void) | undefined
+    let synthesisCount = 0
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/providers/voice-status')) {
+        return Promise.resolve({ ok: true, json: async () => ({ tts_local: { available: true } }) })
+      }
+      synthesisCount += 1
+      if (synthesisCount === 1) {
+        return new Promise((resolve) => {
+          resolveFirstSynthesis = resolve
+        })
+      }
+      return Promise.resolve({ ok: true, blob: async () => new Blob(['fake-wav']) })
+    })
+    const tts = await loadLocalTTS()
+
+    tts.enqueue('La primera respuesta', { key: 'local-cold-first', lang: 'es' })
+    tts.enqueue('La segunda respuesta', { key: 'local-cold-second', lang: 'es' })
+    await flush()
+
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(synthesisCount).toBe(1)
+
+    resolveFirstSynthesis?.({ ok: true, blob: async () => new Blob(['fake-wav']) })
+    await flush()
+    expect(audioInstances).toHaveLength(1)
+
+    audioInstances[0].onended?.()
+    await flush()
+    expect(synthesisCount).toBe(2)
+  })
+
+  it('does not kill an in-flight local synthesis when a message is enqueued after the no-start window', async () => {
+    // Real Kokoro synthesis routinely takes longer than the 1.5s browser
+    // no-start watchdog. A message enqueued while synthesis is still running
+    // must wait in the queue, not destroy the active utterance.
+    let resolveFirstSynthesis: ((value: unknown) => void) | undefined
+    let synthesisCount = 0
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/providers/voice-status')) {
+        return Promise.resolve({ ok: true, json: async () => ({ tts_local: { available: true } }) })
+      }
+      synthesisCount += 1
+      if (synthesisCount === 1) {
+        return new Promise((resolve) => {
+          resolveFirstSynthesis = resolve
+        })
+      }
+      return Promise.resolve({ ok: true, blob: async () => new Blob(['fake-wav']) })
+    })
+    const tts = await loadLocalTTS()
+
+    tts.enqueue('La primera respuesta', { key: 'local-slow-first', lang: 'es' })
+    await flush()
+
+    // The next message arrives seconds later, while the first synthesis is
+    // still in flight (e.g. the user answers before the question audio has
+    // finished synthesizing).
+    await vi.advanceTimersByTimeAsync(2_000)
+    tts.enqueue('La segunda respuesta', { key: 'local-slow-second', lang: 'es' })
+    await flush()
+    expect(synthesisCount).toBe(1)
+
+    resolveFirstSynthesis?.({ ok: true, blob: async () => new Blob(['fake-wav']) })
+    await flush()
+    expect(audioInstances).toHaveLength(1)
+    expect(audioInstances[0].play).toHaveBeenCalledTimes(1)
+    expect(tts.getStatus()).toBe('speaking')
+
+    audioInstances[0].onended?.()
+    await flush()
+    expect(synthesisCount).toBe(2)
+    expect(audioInstances[0].play).toHaveBeenCalledTimes(2)
   })
 
   it('does not switch to browser speech when Kokoro answers with an error', async () => {

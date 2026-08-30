@@ -3,7 +3,7 @@ import { Bot, Send, Mic, Square, Volume2, Trash2 } from 'lucide-react';
 import { useLearningStore, stripReasoning } from '../../store/learningStore';
 import { useAuthStore } from '../../store/authStore';
 import { useTranslation } from 'react-i18next';
-import { tts } from '../../lib/tts';
+import { useAssistantMessageSpeech } from '../../hooks/useAssistantMessageSpeech';
 import { useVoiceRecorder } from '../learning/useVoiceRecorder';
 import { useToastStore } from '../../store/toastStore';
 import { Button } from '../ui/button';
@@ -30,7 +30,7 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
 
   const [input, setInput] = useState('');
   const addToast = useToastStore((state) => state.addToast);
-  const lastSpokenMessageRef = useRef<string | null>(null);
+  const skipInitialSpeech = useLearningStore((state) => state.skipInitialSpeech);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const initAttempted = useRef(false);
   const topic = boardName.trim() || t('topics.general');
@@ -69,23 +69,23 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
     }
   }, [currentSession, user, startSession, isLoading, error, topic, boardId]);
 
-  // Auto-speak assistant messages
-  useEffect(() => {
-    if (!voiceEnabled || messages.length === 0) return;
+  const resolveSpokenText = useCallback(
+    (raw: string) => {
+      const content = resolveAssistantText(raw);
+      return showAdminReasoning ? content : stripReasoning(content);
+    },
+    [resolveAssistantText, showAdminReasoning],
+  );
 
-    const lastMsg = messages[messages.length - 1];
-    if (lastMsg.role === 'assistant') {
-      const content = resolveAssistantText(lastMsg.content);
-
-      if (content === lastSpokenMessageRef.current) return;
-      lastSpokenMessageRef.current = content;
-
-      const textToSpeak = showAdminReasoning ? content : stripReasoning(content);
-      if (textToSpeak) {
-        tts.enqueue(textToSpeak, { rate: 0.9 });
-      }
-    }
-  }, [messages, resolveAssistantText, showAdminReasoning, voiceEnabled]);
+  // Same speech mechanism as the Learning page: every newly appended
+  // assistant message is spoken through the shared TTS queue, in order.
+  useAssistantMessageSpeech({
+    messages,
+    sessionKey: currentSession?.session_id ?? null,
+    enabled: voiceEnabled,
+    resolveText: resolveSpokenText,
+    skipExistingOnSessionChange: skipInitialSpeech,
+  });
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();

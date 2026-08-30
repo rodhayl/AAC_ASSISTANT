@@ -27,6 +27,9 @@ vi.mock('react-i18next', () => ({
       'ai.installFailed': 'Automatic voice installation failed.',
       'ai.localVoice': 'Local neural voice',
       'ai.localVoiceHelp': 'Pick a specific Kokoro voice.',
+      'ai.localSpeed': 'Neural voice speed',
+      'ai.localSpeedHelp': 'How fast Kokoro speaks.',
+      'ai.speedNormal': 'Normal',
       'ai.voiceDefault': 'Default (auto)',
       'ai.sttModelSaved': 'Speech-to-text model updated.',
       'ai.sttModelSaveFailed': 'Could not update the speech-to-text model.',
@@ -237,6 +240,58 @@ describe('VoiceTab', () => {
     const { useTTSStore } = await import('../src/store/ttsStore');
     expect(useTTSStore.getState().localVoice).toBe('ef_dora');
     expect(localStorage.getItem('aac_local_voice')).toBe('ef_dora');
+  });
+
+  it('applies the selected Kokoro speed to the store and the preferences draft', async () => {
+    get.mockResolvedValue({
+      data: {
+        tts_local: {
+          provider: 'kokoro',
+          installed: true,
+          model_present: true,
+          available: true,
+          voices: [{ name: 'ef_dora', language: 'es', gender: 'female', region: null }],
+        },
+        actions: {},
+      },
+    });
+    const setPreferences = vi.fn();
+
+    render(
+      <VoiceTab
+        preferences={{
+          tts_provider: 'kokoro',
+          tts_voice: 'default',
+          tts_local_voice: 'default',
+          tts_local_speed: 1.0,
+          ui_language: 'en-US',
+          notifications_enabled: true,
+          voice_mode_enabled: true,
+          dark_mode: false,
+          dwell_time: 0,
+          ignore_repeats: 0,
+          high_contrast: false,
+        }}
+        setPreferences={setPreferences}
+        filteredVoices={[]}
+        showStatus
+      />
+    );
+
+    const select = await screen.findByRole('combobox', { name: 'Neural voice speed' });
+    await waitFor(() => {
+      expect(select).toBeEnabled();
+    });
+    expect(select).toHaveValue('1');
+
+    fireEvent.change(select, { target: { value: '1.5' } });
+
+    const { useTTSStore } = await import('../src/store/ttsStore');
+    expect(useTTSStore.getState().localSpeed).toBe(1.5);
+    expect(localStorage.getItem('aac_local_speed')).toBe('1.5');
+    const updater = setPreferences.mock.calls[0][0] as (prev: { tts_local_speed: number }) => { tts_local_speed: number };
+    expect(updater({ tts_local_speed: 1.0 })).toEqual({ tts_local_speed: 1.5 });
+    localStorage.removeItem('aac_local_speed');
   });
 
   it('shows a spinner while the Kokoro model is pre-loading in the background', async () => {

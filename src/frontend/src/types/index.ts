@@ -2,6 +2,7 @@ export interface UserPreferences {
   tts_provider: 'kokoro' | 'browser';
   tts_voice: string;
   tts_local_voice: string;
+  tts_local_speed: number;
   tts_language: string;
   ui_language: string;
   notifications_enabled: boolean;

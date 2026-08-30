@@ -29,6 +29,7 @@ class TestBuildPreferencesResponse:
             "tts_provider": "kokoro",
             "tts_voice": "default",
             "tts_local_voice": "default",
+            "tts_local_speed": 1.0,
             "tts_language": None,
             "ui_language": None,
             "notifications_enabled": True,
@@ -60,12 +61,24 @@ class TestBuildPreferencesResponse:
         assert response.dwell_time == 0
         assert response.ignore_repeats == 0
         assert response.high_contrast is False
+        # Missing on legacy rows: falls back to the neutral speed.
+        assert response.tts_local_speed == 1.0
+
+    def test_build_preferences_response_clamps_out_of_range_speed(self):
+        settings = SimpleNamespace(tts_local_speed=9.0)
+
+        assert build_preferences_response(settings).tts_local_speed == 2.0
+
+        settings = SimpleNamespace(tts_local_speed="fast")
+
+        assert build_preferences_response(settings).tts_local_speed == 1.0
 
     def test_build_preferences_response_maps_populated_settings(self):
         settings = SimpleNamespace(
             tts_provider="browser",
             tts_voice="female",
             tts_local_voice="ef_dora",
+            tts_local_speed=1.25,
             tts_language="es",
             ui_language="es-ES",
             notifications_enabled=False,
@@ -82,6 +95,7 @@ class TestBuildPreferencesResponse:
             "tts_provider": "browser",
             "tts_voice": "female",
             "tts_local_voice": "ef_dora",
+            "tts_local_speed": 1.25,
             "tts_language": "es",
             "ui_language": "es-ES",
             "notifications_enabled": False,
@@ -123,6 +137,7 @@ class TestUserPreferences:
         assert data["tts_provider"] == "kokoro"
         assert data["tts_voice"] == "default"
         assert data["tts_local_voice"] == "default"
+        assert data["tts_local_speed"] == 1.0
         assert data["notifications_enabled"] is True
         assert data["dark_mode"] is False
 
@@ -136,6 +151,7 @@ class TestUserPreferences:
                 "tts_provider": "browser",
                 "tts_voice": "female",
                 "tts_local_voice": "ef_dora",
+                "tts_local_speed": 1.5,
                 "notifications_enabled": False,
                 "dark_mode": True,
             },
@@ -145,8 +161,25 @@ class TestUserPreferences:
         assert data["tts_provider"] == "browser"
         assert data["tts_voice"] == "female"
         assert data["tts_local_voice"] == "ef_dora"
+        assert data["tts_local_speed"] == 1.5
         assert data["notifications_enabled"] is False
         assert data["dark_mode"] is True
+
+    def test_update_preferences_rejects_out_of_range_speed(self, prefs_user):
+        """Kokoro speed must stay within the range the synthesis endpoint accepts."""
+        user_id, username, user_type = prefs_user
+        response = client.put(
+            "/api/auth/preferences",
+            headers=create_test_headers(user_id, username, user_type),
+            json={"tts_local_speed": 3.0},
+        )
+        assert response.status_code == 422
+        response = client.put(
+            "/api/auth/preferences",
+            headers=create_test_headers(user_id, username, user_type),
+            json={"tts_local_speed": 0.1},
+        )
+        assert response.status_code == 422
 
     def test_concurrent_cross_route_updates_keep_one_settings_row(self, prefs_user, test_db_session):
         """Concurrent preference routes must not duplicate the unique settings row."""

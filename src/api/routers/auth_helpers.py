@@ -206,12 +206,20 @@ def build_preferences_response(
         except (TypeError, ValueError):
             return default
 
+    def bounded_speed(value: Any) -> float:
+        # Legacy rows may keep NULL or garbage: clamp to the Kokoro range.
+        try:
+            return min(max(float(value), 0.5), 2.0)
+        except (TypeError, ValueError):
+            return 1.0
+
     return schemas.UserPreferencesResponse(
         tts_provider=(
             tts_provider if tts_provider in {"browser", "kokoro"} else "kokoro"
         ),
         tts_voice=getattr(settings, "tts_voice", None) or "default",
         tts_local_voice=getattr(settings, "tts_local_voice", None) or "default",
+        tts_local_speed=bounded_speed(getattr(settings, "tts_local_speed", 1.0)),
         tts_language=getattr(settings, "tts_language", None),
         # Legacy rows may keep NULL: preserve it (the frontend normalizes a
         # missing language to its default). Only an unsupported non-null value

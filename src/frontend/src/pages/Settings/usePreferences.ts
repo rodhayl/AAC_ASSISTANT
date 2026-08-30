@@ -13,6 +13,7 @@ const defaultPreferences = (user: ReturnType<typeof useAuthStore.getState>['user
   tts_provider: user?.settings?.tts_provider === 'browser' ? 'browser' : 'kokoro',
   tts_voice: user?.settings?.tts_voice || 'default',
   tts_local_voice: user?.settings?.tts_local_voice || 'default',
+  tts_local_speed: user?.settings?.tts_local_speed ?? 1.0,
   ui_language: normalizeUILanguage(user?.settings?.ui_language),
   notifications_enabled: user?.settings?.notifications_enabled ?? true,
   voice_mode_enabled: user?.settings?.voice_mode_enabled ?? true,
@@ -64,6 +65,7 @@ export function usePreferences() {
           tts_provider: res.data.tts_provider === 'browser' ? 'browser' : 'kokoro',
           tts_voice: voice,
           tts_local_voice: res.data.tts_local_voice || 'default',
+          tts_local_speed: res.data.tts_local_speed ?? 1.0,
           ui_language: language,
           notifications_enabled: res.data.notifications_enabled ?? true,
           voice_mode_enabled: res.data.voice_mode_enabled ?? true,
@@ -75,6 +77,7 @@ export function usePreferences() {
         useTTSStore.getState().setSelectedVoice(voice);
         useTTSStore.getState().setTTSProvider(res.data.tts_provider === 'browser' ? 'browser' : 'kokoro');
         useTTSStore.getState().setLocalVoice(res.data.tts_local_voice || 'default');
+        useTTSStore.getState().setLocalSpeed(res.data.tts_local_speed ?? 1.0);
         useThemeStore.getState().setDarkMode(darkMode);
         useThemeStore.getState().setHighContrast(res.data.high_contrast ?? false);
         await useLocaleStore.getState().setLocale(language);
@@ -131,7 +134,7 @@ export function usePreferences() {
         const { setDarkMode, setHighContrast } = useThemeStore.getState();
         const { setLocale } = useLocaleStore.getState();
         const { setSelectedVoice } = useTTSStore.getState();
-        const { setTTSProvider, setLocalVoice } = useTTSStore.getState();
+        const { setTTSProvider, setLocalVoice, setLocalSpeed } = useTTSStore.getState();
 
         setDarkMode(preferences.dark_mode);
         setHighContrast(preferences.high_contrast);
@@ -139,6 +142,7 @@ export function usePreferences() {
         setSelectedVoice(preferences.tts_voice);
         setTTSProvider(preferences.tts_provider);
         setLocalVoice(preferences.tts_local_voice);
+        setLocalSpeed(preferences.tts_local_speed);
 
         useAuthStore.setState((state) => {
           if (!state.user) return state;

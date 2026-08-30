@@ -36,6 +36,10 @@ KOKORO_VOICES_URL = (
 KOKORO_MODEL_FILENAME = "kokoro-v1.0.onnx"
 KOKORO_VOICES_FILENAME = "voices-v1.0.bin"
 
+# Pause phonemes prepended at speed > 1 so the model's initial-generation
+# corruption lands on silence instead of the first word (see synthesize()).
+_ONSET_GUARD_PHONEMES = ":" * 5
+
 # Language code -> (default female voice, default male voice)
 DEFAULT_VOICES: dict[str, tuple[str, str]] = {
     "es": ("ef_dora", "em_santa"),
@@ -384,11 +388,25 @@ class LocalTTSProvider:
                 espeak_lang = _espeak_lang_code(voice_info["language"])
 
         try:
+            # Two Kokoro quirks are worked around here:
+            # 1. At speed > 1 the model corrupts the first phonemes of a
+            #    generation (decoder warm-up overlaps the first word once the
+            #    duration predictor shrinks the leading silence, e.g.
+            #    "Excelente" -> "Solente"). A short run of pause tokens (":"
+            #    is Kokoro's pause phoneme) absorbs that corruption.
+            # 2. kokoro-onnx's default trimmer uses a peak-relative threshold
+            #    that can cut soft word onsets, so trimming is disabled; the
+            #    untrimmed edge padding is only ~150-200 ms of silence.
+            phonemes = kokoro.tokenizer.phonemize(text, espeak_lang)
+            if speed > 1.0:
+                phonemes = _ONSET_GUARD_PHONEMES + phonemes
             samples, sample_rate = kokoro.create(
-                text,
+                phonemes,
                 voice=resolved_voice,
                 speed=speed,
                 lang=espeak_lang,
+                is_phonemes=True,
+                trim=False,
             )
             return _samples_to_wav(samples, sample_rate)
         except Exception as exc:

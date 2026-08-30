@@ -84,6 +84,7 @@ def test_schema_ensure_upgrades_legacy_sqlite_without_losing_data():
     assert {
         "tts_provider",
         "tts_local_voice",
+        "tts_local_speed",
         "ui_language",
         "voice_mode_enabled",
         "dwell_time",

@@ -21,14 +21,29 @@ def reset_local_tts_singleton():
     mod.reset_local_tts_provider()
 
 
+class _FakeTokenizer:
+    def phonemize(self, text, lang):
+        return f"ph:{text}"
+
+
 class _FakeKokoro:
     """Minimal stand-in for the kokoro_onnx Kokoro class."""
 
     def __init__(self, *args, **kwargs):
         self.calls: list[dict] = []
+        self.tokenizer = _FakeTokenizer()
 
-    def create(self, text, voice, speed, lang):
-        self.calls.append({"text": text, "voice": voice, "speed": speed, "lang": lang})
+    def create(self, text, voice, speed, lang, is_phonemes=False, trim=True):
+        self.calls.append(
+            {
+                "text": text,
+                "voice": voice,
+                "speed": speed,
+                "lang": lang,
+                "is_phonemes": is_phonemes,
+                "trim": trim,
+            }
+        )
         return np.zeros(12000, dtype=np.float32), 24000
 
 
@@ -116,6 +131,8 @@ def test_provider_voice_resolution_and_wav_encoding(monkeypatch):
     assert wav[:4] == b"RIFF"  # valid WAV header
     assert fake.calls[-1]["voice"] == "ef_dora"
     assert fake.calls[-1]["lang"] == "es"
+    # Peak-relative trimming clips soft first-word onsets at speed > 1.
+    assert fake.calls[-1]["trim"] is False
 
     # Male English: en-US -> base 'en' -> am_michael; espeak code 'en-us'
     provider.synthesize("hello", lang="en-US", voice="male")
@@ -125,6 +142,27 @@ def test_provider_voice_resolution_and_wav_encoding(monkeypatch):
     # Explicit kokoro voice name passes through
     provider.synthesize("hola", lang="es", voice="em_alex")
     assert fake.calls[-1]["voice"] == "em_alex"
+
+
+def test_synthesize_guards_first_word_onset_above_normal_speed(monkeypatch):
+    """At speed > 1, pause phonemes shield the first word from Kokoro's
+    initial-generation corruption; at normal speed no guard is added."""
+    from src.aac_app.providers import local_tts_provider as mod
+
+    fake = _FakeKokoro()
+    _inject_fake_kokoro(monkeypatch, fake)
+    provider = mod.LocalTTSProvider(lazy_load=False)
+
+    provider.synthesize("hola", lang="es", speed=1.0)
+    assert fake.calls[-1]["text"] == "ph:hola"
+    assert fake.calls[-1]["is_phonemes"] is True
+    assert fake.calls[-1]["trim"] is False
+
+    provider.synthesize("hola", lang="es", speed=1.5)
+    assert fake.calls[-1]["text"] == ":" * 5 + "ph:hola"
+
+    provider.synthesize("hola", lang="es", speed=0.5)
+    assert fake.calls[-1]["text"] == "ph:hola"
 
 
 def test_list_kokoro_voices_returns_catalog(monkeypatch):

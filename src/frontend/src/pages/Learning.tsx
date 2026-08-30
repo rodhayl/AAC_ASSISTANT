@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLearningStore, stripReasoning } from '../store/learningStore';
+import { useLearningStore } from '../store/learningStore';
 import { useAuthStore } from '../store/authStore';
 import { useBoardStore } from '../store/boardStore';
 import { loadTopicsForUser, saveTopicsForUser, type SavedTopic } from '../lib/learningTopics';
@@ -16,6 +16,7 @@ import { LearningSymbolPanel } from '../components/learning/LearningSymbolPanel'
 import type { LearningSymbolItem } from '../types';
 import { SessionSummaryModal } from '../components/learning/SessionSummaryModal';
 import { useVoiceRecorder } from '../components/learning/useVoiceRecorder';
+import { useAssistantMessageSpeech } from '../hooks/useAssistantMessageSpeech';
 import { dedupeLearningSymbols } from '../lib/symbols';
 
 type SymbolItem = LearningSymbolItem;
@@ -52,8 +53,8 @@ export function Learning() {
   const user = useAuthStore((state) => state.user);
   const addToast = useToastStore((state) => state.addToast);
   const fetchBoards = useBoardStore((state) => state.fetchBoards);
-  const { t, i18n } = useTranslation('learning');
-  const currentLang = i18n.language?.split('-')[0] || 'en';
+  const { t, i18n } = useTranslation('learning');    const currentLang = i18n.language?.split('-')[0] || 'en';
+  const symbolLanguage = currentLang === 'es' ? 'es' : 'en';
 
   const [input, setInput] = useState('');
   const [voiceEnabled, setVoiceEnabled] = useState(user?.settings?.voice_mode_enabled ?? true);
@@ -74,9 +75,7 @@ export function Learning() {
   const [isStartingSession, setIsStartingSession] = useState(false);
   const [sessionStartError, setSessionStartError] = useState<string | null>(null);
   const [providerNotice, setProviderNotice] = useState<string | null>(null);
-  const lastSpokenMessageRef = useRef<string | null>(null);
-  const speechSessionKeyRef = useRef<number | null>(null);
-  const welcomeToSpeakRef = useRef<{ sessionId: number; text: string } | null>(null);
+  const skipInitialSpeech = useLearningStore((state) => state.skipInitialSpeech);
   const lastProviderHistoryLengthRef = useRef(0);
   const sessionStartErrorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -190,15 +189,10 @@ export function Learning() {
     setSessionStartError(null);
     try {
       await startSession({ topic, purpose, difficulty: sessionDifficulty, board_id: boardId, mode_key: selectedModeKey }, user.id);
-      const startedSession = useLearningStore.getState().currentSession;
-      const welcomeText = stripReasoning(startedSession?.welcome_message || '');
-      if (startedSession && welcomeText) {
-        welcomeToSpeakRef.current = { sessionId: startedSession.session_id, text: welcomeText };
-        tts.enqueue(welcomeText, { rate: 0.9 });
-      }
       await fetchSessionHistory(user.id);
-      // Auto-request the first adaptive question now that the session is active.
-      // The welcome is enqueued explicitly above, so this cannot make it disappear.
+      // Auto-request the first adaptive question now that the session is
+      // active. The welcome and the question are both spoken by
+      // useAssistantMessageSpeech from the messages array, in order.
       void askNextQuestion();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : t('errors.unknownError');
@@ -330,19 +324,20 @@ export function Learning() {
   };
 
   const fetchSymbols = useCallback(async () => {
+    const requestedLanguage = symbolLanguage;
     setSymbolLoading(true);
     try {
       const response = await api.get('/boards/symbols', {
-        params: { limit: 1000, language: currentLang },
+        params: { limit: 1000, language: requestedLanguage },
       });
       setSymbolItems(dedupeLearningSymbols(response.data || []));
-      setSymbolLang(currentLang);
+      setSymbolLang(requestedLanguage);
     } catch {
       setSymbolItems([]);
     } finally {
       setSymbolLoading(false);
     }
-  }, [currentLang]);
+  }, [symbolLanguage]);
 
   // Prefetch the symbol library in the background as soon as the page
   // mounts so opening the symbol view never waits for the full fetch.
@@ -365,10 +360,10 @@ export function Learning() {
     // open before the prefetch finished, or a failed prefetch), and no
     // request is already in flight. Gating on the open transition prevents
     // a retry loop while the view stays open.
-    if (justOpened && !symbolLoading && symbolLang !== currentLang) {
+    if (justOpened && !symbolLoading && symbolLang !== symbolLanguage) {
       void fetchSymbols();
     }
-  }, [fetchSymbols, symbolLoading, symbolLang, currentLang, symbolView]);
+  }, [fetchSymbols, symbolLoading, symbolLang, symbolLanguage, symbolView]);
 
   const filteredSymbols = useMemo(() => {
     let items = symbolItems;
@@ -393,7 +388,7 @@ export function Learning() {
       en: ['I', 'you', 'want', 'go', 'stop', 'help', 'yes', 'no', 'more', 'finished', 'like', 'eat', 'drink'],
       es: ['yo', 'tú', 'quiero', 'ir', 'parar', 'ayuda', 'sí', 'no', 'más', 'terminado', 'me gusta', 'comer', 'beber'],
     };
-    const priorityWords = coreWordsByLanguage[currentLang] || coreWordsByLanguage.en;
+    const priorityWords = coreWordsByLanguage[symbolLanguage] || coreWordsByLanguage.en;
     // Case/accent-insensitive index so labels like "Yo" or "Me gusta" still
     // match the priority list and keep the panel populated for any casing.
     const priorityIndex = new Map(
@@ -416,7 +411,7 @@ export function Learning() {
         (priorityIndex.get(a.label.trim().toLowerCase()) ?? 0) -
         (priorityIndex.get(b.label.trim().toLowerCase()) ?? 0),
     );
-  }, [currentLang, symbolItems]);
+  }, [symbolLanguage, symbolItems]);
 
   useEffect(() => {
     const currentLength = providerHistory.length;
@@ -437,29 +432,14 @@ export function Learning() {
     return () => clearTimeout(timeoutId);
   }, [providerHistory, t]);
 
-  useEffect(() => {
-    const sessionKey = currentSession?.session_id ?? null;
-    if (sessionKey !== speechSessionKeyRef.current) {
-      speechSessionKeyRef.current = sessionKey;
-      lastSpokenMessageRef.current = null;
-    }
-
-    if (!voiceEnabled || messages.length === 0) return;
-    const explicitWelcome = welcomeToSpeakRef.current;
-    if (explicitWelcome && explicitWelcome.sessionId === sessionKey) {
-      welcomeToSpeakRef.current = null;
-      lastSpokenMessageRef.current = messages[0]?.content ?? explicitWelcome.text;
-      return;
-    }
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage.role !== 'assistant' || lastMessage.content === lastSpokenMessageRef.current) return;
-
-    const textToSpeak = stripReasoning(lastMessage.content);
-    if (textToSpeak) {
-      lastSpokenMessageRef.current = lastMessage.content;
-      tts.enqueue(textToSpeak, { rate: 0.9 });
-    }
-  }, [currentSession?.session_id, messages, voiceEnabled]);
+  // All assistant messages (welcome, questions, feedback) are spoken through
+  // this one mechanism; no caller enqueues chat messages directly.
+  useAssistantMessageSpeech({
+    messages,
+    sessionKey: currentSession?.session_id ?? null,
+    enabled: voiceEnabled,
+    skipExistingOnSessionChange: skipInitialSpeech,
+  });
 
   const updateSymbolMessage = async (symbols: Array<{
     id: number;
@@ -561,7 +541,7 @@ export function Learning() {
               if (text) {
                 tts.enqueue(text, {
                   rate: 0.9,
-                  lang: currentLang === 'es' ? 'es-ES' : 'en-US',
+                  lang: symbolLanguage === 'es' ? 'es-ES' : 'en-US',
                 });
               }
             }}

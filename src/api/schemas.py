@@ -10,6 +10,7 @@ class UserPreferencesResponse(BaseModel):
     tts_provider: str = "kokoro"
     tts_voice: str = "default"
     tts_local_voice: str = "default"
+    tts_local_speed: float = 1.0
     tts_language: str | None = None
     ui_language: str | None = None
     notifications_enabled: bool = True
@@ -26,6 +27,8 @@ class UserPreferencesUpdate(BaseModel):
     tts_provider: Literal["browser", "kokoro"] | None = None
     tts_voice: str | None = Field(None, max_length=200)
     tts_local_voice: str | None = Field(None, max_length=40)
+    # Same bounds as the Kokoro synthesis endpoint (providers.py).
+    tts_local_speed: float | None = Field(None, ge=0.5, le=2.0)
     tts_language: PreferenceLanguage | None = None
     ui_language: PreferenceLanguage | None = None
     notifications_enabled: bool | None = None

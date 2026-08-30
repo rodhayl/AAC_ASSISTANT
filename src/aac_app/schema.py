@@ -53,6 +53,7 @@ def _ensure_sqlite_columns(engine: Engine) -> None:
             ("user_settings", "tts_provider", "TEXT DEFAULT 'kokoro'"),
             ("user_settings", "tts_voice", "TEXT DEFAULT 'default'"),
             ("user_settings", "tts_local_voice", "TEXT DEFAULT 'default'"),
+            ("user_settings", "tts_local_speed", "REAL DEFAULT 1.0"),
             ("user_settings", "tts_language", "TEXT DEFAULT 'en'"),
             ("user_settings", "ui_language", "TEXT DEFAULT 'es-ES'"),
             ("user_settings", "notifications_enabled", "BOOLEAN DEFAULT 1"),
