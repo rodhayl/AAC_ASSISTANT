@@ -56,10 +56,10 @@ export function SecurityTab() {
       <section
         id="settings-security"
         aria-labelledby="settings-security-heading"
-        className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+        className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden"
       >
-        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-          <h3 id="settings-security-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+        <div className="p-6 border-b border-border">
+          <h3 id="settings-security-heading" className="text-lg font-semibold text-foreground">
             {t('security.title')}
           </h3>
         </div>
@@ -69,7 +69,7 @@ export function SecurityTab() {
               setChangeOpen(true);
               setChangeError(null);
             }}
-            className="flex items-center text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 font-medium"
+            className="flex items-center text-brand hover:text-brand text-brand hover:text-brand font-medium"
           >
             <Shield className="w-5 h-5 mr-2" />
             {t('security.change')}
@@ -81,7 +81,7 @@ export function SecurityTab() {
         <Dialog open onOpenChange={(open) => { if (!open) closeChangeDialog(); }}>
           <DialogContent showCloseButton={false} className="max-w-md p-6">
             <DialogHeader>
-              <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              <DialogTitle className="text-lg font-semibold text-foreground">
                 {t('security.change')}
               </DialogTitle>
             </DialogHeader>
@@ -94,7 +94,7 @@ export function SecurityTab() {
                 value={currentPassword}
                 onChange={(event) => setCurrentPassword(event.target.value)}
                 placeholder={t('security.current')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                className="w-full px-3 py-2 border border-border rounded-lg"
                 aria-label={t('security.current')}
                 autoComplete="current-password"
               />
@@ -105,7 +105,7 @@ export function SecurityTab() {
                 value={newPassword}
                 onChange={(event) => setNewPassword(event.target.value)}
                 placeholder={t('security.new')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                className="w-full px-3 py-2 border border-border rounded-lg"
                 aria-label={t('security.new')}
                 autoComplete="new-password"
               />
@@ -116,7 +116,7 @@ export function SecurityTab() {
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
                 placeholder={t('security.confirm')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                className="w-full px-3 py-2 border border-border rounded-lg"
                 aria-label={t('security.confirm')}
                 autoComplete="new-password"
               />
@@ -124,7 +124,7 @@ export function SecurityTab() {
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={closeChangeDialog}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+                className="px-4 py-2 text-foreground hover:bg-muted rounded-lg"
               >
                 {t('profile.cancel')}
               </button>

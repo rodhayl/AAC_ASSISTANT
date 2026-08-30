@@ -9,6 +9,7 @@ import { useAutoHide } from '../../hooks/useAutoHide';
 import api, { extractError } from '../../lib/api';
 import type { AiOverride, ProviderHealth } from './types';
 import { AiProviderFields } from './AiProviderFields';
+import { StatusMessage } from '../../components/ui/StatusMessage';
 
 export function AiProviderTab() {
   const user = useAuthStore(state => state.user);
@@ -256,16 +257,16 @@ export function AiProviderTab() {
       <section
         id="settings-ai"
         aria-labelledby="settings-ai-heading"
-        className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+        className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden"
       >
-        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-          <h3 id="settings-ai-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+        <div className="p-6 border-b border-border">
+          <h3 id="settings-ai-heading" className="text-lg font-semibold text-foreground">
             {t('ai.readOnlyTitle')}
           </h3>
-          <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">{t('ai.viewOnly')}</p>
+          <p className="text-sm text-muted-foreground mt-1">{t('ai.viewOnly')}</p>
         </div>
         {readOnlyLoading && (
-          <div className="p-6 text-sm text-gray-500 dark:text-gray-400">{t('ai.loading')}</div>
+          <div className="p-6 text-sm text-muted-foreground">{t('ai.loading')}</div>
         )}
         {readOnlyError && (
           <div className="p-6 text-sm text-red-600" role="alert">
@@ -276,18 +277,18 @@ export function AiProviderTab() {
           <div className="p-6 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <p className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ai.primaryProvider')}</p>                    <div className="px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg capitalize flex items-center">
+                <p className="block text-sm font-medium text-foreground mb-1">{t('ai.primaryProvider')}</p>                    <div className="px-3 py-2 bg-muted border border-border rounded-lg capitalize flex items-center">
                   {visibleAiSettings.provider === 'ollama' ? (
-                    <Cpu className="w-4 h-4 mr-2 text-indigo-600" />
+                    <Cpu className="w-4 h-4 mr-2 text-brand" />
                   ) : (
-                    <Cloud className="w-4 h-4 mr-2 text-indigo-600" />
+                    <Cloud className="w-4 h-4 mr-2 text-brand" />
                   )}
                   {visibleAiSettings.provider}
                 </div>
               </div>
               <div>
-                <p className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('ai.primaryModel')}</p>
-                <div className="px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg">
+                <p className="block text-sm font-medium text-foreground mb-1">{t('ai.primaryModel')}</p>
+                <div className="px-3 py-2 bg-muted border border-border rounded-lg">
                   {(visibleAiSettings.provider === 'ollama'
                     ? visibleAiSettings.ollama_model
                     : visibleAiSettings.provider === 'lmstudio'
@@ -308,15 +309,15 @@ export function AiProviderTab() {
     <section
       id="settings-ai"
       aria-labelledby="settings-ai-heading"
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+      className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden"
     >
-      <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+      <div className="p-6 border-b border-border">
         <div className="flex items-center justify-between">
           <div>
-            <h3 id="settings-ai-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <h3 id="settings-ai-heading" className="text-lg font-semibold text-foreground">
               {t('ai.title')}
             </h3>
-            <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">{t('ai.subtitle')}</p>
+            <p className="text-sm text-muted-foreground mt-1">{t('ai.subtitle')}</p>
           </div>
           {saveSuccess && <div className="text-green-600 text-sm font-medium">{t('ai.saveOk')}</div>}
         </div>
@@ -324,27 +325,27 @@ export function AiProviderTab() {
 
       <div className="p-6 space-y-6">
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center">
+          <StatusMessage variant="error" className="flex items-center">
             <AlertCircle className="w-5 h-5 mr-2" />
             {error}
-          </div>
+          </StatusMessage>
         )}
         <div>
-          <p className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">{t('ai.primary')}</p>
+          <p className="block text-sm font-medium text-foreground mb-3">{t('ai.primary')}</p>
           <div className="grid grid-cols-2 gap-4">
             <button
               type="button"
               onClick={() => setAiOverride((prev) => ({ ...prev, provider: 'ollama' }))}
               className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${
                 currentAiProvider === 'ollama'
-                  ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/30'
-                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
+                  ? 'border-brand bg-brand/10'
+                  : 'border-border'
               }`}
             >
-              <Cpu className="w-6 h-6 text-indigo-600" />
+              <Cpu className="w-6 h-6 text-brand" />
               <div className="text-left">
-                <div className="font-medium text-gray-900 dark:text-gray-100">{t('ai.ollama')}</div>
-                <div className="text-xs text-gray-600 dark:text-gray-400">{t('ai.ollamaDesc')}</div>
+                <div className="font-medium text-foreground">{t('ai.ollama')}</div>
+                <div className="text-xs text-muted-foreground">{t('ai.ollamaDesc')}</div>
               </div>
             </button>
             <button
@@ -352,14 +353,14 @@ export function AiProviderTab() {
               onClick={() => setAiOverride((prev) => ({ ...prev, provider: 'openrouter' }))}
               className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${
                 currentAiProvider === 'openrouter'
-                  ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/30'
-                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
+                  ? 'border-brand bg-brand/10'
+                  : 'border-border'
               }`}
             >
-              <Cloud className="w-6 h-6 text-indigo-600" />
+              <Cloud className="w-6 h-6 text-brand" />
               <div className="text-left">
-                <div className="font-medium text-gray-900 dark:text-gray-100">{t('ai.openrouter')}</div>
-                <div className="text-xs text-gray-600 dark:text-gray-400">{t('ai.openrouterDesc')}</div>
+                <div className="font-medium text-foreground">{t('ai.openrouter')}</div>
+                <div className="text-xs text-muted-foreground">{t('ai.openrouterDesc')}</div>
               </div>
             </button>
             <button
@@ -367,14 +368,14 @@ export function AiProviderTab() {
               onClick={() => setAiOverride((prev) => ({ ...prev, provider: 'lmstudio' }))}
               className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${
                 currentAiProvider === 'lmstudio'
-                  ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/30'
-                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
+                  ? 'border-brand bg-brand/10'
+                  : 'border-border'
               }`}
             >
-              <Cpu className="w-6 h-6 text-indigo-600" />
+              <Cpu className="w-6 h-6 text-brand" />
               <div className="text-left">
-                <div className="font-medium text-gray-900 dark:text-gray-100">{t('ai.lmstudio')}</div>
-                <div className="text-xs text-gray-600 dark:text-gray-400">{t('ai.localOpenAIAPI')}</div>
+                <div className="font-medium text-foreground">{t('ai.lmstudio')}</div>
+                <div className="text-xs text-muted-foreground">{t('ai.localOpenAIAPI')}</div>
               </div>
             </button>
             <button
@@ -382,14 +383,14 @@ export function AiProviderTab() {
               onClick={() => setAiOverride((prev) => ({ ...prev, provider: 'groq' }))}
               className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${
                 currentAiProvider === 'groq'
-                  ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/30'
-                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
+                  ? 'border-brand bg-brand/10'
+                  : 'border-border'
               }`}
             >
-              <Cloud className="w-6 h-6 text-indigo-600" />
+              <Cloud className="w-6 h-6 text-brand" />
               <div className="text-left">
-                <div className="font-medium text-gray-900 dark:text-gray-100">{t('ai.groq')}</div>
-                <div className="text-xs text-gray-600 dark:text-gray-400">{t('ai.groqDesc')}</div>
+                <div className="font-medium text-foreground">{t('ai.groq')}</div>
+                <div className="text-xs text-muted-foreground">{t('ai.groqDesc')}</div>
               </div>
             </button>
           </div>
@@ -417,19 +418,14 @@ export function AiProviderTab() {
           modelSearchQuery={modelSearchQuery}
           setModelSearchQuery={setModelSearchQuery}
           onFetchModels={handleFetchModels}
-        />          <div className="flex items-center gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
-          <button type="button" onClick={checkHealth} className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+        />
+        <div className="flex items-center gap-2 pt-4 border-t border-border">
+          <button type="button" onClick={checkHealth} className="px-3 py-2 text-sm text-foreground hover:bg-surface-hover rounded-lg">
             {t('ai.health')}
           </button>
         </div>
         {selectedHealth && (
-          <div
-            className={`rounded-lg border px-4 py-3 text-sm ${
-              selectedHealth.available
-                ? 'border-green-200 bg-green-50 text-green-800'
-                : 'border-red-200 bg-red-50 text-red-800'
-            }`}
-          >
+          <StatusMessage variant={selectedHealth.available ? 'success' : 'error'}>
             <div className="font-medium">
               {selectedProviderLabel}:{' '}
               <span className={selectedHealth.available ? 'text-green-700' : 'text-red-700'}>
@@ -441,11 +437,11 @@ export function AiProviderTab() {
                 {selectedProviderStatusMessage}
               </div>
             )}
-          </div>
+          </StatusMessage>
         )}
 
-        <div className="flex justify-end pt-6 border-t border-gray-200 dark:border-gray-700">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+        <div className="flex justify-end pt-6 border-t border-border">
+          <p className="text-sm text-muted-foreground">
             {t('ai.autoSave')}
           </p>
         </div>

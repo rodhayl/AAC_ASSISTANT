@@ -50,7 +50,7 @@ export function LearningQuestionCard({
               ? 'border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20'
               : revealedIsCorrect === false
                 ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20'
-                : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'
+                : 'border-border bg-muted/50'
             : 'border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20'
         }`}
       >
@@ -66,7 +66,7 @@ export function LearningQuestionCard({
                   ? 'text-green-700 dark:text-green-400'
                   : revealedIsCorrect === false
                     ? 'text-red-700 dark:text-red-400'
-                    : 'text-gray-600 dark:text-gray-300'
+                    : 'text-muted-foreground'
               }`}
             >
               {revealedIsCorrect === true ? (
@@ -86,16 +86,16 @@ export function LearningQuestionCard({
               'px-3 py-1.5 rounded-lg border text-sm transition-colors ';
             if (!isAnswered) {
               buttonClass +=
-                'bg-white dark:bg-gray-800 border-purple-300 dark:border-purple-700 text-gray-800 dark:text-gray-100 hover:bg-purple-100 dark:hover:bg-purple-900/40 hover:border-purple-400';
+                'bg-surface border-brand/50 text-foreground hover:bg-brand/10 hover:border-brand';
             } else if (isCorrectChoice) {
               buttonClass +=
-                'bg-green-700 dark:bg-green-700 text-white border-green-700 dark:border-green-700 font-medium';
+                'bg-green-700 text-white border-green-700 dark:border-green-700 font-medium';
             } else if (isPicked) {
               buttonClass +=
                 'bg-red-600 dark:bg-red-500 text-white border-red-600 dark:border-red-500';
             } else {
               buttonClass +=
-                'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 opacity-60';
+                'bg-surface border-border text-muted-foreground opacity-60';
             }
             return (
               <button

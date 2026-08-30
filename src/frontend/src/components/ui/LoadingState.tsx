@@ -1,4 +1,5 @@
 import type { HTMLAttributes } from 'react';
+import { cn } from '@/lib/utils';
 
 interface LoadingStateProps extends HTMLAttributes<HTMLDivElement> {
   size?: 'sm' | 'md' | 'lg';
@@ -23,12 +24,12 @@ export function LoadingState({
     <div
       role="status"
       aria-label={label}
-      className={`flex items-center justify-center ${fullHeight ? 'min-h-screen' : 'h-64'} ${className}`}
+      className={cn('flex items-center justify-center', fullHeight ? 'min-h-screen' : 'h-64', className)}
       {...props}
     >
       <span
         aria-hidden="true"
-        className={`animate-spin rounded-full border-indigo-600 border-b-transparent ${sizeStyles[size]}`}
+        className={cn('animate-spin rounded-full border-brand border-b-transparent', sizeStyles[size])}
       />
       <span className="sr-only">{label}</span>
     </div>

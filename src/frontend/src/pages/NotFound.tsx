@@ -7,7 +7,7 @@ export function NotFound() {
   const { t } = useTranslation('error');
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="text-center space-y-6 max-w-md">
         <div className="flex justify-center">
           <div className="bg-amber-100 dark:bg-amber-900/30 p-4 rounded-full">
@@ -15,11 +15,11 @@ export function NotFound() {
           </div>
         </div>
         
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+        <h1 className="text-3xl font-bold text-foreground">
           {t('notFoundTitle')}
         </h1>
         
-        <p className="text-gray-500 dark:text-gray-400 text-lg">
+        <p className="text-muted-foreground text-lg">
           {t('notFoundMessage')}
         </p>
 

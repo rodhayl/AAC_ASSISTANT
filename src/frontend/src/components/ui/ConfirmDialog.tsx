@@ -41,9 +41,9 @@ export function ConfirmDialog({
       <AlertDialogContent className="max-w-md" data-mobile-dialog="true">
         <AlertDialogHeader>
           <div className="mb-4 flex items-center justify-between">
-            <AlertDialogTitle className="text-xl font-bold text-primary">{title}</AlertDialogTitle>
+            <AlertDialogTitle className="text-xl font-bold text-foreground">{title}</AlertDialogTitle>
             <AlertDialogCancel
-              className="modal-close rounded-lg p-2 text-secondary hover:bg-surface-hover transition-colors"
+              className="modal-close rounded-lg p-2 text-muted-foreground hover:bg-surface-hover transition-colors"
               aria-label={t('close')}
               disabled={isLoading}
             >
@@ -52,7 +52,7 @@ export function ConfirmDialog({
           </div>
         </AlertDialogHeader>
 
-        <AlertDialogDescription className="text-secondary mb-8">
+        <AlertDialogDescription className="text-muted-foreground mb-8">
           {description}
         </AlertDialogDescription>
 

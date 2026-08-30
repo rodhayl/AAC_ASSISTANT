@@ -110,12 +110,12 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <DialogTitle className="text-lg font-bold text-primary flex items-center gap-2">
+          <DialogTitle className="text-lg font-bold text-foreground flex items-center gap-2">
             {t('typeToSpeak')}
           </DialogTitle>
           <button 
             onClick={onClose}
-            className="modal-close p-2 rounded-lg text-secondary hover:bg-surface-hover transition-colors"
+            className="modal-close p-2 rounded-lg text-muted-foreground hover:bg-surface-hover transition-colors"
             aria-label={t('close')}
             data-touch-target="true"
           >
@@ -132,7 +132,7 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={t('typeHere')}
-            className="w-full flex-1 p-4 text-lg sm:text-2xl rounded-xl border-2 border-border focus:border-indigo-500 focus:ring-0 bg-background text-primary resize-none"
+            className="w-full flex-1 p-4 text-lg sm:text-2xl rounded-xl border-2 border-border focus:border-brand focus:ring-0 bg-background text-foreground resize-none"
           />
           
           {/* Suggestions */}
@@ -142,7 +142,7 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
                     <button
                         key={s}
                         onClick={() => insertSuggestion(s)}
-                        className="px-3 py-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-lg text-sm font-medium hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors flex items-center gap-1"
+                        className="px-3 py-2 bg-brand/10 text-brand rounded-lg text-sm font-medium hover:bg-brand/20 transition-colors flex items-center gap-1"
                     >
                         <Sparkles className="w-3 h-3" />
                         {s}
@@ -157,7 +157,7 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
              {/* Recent History */}
             {history.length > 0 && (
                 <div className="mb-4">
-                    <div className="text-xs font-semibold text-muted uppercase mb-2 flex items-center gap-1">
+                    <div className="text-xs font-semibold text-muted-foreground uppercase mb-2 flex items-center gap-1">
                         <History className="w-3 h-3" />
                         {t('recent')}
                     </div>
@@ -169,7 +169,7 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
                                     setText(phrase);
                                     inputRef.current?.focus();
                                 }}
-                                className="whitespace-nowrap px-3 py-1.5 bg-surface border border-border rounded-full text-sm text-secondary hover:border-indigo-500 transition-colors"
+                                className="whitespace-nowrap px-3 py-1.5 bg-surface border border-border rounded-full text-sm text-muted-foreground hover:border-brand transition-colors"
                                 data-touch-target="true"
                             >
                                 {phrase}
@@ -180,13 +180,13 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
             )}
 
             <div className="flex justify-between items-center">
-                <div className="text-sm text-muted hidden sm:block">
+                <div className="text-sm text-muted-foreground hidden sm:block">
                     {t('pressEnterToSpeak')}
                 </div>
                 <div className="flex gap-3 ml-auto w-full sm:w-auto">
                     <button
                         onClick={() => setText('')}
-                        className="flex-1 sm:flex-none px-4 py-2 text-secondary hover:bg-surface-hover rounded-lg font-medium transition-colors"
+                        className="flex-1 sm:flex-none px-4 py-2 text-muted-foreground hover:bg-surface-hover rounded-lg font-medium transition-colors"
                         data-touch-target="true"
                     >
                         {t('clear')}
@@ -194,7 +194,7 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
                     <Button
                         onClick={handleSpeak}
                         disabled={!text.trim()}
-                        className="flex-1 sm:flex-none gap-2 px-6 font-bold shadow-lg shadow-indigo-500/30 active:scale-95"
+                        className="flex-1 sm:flex-none gap-2 px-6 font-bold shadow-lg shadow-brand/30 active:scale-95"
                         data-touch-target="true"
                     >
                         <Volume2 />

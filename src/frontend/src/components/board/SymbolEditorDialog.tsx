@@ -68,20 +68,20 @@ export function SymbolEditorDialog({
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent showCloseButton={false} className="max-w-md p-6">
         <DialogHeader className="flex-row items-center justify-between">
-          <DialogTitle className="text-xl font-bold text-gray-900 dark:text-white">{t('editSymbol')}</DialogTitle>
+          <DialogTitle className="text-xl font-bold text-foreground">{t('editSymbol')}</DialogTitle>
           <button
             onClick={onClose}
-            className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="rounded-lg p-2 hover:bg-surface-hover"
             aria-label={t('close')}
           >
-            <X className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+            <X className="h-5 w-5 text-muted-foreground" />
           </button>
         </DialogHeader>
 
         <div className="space-y-4">
           {/* Custom Text */}
           <div>
-            <label htmlFor="symbol-editor-custom-text" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+            <label htmlFor="symbol-editor-custom-text" className="mb-1 block text-sm font-medium text-foreground">
               {t('customLabel')}
             </label>
             <input
@@ -89,14 +89,14 @@ export function SymbolEditorDialog({
               type="text"
               value={customText}
               onChange={(e) => setCustomText(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              className="w-full rounded-lg border border-border p-2 bg-surface-hover text-foreground"
               placeholder={symbol.symbol.label}
             />
           </div>
 
           {/* Background Color */}
           <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+            <label className="mb-2 block text-sm font-medium text-foreground">
               {t('backgroundColor')}
             </label>
             <div className="grid grid-cols-5 gap-2">
@@ -107,8 +107,8 @@ export function SymbolEditorDialog({
                   onClick={() => setColor(c.value)}
                   className={`h-8 w-8 rounded-full border-2 ${
                     color === c.value
-                      ? 'border-indigo-600 ring-2 ring-indigo-600 ring-offset-2 dark:ring-offset-gray-800'
-                      : 'border-gray-200 dark:border-gray-600'
+                      ? 'border-brand ring-2 ring-brand ring-offset-2 ring-offset-background'
+                      : 'border-border'
                   }`}
                   style={{ backgroundColor: c.value }}
                   aria-label={t(`colors.${c.key}`, c.name)}
@@ -120,7 +120,7 @@ export function SymbolEditorDialog({
 
           {/* Linked Board */}
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+            <label className="mb-1 block text-sm font-medium text-foreground">
               {t('linkToBoard')}
             </label>
             <Select
@@ -151,7 +151,7 @@ export function SymbolEditorDialog({
                   ))}
               </SelectContent>
             </Select>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            <p className="mt-1 text-xs text-muted-foreground">
               {t('linkToBoardHelp')}
             </p>
           </div>
@@ -159,7 +159,7 @@ export function SymbolEditorDialog({
           <div className="flex justify-end gap-3">
             <button
               onClick={onClose}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="rounded-lg px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-hover"
             >
               {t('cancel')}
             </button>

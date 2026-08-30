@@ -28,10 +28,10 @@ export function AppearanceTab({
     <section
       id="settings-appearance"
       aria-labelledby="settings-appearance-heading"
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+      className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden"
     >
-      <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-        <h3 id="settings-appearance-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+      <div className="p-6 border-b border-border flex items-center justify-between">
+        <h3 id="settings-appearance-heading" className="text-lg font-semibold text-foreground">
           {t('preferences.title')}
         </h3>
         <div className="flex items-center gap-3">
@@ -50,15 +50,15 @@ export function AppearanceTab({
           </Button>
         </div>
       </div>
-      <div className="divide-y divide-gray-200 dark:divide-gray-700">
+      <div className="divide-y divide-border">
         <div className="p-6 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-indigo-50 rounded-lg">
-              <Globe className="w-5 h-5 text-indigo-600" />
+            <div className="p-2 bg-brand/10 rounded-lg">
+              <Globe className="w-5 h-5 text-brand" />
             </div>
             <div>
-              <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.language')}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.languageHelp')}</p>
+              <p className="font-medium text-foreground">{t('preferences.language')}</p>
+              <p className="text-sm text-muted-foreground">{t('preferences.languageHelp')}</p>
             </div>
           </div>
           <select
@@ -67,7 +67,7 @@ export function AppearanceTab({
             aria-label={t('preferences.language')}
             value={preferences.ui_language}
             onChange={(event) => setPreferences((prev) => ({ ...prev, ui_language: event.target.value }))}
-            className="block w-48 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+            className="block w-48 pl-3 pr-10 py-2 text-base border-border focus:outline-none focus:ring-brand focus:border-brand sm:text-sm rounded-md"
           >
             <option value="es-ES">{t('languages.es-ES')}</option>
             <option value="en-US">{t('languages.en-US')}</option>
@@ -80,8 +80,8 @@ export function AppearanceTab({
               <Volume2 className="w-5 h-5 text-purple-600" />
             </div>
             <div>
-              <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.voiceMode')}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.voiceModeHelp')}</p>
+              <p className="font-medium text-foreground">{t('preferences.voiceMode')}</p>
+              <p className="text-sm text-muted-foreground">{t('preferences.voiceModeHelp')}</p>
             </div>
           </div>
           <Toggle
@@ -99,8 +99,8 @@ export function AppearanceTab({
               <Bell className="w-5 h-5 text-purple-600" />
             </div>
             <div>
-              <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.notifications')}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.notificationsHelp')}</p>
+              <p className="font-medium text-foreground">{t('preferences.notifications')}</p>
+              <p className="text-sm text-muted-foreground">{t('preferences.notificationsHelp')}</p>
             </div>
           </div>
           <Toggle
@@ -114,12 +114,12 @@ export function AppearanceTab({
 
         <div className="p-6 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <Moon className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+            <div className="p-2 bg-muted rounded-lg">
+              <Moon className="w-5 h-5 text-muted-foreground" />
             </div>
             <div>
-              <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.dark')}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.darkHelp')}</p>
+              <p className="font-medium text-foreground">{t('preferences.dark')}</p>
+              <p className="text-sm text-muted-foreground">{t('preferences.darkHelp')}</p>
             </div>
           </div>
           <Toggle
@@ -137,8 +137,8 @@ export function AppearanceTab({
               <Clock className="w-5 h-5 text-green-600" />
             </div>
             <div>
-              <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.dwellTime')}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.dwellTimeHelp')}</p>
+              <p className="font-medium text-foreground">{t('preferences.dwellTime')}</p>
+              <p className="text-sm text-muted-foreground">{t('preferences.dwellTimeHelp')}</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -156,7 +156,7 @@ export function AppearanceTab({
               className="w-32"
               aria-label={t('preferences.dwellTime')}
             />
-            <span className="text-sm text-gray-600 dark:text-gray-300 w-16 text-right">{preferences.dwell_time}ms</span>
+            <span className="text-sm text-muted-foreground w-16 text-right">{preferences.dwell_time}ms</span>
           </div>
         </div>
 
@@ -166,8 +166,8 @@ export function AppearanceTab({
               <MousePointer className="w-5 h-5 text-orange-600" />
             </div>
             <div>
-              <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.ignoreRepeats')}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.ignoreRepeatsHelp')}</p>
+              <p className="font-medium text-foreground">{t('preferences.ignoreRepeats')}</p>
+              <p className="text-sm text-muted-foreground">{t('preferences.ignoreRepeatsHelp')}</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -185,7 +185,7 @@ export function AppearanceTab({
               className="w-32"
               aria-label={t('preferences.ignoreRepeats')}
             />
-            <span className="text-sm text-gray-600 dark:text-gray-300 w-16 text-right">{preferences.ignore_repeats}ms</span>
+            <span className="text-sm text-muted-foreground w-16 text-right">{preferences.ignore_repeats}ms</span>
           </div>
         </div>
 
@@ -195,8 +195,8 @@ export function AppearanceTab({
               <Eye className="w-5 h-5 text-yellow-600" />
             </div>
             <div>
-              <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.highContrast')}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.highContrastHelp')}</p>
+              <p className="font-medium text-foreground">{t('preferences.highContrast')}</p>
+              <p className="text-sm text-muted-foreground">{t('preferences.highContrastHelp')}</p>
             </div>
           </div>
           <Toggle

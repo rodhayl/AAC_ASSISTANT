@@ -40,14 +40,14 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
   };
 
   return (
-    <div className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3 my-2">
-      <div className="flex items-center gap-2 mb-2 text-sm text-gray-600 dark:text-gray-400">
+    <div className="bg-background border border-border rounded-lg p-3 my-2">
+      <div className="flex items-center gap-2 mb-2 text-sm text-muted-foreground">
         <Edit className="w-4 h-4" />
         <span>{t('symbolEditor.title')}</span>
       </div>
 
       {editedSymbols.length === 0 ? (
-        <div className="text-sm text-gray-500 dark:text-gray-400 italic mb-3 p-2">
+        <div className="text-sm text-muted-foreground italic mb-3 p-2">
           {t('symbolEditor.emptyHint')}
         </div>
       ) : (
@@ -70,7 +70,7 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
                 <span>{sym.label}</span>
                 <button
                   onClick={() => removeSymbol(idx)}
-                  className="ml-1 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors"
+                  className="ml-1 text-destructive hover:text-destructive/80 transition-colors"
                   aria-label={t('symbolEditor.removeSymbol', { label: sym.label })}
                   title={t('symbolEditor.removeSymbolTitle')}
                 >
@@ -80,9 +80,9 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
             ))}
           </div>
 
-          <div className="text-sm text-gray-700 dark:text-gray-300 mb-3 p-2 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
-            <span className="text-xs text-gray-500 dark:text-gray-400 mr-2">{t('symbolEditor.preview')}</span>
-            {glossSymbols() || <span className="italic text-gray-400 dark:text-gray-500">{t('symbolEditor.emptyMessage')}</span>}
+          <div className="text-sm text-foreground mb-3 p-2 bg-surface rounded border border-border">
+            <span className="text-xs text-muted-foreground mr-2">{t('symbolEditor.preview')}</span>
+            {glossSymbols() || <span className="italic text-muted-foreground">{t('symbolEditor.emptyMessage')}</span>}
           </div>
         </>
       )}
@@ -94,7 +94,7 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
         </Button>
         <button
           onClick={onCancel}
-          className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+          className="px-3 py-1.5 bg-muted text-foreground rounded text-sm hover:bg-surface-hover transition-colors"
           title={t('symbolEditor.cancelTitle')}
         >
           {t('symbolEditor.cancel')}

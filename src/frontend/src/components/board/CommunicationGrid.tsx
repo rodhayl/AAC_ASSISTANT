@@ -43,7 +43,7 @@ export const CommunicationGrid = memo(function CommunicationGrid({
               onClick={onSymbolClick}
             />
           ) : (
-            <div className="w-full h-full bg-gray-200/10 dark:bg-gray-800/10 rounded-xl border border-dashed border-gray-300/20 dark:border-gray-700/20" />
+            <div className="w-full h-full bg-muted/10 rounded-xl border border-dashed border-border/20" />
           )}
         </div>
       ))}

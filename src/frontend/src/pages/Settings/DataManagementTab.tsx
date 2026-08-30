@@ -48,13 +48,13 @@ export function DataManagementTab() {
     <section
       id="settings-data"
       aria-labelledby="settings-data-heading"
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+      className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden"
     >
-      <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-        <h3 id="settings-data-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+      <div className="p-6 border-b border-border">
+        <h3 id="settings-data-heading" className="text-lg font-semibold text-foreground">
           {t('data.title')}
         </h3>
-        <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">{t('data.subtitle')}</p>
+        <p className="text-sm text-muted-foreground mt-1">{t('data.subtitle')}</p>
       </div>
       <div className="p-6 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -77,7 +77,7 @@ export function DataManagementTab() {
           )}
         </div>
         {isTeacherOrAdmin && (
-          <label className="flex items-center justify-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 w-full">
+          <label className="flex items-center justify-center px-4 py-2 bg-muted text-foreground rounded-lg cursor-pointer hover:bg-muted w-full">
             <Upload className="w-4 h-4 mr-2" />
             {t('data.importBoards')}
             <input

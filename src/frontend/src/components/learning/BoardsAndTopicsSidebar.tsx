@@ -5,6 +5,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useBoardStore } from '../../store/boardStore';
 import { Button } from '../ui/button';
 import { IconButton } from '../ui/icon-button';
+import { cn } from '../../lib/utils';
 import {
     loadTopicsForUser,
     addTopic as addTopicHelper,
@@ -106,12 +107,16 @@ export function BoardsAndTopicsSidebar({
     };
 
     return (
-        <div className={`${isOpen ? 'w-80' : 'w-12'} transition-all duration-300 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden ${className}`}>
-            <div className={`p-4 border-b border-gray-200 dark:border-gray-700 flex items-center ${isOpen ? 'justify-between' : 'justify-center'}`}>
-                {isOpen && <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">{t('boardsTopics')}</h3>}
+        <div className={cn(
+            'flex flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-sm transition-all duration-300',
+            isOpen ? 'w-80' : 'w-12',
+            className,
+        )}>
+            <div className={cn('flex items-center border-b border-border p-4', isOpen ? 'justify-between' : 'justify-center')}>
+                {isOpen && <h3 className="text-lg font-semibold text-foreground truncate">{t('boardsTopics')}</h3>}
                 <button
                     onClick={onToggle}
-                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    className="p-1 hover:bg-surface-hover rounded"
                     title={isOpen ? t('collapseSidebar') : t('expandSidebar')}
                 >
                     {isOpen ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
@@ -121,16 +126,16 @@ export function BoardsAndTopicsSidebar({
             {isOpen && (
                 <>
                     {canManageTopics && (
-                        <div className="p-4 pt-0 border-b border-gray-200 dark:border-gray-700">
+                        <div className="p-4 pt-0 border-b border-border">
                             <div className="space-y-3 mt-3">
                                 {/* Board Selection */}
                                 <div>
-                                    <label htmlFor="comp-board-select" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('selectBoard')}</label>
+                                    <label htmlFor="comp-board-select" className="block text-xs font-medium text-foreground mb-1">{t('selectBoard')}</label>
                                     <select
                                         id="comp-board-select"
                                         value={selectedBoardId}
                                         onChange={(e) => setSelectedBoardId(e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm mb-2"
+                                        className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground text-sm mb-2"
                                     >
                                         <option value="">{t('generalNoBoard')}</option>
                                         {boards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -142,14 +147,14 @@ export function BoardsAndTopicsSidebar({
                                             value={customPurpose}
                                             onChange={(e) => setCustomPurpose(e.target.value)}
                                             placeholder={t('boardOptional')}
-                                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+                                            className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground text-sm"
                                         />
                                     )}
                                 </div>
 
                                 {/* Topic Selection */}
                                 <div>
-                                    <label htmlFor="comp-topic-select" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('topics.label')}</label>
+                                    <label htmlFor="comp-topic-select" className="block text-xs font-medium text-foreground mb-1">{t('topics.label')}</label>
                                     <select
                                         id="comp-topic-select"
                                         value={topicMode === 'custom' ? 'custom' : customTopic}
@@ -162,7 +167,7 @@ export function BoardsAndTopicsSidebar({
                                                 setCustomTopic(e.target.value);
                                             }
                                         }}
-                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm mb-2"
+                                        className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground text-sm mb-2"
                                     >
                                         <option value="" disabled>{t('selectTopic')}</option>
                                         {COMMON_TOPICS.map(key => <option key={key} value={key}>{t(`topics.${key}`)}</option>)}
@@ -174,7 +179,7 @@ export function BoardsAndTopicsSidebar({
                                             value={customTopic}
                                             onChange={(e) => setCustomTopic(e.target.value)}
                                             placeholder={t('topicStudy')}
-                                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+                                            className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground text-sm"
                                         />
                                     )}
                                 </div>
@@ -187,14 +192,14 @@ export function BoardsAndTopicsSidebar({
                     )}
                     <div className="flex-1 overflow-y-auto p-3 space-y-2">
                         {savedTopics.length === 0 ? (
-                            <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">{t('noSavedTopics')}</div>
+                            <div className="text-sm text-muted-foreground text-center py-4">{t('noSavedTopics')}</div>
                         ) : (
                             savedTopics.map((topic) => (
-                                <div key={topic.id} className="p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex items-start gap-2">
+                                <div key={topic.id} className="p-3 rounded-lg border border-border bg-background flex items-start gap-2">
                                     <div className="flex-1">
-                                        <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">{topic.topic}</div>
-                                        <div className="text-xs text-gray-500 dark:text-gray-400">{topic.board}</div>
-                                        <div className="text-[11px] text-gray-400 dark:text-gray-500">{t('by')} {topic.createdBy}</div>
+                                        <div className="text-sm font-semibold text-foreground">{topic.topic}</div>
+                                        <div className="text-xs text-muted-foreground">{topic.board}</div>
+                                        <div className="text-[11px] text-muted-foreground">{t('by')} {topic.createdBy}</div>
                                         <div className="mt-2 flex gap-2">
                                             <Button
                                                 type="button"
@@ -211,7 +216,7 @@ export function BoardsAndTopicsSidebar({
                                             label={t('removeTopic')}
                                             type="button"
                                             onClick={() => removeSavedTopic(topic.id)}
-                                            className="text-gray-400 hover:text-red-600 dark:text-gray-500"
+                                            className="text-muted-foreground hover:text-red-600"
                                         >
                                             <Trash2 className="w-4 h-4" />
                                         </IconButton>

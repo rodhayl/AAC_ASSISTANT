@@ -62,7 +62,7 @@ export function LearningInputRow({
   const currentLanguage = i18n.language?.split('-')[0] || 'en';
 
   return (
-    <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+    <div className="p-4 border-t border-border bg-background">
       <div className="mb-3">
         <Smartbar
           currentSentence={inputToSymbols(input, currentLanguage)}
@@ -84,7 +84,7 @@ export function LearningInputRow({
           value={input}
           onChange={(event) => onInputChange(event.target.value)}
           placeholder={t('typeAnswer')}
-          className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+          className="flex-1 p-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand bg-surface text-foreground"
           disabled={isLoading || isRecording || isStartingSession}
         />
 
@@ -117,13 +117,13 @@ export function LearningInputRow({
                   title={t('discardRecording')}
                   onClick={discardRecording}
                   disabled={isLoading}
-                  className="p-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors size-auto"
+                  className="p-2 bg-muted text-muted-foreground rounded-lg hover:bg-surface-hover transition-colors size-auto"
                 >
                   <Trash2 className="w-5 h-5" />
                 </IconButton>
                 {isLoading && (
-                  <div className="flex items-center ml-2 text-xs text-gray-500 dark:text-gray-400">
-                    <div className="w-2 h-2 mr-2 rounded-full bg-indigo-500 animate-pulse" />
+                  <div className="flex items-center ml-2 text-xs text-muted-foreground">
+                    <div className="w-2 h-2 mr-2 rounded-full bg-brand/100 animate-pulse" />
                     <span>{t('transcribing')}</span>
                   </div>
                 )}
@@ -134,7 +134,7 @@ export function LearningInputRow({
                 title={t('startRecording')}
                 onClick={startRecording}
                 disabled={isLoading || isStartingSession}
-                className="p-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors size-auto"
+                className="p-2 bg-muted text-muted-foreground rounded-lg hover:bg-surface-hover transition-colors size-auto"
               >
                 <Mic className="w-5 h-5" />
               </IconButton>

@@ -277,18 +277,18 @@ export function LearningModesTab() {
     <section
       id="settings-learning-modes"
       aria-labelledby="settings-learning-modes-heading"
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+      className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden"
     >
-      <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+      <div className="p-6 border-b border-border">
         <div className="flex items-center justify-between">
           <div>
             <h3
               id="settings-learning-modes-heading"
-              className="text-lg font-semibold text-gray-900 dark:text-gray-100"
+              className="text-lg font-semibold text-foreground"
             >
               {t('tabs.learningModes')}
             </h3>
-            <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">{t('learningModes.subtitle')}</p>
+            <p className="text-sm text-muted-foreground mt-1 ">{t('learningModes.subtitle')}</p>
           </div>
           {modeSuccess && (
             <div className="flex items-center text-green-600 text-sm font-medium">
@@ -310,19 +310,19 @@ export function LearningModesTab() {
           <div>
             <div className="space-y-2 mb-4">
               {learningModes.map((mode) => (
-                <div key={mode.id} className="p-4 border border-gray-200 rounded-lg flex justify-between items-center">
+                <div key={mode.id} className="p-4 border border-border rounded-lg flex justify-between items-center">
                   <div>
                     <div className="font-semibold">{mode.name}</div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">{mode.description}</div>
+                    <div className="text-sm text-muted-foreground">{mode.description}</div>
                     <div className="flex gap-2 mt-1.5">
                       {!mode.is_custom && (
-                        <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded">{t('learningModes.systemDefault')}</span>
+                        <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded">{t('learningModes.systemDefault')}</span>
                       )}
                       <span
                         className={`text-xs px-2 py-0.5 rounded ${
                           mode.auto_ask_enabled !== false
-                            ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'
+                            ? 'bg-brand/10 text-brand'
+                            : 'bg-muted text-foreground'
                         }`}
                         title={mode.auto_ask_enabled !== false ? t('learningModes.autoAskTitle') : t('learningModes.manualAskTitle')}
                       >
@@ -336,14 +336,14 @@ export function LearningModesTab() {
                       title={t('learningModes.previewSystemPrompt')}
                       type="button"
                       onClick={() => { void openPreview(mode); }}
-                      className="p-2 text-indigo-600 hover:bg-indigo-50 rounded"
+                      className="p-2 text-brand hover:bg-brand/10 rounded"
                     >
                       <Eye className="w-4 h-4" />
                     </IconButton>
                     <button
                       onClick={() => handleEditMode(mode)}
                       aria-label={`${t('learningModes.edit')} ${mode.name}`}
-                      className="p-2 text-indigo-600 hover:bg-indigo-50 rounded"
+                      className="p-2 text-brand hover:bg-brand/10 rounded"
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
@@ -367,18 +367,18 @@ export function LearningModesTab() {
                 setEditingModeId(-1);
                 setModeForm({ ...EMPTY_MODE_FORM });
               }}
-              className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-indigo-500 hover:text-indigo-500 flex items-center justify-center dark:text-gray-400"
+              className="w-full py-2 border-2 border-dashed border-border rounded-lg text-muted-foreground hover:border-brand hover:text-brand flex items-center justify-center "
             >
               <Plus className="w-4 h-4 mr-2" /> {t('learningModes.addNew')}
             </button>
           </div>
         ) : (
           <div className="space-y-4">
-            <h4 className="font-medium text-gray-900 dark:text-gray-100">
+            <h4 className="font-medium text-foreground">
               {editingModeId === -1 ? t('learningModes.createNew') : t('learningModes.editMode')}
             </h4>
             <div>
-              <label htmlFor="learning-mode-name" className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{t('learningModes.name')}</label>
+              <label htmlFor="learning-mode-name" className="block text-sm font-medium text-foreground mb-1">{t('learningModes.name')}</label>
               <input
                 id="learning-mode-name"
                 value={modeForm.name}
@@ -388,7 +388,7 @@ export function LearningModesTab() {
               />
             </div>
             <div>
-              <label htmlFor="learning-mode-key" className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{t('learningModes.key')}</label>
+              <label htmlFor="learning-mode-key" className="block text-sm font-medium text-foreground mb-1">{t('learningModes.key')}</label>
               <input
                 id="learning-mode-key"
                 value={modeForm.key}
@@ -397,10 +397,10 @@ export function LearningModesTab() {
                 placeholder={t('learningModes.keyPlaceholder')}
                 disabled={editingModeId !== -1}
               />
-              <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">{t('learningModes.keyHelp')}</p>
+              <p className="text-xs text-muted-foreground mt-1 ">{t('learningModes.keyHelp')}</p>
             </div>
             <div>
-              <label htmlFor="learning-mode-description" className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{t('learningModes.description')}</label>
+              <label htmlFor="learning-mode-description" className="block text-sm font-medium text-foreground mb-1">{t('learningModes.description')}</label>
               <input
                 id="learning-mode-description"
                 value={modeForm.description}
@@ -411,13 +411,13 @@ export function LearningModesTab() {
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label htmlFor="mode-prompt-instruction" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label htmlFor="mode-prompt-instruction" className="block text-sm font-medium text-foreground">
                   {t('learningModes.promptInstruction')}
                 </label>
                 <button
                   type="button"
                   onClick={() => { void openPreview(); }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-brand border border-brand/20 rounded-md hover:bg-brand/20 transition-colors"
                 >
                   <Eye className="w-3.5 h-3.5" />
                   {t('learningModes.previewSystemPrompt')}
@@ -430,22 +430,22 @@ export function LearningModesTab() {
                 className="w-full p-2 border rounded-lg h-32 font-mono text-sm"
                 placeholder={t('learningModes.promptPlaceholder')}
               />
-              <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
+              <p className="text-xs text-muted-foreground mt-1 ">
                 {t('learningModes.promptHelp')}
               </p>
             </div>
-            <label className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer pt-1">
+            <label className="flex items-start gap-2 text-sm text-foreground cursor-pointer pt-1">
               <input
                 type="checkbox"
                 checked={modeForm.auto_ask_enabled}
                 onChange={(event) =>
                   setModeForm({ ...modeForm, auto_ask_enabled: event.target.checked })
                 }
-                className="mt-0.5 w-4 h-4 accent-indigo-600"
+                className="mt-0.5 w-4 h-4 accent-brand"
               />
               <span className="leading-tight">
                 <span className="font-medium">{t('learningModes.autoAsk')}</span>
-                <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                <span className="block text-xs text-muted-foreground mt-0.5">
                   {t('learningModes.autoAskHelp')}
                 </span>
               </span>
@@ -453,7 +453,7 @@ export function LearningModesTab() {
             <div className="flex justify-end gap-3">
               <button
                 onClick={handleCancelModeEdit}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+                className="px-4 py-2 text-foreground hover:bg-muted rounded-lg"
               >
                 {t('learningModes.cancel')}
               </button>
@@ -471,14 +471,14 @@ export function LearningModesTab() {
             showCloseButton={false}
             className="max-w-3xl max-h-[85vh] flex flex-col p-0"
           >
-            <div className="flex items-start justify-between p-5 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex items-start justify-between p-5 border-b border-border">
               <div>
                 <DialogHeader>
-                  <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  <DialogTitle className="text-lg font-semibold text-foreground">
                     {t('learningModes.previewSystemPrompt')}
                   </DialogTitle>
                 </DialogHeader>
-                <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
+                <p className="text-sm text-muted-foreground mt-1 ">
                   {previewMode
                     ? t('learningModes.previewingSaved', { name: previewMode.name })
                     : t('learningModes.previewingForm')}
@@ -488,16 +488,16 @@ export function LearningModesTab() {
                 type="button"
                 onClick={closePreview}
                 aria-label={t('learningModes.closePreview')}
-                className="p-2 text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                className="p-2 text-muted-foreground hover:bg-surface-hover rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-5 border-b border-gray-200 dark:border-gray-700 space-y-3">
+            <div className="p-5 border-b border-border space-y-3">
               <div className="flex flex-wrap items-end gap-3">
                 <div className="flex-1 min-w-48">
-                  <label htmlFor="preview-student" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label htmlFor="preview-student" className="block text-sm font-medium text-foreground mb-1">
                     {t('learningModes.student')}
                   </label>
                   <select
@@ -530,14 +530,14 @@ export function LearningModesTab() {
                   type="button"
                   onClick={copyPrompt}
                   disabled={!previewPrompt}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 border border-border rounded-lg text-sm text-foreground hover:bg-surface-hover disabled:opacity-60"
                 >
                   <Copy className="w-4 h-4" />
                   {copied ? t('learningModes.copied') : t('learningModes.copy')}
                 </button>
               </div>
 
-              <label className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer pt-1">
+              <label className="flex items-start gap-2 text-sm text-foreground cursor-pointer pt-1">
                 <input
                   type="checkbox"
                   checked={sampleEnabled}
@@ -551,11 +551,11 @@ export function LearningModesTab() {
                       setPreviewParams(null);
                     }
                   }}
-                  className="mt-0.5 w-4 h-4 accent-indigo-600"
+                  className="mt-0.5 w-4 h-4 accent-brand"
                 />
                 <span className="leading-tight">
                   <span className="font-medium">{t('learningModes.previewWithSample')}</span>
-                  <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  <span className="block text-xs text-muted-foreground mt-0.5">
                     {t('learningModes.sampleHelp')}
                   </span>
                 </span>
@@ -563,7 +563,7 @@ export function LearningModesTab() {
               {sampleEnabled && (
                 <div className="flex items-end gap-2">
                   <div className="flex-1">
-                    <label htmlFor="preview-sample-question" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label htmlFor="preview-sample-question" className="block text-sm font-medium text-foreground mb-1">
                       {t('learningModes.sampleQuestion')}
                     </label>
                     <input
@@ -583,7 +583,7 @@ export function LearningModesTab() {
                     type="button"
                     onClick={() => { void runPreview(); }}
                     disabled={previewLoading || !sampleQuestion.trim()}
-                    className="px-3 py-2 border border-indigo-200 text-indigo-600 rounded-lg text-sm font-medium hover:bg-indigo-50 disabled:opacity-50"
+                    className="px-3 py-2 border border-brand/20 text-brand rounded-lg text-sm font-medium hover:bg-brand/10 disabled:opacity-50"
                   >
                     {t('learningModes.run')}
                   </button>
@@ -593,7 +593,7 @@ export function LearningModesTab() {
 
             <div className="flex-1 overflow-auto p-5">
               {previewMeta && (
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                <div className="text-xs text-muted-foreground mb-2">
                   {t('learningModes.template')} <span className="font-medium">{previewMeta.template_name}</span> ·{' '}
                   {previewMeta.has_guardian_profile
                     ? t('learningModes.guardianIncluded')
@@ -607,35 +607,35 @@ export function LearningModesTab() {
                 </div>
               )}
               {previewLoading ? (
-                <div className="text-sm text-gray-500 dark:text-gray-400">{t('learningModes.buildingPrompt')}</div>
+                <div className="text-sm text-muted-foreground">{t('learningModes.buildingPrompt')}</div>
               ) : previewPrompt ? (
                 <div className="space-y-3">
                   {previewUserMessage && (
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         {t('learningModes.fullRequest')}
                       </span>
                       {previewParams && (
-                        <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                        <span className="text-xs text-muted-foreground font-mono">
                           {t('learningModes.temperature')} {previewParams.temperature ?? '—'} · {t('learningModes.maxTokens')} {previewParams.max_tokens ?? '—'}
                         </span>
                       )}
                     </div>
                   )}
                   <div>
-                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                    <div className="text-xs font-medium text-muted-foreground mb-1">
                       {t('learningModes.systemPrompt')}
                     </div>
-                    <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-gray-800 dark:text-gray-200 bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+                    <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-foreground bg-background rounded-lg p-4">
                       {previewPrompt}
                     </pre>
                   </div>
                   {previewUserMessage && (
                     <div>
-                      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                      <div className="text-xs font-medium text-muted-foreground mb-1">
                         {t('learningModes.userMessage')} <span className="font-normal">{t('learningModes.userMessageHelp')}</span>
                       </div>
-                      <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-gray-800 dark:text-gray-200 bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-indigo-100 dark:border-indigo-900">
+                      <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-foreground bg-background rounded-lg p-4 border border-brand/20">
                         {previewUserMessage}
                       </pre>
                     </div>

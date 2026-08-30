@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { AISuggestionPanel } from '../components/board/AISuggestionPanel';
 import { BoardSettingsDialog } from '../components/board/BoardSettingsDialog';
 import { BoardEditorToolbar } from '../components/board/BoardEditorToolbar';
+import { StatusMessage } from '../components/ui/StatusMessage';
 import { useBoardAISuggestions } from '../hooks/useBoardAISuggestions';
 import api, { extractError } from '../lib/api';
 import { useBoardCollab } from '../hooks/useBoardCollab';
@@ -323,14 +324,14 @@ export function BoardEditor() {
 
   if (error && !currentBoard) {
     return (
-      <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-4 rounded-lg">
+      <StatusMessage variant="error">
         {error}
-      </div>
+      </StatusMessage>
     );
   }
 
   if (!currentBoard) {
-    return <div className="text-gray-900 dark:text-gray-100">{t('boardNotFound')}</div>;
+    return <div className="text-foreground">{t('boardNotFound')}</div>;
   }
 
   const rows = currentBoard.grid_rows ?? 4;

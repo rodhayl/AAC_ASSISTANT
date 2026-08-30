@@ -34,14 +34,14 @@ export function CommunicationToolbar({
   const { t } = useTranslation('boards');
 
   return (
-    <div className="glass-panel p-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-30 w-full overflow-hidden">
+    <div className="glass-panel p-2 shadow-md z-30 w-full overflow-hidden">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 overflow-x-auto hide-scrollbar">
 
         {/* Navigation Group */}
-        <div className="flex items-center gap-2 pr-2 border-r border-gray-200 dark:border-gray-700">
+        <div className="flex items-center gap-2 pr-2 border-r border-border">
           <AccessibleButton
             onClick={onHome}
-            className="p-3 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex flex-col items-center min-w-[4rem]"
+            className="p-3 rounded-xl bg-muted text-foreground hover:bg-surface-hover transition-colors flex flex-col items-center min-w-[4rem]"
             title={t('home')}
           >
             <Home className="w-6 h-6 mb-1" />
@@ -51,7 +51,7 @@ export function CommunicationToolbar({
           <AccessibleButton
             onClick={onBack}
             disabled={!canGoBack}
-            className={`p-3 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex flex-col items-center min-w-[4rem] ${!canGoBack ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`p-3 rounded-xl bg-muted text-foreground hover:bg-surface-hover transition-colors flex flex-col items-center min-w-[4rem] ${!canGoBack ? 'opacity-50 cursor-not-allowed' : ''}`}
             title={t('back')}
           >
             <ArrowLeft className="w-6 h-6 mb-1" />
@@ -87,7 +87,7 @@ export function CommunicationToolbar({
         </div>
 
         {/* Tools Group */}
-        <div className="flex items-center gap-2 pl-2 border-l border-gray-200 dark:border-gray-700">
+        <div className="flex items-center gap-2 pl-2 border-l border-border">
           <AccessibleButton
             onClick={onPartnerMic}
             className="p-3 rounded-xl bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors flex flex-col items-center min-w-[4rem]"
@@ -99,7 +99,7 @@ export function CommunicationToolbar({
 
           <AccessibleButton
             onClick={onSearch}
-            className="p-3 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex flex-col items-center min-w-[4rem]"
+            className="p-3 rounded-xl bg-muted text-foreground hover:bg-surface-hover transition-colors flex flex-col items-center min-w-[4rem]"
             title={t('search')}
           >
             <Search className="w-6 h-6 mb-1" />
@@ -108,7 +108,7 @@ export function CommunicationToolbar({
 
           <AccessibleButton
             onClick={onContext}
-            className="p-3 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex flex-col items-center min-w-[4rem]"
+            className="p-3 rounded-xl bg-muted text-foreground hover:bg-surface-hover transition-colors flex flex-col items-center min-w-[4rem]"
             title={t('context')}
           >
             <BookOpen className="w-6 h-6 mb-1" />
@@ -117,7 +117,7 @@ export function CommunicationToolbar({
 
           <AccessibleButton
             onClick={onToggleChat}
-            className={`p-3 rounded-xl transition-colors flex flex-col items-center min-w-[4rem] ${isChatOpen ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+            className={`p-3 rounded-xl transition-colors flex flex-col items-center min-w-[4rem] ${isChatOpen ? 'bg-brand/10 text-brand' : 'bg-muted text-foreground hover:bg-surface-hover'}`}
             title={t('chat')}
           >
             <MessageSquare className="w-6 h-6 mb-1" />
@@ -126,7 +126,7 @@ export function CommunicationToolbar({
 
           <AccessibleButton
             onClick={onToggleKeyboard}
-            className={`p-3 rounded-xl transition-colors flex flex-col items-center min-w-[4rem] ${isKeyboardOpen ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+            className={`p-3 rounded-xl transition-colors flex flex-col items-center min-w-[4rem] ${isKeyboardOpen ? 'bg-brand/10 text-brand' : 'bg-muted text-foreground hover:bg-surface-hover'}`}
             title={t('keyboard')}
           >
             <Keyboard className="w-6 h-6 mb-1" />

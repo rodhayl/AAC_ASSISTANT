@@ -39,13 +39,13 @@ export function Settings() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t('title')}</h1>
-        <p className="text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
+        <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
+        <p className="text-muted-foreground">{t('subtitle')}</p>
       </div>
 
       <nav
         aria-label={t('tabs.sectionsLabel')}
-        className="sticky top-0 z-10 flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-800/95"
+        className="sticky top-0 z-10 flex flex-wrap gap-2 rounded-xl border border-border bg-surface/95 p-2 shadow-sm backdrop-blur border-border bg-surface/95"
       >
         {visibleSections.map((section) => (
           <button
@@ -55,8 +55,8 @@ export function Settings() {
             onClick={() => navigateToSection(section.id)}
             className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
               activeSection === section.id
-                ? 'bg-indigo-600 text-white'
-                : 'text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 dark:text-gray-300 dark:hover:bg-gray-700'
+                ? 'bg-brand text-white'
+                : 'text-muted-foreground hover:bg-surface-hover hover:text-brand'
             }`}
           >
             {t(section.labelKey)}

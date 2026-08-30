@@ -60,7 +60,7 @@ function SortableSymbol({ symbol, index, onRemove, onSpeakItem }: {
       {...attributes}
       {...listeners}
       data-testid="sentence-chip"
-      className="flex-shrink-0 flex flex-col items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-1.5 min-w-[4rem] relative group cursor-grab active:cursor-grabbing hover:border-indigo-500 transition-colors"
+      className="flex-shrink-0 flex flex-col items-center bg-surface border border-border rounded-lg p-1.5 min-w-[4rem] relative group cursor-grab active:cursor-grabbing hover:border-brand transition-colors"
       onClick={() => {
         // If we are dragging, don't trigger speak
         if (!isDragging) onSpeakItem?.(symbol.custom_text || symbol.symbol.label);
@@ -84,7 +84,7 @@ function SortableSymbol({ symbol, index, onRemove, onSpeakItem }: {
           className="w-full h-full object-contain"
         />
       </div>
-      <span className="text-xs font-medium text-gray-900 dark:text-gray-100 whitespace-nowrap max-w-[6rem] overflow-hidden text-ellipsis pointer-events-none">
+      <span className="text-xs font-medium text-foreground whitespace-nowrap max-w-[6rem] overflow-hidden text-ellipsis pointer-events-none">
         {symbol.custom_text || symbol.symbol.label}
       </span>
     </div>
@@ -133,13 +133,13 @@ export const SentenceStrip = memo(function SentenceStrip({
   const sentenceText = symbols.map(s => s.custom_text || s.symbol.label).join(' ');
 
   return (
-    <div data-testid="sentence-strip" className="glass-panel border-b border-border dark:border-white/5 shadow-sm sticky top-0 z-20">
+    <div data-testid="sentence-strip" className="glass-panel border-b border-border shadow-sm sticky top-0 z-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
         <div className="flex items-center gap-4">
           {/* Sentence Display Area */}
-          <div className="flex-1 min-h-[5rem] bg-gray-50 dark:bg-white/5 rounded-xl border border-border dark:border-white/5 p-2 flex items-center gap-2 overflow-x-auto hide-scrollbar touch-pan-x">
+          <div className="flex-1 min-h-[5rem] bg-background rounded-xl border border-border p-2 flex items-center gap-2 overflow-x-auto hide-scrollbar touch-pan-x">
             {symbols.length === 0 ? (
-              <span data-testid="sentence-empty" className="text-gray-600 dark:text-gray-400 px-2 italic select-none">
+              <span data-testid="sentence-empty" className="text-muted-foreground px-2 italic select-none">
                 {t('tapSymbolsToSpeak')}
               </span>
             ) : (
@@ -167,7 +167,7 @@ export const SentenceStrip = memo(function SentenceStrip({
                 {/* Drag Overlay for visual feedback */}
                 <DragOverlay>
                   {activeId ? (
-                    <div className="flex-shrink-0 flex flex-col items-center bg-white dark:bg-gray-800 border-2 border-indigo-500 rounded-lg p-1.5 min-w-[4rem] shadow-xl opacity-90 scale-105">
+                    <div className="flex-shrink-0 flex flex-col items-center bg-surface border-2 border-brand rounded-lg p-1.5 min-w-[4rem] shadow-xl opacity-90 scale-105">
                       {(() => {
                         const s = symbols.find((_, i) => `symbol-${_.id}-${i}` === activeId);
                         if (!s) return null;
@@ -179,7 +179,7 @@ export const SentenceStrip = memo(function SentenceStrip({
                                 className="w-full h-full object-contain"
                               />
                             </div>
-                            <span className="text-xs font-medium text-gray-900 dark:text-gray-100">
+                            <span className="text-xs font-medium text-foreground">
                               {s.custom_text || s.symbol.label}
                             </span>
                           </>
@@ -199,7 +199,7 @@ export const SentenceStrip = memo(function SentenceStrip({
                 onClick={onBackspace}
                 disabled={symbols.length === 0}
                 data-testid="sentence-backspace"
-                className="p-3 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="p-3 rounded-xl bg-muted text-foreground hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 aria-label={t('backspace')}
               >
                 <Delete className="w-6 h-6" />
@@ -223,10 +223,10 @@ export const SentenceStrip = memo(function SentenceStrip({
               className={`
                 p-3 rounded-xl text-white shadow-sm transition-all transform active:scale-95
                 ${isSpeaking
-                  ? 'bg-indigo-400 cursor-wait'
-                  : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-md'
+                  ? 'bg-brand/70 cursor-wait'
+                  : 'bg-brand hover:bg-brand/80 hover:shadow-md'
                 }
-                ${symbols.length === 0 ? 'opacity-50 cursor-not-allowed bg-gray-400 dark:bg-gray-600' : ''}
+                ${symbols.length === 0 ? 'opacity-50 cursor-not-allowed bg-muted-foreground' : ''}
               `}
               aria-label={t('speakSentence')}
             >
@@ -253,7 +253,7 @@ export const SentenceStrip = memo(function SentenceStrip({
 
         {/* Text Preview (for accessibility/clarity) */}
         {symbols.length > 0 && (
-          <div data-testid="sentence-preview" className="mt-1 px-1 text-sm text-gray-500 dark:text-gray-400 truncate">
+          <div data-testid="sentence-preview" className="mt-1 px-1 text-sm text-muted-foreground truncate">
             {sentenceText}
           </div>
         )}

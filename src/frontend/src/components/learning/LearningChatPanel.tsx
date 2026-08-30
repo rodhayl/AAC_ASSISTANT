@@ -7,6 +7,7 @@ import { LearningQuestionCard } from './LearningQuestionCard';
 import type { LearningSessionResponse, QuestionResponse } from '../../types';
 import type { LearningProgress, RevealedAnswer } from '../../store/learningStore';
 import { Button } from '../ui/button';
+import { StatusMessage } from '../ui/StatusMessage';
 
 interface LearningChatPanelProps {
   messages: LearningMessage[];
@@ -137,17 +138,17 @@ export function LearningChatPanel({
       : undefined;
 
   return (
-    <div className="flex-1 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex flex-wrap items-start gap-3 bg-gray-50 dark:bg-gray-900/50">
+    <div className="flex-1 bg-surface rounded-xl shadow-sm border border-border flex flex-col overflow-hidden">
+      <div className="px-4 py-3 border-b border-border flex flex-wrap items-start gap-3 bg-background/50">
         <div className="min-w-0 flex flex-1 items-start gap-2">
-          <div className="p-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">
+          <div className="p-1.5 rounded-lg bg-brand/10 text-brand">
             <Bot className="w-4 h-4" />
           </div>
           <div className="min-w-0">
-            <div className="font-semibold text-gray-900 dark:text-gray-100 text-sm break-words">
+            <div className="font-semibold text-foreground text-sm break-words">
               {t('title')}
             </div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">
+            <div className="text-xs text-muted-foreground">
               {t('panelSubtitle')}
             </div>
           </div>
@@ -156,24 +157,26 @@ export function LearningChatPanel({
           {currentSession && progress && (progressPercent !== undefined || progress.difficulty) && (
             <div className="flex items-center gap-2" data-testid="progress-chips">
               {progressPercent !== undefined && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                <StatusMessage variant="success" className="inline-flex items-center gap-1 rounded-full border-emerald-200 px-2.5 py-1 text-xs font-medium dark:border-emerald-800">
+
                   {t('score')} {progressPercent}%
-                </span>
+                </StatusMessage>
               )}
               {progress.questionsAnswered !== undefined && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-brand/10 text-brand border border-brand/20">
                   {t('correctAnswers')} {progress.correctAnswers ?? 0}/{progress.questionsAnswered}
                 </span>
               )}
               {progress.difficulty && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                <StatusMessage variant="warning" className="inline-flex items-center gap-1 rounded-full border-amber-200 px-2.5 py-1 text-xs font-medium dark:border-amber-800">
+
                   {t('level')}: {difficultyLabels[progress.difficulty] ?? progress.difficulty}
-                </span>
+                </StatusMessage>
               )}
             </div>
           )}
           {isAdmin && (
-            <label className="flex max-w-full items-center gap-1 cursor-pointer select-none text-xs text-gray-500 dark:text-gray-400">
+            <label className="flex max-w-full items-center gap-1 cursor-pointer select-none text-xs text-muted-foreground">
               <input
                 id="show-admin-reasoning"
                 name="show_admin_reasoning"
@@ -209,17 +212,17 @@ export function LearningChatPanel({
                   aria-modal="false"
                   aria-labelledby="end-session-confirmation-title"
                   aria-describedby="end-session-confirmation-description"
-                  className="absolute right-0 top-full z-20 mt-2 w-72 rounded-xl border border-red-200 dark:border-red-800 bg-white dark:bg-gray-800 p-4 shadow-xl"
+                  className="absolute right-0 top-full z-20 mt-2 w-72 rounded-xl border border-red-200 dark:border-red-800 bg-surface p-4 shadow-xl"
                 >
                   <p
                     id="end-session-confirmation-title"
-                    className="text-sm font-semibold text-gray-900 dark:text-gray-100"
+                    className="text-sm font-semibold text-foreground"
                   >
                     {t('endSessionConfirmTitle')}
                   </p>
                   <p
                     id="end-session-confirmation-description"
-                    className="mt-1 text-xs leading-relaxed text-gray-600 dark:text-gray-300"
+                    className="mt-1 text-xs leading-relaxed text-muted-foreground"
                   >
                     {t('endSessionConfirm')}
                   </p>
@@ -228,7 +231,7 @@ export function LearningChatPanel({
                       ref={cancelEndRef}
                       type="button"
                       onClick={() => setShowEndConfirmation(false)}
-                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface-hover"
                     >
                       {t('cancel')}
                     </button>
@@ -256,34 +259,34 @@ export function LearningChatPanel({
         tabIndex={0}
       >
         {isStartingSession && (
-          <div className="flex justify-center items-center p-6 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
+          <div className="flex justify-center items-center p-6 bg-brand/10 rounded-lg border border-brand/20">
             <div className="text-center">
               <div className="inline-flex items-center justify-center mb-3">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand" />
               </div>
-              <p className="text-indigo-700 dark:text-indigo-300 font-medium">
+              <p className="text-brand font-medium">
                 {t('startingSession')}
               </p>
-              <p className="text-indigo-600 dark:text-indigo-400 text-sm mt-1">{t('mayTake')}</p>
+              <p className="text-brand text-sm mt-1">{t('mayTake')}</p>
             </div>
           </div>
         )}
 
         {sessionStartError && (
-          <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
+          <StatusMessage variant="error">
             <p className="font-medium">{sessionStartError}</p>
-          </div>
+          </StatusMessage>
         )}
 
         {error && (
-          <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
+          <StatusMessage variant="error">
             <p className="font-medium">{t('errorPrefix', { message: error })}</p>
-          </div>
+          </StatusMessage>
         )}
 
         {messages.length === 0 && !isLoading && !currentSession && !isStartingSession && (
-          <div className="text-center text-gray-500 dark:text-gray-400 mt-10">
-            <Bot className="w-12 h-12 mx-auto mb-4 text-gray-300 dark:text-gray-600" />
+          <div className="text-center text-muted-foreground mt-10">
+            <Bot className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
             <p>{t('promptStart')}</p>
             <Button onClick={onStartSession} aria-label={t('startSessionLabel')} data-testid="learning-session-start" className="mt-4" disabled={isStartingSession} >
               {isStartingSession ? t('startingSession') : t('startSession')}
@@ -301,11 +304,11 @@ export function LearningChatPanel({
 
         {isLoading && (
           <div className="flex justify-start">
-            <div className="bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-bl-none px-4 py-3">
+            <div className="bg-muted rounded-2xl rounded-bl-none px-4 py-3">
               <div className="flex space-x-2">
-                <div className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce" />
-                <div className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce delay-75" />
-                <div className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce delay-150" />
+                <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" />
+                <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce delay-75" />
+                <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce delay-150" />
               </div>
             </div>
           </div>

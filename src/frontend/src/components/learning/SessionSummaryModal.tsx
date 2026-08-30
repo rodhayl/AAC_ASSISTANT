@@ -37,14 +37,14 @@ export function SessionSummaryModal({ summary, onClose }: SessionSummaryModalPro
       >
         <DialogHeader className="flex-row items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">
+            <div className="p-2.5 rounded-lg bg-brand/10 text-brand">
               <Award className="w-6 h-6" />
             </div>
             <div>
-              <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              <DialogTitle className="text-lg font-semibold text-foreground">
                 {t('summaryTitle')}
               </DialogTitle>
-              <DialogDescription className="text-sm text-gray-500 dark:text-gray-400">
+              <DialogDescription className="text-sm text-muted-foreground">
                 {t('summarySubtitle')}
               </DialogDescription>
             </div>
@@ -53,14 +53,14 @@ export function SessionSummaryModal({ summary, onClose }: SessionSummaryModalPro
             type="button"
             onClick={onClose}
             aria-label={t('closeSummary')}
-            className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+            className="p-2 text-muted-foreground hover:bg-surface-hover rounded-lg"
           >
             <X className="w-5 h-5" />
           </button>
         </DialogHeader>
 
         {summary.summary && (
-          <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed bg-gray-50 dark:bg-gray-900/40 rounded-lg p-4 mb-4">
+          <p className="text-sm text-foreground leading-relaxed bg-background/40 rounded-lg p-4 mb-4">
             {summary.summary}
           </p>
         )}
@@ -74,11 +74,11 @@ export function SessionSummaryModal({ summary, onClose }: SessionSummaryModalPro
               {t('score')}
             </div>
           </div>
-          <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 p-3 text-center">
-            <div className="text-2xl font-bold text-indigo-700 dark:text-indigo-400">
+          <div className="rounded-lg border border-brand/20 bg-brand/10 p-3 text-center">
+            <div className="text-2xl font-bold text-brand">
               {answered}
             </div>
-            <div className="text-xs text-indigo-700 dark:text-indigo-400 mt-1">
+            <div className="text-xs text-brand mt-1">
               {t('questionsAnswered')}
             </div>
           </div>

@@ -29,6 +29,7 @@ import { useAuthStore } from '../store/authStore';
 import { Button } from '../components/ui/button';
 import { useToastStore } from '../store/toastStore';
 import { BoardsAndTopicsSidebar } from '../components/learning/BoardsAndTopicsSidebar';
+import { cn } from '../lib/utils';
 
 const EMPTY_BOARD_SYMBOLS: BoardSymbol[] = [];
 
@@ -440,16 +441,16 @@ export function Communication() {
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-8">
             <div>
-              <h1 className="text-2xl font-bold text-primary">
+              <h1 className="text-2xl font-bold text-foreground">
                 {t('common:communication')}
               </h1>
-              <p className="text-gray-500 dark:text-gray-400 mt-1">
+              <p className="text-muted-foreground mt-1">
                 {t('common:selectBoardToStart')}
               </p>
             </div>
 
             <div className="relative w-full md:w-64">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 dark:text-gray-500" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <input
                 id="board-search"
                 name="board_search"
@@ -457,29 +458,29 @@ export function Communication() {
                 placeholder={t('common:searchBoards')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
               />
             </div>
           </div>
 
           {isListLoading && availableBoards.length === 0 && !hasActiveSearch ? (
             <div className="flex items-center justify-center h-64">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand" />
             </div>
           ) : hasActiveSearch && filteredBoards.length === 0 ? (
-            <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-              <LayoutGrid className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
+            <div className="text-center py-12 bg-surface rounded-xl border border-border">
+              <LayoutGrid className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-foreground">
                 {t('common:noBoardsMatchSearch')}
               </h3>
             </div>
           ) : !hasActiveSearch && availableBoards.length === 0 ? (
-            <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-              <LayoutGrid className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
+            <div className="text-center py-12 bg-surface rounded-xl border border-border">
+              <LayoutGrid className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-foreground">
                 {t('common:noBoardsFound')}
               </h3>
-              <p className="text-gray-500 dark:text-gray-400 mt-2">
+              <p className="text-muted-foreground mt-2">
                 {user?.user_type === 'student'
                   ? t('common:askTeacherForBoards')
                   : t('common:createBoardFirst')}
@@ -506,7 +507,7 @@ export function Communication() {
                     disabled={!playable}
                     className={`group relative glass-card rounded-xl text-left p-6 flex flex-col h-full ${playable
                       ? 'hover:shadow-lg dark:hover:shadow-neon hover:border-brand/50 cursor-pointer'
-                      : 'opacity-80 cursor-not-allowed bg-gray-50/50 dark:bg-surface/20'
+                      : 'opacity-80 cursor-not-allowed bg-background/50'
                       }`}
                   >
                     {!playable && (
@@ -518,18 +519,18 @@ export function Communication() {
                       </div>
                     )}
 
-                    <div className={`mb-4 p-3 rounded-xl w-fit transition-transform duration-300 ${playable ? 'bg-indigo-50 dark:bg-indigo-900/30 group-hover:scale-110' : 'bg-gray-100 dark:bg-gray-700'}`}>
-                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center shadow-inner ${playable ? 'bg-gradient-to-br from-indigo-500 via-blue-500 to-purple-500' : 'bg-gray-400'}`}>
+                    <div className={`mb-4 p-3 rounded-xl w-fit transition-transform duration-300 ${playable ? 'bg-brand/10 group-hover:scale-110' : 'bg-muted'}`}>
+                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center shadow-inner ${playable ? 'bg-gradient-to-br from-indigo-500 via-blue-500 to-purple-500' : 'bg-muted-foreground'}`}>
                         <LayoutGrid className="w-6 h-6 text-white" />
                       </div>
                     </div>
 
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                    <h3 className="text-lg font-bold text-foreground mb-2 group-hover:text-brand transition-colors">
                       {board.name}
                     </h3>
 
                     {board.description && (
-                      <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mb-4 flex-1">
+                      <p className="text-sm text-muted-foreground line-clamp-2 mb-4 flex-1">
                         {board.description}
                       </p>
                     )}
@@ -542,21 +543,21 @@ export function Communication() {
                             ? t('common:addOneMoreSymbol')
                             : t('common:addMoreSymbolsToUnlock', { count: needed })}
                         </p>
-                        <div className="h-1.5 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden shadow-inner">
+                        <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden shadow-inner">
                           <div
-                            className="h-full bg-gradient-to-r from-amber-400 to-amber-600 transition-all duration-700 ease-out shadow-[0_0_8px_rgba(245,158,11,0.5)]"
+                            className="h-full bg-gradient-to-r from-amber-400 to-amber-600 transition-all duration-700 ease-out shadow-sm"
                             style={{ width: `${Math.min(100, progress)}%` }}
                           />
                         </div>
                       </div>
                     )}
 
-                    <div className="mt-auto pt-4 border-t border-gray-100 dark:border-gray-700 w-full flex justify-between items-center">
-                      <span className={`text-sm font-medium flex items-center ${playable ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                    <div className="mt-auto pt-4 border-t border-border w-full flex justify-between items-center">
+                      <span className={`text-sm font-medium flex items-center ${playable ? 'text-brand' : 'text-muted-foreground'}`}>
                         {playable ? t('common:openBoard') : t('common:boardLocked')}
                         {playable && <ArrowLeft className="w-4 h-4 ml-1 rotate-180" />}
                       </span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                      <span className="text-xs text-muted-foreground font-medium">
                         {symbolCount} {symbolCount === 1 ? t('common:symbol') : t('common:symbols')}
                       </span>
                     </div>
@@ -569,7 +570,7 @@ export function Communication() {
                 <div className="col-span-full flex justify-center py-6">
                   <button
                     onClick={loadMore}
-                    className="px-6 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    className="px-6 py-2 bg-surface border border-border rounded-lg shadow-sm text-sm font-medium text-foreground hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand"
                   >
                     {t('common:loadMore')}
                   </button>
@@ -577,7 +578,7 @@ export function Communication() {
               )}
               {isListLoading && (
                 <div className="col-span-full flex justify-center py-6">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand"></div>
                 </div>
               )}
             </div>
@@ -593,12 +594,12 @@ export function Communication() {
     // spinner: offer a retry and a way back to the board list.
     if (!isBoardLoading && !currentBoard && activeBoardId && boardError) {
       return (
-        <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900 p-4">
-          <div className="max-w-md w-full text-center bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-900/60 p-8 shadow-lg">
+        <div className="flex items-center justify-center h-screen bg-background p-4">
+          <div className="max-w-md w-full text-center bg-surface rounded-xl border border-red-200 dark:border-red-900/60 p-8 shadow-lg">
             <div className="text-red-600 dark:text-red-400 text-lg font-bold mb-2">
               {t('common:boardLoadFailed')}
             </div>
-            <p className="text-sm text-gray-600 dark:text-gray-300 mb-6 break-words">{boardError}</p>
+            <p className="text-sm text-muted-foreground mb-6 break-words">{boardError}</p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Button
                 onClick={() => fetchBoard(activeBoardId, true)}
@@ -617,8 +618,8 @@ export function Communication() {
       );
     }
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      <div className="flex items-center justify-center h-screen bg-background">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand"></div>
       </div>
     );
   }
@@ -627,19 +628,19 @@ export function Communication() {
   const cols = currentBoard.grid_cols ?? 5;
 
   return (
-    <div className="flex h-full w-full bg-transparent overflow-hidden relative">
+    <div className="flex h-full w-full bg-background overflow-hidden relative">
       {/* Left Panel: Board & Sentence Strip */}
-      <div className={`flex flex-col flex-1 h-full min-h-0 transition-all duration-300 ${isChatOpen ? 'lg:mr-0' : ''} relative`}>
+      <div className={cn('relative flex h-full min-h-0 flex-1 flex-col transition-all duration-300', isChatOpen && 'lg:mr-0')}>
         {/* Header */}
-        <header className="glass-panel border-b border-border dark:border-white/5 px-4 py-2 flex items-center justify-between shrink-0 z-10 h-14">
-          <h1 className="text-lg font-bold text-primary truncate">
+        <header className="glass-panel border-b border-border px-4 py-2 flex items-center justify-between shrink-0 z-10 h-14">
+          <h1 className="text-lg font-bold text-foreground truncate">
             {currentBoard.name}
           </h1>
 
           <div className="flex items-center gap-2">
             <button
               onClick={toggleFullscreen}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
+              className="p-2 hover:bg-surface-hover rounded-lg text-muted-foreground transition-colors"
               title={isFullscreen ? t('exitFullscreen') : t('enterFullscreen')}
             >
               {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
@@ -680,7 +681,7 @@ export function Communication() {
         </main>
 
         {/* Communication Toolbar (Bottom) */}
-        <div className="shrink-0 z-30 glass-panel border-t border-border dark:border-white/5 w-full">
+        <div className="shrink-0 z-30 glass-panel border-t border-border w-full">
           <CommunicationToolbar
             onHome={handleHome}
             onBack={handleBack}
@@ -704,14 +705,14 @@ export function Communication() {
         onToggle={() => setIsBoardsOpen(!isBoardsOpen)}
         onStartActivity={handleStartActivity}
         isStartingSession={isStartingSession}
-        className="h-full border-l border-gray-200 dark:border-gray-700"
+        className="h-full border-l border-border"
       />
 
       {/* Right Panel: Chat Interface */}
       <div
         className={`
           fixed inset-y-0 right-0 z-40 w-full sm:w-96 lg:w-[35%] glass-panel shadow-2xl transform transition-transform duration-300 ease-in-out
-          lg:relative lg:translate-x-0 lg:shadow-none lg:border-l lg:border-border dark:border-white/5
+          lg:relative lg:translate-x-0 lg:shadow-none lg:border-l lg:border-border/20
           ${isChatOpen ? 'translate-x-0' : 'translate-x-full lg:hidden'}
         `}
       >

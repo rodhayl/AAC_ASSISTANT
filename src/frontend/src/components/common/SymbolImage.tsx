@@ -28,8 +28,8 @@ export function SymbolImage({
   );
 
   if (!isSafePath || error) {
-    const bg = 'bg-gray-100 dark:bg-gray-800';
-    const fg = 'text-gray-600 dark:text-gray-400';
+    const bg = 'bg-muted';
+    const fg = 'text-muted-foreground';
     return (
       <div
         className={`flex items-center justify-center rounded-lg ${bg} ${className}`}

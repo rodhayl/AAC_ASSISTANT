@@ -115,7 +115,7 @@ export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
   }, [token, user?.id, user?.settings?.notifications_enabled])
 
   return (
-    <header className="h-16 bg-surface/90 dark:bg-transparent backdrop-blur-sm border-b border-border dark:border-white/5 flex items-center justify-between gap-2 px-4 md:px-6 transition-all duration-200 z-10 sticky top-0">
+    <header className="h-16 bg-surface/90 dark:bg-transparent backdrop-blur-sm border-b border-border/20 flex items-center justify-between gap-2 px-4 md:px-6 transition-all duration-200 z-10 sticky top-0">
       <div className="flex items-center gap-3 min-w-0">
         {onMenuToggle && (
           <button
@@ -123,13 +123,13 @@ export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
             onClick={onMenuToggle}
             aria-label={t('navbar.toggleMenu')}
             aria-expanded={isSidebarOpen}
-            className="md:hidden rounded-lg p-2 text-secondary hover:bg-surface-hover transition-colors"
+            className="md:hidden rounded-lg p-2 text-muted-foreground hover:bg-surface-hover transition-colors"
             data-touch-target="true"
           >
             {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
         )}
-        <h2 className="hidden sm:block text-lg md:text-xl font-semibold text-primary truncate max-w-[32vw] lg:max-w-none">
+        <h2 className="hidden sm:block text-lg md:text-xl font-semibold text-foreground truncate max-w-[32vw] lg:max-w-none">
           {t('navbar.welcome', { name: user?.display_name || t('navbar.guest') })}
         </h2>
       </div>
@@ -140,7 +140,7 @@ export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
             href={`${config.BACKEND_URL}/docs`}
             target="_blank"
             rel="noopener noreferrer"
-            className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm font-medium text-brand dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
+            className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm font-medium text-brand hover:bg-brand/20 rounded-lg transition-colors"
             title={t('navbar.apiDocs')}
             data-touch-target="true"
           >
@@ -152,7 +152,7 @@ export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
         <div className="relative flex-shrink-0">
           <button
             onClick={() => setOpen(v => !v)}
-            className="p-2 text-secondary hover:bg-surface-hover dark:hover:bg-gray-700 rounded-full relative transition-colors"
+            className="p-2 text-muted-foreground hover:bg-surface-hover rounded-full relative transition-colors"
             aria-label={t('notifications.title')}
             data-touch-target="true"
           >
@@ -162,14 +162,14 @@ export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
           {open && <NotificationsPanel onClose={() => setOpen(false)} />}
         </div>
 
-        <div className="flex items-center gap-2 md:gap-3 pl-2 md:pl-4 border-l border-border dark:border-white/10 min-w-0">
+        <div className="flex items-center gap-2 md:gap-3 pl-2 md:pl-4 border-l border-border/20 min-w-0">
           <Link to="/settings" className="flex items-center gap-3 hover:opacity-80 transition-opacity flex-shrink-0">
-            <div className="w-8 h-8 bg-indigo-100 dark:bg-white/10 rounded-full flex items-center justify-center text-brand dark:text-white">
+            <div className="w-8 h-8 bg-brand/10 rounded-full flex items-center justify-center text-brand">
               <User className="w-5 h-5" />
             </div>
             <div className="hidden md:block">
-              <p className="text-sm font-medium text-primary">{user?.display_name || t('navbar.guest')}</p>
-              <p className="text-xs text-muted capitalize">{user?.user_type ? t(`navbar.roles.${user.user_type}`) : t('navbar.visitor')}</p>
+              <p className="text-sm font-medium text-foreground">{user?.display_name || t('navbar.guest')}</p>
+              <p className="text-xs text-muted-foreground capitalize">{user?.user_type ? t(`navbar.roles.${user.user_type}`) : t('navbar.visitor')}</p>
             </div>
           </Link>
           <div className="ml-1 sm:ml-2 md:ml-4 min-w-0">

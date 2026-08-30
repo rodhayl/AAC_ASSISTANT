@@ -65,11 +65,11 @@ function WarmupIndicator({ status, inProgressText, readyText, testId }: WarmupIn
   return (
     <div
       data-testid={testId}
-      className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300"
+      className="flex items-center gap-2 text-xs text-muted-foreground"
     >
       {status === 'warming' ? (
         <>
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" />
           <span>{inProgressText}</span>
         </>
       ) : (
@@ -212,10 +212,10 @@ export function VoiceTab({
   const localVoicePicker = (
     <div className="flex items-center justify-between gap-4">
           <div>
-        <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+        <p className="text-sm font-medium text-foreground">
           {t('ai.localVoice')}
         </p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">
+        <p className="text-xs text-muted-foreground">
           {t('ai.localVoiceHelp')}
         </p>
       </div>
@@ -229,7 +229,7 @@ export function VoiceTab({
           setLocalVoice(event.target.value);
           setPreferences((prev) => ({ ...prev, tts_local_voice: event.target.value }));
         }}
-        className="block w-72 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md disabled:cursor-not-allowed disabled:opacity-60"
+        className="block w-72 pl-3 pr-10 py-2 text-base border-border focus:outline-none focus:ring-brand focus:border-brand sm:text-sm rounded-md disabled:cursor-not-allowed disabled:opacity-60"
       >
         <option value="default">{t('ai.voiceDefault')}</option>
         {groupedLocalVoices.map(([language, voices]) => (
@@ -285,14 +285,14 @@ export function VoiceTab({
     <section
       id="settings-voice"
       aria-labelledby="settings-voice-heading"
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+      className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden"
     >
-      <div className="flex items-center justify-between gap-4 border-b border-gray-200 p-6 dark:border-gray-700">
+      <div className="flex items-center justify-between gap-4 border-b border-border p-6">
         <div>
-        <h3 id="settings-voice-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+        <h3 id="settings-voice-heading" className="text-lg font-semibold text-foreground">
           {t('preferences.tts')}
         </h3>
-        <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">{t('preferences.ttsHelp')}</p>
+        <p className="text-sm text-muted-foreground mt-1">{t('preferences.ttsHelp')}</p>
         </div>
         {onSave && (
           <div className="flex shrink-0 items-center gap-3">
@@ -317,16 +317,16 @@ export function VoiceTab({
         )}
       </div>
       <div className="p-6 space-y-6">
-        <div className="rounded-xl border-2 border-indigo-100 bg-indigo-50/50 p-4 dark:border-indigo-900 dark:bg-indigo-950/30">
+        <div className="rounded-xl border-2 border-brand/30 bg-brand/10 p-4">
           <div className="flex items-start gap-3">
-            <div className="rounded-lg bg-white p-2 shadow-sm dark:bg-gray-800">
-              <Volume2 className="h-5 w-5 text-indigo-600" />
+            <div className="rounded-lg bg-surface p-2 shadow-sm">
+              <Volume2 className="h-5 w-5 text-brand" />
             </div>
             <div className="min-w-0 flex-1">
-              <h4 className="font-semibold text-gray-900 dark:text-gray-100">{t('preferences.ttsEngine')}</h4>
-              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{t('preferences.ttsEngineHelp')}</p>
+              <h4 className="font-semibold text-foreground">{t('preferences.ttsEngine')}</h4>
+              <p className="mt-1 text-sm text-muted-foreground">{t('preferences.ttsEngineHelp')}</p>
               <div className="mt-3 flex flex-wrap items-center gap-3">
-                <label htmlFor="pref-tts-provider" className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                <label htmlFor="pref-tts-provider" className="text-sm font-medium text-foreground">
                   {t('preferences.selectedEngine')}
                 </label>
                 <select
@@ -339,13 +339,13 @@ export function VoiceTab({
                     setTTSProvider(provider);
                     setPreferences((prev) => ({ ...prev, tts_provider: provider }));
                   }}
-                  className="block w-72 rounded-md border-gray-300 bg-white py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm dark:bg-gray-800"
+                  className="block w-72 rounded-md border-border bg-surface py-2 pl-3 pr-10 text-base focus:border-brand focus:outline-none focus:ring-brand sm:text-sm "
                 >
                   <option value="kokoro">{t('preferences.ttsProviders.kokoro')} — {t('preferences.defaultEngine')}</option>
                   <option value="browser">{t('preferences.ttsProviders.browser')}</option>
                 </select>
               </div>
-              <p className="mt-2 text-xs text-indigo-800 dark:text-indigo-200">{t('preferences.engineSingleChoiceHelp')}</p>
+              <p className="mt-2 text-xs text-brand">{t('preferences.engineSingleChoiceHelp')}</p>
             </div>
           </div>
         </div>
@@ -353,8 +353,8 @@ export function VoiceTab({
         {preferences.tts_provider === 'browser' && (
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('preferences.browserVoice')}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{t('preferences.browserVoiceHelp')}</p>
+              <p className="text-sm font-medium text-foreground">{t('preferences.browserVoice')}</p>
+              <p className="text-xs text-muted-foreground">{t('preferences.browserVoiceHelp')}</p>
             </div>
             <select
               id="pref-tts-voice"
@@ -362,7 +362,7 @@ export function VoiceTab({
               aria-label={t('preferences.browserVoice')}
               value={preferences.tts_voice}
               onChange={(event) => setPreferences((prev) => ({ ...prev, tts_voice: event.target.value }))}
-              className="block w-56 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+              className="block w-56 pl-3 pr-10 py-2 text-base border-border focus:outline-none focus:ring-brand focus:border-brand sm:text-sm rounded-md"
             >
               <option value="default">{t('preferences.voices.default')}</option>
               {filteredVoices.length > 0 && <option disabled>──────────</option>}
@@ -393,13 +393,13 @@ export function VoiceTab({
         )}
 
         {showStatus && (
-          <div className="border-t border-gray-200 pt-6">
+          <div className="border-t border-border pt-6">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <p className="text-sm font-medium text-foreground">
                   {t('ai.sttModel')}
                 </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
+              <p className="text-xs text-muted-foreground">
                 {t('ai.sttModelHelp')}
               </p>
               </div>
@@ -410,7 +410,7 @@ export function VoiceTab({
                 value={sttModel}
                 disabled={Object.keys(sttModels).length === 0 || sttModelSaving}
                 onChange={(event) => { void saveSttModel(event.target.value); }}
-                className="block w-72 pl-3 pr-10 py-2 text-sm border-gray-300 rounded-md disabled:cursor-not-allowed disabled:opacity-60"
+                className="block w-72 pl-3 pr-10 py-2 text-sm border-border rounded-md disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {Object.entries(sttModels).map(([model, details]) => (
                   <option key={model} value={model}>
@@ -436,11 +436,11 @@ export function VoiceTab({
           </div>
         )}
 
-        {showStatus && <div className="border-t border-gray-200 pt-6">
+        {showStatus && <div className="border-t border-border pt-6">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('ai.voiceDeps')}</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{t('ai.voiceDepsHelp')}</p>
+              <h3 className="text-lg font-semibold text-foreground">{t('ai.voiceDeps')}</h3>
+              <p className="text-sm text-muted-foreground">{t('ai.voiceDepsHelp')}</p>
             </div>
           </div>
           <div className="space-y-3">
@@ -449,7 +449,7 @@ export function VoiceTab({
               return (
                 <div
                   key={item.key}
-                  className="flex items-center justify-between bg-gray-50 dark:bg-gray-900 rounded-lg px-3 py-2"
+                  className="flex items-center justify-between bg-background rounded-lg px-3 py-2"
                 >
                   <div className="flex items-center gap-3">
                     <Circle
@@ -459,13 +459,13 @@ export function VoiceTab({
                       fill={ok ? 'currentColor' : 'none'}
                     />
                     <div>
-                      <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">{item.label}</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                      <div className="text-sm font-semibold text-foreground">{item.label}</div>
+                      <div className="text-xs text-muted-foreground">
                         {ok ? t('ai.installed') : t('ai.notInstalled')} {item.extra ? `(${item.extra})` : ''}
                       </div>
                       {!ok && <div className="text-xs text-amber-800 dark:text-amber-300 font-medium">{item.help}</div>}
                       {!ok && item.key === 'stt' && voiceStatus?.actions?.install_voice?.reason && (
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                        <div className="text-xs text-muted-foreground">
                           {voiceStatus.actions.install_voice.reason}
                         </div>
                       )}
@@ -500,7 +500,7 @@ export function VoiceTab({
                       href={item.link}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                      className="text-xs text-brand hover:underline"
                       title={item.help}
                     >
                       {t('ai.howToInstall')}

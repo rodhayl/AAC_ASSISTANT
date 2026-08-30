@@ -99,18 +99,18 @@ const STYLES: Record<CategoryKind, Omit<CategoryStyle, 'kind'>> = {
     dot: 'bg-purple-500',
   },
   punctuation: {
-    border: 'border-gray-200 dark:border-gray-700',
-    hoverBorder: 'hover:border-gray-400 dark:hover:border-gray-500',
-    badgeBg: 'bg-gray-100 dark:bg-gray-800',
-    badgeText: 'text-gray-700 dark:text-gray-200',
-    dot: 'bg-gray-500',
+    border: 'border-border',
+    hoverBorder: 'hover:border-muted-foreground',
+    badgeBg: 'bg-muted',
+    badgeText: 'text-muted-foreground',
+    dot: 'bg-muted-foreground',
   },
   general: {
-    border: 'border-slate-200 dark:border-slate-800/70',
-    hoverBorder: 'hover:border-slate-400 dark:hover:border-slate-500',
-    badgeBg: 'bg-slate-100 dark:bg-slate-900/60',
-    badgeText: 'text-slate-700 dark:text-slate-200',
-    dot: 'bg-slate-500',
+    border: 'border-border',
+    hoverBorder: 'hover:border-muted-foreground',
+    badgeBg: 'bg-muted',
+    badgeText: 'text-muted-foreground',
+    dot: 'bg-muted-foreground',
   },
 }
 

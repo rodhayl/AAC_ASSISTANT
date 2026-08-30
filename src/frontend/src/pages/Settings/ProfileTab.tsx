@@ -65,25 +65,25 @@ export function ProfileTab() {
     <section
       id="settings-profile"
       aria-labelledby="settings-profile-heading"
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+      className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden"
     >
-      <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+      <div className="p-6 border-b border-border">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <div className="h-16 w-16 bg-indigo-100 rounded-full flex items-center justify-center">
-              <User className="h-8 w-8 text-indigo-600" />
+            <div className="h-16 w-16 bg-brand/10 rounded-full flex items-center justify-center">
+              <User className="h-8 w-8 text-brand" />
             </div>
             <div>
-              <h2 id="settings-profile-heading" className="text-xl font-bold text-gray-900 dark:text-gray-100">
+              <h2 id="settings-profile-heading" className="text-xl font-bold text-foreground">
                 {user?.display_name}
               </h2>
-              <p className="text-gray-500 capitalize dark:text-gray-400">{user?.user_type}</p>
+              <p className="text-muted-foreground capitalize">{user?.user_type}</p>
             </div>
           </div>
           {!editingProfile ? (
             <button
               onClick={() => setEditingProfile(true)}
-              className="flex items-center text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+              className="flex items-center text-brand hover:text-brand"
             >
               <Edit2 className="w-4 h-4 mr-1" />
               {t('profile.edit')}
@@ -92,7 +92,7 @@ export function ProfileTab() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setEditingProfile(false)}
-                className="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded"
+                className="px-3 py-1 text-muted-foreground hover:bg-muted rounded"
               >
                 {t('profile.cancel')}
               </button>
@@ -116,7 +116,7 @@ export function ProfileTab() {
       </div>
       <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label htmlFor="profile-username" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label htmlFor="profile-username" className="block text-sm font-medium text-foreground mb-1">
             {t('profile.username')}
           </label>
           <input
@@ -126,11 +126,11 @@ export function ProfileTab() {
             value={user?.username || ''}
             disabled
             autoComplete="username"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500"
+            className="w-full px-3 py-2 border border-border rounded-lg bg-background text-muted-foreground"
           />
         </div>
         <div className="md:col-span-2">
-          <label htmlFor="profile-display-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label htmlFor="profile-display-name" className="block text-sm font-medium text-foreground mb-1">
             {t('profile.displayName')}
           </label>
           <input
@@ -141,13 +141,13 @@ export function ProfileTab() {
             onChange={(event) => setProfileForm((prev) => ({ ...prev, display_name: event.target.value }))}
             disabled={!editingProfile}
             autoComplete="name"
-            className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg ${
-              !editingProfile ? 'bg-gray-50 text-gray-500 dark:bg-gray-700 dark:text-gray-300' : 'bg-white dark:bg-gray-800'
+            className={`w-full px-3 py-2 border border-border rounded-lg ${
+              !editingProfile ? 'bg-background text-muted-foreground' : 'bg-surface'
             }`}
           />
         </div>
         <div className="md:col-span-2">
-          <label htmlFor="profile-email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label htmlFor="profile-email" className="block text-sm font-medium text-foreground mb-1">
             {t('profile.email')}
           </label>
           <input
@@ -159,8 +159,8 @@ export function ProfileTab() {
             disabled={!editingProfile}
             autoComplete="email"
             placeholder={editingProfile ? t('profile.emailPlaceholder') : t('profile.noEmail')}
-            className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg ${
-              !editingProfile ? 'bg-gray-50 text-gray-500 dark:bg-gray-700 dark:text-gray-300' : 'bg-white dark:bg-gray-800'
+            className={`w-full px-3 py-2 border border-border rounded-lg ${
+              !editingProfile ? 'bg-background text-muted-foreground' : 'bg-surface'
             }`}
           />
         </div>

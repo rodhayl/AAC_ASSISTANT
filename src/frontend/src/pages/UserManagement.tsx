@@ -186,8 +186,8 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400">{t('title')}</h1>
-          <p className="mt-1 text-sm font-medium text-gray-600 dark:text-gray-400">{t('subtitle')}</p>
+          <h1 className="text-3xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-foreground to-muted-foreground">{t('title')}</h1>
+          <p className="mt-1 text-sm font-medium text-muted-foreground">{t('subtitle')}</p>
         </div>
         <button
           onClick={() => { setCreateModalOpen(true); setError(null) }}
@@ -202,31 +202,31 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
 
       {loading ? (
         <div className="flex h-64 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-indigo-600" />
+          <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-brand" />
         </div>
       ) : (
         <div className="glass-panel overflow-hidden rounded-xl">
-          <table className="min-w-full divide-y divide-border dark:divide-white/5">
-            <thead className="border-b border-border/50 bg-gray-50/50 dark:border-white/5 dark:bg-white/5">
+          <table className="min-w-full divide-y divide-border divide-border">
+            <thead className="border-b border-border/50 bg-background/50">
               <tr>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">{t('table.name')}</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">{t('table.username')}</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">{t('table.email')}</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">{t('table.actions')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('table.name')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('table.username')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('table.email')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('table.actions')}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border bg-transparent dark:divide-white/5">
+            <tbody className="divide-y divide-border bg-transparent divide-border">
               {managedUsers.map(item => (
                 <tr key={item.id}>
-                  <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                  <td className="px-6 py-4 text-sm text-foreground">
                     {item.display_name}
                     {role === 'admin' && item.id === user?.id && (
-                      <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-800">{t('you')}</span>
+                      <span className="ml-2 rounded-full bg-brand/10 px-2 py-0.5 text-xs text-brand">{t('you')}</span>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{item.username}</td>
-                  <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{item.email || '-'}</td>
-                  <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
+                  <td className="px-6 py-4 text-sm text-muted-foreground">{item.username}</td>
+                  <td className="px-6 py-4 text-sm text-muted-foreground">{item.email || '-'}</td>
+                  <td className="px-6 py-4 text-sm text-muted-foreground">
                     <div className="flex gap-2">
                       <button
                         onClick={() => {
@@ -235,7 +235,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
                           setEditEmail(item.email || '')
                           setError(null)
                         }}
-                        className="rounded px-3 py-1 text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/30"
+                        className="rounded px-3 py-1 text-brand hover:bg-brand/10 text-brand hover:bg-brand/20"
                         aria-label={t('actions.editAria', { name: item.username })}
                         title={t('actions.editTitle')}
                       >{t('edit')}</button>
@@ -265,7 +265,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
             </tbody>
           </table>
           {managedUsers.length === 0 && (
-            <div className="p-6 text-center text-gray-600 dark:text-gray-400">
+            <div className="p-6 text-center text-muted-foreground">
               {t(role === 'teacher' ? 'noTeachers' : 'noAdmins')}
             </div>
           )}
@@ -276,16 +276,16 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
         <Dialog open onOpenChange={(open) => { if (!open) setEditId(null) }}>
           <DialogContent showCloseButton={false} className="max-w-md p-6">
             <DialogHeader>
-              <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('edit')}</DialogTitle>
+              <DialogTitle className="text-lg font-semibold text-foreground">{t('edit')}</DialogTitle>
             </DialogHeader>
             <div className="space-y-3">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              <label className="block text-sm font-medium text-foreground">
                 {t('labels.displayName')}
-                <input value={editDisplayName} onChange={event => setEditDisplayName(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100" />
+                <input value={editDisplayName} onChange={event => setEditDisplayName(event.target.value)} className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-foreground" />
               </label>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              <label className="block text-sm font-medium text-foreground">
                 {t('labels.email')}
-                <input type="email" value={editEmail} onChange={event => setEditEmail(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100" />
+                <input type="email" value={editEmail} onChange={event => setEditEmail(event.target.value)} className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-foreground" />
               </label>
             </div>
             <div className="mt-4 flex justify-end gap-2">
@@ -309,29 +309,29 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
         >
           <DialogContent showCloseButton={false} className="max-w-md p-6">
             <DialogHeader>
-              <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('createTitle')}</DialogTitle>
+              <DialogTitle className="text-lg font-semibold text-foreground">{t('createTitle')}</DialogTitle>
             </DialogHeader>
             {error && <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/30 dark:text-red-400">{error}</div>}
             <form onSubmit={handleCreate} className="space-y-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              <label className="block text-sm font-medium text-foreground">
                 {t('labels.username')}
-                <input id="username" name="username" value={newUsername} onChange={event => setNewUsername(event.target.value)} required autoComplete="username" className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100" placeholder={t('placeholders.username')} />
+                <input id="username" name="username" value={newUsername} onChange={event => setNewUsername(event.target.value)} required autoComplete="username" className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-foreground" placeholder={t('placeholders.username')} />
               </label>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              <label className="block text-sm font-medium text-foreground">
                 {t('labels.displayName')}
-                <input id="displayName" name="displayName" value={newDisplayName} onChange={event => setNewDisplayName(event.target.value)} required autoComplete="name" className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100" placeholder={t('placeholders.displayName')} />
+                <input id="displayName" name="displayName" value={newDisplayName} onChange={event => setNewDisplayName(event.target.value)} required autoComplete="name" className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-foreground" placeholder={t('placeholders.displayName')} />
               </label>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              <label className="block text-sm font-medium text-foreground">
                 {t('labels.email')}
-                <input id="email" name="email" type="email" value={newEmail} onChange={event => setNewEmail(event.target.value)} autoComplete="email" className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100" placeholder={t('placeholders.email')} />
+                <input id="email" name="email" type="email" value={newEmail} onChange={event => setNewEmail(event.target.value)} autoComplete="email" className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-foreground" placeholder={t('placeholders.email')} />
               </label>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              <label className="block text-sm font-medium text-foreground">
                 {t('labels.password')}
-                <input id="password" name="password" type="password" value={newPassword} onChange={event => setNewPassword(event.target.value)} required minLength={8} autoComplete="new-password" className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100" placeholder={t('labels.passwordHint')} />
+                <input id="password" name="password" type="password" value={newPassword} onChange={event => setNewPassword(event.target.value)} required minLength={8} autoComplete="new-password" className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-foreground" placeholder={t('labels.passwordHint')} />
               </label>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              <label className="block text-sm font-medium text-foreground">
                 {t('labels.confirmPassword')}
-                <input id="confirmPassword" name="confirmPassword" type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} required minLength={8} autoComplete="new-password" className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:bg-gray-700 dark:text-gray-100" />
+                <input id="confirmPassword" name="confirmPassword" type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} required minLength={8} autoComplete="new-password" className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-foreground" />
               </label>
               <div className="mt-6 flex justify-end gap-3">
                 <Button type="button" variant="ghost" onClick={() => { setCreateModalOpen(false); clearCreateForm(); setError(null) }} disabled={createLoading}>{t('cancel')}</Button>

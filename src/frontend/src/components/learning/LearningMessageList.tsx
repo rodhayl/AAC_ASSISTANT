@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { SymbolMessageEditor } from '../SymbolMessageEditor';
 import { SymbolImage } from '../common/SymbolImage';
 import { IconButton } from '../ui/icon-button';
+import { cn } from '../../lib/utils';
 
 export interface LearningMessage {
   role: 'user' | 'assistant';
@@ -73,14 +74,15 @@ export function LearningMessageList({
         return (
           <div
             key={index}
-            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} group relative`}
+            className={cn('group relative flex', message.role === 'user' ? 'justify-end' : 'justify-start')}
           >
             <div
-              className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+              className={cn(
+                'max-w-[80%] rounded-2xl px-4 py-3',
                 message.role === 'user'
-                  ? 'bg-indigo-600 text-white rounded-br-none'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-bl-none'
-              }`}
+                  ? 'rounded-br-none bg-brand text-white'
+                  : 'rounded-bl-none bg-muted text-foreground',
+              )}
             >
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center opacity-75 text-xs">
@@ -93,7 +95,7 @@ export function LearningMessageList({
                     label={t('editSymbols')}
                     aria-label={t('editSymbolMessage')}
                     onClick={() => onEditMessage(index)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-white/20 rounded"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-surface/20 rounded"
                   >
                     <Edit className="w-3 h-3" />
                   </IconButton>
@@ -105,7 +107,7 @@ export function LearningMessageList({
                   {symbolData.map((symbol, symbolIndex) => (
                     <div
                       key={symbolIndex}
-                      className="w-8 h-8 rounded bg-white/10 overflow-hidden border border-white/20"
+                      className="w-8 h-8 rounded bg-surface/10 overflow-hidden border border-white/20"
                       title={symbol.label}
                     >
                       {symbol.image_path ? (

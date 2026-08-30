@@ -119,25 +119,25 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                 className="max-w-md p-0 max-h-[90vh] overflow-hidden"
             >
                 {/* Header */}
-                <DialogHeader className="flex-row items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                <DialogHeader className="flex-row items-center justify-between p-6 border-b border-border">
                     <DialogTitle className="text-xl font-bold flex items-center gap-2">
                         <Sparkles className="w-5 h-5 text-indigo-500" />
                         {t('students:guardianProfile')}: {student?.display_name}
                     </DialogTitle>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full" aria-label={t('common:close')}><X className="w-6 h-6" /></button>
+                    <button onClick={onClose} className="p-2 hover:bg-muted rounded-full" aria-label={t('common:close')}><X className="w-6 h-6" /></button>
                 </DialogHeader>
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-6">
                     {/* Tabs */}
-                    <div className="flex gap-2 mb-6 border-b border-gray-200 dark:border-gray-700">
+                    <div className="flex gap-2 mb-6 border-b border-border">
                         {['general', 'persona', 'safety'].map(tab => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab as Tab)}
                                 className={`px-4 py-2 font-medium border-b-2 transition-colors ${activeTab === tab
-                                        ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
-                                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                                        ? 'border-brand text-brand'
+                                        : 'border-transparent text-muted-foreground hover:text-foreground'
                                     }`}
                             >
                                 {t(`tabs.${tab}`, tab.charAt(0).toUpperCase() + tab.slice(1))}
@@ -165,7 +165,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                                         ))}
                                     </SelectContent>
                                 </Select>
-                                <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
+                                <p className="text-xs text-muted-foreground mt-1">
                                     {templates.find(t => t.name === selectedTemplate)?.description}
                                 </p>
                             </div>
@@ -178,7 +178,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                                         type="number"
                                         value={profile.age || ''}
                                         onChange={e => setProfile({ ...profile, age: parseInt(e.target.value) || undefined })}
-                                        className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+                                        className="w-full p-2 border border-border rounded-lg bg-surface-hover"
                                     />
                                 </div>
                                 <div>
@@ -187,7 +187,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                                         id="gender"
                                         value={profile.gender || ''}
                                         onChange={e => setProfile({ ...profile, gender: e.target.value })}
-                                        className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+                                        className="w-full p-2 border border-border rounded-lg bg-surface-hover"
                                     >
                                         <option value="">{t('students:select')}</option>
                                         <option value="male">{t('students:male')}</option>
@@ -210,7 +210,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                                         ...profile,
                                         companion_persona: { ...profile.companion_persona, name: e.target.value }
                                     })}
-                                    className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+                                    className="w-full p-2 border border-border rounded-lg bg-surface-hover"
                                     placeholder={t('placeholders.companionName')}
                                 />
                             </div>
@@ -223,7 +223,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                                         ...profile,
                                         companion_persona: { ...profile.companion_persona, role: e.target.value }
                                     })}
-                                    className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+                                    className="w-full p-2 border border-border rounded-lg bg-surface-hover"
                                     placeholder={t('placeholders.role')}
                                 />
                             </div>
@@ -240,7 +240,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                                         ...profile,
                                         safety_constraints: { ...profile.safety_constraints, content_filter_level: e.target.value }
                                     })}
-                                    className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+                                    className="w-full p-2 border border-border rounded-lg bg-surface-hover"
                                 >
                                     <option value="strict">{t('students:strict')}</option>
                                     <option value="standard">{t('students:standard')}</option>
@@ -266,10 +266,10 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                 </div>
 
                 {/* Footer */}
-                <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+                <div className="p-6 border-t border-border flex justify-end gap-3">
                     <button
                         onClick={onClose}
-                        className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                        className="px-4 py-2 text-muted-foreground hover:bg-muted rounded-lg"
                     >
                         {t('students:cancel')}
                     </button>

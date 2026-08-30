@@ -101,28 +101,28 @@ export function PartnerOverlay({ isOpen, onClose }: PartnerOverlayProps) {
       >
         <button 
             onClick={onClose}
-            className="absolute top-4 right-4 p-2 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600"
+            className="absolute top-4 right-4 p-2 rounded-full bg-muted hover:bg-surface-hover"
             aria-label={t('close')}
         >
             <X className="w-6 h-6" />
         </button>
 
         <div className="mb-6">
-            <div className={`p-4 rounded-full inline-flex items-center justify-center ${isListening ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-gray-100 text-gray-500'}`}>
+            <div className={`p-4 rounded-full inline-flex items-center justify-center ${isListening ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-muted text-muted-foreground'}`}>
                 <Mic className="w-12 h-12" />
             </div>
-            <DialogTitle className="mt-4 text-xl font-semibold text-gray-900 dark:text-gray-100">
+            <DialogTitle className="mt-4 text-xl font-semibold text-foreground">
                 {isListening ? t('listening') : t('paused')}
             </DialogTitle>
         </div>
 
-        <div className="w-full min-h-[200px] bg-gray-50 dark:bg-gray-900/50 rounded-xl p-6 flex items-center justify-center border-2 border-dashed border-gray-200 dark:border-gray-700 overflow-y-auto max-h-[60vh]">
+        <div className="w-full min-h-[200px] bg-background/50 rounded-xl p-6 flex items-center justify-center border-2 border-dashed border-border overflow-y-auto max-h-[60vh]">
             {transcript ? (
-                <p className="text-3xl md:text-4xl font-bold text-gray-800 dark:text-gray-100 leading-relaxed">
+                <p className="text-3xl md:text-4xl font-bold text-foreground leading-relaxed">
                     "{transcript}"
                 </p>
             ) : (
-                <p className="text-gray-400 italic text-xl dark:text-gray-500">
+                <p className="text-muted-foreground italic text-xl">
                     {t('waitingForSpeech')}
                 </p>
             )}

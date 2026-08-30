@@ -48,7 +48,7 @@ export function ResetPasswordModal({
           </div>
         )}
         <form onSubmit={onSubmit} className="space-y-4">
-          <label htmlFor={inputId} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label htmlFor={inputId} className="block text-sm font-medium text-foreground">
             {t('labels.newPassword')}
             <input
               id={inputId}
@@ -59,12 +59,12 @@ export function ResetPasswordModal({
               required
               minLength={8}
               autoComplete="new-password"
-              className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+              className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-foreground"
               placeholder={t('labels.passwordHint')}
             />
           </label>
           <div className="flex justify-end gap-3">
-            <button type="button" onClick={onClose} disabled={loading} className="rounded-lg px-4 py-2 text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700">
+            <button type="button" onClick={onClose} disabled={loading} className="rounded-lg px-4 py-2 text-foreground hover:bg-surface-hover">
               {t('cancel')}
             </button>
             <Button type="submit" variant="warning" loading={loading}>

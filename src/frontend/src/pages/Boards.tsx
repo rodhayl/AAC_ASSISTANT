@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next';
 import { formatDate } from '../lib/format';
 
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { StatusMessage } from '../components/ui/StatusMessage';
 
 export function Boards() {
   const boards = useBoardStore((state) => state.boards);
@@ -285,7 +286,7 @@ export function Boards() {
   if (isListLoading && boards.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand" />
       </div>
     );
   }
@@ -314,12 +315,12 @@ export function Boards() {
       />
       <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t('title')}</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">{t('subtitle')}</p>
+          <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
+          <p className="text-muted-foreground mt-1">{t('subtitle')}</p>
         </div>
         <div className="flex gap-4 w-full md:w-auto">
           <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 dark:text-gray-500" />              <input
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4 " />              <input
                 id="boards-search"
                 name="boards_search"
                 type="text"
@@ -328,7 +329,7 @@ export function Boards() {
 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
             />
           </div>
           <Button data-testid="force-refresh" variant="ghost" onClick={handleForceRefresh} disabled={isListLoading}>
@@ -342,7 +343,7 @@ export function Boards() {
       </div>
 
       <div className="flex items-center justify-between">
-        <label htmlFor="select-all-boards" className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+        <label htmlFor="select-all-boards" className="flex items-center gap-2 text-sm text-foreground">
           <input
             id="select-all-boards"
             name="select_all_boards"
@@ -350,7 +351,7 @@ export function Boards() {
             aria-label={t('selectAll')}
             checked={boardsToShow.length > 0 && selectedBoardIds.size === boardsToShow.length}
             onChange={(e) => toggleSelectAll(e.target.checked)}
-            className="rounded border-gray-300 dark:border-gray-600"
+            className="rounded border-border"
           />
           {t('selectAll')}
         </label>
@@ -369,16 +370,13 @@ export function Boards() {
       </div>
 
       {bulkDeleteError && (
-        <div role="alert" className="bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 p-4 rounded-lg">
+        <StatusMessage variant="error">
           {bulkDeleteError}
-        </div>
+        </StatusMessage>
       )}
 
       {error && (
-        <div
-          role="alert"
-          className="bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 p-4 rounded-lg"
-        >
+        <StatusMessage variant="error">
           <h2 className="font-semibold">{tError('title')}</h2>
           <p className="text-sm mt-1">{tError('subtitle')}</p>
           <p className="text-sm mt-2">{error}</p>
@@ -392,54 +390,54 @@ export function Boards() {
           >
             {tError('retry')}
           </Button>
-        </div>
+        </StatusMessage>
       )}
 
       {isCreating && (
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 mb-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">{t('createTitle')}</h3>
+        <div className="bg-surface p-6 rounded-xl shadow-sm border border-border mb-6">
+          <h3 className="text-lg font-semibold text-foreground mb-4">{t('createTitle')}</h3>
           <form onSubmit={handleCreateBoard} className="space-y-4">
             <div>
-              <label htmlFor="new-board-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('boardName')}</label>
+              <label htmlFor="new-board-name" className="block text-sm font-medium text-foreground mb-1">{t('boardName')}</label>
               <input
                 id="new-board-name"
                 name="new_board_name"
                 type="text"
                 value={newBoardName}
                 onChange={(e) => setNewBoardName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
                 placeholder={t('placeholderName')}
                 required
               />
             </div>
             <div>
-              <label htmlFor="new-board-description" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('description')}</label>
+              <label htmlFor="new-board-description" className="block text-sm font-medium text-foreground mb-1">{t('description')}</label>
               <input
                 id="new-board-description"
                 name="new_board_description"
                 type="text"
                 value={newBoardDescription}
                 onChange={(e) => setNewBoardDescription(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
                 placeholder={t('optionalDescription')}
               />
             </div>
 
-            <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+            <div className="border-t border-border pt-4">
               <div className="flex items-center mb-3">
                 <input
                   type="checkbox"
                   id="isLanguageLearning"
                   checked={isLanguageLearning}
                   onChange={(e) => setIsLanguageLearning(e.target.checked)}
-                  className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                  className="w-4 h-4 text-brand rounded focus:ring-brand"
                 />
-                <label htmlFor="isLanguageLearning" className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label htmlFor="isLanguageLearning" className="ml-2 text-sm font-medium text-foreground">
                   {t('languageLearning')}
                 </label>
               </div>
               {isLanguageLearning && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 ml-6">
+                <p className="text-xs text-muted-foreground mb-3 ml-6">
                   {t('languageLearningDesc')}
                 </p>
               )}
@@ -449,9 +447,9 @@ export function Boards() {
                   id="aiEnabledNew"
                   checked={aiEnabled}
                   onChange={(e) => setAiEnabled(e.target.checked)}
-                  className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                  className="w-4 h-4 text-brand rounded focus:ring-brand"
                 />
-                <label htmlFor="aiEnabledNew" className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label htmlFor="aiEnabledNew" className="ml-2 text-sm font-medium text-foreground">
                   {t('enableAI')}
                 </label>
               </div>
@@ -460,8 +458,8 @@ export function Boards() {
                   <label
                     className={`relative block p-3 rounded-lg border transition-colors ${primaryReady ? '' : 'opacity-60'}`}
                   >
-                    <div className="font-semibold text-gray-900 dark:text-gray-100">{t('primaryAI')}</div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400 capitalize">
+                    <div className="font-semibold text-foreground">{t('primaryAI')}</div>
+                    <div className="text-sm text-muted-foreground capitalize">
                       {primaryReady ? `${primaryProvider} - ${primaryModel}` : t('notConfigured')}
                     </div>
                   </label>
@@ -486,11 +484,11 @@ export function Boards() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {boardsToShow.map((board) => (
-          <div key={board.id} className="relative bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
+          <div key={board.id} className="relative bg-surface rounded-xl shadow-sm border border-border hover:shadow-md transition-shadow">
             <div className="p-6">
                 <div className="flex justify-between items-start mb-4">
                   <Link to={`/boards/${board.id}`} className="block mr-4">
-                    <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg">
+                    <div className="p-2 bg-brand/10 rounded-lg">
                       <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 via-blue-500 to-purple-500 flex items-center justify-center shadow-inner">
                         <LayoutGrid className="w-5 h-5 text-white" />
                       </div>
@@ -500,7 +498,7 @@ export function Boards() {
                     {(user?.user_type === 'admin' || board.user_id === user?.id) && (
                       <button
                         onClick={() => handleDeleteBoard(board.id)}
-                        className="p-2 text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                        className="p-2 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
                         aria-label={t('delete')}
                       >
                         <Trash2 className="w-4 h-4" />
@@ -509,7 +507,7 @@ export function Boards() {
                     {user && (
                       <button
                         onClick={() => duplicateBoard(board.id, user.id)}
-                        className="p-2 text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
+                        className="p-2 text-muted-foreground hover:text-brand hover:bg-brand/20 rounded-lg transition-colors"
                         aria-label={t('duplicateBoard')}
                       >
                         <Copy className="w-4 h-4" />
@@ -520,7 +518,7 @@ export function Boards() {
                         label={t('assignToStudent')}
                         title={t('assignToStudentTitle')}
                         onClick={() => openAssign(board.id)}
-                        className="p-2 text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
+                        className="p-2 text-muted-foreground hover:text-brand hover:bg-brand/20 rounded-lg transition-colors"
                       >
                         <UserPlus className="w-4 h-4" />
                       </IconButton>
@@ -528,12 +526,12 @@ export function Boards() {
                   </div>
                 </div>
                 <Link to={`/boards/${board.id}`} className="block">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{board.name}</h3>
-                  <p className="text-gray-500 dark:text-gray-400 text-sm mb-4 line-clamp-2">
+                  <h3 className="text-lg font-semibold text-foreground mb-1">{board.name}</h3>
+                  <p className="text-muted-foreground text-sm mb-4 line-clamp-2">
                     {board.description || t('noDescriptionProvided')}
                   </p>
                 </Link>
-              <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400 pt-4 border-t border-gray-100 dark:border-gray-700">
+              <div className="flex items-center justify-between text-sm text-muted-foreground pt-4 border-t border-border">
                 <span>{formatDate(board.created_at)}</span>
                 <div className="flex items-center gap-3">
                   <Link
@@ -547,7 +545,7 @@ export function Boards() {
                   {(user?.user_type === 'admin' || board.user_id === user?.id) && (
                     <Link
                       to={`/boards/${board.id}`}
-                      className="flex items-center text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium"
+                      className="flex items-center text-brand hover:text-brand font-medium"
                     >
                       <Edit className="w-4 h-4 mr-1" />
                       {t('editBoard')}
@@ -556,7 +554,7 @@ export function Boards() {
                 </div>
               </div>
               {assignOpenId === board.id && (
-                <div className="mt-4 p-4 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-800 rounded-lg">
+                <div className="mt-4 p-4 bg-brand/10 border border-brand/20 rounded-lg">
                   <div className="flex items-center space-x-3">
                     <Select
                       value={selectedStudentId == null ? 'none' : String(selectedStudentId)}

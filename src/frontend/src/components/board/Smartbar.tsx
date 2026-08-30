@@ -156,11 +156,11 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
   // Always render to allow access to categories
 
   return (
-    <div className="w-full bg-indigo-50 dark:bg-indigo-900/20 border-b border-indigo-100 dark:border-indigo-800/50 p-1.5 transition-all">
+    <div className="w-full bg-brand/10 border-b border-brand/20 p-1.5 transition-all">
       <div className="flex items-center justify-between gap-2 mb-1.5 px-1 overflow-x-auto">
         <div className="flex items-center gap-1.5 shrink-0">
-          <Sparkles className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
-          <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-300 uppercase tracking-wider hidden sm:inline">
+          <Sparkles className="w-3.5 h-3.5 text-brand animate-pulse" />
+          <span className="text-[10px] font-medium text-brand uppercase tracking-wider hidden sm:inline">
             {t('suggestions')}
           </span>
         </div>
@@ -169,8 +169,8 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
           <button
             onClick={() => handleIntentChange('general')}
             className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors flex items-center gap-1 ${activeIntent === 'general'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'glass-card text-gray-600 dark:text-gray-100 hover:bg-indigo-100 dark:hover:bg-indigo-900/50'
+              ? 'bg-brand text-white shadow-sm'
+              : 'glass-card text-muted-foreground hover:bg-brand/10'
               }`}
           >
             <Brain className="w-3 h-3" />
@@ -179,8 +179,8 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
           <button
             onClick={() => handleIntentChange('pronouns')}
             className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors flex items-center gap-1 ${activeIntent === 'pronouns'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'glass-card text-gray-600 dark:text-gray-100 hover:bg-indigo-100 dark:hover:bg-indigo-900/50'
+              ? 'bg-brand text-white shadow-sm'
+              : 'glass-card text-muted-foreground hover:bg-brand/10'
               }`}
           >
             <User className="w-3 h-3" />
@@ -189,8 +189,8 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
           <button
             onClick={() => handleIntentChange('verbs')}
             className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors flex items-center gap-1 ${activeIntent === 'verbs'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'glass-card text-gray-600 dark:text-gray-100 hover:bg-indigo-100 dark:hover:bg-indigo-900/50'
+              ? 'bg-brand text-white shadow-sm'
+              : 'glass-card text-muted-foreground hover:bg-brand/10'
               }`}
           >
             <Play className="w-3 h-3" />
@@ -199,8 +199,8 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
           <button
             onClick={() => handleIntentChange('nouns')}
             className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors flex items-center gap-1 ${activeIntent === 'nouns'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'glass-card text-gray-600 dark:text-gray-100 hover:bg-indigo-100 dark:hover:bg-indigo-900/50'
+              ? 'bg-brand text-white shadow-sm'
+              : 'glass-card text-muted-foreground hover:bg-brand/10'
               }`}
           >
             <Type className="w-3 h-3" />
@@ -209,8 +209,8 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
           <button
             onClick={() => handleIntentChange('articles')}
             className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors flex items-center gap-1 ${activeIntent === 'articles'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'glass-card text-gray-600 dark:text-gray-100 hover:bg-indigo-100 dark:hover:bg-indigo-900/50'
+              ? 'bg-brand text-white shadow-sm'
+              : 'glass-card text-muted-foreground hover:bg-brand/10'
               }`}
           >
             <FileText className="w-3 h-3" />
@@ -220,8 +220,8 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
           <button
             onClick={() => handleIntentChange('places')}
             className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors flex items-center gap-1 ${activeIntent === 'places'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'glass-card text-gray-600 dark:text-gray-100 hover:bg-indigo-100 dark:hover:bg-indigo-900/50'
+              ? 'bg-brand text-white shadow-sm'
+              : 'glass-card text-muted-foreground hover:bg-brand/10'
               }`}
           >
             <MapPin className="w-3 h-3" />
@@ -232,7 +232,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
           <button
             onClick={handleMore}
             disabled={isLoading || !hasMore}
-            className="px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/50 transition-colors flex items-center gap-1 border border-indigo-100 dark:border-indigo-800 disabled:opacity-50"
+            className="px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-surface text-brand hover:bg-brand/10 transition-colors flex items-center gap-1 border border-brand/20 disabled:opacity-50"
             title={t('moreSuggestions')}
           >
             <Plus className="w-3 h-3" />
@@ -242,8 +242,8 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
       </div>
 
       {isLoading && offset === 0 ? (
-        <div className="flex justify-center items-center h-16 text-indigo-500">
-          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600" />
+        <div className="flex justify-center items-center h-16 text-brand">
+          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-brand" />
         </div>
       ) : suggestions.length > 0 ? (
         <div className="flex gap-2 overflow-x-auto pb-2 px-1 scrollbar-hide">
@@ -287,7 +287,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
                   className={`
                     h-14 sm:h-[4.5rem] min-w-[4rem] px-3
                     flex flex-col items-center justify-center relative overflow-hidden
-                    ${!suggestion.color ? 'bg-white dark:bg-gray-800' : ''}
+                    ${!suggestion.color ? 'bg-surface' : ''}
                     border-2 ${categoryStyle.border}
                     rounded-xl shadow-sm 
                     ${categoryStyle.hoverBorder} hover:shadow-md 
@@ -303,7 +303,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
                       missingImageLabel={t('imageUnavailable')}
                     />
                   </div>
-                  <span className={`text-xs font-bold leading-tight text-center w-full px-1 ${isPunctuation ? 'sr-only' : ''} ${suggestion.color ? 'text-gray-900' : 'text-gray-900 dark:text-gray-100'} line-clamp-2`}>
+                  <span className={`text-xs font-bold leading-tight text-center w-full px-1 ${isPunctuation ? 'sr-only' : ''} text-foreground line-clamp-2`}>
                     {suggestion.label}
                   </span>
                 </button>
@@ -318,7 +318,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
           })}
         </div>
       ) : (
-        <div className="text-center py-2 text-gray-400 text-xs dark:text-gray-500">
+        <div className="text-center py-2 text-muted-foreground text-xs">
           {t('noSuggestions')}
         </div>
       )}
