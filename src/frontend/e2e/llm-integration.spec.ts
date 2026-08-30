@@ -448,7 +448,11 @@ test.describe('LLM Integration (Mocked)', () => {
     await expect(strip).toContainText("Hi", { timeout: 5000 });
 
     // Click Ask AI
-    const askAiBtn = page.getByRole('button', { name: /ask ai|preguntar ia|magic/i }).first();
+    // The app restores the authenticated user's saved ui_language, so the button label may be
+    // English ("Ask AI") or Spanish ("Preguntar a la IA"). Match both locales (and the "IA" chip).
+    const askAiBtn = page.locator('[data-testid="sentence-ask-ai"]').or(
+      page.getByRole('button', { name: /ask ai|preguntar a?l?a? ?ia|magic/i }),
+    ).first();
     await expect(askAiBtn).toBeEnabled();
     await askAiBtn.click();
     
