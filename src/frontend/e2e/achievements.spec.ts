@@ -19,7 +19,7 @@ test.describe('Achievements', () => {
     // every card must render from real data in the locked (grayscale) state.
     for (const name of ['First Steps', 'Vocabulary Explorer', 'Quick Learner']) {
       const card = page
-        .locator('.bg-white')
+        .locator('.bg-surface')
         .filter({ hasText: name })
         .first();
       await expect(card).toBeVisible();

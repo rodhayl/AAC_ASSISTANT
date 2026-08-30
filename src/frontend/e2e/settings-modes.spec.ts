@@ -42,7 +42,7 @@ test.describe('Learning Modes Settings', () => {
     await page.getByRole('button', { name: /Save Mode|Guardar modo/i }).click();
     await expect(page.getByText(/Mode created successfully|Modo creado correctamente/i)).toBeVisible();
 
-    const row = page.locator('div.border.border-gray-200').filter({ hasText: name }).first();
+    const row = page.locator('div.border.border-border').filter({ hasText: name }).first();
     await expect(row).toBeVisible();
     await row.getByRole('button', { name: new RegExp(`(?:Edit|Editar) ${name}`, 'i') }).click();
 
