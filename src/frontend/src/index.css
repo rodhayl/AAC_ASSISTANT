@@ -193,6 +193,29 @@ body {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
+/* Chrome paints autofilled inputs with its own light-yellow background no
+   matter what the theme is, which is blinding on the dark palette. The inset
+   box-shadow trick repaints the fill with the theme surface, and
+   -webkit-text-fill-color keeps the text readable over it. */
+.dark input:-webkit-autofill,
+.dark textarea:-webkit-autofill,
+.dark select:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px rgb(var(--bg-surface)) inset;
+  -webkit-text-fill-color: rgb(var(--text-primary));
+  caret-color: rgb(var(--text-primary));
+  transition: background-color 9999s ease-out;
+}
+
+/* High-contrast dark: the global HCM rule strips box-shadows with !important,
+   so the autofill override needs its own !important to survive it. */
+html.high-contrast.dark input:-webkit-autofill,
+html.high-contrast.dark textarea:-webkit-autofill,
+html.high-contrast.dark select:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px #000 inset !important;
+  -webkit-text-fill-color: #fff !important;
+  caret-color: #fff;
+}
+
 /* Animation utilities are supplied by tw-animate-css. */
 
 .hide-scrollbar,
