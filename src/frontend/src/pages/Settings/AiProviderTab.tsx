@@ -428,7 +428,7 @@ export function AiProviderTab() {
           <StatusMessage variant={selectedHealth.available ? 'success' : 'error'}>
             <div className="font-medium">
               {selectedProviderLabel}:{' '}
-              <span className={selectedHealth.available ? 'text-green-700' : 'text-red-700'}>
+              <span className={selectedHealth.available ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}>
                 {selectedHealth.available ? t('ai.statusUp') : t('ai.statusDown')}
               </span>
             </div>

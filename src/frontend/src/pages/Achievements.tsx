@@ -319,15 +319,15 @@ export function Achievements() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
-                        <IconButton label={t('award')} onClick={() => openAwardModal(a.id)} className="p-2 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded">
+                        <IconButton label={t('award')} onClick={() => openAwardModal(a.id)} className="p-2 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded">
                           <Award className="w-4 h-4" />
                         </IconButton>
                         {a.created_by && (a.created_by === user?.id || user?.user_type === 'admin') && (
                           <>
-                            <IconButton label={t('edit')} onClick={() => openEditModal(a)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded">
+                            <IconButton label={t('edit')} onClick={() => openEditModal(a)} className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded">
                               <Pencil className="w-4 h-4" />
                             </IconButton>
-                            <IconButton label={t('delete')} onClick={() => handleDelete(a.id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded">
+                            <IconButton label={t('delete')} onClick={() => handleDelete(a.id)} className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded">
                               <Trash2 className="w-4 h-4" />
                             </IconButton>
                           </>
@@ -367,7 +367,7 @@ export function Achievements() {
                   </div>
                 )}
                 {isUnlocked && (
-                  <div className="absolute top-4 right-4 text-green-500">
+                  <div className="absolute top-4 right-4 text-green-500 dark:text-green-400">
                     <CheckCircle className="w-5 h-5" />
                   </div>
                 )}

@@ -380,7 +380,7 @@ export function VoiceTab({
         {preferences.tts_provider === 'kokoro' && (
           <>
             {!localTTSAvailable && (
-              <div role="alert" className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-800">
+              <div role="alert" className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-800 dark:text-red-200">
                 {t('preferences.kokoroUnavailable')}
               </div>
             )}

@@ -129,7 +129,7 @@ export function BoardEditorToolbar({
         <button
           onClick={onClear}
           disabled={isBusy || !hasSymbols}
-          className="flex items-center px-4 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:bg-red-900/30 disabled:opacity-50"
+          className="flex items-center px-4 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/30 disabled:opacity-50"
           title={t('clearBoardTitle')}
         >
           <Trash2 className="w-4 h-4 mr-2" />
