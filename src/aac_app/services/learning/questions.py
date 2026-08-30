@@ -96,6 +96,66 @@ def _is_valid_question_data(value: object) -> bool:
     )
 
 
+def _question_coverage(session: LearningSession) -> tuple[list[str], list[str]]:
+    """Question texts already asked and target terms already practiced.
+
+    Reads the session's conversation history; entries that do not match the
+    full question contract (e.g. the welcome message) are skipped.
+    """
+    asked: list[str] = []
+    practiced: list[str] = []
+    for entry in session.conversation_history or []:
+        if entry.get("type") != "question":
+            continue
+        data = entry.get("data")
+        if not isinstance(data, dict) or not {"question", "choices", "correct"} <= set(data):
+            continue
+        question = data["question"]
+        if isinstance(question, str) and question.strip():
+            asked.append(question.strip()[:80])
+        correct = data["correct"]
+        choices = data["choices"]
+        if type(correct) is int and 0 <= correct < len(choices):
+            term = choices[correct]
+            if isinstance(term, str) and term.strip():
+                practiced.append(term.strip()[:40])
+    return asked, practiced
+
+
+def _terms_practiced_in_recent_sessions(
+    session: LearningSession, db: Session | None, limit: int = 5
+) -> list[str]:
+    """Target terms already asked in the student's recent sessions on this topic.
+
+    Lets the tutor prioritize unstudied vocabulary instead of reopening every
+    session with the same terms. Best-effort: a lookup failure must not block
+    question generation.
+    """
+    if db is None:
+        return []
+    try:
+        past_sessions = (
+            db.query(LearningSession)
+            .filter(
+                LearningSession.user_id == session.user_id,
+                LearningSession.topic_name == session.topic_name,
+                LearningSession.id != session.id,
+            )
+            .order_by(LearningSession.started_at.desc())
+            .limit(limit)
+            .all()
+        )
+    except Exception as exc:
+        logger.warning(f"Recent-session coverage lookup failed: {exc}")
+        return []
+    terms: list[str] = []
+    for past in past_sessions:
+        _, practiced = _question_coverage(past)
+        terms.extend(practiced)
+    # Deduplicate preserving order and cap the prompt footprint.
+    return list(dict.fromkeys(terms))[:15]
+
+
 class QuestionGenerationMixin:
     async def ask_question(
         self, session_id: int, difficulty: str = None, db: Session | None = None
@@ -190,9 +250,20 @@ class QuestionGenerationMixin:
         """
         response = ""
         try:
+            asked_in_session, _practiced_here = _question_coverage(session)
+            past_terms = _terms_practiced_in_recent_sessions(session, db)
+            coverage = (
+                "Questions already asked in this session: "
+                f"{json.dumps(asked_in_session[-12:], ensure_ascii=False)}\n"
+                "    Terms the student already practiced in recent sessions on this topic: "
+                f"{json.dumps(past_terms, ensure_ascii=False)}"
+            )
             prompt = f"""Generate a {difficulty} level question about {session.topic_name}.
 
     Previous conversation: {json.dumps(recent_history)}
+
+    Coverage so far:
+    {coverage}
 
     Requirements:
     - Appropriate for AAC users with communication difficulties
@@ -203,6 +274,7 @@ class QuestionGenerationMixin:
     - Never include the correct answer, or an obvious synonym of it, in the question text; the student must recall or produce it
     - Distractors must be plausible, topic-related alternatives of the same kind as the correct answer, not generic filler
     - Do NOT repeat a question or choice set you already used earlier in this conversation
+    - Vary the situations and opening themes; prioritize vocabulary and situations the student has NOT practiced yet (see the coverage lists) so every term of the topic gets practiced over time
 
     RESPOND ONLY WITH VALID JSON. No greetings, no explanations, no markdown.
     Use exactly this format (shown for a different topic):

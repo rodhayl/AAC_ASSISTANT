@@ -248,7 +248,11 @@ describe('learningStore adaptive question flow', () => {
 
     await useLearningStore.getState().submitAnswer(7, 'Cat');
 
-    expect(useLearningStore.getState().revealedAnswer).toEqual({ choice: 'Cat', isCorrect: null });
+    expect(useLearningStore.getState().revealedAnswer).toEqual({
+      choice: 'Cat',
+      isCorrect: null,
+      answerRevealed: false,
+    });
     expect(post).toHaveBeenCalledWith(
       '/achievements/user/42/check',
       undefined,
@@ -378,7 +382,7 @@ describe('learningStore adaptive question flow', () => {
     const state = useLearningStore.getState();
     // The pending question stays visible so the highlight can be shown.
     expect(state.currentQuestion?.question_text).toBe('What animal says miau?');
-    expect(state.revealedAnswer).toEqual({ choice: 'Dog', isCorrect: false });
+    expect(state.revealedAnswer).toEqual({ choice: 'Dog', isCorrect: false, answerRevealed: false });
 
     // No auto-advance: the student retries the same question after a hint.
     await vi.advanceTimersByTimeAsync(NEXT_QUESTION_REVEAL_DELAY_MS);

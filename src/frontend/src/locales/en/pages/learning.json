@@ -112,6 +112,7 @@
   "level": "Level",
   "correctAnswer": "Correct!",
   "notQuite": "Not quite — the correct answer is \"{{answer}}\"",
+  "tryAgain": "Not quite — try again!",
   "answerReceived": "Answer received",
   "close": "Close",
   "aiAssistant": "AI Assistant",

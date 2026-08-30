@@ -38,9 +38,12 @@ export interface LearningProgress {
 
 // Correct-answer reveal state for the question card: which choice was picked
 // and whether it was right (null = no verdict, e.g. a voice answer).
+// answerRevealed mirrors the backend flag: true once the tutor revealed the
+// full answer after enough failed attempts, which ends the retry loop.
 export interface RevealedAnswer {
   choice: string;
   isCorrect: boolean | null;
+  answerRevealed?: boolean;
 }
 
 // Returned by the end-session endpoint and shown in the summary modal.
@@ -291,7 +294,11 @@ export const useLearningStore = create<LearningState>((set, get) => {
     const reply = buildAssistantReply(result, showReasoning);
     set((state) => ({
       lastAnswer: result,
-      revealedAnswer: { choice, isCorrect: result.is_correct ?? null },
+      revealedAnswer: {
+        choice,
+        isCorrect: result.is_correct ?? null,
+        answerRevealed: result.answer_revealed === true,
+      },
       progressStats: mergeProgress(state.progressStats, result),
       messages: [
         ...state.messages,

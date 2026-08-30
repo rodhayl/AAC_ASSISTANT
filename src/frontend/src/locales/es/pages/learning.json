@@ -112,6 +112,7 @@
   "level": "Nivel",
   "correctAnswer": "¡Correcto!",
   "notQuite": "Casi — la respuesta correcta es \"{{answer}}\"",
+  "tryAgain": "Casi — ¡inténtalo de nuevo!",
   "answerReceived": "Respuesta recibida",
   "close": "Cerrar",
   "aiAssistant": "Asistente de IA",

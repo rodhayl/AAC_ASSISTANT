@@ -25,6 +25,11 @@ export function LearningQuestionCard({
 
   const isAnswered = revealed !== null;
   const revealedIsCorrect = revealed?.isCorrect ?? null;
+  // A wrong pick is only "final" once the tutor revealed the full answer;
+  // before that the student keeps retrying with progressive hints and the
+  // correct choice must stay hidden.
+  const isFinal =
+    revealedIsCorrect !== false || revealed?.answerRevealed === true;
   const correctIndex = question.correct_answer_index;
   const correctLabel =
     correctIndex !== undefined && correctIndex >= 0 && correctIndex < choices.length
@@ -35,9 +40,11 @@ export function LearningQuestionCard({
     ? revealedIsCorrect === true
       ? t('correctAnswer')
       : revealedIsCorrect === false
-        ? t('notQuite', {
-            answer: correctLabel ?? revealed?.choice ?? '',
-          })
+        ? isFinal
+          ? t('notQuite', {
+              answer: correctLabel ?? revealed?.choice ?? '',
+            })
+          : t('tryAgain')
         : t('answerReceived')
     : null;
 
@@ -87,6 +94,13 @@ export function LearningQuestionCard({
             if (!isAnswered) {
               buttonClass +=
                 'bg-surface border-brand/50 text-foreground hover:bg-brand/10 hover:border-brand';
+            } else if (!isFinal) {
+              // Hint state: only the picked (wrong) choice is marked and
+              // disabled; the rest stay available for another attempt and
+              // the correct choice is NOT revealed.
+              buttonClass += isPicked
+                ? 'bg-red-600 dark:bg-red-500 text-white border-red-600 dark:border-red-500'
+                : 'bg-surface border-brand/50 text-foreground hover:bg-brand/10 hover:border-brand';
             } else if (isCorrectChoice) {
               buttonClass +=
                 'bg-green-700 text-white border-green-700 dark:border-green-700 font-medium';
@@ -102,7 +116,7 @@ export function LearningQuestionCard({
                 key={`${index}-${choice}`}
                 type="button"
                 onClick={() => onAnswer(choice)}
-                disabled={disabled || isAnswered}
+                disabled={disabled || (isAnswered && (isFinal || isPicked))}
                 aria-label={choice}
                 data-correct={isCorrectChoice ? 'true' : undefined}
                 className={buttonClass}

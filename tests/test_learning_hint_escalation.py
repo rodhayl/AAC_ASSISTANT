@@ -127,6 +127,36 @@ def test_third_wrong_attempt_may_reveal_and_lets_ui_advance(
 
 
 @pytest.mark.usefixtures("setup_test_db")
+def test_question_prompt_prioritizes_unpracticed_terms(
+    configured_providers, regular_user, user_token
+):
+    """The next question sees what was already asked, and a fresh session on
+    the same topic inherits terms practiced in earlier sessions."""
+    configured_providers.generate.side_effect = [
+        QUESTION_JSON,  # session A: first question
+        CORRECT_JSON,  # session A: student masters "Good morning"
+        QUESTION_JSON,  # session A: next question
+        QUESTION_JSON,  # session B: first question
+    ]
+    headers, session_a = _start_session(regular_user.id, user_token)
+    client.post(f"/api/learning/{session_a}/ask", headers=headers)
+    _answer(session_a, headers, "Good morning")
+    client.post(f"/api/learning/{session_a}/ask", headers=headers)
+
+    second_prompt = configured_providers.generate.call_args_list[2].kwargs["prompt"]
+    assert "Questions already asked in this session" in second_prompt
+    assert "What do you say when you see a friend in the morning?" in second_prompt
+    assert "prioritize vocabulary" in second_prompt
+
+    headers_b, session_b = _start_session(regular_user.id, user_token)
+    client.post(f"/api/learning/{session_b}/ask", headers=headers_b)
+
+    third_prompt = configured_providers.generate.call_args_list[3].kwargs["prompt"]
+    assert "already practiced in recent sessions" in third_prompt
+    assert "Good morning" in third_prompt
+
+
+@pytest.mark.usefixtures("setup_test_db")
 def test_correct_answer_never_sets_the_reveal_flag(
     configured_providers, regular_user, user_token
 ):

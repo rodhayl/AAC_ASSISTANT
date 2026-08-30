@@ -94,7 +94,7 @@ describe('LearningQuestionCard', () => {
     screen.getAllByRole('button').forEach((button) => expect(button).toBeDisabled());
   });
 
-  it('marks a wrong pick red and names the correct answer in the caption', () => {
+  it('marks a wrong pick red and names the correct answer once revealed', () => {
     render(
       <LearningQuestionCard
         question={{
@@ -105,13 +105,48 @@ describe('LearningQuestionCard', () => {
         }}
         disabled={false}
         onAnswer={vi.fn()}
-        revealed={{ choice: 'Dog', isCorrect: false }}
+        revealed={{ choice: 'Dog', isCorrect: false, answerRevealed: true }}
       />,
     );
 
     expect(screen.getByRole('button', { name: 'Dog' }).className).toContain('bg-red-600');
     expect(screen.getByRole('button', { name: 'Cat' }).className).toContain('bg-green-700');
     expect(screen.getByTestId('reveal-caption').textContent).toContain('Cat');
+    screen.getAllByRole('button').forEach((button) => expect(button).toBeDisabled());
+  });
+
+  it('a wrong pick before reveal disables only the picked choice and hides the answer', () => {
+    const onAnswer = vi.fn();
+    render(
+      <LearningQuestionCard
+        question={{
+          success: true,
+          question_text: 'Which animal says miau?',
+          choices: ['Cat', 'Dog', 'Cow'],
+          correct_answer_index: 0,
+        }}
+        disabled={false}
+        onAnswer={onAnswer}
+        revealed={{ choice: 'Dog', isCorrect: false, answerRevealed: false }}
+      />,
+    );
+
+    // The picked wrong choice is marked and disabled so it is not retried.
+    const picked = screen.getByRole('button', { name: 'Dog' });
+    expect(picked.className).toContain('bg-red-600');
+    expect(picked).toBeDisabled();
+    // The correct choice stays hidden (no green reveal) and clickable.
+    const correct = screen.getByRole('button', { name: 'Cat' });
+    expect(correct.className).not.toContain('bg-green-700');
+    expect(correct).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Cow' })).toBeEnabled();
+    // The caption invites a retry without naming the answer.
+    const caption = screen.getByTestId('reveal-caption').textContent;
+    expect(caption).toContain('try again');
+    expect(caption).not.toContain('Cat');
+
+    fireEvent.click(correct);
+    expect(onAnswer).toHaveBeenCalledWith('Cat');
   });
 
   it('a revealed answer with no verdict shows a neutral state and disables choices', () => {
