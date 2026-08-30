@@ -155,7 +155,7 @@ describe('SymbolHunt page', () => {
     // The wrong symbol (Cat) renders with the incorrect overlay and the target
     // (Dog) still renders normally.
     const catCell = screen.getByText('card-Cat').closest('.relative');
-    expect(catCell?.querySelector('.bg-red-500')).not.toBeNull();
+    expect(catCell?.querySelector('[class*="bg-red-500"]')).not.toBeNull();
   });
 
   it('shows an empty state when no boards exist', () => {

@@ -183,7 +183,7 @@ export function LearningSymbolPanel({
                     className="w-10 h-10 object-contain mb-1"
                   />
                 ) : (
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-1 ${categoryClasses(symbol.category)} bg-opacity-20`}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-1 ${categoryClasses(symbol.category)} bg-surface/20`}>
                     <span className="text-xs font-bold">{symbol.label.substring(0, 2).toUpperCase()}</span>
                   </div>
                 )}

@@ -166,12 +166,12 @@ export function SymbolHunt() {
                 ariaLabel={symbol.custom_text || symbol.symbol.label}
               />
               {feedback === 'correct' && symbol.id === targetSymbol?.id && (
-                <div className="absolute inset-0 bg-green-500 bg-opacity-30 dark:bg-green-500/30 rounded-xl flex items-center justify-center pointer-events-none border-4 border-green-500">
+                <div className="absolute inset-0 bg-green-500/30 dark:bg-green-500/30 rounded-xl flex items-center justify-center pointer-events-none border-4 border-green-500">
                   <CheckCircle className="w-12 h-12 text-green-600 dark:text-green-400 drop-shadow-lg" />
                 </div>
               )}
               {feedback === 'incorrect' && symbol.id === incorrectSymbolId && (
-                <div className="absolute inset-0 bg-red-500 bg-opacity-30 dark:bg-red-500/30 rounded-xl flex items-center justify-center pointer-events-none border-4 border-red-500">
+                <div className="absolute inset-0 bg-red-500/30 dark:bg-red-500/30 rounded-xl flex items-center justify-center pointer-events-none border-4 border-red-500">
                   <XCircle className="w-12 h-12 text-red-600 dark:text-red-400 drop-shadow-lg" />
                 </div>
               )}
