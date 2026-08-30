@@ -498,7 +498,7 @@ export function Symbols() {
             />
           </div>
           <div>
-            <FormLabel className="block text-sm font-medium text-foreground mb-1">{t('category')}</FormLabel>
+            <FormLabel>{t('category')}</FormLabel>
             <Select value={form.category} onValueChange={(next) => { if (next != null) setForm(prev => ({ ...prev, category: next })); }}>
               <SelectTrigger aria-label={t('category')} className="w-full text-sm">
                 <SelectValue />
@@ -511,7 +511,7 @@ export function Symbols() {
             </Select>
           </div>
           <div>
-            <FormLabel className="block text-sm font-medium text-foreground mb-1">{t('description')}</FormLabel>
+            <FormLabel>{t('description')}</FormLabel>
             <input
               value={form.description}
               onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
@@ -520,7 +520,7 @@ export function Symbols() {
             />
           </div>
           <div>
-            <FormLabel className="block text-sm font-medium text-foreground mb-1">{t('keywords')}</FormLabel>
+            <FormLabel>{t('keywords')}</FormLabel>
             <input
               value={form.keywords}
               onChange={(e) => setForm(prev => ({ ...prev, keywords: e.target.value }))}

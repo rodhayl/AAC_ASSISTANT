@@ -421,7 +421,7 @@ export function Achievements() {
 
             <div className="space-y-4">
               <div>
-                <FormLabel className="block text-sm font-medium text-foreground mb-1">{t('icon')}</FormLabel>
+                <FormLabel>{t('icon')}</FormLabel>
                 <div className="flex flex-wrap gap-2">
                   {EMOJI_OPTIONS.map(emoji => (
                     <button key={emoji} type="button" onClick={() => setFormData({ ...formData, icon: emoji })}
@@ -433,20 +433,20 @@ export function Achievements() {
               </div>
 
               <div>
-                <FormLabel className="block text-sm font-medium text-foreground mb-1">{t('name')}</FormLabel>
+                <FormLabel>{t('name')}</FormLabel>
                 <input type="text" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })}
                   className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground" />
               </div>
 
               <div>
-                <FormLabel className="block text-sm font-medium text-foreground mb-1">{t('description')}</FormLabel>
+                <FormLabel>{t('description')}</FormLabel>
                 <textarea value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })}
                   className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground" rows={2} />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <FormLabel className="block text-sm font-medium text-foreground mb-1">{t('category')}</FormLabel>
+                  <FormLabel>{t('category')}</FormLabel>
                   <select value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })}
                     className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground">
                     {categories.map(cat => (
@@ -455,7 +455,7 @@ export function Achievements() {
                   </select>
                 </div>
                 <div>
-                  <FormLabel className="block text-sm font-medium text-foreground mb-1">{t('points')}</FormLabel>
+                  <FormLabel>{t('points')}</FormLabel>
                   <input type="number" min={0} value={formData.points} onChange={e => setFormData({ ...formData, points: parseInt(e.target.value) || 0 })}
                     className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground" />
                 </div>
@@ -500,7 +500,7 @@ export function Achievements() {
 
               {students.length > 0 && (
                 <div>
-                  <FormLabel className="block text-sm font-medium text-foreground mb-1">
+                  <FormLabel>
                     <Users className="w-4 h-4 inline mr-1" />
                     {t('targetUser')}
                   </FormLabel>
