@@ -328,79 +328,179 @@ def _create_default_learning_modes(session: Session) -> None:
 
 
 def _create_sample_symbols(session: Session) -> None:
-    """Create the built-in communication symbols when they are missing."""
+    """Create the built-in communication symbols when they are missing.
+
+    Seed both supported UI locales so a Spanish learner never receives an
+    English-only fallback symbol (and therefore an unrelated English pictogram).
+    """
     sample_symbols = [
+        {
+            "label": "vaca",
+            "description": "Animal de granja que produce leche",
+            "category": "farm_animals",
+            "keywords": "vaca, granja, leche, animal",
+            "language": "es",
+        },
         {
             "label": "cow",
             "description": "A farm animal that gives milk",
             "category": "farm_animals",
             "keywords": "cow, farm, milk, animal",
+            "language": "en",
+        },
+        {
+            "label": "caballo",
+            "description": "Animal grande que se puede montar",
+            "category": "farm_animals",
+            "keywords": "caballo, granja, montar, animal",
+            "language": "es",
         },
         {
             "label": "horse",
             "description": "A large animal you can ride",
             "category": "farm_animals",
             "keywords": "horse, farm, ride, animal",
+            "language": "en",
+        },
+        {
+            "label": "gallina",
+            "description": "Ave que pone huevos",
+            "category": "farm_animals",
+            "keywords": "gallina, granja, huevos, ave",
+            "language": "es",
         },
         {
             "label": "chicken",
             "description": "A bird that lays eggs",
             "category": "farm_animals",
             "keywords": "chicken, farm, eggs, bird",
+            "language": "en",
+        },
+        {
+            "label": "manzana",
+            "description": "Una fruta roja",
+            "category": "food",
+            "keywords": "manzana, fruta, roja, comida",
+            "language": "es",
         },
         {
             "label": "apple",
             "description": "A red fruit",
             "category": "food",
             "keywords": "apple, fruit, red, food",
+            "language": "en",
+        },
+        {
+            "label": "agua",
+            "description": "Líquido transparente para beber",
+            "category": "drinks",
+            "keywords": "agua, beber, líquido",
+            "language": "es",
         },
         {
             "label": "water",
             "description": "Clear liquid for drinking",
             "category": "drinks",
             "keywords": "water, drink, liquid",
+            "language": "en",
+        },
+        {
+            "label": "hola",
+            "description": "Un saludo amistoso",
+            "category": "social",
+            "keywords": "hola, saludo, saludos",
+            "language": "es",
         },
         {
             "label": "hello",
             "description": "A friendly greeting",
             "category": "social",
             "keywords": "hello, hi, greetings",
+            "language": "en",
+        },
+        {
+            "label": "adiós",
+            "description": "Una palabra de despedida",
+            "category": "social",
+            "keywords": "adiós, despedida, irse",
+            "language": "es",
         },
         {
             "label": "goodbye",
             "description": "A parting word",
             "category": "social",
             "keywords": "goodbye, bye, leave",
+            "language": "en",
+        },
+        {
+            "label": "sí",
+            "description": "Acuerdo o confirmación",
+            "category": "social",
+            "keywords": "sí, aceptar, correcto",
+            "language": "es",
         },
         {
             "label": "yes",
             "description": "Agreement or confirmation",
             "category": "social",
             "keywords": "yes, agree, correct",
+            "language": "en",
+        },
+        {
+            "label": "no",
+            "description": "Desacuerdo o rechazo",
+            "category": "social",
+            "keywords": "no, rechazar, incorrecto",
+            "language": "es",
         },
         {
             "label": "no",
             "description": "Disagreement or refusal",
             "category": "social",
             "keywords": "no, disagree, incorrect",
+            "language": "en",
+        },
+        {
+            "label": "por favor",
+            "description": "Una palabra para pedir algo con educación",
+            "category": "social",
+            "keywords": "por favor, educación",
+            "language": "es",
         },
         {
             "label": "please",
             "description": "A polite request word",
             "category": "social",
             "keywords": "please, polite",
+            "language": "en",
+        },
+        {
+            "label": "gracias",
+            "description": "Expresar gratitud",
+            "category": "social",
+            "keywords": "gracias, gratitud",
+            "language": "es",
         },
         {
             "label": "thank you",
             "description": "Expressing gratitude",
             "category": "social",
             "keywords": "thanks, gratitude, thank you",
+            "language": "en",
+        },
+        {
+            "label": "ayuda",
+            "description": "Pedir asistencia",
+            "category": "social",
+            "keywords": "ayuda, asistir, apoyo",
+            "language": "es",
         },
         {
             "label": "help",
             "description": "Asking for assistance",
             "category": "social",
             "keywords": "help, assist, support",
+            "language": "en",
         },
     ]
 
@@ -410,6 +510,7 @@ def _create_sample_symbols(session: Session) -> None:
             .filter(
                 Symbol.label == values["label"],
                 Symbol.category == values["category"],
+                Symbol.language == values.get("language", "en"),
             )
             .first()
         )
@@ -421,7 +522,6 @@ def _create_sample_symbols(session: Session) -> None:
 
 
 def _create_sample_achievements(session: Session) -> None:
-    """Create the three system achievements without duplicating them."""
     sample_achievements = [
         {
             field: PREDEFINED_ACHIEVEMENTS[key][field]

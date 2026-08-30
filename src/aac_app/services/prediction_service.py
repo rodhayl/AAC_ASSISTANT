@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_session
 from ..models import BoardSymbol, Symbol, SymbolUsageLog
-from ..services.runtime_translation import normalize_language_code, translate_text
+from ..services.runtime_translation import normalize_language_code
 from ..services.symbol_analytics import SymbolAnalytics
 from ..services.symbol_catalog import category_is_noun, standard_library_labels
 
@@ -119,8 +119,6 @@ class _PredictionContext:
 
         self.lang = normalize_language_code(language) or "en"
         self.preferred_langs = [self.lang]
-        if self.lang != "en":
-            self.preferred_langs.append("en")
 
         self.allowed_symbol_ids: set[int] | None = None
         if board_id is not None:
@@ -168,9 +166,13 @@ class _PredictionContext:
             return len(self.preferred_langs) + 1
 
     def localize_label(self, label: str, symbol_language: str | None) -> str:
-        if normalize_language_code(symbol_language) == self.lang:
-            return label
-        return translate_text(label, self.lang)
+        """Return a label only when its symbol belongs to the requested locale.
+
+        Runtime translation is deliberately not used for suggestions: a
+        translated label can still point at an image from the source locale.
+        The catalog must provide the locale-specific symbol record instead.
+        """
+        return label if normalize_language_code(symbol_language) == self.lang else ""
 
     def add_symbol(
         self,
@@ -195,6 +197,8 @@ class _PredictionContext:
         if _label_looks_bad(label):
             return
         localized_label = self.localize_label(label, symbol_language)
+        if not localized_label:
+            return
         normalized_label = self.normalize_label(localized_label)
         if not normalized_label or normalized_label in self.seen_labels:
             return

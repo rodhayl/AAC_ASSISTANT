@@ -591,11 +591,16 @@ class SymbolAnalytics:
         if not symbols:
             # Return most frequently used symbols
             with self._session_scope(db) as db:
+                # Read the label from the live Symbol row, not the denormalized
+                # usage-log label: the log keeps whatever label the symbol had
+                # when it was used, so a renamed symbol (or a stale test
+                # label) would otherwise surface outdated text with the
+                # current image.
                 most_used = (
                     db.query(
                         SymbolUsageLog.symbol_id,
-                        SymbolUsageLog.symbol_label,
-                        SymbolUsageLog.symbol_category,
+                        Symbol.label,
+                        Symbol.category,
                         Symbol.image_path,
                         Symbol.language,
                         func.count(SymbolUsageLog.id).label("count"),
@@ -607,8 +612,8 @@ class SymbolAnalytics:
                     )
                     .group_by(
                         SymbolUsageLog.symbol_id,
-                        SymbolUsageLog.symbol_label,
-                        SymbolUsageLog.symbol_category,
+                        Symbol.label,
+                        Symbol.category,
                         Symbol.image_path,
                         Symbol.language,
                     )
@@ -668,16 +673,22 @@ class SymbolAnalytics:
                 .correlate(current_log)
                 .scalar_subquery()
             )
+            # Read the label from the live Symbol row, not the denormalized
+            # usage-log label: the log keeps whatever label the symbol had
+            # when it was used, so a renamed symbol (or a stale test label)
+            # would otherwise surface outdated text with the current image.
+            # The Symbol join is 1:1 on the PK, so counts are unaffected.
             transition_counts = (
                 db.query(
                     next_log.symbol_id,
-                    next_log.symbol_label,
-                    next_log.symbol_category,
+                    Symbol.label,
+                    Symbol.category,
                     func.count(current_log.id).label("count"),
                     func.min(current_log.id).label("first_current_id"),
                 )
                 .select_from(current_log)
                 .join(next_log, next_log.id == first_next_id)
+                .join(Symbol, Symbol.id == next_log.symbol_id)
                 .filter(
                     current_log.user_id == user_id,
                     current_log.symbol_label == last_label,
@@ -686,8 +697,8 @@ class SymbolAnalytics:
                 )
                 .group_by(
                     next_log.symbol_id,
-                    next_log.symbol_label,
-                    next_log.symbol_category,
+                    Symbol.label,
+                    Symbol.category,
                 )
                 # The old Python accumulator was stable for ties because it
                 # encountered current logs in database order. Use the first

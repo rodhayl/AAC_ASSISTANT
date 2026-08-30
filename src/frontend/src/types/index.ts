@@ -49,6 +49,7 @@ export interface LearningSymbolItem {
   category: string;
   image_path?: string;
   keywords?: string;
+  language?: string;
 }
 
 export interface BoardSymbol {

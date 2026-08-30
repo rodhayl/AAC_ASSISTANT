@@ -368,10 +368,10 @@ export function Learning() {
   const filteredSymbols = useMemo(() => {
     let items = symbolItems;
     if (symbolSearch) {
-      const query = symbolSearch.toLowerCase();
+      const query = symbolSearch.toLocaleLowerCase(symbolLanguage);
       items = items.filter((symbol) =>
-        symbol.label.toLowerCase().includes(query) ||
-        (symbol.keywords && symbol.keywords.toLowerCase().includes(query)),
+        symbol.label.toLocaleLowerCase(symbolLanguage).includes(query) ||
+        (symbol.keywords && symbol.keywords.toLocaleLowerCase(symbolLanguage).includes(query)),
       );
     }
 
@@ -381,7 +381,7 @@ export function Learning() {
         : items.filter((symbol) => symbol.category === selectedCategory);
     }
     return items;
-  }, [selectedCategory, symbolItems, symbolSearch]);
+  }, [selectedCategory, symbolItems, symbolSearch, symbolLanguage]);
 
   const coreWords = useMemo(() => {
     const coreWordsByLanguage: Record<string, string[]> = {
@@ -392,14 +392,14 @@ export function Learning() {
     // Case/accent-insensitive index so labels like "Yo" or "Me gusta" still
     // match the priority list and keep the panel populated for any casing.
     const priorityIndex = new Map(
-      priorityWords.map((word, index) => [word.trim().toLowerCase(), index]),
+      priorityWords.map((word, index) => [word.trim().toLocaleLowerCase(symbolLanguage), index]),
     );
     const byLabel = new Map<string, SymbolItem>();
 
     symbolItems
-      .filter((symbol) => priorityIndex.has(symbol.label.trim().toLowerCase()))
+      .filter((symbol) => priorityIndex.has(symbol.label.trim().toLocaleLowerCase(symbolLanguage)))
       .forEach((symbol) => {
-        const key = symbol.label.trim().toLowerCase();
+        const key = symbol.label.trim().toLocaleLowerCase(symbolLanguage);
         const existing = byLabel.get(key);
         if (!existing || (!existing.image_path && symbol.image_path)) {
           byLabel.set(key, symbol);
@@ -408,8 +408,8 @@ export function Learning() {
 
     return Array.from(byLabel.values()).sort(
       (a, b) =>
-        (priorityIndex.get(a.label.trim().toLowerCase()) ?? 0) -
-        (priorityIndex.get(b.label.trim().toLowerCase()) ?? 0),
+        (priorityIndex.get(a.label.trim().toLocaleLowerCase(symbolLanguage)) ?? 0) -
+        (priorityIndex.get(b.label.trim().toLocaleLowerCase(symbolLanguage)) ?? 0),
     );
   }, [symbolLanguage, symbolItems]);
 
