@@ -15,6 +15,10 @@ from ...services.translation_service import TranslationService
 from .history import append_history_entry
 from .questions import extract_json_object
 
+# Wrong attempts on the same question after which feedback may reveal the
+# full correct answer; earlier attempts get progressive hints only.
+REVEAL_ANSWER_ATTEMPT = 3
+
 
 class ResponseProcessingMixin:
     async def process_response(
@@ -82,6 +86,25 @@ class ResponseProcessingMixin:
                             last_question = entry["data"]
                             break
 
+                # Count previous failed attempts at the CURRENT question so
+                # feedback can escalate hints instead of revealing the answer
+                # on the first mistake. The walk stops at the question entry
+                # being answered (the same contract the lookup above uses).
+                failed_attempts = 0
+                for entry in reversed(session.conversation_history or []):
+                    if (
+                        entry.get("type") == "question"
+                        and isinstance(entry.get("data"), dict)
+                        and {"question", "choices", "correct"} <= set(entry["data"])
+                    ):
+                        break
+                    if (
+                        entry.get("type") == "response"
+                        and entry.get("is_correct") is False
+                    ):
+                        failed_attempts += 1
+                attempt_number = failed_attempts + 1
+
                 # Get user language for localization
                 user_lang = self._get_user_language(session.user_id, db)
                 translation_service = TranslationService()
@@ -106,11 +129,18 @@ class ResponseProcessingMixin:
                     analysis_prompt = f"""Question: {last_question["question"]}
     Student's answer: {student_response}
     Correct answer: {last_question["choices"][last_question["correct"]]}
+    Attempt number for this question: {attempt_number}
 
     Analyze if the student's answer is correct. Consider:
     1. Exact matches
     2. Semantic similarity (accept answers that mean the same thing even when worded differently)
     3. Partial understanding (give credit for partially correct answers)
+
+    Feedback rules (important):
+    - If the answer is correct: celebrate briefly.
+    - If it is wrong on attempt 1: do NOT say or name the correct answer. Give one short encouraging hint (a context or situation clue).
+    - If it is wrong on attempt 2: give a stronger hint (for example the first sound or a closer clue) but still do NOT say the whole correct answer.
+    - If it is wrong on attempt {REVEAL_ANSWER_ATTEMPT} or later: you may gently say the correct answer and invite the student to practice it.
 
     Reply ONLY with a JSON object. No markdown, no explanations.
     Example: {{"is_correct": true, "confidence": 0.85, "encouraging_feedback": "¡Muy bien! Entendiste el concepto."}}
@@ -437,6 +467,14 @@ class ResponseProcessingMixin:
                 else:
                     next_action = "continue_questions"
 
+                # The frontend keeps the same question open while the tutor
+                # is still giving hints; once the full answer has been
+                # revealed (or the answer was right) it may auto-advance.
+                answer_revealed = (
+                    analysis_data.get("is_correct") is False
+                    and attempt_number >= REVEAL_ANSWER_ATTEMPT
+                )
+
                 logger.info(f"Response processed for session {session_id}")
 
                 return {
@@ -444,6 +482,7 @@ class ResponseProcessingMixin:
                     "is_correct": analysis_data.get("is_correct", False),
                     "transcription": student_response if is_voice else None,
                     "feedback_message": feedback_message,
+                    "answer_revealed": answer_revealed,
                     "confidence": analysis_data.get("confidence", 0.5),
                     "comprehension_score": session.comprehension_score,
                     "next_action": next_action,

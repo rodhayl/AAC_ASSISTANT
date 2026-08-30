@@ -451,6 +451,9 @@ class AnswerResponse(BaseModel):
     is_correct: bool | None = None
     transcription: str | None = None
     feedback_message: str | None = None
+    # True once the tutor has revealed the full correct answer after enough
+    # failed attempts; the UI may then auto-advance to the next question.
+    answer_revealed: bool | None = None
     confidence: float | None = None
     comprehension_score: float | None = None
     next_action: str | None = None

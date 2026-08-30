@@ -206,6 +206,9 @@ export interface AnswerResponse {
   is_correct?: boolean;
   transcription?: string;
   feedback_message?: string;
+  // True once the tutor revealed the full correct answer after enough failed
+  // attempts; only then (or on a correct answer) should the UI auto-advance.
+  answer_revealed?: boolean;
   assistant_reply?: string;  // LLM response field
   encouraging_feedback?: string;  // Feedback field
   message?: string;  // Generic message field

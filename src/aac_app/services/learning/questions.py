@@ -200,6 +200,8 @@ class QuestionGenerationMixin:
     - Include exactly 3 answer choices
     - Make it engaging and encouraging
     - The "correct" field is the 0-based index of the right answer in "choices"
+    - Never include the correct answer, or an obvious synonym of it, in the question text; the student must recall or produce it
+    - Distractors must be plausible, topic-related alternatives of the same kind as the correct answer, not generic filler
     - Do NOT repeat a question or choice set you already used earlier in this conversation
 
     RESPOND ONLY WITH VALID JSON. No greetings, no explanations, no markdown.
@@ -240,6 +242,7 @@ class QuestionGenerationMixin:
     You must reply only with valid JSON. Do not add any text, greetings,
     explanations, or markdown before or after the JSON object.
     Format: {{"question": "...", "choices": ["A", "B", "C"], "correct": 0}}
+    Never include the correct answer, or an obvious synonym of it, in the question text.
     Do NOT repeat a question or choice set you already used earlier in this conversation.
 
     Generate the {difficulty} level question about {session.topic_name} again.

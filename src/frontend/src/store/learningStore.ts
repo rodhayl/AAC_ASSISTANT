@@ -303,7 +303,12 @@ export const useLearningStore = create<LearningState>((set, get) => {
       isLoading: false,
     }));
 
-    scheduleAutoAsk(get, requestEpoch, sessionId);
+    // Keep the current question open after a wrong answer while the tutor is
+    // still giving progressive hints; auto-advance only on a correct answer
+    // or once the backend revealed the full answer after enough failures.
+    if (result.is_correct === true || result.answer_revealed === true) {
+      scheduleAutoAsk(get, requestEpoch, sessionId);
+    }
     const { user } = useAuthStore.getState();
     if (user && requestEpoch === sessionEpoch && get().currentSession?.session_id === sessionId) {
       void triggerAchievementCheck(user.id);

@@ -49,7 +49,9 @@ describe('learningStore adaptive question flow', () => {
 
   it('resetSession cancels pending auto-ask work and clears active learning state', async () => {
     useLearningStore.setState({ currentSession: { session_id: 7, success: true } });
-    post.mockResolvedValue({ data: { success: true, feedback_message: 'Answer received' } });
+    post.mockResolvedValue({
+      data: { success: true, feedback_message: 'Answer received', is_correct: true },
+    });
 
     await useLearningStore.getState().submitAnswer(7, 'Answer');
     useLearningStore.getState().resetSession();
@@ -327,7 +329,7 @@ describe('learningStore adaptive question flow', () => {
     useLearningStore.setState({ currentSession: { session_id: 7, success: true } });
     post
       .mockResolvedValueOnce({
-        data: { success: true, transcription: 'Hola', feedback_message: 'Escuchado' },
+        data: { success: true, transcription: 'Hola', feedback_message: 'Escuchado', is_correct: true },
       })
       .mockResolvedValueOnce({
         data: {
@@ -351,7 +353,40 @@ describe('learningStore adaptive question flow', () => {
     );
   });
 
-  it('submitAnswer keeps the question revealed with the correct/wrong highlight', async () => {
+  it('a wrong answer keeps the same question open while hints are pending', async () => {
+    useLearningStore.setState({
+      currentSession: { session_id: 7, success: true },
+      currentQuestion: {
+        success: true,
+        question_text: 'What animal says miau?',
+        choices: ['Cat', 'Dog', 'Cow'],
+        correct_answer_index: 0,
+      },
+      messages: [{ role: 'assistant', content: 'What animal says miau?' }],
+    });
+    post.mockResolvedValue({
+      data: {
+        success: true,
+        feedback_message: 'Not quite, think of a pet',
+        is_correct: false,
+        answer_revealed: false,
+      },
+    });
+
+    await useLearningStore.getState().submitAnswer(7, 'Dog');
+
+    const state = useLearningStore.getState();
+    // The pending question stays visible so the highlight can be shown.
+    expect(state.currentQuestion?.question_text).toBe('What animal says miau?');
+    expect(state.revealedAnswer).toEqual({ choice: 'Dog', isCorrect: false });
+
+    // No auto-advance: the student retries the same question after a hint.
+    await vi.advanceTimersByTimeAsync(NEXT_QUESTION_REVEAL_DELAY_MS);
+    expect(useLearningStore.getState().currentQuestion?.question_text).toBe('What animal says miau?');
+    expect(post.mock.calls.some(([url]) => url === '/learning/7/ask')).toBe(false);
+  });
+
+  it('a wrong answer auto-advances once the backend revealed the answer', async () => {
     useLearningStore.setState({
       currentSession: { session_id: 7, success: true },
       currentQuestion: {
@@ -364,7 +399,12 @@ describe('learningStore adaptive question flow', () => {
     });
     post
       .mockResolvedValueOnce({
-        data: { success: true, feedback_message: 'Not quite', is_correct: false },
+        data: {
+          success: true,
+          feedback_message: "It was 'Cat'",
+          is_correct: false,
+          answer_revealed: true,
+        },
       })
       .mockResolvedValueOnce({
         data: {
@@ -376,14 +416,8 @@ describe('learningStore adaptive question flow', () => {
       });
 
     await useLearningStore.getState().submitAnswer(7, 'Dog');
-
-    const state = useLearningStore.getState();
-    // The pending question stays visible so the highlight can be shown.
-    expect(state.currentQuestion?.question_text).toBe('What animal says miau?');
-    expect(state.revealedAnswer).toEqual({ choice: 'Dog', isCorrect: false });
-
-    // After the reveal delay the next adaptive question replaces it.
     await vi.advanceTimersByTimeAsync(NEXT_QUESTION_REVEAL_DELAY_MS);
+
     expect(useLearningStore.getState().currentQuestion?.question_text).toBe('Next question');
     expect(useLearningStore.getState().revealedAnswer).toBeNull();
   });
