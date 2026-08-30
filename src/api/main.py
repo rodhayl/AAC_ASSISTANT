@@ -18,6 +18,7 @@ from src.aac_app.seed import init_database
 from src.aac_app.services.arasaac_library_import import import_arasaac_library_if_needed
 from src.aac_app.services.ngram_builder import run_periodic_ngram_rebuild
 from src.aac_app.services.prediction_service import prediction_service
+from src.aac_app.services.runtime_translation import normalize_language_code
 from src.aac_app.services.symbol_image_backfill import backfill_missing_symbol_images
 from src.aac_app.services.vector_utils import index_all_symbols
 from src.api.deps import (
@@ -168,13 +169,13 @@ async def lifespan(app: FastAPI):
             if not config.get_bool("AAC_ENABLE_ARASAAC_LIBRARY_IMPORT", False):
                 logger.info("ARASAAC library import disabled by configuration")
                 return
-            locales = [
-                locale.strip()
+            configured_locales = [
+                normalize_language_code(locale)
                 for locale in str(
-                    config.get("AAC_ARASAAC_LIBRARY_LOCALES", "es")
+                    config.get("AAC_ARASAAC_LIBRARY_LOCALES", "es,en")
                 ).split(",")
-                if locale.strip()
-            ] or ["es"]
+            ]
+            locales = list(dict.fromkeys(locale for locale in configured_locales if locale)) or ["es", "en"]
             for locale in locales:
                 await import_arasaac_library_if_needed(locale=locale)
         except asyncio.CancelledError:

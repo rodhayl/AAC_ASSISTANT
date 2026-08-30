@@ -182,7 +182,9 @@ def get_symbols(
     if category:
         query = query.filter(Symbol.category == category)
     if language:
-        query = query.filter(Symbol.language == language)
+        normalized_language = normalize_language_code(language)
+        if normalized_language:
+            query = query.filter(Symbol.language == normalized_language)
     if search:
         query = _apply_symbol_search(query, search, db)
     if keywords:

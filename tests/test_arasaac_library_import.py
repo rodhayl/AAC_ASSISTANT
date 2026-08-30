@@ -110,6 +110,41 @@ def test_import_deduplicates_and_downloads_images(
 
 
 @pytest.mark.usefixtures("setup_test_db")
+def test_import_normalizes_locale_and_keeps_language_rows_separate(
+    test_db_session, monkeypatch, tmp_path
+):
+    catalog = [
+        {"_id": 3001, "keywords": [{"keyword": "hello"}], "categories": ["social"]},
+    ]
+    requested_locales: list[str] = []
+
+    class FakeService:
+        async def list_all_symbols(self, locale="es"):
+            requested_locales.append(locale)
+            return catalog
+
+        async def download_symbol_image_500(self, arasaac_id):
+            return PNG_BYTES
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(import_mod, "get_session", _override_get_session(test_db_session))
+    monkeypatch.setattr(import_mod, "ArasaacService", FakeService)
+    monkeypatch.setattr(import_mod.config, "UPLOADS_DIR", tmp_path / "uploads")
+
+    asyncio.run(import_mod.import_arasaac_library("es-ES"))
+    asyncio.run(import_mod.import_arasaac_library("en-US"))
+
+    assert requested_locales == ["es", "en"]
+    rows = test_db_session.query(Symbol).filter(Symbol.label == "hello").all()
+    assert {(row.language, row.image_path) for row in rows} == {
+        ("es", "/uploads/symbols/arasaac_3001.png"),
+        ("en", "/uploads/symbols/arasaac_3001.png"),
+    }
+
+
+@pytest.mark.usefixtures("setup_test_db")
 def test_import_reuses_existing_pictogram_file_without_redownload(
     test_db_session, monkeypatch, tmp_path
 ):

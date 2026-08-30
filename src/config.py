@@ -150,7 +150,7 @@ class Settings(BaseSettings):
     AAC_ENABLE_ARASAAC_LIBRARY_IMPORT: bool = False
     # Comma-separated locale list to import. Pictograms are locale-independent,
     # so each locale materializes its translated labels reusing the same images.
-    AAC_ARASAAC_LIBRARY_LOCALES: str = "es"
+    AAC_ARASAAC_LIBRARY_LOCALES: str = "es,en"
     # Rebuild the n-gram prediction models from real symbol usage logs at
     # startup. Opt-in: it scans the usage-log table and rewrites the writable
     # data/ngrams models (the bundled files are never modified).

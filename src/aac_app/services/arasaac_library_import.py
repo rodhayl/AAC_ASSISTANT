@@ -29,6 +29,7 @@ from src import config
 from src.aac_app.db import get_session
 from src.aac_app.models import AppSettings, Symbol
 from src.aac_app.services.arasaac import ArasaacService
+from src.aac_app.services.runtime_translation import normalize_language_code
 
 MAX_CONCURRENCY = 10
 COMMIT_BATCH = 200
@@ -88,6 +89,7 @@ async def import_arasaac_library(locale: str = "es") -> dict[str, int]:
 
     Returns a summary with ``imported``, ``failed``, and ``skipped`` counts.
     """
+    locale = normalize_language_code(locale) or "es"
     service = ArasaacService()
     imported = 0
     failed = 0
@@ -96,7 +98,16 @@ async def import_arasaac_library(locale: str = "es") -> dict[str, int]:
         pictograms = await service.list_all_symbols(locale)
         logger.info("ARASAAC returned {} pictograms", len(pictograms))
 
-        existing = _existing_labels()
+        # Labels are scoped by locale: the Spanish and English catalogs must
+        # both be materialized even when their primary terms happen to match.
+        with get_session() as db:
+            existing = {
+                label.casefold()
+                for (label,) in db.query(Symbol.label)
+                .filter(Symbol.language == locale)
+                .all()
+                if label
+            }
         seen = set(existing)
         chosen: list[tuple[dict, str]] = []
         for entry in pictograms:
@@ -220,6 +231,7 @@ async def import_arasaac_library_if_needed(
     Returns the import summary, or ``None`` when the library was already
     imported for this locale.
     """
+    locale = normalize_language_code(locale) or "es"
     if _already_imported(locale):
         logger.info("ARASAAC library already imported for locale={}; skipping", locale)
         return None
