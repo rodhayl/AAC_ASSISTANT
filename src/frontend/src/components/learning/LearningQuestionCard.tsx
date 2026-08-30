@@ -88,23 +88,27 @@ export function LearningQuestionCard({
         <div className="flex flex-wrap gap-2">
           {choices.map((choice, index) => {
             const isCorrectChoice = correctIndex === index;
-            const isPicked = revealed?.choice === choice;
+            // Every failed pick on this question stays marked and disabled.
+            const wrongPicks =
+              revealed?.wrongChoices ??
+              (revealed?.isCorrect === false ? [revealed.choice] : []);
+            const isWrongPick = wrongPicks.includes(choice);
             let buttonClass =
               'px-3 py-1.5 rounded-lg border text-sm transition-colors ';
             if (!isAnswered) {
               buttonClass +=
                 'bg-surface border-brand/50 text-foreground hover:bg-brand/10 hover:border-brand';
             } else if (!isFinal) {
-              // Hint state: only the picked (wrong) choice is marked and
-              // disabled; the rest stay available for another attempt and
-              // the correct choice is NOT revealed.
-              buttonClass += isPicked
+              // Hint state: only the failed picks are marked and disabled;
+              // the rest stay available for another attempt and the correct
+              // choice is NOT revealed.
+              buttonClass += isWrongPick
                 ? 'bg-red-600 dark:bg-red-500 text-white border-red-600 dark:border-red-500'
                 : 'bg-surface border-brand/50 text-foreground hover:bg-brand/10 hover:border-brand';
             } else if (isCorrectChoice) {
               buttonClass +=
                 'bg-green-700 text-white border-green-700 dark:border-green-700 font-medium';
-            } else if (isPicked) {
+            } else if (isWrongPick) {
               buttonClass +=
                 'bg-red-600 dark:bg-red-500 text-white border-red-600 dark:border-red-500';
             } else {
@@ -116,7 +120,7 @@ export function LearningQuestionCard({
                 key={`${index}-${choice}`}
                 type="button"
                 onClick={() => onAnswer(choice)}
-                disabled={disabled || (isAnswered && (isFinal || isPicked))}
+                disabled={disabled || (isAnswered && (isFinal || isWrongPick))}
                 aria-label={choice}
                 data-correct={isCorrectChoice ? 'true' : undefined}
                 className={buttonClass}

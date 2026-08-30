@@ -149,6 +149,38 @@ describe('LearningQuestionCard', () => {
     expect(onAnswer).toHaveBeenCalledWith('Cat');
   });
 
+  it('keeps every failed pick red and disabled so only unproven choices remain', () => {
+    const onAnswer = vi.fn();
+    render(
+      <LearningQuestionCard
+        question={{
+          success: true,
+          question_text: 'Which animal says miau?',
+          choices: ['Cat', 'Dog', 'Cow'],
+          correct_answer_index: 0,
+        }}
+        disabled={false}
+        onAnswer={onAnswer}
+        revealed={{
+          choice: 'Cow',
+          isCorrect: false,
+          answerRevealed: false,
+          wrongChoices: ['Dog', 'Cow'],
+        }}
+      />,
+    );
+
+    for (const label of ['Dog', 'Cow']) {
+      const button = screen.getByRole('button', { name: label });
+      expect(button.className).toContain('bg-red-600');
+      expect(button).toBeDisabled();
+    }
+    // Only the remaining (correct) choice is clickable, still unrevealed.
+    const correct = screen.getByRole('button', { name: 'Cat' });
+    expect(correct).toBeEnabled();
+    expect(correct.className).not.toContain('bg-green-700');
+  });
+
   it('a revealed answer with no verdict shows a neutral state and disables choices', () => {
     render(
       <LearningQuestionCard

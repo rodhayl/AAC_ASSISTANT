@@ -252,6 +252,7 @@ describe('learningStore adaptive question flow', () => {
       choice: 'Cat',
       isCorrect: null,
       answerRevealed: false,
+      wrongChoices: [],
     });
     expect(post).toHaveBeenCalledWith(
       '/achievements/user/42/check',
@@ -382,12 +383,54 @@ describe('learningStore adaptive question flow', () => {
     const state = useLearningStore.getState();
     // The pending question stays visible so the highlight can be shown.
     expect(state.currentQuestion?.question_text).toBe('What animal says miau?');
-    expect(state.revealedAnswer).toEqual({ choice: 'Dog', isCorrect: false, answerRevealed: false });
+    expect(state.revealedAnswer).toEqual({
+      choice: 'Dog',
+      isCorrect: false,
+      answerRevealed: false,
+      wrongChoices: ['Dog'],
+    });
 
     // No auto-advance: the student retries the same question after a hint.
     await vi.advanceTimersByTimeAsync(NEXT_QUESTION_REVEAL_DELAY_MS);
     expect(useLearningStore.getState().currentQuestion?.question_text).toBe('What animal says miau?');
     expect(post.mock.calls.some(([url]) => url === '/learning/7/ask')).toBe(false);
+  });
+
+  it('accumulates wrong picks so every failed choice stays disabled', async () => {
+    useLearningStore.setState({
+      currentSession: { session_id: 7, success: true },
+      currentQuestion: {
+        success: true,
+        question_text: 'What animal says miau?',
+        choices: ['Cat', 'Dog', 'Cow'],
+        correct_answer_index: 0,
+      },
+      messages: [],
+    });
+    post.mockResolvedValue({
+      data: {
+        success: true,
+        feedback_message: 'Hint',
+        is_correct: false,
+        answer_revealed: false,
+      },
+    });
+
+    await useLearningStore.getState().submitAnswer(7, 'Dog');
+    // The retry is allowed because the store clears isLoading; submit the
+    // second wrong pick.
+    await useLearningStore.getState().submitAnswer(7, 'Cow');
+
+    expect(useLearningStore.getState().revealedAnswer).toEqual({
+      choice: 'Cow',
+      isCorrect: false,
+      answerRevealed: false,
+      wrongChoices: ['Dog', 'Cow'],
+    });
+
+    // Repeating an already-failed pick does not duplicate it.
+    await useLearningStore.getState().submitAnswer(7, 'Dog');
+    expect(useLearningStore.getState().revealedAnswer?.wrongChoices).toEqual(['Dog', 'Cow']);
   });
 
   it('a wrong answer auto-advances once the backend revealed the answer', async () => {

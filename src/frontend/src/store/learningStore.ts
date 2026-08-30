@@ -40,10 +40,13 @@ export interface LearningProgress {
 // and whether it was right (null = no verdict, e.g. a voice answer).
 // answerRevealed mirrors the backend flag: true once the tutor revealed the
 // full answer after enough failed attempts, which ends the retry loop.
+// wrongChoices accumulates every failed pick on the current question so each
+// of them stays marked and disabled while the student keeps retrying.
 export interface RevealedAnswer {
   choice: string;
   isCorrect: boolean | null;
   answerRevealed?: boolean;
+  wrongChoices?: string[];
 }
 
 // Returned by the end-session endpoint and shown in the summary modal.
@@ -292,12 +295,21 @@ export const useLearningStore = create<LearningState>((set, get) => {
     const isAdmin = useAuthStore.getState().user?.user_type === 'admin';
     const showReasoning = Boolean(isAdmin && get().showAdminReasoning);
     const reply = buildAssistantReply(result, showReasoning);
+    // Accumulate failed picks within the current question so every wrong
+    // choice stays marked and disabled; the list resets with each new
+    // question (askQuestion clears revealedAnswer).
+    const previousWrong = get().revealedAnswer?.wrongChoices ?? [];
+    const wrongChoices =
+      result.is_correct === false && !previousWrong.includes(choice)
+        ? [...previousWrong, choice]
+        : previousWrong;
     set((state) => ({
       lastAnswer: result,
       revealedAnswer: {
         choice,
         isCorrect: result.is_correct ?? null,
         answerRevealed: result.answer_revealed === true,
+        wrongChoices,
       },
       progressStats: mergeProgress(state.progressStats, result),
       messages: [
