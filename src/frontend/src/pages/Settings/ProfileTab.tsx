@@ -105,12 +105,12 @@ export function ProfileTab() {
           )}
         </div>
         {profileSuccess && (
-          <div className="mt-3 flex items-center text-green-600 text-sm">
+          <div className="mt-3 flex items-center text-green-600 dark:text-green-400 text-sm">
             <Check className="w-4 h-4 mr-1" /> {t('profile.updated')}
           </div>
         )}
         {profileError && (
-          <div className="mt-3 flex items-center text-red-600 text-sm">
+          <div className="mt-3 flex items-center text-red-600 dark:text-red-400 text-sm">
             <AlertCircle className="w-4 h-4 mr-1" /> {profileError}
           </div>
         )}

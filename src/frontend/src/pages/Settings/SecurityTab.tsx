@@ -85,7 +85,7 @@ export function SecurityTab() {
                 {t('security.change')}
               </DialogTitle>
             </DialogHeader>
-            {changeError && <div className="mb-3 text-sm text-red-600">{changeError}</div>}
+            {changeError && <div className="mb-3 text-sm text-red-600 dark:text-red-400">{changeError}</div>}
             <div className="space-y-3">
               <input
                 id="current-password"

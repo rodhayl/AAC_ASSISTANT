@@ -292,7 +292,7 @@ export function LearningModesTab() {
             <p className="text-sm text-muted-foreground mt-1 ">{t('learningModes.subtitle')}</p>
           </div>
           {modeSuccess && (
-            <div className="flex items-center text-green-600 text-sm font-medium">
+            <div className="flex items-center text-green-600 dark:text-green-400 text-sm font-medium">
               <Check className="w-4 h-4 mr-1" /> {modeSuccess}
             </div>
           )}
@@ -301,7 +301,7 @@ export function LearningModesTab() {
 
       <div className="p-6">
         {modeError && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center mb-4">
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 px-4 py-3 rounded-lg flex items-center mb-4">
             <AlertCircle className="w-5 h-5 mr-2" />
             {modeError}
           </div>
@@ -354,7 +354,7 @@ export function LearningModesTab() {
                         onClick={() => handleDeleteMode(mode.id)}
                         aria-label={`${t('learningModes.delete')} ${mode.name}`}
                         title={t('learningModes.deleteModeTitle')}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded"
+                        className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:bg-red-900/20 rounded"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -602,7 +602,7 @@ export function LearningModesTab() {
                 </div>
               )}
               {previewError && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center mb-3">
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 px-4 py-3 rounded-lg flex items-center mb-3">
                   <AlertCircle className="w-5 h-5 mr-2" />
                   {previewError}
                 </div>

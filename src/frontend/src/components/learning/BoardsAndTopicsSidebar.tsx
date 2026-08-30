@@ -218,7 +218,7 @@ export function BoardsAndTopicsSidebar({
                                             label={t('removeTopic')}
                                             type="button"
                                             onClick={() => removeSavedTopic(topic.id)}
-                                            className="text-muted-foreground hover:text-red-600"
+                                            className="text-muted-foreground hover:text-red-600 dark:text-red-400"
                                         >
                                             <Trash2 className="w-4 h-4" />
                                         </IconButton>

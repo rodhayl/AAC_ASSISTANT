@@ -251,13 +251,13 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                     )}
 
                     {error && (
-                        <div className="mt-4 p-3 bg-red-50 text-red-600 rounded-lg flex items-center gap-2">
+                        <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg flex items-center gap-2">
                             <AlertTriangle className="w-5 h-5" />
                             {error}
                         </div>
                     )}
                     {success && (
-                        <div className="mt-4 p-3 bg-green-50 text-green-600 rounded-lg flex items-center gap-2">
+                        <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-lg flex items-center gap-2">
                             <Check className="w-5 h-5" />
                             {success}
                         </div>

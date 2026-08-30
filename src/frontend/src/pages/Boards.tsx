@@ -585,7 +585,7 @@ export function Boards() {
                       {t('close')}
                     </Button>
                   </div>
-                  {assignError && <div className="text-sm text-red-600 mt-2">{assignError}</div>}
+                  {assignError && <div className="text-sm text-red-600 dark:text-red-400 mt-2">{assignError}</div>}
                 </div>
               )}
             </div>

@@ -76,7 +76,7 @@ function WarmupIndicator({ status, inProgressText, readyText, testId }: WarmupIn
         </>
       ) : (
         <>
-          <Check className="h-3.5 w-3.5 text-green-600" />
+          <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
           <span>{readyText}</span>
         </>
       )}
@@ -299,12 +299,12 @@ export function VoiceTab({
         {onSave && (
           <div className="flex shrink-0 items-center gap-3">
             {prefsSaveSuccess && (
-              <span className="flex items-center text-sm text-green-600">
+              <span className="flex items-center text-sm text-green-600 dark:text-green-400">
                 <Check className="mr-1 h-4 w-4" /> {t('preferences.saved')}
               </span>
             )}
             {prefsSaveError && (
-              <span className="flex items-center text-sm text-red-600">
+              <span className="flex items-center text-sm text-red-600 dark:text-red-400">
                 <AlertCircle className="mr-1 h-4 w-4" /> {prefsSaveError}
               </span>
             )}
@@ -380,7 +380,7 @@ export function VoiceTab({
         {preferences.tts_provider === 'kokoro' && (
           <>
             {!localTTSAvailable && (
-              <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              <div role="alert" className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-800">
                 {t('preferences.kokoroUnavailable')}
               </div>
             )}

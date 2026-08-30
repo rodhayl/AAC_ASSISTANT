@@ -269,7 +269,7 @@ export function AiProviderTab() {
           <div className="p-6 text-sm text-muted-foreground">{t('ai.loading')}</div>
         )}
         {readOnlyError && (
-          <div className="p-6 text-sm text-red-600" role="alert">
+          <div className="p-6 text-sm text-red-600 dark:text-red-400" role="alert">
             {readOnlyError}
           </div>
         )}
@@ -319,7 +319,7 @@ export function AiProviderTab() {
             </h3>
             <p className="text-sm text-muted-foreground mt-1">{t('ai.subtitle')}</p>
           </div>
-          {saveSuccess && <div className="text-green-600 text-sm font-medium">{t('ai.saveOk')}</div>}
+          {saveSuccess && <div className="text-green-600 dark:text-green-400 text-sm font-medium">{t('ai.saveOk')}</div>}
         </div>
       </div>
 

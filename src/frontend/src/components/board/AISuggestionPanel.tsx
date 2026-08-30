@@ -72,7 +72,7 @@ export function AISuggestionPanel({
         </div>
       </div>
       {isFull && (
-        <div className="mb-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+        <div className="mb-3 text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
           {t('boardFullWarning', { rows, cols })}
         </div>
       )}
@@ -101,7 +101,7 @@ export function AISuggestionPanel({
           {aiLoading ? t('regenerating') : t('regenerateFullBoard')}
         </button>
       </div>
-      {aiError && <div className="text-sm text-red-600 mb-2">{aiError}</div>}
+      {aiError && <div className="text-sm text-red-600 dark:text-red-400 mb-2">{aiError}</div>}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {suggestions.map((item) => (
           <div key={item.label} className="border border-border rounded-lg p-3 bg-background/40 flex flex-col gap-2">

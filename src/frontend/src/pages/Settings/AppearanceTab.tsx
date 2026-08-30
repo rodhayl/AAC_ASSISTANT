@@ -36,12 +36,12 @@ export function AppearanceTab({
         </h3>
         <div className="flex items-center gap-3">
           {prefsSaveSuccess && (
-            <span className="flex items-center text-green-600 text-sm">
+            <span className="flex items-center text-green-600 dark:text-green-400 text-sm">
               <Check className="w-4 h-4 mr-1" /> {t('preferences.saved')}
             </span>
           )}
           {prefsSaveError && (
-            <span className="flex items-center text-red-600 text-sm">
+            <span className="flex items-center text-red-600 dark:text-red-400 text-sm">
               <AlertCircle className="w-4 h-4 mr-1" /> {prefsSaveError}
             </span>
           )}
@@ -76,8 +76,8 @@ export function AppearanceTab({
 
         <div className="p-6 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-purple-50 rounded-lg">
-              <Volume2 className="w-5 h-5 text-purple-600" />
+            <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+              <Volume2 className="w-5 h-5 text-purple-600 dark:text-purple-400" />
             </div>
             <div>
               <p className="font-medium text-foreground">{t('preferences.voiceMode')}</p>
@@ -95,8 +95,8 @@ export function AppearanceTab({
 
         <div className="p-6 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-purple-50 rounded-lg">
-              <Bell className="w-5 h-5 text-purple-600" />
+            <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+              <Bell className="w-5 h-5 text-purple-600 dark:text-purple-400" />
             </div>
             <div>
               <p className="font-medium text-foreground">{t('preferences.notifications')}</p>
@@ -133,8 +133,8 @@ export function AppearanceTab({
 
         <div className="p-6 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-green-50 rounded-lg">
-              <Clock className="w-5 h-5 text-green-600" />
+            <div className="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
+              <Clock className="w-5 h-5 text-green-600 dark:text-green-400" />
             </div>
             <div>
               <p className="font-medium text-foreground">{t('preferences.dwellTime')}</p>
@@ -162,8 +162,8 @@ export function AppearanceTab({
 
         <div className="p-6 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-orange-50 rounded-lg">
-              <MousePointer className="w-5 h-5 text-orange-600" />
+            <div className="p-2 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+              <MousePointer className="w-5 h-5 text-orange-600 dark:text-orange-400" />
             </div>
             <div>
               <p className="font-medium text-foreground">{t('preferences.ignoreRepeats')}</p>
@@ -191,8 +191,8 @@ export function AppearanceTab({
 
         <div className="p-6 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-yellow-50 rounded-lg">
-              <Eye className="w-5 h-5 text-yellow-600" />
+            <div className="p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+              <Eye className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
             </div>
             <div>
               <p className="font-medium text-foreground">{t('preferences.highContrast')}</p>
