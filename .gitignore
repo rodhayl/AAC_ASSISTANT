@@ -98,6 +98,9 @@ _input_*.txt
 # Throwaway browser diagnostics
 src/frontend/pw-diag*.mjs
 
+# Visual verification screenshots (one-off dark-mode checks)
+src/frontend/screenshots-dark/
+
 # IDE
 .vscode/
 .idea/
