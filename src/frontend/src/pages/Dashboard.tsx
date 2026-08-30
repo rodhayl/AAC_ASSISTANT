@@ -7,6 +7,8 @@ import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { formatDateTime } from '../lib/format';
 
+import { SectionTitle } from '@/components/ui/SectionTitle';
+
 export function Dashboard() {
   const user = useAuthStore((state) => state.user);
   const boards = useBoardStore((state) => state.boards);
@@ -39,7 +41,7 @@ export function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-surface p-6 rounded-xl shadow-sm border border-border">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-foreground">{t('cards.myBoards')}</h3>
+            <SectionTitle as="h3">{t('cards.myBoards')}</SectionTitle>
             <LayoutGrid className="w-5 h-5 text-brand" />
           </div>
           <p className="text-3xl font-bold text-foreground mb-2">{isLoading ? '...' : boards.length}</p>
@@ -55,7 +57,7 @@ export function Dashboard() {
         {user?.user_type === 'student' && (
           <div className="bg-surface p-6 rounded-xl shadow-sm border border-border">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-foreground">{t('cards.assignedBoards')}</h3>
+              <SectionTitle as="h3">{t('cards.assignedBoards')}</SectionTitle>
               <LayoutGrid className="w-5 h-5 text-brand" />
             </div>
             <p className="text-3xl font-bold text-foreground mb-2">{isLoading ? '...' : assignedBoards.length}</p>
@@ -71,7 +73,7 @@ export function Dashboard() {
 
         <div className="bg-surface p-6 rounded-xl shadow-sm border border-border">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-foreground">{t('cards.learningStreak')}</h3>
+            <SectionTitle as="h3">{t('cards.learningStreak')}</SectionTitle>
             <Star className="w-5 h-5 text-orange-500" />
           </div>
           <p className="text-3xl font-bold text-foreground mb-2">{isLoading ? '...' : t('cards.days', { count: stats?.learningStreak || 0 })}</p>
@@ -86,7 +88,7 @@ export function Dashboard() {
 
         <div className="bg-surface p-6 rounded-xl shadow-sm border border-border">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-foreground">{t('cards.achievements')}</h3>
+            <SectionTitle as="h3">{t('cards.achievements')}</SectionTitle>
             <Trophy className="w-5 h-5 text-yellow-500" />
           </div>
           <p className="text-3xl font-bold text-foreground mb-2">{isLoading ? '...' : stats?.achievementCount || 0}</p>
@@ -100,7 +102,7 @@ export function Dashboard() {
       {user?.user_type === 'student' && (
         <div className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden">
           <div className="p-6 border-b border-border">
-            <h3 className="text-lg font-semibold text-foreground">{t('assigned.title')}</h3>
+            <SectionTitle as="h3">{t('assigned.title')}</SectionTitle>
             <p className="text-sm text-muted-foreground">{t('assigned.subtitle')}</p>
           </div>
           {isLoading ? (
@@ -131,7 +133,7 @@ export function Dashboard() {
 
       <div className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden">
         <div className="p-6 border-b border-border">
-          <h3 className="text-lg font-semibold text-foreground">{t('activity.recent')}</h3>
+          <SectionTitle as="h3">{t('activity.recent')}</SectionTitle>
         </div>
         <div className="divide-y divide-border">
           {isLoading ? (

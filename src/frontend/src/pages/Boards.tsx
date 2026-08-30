@@ -22,6 +22,9 @@ import { formatDate } from '../lib/format';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { StatusMessage } from '../components/ui/StatusMessage';
 
+import { FormLabel } from '@/components/ui/FormLabel';
+import { SectionTitle } from '@/components/ui/SectionTitle';
+
 export function Boards() {
   const boards = useBoardStore((state) => state.boards);
   const assignedBoards = useBoardStore((state) => state.assignedBoards);
@@ -395,10 +398,10 @@ export function Boards() {
 
       {isCreating && (
         <div className="bg-surface p-6 rounded-xl shadow-sm border border-border mb-6">
-          <h3 className="text-lg font-semibold text-foreground mb-4">{t('createTitle')}</h3>
+          <SectionTitle as="h3" className="mb-4">{t('createTitle')}</SectionTitle>
           <form onSubmit={handleCreateBoard} className="space-y-4">
             <div>
-              <label htmlFor="new-board-name" className="block text-sm font-medium text-foreground mb-1">{t('boardName')}</label>
+              <FormLabel htmlFor="new-board-name">{t('boardName')}</FormLabel>
               <input
                 id="new-board-name"
                 name="new_board_name"
@@ -411,7 +414,7 @@ export function Boards() {
               />
             </div>
             <div>
-              <label htmlFor="new-board-description" className="block text-sm font-medium text-foreground mb-1">{t('description')}</label>
+              <FormLabel htmlFor="new-board-description">{t('description')}</FormLabel>
               <input
                 id="new-board-description"
                 name="new_board_description"
@@ -526,7 +529,7 @@ export function Boards() {
                   </div>
                 </div>
                 <Link to={`/boards/${board.id}`} className="block">
-                  <h3 className="text-lg font-semibold text-foreground mb-1">{board.name}</h3>
+                  <SectionTitle as="h3" className="mb-1">{board.name}</SectionTitle>
                   <p className="text-muted-foreground text-sm mb-4 line-clamp-2">
                     {board.description || t('noDescriptionProvided')}
                   </p>

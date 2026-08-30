@@ -13,6 +13,10 @@ import { isValidImageFile, MAX_IMAGE_FILE_BYTES } from '../lib/download';
 import { SymbolImage } from '../components/common/SymbolImage';
 import { useToastStore } from '../store/toastStore';
 
+import { SectionTitle } from '@/components/ui/SectionTitle';
+
+import { FormLabel } from '@/components/ui/FormLabel';
+
 type UsageFilter = 'all' | 'in_use' | 'unused';
 
 interface ArasaacSymbol {
@@ -429,7 +433,7 @@ export function Symbols() {
       {showArasaac ? (
         <div className="bg-surface rounded-xl shadow-sm border border-border p-4 space-y-4">
           <div className="flex flex-col gap-2">
-            <h2 className="text-lg font-semibold text-foreground">{t('searchArasaac')}</h2>
+            <SectionTitle>{t('searchArasaac')}</SectionTitle>
             <p className="text-sm text-muted-foreground">
               {t('subtitle')}
             </p>
@@ -484,7 +488,7 @@ export function Symbols() {
       <div ref={formRef} className="bg-surface rounded-xl shadow-sm border border-border p-4 space-y-4">
         <div className="grid gap-4 md:grid-cols-2">
           <div>
-            <label htmlFor="symbol-label" className="block text-sm font-medium text-foreground mb-1">{t('label')}</label>
+            <FormLabel htmlFor="symbol-label" className="block text-sm font-medium text-foreground mb-1">{t('label')}</FormLabel>
             <input
               id="symbol-label"
               value={form.label}
@@ -494,7 +498,7 @@ export function Symbols() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">{t('category')}</label>
+            <FormLabel className="block text-sm font-medium text-foreground mb-1">{t('category')}</FormLabel>
             <Select value={form.category} onValueChange={(next) => { if (next != null) setForm(prev => ({ ...prev, category: next })); }}>
               <SelectTrigger aria-label={t('category')} className="w-full text-sm">
                 <SelectValue />
@@ -507,7 +511,7 @@ export function Symbols() {
             </Select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">{t('description')}</label>
+            <FormLabel className="block text-sm font-medium text-foreground mb-1">{t('description')}</FormLabel>
             <input
               value={form.description}
               onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
@@ -516,7 +520,7 @@ export function Symbols() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">{t('keywords')}</label>
+            <FormLabel className="block text-sm font-medium text-foreground mb-1">{t('keywords')}</FormLabel>
             <input
               value={form.keywords}
               onChange={(e) => setForm(prev => ({ ...prev, keywords: e.target.value }))}

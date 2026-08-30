@@ -5,6 +5,7 @@ import { config } from '../../config';
 import type { OllamaModel, OpenRouterModel } from '../../store/settingsStore';
 import type { AiOverride, AiProvider } from './types';
 
+import { FormLabel } from '@/components/ui/FormLabel';
 interface AiProviderFieldsProps {
   provider: AiProvider;
   lmStudioModel: string;
@@ -59,7 +60,7 @@ export function AiProviderFields({
       {provider === 'ollama' && (
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">{t('ai.ollamaUrl')}</label>
+            <FormLabel className="mb-2">{t('ai.ollamaUrl')}</FormLabel>
             <input
               id="primary-ollama-base-url"
               name="primary_ollama_base_url"
@@ -73,7 +74,7 @@ export function AiProviderFields({
           </div>
           <div className="relative">
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-foreground">{t('ai.models')}</label>
+              <FormLabel>{t('ai.models')}</FormLabel>
               <button
                 type="button"
                 onClick={onFetchModels}
@@ -137,9 +138,9 @@ export function AiProviderFields({
       {provider === 'openrouter' && (
         <div className="space-y-4">
           <div>
-            <label htmlFor="primary-openrouter-api-key" className="block text-sm font-medium text-foreground mb-2">
+            <FormLabel htmlFor="primary-openrouter-api-key" className="mb-2">
               {t('ai.apiKey')}
-            </label>
+            </FormLabel>
             <input
               id="primary-openrouter-api-key"
               name="primary_openrouter_api_key"
@@ -161,9 +162,9 @@ export function AiProviderFields({
           </div>
           <div className="relative">
             <div className="flex items-center justify-between mb-2">
-              <label htmlFor="primary-openrouter-model-search" className="block text-sm font-medium text-foreground">
+              <FormLabel htmlFor="primary-openrouter-model-search">
                 {t('ai.models')}
-              </label>
+              </FormLabel>
               <button
                 type="button"
                 onClick={onFetchModels}
@@ -232,9 +233,9 @@ export function AiProviderFields({
       {provider === 'groq' && (
         <div className="space-y-4">
           <div>
-            <label htmlFor="primary-groq-api-key" className="block text-sm font-medium text-foreground mb-2">
+            <FormLabel htmlFor="primary-groq-api-key" className="mb-2">
               {t('ai.groqApiKey')}
-            </label>
+            </FormLabel>
             <input
               id="primary-groq-api-key"
               name="primary_groq_api_key"
@@ -256,9 +257,9 @@ export function AiProviderFields({
           </div>
           <div className="relative">
             <div className="flex items-center justify-between mb-2">
-              <label htmlFor="primary-groq-model-search" className="block text-sm font-medium text-foreground">
+              <FormLabel htmlFor="primary-groq-model-search">
                 {t('ai.models')}
-              </label>
+              </FormLabel>
               <button
                 type="button"
                 onClick={onFetchModels}
@@ -327,7 +328,7 @@ export function AiProviderFields({
       {provider === 'lmstudio' && (
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">{t('ai.lmstudioUrl')}</label>
+            <FormLabel className="mb-2">{t('ai.lmstudioUrl')}</FormLabel>
             <input
               id="primary-lmstudio-base-url"
               name="primary_lmstudio_base_url"
@@ -342,7 +343,7 @@ export function AiProviderFields({
           </div>
           <div className="relative">
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-foreground">{t('ai.models')}</label>
+              <FormLabel>{t('ai.models')}</FormLabel>
               <button
                 type="button"
                 onClick={onFetchModels}
@@ -353,7 +354,7 @@ export function AiProviderFields({
                 <span>{t('ai.refresh')}</span>
               </button>
             </div>
-            <label className="block text-sm font-medium text-foreground">{t('ai.selectModel')}</label>
+            <FormLabel>{t('ai.selectModel')}</FormLabel>
             <select
               id="primary-lmstudio-model"
               name="primary_lmstudio_model"
@@ -379,9 +380,9 @@ export function AiProviderFields({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
         <div>
-          <label htmlFor="primary-max-tokens" className="block text-sm font-medium text-foreground mb-1">
+          <FormLabel htmlFor="primary-max-tokens">
             {t('ai.maxTokens')}
-          </label>
+          </FormLabel>
           <input
             id="primary-max-tokens"
             name="primary_max_tokens"
@@ -410,9 +411,9 @@ export function AiProviderFields({
           <p className="mt-1 text-xs text-muted-foreground">{t('ai.maxTokensHelp')}</p>
         </div>
         <div>
-          <label htmlFor="primary-temperature" className="block text-sm font-medium text-foreground mb-1">
+          <FormLabel htmlFor="primary-temperature">
             {t('ai.temperature')}
-          </label>
+          </FormLabel>
           <input
             id="primary-temperature"
             name="primary_temperature"

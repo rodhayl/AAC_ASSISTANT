@@ -6,6 +6,8 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '../components/ui/button'
 import { StatusMessage } from '../components/ui/StatusMessage'
 
+import { FormLabel } from '@/components/ui/FormLabel';
+
 export function Register() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -45,7 +47,7 @@ export function Register() {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label htmlFor="username" className="block text-sm font-medium text-foreground mb-2">{t('username')}</label>
+            <FormLabel htmlFor="username" className="mb-2">{t('username')}</FormLabel>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <User className="h-5 w-5 text-muted-foreground" />
@@ -64,7 +66,7 @@ export function Register() {
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-foreground mb-2">{t('password')}</label>
+            <FormLabel htmlFor="password" className="mb-2">{t('password')}</FormLabel>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Lock className="h-5 w-5 text-muted-foreground" />
@@ -83,7 +85,7 @@ export function Register() {
           </div>
 
           <div>
-            <label htmlFor="displayName" className="block text-sm font-medium text-foreground mb-2">{t('displayName')}</label>
+            <FormLabel htmlFor="displayName" className="mb-2">{t('displayName')}</FormLabel>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <IdCard className="h-5 w-5 text-muted-foreground" />

@@ -6,6 +6,7 @@ import { useAutoHide } from '../../hooks/useAutoHide';
 import api, { extractError } from '../../lib/api';
 import { Button } from '../../components/ui/button';
 
+import { FormLabel } from '@/components/ui/FormLabel';
 export function ProfileTab() {
   const user = useAuthStore(state => state.user);
   const { t } = useTranslation('settings');
@@ -116,9 +117,9 @@ export function ProfileTab() {
       </div>
       <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label htmlFor="profile-username" className="block text-sm font-medium text-foreground mb-1">
+          <FormLabel htmlFor="profile-username">
             {t('profile.username')}
-          </label>
+          </FormLabel>
           <input
             id="profile-username"
             name="username"
@@ -130,9 +131,9 @@ export function ProfileTab() {
           />
         </div>
         <div className="md:col-span-2">
-          <label htmlFor="profile-display-name" className="block text-sm font-medium text-foreground mb-1">
+          <FormLabel htmlFor="profile-display-name">
             {t('profile.displayName')}
-          </label>
+          </FormLabel>
           <input
             id="profile-display-name"
             name="display_name"
@@ -147,9 +148,9 @@ export function ProfileTab() {
           />
         </div>
         <div className="md:col-span-2">
-          <label htmlFor="profile-email" className="block text-sm font-medium text-foreground mb-1">
+          <FormLabel htmlFor="profile-email">
             {t('profile.email')}
-          </label>
+          </FormLabel>
           <input
             id="profile-email"
             name="email"

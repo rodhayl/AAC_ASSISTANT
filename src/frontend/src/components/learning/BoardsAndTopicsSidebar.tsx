@@ -13,6 +13,8 @@ import {
     type SavedTopic
 } from '../../lib/learningTopics';
 
+import { SectionTitle } from '@/components/ui/SectionTitle';
+
 interface BoardsAndTopicsSidebarProps {
     isOpen: boolean;
     onToggle: () => void;
@@ -113,7 +115,7 @@ export function BoardsAndTopicsSidebar({
             className,
         )}>
             <div className={cn('flex items-center border-b border-border p-4', isOpen ? 'justify-between' : 'justify-center')}>
-                {isOpen && <h3 className="text-lg font-semibold text-foreground truncate">{t('boardsTopics')}</h3>}
+                {isOpen && <SectionTitle as="h3" className="truncate">{t('boardsTopics')}</SectionTitle>}
                 <button
                     onClick={onToggle}
                     className="p-1 hover:bg-surface-hover rounded"

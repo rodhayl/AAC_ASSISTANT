@@ -7,6 +7,8 @@ import { LEARNING_SYMBOL_CATEGORY_IDS } from '../../lib/symbolCategories';
 import type { LearningSymbolItem } from '../../types';
 import { Button } from '../ui/button';
 
+import { SectionTitle } from '@/components/ui/SectionTitle';
+
 export type { LearningSymbolItem } from '../../types';
 
 interface LearningSymbolPanelProps {
@@ -61,9 +63,9 @@ export function LearningSymbolPanel({
   return (
     <div className="w-[450px] bg-surface rounded-xl shadow-sm border border-border flex flex-col overflow-hidden">
       <div className="p-4 border-b border-border">
-        <h3 className="text-lg font-semibold text-foreground">
+        <SectionTitle as="h3">
           {t('symbolFirst')}
-        </h3>
+        </SectionTitle>
 
         {symbolUtterance.length > 0 && (
           <div className="mb-2 bg-muted border border-border rounded-lg p-3">

@@ -16,6 +16,7 @@ import {
   DialogFooter,
 } from '../ui/dialog';
 
+import { FormLabel } from '@/components/ui/FormLabel';
 interface BoardSettingsDialogProps {
   isOpen: boolean;
   saveSuccess: boolean;
@@ -74,9 +75,9 @@ export function BoardSettingsDialog({
           )}
 
           <div>
-            <label htmlFor="board-settings-name" className="block text-sm font-medium text-foreground mb-1">
+            <FormLabel htmlFor="board-settings-name">
               {t('boardName')}
-            </label>
+            </FormLabel>
             <input
               id="board-settings-name"
               name="board_name"
@@ -89,9 +90,9 @@ export function BoardSettingsDialog({
           </div>
 
           <div>
-            <label htmlFor="board-settings-description" className="block text-sm font-medium text-foreground mb-1">
+            <FormLabel htmlFor="board-settings-description">
               {t('description')}
-            </label>
+            </FormLabel>
             <textarea
               id="board-settings-description"
               name="board_description"
@@ -104,9 +105,9 @@ export function BoardSettingsDialog({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
+            <FormLabel>
               {t('category')}
-            </label>
+            </FormLabel>
             <Select value={boardCategory} onValueChange={(next) => { if (next != null) onBoardCategoryChange(next); }}>
               <SelectTrigger aria-label={t('category')} name="board_category" className="w-full text-sm">
                 <SelectValue />

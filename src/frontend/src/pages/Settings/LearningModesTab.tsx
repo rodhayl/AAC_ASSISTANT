@@ -15,6 +15,7 @@ import {
 import type { LearningMode } from './types';
 import { Button } from '../../components/ui/button';
 
+import { FormLabel } from '@/components/ui/FormLabel';
 interface PreviewStudent {
   id: number;
   username: string;
@@ -378,7 +379,7 @@ export function LearningModesTab() {
               {editingModeId === -1 ? t('learningModes.createNew') : t('learningModes.editMode')}
             </h4>
             <div>
-              <label htmlFor="learning-mode-name" className="block text-sm font-medium text-foreground mb-1">{t('learningModes.name')}</label>
+              <FormLabel htmlFor="learning-mode-name">{t('learningModes.name')}</FormLabel>
               <input
                 id="learning-mode-name"
                 value={modeForm.name}
@@ -388,7 +389,7 @@ export function LearningModesTab() {
               />
             </div>
             <div>
-              <label htmlFor="learning-mode-key" className="block text-sm font-medium text-foreground mb-1">{t('learningModes.key')}</label>
+              <FormLabel htmlFor="learning-mode-key">{t('learningModes.key')}</FormLabel>
               <input
                 id="learning-mode-key"
                 value={modeForm.key}
@@ -400,7 +401,7 @@ export function LearningModesTab() {
               <p className="text-xs text-muted-foreground mt-1 ">{t('learningModes.keyHelp')}</p>
             </div>
             <div>
-              <label htmlFor="learning-mode-description" className="block text-sm font-medium text-foreground mb-1">{t('learningModes.description')}</label>
+              <FormLabel htmlFor="learning-mode-description">{t('learningModes.description')}</FormLabel>
               <input
                 id="learning-mode-description"
                 value={modeForm.description}
@@ -411,9 +412,9 @@ export function LearningModesTab() {
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label htmlFor="mode-prompt-instruction" className="block text-sm font-medium text-foreground">
+                <FormLabel htmlFor="mode-prompt-instruction">
                   {t('learningModes.promptInstruction')}
-                </label>
+                </FormLabel>
                 <button
                   type="button"
                   onClick={() => { void openPreview(); }}
@@ -497,9 +498,9 @@ export function LearningModesTab() {
             <div className="p-5 border-b border-border space-y-3">
               <div className="flex flex-wrap items-end gap-3">
                 <div className="flex-1 min-w-48">
-                  <label htmlFor="preview-student" className="block text-sm font-medium text-foreground mb-1">
+                  <FormLabel htmlFor="preview-student">
                     {t('learningModes.student')}
-                  </label>
+                  </FormLabel>
                   <select
                     id="preview-student"
                     value={previewStudentId}
@@ -563,9 +564,9 @@ export function LearningModesTab() {
               {sampleEnabled && (
                 <div className="flex items-end gap-2">
                   <div className="flex-1">
-                    <label htmlFor="preview-sample-question" className="block text-sm font-medium text-foreground mb-1">
+                    <FormLabel htmlFor="preview-sample-question">
                       {t('learningModes.sampleQuestion')}
-                    </label>
+                    </FormLabel>
                     <input
                       id="preview-sample-question"
                       value={sampleQuestion}

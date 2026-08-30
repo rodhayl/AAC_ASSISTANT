@@ -7,6 +7,7 @@ import api from '../lib/api';
 import { Button } from '../components/ui/button';
 import { StatusMessage } from '../components/ui/StatusMessage';
 
+import { FormLabel } from '@/components/ui/FormLabel';
 export function Setup() {
   const [username, setUsername] = useState('admin1');
   const [displayName, setDisplayName] = useState('Administrator');
@@ -113,9 +114,9 @@ export function Setup() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="setup-username" className="block text-sm font-medium text-foreground mb-1">
+            <FormLabel htmlFor="setup-username">
               {t('username')}
-            </label>
+            </FormLabel>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <User className="h-5 w-5 text-muted-foreground" />
@@ -134,9 +135,9 @@ export function Setup() {
           </div>
 
           <div>
-            <label htmlFor="setup-displayname" className="block text-sm font-medium text-foreground mb-1">
+            <FormLabel htmlFor="setup-displayname">
               {t('displayName')}
-            </label>
+            </FormLabel>
             <input
               id="setup-displayname"
               type="text"
@@ -149,9 +150,9 @@ export function Setup() {
           </div>
 
           <div>
-            <label htmlFor="setup-email" className="block text-sm font-medium text-foreground mb-1">
+            <FormLabel htmlFor="setup-email">
               {t('email')}
-            </label>
+            </FormLabel>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Mail className="h-5 w-5 text-muted-foreground" />
@@ -169,9 +170,9 @@ export function Setup() {
           </div>
 
           <div>
-            <label htmlFor="setup-password" className="block text-sm font-medium text-foreground mb-1">
+            <FormLabel htmlFor="setup-password">
               {t('password')}
-            </label>
+            </FormLabel>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Lock className="h-5 w-5 text-muted-foreground" />
@@ -190,9 +191,9 @@ export function Setup() {
           </div>
 
           <div>
-            <label htmlFor="setup-confirm-password" className="block text-sm font-medium text-foreground mb-1">
+            <FormLabel htmlFor="setup-confirm-password">
               {t('confirmPassword')}
-            </label>
+            </FormLabel>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Lock className="h-5 w-5 text-muted-foreground" />

@@ -8,6 +8,8 @@ import { Button } from '../../components/ui/button';
 import { useTTSStore, type WarmupStatus } from '../../store/ttsStore';
 import type { Preferences, VoiceStatus } from './types';
 
+import { SectionTitle } from '@/components/ui/SectionTitle';
+
 interface VoiceTabProps {
   preferences: Preferences;
   setPreferences: Dispatch<SetStateAction<Preferences>>;
@@ -439,7 +441,7 @@ export function VoiceTab({
         {showStatus && <div className="border-t border-border pt-6">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <h3 className="text-lg font-semibold text-foreground">{t('ai.voiceDeps')}</h3>
+              <SectionTitle as="h3">{t('ai.voiceDeps')}</SectionTitle>
               <p className="text-sm text-muted-foreground">{t('ai.voiceDepsHelp')}</p>
             </div>
           </div>

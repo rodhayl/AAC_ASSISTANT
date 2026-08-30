@@ -7,6 +7,8 @@ import { Trophy, Play, ArrowLeft, RotateCcw, Volume2, CheckCircle, XCircle } fro
 import { Button } from '../components/ui/button';
 import { IconButton } from '../components/ui/icon-button';
 
+import { SectionTitle } from '@/components/ui/SectionTitle';
+
 export function SymbolHunt() {
   const { t } = useTranslation('games');
   const addToast = useToastStore((state) => state.addToast);
@@ -58,7 +60,7 @@ export function SymbolHunt() {
                   onClick={() => { void startGame(board); }}
                   className="bg-surface p-6 rounded-xl shadow-sm border border-border hover:border-brand hover:shadow-md transition-all text-left group"
                 >
-                  <h3 className="text-lg font-semibold text-foreground group-hover:text-brand mb-2">{board.name}</h3>
+                  <SectionTitle as="h3" className="group-hover:text-brand mb-2">{board.name}</SectionTitle>
                   <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
                     {board.description || t('symbolHunt.noDescription')}
                   </p>

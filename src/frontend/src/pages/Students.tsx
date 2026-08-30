@@ -18,6 +18,7 @@ import { GuardianProfileModal } from '../components/students/GuardianProfileModa
 import { Sparkles, Volume2 } from 'lucide-react'
 import { LoadingState } from '../components/ui/LoadingState'
 import { useToastStore } from '../store/toastStore'
+import { FormLabel } from '@/components/ui/FormLabel'
 import { Button } from '../components/ui/button';
 
 
@@ -395,13 +396,13 @@ export function Students() {
                   </DialogHeader>
                   {error && <StatusMessage variant="error" className="mb-4">{error}</StatusMessage>}
                   <div className="space-y-3">
-                    <label htmlFor="edit-student-display-name" className="block text-sm font-medium text-foreground">
+                    <FormLabel htmlFor="edit-student-display-name">
                       {t('labels.displayName')}
-                    </label>
+                    </FormLabel>
                     <input id="edit-student-display-name" type="text" value={editDisplayName} onChange={(e) => setEditDisplayName(e.target.value)} required className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground" />
-                    <label className="block text-sm font-medium text-foreground">
+                    <FormLabel>
                       {t('role')}
-                    </label>
+                    </FormLabel>
                     <Select value={editUserType} onValueChange={(next) => { if (next != null) setEditUserType(next as 'student' | 'teacher' | 'admin'); }}>
                       <SelectTrigger aria-label={t('role')} name="edit_student_role" className="w-full text-sm">
                         <SelectValue />
@@ -509,7 +510,7 @@ export function Students() {
                   {error && <StatusMessage variant="error" className="mb-4">{error}</StatusMessage>}
                   <form onSubmit={handleCreateStudent} className="space-y-4">
                     <div>
-                      <label htmlFor="create-student-username" className="block text-sm font-medium text-foreground mb-1">{t('labels.username')}</label>
+                      <FormLabel htmlFor="create-student-username">{t('labels.username')}</FormLabel>
                       <input
                         id="create-student-username"
                         type="text"
@@ -522,7 +523,7 @@ export function Students() {
                     </div>
 
                     <div>
-                      <label htmlFor="create-student-display-name" className="block text-sm font-medium text-foreground mb-1">{t('labels.displayName')}</label>
+                      <FormLabel htmlFor="create-student-display-name">{t('labels.displayName')}</FormLabel>
                       <input
                         id="create-student-display-name"
                         type="text"
@@ -535,7 +536,7 @@ export function Students() {
                     </div>
 
                     <div>
-                      <label htmlFor="create-student-email" className="block text-sm font-medium text-foreground mb-1">{t('labels.email')}</label>
+                      <FormLabel htmlFor="create-student-email">{t('labels.email')}</FormLabel>
                       <input
                         id="create-student-email"
                         type="email"
@@ -547,7 +548,7 @@ export function Students() {
                     </div>
 
                     <div>
-                      <label htmlFor="create-student-password" className="block text-sm font-medium text-foreground mb-1">{t('labels.password')}</label>
+                      <FormLabel htmlFor="create-student-password">{t('labels.password')}</FormLabel>
                       <input
                         id="create-student-password"
                         type="password"
@@ -562,7 +563,7 @@ export function Students() {
 
                     {user?.user_type === 'admin' && (
                       <div>
-                        <label htmlFor="create-student-confirm-password" className="block text-sm font-medium text-foreground mb-1">{t('labels.confirmPassword')}</label>
+                        <FormLabel htmlFor="create-student-confirm-password">{t('labels.confirmPassword')}</FormLabel>
                         <input
                           id="create-student-confirm-password"
                           type="password"

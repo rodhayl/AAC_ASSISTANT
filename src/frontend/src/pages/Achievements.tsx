@@ -17,6 +17,9 @@ import {
   localizeAchievementName,
 } from '../lib/achievementLocalization'
 
+import { SectionTitle } from '@/components/ui/SectionTitle';
+import { FormLabel } from '@/components/ui/FormLabel';
+
 interface AchievementFormData {
   name: string;
   description: string;
@@ -276,7 +279,7 @@ export function Achievements() {
       {showManage && isTeacherOrAdmin && (
         <div className="bg-surface rounded-xl shadow-sm border border-border p-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold text-foreground">{t('manageTitle')}</h2>
+            <SectionTitle>{t('manageTitle')}</SectionTitle>
             <Button variant="success" onClick={openCreateModal}>
               <Plus />
               {t('create')}
@@ -418,7 +421,7 @@ export function Achievements() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">{t('icon')}</label>
+                <FormLabel className="block text-sm font-medium text-foreground mb-1">{t('icon')}</FormLabel>
                 <div className="flex flex-wrap gap-2">
                   {EMOJI_OPTIONS.map(emoji => (
                     <button key={emoji} type="button" onClick={() => setFormData({ ...formData, icon: emoji })}
@@ -430,20 +433,20 @@ export function Achievements() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">{t('name')}</label>
+                <FormLabel className="block text-sm font-medium text-foreground mb-1">{t('name')}</FormLabel>
                 <input type="text" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })}
                   className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground" />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">{t('description')}</label>
+                <FormLabel className="block text-sm font-medium text-foreground mb-1">{t('description')}</FormLabel>
                 <textarea value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })}
                   className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground" rows={2} />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">{t('category')}</label>
+                  <FormLabel className="block text-sm font-medium text-foreground mb-1">{t('category')}</FormLabel>
                   <select value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })}
                     className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground">
                     {categories.map(cat => (
@@ -452,14 +455,14 @@ export function Achievements() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">{t('points')}</label>
+                  <FormLabel className="block text-sm font-medium text-foreground mb-1">{t('points')}</FormLabel>
                   <input type="number" min={0} value={formData.points} onChange={e => setFormData({ ...formData, points: parseInt(e.target.value) || 0 })}
                     className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground" />
                 </div>
               </div>
 
               <div className="border-t border-border pt-4">
-                <label className="block text-sm font-medium text-foreground mb-2">{t('awardType')}</label>
+                <FormLabel className="mb-2">{t('awardType')}</FormLabel>
                 <div className="flex gap-4 mb-3">
                   <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
                     <input type="radio" name="awardType" checked={!formData.criteria_type}
@@ -497,10 +500,10 @@ export function Achievements() {
 
               {students.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">
+                  <FormLabel className="block text-sm font-medium text-foreground mb-1">
                     <Users className="w-4 h-4 inline mr-1" />
                     {t('targetUser')}
-                  </label>
+                  </FormLabel>
                   <select value={formData.target_user_id ?? ''} onChange={e => setFormData({ ...formData, target_user_id: e.target.value ? parseInt(e.target.value) : null })}
                     className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground">
                     <option value="">{t('allStudents')}</option>
@@ -541,7 +544,7 @@ export function Achievements() {
             )}
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-foreground mb-2">{t('selectStudent')}</label>
+              <FormLabel className="mb-2">{t('selectStudent')}</FormLabel>
               <input
                 type="text"
                 placeholder={t('searchStudent')}
