@@ -37,6 +37,7 @@ interface LearningInputRowProps {
   isLoading: boolean;
   isStartingSession: boolean;
   boardId?: number | null;
+  topic?: string | null;
   startRecording: () => Promise<void>;
   stopRecording: () => void;
   sendRecording: () => Promise<void>;
@@ -53,6 +54,7 @@ export function LearningInputRow({
   isLoading,
   isStartingSession,
   boardId,
+  topic,
   startRecording,
   stopRecording,
   sendRecording,
@@ -66,6 +68,7 @@ export function LearningInputRow({
       <div className="mb-3">
         <Smartbar
           currentSentence={inputToSymbols(input, currentLanguage)}
+          topic={topic}
           onSelectSymbol={(symbol) => {
             const label = symbol.custom_text || symbol.symbol.label;
             onInputChange(

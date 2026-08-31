@@ -12,6 +12,8 @@ interface SmartbarProps {
   currentSentence: BoardSymbol[];
   onSelectSymbol: (symbol: BoardSymbol) => void;
   boardId?: number | null;
+  /** Session/topic context so predictions match the subject under study. */
+  topic?: string | null;
 }
 
 interface Suggestion {
@@ -31,7 +33,7 @@ type IntentType = 'general' | 'pronouns' | 'verbs' | 'articles' | 'nouns' | 'pla
 // single request without delaying explicit intent/pagination changes.
 const SMARTBAR_DEBOUNCE_MS = 300;
 
-export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarProps) {
+export function Smartbar({ currentSentence, onSelectSymbol, boardId, topic }: SmartbarProps) {
   const { t, i18n } = useTranslation('boards');
   const currentLanguage = i18n?.language?.split('-')[0] || 'en';
   const messages = useLearningStore((state) => state.messages);
@@ -123,6 +125,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
           intent: activeIntent,
           offset: offset,
           board_id: boardId ?? undefined,
+          topic: topic ?? undefined,
         }, { signal: controller.signal });
 
         if (active) {
@@ -152,7 +155,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
       active = false;
       controller.abort();
     };
-  }, [debouncedSentence, messages, activeIntent, offset, boardId]); // Re-fetch when sentence OR chat updates
+  }, [debouncedSentence, messages, activeIntent, offset, boardId, topic]); // Re-fetch when sentence OR chat updates
 
   useEffect(() => {
     const container = suggestionsContainerRef.current;

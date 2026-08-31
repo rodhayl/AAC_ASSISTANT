@@ -9,7 +9,13 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
-from src.aac_app.models import Symbol, SymbolUsageLog, UserSettings
+from src.aac_app.models import (
+    BoardSymbol,
+    CommunicationBoard,
+    Symbol,
+    SymbolUsageLog,
+    UserSettings,
+)
 from src.api.deps import get_current_active_user
 from src.api.main import app
 
@@ -346,6 +352,48 @@ class TestAnalyticsAPI:
         verb_labels = {item["label"] for item in verbs.json()}
         assert "run" in verb_labels
         assert "quickly" not in verb_labels  # adverb is not a verb
+
+    def test_board_scoped_intent_does_not_fall_back_to_global_symbols(
+        self, test_db_session, regular_user
+    ):
+        """A quick-word filter must keep its board boundary when no local match exists."""
+        board = CommunicationBoard(
+            user_id=regular_user.id,
+            name="Animals board",
+            is_public=True,
+        )
+        board_noun = Symbol(
+            label="dog",
+            category="animal",
+            language="en",
+            is_builtin=True,
+        )
+        global_verb = Symbol(
+            label="run",
+            category="verb",
+            language="en",
+            is_builtin=True,
+        )
+        test_db_session.add_all([board, board_noun, global_verb])
+        test_db_session.flush()
+        test_db_session.add(
+            BoardSymbol(
+                board_id=board.id,
+                symbol_id=board_noun.id,
+                position_x=0,
+                position_y=0,
+                is_visible=True,
+            )
+        )
+        test_db_session.commit()
+
+        response = client.post(
+            "/api/analytics/next-symbol",
+            json={"board_id": board.id, "intent": "verbs", "limit": 5},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == []
 
     def test_intent_suggestions_paginate_after_language_rank(
         self, test_db_session, regular_user

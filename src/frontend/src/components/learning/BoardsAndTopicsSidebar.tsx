@@ -45,6 +45,14 @@ export function BoardsAndTopicsSidebar({
     const { t } = useTranslation('learning');
     const user = useAuthStore((state) => state.user);
     const boards = useBoardStore((state) => state.boards);
+    const assignedBoards = useBoardStore((state) => state.assignedBoards);
+    const availableBoards = useMemo(() => {
+        const uniqueBoards = new Map<number, (typeof boards)[number]>();
+        for (const board of [...boards, ...assignedBoards]) {
+            uniqueBoards.set(board.id, board);
+        }
+        return Array.from(uniqueBoards.values());
+    }, [assignedBoards, boards]);
 
     const [topicsRevision, setTopicsRevision] = useState(0);
     const [selectedBoardId, setSelectedBoardId] = useState<string>('');
@@ -69,16 +77,21 @@ export function BoardsAndTopicsSidebar({
         if (!user?.id) return;
 
         let boardName = t('boardNameDefault');
+        let boardId: number | undefined;
         if (selectedBoardId === 'custom') {
             boardName = customPurpose.trim() || t('boardNameDefault');
         } else if (selectedBoardId) {
-            const board = boards.find(b => b.id.toString() === selectedBoardId);
-            if (board) boardName = board.name;
+            const board = availableBoards.find(b => b.id.toString() === selectedBoardId);
+            if (board) {
+                boardName = board.name;
+                boardId = board.id;
+            }
         }
 
         const topic: SavedTopic = {
             id: Date.now(),
             board: boardName,
+            ...(boardId !== undefined ? { boardId } : {}),
             topic: topicName,
             createdBy: user?.display_name || user?.username || t('teacherDefault'),
         };
@@ -96,16 +109,14 @@ export function BoardsAndTopicsSidebar({
         setTopicsRevision((value) => value + 1);
     };
 
-    const handleStart = (topicName: string, boardName: string) => {
-        // Find board ID if possible, otherwise just pass board name as context/purpose
-        // In Learning.tsx logic: boardId is passed if selectedBoardId is numeric.
-        // Here we are starting from a SAVED topic which stores 'board' as a string name.
-        // The parent onStartActivity expects specific params.
-        // We'll pass the topic and use the board name as the purpose/context.
-        // Ideally we would store boardId in SavedTopic but the interface uses string name.
-        // We will look up board by name to find ID if possible.
-        const board = boards.find(b => b.name === boardName);
-        onStartActivity(topicName, boardName, board ? board.id : undefined);
+    const handleStart = (savedTopic: SavedTopic) => {
+        // Keep the durable ID when available. The name lookup is only a
+        // compatibility fallback for topics saved before board IDs existed;
+        // IDs avoid selecting the wrong board when names are duplicated.
+        const board = savedTopic.boardId !== undefined
+            ? availableBoards.find((item) => item.id === savedTopic.boardId)
+            : availableBoards.find((item) => item.name === savedTopic.board);
+        onStartActivity(savedTopic.topic, savedTopic.board, board?.id ?? savedTopic.boardId);
     };
 
     return (
@@ -140,7 +151,7 @@ export function BoardsAndTopicsSidebar({
                                         className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground text-sm mb-2"
                                     >
                                         <option value="">{t('generalNoBoard')}</option>
-                                        {boards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                                        {availableBoards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                                         <option value="custom">{t('customContext')}</option>
                                     </select>
                                     {selectedBoardId === 'custom' && (
@@ -206,7 +217,7 @@ export function BoardsAndTopicsSidebar({
                                             <Button
                                                 type="button"
                                                 size="xs"
-                                                onClick={() => user && handleStart(topic.topic, topic.board || 'practice')}
+                                                onClick={() => user && handleStart(topic)}
                                                 disabled={isStartingSession}
                                             >
                                                 {isStartingSession ? t('startingSession') : t('startStudy')}

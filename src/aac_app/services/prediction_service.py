@@ -41,6 +41,40 @@ def _label_looks_bad(label: str) -> bool:
     return lower.count("-") > 3
 
 
+# Common stop-words excluded from topic tokenization so a topic like
+# "Inteligencia Artificial y LLMs" focuses on inteligencia/artificial/llms.
+_TOPIC_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "y", "o", "e", "u", "de", "del", "la", "el", "las", "los", "en",
+        "the", "and", "or", "of", "for", "with", "a", "an", "to", "in",
+        "on", "about",
+    }
+)
+
+
+def _tokenize_topic(topic: str) -> list[str]:
+    r"""Split a topic string into meaningful lowercase tokens (len >= 2).
+
+    Splits on any non-alphanumeric character (Unicode-aware via ``\W``)
+    so accented words like "inteligencia" survive intact.
+    """
+    import re
+
+    tokens: list[str] = []
+    for raw in re.split(r"\W+", topic, flags=re.UNICODE):
+        word = (raw or "").strip().lower()
+        if len(word) < 2 or word in _TOPIC_STOPWORDS:
+            continue
+        tokens.append(word)
+    # Deduplicate preserving order.
+    seen: set[str] = set()
+    unique: list[str] = []
+    for word in tokens:
+        if word not in seen:
+            seen.add(word)
+            unique.append(word)
+    return unique
+
 # Punctuation appended after all real suggestions (only when they fit).
 PUNCTUATION: tuple[str, ...] = (".", ",", "?", "!")
 
@@ -102,6 +136,7 @@ class _PredictionContext:
         db: Session | None,
         analytics_service: SymbolAnalytics,
         load_model: Callable[[str], dict],
+        topic: str | None = None,
     ) -> None:
         self.user_id = user_id
         self.current_symbols = current_symbols
@@ -113,6 +148,10 @@ class _PredictionContext:
         self.db = db
         self.analytics_service = analytics_service
         self._load_model = load_model
+        # Topic tokens drive a topic-aware tier so predictions reflect the
+        # subject under study instead of always surfacing the same global
+        # standard-library fallbacks.
+        self.topic_tokens = _tokenize_topic(topic or "")
 
         self.suggestions: list[dict] = []
         self.seen_labels: set[str] = set()
@@ -123,6 +162,11 @@ class _PredictionContext:
         self.allowed_symbol_ids: set[int] | None = None
         if board_id is not None:
             self._resolve_allowed_symbol_ids()
+            # A requested board that has no visible symbols is still a valid
+            # empty scope. Keep it distinct from a missing/failed scope so
+            # global tiers cannot leak unrelated suggestions.
+            if self.allowed_symbol_ids is None:
+                self.allowed_symbol_ids = set()
 
     def _resolve_allowed_symbol_ids(self) -> None:
         """Load the visible symbol ids of the board scope, if any."""
@@ -141,7 +185,7 @@ class _PredictionContext:
                 self.board_id,
                 exc,
             )
-            self.allowed_symbol_ids = None
+            self.allowed_symbol_ids = set()
 
     def _board_symbol_ids(self, session: Session) -> list[int]:
         rows = (
@@ -330,6 +374,85 @@ class _PredictionContext:
         return self.best_symbol(options)
 
     # -- suggestion tiers ---------------------------------------------------
+
+    def suggest_topic(self) -> None:
+        """Tier 0: symbols whose label/keywords overlap the session topic.
+
+        Runs before any fallback so a study topic like "Inteligencia
+        Artificial y LLMs" surfaces the matching catalog symbols instead
+        of the same global standard-library words on every topic.
+        """
+        if not self.topic_tokens:
+            return
+        from sqlalchemy import func, or_
+
+        # Build OR conditions: each token is matched against label/keywords
+        # via word boundaries. LIKE is portable across SQLite/Postgres.
+        clauses: list = []
+        for token in self.topic_tokens:
+            like_tok = f"% {token}%"
+            clauses.extend(
+                [
+                    func.lower(Symbol.label).like(f"{token}%"),
+                    func.lower(Symbol.label).like(like_tok),
+                    func.lower(Symbol.keywords).like(f"%{token}%"),
+                ]
+            )
+        if not clauses:
+            return
+
+        def run_query(session: Session) -> list:
+            q = session.query(
+                Symbol.id,
+                Symbol.label,
+                Symbol.category,
+                Symbol.image_path,
+                Symbol.language,
+                Symbol.keywords,
+            ).filter(
+                Symbol.label.isnot(None),
+                or_(*clauses),
+            )
+            # Restrict to the active locale so a Spanish topic does not
+            # surface English-only symbols, and vice versa.
+            q = q.filter(
+                or_(
+                    func.lower(Symbol.language) == self.lang,
+                    func.lower(Symbol.language).like(f"{self.lang}-%"),
+                )
+            )
+            if self.allowed_symbol_ids is not None:
+                q = q.filter(Symbol.id.in_(self.allowed_symbol_ids))
+            # Bounded scan; the matching catalog slice is small.
+            return q.limit(max(self.base_limit * 4, 60)).all()
+
+        try:
+            rows = run_query(self.db) if self.db is not None else None
+            if rows is None:
+                with get_session() as session:
+                    rows = run_query(session)
+        except Exception as exc:
+            logger.warning("Topic symbol query failed: {}", exc)
+            return
+
+        def score(label: str, keywords: str | None) -> int:
+            text = f"{label} {keywords or ''}".lower()
+            return sum(1 for token in self.topic_tokens if token in text)
+
+        ranked = sorted(
+            rows,
+            key=lambda row: (-score(row[1] or "", row[5])),
+        )
+        for sid, label, cat, img, language_code, _kw in ranked:
+            self.add_symbol(
+                symbol_id=sid,
+                label=label,
+                category=cat,
+                image_path=img,
+                confidence=0.6,
+                source="topic",
+                symbol_language=language_code,
+            )
 
     def suggest_history(self) -> None:
         """Tier 1: personalized suggestions from the user's usage history."""
@@ -700,6 +823,7 @@ class PredictionService:
         offset: int = 0,
         board_id: int | None = None,
         db: Session | None = None,
+        topic: str | None = None,
     ) -> list[dict]:
         """
         Predict next symbols.
@@ -736,13 +860,24 @@ class PredictionService:
             db=db,
             analytics_service=self.analytics_service,
             load_model=self._load_model,
+            topic=topic,
         )
 
+
+
+
+        # Topic symbols rank first so a study subject actually shapes the
+        # Smartbar instead of the same global standard-library words on every
+        # topic. Board content comes next (it is the user's chosen scope), then
+        # the global fallbacks fill remaining slots. ``suggest_board_library``
+        # is a no-op when no board is scoped, so a single call covers both
+        # cases.
+        context.suggest_topic()
+        context.suggest_board_library()
         context.suggest_history()
         context.suggest_ngrams()
         context.suggest_popular_symbols()
         context.suggest_standard_library()
-        context.suggest_board_library()
         context.suggest_punctuation()
 
         return context.suggestions[safe_offset : safe_offset + limit]

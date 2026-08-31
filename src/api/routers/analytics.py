@@ -264,7 +264,10 @@ def get_next_symbol_suggestions_post(
                     return suggestions[offset : offset + limit]
 
                 strict_passes = [True, False]
-                board_scopes = [request.board_id is not None, False]
+                # A board-scoped intent must never silently fall back to the
+                # global symbol catalog: that is how unrelated suggestions
+                # escaped into Learning when a board lacked that category.
+                board_scopes = [request.board_id is not None]
                 for strict in strict_passes:
                     for board_scoped in board_scopes:
                         query = build_query(board_scoped)
@@ -278,8 +281,13 @@ def get_next_symbol_suggestions_post(
                             return suggestions
             except Exception as db_err:
                 logger.error(f"Database error in intent query: {db_err}")
-                # Fall back to general suggestion if specific intent fails
-                pass
+                # Fall back to general suggestion only when no board context
+                # was requested. A scoped request must not leak global items.
+                if request.board_id is not None:
+                    return []
+
+            if request.board_id is not None:
+                return []
 
         # Get unified suggestions from PredictionService
         final_suggestions = prediction_service.predict_next(
@@ -289,6 +297,7 @@ def get_next_symbol_suggestions_post(
             language=user_lang,
             offset=offset,
             board_id=request.board_id,
+            topic=request.topic,
             db=db,
         )
 

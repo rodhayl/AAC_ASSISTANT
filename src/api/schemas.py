@@ -586,6 +586,7 @@ class NextSymbolRequest(BaseModel):
     intent: str = "general"
     offset: int = Field(0, ge=0, le=100_000)
     board_id: int | None = None
+    topic: str | None = None
 
 
 # --- Guardian Profile Schemas (Learning Companion Personality) ---

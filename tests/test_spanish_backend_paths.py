@@ -310,10 +310,10 @@ def test_runtime_translation_times_out_and_recovers_after_cooldown(monkeypatch):
     assert factory.call_count == 4
 
 
-def test_prediction_service_localizes_history_labels_to_requested_language(
-    monkeypatch, test_db_session, regular_user
+def test_prediction_service_keeps_suggestions_in_requested_language(
+    test_db_session, regular_user
 ):
-    """History suggestions should be localized before they reach the smartbar."""
+    """History suggestions from another locale are not mixed into the Smartbar."""
     service = PredictionService()
     symbol = Symbol(label="cookie", category="noun", language="en", is_builtin=True)
     session = LearningSession(
@@ -336,11 +336,6 @@ def test_prediction_service_localizes_history_labels_to_requested_language(
     )
     test_db_session.commit()
 
-    monkeypatch.setattr(
-        "src.aac_app.services.prediction_service.translate_text",
-        lambda text, target_lang: {"cookie": "galleta"}.get(text, text),
-    )
-
     suggestions = service.predict_next(
         user_id=regular_user.id,
         current_symbols=[],
@@ -351,5 +346,5 @@ def test_prediction_service_localizes_history_labels_to_requested_language(
     )
 
     assert suggestions
-    assert suggestions[0]["label"] == "galleta"
-    assert suggestions[0]["source"] == "history"
+    assert all(suggestion["label"] != "cookie" for suggestion in suggestions)
+    assert all(suggestion["source"] != "history" for suggestion in suggestions)

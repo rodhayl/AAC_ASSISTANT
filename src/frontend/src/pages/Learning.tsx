@@ -54,6 +54,7 @@ export function Learning() {
   const defaultLearningModeKey = user?.settings?.default_learning_mode || 'practice';
   const addToast = useToastStore((state) => state.addToast);
   const fetchBoards = useBoardStore((state) => state.fetchBoards);
+  const fetchAssignedBoards = useBoardStore((state) => state.fetchAssignedBoards);
   const { t, i18n } = useTranslation('learning');
   const currentLang = i18n.language?.split('-')[0] || 'en';
   const modeTranslationRef = useRef(t);
@@ -184,9 +185,13 @@ export function Learning() {
 
   useEffect(() => {
     if (!user?.id) return;
-    fetchBoards(user.id);
+    if (user.user_type === 'student') {
+      void fetchAssignedBoards(user.id, true);
+    } else {
+      void fetchBoards(user.user_type === 'admin' ? undefined : user.id);
+    }
     void loadAvailableModes();
-  }, [fetchBoards, loadAvailableModes, user?.id]);
+  }, [fetchAssignedBoards, fetchBoards, loadAvailableModes, user?.id, user?.user_type]);
 
   // A preference response can arrive after the page first renders. Once it
   // does, use it as the next session's default without overriding a temporary

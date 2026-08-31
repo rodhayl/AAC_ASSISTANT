@@ -51,6 +51,40 @@ afterEach(() => {
 });
 
 describe('Smartbar', () => {
+  it('passes the active Learning board ID to the prediction request', async () => {
+    vi.mocked(api.post).mockResolvedValue({ data: [] });
+
+    render(
+      <Smartbar
+        currentSentence={[]}
+        onSelectSymbol={vi.fn()}
+        boardId={42}
+      />,
+    );
+
+    await waitFor(() => expect(vi.mocked(api.post)).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(api.post).mock.calls[0][1]).toEqual(
+      expect.objectContaining({ board_id: 42 }),
+    );
+  });
+
+  it('passes the active Learning topic to the prediction request', async () => {
+    vi.mocked(api.post).mockResolvedValue({ data: [] });
+
+    render(
+      <Smartbar
+        currentSentence={[]}
+        onSelectSymbol={vi.fn()}
+        topic="Inteligencia Artificial y LLMs"
+      />,
+    );
+
+    await waitFor(() => expect(vi.mocked(api.post)).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(api.post).mock.calls[0][1]).toEqual(
+      expect.objectContaining({ topic: 'Inteligencia Artificial y LLMs' }),
+    );
+  });
+
   it('renders repeated suggestion ids without duplicate React key warnings', async () => {
     vi.mocked(api.post).mockResolvedValue({
       data: [

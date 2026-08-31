@@ -6,10 +6,10 @@ import pytest
 from sqlalchemy import event
 
 from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol
-from src.aac_app.services import prediction_service as prediction_module
 from src.aac_app.services.prediction_service import (
     PredictionService,
     _label_looks_bad,
+    _tokenize_topic,
 )
 
 
@@ -18,9 +18,6 @@ def test_warmup_builds_symbol_catalog(test_db_session, regular_user, monkeypatch
     from src.aac_app.services.prediction_service import _catalog_cache
 
     service = PredictionService()
-    monkeypatch.setattr(
-        prediction_module, "translate_text", lambda text, _target_lang: text
-    )
     test_db_session.add_all(
         [
             Symbol(label="cookie", category="noun", language="en", is_builtin=True),
@@ -67,9 +64,6 @@ def test_predict_next_loads_symbol_library_once_per_request(
 ):
     """One library load serves both resolve paths; per-word ilike queries are gone."""
     service = PredictionService()
-    monkeypatch.setattr(
-        prediction_module, "translate_text", lambda text, _target_lang: text
-    )
     test_db_session.add_all(
         [
             Symbol(label="cookie", category="noun", language="en", is_builtin=True),
@@ -109,7 +103,7 @@ def test_predict_next_loads_symbol_library_once_per_request(
 
     labels = [suggestion["label"] for suggestion in suggestions]
     assert labels[0] == "cookie"
-    assert labels[1] == "galleta"
+    assert "galleta" not in labels
     assert suggestions[0]["source"] == "general_model"
 
 
@@ -118,9 +112,6 @@ def test_predict_next_caches_symbol_catalog_between_requests(
 ):
     """The catalog is cached per engine; a second call skips the library query."""
     service = PredictionService()
-    monkeypatch.setattr(
-        prediction_module, "translate_text", lambda text, _target_lang: text
-    )
     monkeypatch.setitem(
         service._models,
         "en",
@@ -172,9 +163,6 @@ def test_predict_next_pagination_skips_seen_suggestions(
 ):
     """A non-zero offset continues after the previous page instead of repeating it."""
     service = PredictionService()
-    monkeypatch.setattr(
-        prediction_module, "translate_text", lambda text, _target_lang: text
-    )
     test_db_session.add_all(
         [
             Symbol(label="one", category="noun", language="en", is_builtin=True),
@@ -231,9 +219,6 @@ def test_predict_next_board_scope_uses_scalar_symbol_ids(
 ):
     """Board-scoped fallbacks bind integer symbol IDs, not SQLAlchemy Row objects."""
     service = PredictionService()
-    monkeypatch.setattr(
-        prediction_module, "translate_text", lambda text, _target_lang: text
-    )
     board = CommunicationBoard(
         name="Prediction board",
         user_id=regular_user.id,
@@ -307,6 +292,52 @@ def test_predict_next_new_symbols_visible_after_mutation(
     assert any(suggestion["label"] == "milk" for suggestion in second)
 
 
+def test_tokenize_topic_strips_stopwords_and_short_words():
+    assert _tokenize_topic("Inteligencia Artificial y LLMs") == [
+        "inteligencia",
+        "artificial",
+        "llms",
+    ]
+    assert _tokenize_topic("") == []
+    assert _tokenize_topic("el y de a") == []
+
+
+def test_predict_next_topic_surfaces_matching_symbols_first(
+    test_db_session, regular_user, monkeypatch
+):
+    """A study topic must rank its matching catalog symbols before fallbacks."""
+    service = PredictionService()
+    monkeypatch.setitem(service._models, "es", {"bigrams": {}})
+    test_db_session.add_all(
+        [
+            Symbol(label="inteligencia artificial", category="computing", language="es", keywords="inteligencia artificial, IA", is_builtin=True),
+            Symbol(label="coche", category="toy", language="es", is_builtin=True),
+        ]
+    )
+    test_db_session.commit()
+
+    analytics = Mock()
+    analytics.suggest_next_symbol.return_value = []
+    monkeypatch.setattr(service, "analytics_service", analytics)
+
+    suggestions = service.predict_next(
+        user_id=regular_user.id,
+        current_symbols=[],
+        limit=5,
+        language="es",
+        offset=0,
+        topic="Inteligencia Artificial y LLMs",
+        db=test_db_session,
+    )
+
+    sources = [s["source"] for s in suggestions]
+    assert sources[0] == "topic"
+    labels = [s["label"] for s in suggestions]
+    assert "inteligencia artificial" in labels
+    # Topic match ranks first, ahead of any global fallback.
+    assert suggestions[0]["label"] == "inteligencia artificial"
+
+
 def test_label_looks_bad_rejects_artifacts_and_paths():
     assert _label_looks_bad("frontend-icons")
     assert _label_looks_bad("node_modules/index")
@@ -320,14 +351,69 @@ def test_label_looks_bad_rejects_artifacts_and_paths():
     assert not _label_looks_bad("ice-cream")
 
 
+def test_predict_next_board_symbols_rank_before_global_history(test_db_session, regular_user, monkeypatch):
+    """Board-scoped suggestions outrank global history/popular fallbacks.
+
+    Regression: the board tier must run first so each board's suggestions
+    reflect that board's symbols rather than the same global history on every
+    board.
+    """
+    service = PredictionService()
+    board = CommunicationBoard(
+        name="Food board",
+        user_id=regular_user.id,
+        is_public=True,
+    )
+    board_symbol = Symbol(label="apple", category="food", language="en", is_builtin=True)
+    off_board_symbol = Symbol(label="cookie", category="noun", language="en", is_builtin=True)
+    test_db_session.add_all([board, board_symbol, off_board_symbol])
+    test_db_session.commit()
+    test_db_session.add(
+        BoardSymbol(
+            board_id=board.id,
+            symbol_id=board_symbol.id,
+            is_visible=True,
+            position_x=0,
+            position_y=0,
+        )
+    )
+    test_db_session.commit()
+    monkeypatch.setitem(service._models, "en", {"bigrams": {}})
+
+    # Global history tier would otherwise return the off-board symbol first.
+    analytics = Mock()
+    analytics.suggest_next_symbol.side_effect = [
+        [{"symbol_id": off_board_symbol.id, "label": "cookie", "category": "noun", "language": "en"}],  # history
+        [],  # popular
+    ]
+    monkeypatch.setattr(service, "analytics_service", analytics)
+
+    suggestions = service.predict_next(
+        user_id=regular_user.id,
+        current_symbols=[],
+        limit=3,
+        language="en",
+        offset=0,
+        board_id=board.id,
+        db=test_db_session,
+    )
+
+    sources = [s["source"] for s in suggestions]
+    # The board-layout tier must fill the first slot with the board's symbol
+    # before the global history tier adds its board-filtered candidate.
+    assert suggestions[0]["source"] in {"board_layout", "board_popular", "board_personal"}
+    assert "board_layout" in sources
+    labels = [s["label"] for s in suggestions]
+    assert "apple" in labels
+    # The off-board history candidate is filtered out by the board scope.
+    assert "cookie" not in labels
+
+
 def test_predict_next_uses_popular_tier_when_history_and_ngrams_empty(
     test_db_session, regular_user, monkeypatch
 ):
     """Tier 3: popular global symbols interleave nouns and others."""
     service = PredictionService()
-    monkeypatch.setattr(
-        prediction_module, "translate_text", lambda text, _target_lang: text
-    )
     monkeypatch.setitem(service._models, "en", {"bigrams": {}})
     test_db_session.add_all(
         [
@@ -341,10 +427,10 @@ def test_predict_next_uses_popular_tier_when_history_and_ngrams_empty(
     analytics = Mock()
     analytics.suggest_next_symbol.side_effect = [
         [],  # history tier: no user history
-        [
-            {"symbol_id": None, "label": "cookie", "category": "noun"},
-            {"symbol_id": None, "label": "milk", "category": "food"},
-            {"symbol_id": None, "label": "water", "category": "drink"},
+        [                {"symbol_id": None, "label": "cookie", "category": "noun", "language": "en"},
+                {"symbol_id": None, "label": "milk", "category": "food", "language": "en"},
+                {"symbol_id": None, "label": "water", "category": "drink", "language": "en"},
+
         ],  # popular tier
     ]
     monkeypatch.setattr(service, "analytics_service", analytics)
@@ -371,9 +457,6 @@ def test_predict_next_uses_standard_library_on_cold_start(
     from src.aac_app.services.symbol_catalog import standard_library_labels
 
     service = PredictionService()
-    monkeypatch.setattr(
-        prediction_module, "translate_text", lambda text, _target_lang: text
-    )
     monkeypatch.setitem(service._models, "en", {"bigrams": {}})
     # Seed only symbols whose labels are in the standard library.
     standard = set(standard_library_labels("en"))
@@ -407,9 +490,6 @@ def test_predict_next_appends_punctuation_when_budget_allows(
 ):
     """Tier 6: punctuation fills remaining slots past real suggestions."""
     service = PredictionService()
-    monkeypatch.setattr(
-        prediction_module, "translate_text", lambda text, _target_lang: text
-    )
     monkeypatch.setitem(service._models, "en", {"bigrams": {}})
     test_db_session.add(
         Symbol(label="cookie", category="noun", language="en", is_builtin=True)
@@ -420,7 +500,7 @@ def test_predict_next_appends_punctuation_when_budget_allows(
     analytics.suggest_next_symbol.side_effect = [
         [],  # history tier: no user history
         [
-            {"symbol_id": None, "label": "cookie", "category": "noun"}
+            {"symbol_id": None, "label": "cookie", "category": "noun", "language": "en"}
         ],  # popular tier
     ]
     monkeypatch.setattr(service, "analytics_service", analytics)
@@ -446,9 +526,6 @@ def test_predict_next_popular_tier_failure_is_explicit(
 ):
     """A failing analytics call during the popular tier raises, never fabricates."""
     service = PredictionService()
-    monkeypatch.setattr(
-        prediction_module, "translate_text", lambda text, _target_lang: text
-    )
     monkeypatch.setitem(service._models, "en", {"bigrams": {}})
 
     analytics = Mock()

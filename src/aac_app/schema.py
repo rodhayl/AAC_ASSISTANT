@@ -75,6 +75,7 @@ def _ensure_sqlite_columns(engine: Engine) -> None:
             ("symbol_usage_logs", "symbol_category", "VARCHAR(50)"),
             ("symbol_usage_logs", "semantic_intent", "VARCHAR(20)"),
             ("symbol_usage_logs", "context_topic", "VARCHAR(100)"),
+            ("learning_sessions", "board_id", "INTEGER"),
         )
         for table, column, definition in columns:
             if table_exists(table) and not has_column(table, column):

@@ -1,4 +1,10 @@
-export type SavedTopic = { id: number; board: string; topic: string; createdBy: string };
+export type SavedTopic = {
+  id: number;
+  board: string;
+  boardId?: number;
+  topic: string;
+  createdBy: string;
+};
 
 const keyForUser = (userId: number) => `learning-topics-${userId}`;
 

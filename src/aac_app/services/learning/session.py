@@ -72,6 +72,7 @@ class SessionLifecycleMixin:
                     user_id=user_id,
                     topic_name=topic,
                     purpose=purpose,
+                    board_id=board_id,
                     mode_key=mode_key,
                     status="active",
                     conversation_history=[],
@@ -213,6 +214,7 @@ class SessionLifecycleMixin:
                     "id": session_id,
                     "session_id": session_id,  # Keep for backward compatibility
                     "topic": session.topic_name,
+                    "board_id": session.board_id,
                     "status": session.status,
                     "comprehension_score": session.comprehension_score,
                     "questions_asked": session.questions_asked,
@@ -244,6 +246,7 @@ class SessionLifecycleMixin:
                         {
                             "id": s.id,
                             "topic": s.topic_name,
+                            "board_id": s.board_id,
                             "purpose": s.purpose or "practice",
                             "status": s.status,
                             "created_at": (s.started_at.isoformat() if s.started_at else None),

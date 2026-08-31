@@ -26,6 +26,13 @@ class LearningSession(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     topic_name = Column(String(100), nullable=False)
     purpose = Column(Text)
+    # Keep the board context with the session so Smartbar suggestions remain
+    # scoped after a session is loaded from history or the page is revisited.
+    board_id = Column(
+        Integer,
+        ForeignKey("communication_boards.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     # Learning mode key (e.g. "practice", "regression_mode"); the mode's
     # prompt_instruction is appended to the LLM system prompt for this session.
     mode_key = Column(String(50), nullable=True)

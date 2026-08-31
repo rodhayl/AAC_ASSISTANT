@@ -19,6 +19,7 @@ interface WithProvider {
 export interface SessionHistoryItem {
   id: number;
   topic: string;
+  board_id?: number;
   purpose: string;
   status: string;
   created_at: string;
@@ -688,6 +689,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
         currentSession: {
           session_id: sessionData.id,
           success: true,
+          board_id: sessionData.board_id,
           welcome_message: messages[0]?.content || ''
         },
         messages,

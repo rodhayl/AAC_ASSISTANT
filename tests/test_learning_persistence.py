@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import LearningSession, User
+from src.aac_app.models import BoardSymbol, CommunicationBoard, LearningSession, Symbol, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.aac_app.services.learning.history import (
     MAX_CONVERSATION_HISTORY_ENTRIES,
@@ -110,6 +110,63 @@ def test_start_session_creates_persisted_record(
     # can reconstruct the complete conversation after a reload.
     assert session.conversation_history
     assert session.conversation_history[0]["type"] == "question"
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_session_board_context_persists_into_progress_and_history(
+    regular_user, user_token, test_db_session: Session
+):
+    """A session keeps its board ID so loaded Learning pages stay board-scoped."""
+    board = CommunicationBoard(
+        user_id=regular_user.id,
+        name="Animals board",
+        is_public=True,
+    )
+    symbol = Symbol(label="dog", category="animal", language="en", is_builtin=True)
+    test_db_session.add_all([board, symbol])
+    test_db_session.flush()
+    test_db_session.add(
+        BoardSymbol(
+            board_id=board.id,
+            symbol_id=symbol.id,
+            position_x=0,
+            position_y=0,
+            is_visible=True,
+        )
+    )
+    test_db_session.commit()
+
+    headers = {"Authorization": f"Bearer {user_token}"}
+    response = client.post(
+        "/api/learning/start",
+        json={
+            "topic": "animals",
+            "purpose": "practice",
+            "difficulty": "basic",
+            "board_id": board.id,
+        },
+        params={"user_id": regular_user.id},
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    session_id = response.json()["session_id"]
+    assert response.json()["board_id"] == board.id
+
+    stored = test_db_session.get(LearningSession, session_id)
+    assert stored is not None
+    assert stored.board_id == board.id
+
+    progress = client.get(f"/api/learning/{session_id}/progress", headers=headers)
+    assert progress.status_code == 200, progress.text
+    assert progress.json()["board_id"] == board.id
+
+    history = client.get(
+        f"/api/learning/history/{regular_user.id}", headers=headers
+    )
+    assert history.status_code == 200, history.text
+    item = next(row for row in history.json()["sessions"] if row["id"] == session_id)
+    assert item["board_id"] == board.id
 
 
 @pytest.mark.usefixtures("setup_test_db")

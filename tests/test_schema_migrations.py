@@ -56,6 +56,27 @@ def test_schema_ensure_upgrades_legacy_sqlite_without_losing_data():
         connection.execute(
             text(
                 """
+                CREATE TABLE learning_sessions (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    topic_name VARCHAR(100) NOT NULL,
+                    purpose TEXT,
+                    mode_key VARCHAR(50),
+                    status VARCHAR(20),
+                    comprehension_score FLOAT,
+                    questions_asked INTEGER,
+                    questions_answered INTEGER,
+                    correct_answers INTEGER,
+                    conversation_history JSON,
+                    started_at DATETIME,
+                    ended_at DATETIME
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
                 CREATE TABLE learning_modes (
                     id INTEGER PRIMARY KEY,
                     created_at DATETIME
@@ -94,6 +115,9 @@ def test_schema_ensure_upgrades_legacy_sqlite_without_losing_data():
     } <= settings_columns
     assert "updated_at" in {
         column["name"] for column in inspector.get_columns("learning_modes")
+    }
+    assert "board_id" in {
+        column["name"] for column in inspector.get_columns("learning_sessions")
     }
 
     with engine.connect() as connection:

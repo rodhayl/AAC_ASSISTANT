@@ -332,6 +332,7 @@ export function LearningChatPanel({
         isLoading={isLoading}
         isStartingSession={isStartingSession}
         boardId={currentSession?.board_id ?? null}
+        topic={currentSession?.topic ?? null}
         startRecording={startRecording}
         stopRecording={stopRecording}
         sendRecording={sendRecording}
