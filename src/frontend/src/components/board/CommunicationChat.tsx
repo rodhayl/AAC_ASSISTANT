@@ -34,6 +34,7 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const initAttempted = useRef(false);
   const topic = boardName.trim() || t('topics.general');
+  const defaultLearningModeKey = user?.settings?.default_learning_mode || 'practice';
 
   const resolveAssistantText = useCallback((raw: string) => {
     if (!raw) return raw;
@@ -62,12 +63,13 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
         purpose: 'communication board',
         difficulty: 'adaptive',
         board_id: boardId,
+        mode_key: defaultLearningModeKey,
       }, user.id).catch(err => {
         console.error('Failed to auto-start session:', err);
         initAttempted.current = false;
       });
     }
-  }, [currentSession, user, startSession, isLoading, error, topic, boardId]);
+  }, [currentSession, user, startSession, isLoading, error, topic, boardId, defaultLearningModeKey]);
 
   const resolveSpokenText = useCallback(
     (raw: string) => {
@@ -101,6 +103,7 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
           purpose: 'communication board',
           difficulty: 'adaptive',
           board_id: boardId,
+          mode_key: defaultLearningModeKey,
         }, user.id);
         activeSession = useLearningStore.getState().currentSession;
       } catch (err) {
@@ -134,6 +137,7 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
     microphoneAccessMessage: t('errors.microphoneAccess'),
     sessionTopic: topic,
     sessionBoardId: boardId,
+    modeKey: defaultLearningModeKey,
   });
 
   return (

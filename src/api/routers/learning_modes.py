@@ -3,7 +3,7 @@ from loguru import logger
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import LearningMode, User
+from src.aac_app.models import LearningMode, User, UserSettings
 from src.aac_app.services.guardian_profile_service import get_guardian_profile_service
 from src.aac_app.services.learning.service import LearningCompanionService
 from src.api.deps import (
@@ -262,6 +262,39 @@ def delete_learning_mode(
                 detail=get_text(user=current_user, key="errors.learningModes.deleteForbidden"),
             )
 
+    deleted_key = db_mode.key
     db.delete(db_mode)
+    db.flush()
+
+    # A deleted mode must never remain selected as a user's default. Repair
+    # every affected settings row against that user's visible modes so a later
+    # session start cannot receive an inaccessible key.
+    affected_settings = (
+        db.query(UserSettings)
+        .filter(UserSettings.default_learning_mode == deleted_key)
+        .all()
+    )
+    for settings in affected_settings:
+        fallback = (
+            db.query(LearningMode)
+            .filter(
+                (LearningMode.created_by.is_(None))
+                | (LearningMode.created_by == settings.user_id)
+            )
+            .order_by(LearningMode.id)
+            .first()
+        )
+        settings.default_learning_mode = fallback.key if fallback else None
+
     db.commit()
-    return {"success": True}
+    current_settings = (
+        db.query(UserSettings)
+        .filter(UserSettings.user_id == current_user.id)
+        .first()
+    )
+    return {
+        "success": True,
+        "default_learning_mode": (
+            current_settings.default_learning_mode if current_settings else "practice"
+        ),
+    }

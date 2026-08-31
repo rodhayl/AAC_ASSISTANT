@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { post, get } = vi.hoisted(() => ({
+const { post, get, cancelAll } = vi.hoisted(() => ({
   post: vi.fn(),
   get: vi.fn(),
+  cancelAll: vi.fn(),
+}));
+
+vi.mock('../src/lib/tts', () => ({
+  tts: { cancelAll },
 }));
 
 vi.mock('../src/lib/api', () => ({
@@ -55,6 +60,7 @@ describe('learningStore adaptive question flow', () => {
 
     await useLearningStore.getState().submitAnswer(7, 'Answer');
     useLearningStore.getState().resetSession();
+    expect(cancelAll).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(NEXT_QUESTION_REVEAL_DELAY_MS);
 
     const state = useLearningStore.getState();
@@ -517,8 +523,14 @@ describe('learningStore adaptive question flow', () => {
     expect(state.progressStats?.difficulty).toBe('advanced');
   });
 
-  it('endSession captures the summary returned by the backend', async () => {
-    useLearningStore.setState({ currentSession: { session_id: 7, success: true } });
+  it('endSession clears the conversation while capturing the summary', async () => {
+    useLearningStore.setState({
+      currentSession: { session_id: 7, success: true },
+      messages: [
+        { role: 'assistant', content: 'Welcome' },
+        { role: 'user', content: 'Answer' },
+      ],
+    });
     post.mockResolvedValue({
       data: {
         success: true,
@@ -534,6 +546,9 @@ describe('learningStore adaptive question flow', () => {
 
     const state = useLearningStore.getState();
     expect(state.currentSession).toBeNull();
+    expect(state.messages).toEqual([]);
+    expect(state.skipInitialSpeech).toBe(false);
+    expect(post.mock.calls.some(([url]) => url === '/learning/start')).toBe(false);
     expect(state.lastSessionSummary?.summary).toBe('Great work!');
     expect(state.lastSessionSummary?.comprehension_score).toBe(0.75);
 
@@ -730,6 +745,7 @@ describe('learningStore resilience and history reconstruction', () => {
     await expect(
       useLearningStore.getState().startSession({ topic: 'T', purpose: 'practice' }, 1),
     ).rejects.toThrow();
+    expect(cancelAll).toHaveBeenCalledTimes(1);
 
     const state = useLearningStore.getState();
     expect(state.error).toBe('provider unavailable');
@@ -826,6 +842,7 @@ describe('learningStore resilience and history reconstruction', () => {
 
     await useLearningStore.getState().loadSession(9);
 
+    expect(cancelAll).toHaveBeenCalled();
     const contents = useLearningStore.getState().messages.map((message) => message.content);
     expect(contents).toContain('What color is the sky?');
     expect(contents).toContain('Blue');

@@ -85,7 +85,13 @@ export function Settings() {
         onSave={preferences.handleSavePreferences}
       />
       <AiProviderTab key={`${user?.id ?? 'anonymous'}:${user?.user_type ?? 'unknown'}`} />
-      {isStaff && <LearningModesTab />}
+      {isStaff && (
+        <LearningModesTab
+          preferences={preferences.preferences}
+          setPreferences={preferences.setPreferences}
+          onDefaultModeChange={preferences.saveDefaultLearningMode}
+        />
+      )}
       <DataManagementTab />
     </div>
   );

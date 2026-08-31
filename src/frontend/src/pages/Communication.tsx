@@ -53,6 +53,7 @@ export function Communication() {
   const resetSession = useLearningStore((state) => state.resetSession);
   const currentSession = useLearningStore((state) => state.currentSession);
   const isChatLoading = useLearningStore((state) => state.isLoading);
+  const defaultLearningModeKey = user?.settings?.default_learning_mode || 'practice';
 
   const [activeBoardId, setActiveBoardId] = useState<number | null>(() => {
     const id = searchParams.get('boardId');
@@ -104,7 +105,8 @@ export function Communication() {
         topic,
         purpose,
         difficulty: 'basic',
-        board_id: boardId
+        board_id: boardId,
+        mode_key: defaultLearningModeKey,
       }, user.id);
       addToast(t('common:sessionStarted'), 'success');
       // If a board was selected, we might want to switch to it? 
@@ -284,6 +286,7 @@ export function Communication() {
           difficulty: "basic",
           purpose: "communication board",
           board_id: currentBoard?.id,
+          mode_key: defaultLearningModeKey,
         }, user.id);
 
         // Get the newly created session
@@ -318,7 +321,7 @@ export function Communication() {
         addToast(t('common:sendToChatFailed'), 'error');
         setSentence(phrase);
       });
-  }, [sentence, currentSession, currentBoard, isChatLoading, submitSymbolAnswer, isChatOpen, user, startSession, addToast, t]);
+  }, [sentence, currentSession, currentBoard, defaultLearningModeKey, isChatLoading, submitSymbolAnswer, isChatOpen, user, startSession, addToast, t]);
 
   const handleHome = useCallback(() => {
     setActiveBoardId(null);

@@ -21,6 +21,7 @@ class UserPreferencesResponse(BaseModel):
     high_contrast: bool = False
     hover_speak_enabled: bool = False
     hover_speak_delay_ms: int = 1000
+    default_learning_mode: str = "practice"
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -43,6 +44,12 @@ class UserPreferencesUpdate(BaseModel):
     ignore_repeats: int | None = Field(None, le=2000)
     high_contrast: bool | None = None
     hover_speak_enabled: bool | None = None
+    default_learning_mode: str | None = Field(
+        None,
+        min_length=1,
+        max_length=50,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
     # Hover-to-speak delay: sub-200ms values fire on accidental fly-bys,
     # anything above 5s is indistinguishable from a disabled feature.
     hover_speak_delay_ms: int | None = Field(None, le=5000)

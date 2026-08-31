@@ -5,7 +5,7 @@ import os
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import LearningMode, User
+from src.aac_app.models import LearningMode, User, UserSettings
 from src.aac_app.services.learning.service import LearningCompanionService
 from src.api import schemas
 from src.api.deps import (
@@ -30,6 +30,55 @@ def get_text(user: User, key: str, **kwargs) -> str:
     return get_shared_text(user, key, namespace="pages/learning", **kwargs)
 
 
+def _visible_learning_mode(
+    db: Session,
+    user_id: int,
+    mode_key: str,
+    *,
+    include_all: bool = False,
+) -> LearningMode | None:
+    """Return a mode visible to the user who owns a learning session."""
+    query = db.query(LearningMode).filter(LearningMode.key == mode_key)
+    if not include_all:
+        query = query.filter(
+            (LearningMode.created_by.is_(None))
+            | (LearningMode.created_by == user_id)
+        )
+    return query.order_by(LearningMode.id).first()
+
+
+def _resolve_default_learning_mode(db: Session, user_id: int) -> str | None:
+    """Resolve the persisted default, falling back to an available mode."""
+    settings = (
+        db.query(UserSettings)
+        .filter(UserSettings.user_id == user_id)
+        .first()
+    )
+    preferred = getattr(settings, "default_learning_mode", None) or "practice"
+    if _visible_learning_mode(db, user_id, preferred) is not None:
+        return preferred
+
+    fallback = _visible_learning_mode(db, user_id, "practice")
+    if fallback is None:
+        fallback = (
+            db.query(LearningMode)
+            .filter(
+                (LearningMode.created_by.is_(None))
+                | (LearningMode.created_by == user_id)
+            )
+            .order_by(LearningMode.id)
+            .first()
+        )
+    if fallback is None:
+        return None
+
+    # Repair a stale preference when a mode was removed outside the normal
+    # settings flow, so subsequent sessions and preference reads converge.
+    if settings is not None and settings.default_learning_mode != fallback.key:
+        settings.default_learning_mode = fallback.key
+    return fallback.key
+
+
 @router.post("/start", response_model=schemas.LearningSessionResponse)
 def start_session(
     session_data: schemas.LearningSessionStart,
@@ -48,23 +97,22 @@ def start_session(
         board = get_board_or_404(db, session_data.board_id, current_user)
         require_board_view_access(board, current_user, db)
 
-    if session_data.mode_key:
-        mode_query = db.query(LearningMode).filter(LearningMode.key == session_data.mode_key)
-        if current_user.user_type != "admin":
-            mode_query = mode_query.filter(
-                (LearningMode.created_by.is_(None))
-                | (LearningMode.created_by == current_user.id)
-            )
-        mode = mode_query.order_by(LearningMode.id).first()
-        mode_visible = mode is not None
-        if not mode_visible:
-            raise HTTPException(
-                status_code=404,
-                # The learningModes keys live in the shared common namespace.
-                detail=get_shared_text(
-                    current_user, "errors.learningModes.notFound"
-                ),
-            )
+    effective_mode_key = session_data.mode_key
+    if effective_mode_key is None:
+        effective_mode_key = _resolve_default_learning_mode(db, user_id)
+    elif _visible_learning_mode(
+        db,
+        user_id,
+        effective_mode_key,
+        include_all=current_user.user_type == "admin",
+    ) is None:
+        raise HTTPException(
+            status_code=404,
+            # The learningModes keys live in the shared common namespace.
+            detail=get_shared_text(
+                current_user, "errors.learningModes.notFound"
+            ),
+        )
 
     result = service.start_learning_session(
         user_id=user_id,
@@ -72,7 +120,7 @@ def start_session(
         purpose=session_data.purpose,
         difficulty=session_data.difficulty,
         board_id=session_data.board_id,
-        mode_key=session_data.mode_key,
+        mode_key=effective_mode_key,
         db=db,
     )
 

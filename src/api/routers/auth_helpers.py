@@ -247,4 +247,7 @@ def build_preferences_response(
         hover_speak_delay_ms=bounded_hover_delay(
             getattr(settings, "hover_speak_delay_ms", 1000)
         ),
+        default_learning_mode=(
+            getattr(settings, "default_learning_mode", None) or "practice"
+        ),
     )

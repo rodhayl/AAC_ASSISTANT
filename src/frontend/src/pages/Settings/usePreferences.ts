@@ -8,6 +8,7 @@ import { normalizeUILanguage } from '../../lib/utils';
 import { useToastStore } from '../../store/toastStore';
 import { useTranslation } from 'react-i18next';
 import type { Preferences } from './types';
+import type { UserPreferences } from '../../types';
 
 const defaultPreferences = (user: ReturnType<typeof useAuthStore.getState>['user']): Preferences => ({
   tts_provider: user?.settings?.tts_provider === 'browser' ? 'browser' : 'kokoro',
@@ -23,6 +24,7 @@ const defaultPreferences = (user: ReturnType<typeof useAuthStore.getState>['user
   high_contrast: user?.settings?.high_contrast ?? false,
   hover_speak_enabled: user?.settings?.hover_speak_enabled ?? false,
   hover_speak_delay_ms: user?.settings?.hover_speak_delay_ms ?? 1000,
+  default_learning_mode: user?.settings?.default_learning_mode || 'practice',
 });
 
 export function usePreferences() {
@@ -77,6 +79,7 @@ export function usePreferences() {
           high_contrast: res.data.high_contrast ?? false,
           hover_speak_enabled: res.data.hover_speak_enabled ?? false,
           hover_speak_delay_ms: res.data.hover_speak_delay_ms ?? 1000,
+          default_learning_mode: res.data.default_learning_mode || 'practice',
         });
         useTTSStore.getState().setSelectedVoice(voice);
         useTTSStore.getState().setTTSProvider(res.data.tts_provider === 'browser' ? 'browser' : 'kokoro');
@@ -128,6 +131,56 @@ export function usePreferences() {
     [availableVoices, preferences.ui_language],
   );
 
+  const updateAuthSettings = useCallback((data: Record<string, unknown>) => {
+    useAuthStore.setState((state) => {
+      if (!state.user) return state;
+      return {
+        user: {
+          ...state.user,
+          settings: {
+            ...(state.user.settings || {}),
+            ...data,
+          } as UserPreferences,
+        },
+      };
+    });
+  }, []);
+
+  const notifyLearningModeChange = useCallback((defaultModeKey: string) => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('aac:learning-modes-changed', {
+        detail: { defaultModeKey },
+      }));
+    }
+  }, []);
+
+  const saveDefaultLearningMode = useCallback(async (defaultModeKey: string) => {
+    if (!user) return;
+    const previousModeKey = preferences.default_learning_mode || 'practice';
+    setPreferences((prev) => ({ ...prev, default_learning_mode: defaultModeKey }));
+    setPrefsLoading(true);
+    setPrefsSaveSuccess(false);
+    setPrefsSaveError(null);
+    try {
+      const res = await api.put('/auth/preferences', {
+        default_learning_mode: defaultModeKey,
+      });
+      const savedModeKey = res.data.default_learning_mode || defaultModeKey;
+      setPreferencesState((prev) => ({ ...prev, default_learning_mode: savedModeKey }));
+      updateAuthSettings(res.data);
+      notifyLearningModeChange(savedModeKey);
+      setPrefsSaveSuccess(true);
+      addToast(t('learningModes.defaultModeSaved'), 'success');
+    } catch (err: unknown) {
+      setPreferencesState((prev) => ({ ...prev, default_learning_mode: previousModeKey }));
+      setPrefsSaveError(t('errors.saveFailed'));
+      addToast(t('errors.saveFailed'), 'error');
+      throw err;
+    } finally {
+      setPrefsLoading(false);
+    }
+  }, [addToast, notifyLearningModeChange, preferences.default_learning_mode, setPreferences, t, updateAuthSettings, user]);
+
   const handleSavePreferences = async () => {
     setPrefsLoading(true);
     setPrefsSaveSuccess(false);
@@ -148,19 +201,8 @@ export function usePreferences() {
         setLocalVoice(preferences.tts_local_voice);
         setLocalSpeed(preferences.tts_local_speed);
 
-        useAuthStore.setState((state) => {
-          if (!state.user) return state;
-          return {
-            user: {
-              ...state.user,
-              settings: {
-                ...(state.user.settings || {}),
-                ...res.data,
-              },
-            },
-          };
-        });
-
+        updateAuthSettings(res.data);
+        notifyLearningModeChange(preferences.default_learning_mode || 'practice');
         setPrefsSaveSuccess(true);
         addToast(t('preferences.saved'), 'success');
       }
@@ -181,5 +223,6 @@ export function usePreferences() {
     prefsSaveSuccess,
     prefsSaveError,
     handleSavePreferences,
+    saveDefaultLearningMode,
   };
 }

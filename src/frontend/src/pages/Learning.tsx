@@ -51,15 +51,19 @@ export function Learning() {
   const difficultyOverride = useLearningStore((state) => state.difficultyOverride);
   const setDifficultyOverride = useLearningStore((state) => state.setDifficultyOverride);
   const user = useAuthStore((state) => state.user);
+  const defaultLearningModeKey = user?.settings?.default_learning_mode || 'practice';
   const addToast = useToastStore((state) => state.addToast);
   const fetchBoards = useBoardStore((state) => state.fetchBoards);
-  const { t, i18n } = useTranslation('learning');    const currentLang = i18n.language?.split('-')[0] || 'en';
+  const { t, i18n } = useTranslation('learning');
+  const currentLang = i18n.language?.split('-')[0] || 'en';
+  const modeTranslationRef = useRef(t);
+  modeTranslationRef.current = t;
   const symbolLanguage = currentLang === 'es' ? 'es' : 'en';
 
   const [input, setInput] = useState('');
   const [voiceEnabled, setVoiceEnabled] = useState(user?.settings?.voice_mode_enabled ?? true);
   const [showHistory, setShowHistory] = useState(false);
-  const [selectedModeKey, setSelectedModeKey] = useState('practice');
+  const [selectedModeKey, setSelectedModeKey] = useState(defaultLearningModeKey);
   const [availableModes, setAvailableModes] = useState<Array<{ id: number; name: string; key: string; description: string; auto_ask_enabled?: boolean }>>([]);
   const [savedTopics, setSavedTopics] = useState<SavedTopic[]>([]);
   const [symbolView, setSymbolView] = useState(false);
@@ -101,6 +105,7 @@ export function Learning() {
     microphoneAccessMessage: t('errors.microphoneAccess'),
     sessionDifficulty,
     sessionTopic: t('topics.audioConversation'),
+    modeKey: selectedModeKey,
   });
 
   useEffect(() => {
@@ -138,31 +143,70 @@ export function Learning() {
     saveTopicsForUser(user.id, savedTopics);
   }, [savedTopics, user?.id]);
 
+  const loadAvailableModes = useCallback(async (preferredModeKey?: string) => {
+    if (!user?.id) return;
+    try {
+      // System modes (created_by null) keep the seeded English name in the
+      // DB; translate by key so the dropdown matches the UI language.
+      // Custom teacher modes always show their stored name.
+      const response = await api.get('/learning-modes/');
+      const modes = (response.data as Array<{
+        id: number;
+        name: string;
+        key: string;
+        description: string;
+        auto_ask_enabled?: boolean;
+        created_by?: number | null;
+      }>).map((mode) => ({
+        ...mode,
+        name: mode.created_by == null
+          ? modeTranslationRef.current(`modes.${mode.key}`, mode.name, { lng: currentLang })
+          : mode.name,
+      }));
+      setAvailableModes(modes);
+      setSelectedModeKey((currentModeKey) => {
+        const configuredModeKey = defaultLearningModeKey;
+        if (preferredModeKey && modes.some((mode) => mode.key === preferredModeKey)) {
+          return preferredModeKey;
+        }
+        if (modes.some((mode) => mode.key === currentModeKey)) {
+          return currentModeKey;
+        }
+        if (modes.some((mode) => mode.key === configuredModeKey)) {
+          return configuredModeKey;
+        }
+        return modes[0]?.key || configuredModeKey;
+      });
+    } catch (fetchError) {
+      console.error('Failed to fetch learning modes', fetchError);
+    }
+  }, [currentLang, defaultLearningModeKey, user?.id]);
+
   useEffect(() => {
     if (!user?.id) return;
     fetchBoards(user.id);
-    api.get('/learning-modes/')
-      .then((response) => {
-        // System modes (created_by null) keep the seeded English name in the
-        // DB; translate by key so the dropdown matches the UI language.
-        // Custom teacher modes always show their stored name.
-        const modes = (response.data as Array<{
-          id: number;
-          name: string;
-          key: string;
-          description: string;
-          auto_ask_enabled?: boolean;
-          created_by?: number | null;
-        }>).map((mode) => ({
-          ...mode,
-          name: mode.created_by == null
-            ? t(`modes.${mode.key}`, mode.name)
-            : mode.name,
-        }));
-        setAvailableModes(modes);
-      })
-      .catch((fetchError) => console.error('Failed to fetch learning modes', fetchError));
-  }, [fetchBoards, t, user?.id]);
+    void loadAvailableModes();
+  }, [fetchBoards, loadAvailableModes, user?.id]);
+
+  // A preference response can arrive after the page first renders. Once it
+  // does, use it as the next session's default without overriding a temporary
+  // choice made in the dropdown until the account setting actually changes.
+  useEffect(() => {
+    setSelectedModeKey(defaultLearningModeKey);
+  }, [defaultLearningModeKey, user?.id]);
+
+  // Settings and other same-page surfaces announce mode catalog/default
+  // changes. Refresh only this selector; the rest of the page stays mounted.
+  useEffect(() => {
+    const handleLearningModesChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ defaultModeKey?: string }>).detail;
+      const preferredModeKey = detail?.defaultModeKey;
+      if (preferredModeKey) setSelectedModeKey(preferredModeKey);
+      void loadAvailableModes(preferredModeKey);
+    };
+    window.addEventListener('aac:learning-modes-changed', handleLearningModesChanged);
+    return () => window.removeEventListener('aac:learning-modes-changed', handleLearningModesChanged);
+  }, [loadAvailableModes]);
 
   useEffect(() => {
     if (user?.id) {

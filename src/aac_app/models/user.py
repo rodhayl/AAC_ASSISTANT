@@ -53,6 +53,9 @@ class UserSettings(Base):
     # Speak a symbol suggestion aloud when the pointer rests on it.
     hover_speak_enabled = Column(Boolean, default=False, server_default="0")
     hover_speak_delay_ms = Column(Integer, default=1000, server_default="1000")
+    # Learning mode used when a section starts a session without an explicit
+    # mode selection. The key is validated against the user's visible modes.
+    default_learning_mode = Column(String(50), default="practice", server_default="practice")
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 

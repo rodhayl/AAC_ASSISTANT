@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { AlertCircle, Check, Copy, Edit2, Eye, Plus, Trash2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
@@ -12,10 +12,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../components/ui/dialog';
-import type { LearningMode } from './types';
+import type { LearningMode, Preferences } from './types';
 import { Button } from '../../components/ui/button';
 
 import { FormLabel } from '@/components/ui/FormLabel';
+interface LearningModesTabProps {
+  preferences?: Preferences;
+  setPreferences?: Dispatch<SetStateAction<Preferences>>;
+  onDefaultModeChange?: (modeKey: string) => Promise<void>;
+}
+
 interface PreviewStudent {
   id: number;
   username: string;
@@ -41,7 +47,11 @@ const EMPTY_MODE_FORM: ModeForm = {
   auto_ask_enabled: true,
 };
 
-export function LearningModesTab() {
+export function LearningModesTab({
+  preferences,
+  setPreferences,
+  onDefaultModeChange,
+}: LearningModesTabProps = {}) {
   const user = useAuthStore(state => state.user);
   const { t } = useTranslation('settings');
   const [learningModes, setLearningModes] = useState<LearningMode[]>([]);
@@ -51,6 +61,13 @@ export function LearningModesTab() {
   const [modeSuccess, setModeSuccess] = useState<string | null>(null);
   const [pendingDeleteMode, setPendingDeleteMode] = useState<LearningMode | null>(null);
   const [deletingMode, setDeletingMode] = useState(false);
+  const [savingDefaultMode, setSavingDefaultMode] = useState(false);
+
+  const defaultModeKey =
+    preferences?.default_learning_mode || user?.settings?.default_learning_mode || 'practice';
+  const defaultModeOptionKey = learningModes.some((mode) => mode.key === defaultModeKey)
+    ? defaultModeKey
+    : learningModes[0]?.key || defaultModeKey;
 
   // System prompt preview state
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -80,12 +97,25 @@ export function LearningModesTab() {
   // selection) are ignored when a newer request has already started.
   const previewRequestIdRef = useRef(0);
 
-  const fetchLearningModes = useCallback(() => {
-    api
-      .get('/learning-modes/')
-      .then((res) => setLearningModes(res.data))
-      .catch((err) => console.error('Failed to fetch modes', err));
+  const fetchLearningModes = useCallback(async () => {
+    try {
+      const res = await api.get('/learning-modes/');
+      const modes = res.data as LearningMode[];
+      setLearningModes(modes);
+      return modes;
+    } catch (err) {
+      console.error('Failed to fetch modes', err);
+      return [];
+    }
   }, []);
+
+  const notifyLearningModesChanged = useCallback((nextDefaultModeKey?: string) => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('aac:learning-modes-changed', {
+        detail: { defaultModeKey: nextDefaultModeKey || defaultModeKey },
+      }));
+    }
+  }, [defaultModeKey]);
 
   useEffect(() => {
     if (user?.user_type === 'admin' || user?.user_type === 'teacher') {
@@ -246,7 +276,8 @@ export function LearningModesTab() {
         await api.post('/learning-modes/', modeForm);
         setModeSuccess(t('learningModes.created'));
       }
-      fetchLearningModes();
+      await fetchLearningModes();
+      notifyLearningModesChanged();
       handleCancelModeEdit();
     } catch (err: unknown) {
       setModeError(extractError(err, t('learningModes.saveFailed')));
@@ -262,15 +293,51 @@ export function LearningModesTab() {
     if (!pendingDeleteMode) return;
     setDeletingMode(true);
     try {
-      await api.delete(`/learning-modes/${pendingDeleteMode.id}`);
+      const response = await api.delete(`/learning-modes/${pendingDeleteMode.id}`);
+      const deletedKey = pendingDeleteMode.key;
+      const nextDefaultModeKey = response.data?.default_learning_mode as string | undefined;
       setPendingDeleteMode(null);
-      fetchLearningModes();
+      const modes = await fetchLearningModes();
+      let resolvedDefaultModeKey = nextDefaultModeKey || defaultModeKey;
+      let defaultChangeNotified = false;
+      if (deletedKey === defaultModeKey || !modes.some((mode) => mode.key === resolvedDefaultModeKey)) {
+        resolvedDefaultModeKey = modes[0]?.key || 'practice';
+        if (onDefaultModeChange) {
+          await onDefaultModeChange(resolvedDefaultModeKey);
+          // The persistence callback announces successful default changes.
+          defaultChangeNotified = true;
+        } else {
+          setPreferences?.((prev) => ({ ...prev, default_learning_mode: resolvedDefaultModeKey }));
+        }
+      }
+      if (!defaultChangeNotified) {
+        notifyLearningModesChanged(resolvedDefaultModeKey);
+      }
       setModeSuccess(t('learningModes.deleted'));
     } catch (err: unknown) {
       setModeError(extractError(err, t('learningModes.deleteFailed')));
       setPendingDeleteMode(null);
     } finally {
       setDeletingMode(false);
+    }
+  };
+
+  const handleDefaultModeChange = async (modeKey: string) => {
+    if (modeKey === defaultModeKey) return;
+    setSavingDefaultMode(true);
+    try {
+      if (onDefaultModeChange) {
+        // The persistence callback also announces the successful change.
+        await onDefaultModeChange(modeKey);
+      } else {
+        setPreferences?.((prev) => ({ ...prev, default_learning_mode: modeKey }));
+        notifyLearningModesChanged(modeKey);
+      }
+    } catch {
+      // The saving hook displays the localized error and restores the prior
+      // value; keep the selector usable if persistence fails.
+    } finally {
+      setSavingDefaultMode(false);
     }
   };
 
@@ -300,6 +367,26 @@ export function LearningModesTab() {
       </div>
 
       <div className="p-6">
+        <div className="mb-6 flex flex-col gap-3 rounded-lg border border-brand/20 bg-brand/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-medium text-foreground">{t('learningModes.defaultMode')}</p>
+            <p className="text-sm text-muted-foreground">{t('learningModes.defaultModeHelp')}</p>
+          </div>
+          <select
+            id="default-learning-mode"
+            name="default_learning_mode"
+            aria-label={t('learningModes.defaultMode')}
+            value={defaultModeOptionKey}
+            disabled={savingDefaultMode || learningModes.length === 0}
+            onChange={(event) => { void handleDefaultModeChange(event.target.value); }}
+            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground focus:ring-2 focus:ring-brand sm:w-64 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {learningModes.map((mode) => (
+              <option key={mode.key} value={mode.key}>{mode.name}</option>
+            ))}
+          </select>
+        </div>
+
         {modeError && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 px-4 py-3 rounded-lg flex items-center mb-4">
             <AlertCircle className="w-5 h-5 mr-2" />

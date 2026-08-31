@@ -77,13 +77,15 @@ vi.mock('../src/lib/api', () => {
   };
 });
 
-const { mockTtsEnqueue, mockLanguage } = vi.hoisted(() => ({
+const { mockTtsEnqueue, mockTtsCancelAll, mockLanguage } = vi.hoisted(() => ({
   mockTtsEnqueue: vi.fn(),
+  mockTtsCancelAll: vi.fn(),
   mockLanguage: { value: 'en' },
 }));
 vi.mock('../src/lib/tts', () => ({
   tts: {
     enqueue: mockTtsEnqueue,
+    cancelAll: mockTtsCancelAll,
   },
 }));
 
@@ -157,6 +159,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     __startSession.mockReset();
     __submitAnswer.mockReset();
     mockTtsEnqueue.mockReset();
+    mockTtsCancelAll.mockReset();
     mockLanguage.value = 'en';
     
     // Reset store state
@@ -399,6 +402,7 @@ describe('Learning symbol-first and audio-first flows', () => {
 
   it('voice: speaks the last assistant message through the TTS queue', async () => {
     const store = (await import('../src/store/learningStore')).__mockStore;
+    store.currentSession = { session_id: 12, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
     store.messages = [{ role: 'assistant', content: 'Hello there' }];
 
     render(<Learning />);
@@ -436,6 +440,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledTimes(1));
 
     store.currentSession = { session_id: 2, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
+    store.messages = [{ role: 'assistant', content: 'Hello there' }];
     rerender(<Learning />);
     await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledTimes(2));
   });

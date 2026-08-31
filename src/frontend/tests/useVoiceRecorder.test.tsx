@@ -62,6 +62,33 @@ describe('useVoiceRecorder lifecycle', () => {
     vi.unstubAllGlobals();
   });
 
+  it('passes the selected default mode when voice starts a new session', async () => {
+    const stream = makeStream();
+    const options = {
+      ...makeOptions(),
+      currentSession: null,
+      userId: 7,
+      modeKey: 'roleplay',
+    };
+    vi.stubGlobal('navigator', {
+      mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+    });
+    const { result } = renderHook(() => useVoiceRecorder(options));
+
+    await act(async () => {
+      await result.current.startRecording();
+    });
+
+    expect(options.startSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        topic: 'Audio Conversation',
+        purpose: 'voice',
+        mode_key: 'roleplay',
+      }),
+      7,
+    );
+  });
+
   it('does not resurrect a discarded recording when stop is delivered late', async () => {
     const stream = makeStream();
     vi.stubGlobal('navigator', {

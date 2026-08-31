@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LearningModesTab } from '../src/pages/Settings/LearningModesTab';
+import type { Preferences } from '../src/pages/Settings/types';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -8,6 +9,9 @@ vi.mock('react-i18next', () => ({
       const table: Record<string, string> = {
         'tabs.learningModes': 'Learning Modes',
         'learningModes.subtitle': 'Configure learning modes',
+        'learningModes.defaultMode': 'Default learning mode',
+        'learningModes.defaultModeHelp': 'Used automatically for new sessions',
+        'learningModes.defaultModeSaved': 'Default learning mode saved',
         'learningModes.addNew': 'Add New Learning Mode',
         'learningModes.createNew': 'Create New Learning Mode',
         'learningModes.editMode': 'Edit Learning Mode',
@@ -76,9 +80,10 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-const { get, post, delete: deleteApi } = vi.hoisted(() => ({
+const { get, post, put, delete: deleteApi } = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
+  put: vi.fn(),
   delete: vi.fn(),
 }));
 
@@ -86,7 +91,7 @@ vi.mock('../src/lib/api', () => ({
   default: {
     get,
     post,
-    put: vi.fn(),
+    put,
     delete: deleteApi,
   },
   extractError: (error: { message?: string } | undefined, fallback: string) =>
@@ -108,6 +113,8 @@ describe('LearningModesTab preview', () => {
   beforeEach(() => {
     get.mockReset();
     post.mockReset();
+    put.mockReset();
+    put.mockResolvedValue({ data: {} });
     deleteApi.mockReset();
     get.mockImplementation((url: string) => {
       if (url.includes('/learning-modes/')) return Promise.resolve({ data: [] });
@@ -418,6 +425,116 @@ describe('LearningModesTab preview', () => {
   });
 });
 
+describe('LearningModesTab default mode', () => {
+  const modes = [
+    {
+      id: 1,
+      name: 'Practice',
+      key: 'practice',
+      description: 'Adaptive practice',
+      prompt_instruction: 'Ask practice questions.',
+      is_custom: false,
+      created_by: null,
+    },
+    {
+      id: 2,
+      name: 'Andaluz',
+      key: 'andalusian',
+      description: 'Andalusian Spanish',
+      prompt_instruction: 'Speak like an Andalusian.',
+      is_custom: true,
+      created_by: 1,
+    },
+  ];
+
+  const preferences: Preferences = {
+    tts_provider: 'kokoro',
+    tts_voice: 'default',
+    tts_local_voice: 'default',
+    tts_local_speed: 1,
+    ui_language: 'en-US',
+    notifications_enabled: true,
+    voice_mode_enabled: true,
+    dark_mode: false,
+    dwell_time: 0,
+    ignore_repeats: 0,
+    high_contrast: false,
+    hover_speak_enabled: false,
+    hover_speak_delay_ms: 1000,
+    default_learning_mode: 'andalusian',
+  };
+
+  beforeEach(() => {
+    get.mockReset();
+    put.mockReset();
+    post.mockReset();
+    deleteApi.mockReset();
+    get.mockImplementation((url: string) => {
+      if (url.includes('/learning-modes/')) return Promise.resolve({ data: modes });
+      return Promise.resolve({ data: [] });
+    });
+    put.mockResolvedValue({ data: { default_learning_mode: 'practice' } });
+  });
+
+  it('loads the persisted default and saves a new selection', async () => {
+    const onDefaultModeChange = vi.fn().mockResolvedValue(undefined);
+    render(
+      <LearningModesTab
+        preferences={preferences}
+        onDefaultModeChange={onDefaultModeChange}
+      />,
+    );
+
+    const select = await screen.findByRole('combobox', { name: 'Default learning mode' });
+    expect(select).toHaveValue('andalusian');
+
+    fireEvent.change(select, { target: { value: 'practice' } });
+
+    await waitFor(() => {
+      expect(onDefaultModeChange).toHaveBeenCalledWith('practice');
+    });
+  });
+
+  it('refreshes the mode options after creating a mode without a page reload', async () => {
+    let modeFetches = 0;
+    const newMode = {
+      id: 3,
+      name: 'Conversation',
+      key: 'conversation_custom',
+      description: 'Conversation',
+      prompt_instruction: 'Talk naturally.',
+      is_custom: true,
+      created_by: 1,
+    };
+    get.mockImplementation((url: string) => {
+      if (url.includes('/learning-modes/')) {
+        modeFetches += 1;
+        return Promise.resolve({ data: modeFetches === 1 ? modes.slice(0, 1) : [...modes, newMode] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    post.mockResolvedValue({ data: newMode });
+
+    render(<LearningModesTab preferences={preferences} />);
+    fireEvent.click(await screen.findByText('Add New Learning Mode'));
+    fireEvent.change(screen.getByPlaceholderText(/e.g. Daily Conversation/), {
+      target: { value: newMode.name },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/e.g. daily_conversation/), {
+      target: { value: newMode.key },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Instructions for the AI/), {
+      target: { value: newMode.prompt_instruction },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Save Mode/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Conversation' })).toBeInTheDocument();
+      expect(modeFetches).toBe(2);
+    });
+  });
+});
+
 describe('LearningModesTab delete', () => {
   const customMode = {
     id: 10,
@@ -436,6 +553,43 @@ describe('LearningModesTab delete', () => {
     });
     deleteApi.mockReset();
     deleteApi.mockResolvedValue({ data: {} });
+  });
+
+  it('refreshes the default combo after editing a mode without a page reload', async () => {
+    const originalMode = {
+      id: 11,
+      name: 'Original name',
+      key: 'editable_mode',
+      description: 'Editable',
+      prompt_instruction: 'Use this mode.',
+      is_custom: true,
+      created_by: 1,
+    };
+    const updatedMode = { ...originalMode, name: 'Updated name' };
+    let modeFetches = 0;
+    get.mockImplementation((url: string) => {
+      if (url.includes('/learning-modes/')) {
+        modeFetches += 1;
+        return Promise.resolve({ data: [modeFetches === 1 ? originalMode : updatedMode] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    put.mockResolvedValue({ data: updatedMode });
+
+    render(<LearningModesTab />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Original name' }));
+    fireEvent.change(screen.getByLabelText('Name'), {
+      target: { value: 'Updated name' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Save Mode/i }));
+
+    await waitFor(() => {
+      expect(put).toHaveBeenCalledWith('/learning-modes/11', expect.objectContaining({
+        name: 'Updated name',
+      }));
+      expect(screen.getByRole('option', { name: 'Updated name' })).toBeInTheDocument();
+      expect(modeFetches).toBe(2);
+    });
   });
 
   it('deletes a custom mode after confirming in the dialog', async () => {
@@ -460,7 +614,7 @@ describe('LearningModesTab delete', () => {
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
     expect(deleteApi).not.toHaveBeenCalled();
-    expect(screen.getByText('Andaluz')).toBeInTheDocument();
+    expect(screen.getAllByText('Andaluz').length).toBeGreaterThan(0);
   });
 
   it('surfaces an error when deleting a mode fails', async () => {

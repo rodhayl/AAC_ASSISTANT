@@ -2,16 +2,18 @@
 Tests for Learning Modes integration and regression testing for session conflicts.
 """
 
+from unittest.mock import MagicMock
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import LearningMode, User
+from src.aac_app.models import LearningMode, User, UserSettings
 from src.aac_app.services.auth_service import get_password_hash
 from src.aac_app.services.guardian_profile_service import get_guardian_profile_service
 from src.aac_app.services.learning.service import LearningCompanionService
-from src.api.deps import get_llm_provider, get_speech_provider
+from src.api.deps import get_learning_service, get_llm_provider, get_speech_provider
 from src.api.main import app
 
 
@@ -69,6 +71,89 @@ def override_providers(
     yield
     app.dependency_overrides.pop(get_llm_provider, None)
     app.dependency_overrides.pop(get_speech_provider, None)
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_default_learning_mode_is_used_when_session_omits_mode(
+    admin_user, admin_token, test_db_session: Session, client
+):
+    """A session without an explicit mode uses the user's saved default."""
+    mode = LearningMode(
+        name="Saved Default",
+        key="saved_default",
+        description="Saved default mode",
+        prompt_instruction="Use the saved default.",
+        is_custom=True,
+        created_by=admin_user.id,
+    )
+    settings = UserSettings(
+        user_id=admin_user.id,
+        default_learning_mode=mode.key,
+    )
+    test_db_session.add_all([mode, settings])
+    test_db_session.commit()
+
+    mock_learning_service = MagicMock()
+    mock_learning_service.start_learning_session.return_value = {
+        "success": True,
+        "session_id": 123,
+    }
+    app.dependency_overrides[get_learning_service] = lambda: mock_learning_service
+    try:
+        response = client.post(
+            "/api/learning/start",
+            params={"user_id": admin_user.id},
+            json={"topic": "Weather", "purpose": "practice"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_learning_service, None)
+
+    assert response.status_code == 200, response.text
+    mock_learning_service.start_learning_session.assert_called_once()
+    assert mock_learning_service.start_learning_session.call_args.kwargs["mode_key"] == mode.key
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_deleting_default_learning_mode_repairs_the_saved_preference(
+    admin_user, admin_token, test_db_session: Session, client
+):
+    """Deleting a selected mode immediately switches the default to a visible mode."""
+    fallback = LearningMode(
+        name="Practice",
+        key="practice",
+        prompt_instruction="Ask practice questions.",
+        is_custom=False,
+        created_by=None,
+    )
+    selected = LearningMode(
+        name="Selected",
+        key="selected_for_delete",
+        prompt_instruction="Use this mode.",
+        is_custom=True,
+        created_by=admin_user.id,
+    )
+    settings = UserSettings(
+        user_id=admin_user.id,
+        default_learning_mode=selected.key,
+    )
+    test_db_session.add_all([fallback, selected, settings])
+    test_db_session.commit()
+    test_db_session.refresh(selected)
+
+    response = client.delete(
+        f"/api/learning-modes/{selected.id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["default_learning_mode"] == fallback.key
+    saved_settings = (
+        test_db_session.query(UserSettings)
+        .filter(UserSettings.user_id == admin_user.id)
+        .one()
+    )
+    assert saved_settings.default_learning_mode == fallback.key
 
 
 @pytest.mark.usefixtures("setup_test_db")

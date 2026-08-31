@@ -6,6 +6,7 @@ interface UseVoiceRecorderOptions {
   currentSession: LearningSessionResponse | null;
   userId?: number;
   sessionBoardId?: number;
+  modeKey?: string;
   isLoading: boolean;
   sessionDifficulty: string;
   sessionTopic: string;
@@ -14,6 +15,7 @@ interface UseVoiceRecorderOptions {
     purpose: string;
     difficulty: string;
     board_id?: number;
+    mode_key?: string;
   }, userId: number) => Promise<void>;
   submitVoiceAnswer: (sessionId: number, audioBlob: Blob) => Promise<void>;
   addToast: (message: string, type?: ToastType) => void;
@@ -40,6 +42,7 @@ export function useVoiceRecorder({
   currentSession,
   userId,
   sessionBoardId,
+  modeKey,
   isLoading,
   sessionDifficulty,
   sessionTopic,
@@ -106,6 +109,7 @@ export function useVoiceRecorder({
             purpose: 'voice',
             difficulty: sessionDifficulty,
             board_id: sessionBoardId,
+            mode_key: modeKey,
           }, userId);
         } catch (error) {
           stopStream(stream);
@@ -180,6 +184,7 @@ export function useVoiceRecorder({
     sessionDifficulty,
     sessionTopic,
     sessionBoardId,
+    modeKey,
     startSession,
     userId,
   ]);

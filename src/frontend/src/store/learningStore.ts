@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import api, { extractError } from '../lib/api';
 import i18n from '../i18n/index';
+import { tts } from '../lib/tts';
 import { useAuthStore } from './authStore';
 import type {
   LearningSessionStart,
@@ -361,6 +362,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
   clearSessionSummary: () => set({ lastSessionSummary: null }),
 
   resetSession: () => {
+    tts.cancelAll();
     sessionEpoch += 1;
     questionRequestId += 1;
     answerRequestId += 1;
@@ -387,6 +389,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
 
   startSession: async (data, userId) => {
     const requestEpoch = ++sessionEpoch;
+    tts.cancelAll();
     cancelPendingAutoAsk();
     cancelAchievementCheck();
     set({
@@ -396,6 +399,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
       revealedAnswer: null,
       progressStats: null,
       lastSessionSummary: null,
+      skipInitialSpeech: false,
     });
     try {
       const response = await api.post('/learning/start', data, {
@@ -583,6 +587,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
 
   endSession: async (sessionId) => {
     if (get().currentSession?.session_id !== sessionId) return;
+    tts.cancelAll();
     const requestEpoch = ++sessionEpoch;
     cancelPendingAutoAsk();
     cancelAchievementCheck();
@@ -597,6 +602,11 @@ export const useLearningStore = create<LearningState>((set, get) => {
         lastAnswer: null,
         revealedAnswer: null,
         progressStats: null,
+        // The completed conversation belongs in history, not in the fresh
+        // composer state. Clearing it also prevents the speech hook from
+        // replaying old assistant messages when the session key becomes null.
+        messages: [],
+        skipInitialSpeech: false,
         lastSessionSummary: summary ?? null,
         isLoading: false,
       });
@@ -632,6 +642,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
 
   loadSession: async (sessionId) => {
     const requestEpoch = ++sessionEpoch;
+    tts.cancelAll();
     cancelPendingAutoAsk();
     cancelAchievementCheck();
     set({
@@ -640,6 +651,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
       revealedAnswer: null,
       progressStats: null,
       lastSessionSummary: null,
+      skipInitialSpeech: false,
     });
     try {
       const response = await api.get(`/learning/${sessionId}/progress`);

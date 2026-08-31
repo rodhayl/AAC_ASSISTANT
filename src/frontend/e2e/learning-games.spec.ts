@@ -60,6 +60,68 @@ test.describe('Learning', () => {
     }
   });
 
+  test('does not start another session after the current session is ended', async ({ page }) => {
+    let startRequests = 0;
+    page.on('request', request => {
+      if (request.url().includes('/api/learning/start') && request.method() === 'POST') {
+        startRequests += 1;
+      }
+    });
+    await page.route('**/api/learning/start**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          session_id: 900000 + startRequests,
+          welcome_message: 'E2E welcome',
+        }),
+      });
+    });
+    await page.route('**/api/learning/*/end', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          session_id: 900001,
+          summary: 'E2E session completed',
+          comprehension_score: 0,
+          questions_answered: 0,
+          correct_answers: 0,
+        }),
+      });
+    });
+    await page.route('**/api/achievements/user/*/check', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true }),
+      });
+    });
+
+    const startButton = page.getByTestId('learning-session-start');
+    await expect(startButton).toBeVisible();
+    await startButton.click();
+    await expect(page.getByTestId('learning-session-active')).toBeVisible();
+    expect(startRequests).toBe(1);
+
+    await page.getByTestId('learning-session-active').click();
+    const confirmation = page.getByRole('dialog');
+    await expect(confirmation).toBeVisible();
+    await confirmation.getByRole('button', { name: /end session|finalizar sesión/i }).click();
+
+    await expect(page.getByTestId('session-summary-modal')).toBeVisible();
+    await expect(page.getByTestId('learning-session-active')).not.toBeVisible();
+    await expect(page.getByTestId('learning-session-start')).toBeVisible();
+    await expect(page.locator('[role="log"]')).not.toContainText('E2E welcome');
+
+    // Keep the page mounted long enough to catch a delayed auto-start or a
+    // stale callback from the completed session.
+    await page.waitForTimeout(2000);
+    expect(startRequests).toBe(1);
+  });
+
   test('should chat with companion', async ({ page }) => {
     // Check if we are on the right page
     await expect(page).toHaveURL('/learning');

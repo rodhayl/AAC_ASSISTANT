@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Learning } from '../src/pages/Learning'
 
@@ -10,7 +10,10 @@ const authStoreMock = vi.hoisted(() => {
     id: 1,
     username: 'admin1',
     user_type: 'admin',
-    settings: { voice_mode_enabled: true },
+    settings: {
+      voice_mode_enabled: true,
+      default_learning_mode: undefined as string | undefined,
+    },
   }
   const state = { user, token: 'test-token' };
   const hook = ((selector?: (value: typeof state) => unknown) =>
@@ -22,14 +25,14 @@ const authStoreMock = vi.hoisted(() => {
     }
   }
   hook.getState = () => ({ user, token: 'test-token', logout: () => {} })
-  return hook
+  return { hook, user }
 })
 
 vi.mock('../src/lib/api', () => ({
   default: { get: getApi, post: postApi },
 }))
 
-vi.mock('../src/store/authStore', () => ({ useAuthStore: authStoreMock }))
+vi.mock('../src/store/authStore', () => ({ useAuthStore: authStoreMock.hook }))
 
 // The real learningStore is used on purpose: its startSession action performs
 // the POST to /learning/start, so asserting on postApi proves the selected
@@ -51,7 +54,7 @@ vi.mock('../src/store/toastStore', () => {
 // The page only enqueues speech for assistant messages; keep the TTS module
 // out of this test so the real i18n/speechSynthesis chain is not required.
 vi.mock('../src/lib/tts', () => ({
-  tts: { enqueue: vi.fn() },
+  tts: { enqueue: vi.fn(), cancelAll: vi.fn() },
 }))
 
 vi.mock('react-i18next', () => ({
@@ -135,6 +138,56 @@ describe('Learning mode dropdown', () => {
       data: { success: true, session_id: 99, welcome_message: 'Welcome' },
     })
     localStorage.clear()
+    authStoreMock.user.settings.default_learning_mode = undefined
+  })
+
+  it('uses the persisted default mode in the dropdown and session payload', async () => {
+    authStoreMock.user.settings.default_learning_mode = 'andalusian'
+    render(<Learning />)
+
+    const select = await screen.findByRole('combobox', { name: 'Mode:' })
+    expect(select).toHaveValue('andalusian')
+    fireEvent.click(screen.getByTestId('start-session'))
+
+    await waitFor(() => {
+      expect(postApi).toHaveBeenCalledWith(
+        '/learning/start',
+        expect.objectContaining({ mode_key: 'andalusian' }),
+        expect.anything(),
+      )
+    })
+  })
+
+  it('refreshes the mode catalog and default after a mode-change event', async () => {
+    const refreshedMode = {
+      id: 3,
+      name: 'Roleplay',
+      key: 'roleplay',
+      description: 'Scenario practice',
+    }
+    let modeFetches = 0
+    getApi.mockImplementation((url: string) => {
+      if (url.includes('/learning-modes/')) {
+        modeFetches += 1
+        return Promise.resolve({ data: modeFetches === 1 ? modes : [...modes, refreshedMode] })
+      }
+      return Promise.resolve({ data: { sessions: [] } })
+    })
+
+    render(<Learning />)
+    const select = await screen.findByRole('combobox', { name: 'Mode:' })
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('aac:learning-modes-changed', {
+        detail: { defaultModeKey: 'roleplay' },
+      }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Roleplay' })).toBeInTheDocument()
+      expect(select).toHaveValue('roleplay')
+    })
+    expect(modeFetches).toBe(2)
   })
 
   it('sends the mode key selected in the dropdown to the session start endpoint', async () => {

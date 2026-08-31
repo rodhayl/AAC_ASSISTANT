@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models import StudentTeacher, User, UserSettings
+from src.aac_app.models import LearningMode, StudentTeacher, User, UserSettings
 from src.aac_app.services.auth_service import get_password_hash
 from src.api.main import app
 from src.api.routers.auth_helpers import build_preferences_response
@@ -40,6 +40,7 @@ class TestBuildPreferencesResponse:
             "high_contrast": False,
             "hover_speak_enabled": False,
             "hover_speak_delay_ms": 1000,
+            "default_learning_mode": "practice",
         }
 
     def test_build_preferences_response_handles_legacy_and_null_values(self):
@@ -119,6 +120,7 @@ class TestBuildPreferencesResponse:
             "high_contrast": True,
             "hover_speak_enabled": True,
             "hover_speak_delay_ms": 1500,
+            "default_learning_mode": "practice",
         }
 
 
@@ -155,6 +157,7 @@ class TestUserPreferences:
         assert data["tts_local_speed"] == 1.0
         assert data["notifications_enabled"] is True
         assert data["dark_mode"] is False
+        assert data["default_learning_mode"] == "practice"
 
     def test_update_preferences(self, prefs_user):
         """Test updating user preferences"""
@@ -179,6 +182,43 @@ class TestUserPreferences:
         assert data["tts_local_speed"] == 1.5
         assert data["notifications_enabled"] is False
         assert data["dark_mode"] is True
+
+    def test_default_learning_mode_roundtrip_and_validation(self, prefs_user, test_db_session):
+        """The default mode is persisted only when it is visible to the user."""
+        mode = LearningMode(
+            name="Quiz",
+            key="quiz_preference",
+            description="Multiple-choice practice",
+            prompt_instruction="Ask quiz questions.",
+            is_custom=False,
+            created_by=None,
+        )
+        test_db_session.add(mode)
+        test_db_session.commit()
+
+        user_id, username, user_type = prefs_user
+        headers = create_test_headers(user_id, username, user_type)
+        response = client.put(
+            "/api/auth/preferences",
+            headers=headers,
+            json={"default_learning_mode": mode.key},
+        )
+        assert response.status_code == 200
+        assert response.json()["default_learning_mode"] == mode.key
+
+        stored = (
+            test_db_session.query(UserSettings)
+            .filter(UserSettings.user_id == user_id)
+            .one()
+        )
+        assert stored.default_learning_mode == mode.key
+
+        invalid = client.put(
+            "/api/auth/preferences",
+            headers=headers,
+            json={"default_learning_mode": "not_visible"},
+        )
+        assert invalid.status_code == 400
 
     def test_update_preferences_rejects_out_of_range_speed(self, prefs_user):
         """Kokoro speed must stay within the range the synthesis endpoint accepts."""

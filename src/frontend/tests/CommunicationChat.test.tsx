@@ -124,6 +124,7 @@ const getTts = async () => (await import('../src/lib/tts')).tts as {
 describe('CommunicationChat', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    hoisted.auth.user.settings = {};
   });
 
   it('shows the store error so a failed exchange is not silent', () => {
@@ -166,7 +167,20 @@ describe('CommunicationChat', () => {
         expect.objectContaining({
           topic: 'Practice Board',
           board_id: 7,
+          mode_key: 'practice',
         }),
+        1,
+      );
+    });
+  });
+
+  it('uses the saved default mode for an automatically started chat session', async () => {
+    hoisted.auth.user.settings = { default_learning_mode: 'roleplay' };
+    renderChat();
+
+    await waitFor(() => {
+      expect(hoisted.learning.startSession).toHaveBeenCalledWith(
+        expect.objectContaining({ mode_key: 'roleplay' }),
         1,
       );
     });
@@ -224,9 +238,12 @@ describe('CommunicationChat', () => {
     const tts = await getTts();
 
     expect(tts.enqueue).toHaveBeenCalledWith('Welcome', { rate: 0.9 });
+    expect(tts.cancelAll).not.toHaveBeenCalled();
     tts.enqueue.mockClear();
+    tts.cancelAll.mockClear();
 
     hoisted.learning.currentSession = { session_id: 'sess-2' };
+    hoisted.learning.messages = [{ role: 'assistant', content: 'Welcome' }];
     rerender(
       <CommunicationChat
         voiceEnabled
@@ -237,5 +254,40 @@ describe('CommunicationChat', () => {
     );
 
     expect(tts.enqueue).toHaveBeenCalledWith('Welcome', { rate: 0.9 });
+    expect(tts.cancelAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not replay handled messages when the chat surface remounts', async () => {
+    const messages = [{ role: 'assistant', content: 'Welcome once' }];
+    const first = renderChat({
+      currentSession: { session_id: 'sess-remount-1' },
+      messages,
+    }, 'Practice Board', true);
+    const tts = await getTts();
+
+    expect(tts.enqueue).toHaveBeenCalledWith('Welcome once', { rate: 0.9 });
+    tts.enqueue.mockClear();
+    first.unmount();
+
+    renderChat({
+      currentSession: { session_id: 'sess-remount-1' },
+      messages,
+    }, 'Practice Board', true);
+
+    expect(tts.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('cancels queued speech when the chat surface unmounts', async () => {
+    const view = renderChat({
+      currentSession: { session_id: 'sess-unmount-1' },
+      messages: [{ role: 'assistant', content: 'Goodbye' }],
+    }, 'Practice Board', true);
+    const tts = await getTts();
+    tts.cancelAll.mockClear();
+
+    view.unmount();
+    await Promise.resolve();
+
+    expect(tts.cancelAll).toHaveBeenCalledTimes(1);
   });
 });

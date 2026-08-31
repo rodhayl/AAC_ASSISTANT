@@ -204,6 +204,9 @@
   },
   "learningModes": {
     "subtitle": "Configura modos de aprendizaje inteligentes y prompts",
+    "defaultMode": "Modo de aprendizaje predeterminado",
+    "defaultModeHelp": "Se aplica automáticamente cuando una sesión de aprendizaje comienza sin otra selección.",
+    "defaultModeSaved": "Modo de aprendizaje predeterminado guardado",
     "systemDefault": "Predeterminado del sistema",
     "addNew": "Añadir nuevo modo de aprendizaje",
     "name": "Nombre",

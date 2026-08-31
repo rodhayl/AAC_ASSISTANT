@@ -90,6 +90,7 @@ def test_schema_ensure_upgrades_legacy_sqlite_without_losing_data():
         "dwell_time",
         "ignore_repeats",
         "high_contrast",
+        "default_learning_mode",
     } <= settings_columns
     assert "updated_at" in {
         column["name"] for column in inspector.get_columns("learning_modes")

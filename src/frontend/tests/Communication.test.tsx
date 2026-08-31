@@ -573,7 +573,8 @@ describe('Communication page', () => {
       expect(screen.getByText('voice-off')).toBeInTheDocument();
     });
 
-    it('starts a session from the sidebar and switches to the board', async () => {
+    it('starts a session from the sidebar using the saved default mode', async () => {
+      hoisted.auth.user.settings = { default_learning_mode: 'roleplay' };
       hoisted.learning.startSession.mockResolvedValue({});
       renderCommunication();
       fireEvent.click(screen.getByRole('button', { name: /Morning Routine/i }));
@@ -581,7 +582,7 @@ describe('Communication page', () => {
 
       await waitFor(() => {
         expect(hoisted.learning.startSession).toHaveBeenCalledWith(
-          expect.objectContaining({ topic: 'general', board_id: 7 }),
+          expect.objectContaining({ topic: 'general', board_id: 7, mode_key: 'roleplay' }),
           1,
         );
         expect(hoisted.addToast).toHaveBeenCalledWith('Session started', 'success');

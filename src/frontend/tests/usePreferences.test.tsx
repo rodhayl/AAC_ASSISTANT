@@ -23,6 +23,7 @@ vi.mock('react-i18next', () => ({
       const table: Record<string, string> = {
         'errors.saveFailed': 'Failed to save preferences',
         'preferences.saved': 'Saved',
+        'learningModes.defaultModeSaved': 'Default learning mode saved',
       };
       return table[key] ?? defaultValue ?? key;
     },
@@ -91,6 +92,7 @@ describe('usePreferences', () => {
         dwell_time: 300,
         ignore_repeats: 100,
         high_contrast: true,
+        default_learning_mode: 'roleplay',
       },
     });
 
@@ -104,6 +106,7 @@ describe('usePreferences', () => {
     expect(result.current.preferences.ui_language).toBe('en-US');
     expect(result.current.preferences.dark_mode).toBe(true);
     expect(result.current.preferences.high_contrast).toBe(true);
+    expect(result.current.preferences.default_learning_mode).toBe('roleplay');
     // The server-side appearance must be pushed into the theme store so the
     // document classes follow the logged-in user's persisted settings.
     expect(useThemeStore.getState().darkMode).toBe(true);
@@ -232,6 +235,38 @@ describe('usePreferences', () => {
     // The form still reflects user B's defaults, not the stale account's data.
     expect(result.current.preferences.tts_voice).toBe('b-voice');
     expect(result.current.preferences.ui_language).toBe('es-ES');
+  });
+
+  it('persists the default learning mode and announces the updated value', async () => {
+    useAuthStore.setState({
+      user: {
+        id: 1,
+        username: 'teacher1',
+        display_name: 'Teacher',
+        user_type: 'teacher',
+        settings: { default_learning_mode: 'practice' },
+      },
+    });
+    get.mockResolvedValue({ data: {} });
+    put.mockResolvedValue({ data: { default_learning_mode: 'roleplay' } });
+    const modeChanged = vi.fn();
+    window.addEventListener('aac:learning-modes-changed', modeChanged);
+
+    const { result } = renderHook(() => usePreferences());
+    await act(async () => {
+      await result.current.saveDefaultLearningMode('roleplay');
+    });
+
+    expect(put).toHaveBeenCalledWith('/auth/preferences', {
+      default_learning_mode: 'roleplay',
+    });
+    expect(result.current.preferences.default_learning_mode).toBe('roleplay');
+    expect(modeChanged).toHaveBeenCalledTimes(1);
+    expect(modeChanged.mock.calls[0][0]).toMatchObject({
+      type: 'aac:learning-modes-changed',
+      detail: { defaultModeKey: 'roleplay' },
+    });
+    window.removeEventListener('aac:learning-modes-changed', modeChanged);
   });
 
   it('normalizes a legacy short ui_language so it matches the select options', async () => {

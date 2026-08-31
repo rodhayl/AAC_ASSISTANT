@@ -204,6 +204,9 @@
   },
   "learningModes": {
     "subtitle": "Configure smart learning modes and prompts",
+    "defaultMode": "Default learning mode",
+    "defaultModeHelp": "This mode is applied automatically when a learning session starts without another selection.",
+    "defaultModeSaved": "Default learning mode saved",
     "systemDefault": "System Default",
     "addNew": "Add New Learning Mode",
     "name": "Name",

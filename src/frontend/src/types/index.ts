@@ -13,6 +13,8 @@ export interface UserPreferences {
   high_contrast: boolean;
   hover_speak_enabled: boolean;
   hover_speak_delay_ms: number;
+  // Learning mode used when a section starts without an explicit override.
+  default_learning_mode?: string;
 }
 
 export interface User {
