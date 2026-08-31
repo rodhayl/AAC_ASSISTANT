@@ -11,6 +11,8 @@ export interface UserPreferences {
   dwell_time: number;
   ignore_repeats: number;
   high_contrast: boolean;
+  hover_speak_enabled: boolean;
+  hover_speak_delay_ms: number;
 }
 
 export interface User {

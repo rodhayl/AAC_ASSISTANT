@@ -21,6 +21,8 @@ const defaultPreferences = (user: ReturnType<typeof useAuthStore.getState>['user
   dwell_time: user?.settings?.dwell_time ?? 0,
   ignore_repeats: user?.settings?.ignore_repeats ?? 0,
   high_contrast: user?.settings?.high_contrast ?? false,
+  hover_speak_enabled: user?.settings?.hover_speak_enabled ?? false,
+  hover_speak_delay_ms: user?.settings?.hover_speak_delay_ms ?? 1000,
 });
 
 export function usePreferences() {
@@ -73,6 +75,8 @@ export function usePreferences() {
           dwell_time: res.data.dwell_time ?? 0,
           ignore_repeats: res.data.ignore_repeats ?? 0,
           high_contrast: res.data.high_contrast ?? false,
+          hover_speak_enabled: res.data.hover_speak_enabled ?? false,
+          hover_speak_delay_ms: res.data.hover_speak_delay_ms ?? 1000,
         });
         useTTSStore.getState().setSelectedVoice(voice);
         useTTSStore.getState().setTTSProvider(res.data.tts_provider === 'browser' ? 'browser' : 'kokoro');

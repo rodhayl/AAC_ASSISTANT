@@ -62,6 +62,8 @@ def _ensure_sqlite_columns(engine: Engine) -> None:
             ("user_settings", "dwell_time", "INTEGER DEFAULT 0"),
             ("user_settings", "ignore_repeats", "INTEGER DEFAULT 0"),
             ("user_settings", "high_contrast", "BOOLEAN DEFAULT 0"),
+            ("user_settings", "hover_speak_enabled", "BOOLEAN DEFAULT 0"),
+            ("user_settings", "hover_speak_delay_ms", "INTEGER DEFAULT 1000"),
             ("achievements", "criteria_type", "VARCHAR(50)"),
             ("achievements", "criteria_value", "FLOAT"),
             ("achievements", "is_manual", "BOOLEAN DEFAULT 0"),

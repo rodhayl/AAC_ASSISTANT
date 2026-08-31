@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Smartbar } from '../src/components/board/Smartbar';
 import api from '../src/lib/api';
@@ -7,6 +7,12 @@ vi.mock('../src/lib/api', () => ({
   default: {
     post: vi.fn(),
   },
+}));
+
+// Hover-to-speak is covered independently; keep these rendering tests
+// isolated from the auth/i18n dependencies used by that hook.
+vi.mock('../src/hooks/useHoverSpeak', () => ({
+  useHoverSpeak: () => ({ getHoverSpeakProps: () => ({}) }),
 }));
 
 vi.mock('../src/store/learningStore', () => {
@@ -24,6 +30,8 @@ vi.mock('react-i18next', () => ({
       const labels: Record<string, string> = {
         more: 'More',
         moreSuggestions: 'More suggestions',
+        previousSuggestions: 'Previous suggestions',
+        nextSuggestions: 'Next suggestions',
         suggestions: 'Suggestions',
       };
       return labels[key] ?? key;
@@ -151,6 +159,40 @@ describe('Smartbar pagination', () => {
     await waitFor(() => {
       const moreButton = screen.getByRole('button', { name: 'More' });
       expect(moreButton).toBeEnabled();
+    });
+  });
+
+  it('shows accessible controls and scrolls the suggestions row horizontally', async () => {
+    const fullPage = Array.from({ length: 20 }, (_, index) =>
+      suggestion(index + 1, `Word ${index + 1}`),
+    );
+    vi.mocked(api.post).mockResolvedValue({ data: fullPage });
+
+    render(<Smartbar currentSentence={[]} onSelectSymbol={vi.fn()} />);
+    const container = await screen.findByTestId('smartbar-suggestions');
+    Object.defineProperties(container, {
+      clientWidth: { configurable: true, value: 320 },
+      scrollWidth: { configurable: true, value: 640 },
+      scrollLeft: { configurable: true, writable: true, value: 0 },
+    });
+    const scrollBy = vi.fn();
+    Object.defineProperty(container, 'scrollBy', { configurable: true, value: scrollBy });
+
+    await act(async () => {
+      window.dispatchEvent(new Event('resize'));
+    });
+
+    const nextButton = await screen.findByRole('button', { name: 'Next suggestions' });
+    expect(nextButton).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Previous suggestions' })).toBeDisabled();
+
+    fireEvent.click(nextButton);
+    expect(scrollBy).toHaveBeenCalledWith({ left: 256, behavior: 'smooth' });
+
+    container.scrollLeft = 320;
+    fireEvent.scroll(container);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Previous suggestions' })).toBeEnabled();
     });
   });
 });

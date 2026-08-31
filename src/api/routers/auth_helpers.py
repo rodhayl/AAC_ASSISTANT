@@ -133,7 +133,7 @@ def validate_preference_updates(
                 key="errors.settings.unsupportedLanguage",
             ),
         )
-    for key in ("dwell_time", "ignore_repeats"):
+    for key in ("dwell_time", "ignore_repeats", "hover_speak_delay_ms"):
         value = updates.get(key)
         if value is not None and int(value) < 0:
             raise HTTPException(
@@ -213,6 +213,14 @@ def build_preferences_response(
         except (TypeError, ValueError):
             return 1.0
 
+    def bounded_hover_delay(value: Any) -> int:
+        # Clamp to the range the update schema accepts (see schemas.py);
+        # legacy rows may keep NULL or out-of-range values.
+        try:
+            return min(max(int(value), 0), 5000)
+        except (TypeError, ValueError):
+            return 1000
+
     return schemas.UserPreferencesResponse(
         tts_provider=(
             tts_provider if tts_provider in {"browser", "kokoro"} else "kokoro"
@@ -235,4 +243,8 @@ def build_preferences_response(
         dwell_time=bounded_int(getattr(settings, "dwell_time", 0)),
         ignore_repeats=bounded_int(getattr(settings, "ignore_repeats", 0)),
         high_contrast=bool(getattr(settings, "high_contrast", False) or False),
+        hover_speak_enabled=bool(getattr(settings, "hover_speak_enabled", False) or False),
+        hover_speak_delay_ms=bounded_hover_delay(
+            getattr(settings, "hover_speak_delay_ms", 1000)
+        ),
     )

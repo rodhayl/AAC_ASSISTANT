@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Sparkles, Brain, Type, User, Play, FileText, Plus, MapPin } from 'lucide-react';
+import { Sparkles, Brain, Type, User, Play, FileText, Plus, MapPin, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../../lib/api';
 import { SymbolImage } from '../common/SymbolImage';
+import { useHoverSpeak } from '../../hooks/useHoverSpeak';
 import { useLearningStore } from '../../store/learningStore';
 import type { BoardSymbol } from '../../types';
 import { getCategoryStyle } from '../../lib/symbolCategoryStyle';
@@ -34,12 +35,16 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
   const { t, i18n } = useTranslation('boards');
   const currentLanguage = i18n?.language?.split('-')[0] || 'en';
   const messages = useLearningStore((state) => state.messages);
+  const { getHoverSpeakProps } = useHoverSpeak();
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [activeIntent, setActiveIntent] = useState<IntentType>('general');
   const [offset, setOffset] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [debouncedSentence, setDebouncedSentence] = useState(currentSentence);
+  const suggestionsContainerRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
 
   const SUGGESTIONS_PAGE_SIZE = 20;
 
@@ -149,6 +154,43 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
     };
   }, [debouncedSentence, messages, activeIntent, offset, boardId]); // Re-fetch when sentence OR chat updates
 
+  useEffect(() => {
+    const container = suggestionsContainerRef.current;
+    if (!container) return;
+
+    const updateScrollControls = () => {
+      const maxScrollLeft = container.scrollWidth - container.clientWidth;
+      setCanScrollLeft(container.scrollLeft > 1);
+      setCanScrollRight(maxScrollLeft - container.scrollLeft > 1);
+    };
+
+    updateScrollControls();
+    container.addEventListener('scroll', updateScrollControls, { passive: true });
+    window.addEventListener('resize', updateScrollControls);
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(updateScrollControls)
+      : null;
+    resizeObserver?.observe(container);
+
+    return () => {
+      container.removeEventListener('scroll', updateScrollControls);
+      window.removeEventListener('resize', updateScrollControls);
+      resizeObserver?.disconnect();
+    };
+  }, [suggestions]);
+
+  const scrollSuggestions = (direction: 'left' | 'right') => {
+    const container = suggestionsContainerRef.current;
+    if (!container) return;
+
+    const distance = Math.max(container.clientWidth * 0.8, 160);
+    container.scrollBy({
+      left: direction === 'left' ? -distance : distance,
+      behavior: 'smooth',
+    });
+  };
+
   const handleMore = () => {
     setOffset(prev => prev + SUGGESTIONS_PAGE_SIZE);
   };
@@ -246,8 +288,26 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
           <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-brand" />
         </div>
       ) : suggestions.length > 0 ? (
-        <div className="flex gap-2 overflow-x-auto pb-2 px-1 scrollbar-hide">
-          {suggestions.map((suggestion, suggestionIndex) => {
+        <div className="flex items-center gap-1 min-w-0 px-1">
+          {(canScrollLeft || canScrollRight) && (
+            <button
+              type="button"
+              onClick={() => scrollSuggestions('left')}
+              disabled={!canScrollLeft}
+              className="flex min-h-[2.75rem] min-w-[2.75rem] shrink-0 items-center justify-center rounded-full border border-brand/20 bg-surface text-brand transition-colors hover:bg-brand/10 disabled:cursor-not-allowed disabled:opacity-30"
+              aria-label={t('previousSuggestions')}
+              title={t('previousSuggestions')}
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
+
+          <div
+            ref={suggestionsContainerRef}
+            data-testid="smartbar-suggestions"
+            className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-2 scrollbar-hide touch-pan-x"
+          >
+            {suggestions.map((suggestion, suggestionIndex) => {
             const isAI = suggestion.source === 'ai';
             const isPunctuation = suggestion.category === 'punctuation';
             const categoryStyle = getCategoryStyle(suggestion.category);
@@ -258,6 +318,9 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
                 className="relative shrink-0"
               >
                 <button
+                  // Punctuation tiles hide their label visually; hovering
+                  // them has no word worth speaking.
+                  {...getHoverSpeakProps(isPunctuation ? '' : suggestion.label)}
                   onClick={() => {
                     const tempSymbol: BoardSymbol = {
                       id: -suggestion.symbol_id,
@@ -315,7 +378,21 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
                 )}
               </div>
             );
-          })}
+            })}
+          </div>
+
+          {(canScrollLeft || canScrollRight) && (
+            <button
+              type="button"
+              onClick={() => scrollSuggestions('right')}
+              disabled={!canScrollRight}
+              className="flex min-h-[2.75rem] min-w-[2.75rem] shrink-0 items-center justify-center rounded-full border border-brand/20 bg-surface text-brand transition-colors hover:bg-brand/10 disabled:cursor-not-allowed disabled:opacity-30"
+              aria-label={t('nextSuggestions')}
+              title={t('nextSuggestions')}
+            >
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
         </div>
       ) : (
         <div className="text-center py-2 text-muted-foreground text-xs">

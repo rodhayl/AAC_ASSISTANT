@@ -53,6 +53,10 @@ vi.mock('react-i18next', () => ({
       'preferences.ttsProviders.browser': 'Browser / system voice',
       'preferences.browserVoice': 'Browser voice',
       'preferences.browserVoiceHelp': 'Uses voices installed by your browser or operating system.',
+      'preferences.hoverSpeak': 'Read suggestions aloud on hover',
+      'preferences.hoverSpeakHelp': 'Resting the pointer on a symbol suggestion speaks its word aloud.',
+      'preferences.hoverSpeakDelay': 'Time before speaking',
+      'preferences.hoverSpeakDelayHelp': 'How long the pointer must rest on the symbol.',
       'preferences.kokoroUnavailable': 'Kokoro is not ready.',
       'voice.americanEnglish': 'American English',
       'voice.britishEnglish': 'British English',
@@ -506,6 +510,87 @@ describe('VoiceTab', () => {
     expect(screen.queryByTestId('vector-warmup-indicator')).not.toBeInTheDocument();
     // Flush the mount fetch inside act so its state update is not reported as
     // an un-acted update after the test body finishes.
+    await waitFor(() => expect(get).toHaveBeenCalled());
+  });
+
+  it('toggles hover-to-speak and only shows the delay picker when enabled', async () => {
+    const setPreferences = vi.fn();
+
+    const { rerender } = render(
+      <VoiceTab
+        preferences={{
+          tts_provider: 'browser',
+          tts_voice: 'default',
+          tts_local_voice: 'default',
+          ui_language: 'en-US',
+          notifications_enabled: true,
+          voice_mode_enabled: true,
+          dark_mode: false,
+          dwell_time: 0,
+          ignore_repeats: 0,
+          high_contrast: false,
+          hover_speak_enabled: false,
+          hover_speak_delay_ms: 1000,
+        }}
+        setPreferences={setPreferences}
+        filteredVoices={[]}
+      />
+    );
+
+    const checkbox = screen.getByRole('checkbox', {
+      name: 'Read suggestions aloud on hover',
+    });
+    expect(checkbox).not.toBeChecked();
+    // The delay picker stays hidden while the feature is off.
+    expect(
+      screen.queryByRole('combobox', { name: 'Time before speaking' }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(checkbox);
+    // The checkbox is fully controlled, so the handler toggles from the
+    // previous preference value instead of reading event.target.checked.
+    const toggle = setPreferences.mock.calls[0][0] as (
+      prev: { hover_speak_enabled: boolean },
+    ) => { hover_speak_enabled: boolean };
+    expect(toggle({ hover_speak_enabled: false })).toEqual({
+      hover_speak_enabled: true,
+    });
+    expect(toggle({ hover_speak_enabled: true })).toEqual({
+      hover_speak_enabled: false,
+    });
+
+    rerender(
+      <VoiceTab
+        preferences={{
+          tts_provider: 'browser',
+          tts_voice: 'default',
+          tts_local_voice: 'default',
+          ui_language: 'en-US',
+          notifications_enabled: true,
+          voice_mode_enabled: true,
+          dark_mode: false,
+          dwell_time: 0,
+          ignore_repeats: 0,
+          high_contrast: false,
+          hover_speak_enabled: true,
+          hover_speak_delay_ms: 1000,
+        }}
+        setPreferences={setPreferences}
+        filteredVoices={[]}
+      />
+    );
+
+    const delaySelect = screen.getByRole('combobox', { name: 'Time before speaking' });
+    expect(delaySelect).toHaveValue('1000');
+
+    fireEvent.change(delaySelect, { target: { value: '2000' } });
+    const update = setPreferences.mock.calls[1][0] as (
+      prev: { hover_speak_delay_ms: number },
+    ) => { hover_speak_delay_ms: number };
+    expect(update({ hover_speak_delay_ms: 1000 })).toEqual({
+      hover_speak_delay_ms: 2000,
+    });
+
     await waitFor(() => expect(get).toHaveBeenCalled());
   });
 });

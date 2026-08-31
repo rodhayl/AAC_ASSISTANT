@@ -38,6 +38,8 @@ class TestBuildPreferencesResponse:
             "dwell_time": 0,
             "ignore_repeats": 0,
             "high_contrast": False,
+            "hover_speak_enabled": False,
+            "hover_speak_delay_ms": 1000,
         }
 
     def test_build_preferences_response_handles_legacy_and_null_values(self):
@@ -73,6 +75,15 @@ class TestBuildPreferencesResponse:
 
         assert build_preferences_response(settings).tts_local_speed == 1.0
 
+    def test_build_preferences_response_clamps_out_of_range_hover_delay(self):
+        settings = SimpleNamespace(hover_speak_delay_ms=99999)
+
+        assert build_preferences_response(settings).hover_speak_delay_ms == 5000
+
+        settings = SimpleNamespace(hover_speak_delay_ms="slow")
+
+        assert build_preferences_response(settings).hover_speak_delay_ms == 1000
+
     def test_build_preferences_response_maps_populated_settings(self):
         settings = SimpleNamespace(
             tts_provider="browser",
@@ -87,6 +98,8 @@ class TestBuildPreferencesResponse:
             dwell_time=250,
             ignore_repeats=3,
             high_contrast=True,
+            hover_speak_enabled=True,
+            hover_speak_delay_ms=1500,
         )
 
         response = build_preferences_response(settings)
@@ -104,6 +117,8 @@ class TestBuildPreferencesResponse:
             "dwell_time": 250,
             "ignore_repeats": 3,
             "high_contrast": True,
+            "hover_speak_enabled": True,
+            "hover_speak_delay_ms": 1500,
         }
 
 

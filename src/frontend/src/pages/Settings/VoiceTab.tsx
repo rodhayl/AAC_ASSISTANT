@@ -28,6 +28,10 @@ type LocalVoiceEntry = {
   region?: string | null;
 };
 
+// Hover-to-speak delay options (ms). 1000 matches the schema default; the
+// backend clamps persisted values to [0, 5000].
+const HOVER_SPEAK_DELAY_OPTIONS = [500, 750, 1000, 1500, 2000, 3000, 5000];
+
 const LANGUAGE_LABELS: Record<string, string> = {
   es: 'Español',
   en: 'English',
@@ -385,6 +389,68 @@ export function VoiceTab({
               <p className="mt-2 text-xs text-brand">{t('preferences.engineSingleChoiceHelp')}</p>
             </div>
           </div>
+        </div>
+
+        <div className="rounded-xl border border-border p-4 space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                {t('preferences.hoverSpeak')}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t('preferences.hoverSpeakHelp')}
+              </p>
+            </div>
+            <input
+              id="pref-hover-speak-enabled"
+              name="hover_speak_enabled"
+              type="checkbox"
+              aria-label={t('preferences.hoverSpeak')}
+              checked={preferences.hover_speak_enabled}
+              onChange={() =>
+                setPreferences((prev) => ({
+                  ...prev,
+                  hover_speak_enabled: !prev.hover_speak_enabled,
+                }))
+              }
+              className="h-5 w-5 rounded border-border text-brand focus:ring-brand"
+            />
+          </div>
+          {preferences.hover_speak_enabled && (
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {t('preferences.hoverSpeakDelay')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('preferences.hoverSpeakDelayHelp')}
+                </p>
+              </div>
+              <select
+                id="pref-hover-speak-delay"
+                name="hover_speak_delay_ms"
+                aria-label={t('preferences.hoverSpeakDelay')}
+                value={String(preferences.hover_speak_delay_ms)}
+                onChange={(event) => {
+                  // Capture eagerly: React restores the controlled DOM value
+                  // after dispatch, so reading event.target inside the
+                  // updater could observe the restored value.
+                  const delay = parseInt(event.target.value, 10);
+                  setPreferences((prev) => ({
+                    ...prev,
+                    hover_speak_delay_ms: delay,
+                  }));
+                }}
+                className="block w-72 pl-3 pr-10 py-2 text-base border-border focus:outline-none focus:ring-brand focus:border-brand sm:text-sm rounded-md"
+              >
+                {HOVER_SPEAK_DELAY_OPTIONS.map((ms) => (
+                  <option key={ms} value={String(ms)}>
+                    {t('preferences.hoverSpeakDelaySeconds', { value: ms / 1000 })}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {preferences.tts_provider === 'browser' && (

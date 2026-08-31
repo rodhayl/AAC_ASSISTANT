@@ -50,6 +50,9 @@ class UserSettings(Base):
     dwell_time = Column(Integer, default=0)
     ignore_repeats = Column(Integer, default=0)
     high_contrast = Column(Boolean, default=False)
+    # Speak a symbol suggestion aloud when the pointer rests on it.
+    hover_speak_enabled = Column(Boolean, default=False, server_default="0")
+    hover_speak_delay_ms = Column(Integer, default=1000, server_default="1000")
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 

@@ -19,6 +19,8 @@ class UserPreferencesResponse(BaseModel):
     dwell_time: int = 0
     ignore_repeats: int = 0
     high_contrast: bool = False
+    hover_speak_enabled: bool = False
+    hover_speak_delay_ms: int = 1000
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -40,6 +42,10 @@ class UserPreferencesUpdate(BaseModel):
     dwell_time: int | None = Field(None, le=2000)
     ignore_repeats: int | None = Field(None, le=2000)
     high_contrast: bool | None = None
+    hover_speak_enabled: bool | None = None
+    # Hover-to-speak delay: sub-200ms values fire on accidental fly-bys,
+    # anything above 5s is indistinguishable from a disabled feature.
+    hover_speak_delay_ms: int | None = Field(None, le=5000)
 
 
 # --- User Schemas ---
