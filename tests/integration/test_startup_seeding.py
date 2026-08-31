@@ -247,8 +247,45 @@ def test_database_initialization_idempotency():
     assert session.query(User).count() == 0
     from src.aac_app.models import Symbol
 
-    assert session.query(Symbol).count() == 12
+    # 12 concepts seeded in both UI locales (es + en); the second run must
+    # not add rows even for labels that already exist under other categories.
+    assert session.query(Symbol).count() == 24
     assert session.query(Achievement).count() == 3
+    session.close()
+    engine.dispose()
+
+
+def test_sample_symbols_do_not_duplicate_imported_labels():
+    """An imported symbol with the same label under a different category
+    (e.g. the ARASAAC bulk import's "herbivorous" vs the seed's
+    "farm_animals") must stop the seed from inserting a duplicate row."""
+    from src.aac_app.models import Symbol
+    from src.aac_app.seed import _create_sample_symbols
+
+    engine = create_engine(TEST_DB_URL)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    session.add(
+        Symbol(
+            label="vaca",
+            category="herbivorous",
+            language="es",
+            is_builtin=False,
+        )
+    )
+    session.flush()
+    _create_sample_symbols(session)
+    session.commit()
+
+    es_vacas = (
+        session.query(Symbol)
+        .filter(Symbol.label == "vaca", Symbol.language == "es")
+        .all()
+    )
+    assert len(es_vacas) == 1
+    assert es_vacas[0].category == "herbivorous"
     session.close()
     engine.dispose()
 

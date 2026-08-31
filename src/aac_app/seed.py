@@ -6,6 +6,7 @@ import os
 import secrets
 
 from loguru import logger
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src import config
@@ -504,12 +505,16 @@ def _create_sample_symbols(session: Session) -> None:
         },
     ]
 
+    # Dedupe by (label, language) only: the category is descriptive metadata,
+    # not part of the symbol's identity. An ARASAAC library import stores the
+    # same words under ARASAAC's own categories ("herbivorous", "beverage"),
+    # so including the category in the check would insert a second "vaca"
+    # next to the imported one on every restart.
     for values in sample_symbols:
         existing = (
             session.query(Symbol)
             .filter(
-                Symbol.label == values["label"],
-                Symbol.category == values["category"],
+                func.lower(func.trim(Symbol.label)) == values["label"].strip().lower(),
                 Symbol.language == values.get("language", "en"),
             )
             .first()

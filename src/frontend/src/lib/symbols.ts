@@ -4,19 +4,25 @@ import type { LearningSymbolItem } from '../types';
 const normalized = (value: string | undefined | null): string =>
   (value || '').trim().toLowerCase();
 
-/** Deduplicate learning-library symbols by label and category. */
+/**
+ * Deduplicate learning-library symbols by label.
+ *
+ * The category is not part of the key: the catalog can hold the same word
+ * under different categories (e.g. an ARASAAC import's "beverage" next to a
+ * seeded "drinks"), and showing both tiles would render duplicate labels in
+ * the panel. Prefer the variant that has an image.
+ */
 export function dedupeLearningSymbols(items: LearningSymbolItem[]): LearningSymbolItem[] {
-  const byKey = new Map<string, LearningSymbolItem>();
+  const byLabel = new Map<string, LearningSymbolItem>();
   for (const item of items) {
     const label = normalized(item.label);
     if (!label) continue;
-    const key = `${label}|${normalized(item.category)}`;
-    const existing = byKey.get(key);
+    const existing = byLabel.get(label);
     if (!existing || (!existing.image_path && item.image_path)) {
-      byKey.set(key, item);
+      byLabel.set(label, item);
     }
   }
-  return Array.from(byKey.values());
+  return Array.from(byLabel.values());
 }
 
 /**
