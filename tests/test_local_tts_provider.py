@@ -145,12 +145,14 @@ def test_provider_voice_resolution_and_wav_encoding(monkeypatch):
 
 
 def test_synthesize_guards_first_word_onset_above_normal_speed(monkeypatch):
-    """At speed > 1, pause phonemes shield the first word from Kokoro's
-    initial-generation corruption; at normal speed no guard is added."""
+    """Legacy path (no PyAV): at speed > 1, pause phonemes shield the first
+    word from Kokoro's initial-generation corruption; at normal speed no
+    guard is added."""
     from src.aac_app.providers import local_tts_provider as mod
 
     fake = _FakeKokoro()
     _inject_fake_kokoro(monkeypatch, fake)
+    monkeypatch.setattr(mod, "_atempo_available", lambda: False)
     provider = mod.LocalTTSProvider(lazy_load=False)
 
     provider.synthesize("hola", lang="es", speed=1.0)
@@ -160,9 +162,57 @@ def test_synthesize_guards_first_word_onset_above_normal_speed(monkeypatch):
 
     provider.synthesize("hola", lang="es", speed=1.5)
     assert fake.calls[-1]["text"] == ":" * 5 + "ph:hola"
+    assert fake.calls[-1]["speed"] == 1.5
 
     provider.synthesize("hola", lang="es", speed=0.5)
     assert fake.calls[-1]["text"] == "ph:hola"
+    assert fake.calls[-1]["speed"] == 0.5
+
+
+def test_synthesize_stretches_with_atempo_instead_of_model_speed(monkeypatch):
+    """Primary path (PyAV present): the model always runs at speed 1.0 —
+    its own speed parameter voices the resized BOS token as a phantom
+    leading vowel (hexgrad/kokoro#344) — and atempo stretches the result."""
+    from src.aac_app.providers import local_tts_provider as mod
+
+    fake = _FakeKokoro()
+    _inject_fake_kokoro(monkeypatch, fake)
+    monkeypatch.setattr(mod, "_atempo_available", lambda: True)
+    stretched: list[tuple[int, float]] = []
+
+    def fake_atempo(samples, sample_rate, speed):
+        stretched.append((sample_rate, speed))
+        return samples
+
+    monkeypatch.setattr(mod, "_apply_atempo", fake_atempo)
+    provider = mod.LocalTTSProvider(lazy_load=False)
+
+    wav = provider.synthesize("hola", lang="es", speed=1.5)
+    assert wav is not None and wav[:4] == b"RIFF"
+    assert fake.calls[-1]["text"] == "ph:hola"  # no pause-phoneme guard
+    assert fake.calls[-1]["speed"] == 1.0
+    assert stretched == [(24000, 1.5)]
+
+    # Normal speed never stretches.
+    provider.synthesize("hola", lang="es", speed=1.0)
+    assert fake.calls[-1]["speed"] == 1.0
+    assert stretched == [(24000, 1.5)]
+
+
+def test_apply_atempo_changes_duration_without_resampling(monkeypatch):
+    """The atempo stretch keeps the sample rate and scales the duration."""
+    pytest.importorskip("av")
+    from src.aac_app.providers import local_tts_provider as mod
+
+    rate = 24000
+    t = np.arange(rate // 2, dtype=np.float32) / rate  # 0.5 s tone
+    samples = 0.2 * np.sin(2 * np.pi * 220 * t)
+
+    stretched = mod._apply_atempo(samples, rate, 2.0)
+    assert len(stretched) < len(samples) * 0.75
+
+    slowed = mod._apply_atempo(samples, rate, 0.5)
+    assert len(slowed) > len(samples) * 1.5
 
 
 def test_list_kokoro_voices_returns_catalog(monkeypatch):

@@ -37,8 +37,67 @@ KOKORO_MODEL_FILENAME = "kokoro-v1.0.onnx"
 KOKORO_VOICES_FILENAME = "voices-v1.0.bin"
 
 # Pause phonemes prepended at speed > 1 so the model's initial-generation
-# corruption lands on silence instead of the first word (see synthesize()).
+# corruption lands on silence instead of the first word. Only used on the
+# legacy fallback path; the primary speed path is atempo (see synthesize()).
 _ONSET_GUARD_PHONEMES = ":" * 5
+
+_av_available: bool | None = None
+
+
+def _atempo_available() -> bool:
+    """PyAV (a faster-whisper dependency) provides ffmpeg's atempo filter."""
+    global _av_available
+    if _av_available is None:
+        try:
+            import av  # noqa: F401
+
+            _av_available = True
+        except ImportError:
+            _av_available = False
+    return _av_available
+
+
+def _apply_atempo(samples, sample_rate: int, speed: float):
+    """Time-stretch float mono samples without shifting pitch.
+
+    Kokoro's own speed parameter also scales the BOS/EOS boundary tokens,
+    and the vocoder voices that resized boundary window as a phantom leading
+    vowel ("e"/"a") — blatant on isolated words (hexgrad/kokoro#344). The
+    documented workaround is to synthesize at speed 1.0 and stretch the
+    result afterwards; ffmpeg's atempo preserves formants and never touches
+    the onset.
+    """
+    import av
+    import numpy as np
+
+    pcm16 = (np.clip(samples, -1.0, 1.0) * 32767).astype(np.int16)
+    frame = av.AudioFrame.from_ndarray(pcm16.reshape(1, -1), format="s16", layout="mono")
+    frame.sample_rate = int(sample_rate)
+    graph = av.filter.Graph()
+    source = graph.add(
+        "abuffer",
+        args=(
+            f"time_base=1/{int(sample_rate)}:sample_rate={int(sample_rate)}"
+            ":sample_fmt=s16:channel_layout=mono"
+        ),
+    )
+    tempo = graph.add("atempo", f"{speed:.4f}")
+    sink = graph.add("abuffersink")
+    source.link_to(tempo)
+    tempo.link_to(sink)
+    graph.configure()
+    graph.push(frame)
+    graph.push(None)  # flush so the tail is not left in the filter
+    chunks = []
+    while True:
+        try:
+            out = sink.pull()
+        except (BlockingIOError, EOFError, av.error.FFmpegError):
+            break
+        chunks.append(np.frombuffer(out.to_ndarray().tobytes(), dtype=np.int16))
+    if not chunks:
+        return samples
+    return np.concatenate(chunks).astype(np.float32) / 32768
 
 # Language code -> (default female voice, default male voice)
 DEFAULT_VOICES: dict[str, tuple[str, str]] = {
@@ -388,26 +447,38 @@ class LocalTTSProvider:
                 espeak_lang = _espeak_lang_code(voice_info["language"])
 
         try:
-            # Two Kokoro quirks are worked around here:
-            # 1. At speed > 1 the model corrupts the first phonemes of a
-            #    generation (decoder warm-up overlaps the first word once the
-            #    duration predictor shrinks the leading silence, e.g.
-            #    "Excelente" -> "Solente"). A short run of pause tokens (":"
-            #    is Kokoro's pause phoneme) absorbs that corruption.
+            # Kokoro quirks worked around here:
+            # 1. The model's speed parameter corrupts the clip boundaries
+            #    (hexgrad/kokoro#344): the duration scaling also resizes the
+            #    BOS/EOS tokens and the vocoder voices that window as a
+            #    phantom leading vowel ("e"/"a"), blatant on isolated words.
+            #    The documented workaround is to synthesize at speed 1.0 and
+            #    stretch afterwards with the pitch-preserving atempo filter.
+            #    Only without PyAV do we pass speed != 1 to the model, where
+            #    a short run of pause tokens (":" is Kokoro's pause phoneme)
+            #    absorbs most of the onset corruption.
             # 2. kokoro-onnx's default trimmer uses a peak-relative threshold
             #    that can cut soft word onsets, so trimming is disabled; the
             #    untrimmed edge padding is only ~150-200 ms of silence.
             phonemes = kokoro.tokenizer.phonemize(text, espeak_lang)
-            if speed > 1.0:
+            stretch = speed != 1.0 and _atempo_available()
+            model_speed = 1.0 if stretch else speed
+            if model_speed > 1.0:
                 phonemes = _ONSET_GUARD_PHONEMES + phonemes
             samples, sample_rate = kokoro.create(
                 phonemes,
                 voice=resolved_voice,
-                speed=speed,
+                speed=model_speed,
                 lang=espeak_lang,
                 is_phonemes=True,
                 trim=False,
             )
+            if stretch:
+                try:
+                    samples = _apply_atempo(samples, sample_rate, speed)
+                except Exception as exc:
+                    # Clean audio at normal tempo beats no audio.
+                    logger.warning("atempo stretch failed, keeping 1.0x audio: {}", exc)
             return _samples_to_wav(samples, sample_rate)
         except Exception as exc:
             logger.warning("Kokoro synthesis failed: {}", exc)
