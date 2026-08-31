@@ -61,7 +61,10 @@ describe('useHoverSpeak', () => {
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(enqueue).toHaveBeenCalledWith('agua', { key: 'hover-speak:agua' });
+    expect(enqueue).toHaveBeenCalledWith('agua', {
+      key: 'hover-speak:agua',
+      group: 'hover-speak',
+    });
   });
 
   it('honors a custom configured delay', () => {
@@ -78,7 +81,10 @@ describe('useHoverSpeak', () => {
     act(() => {
       vi.advanceTimersByTime(1500);
     });
-    expect(enqueue).toHaveBeenCalledWith('hola', { key: 'hover-speak:hola' });
+    expect(enqueue).toHaveBeenCalledWith('hola', {
+      key: 'hover-speak:hola',
+      group: 'hover-speak',
+    });
   });
 
   it('cancels the pending utterance when the pointer leaves early', () => {

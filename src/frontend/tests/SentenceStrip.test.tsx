@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import type { BoardSymbol } from '../src/types';
@@ -115,6 +115,43 @@ describe('SentenceStrip', () => {
     expect(screen.getByTestId('sentence-preview')).toHaveTextContent(
       'apple banana',
     );
+  });
+
+  it('shows accessible controls and scrolls the sentence horizontally', async () => {
+    const sentenceSymbols = Array.from({ length: 8 }, (_, index) =>
+      symbol(index + 1, `word-${index + 1}`),
+    );
+    renderStrip(sentenceSymbols);
+
+    const container = screen.getByTestId('sentence-scroll-container');
+    Object.defineProperties(container, {
+      clientWidth: { configurable: true, value: 320 },
+      scrollWidth: { configurable: true, value: 640 },
+      scrollLeft: { configurable: true, writable: true, value: 0 },
+    });
+    const scrollBy = vi.fn();
+    Object.defineProperty(container, 'scrollBy', { configurable: true, value: scrollBy });
+
+    await act(async () => {
+      window.dispatchEvent(new Event('resize'));
+    });
+
+    const nextButton = screen.getByRole('button', { name: 'nextSentenceSymbols' });
+    expect(nextButton).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'previousSentenceSymbols' })).toBeDisabled();
+    expect(screen.getByTestId('sentence-right-overflow-indicator')).toBeInTheDocument();
+    expect(screen.queryByTestId('sentence-left-overflow-indicator')).not.toBeInTheDocument();
+
+    fireEvent.click(nextButton);
+    expect(scrollBy).toHaveBeenCalledWith({ left: 256, behavior: 'smooth' });
+
+    container.scrollLeft = 320;
+    fireEvent.scroll(container);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'previousSentenceSymbols' })).toBeEnabled();
+      expect(screen.getByTestId('sentence-left-overflow-indicator')).toBeInTheDocument();
+      expect(screen.queryByTestId('sentence-right-overflow-indicator')).not.toBeInTheDocument();
+    });
   });
 
   it('shows custom_text in preview when available', () => {

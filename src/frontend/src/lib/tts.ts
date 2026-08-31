@@ -5,6 +5,13 @@ interface EnqueueOptions {
   rate?: number
   pitch?: number
   lang?: string
+  /**
+   * Replacement group: enqueueing with a group cancels any still-queued or
+   * currently speaking utterance of the SAME group. Hover-to-speak previews
+   * use this so only the symbol under the pointer is spoken; utterances
+   * without a group (real messages) are never displaced.
+   */
+  group?: string
 }
 
 const NO_START_WATCHDOG_MS = 1_500
@@ -212,6 +219,7 @@ class TTSQueue {
   private debounceMs: number
   private activeUtteranceId: number | null
   private activeIsLocal: boolean
+  private activeGroup: string | null
   private nextUtteranceId: number
   private speakingRequestedAt: number | null
   private speakingStartedAt: number | null
@@ -232,6 +240,7 @@ class TTSQueue {
     this.debounceMs = 250
     this.activeUtteranceId = null
     this.activeIsLocal = false
+    this.activeGroup = null
     this.nextUtteranceId = 0
     this.speakingRequestedAt = null
     this.speakingStartedAt = null
@@ -283,6 +292,7 @@ class TTSQueue {
     this.clearWatchdogs()
     this.activeUtteranceId = null
     this.activeIsLocal = false
+    this.activeGroup = null
     this.speakingRequestedAt = null
     this.speakingStartedAt = null
     this.clearLocalSynthesisAttempt()
@@ -295,6 +305,18 @@ class TTSQueue {
     this.setStatus('idle')
   }
 
+  /**
+   * Drop queued utterances of a replacement group and stop the active one
+   * when it belongs to the group. Other utterances (real messages) keep
+   * their place and are never interrupted.
+   */
+  private cancelGroup(group: string) {
+    this.queue = this.queue.filter((item) => item.opts.group !== group)
+    if (this.activeUtteranceId !== null && this.activeGroup === group) {
+      this.finishCurrentUtterance(true)
+    }
+  }
+
   enqueue(text: string, opts: EnqueueOptions = {}) {
     const now = Date.now()
     const k = opts.key ?? text
@@ -302,6 +324,7 @@ class TTSQueue {
     if (now - last < this.debounceMs) return
     this.lastSpokenAt.set(k, now)
 
+    if (opts.group) this.cancelGroup(opts.group)
     this.queue.push({ text, opts })
     this.processNext()
   }
@@ -327,6 +350,7 @@ class TTSQueue {
 
     const utteranceId = ++this.nextUtteranceId
     this.activeUtteranceId = utteranceId
+    this.activeGroup = item.opts.group ?? null
     this.speakingRequestedAt = Date.now()
     this.speakingStartedAt = null
 
@@ -700,6 +724,7 @@ class TTSQueue {
     this.clearWatchdogs()
     this.activeUtteranceId = null
     this.activeIsLocal = false
+    this.activeGroup = null
     this.speakingRequestedAt = null
     this.speakingStartedAt = null
     this.clearLocalSynthesisAttempt()

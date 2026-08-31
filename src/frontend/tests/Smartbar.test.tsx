@@ -185,6 +185,8 @@ describe('Smartbar pagination', () => {
     const nextButton = await screen.findByRole('button', { name: 'Next suggestions' });
     expect(nextButton).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Previous suggestions' })).toBeDisabled();
+    expect(screen.getByTestId('smartbar-right-overflow-indicator')).toBeInTheDocument();
+    expect(screen.queryByTestId('smartbar-left-overflow-indicator')).not.toBeInTheDocument();
 
     fireEvent.click(nextButton);
     expect(scrollBy).toHaveBeenCalledWith({ left: 256, behavior: 'smooth' });
@@ -193,6 +195,8 @@ describe('Smartbar pagination', () => {
     fireEvent.scroll(container);
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Previous suggestions' })).toBeEnabled();
+      expect(screen.getByTestId('smartbar-left-overflow-indicator')).toBeInTheDocument();
+      expect(screen.queryByTestId('smartbar-right-overflow-indicator')).not.toBeInTheDocument();
     });
   });
 });

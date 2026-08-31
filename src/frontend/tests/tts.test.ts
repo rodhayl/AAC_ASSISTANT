@@ -157,6 +157,49 @@ describe('tts queue watchdog', () => {
     expect(speechSynthesis.speak).toHaveBeenCalledTimes(2)
     expect(utterances[1].text).toBe('B')
   })
+
+  it('replaces the speaking utterance when a newer one shares its group', async () => {
+    speechSynthesis.speak.mockImplementation((utterance: FakeUtterance) => {
+      utterances.push(utterance)
+      utterance.onstart?.()
+    })
+    const { tts } = await import('../src/lib/tts')
+    await selectBrowserTTS()
+
+    tts.enqueue('con', { key: 'hover-1', group: 'hover-speak' })
+    expect(utterances[0].text).toBe('con')
+    expect(tts.getStatus()).toBe('speaking')
+
+    // The pointer moved to another suggestion: the stale preview must be
+    // cancelled, never chained before the new word.
+    tts.enqueue('nosotros', { key: 'hover-2', group: 'hover-speak' })
+
+    expect(speechSynthesis.cancel).toHaveBeenCalled()
+    expect(speechSynthesis.speak).toHaveBeenCalledTimes(2)
+    expect(utterances[1].text).toBe('nosotros')
+  })
+
+  it('drops queued previews of the same group without displacing real messages', async () => {
+    const { tts } = await import('../src/lib/tts')
+    await selectBrowserTTS()
+
+    // A real message is speaking (no events fire in this fake environment).
+    tts.enqueue('message', { key: 'msg-1' })
+    // Two hover previews: the second must drop the first from the queue,
+    // while the real message keeps its priority.
+    tts.enqueue('con', { key: 'hover-1', group: 'hover-speak' })
+    tts.enqueue('nosotros', { key: 'hover-2', group: 'hover-speak' })
+
+    expect(speechSynthesis.speak).toHaveBeenCalledTimes(1)
+
+    // The no-start watchdog retires the eventless message; only the latest
+    // preview remains queued behind it.
+    await vi.advanceTimersByTimeAsync(1_500)
+
+    expect(speechSynthesis.speak).toHaveBeenCalledTimes(2)
+    expect(utterances[0].text).toBe('message')
+    expect(utterances[1].text).toBe('nosotros')
+  })
 })
 
 // ---------------------------------------------------------------------------

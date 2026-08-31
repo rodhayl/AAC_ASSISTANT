@@ -213,6 +213,8 @@
   "moreSuggestions": "More suggestions",
   "previousSuggestions": "Previous suggestions",
   "nextSuggestions": "Next suggestions",
+  "previousSentenceSymbols": "Previous sentence symbols",
+  "nextSentenceSymbols": "Next sentence symbols",
   "home": "Home",
   "back": "Back",
   "listen": "Listen",

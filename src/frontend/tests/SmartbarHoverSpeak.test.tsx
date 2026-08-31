@@ -80,7 +80,10 @@ describe('Smartbar hover-to-speak', () => {
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(enqueue).toHaveBeenCalledWith('agua', { key: 'hover-speak:agua' });
+    expect(enqueue).toHaveBeenCalledWith('agua', {
+      key: 'hover-speak:agua',
+      group: 'hover-speak',
+    });
   });
 
   it('does not speak when the pointer leaves before the delay', async () => {

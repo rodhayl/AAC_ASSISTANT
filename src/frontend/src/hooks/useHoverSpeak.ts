@@ -44,7 +44,13 @@ export function useHoverSpeak() {
           cancel();
           timerRef.current = setTimeout(() => {
             timerRef.current = null;
-            tts.enqueue(text, { key: `hover-speak:${text.trim().toLowerCase()}` });
+            // The hover-speak group replaces a still-queued or speaking
+            // preview: the pointer has moved on, so the previous word must
+            // never be chained before this one ("con" + "nosotros").
+            tts.enqueue(text, {
+              key: `hover-speak:${text.trim().toLowerCase()}`,
+              group: 'hover-speak',
+            });
           }, delayMs);
         },
         onMouseLeave: cancel,

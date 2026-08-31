@@ -1,5 +1,5 @@
-import { memo } from 'react';
-import { Play, Delete, Trash2, X, Volume2, MessageSquare } from 'lucide-react';
+import { memo, useEffect, useRef, useState } from 'react';
+import { Play, Delete, Trash2, X, Volume2, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react';
 import { IconButton } from '../ui/icon-button';
 import type { BoardSymbol } from '../../types';
 import { useTranslation } from 'react-i18next';
@@ -16,7 +16,6 @@ import {
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useState } from 'react';
 import { getCategoryStyle } from '../../lib/symbolCategoryStyle';
 
 interface SentenceStripProps {
@@ -104,6 +103,9 @@ export const SentenceStrip = memo(function SentenceStrip({
 }: SentenceStripProps) {
   const { t } = useTranslation('boards');
   const [activeId, setActiveId] = useState<string | null>(null);
+  const sentenceScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -132,12 +134,76 @@ export const SentenceStrip = memo(function SentenceStrip({
 
   const sentenceText = symbols.map(s => s.custom_text || s.symbol.label).join(' ');
 
+  useEffect(() => {
+    const container = sentenceScrollRef.current;
+    if (!container) return;
+
+    const updateScrollControls = () => {
+      const maxScrollLeft = container.scrollWidth - container.clientWidth;
+      setCanScrollLeft(container.scrollLeft > 1);
+      setCanScrollRight(maxScrollLeft - container.scrollLeft > 1);
+    };
+
+    updateScrollControls();
+    container.addEventListener('scroll', updateScrollControls, { passive: true });
+    window.addEventListener('resize', updateScrollControls);
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(updateScrollControls)
+      : null;
+    resizeObserver?.observe(container);
+
+    return () => {
+      container.removeEventListener('scroll', updateScrollControls);
+      window.removeEventListener('resize', updateScrollControls);
+      resizeObserver?.disconnect();
+    };
+  }, [symbols]);
+
+  const scrollSentence = (direction: 'left' | 'right') => {
+    const container = sentenceScrollRef.current;
+    if (!container) return;
+
+    const distance = Math.max(container.clientWidth * 0.8, 160);
+    container.scrollBy({
+      left: direction === 'left' ? -distance : distance,
+      behavior: 'smooth',
+    });
+  };
+
   return (
     <div data-testid="sentence-strip" className="glass-panel border-b border-border shadow-sm sticky top-0 z-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
         <div className="flex items-center gap-4">
           {/* Sentence Display Area */}
-          <div className="flex-1 min-h-[5rem] bg-background rounded-xl border border-border p-2 flex items-center gap-2 overflow-x-auto hide-scrollbar touch-pan-x">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            {(canScrollLeft || canScrollRight) && (
+              <button
+                type="button"
+                onClick={() => scrollSentence('left')}
+                disabled={!canScrollLeft}
+                className="flex min-h-[2.75rem] min-w-[2.75rem] shrink-0 items-center justify-center rounded-full border border-brand/20 bg-surface text-brand transition-colors hover:bg-brand/10 disabled:cursor-not-allowed disabled:opacity-30"
+                aria-label={t('previousSentenceSymbols')}
+                title={t('previousSentenceSymbols')}
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
+
+            <div className="relative min-w-0 flex-1">
+              {canScrollLeft && (
+                <div
+                  data-testid="sentence-left-overflow-indicator"
+                  className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-brand/25 via-brand/10 to-transparent"
+                  aria-hidden="true"
+                />
+              )}
+
+              <div
+                ref={sentenceScrollRef}
+                data-testid="sentence-scroll-container"
+                className="flex min-h-[5rem] min-w-0 items-center gap-2 overflow-x-auto rounded-xl border border-border bg-background p-2 hide-scrollbar touch-pan-x"
+              >
             {symbols.length === 0 ? (
               <span data-testid="sentence-empty" className="text-muted-foreground px-2 italic select-none">
                 {t('tapSymbolsToSpeak')}
@@ -189,6 +255,29 @@ export const SentenceStrip = memo(function SentenceStrip({
                   ) : null}
                 </DragOverlay>
               </DndContext>
+            )}
+              </div>
+
+              {canScrollRight && (
+                <div
+                  data-testid="sentence-right-overflow-indicator"
+                  className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-brand/25 via-brand/10 to-transparent"
+                  aria-hidden="true"
+                />
+              )}
+            </div>
+
+            {(canScrollLeft || canScrollRight) && (
+              <button
+                type="button"
+                onClick={() => scrollSentence('right')}
+                disabled={!canScrollRight}
+                className="flex min-h-[2.75rem] min-w-[2.75rem] shrink-0 items-center justify-center rounded-full border border-brand/20 bg-surface text-brand transition-colors hover:bg-brand/10 disabled:cursor-not-allowed disabled:opacity-30"
+                aria-label={t('nextSentenceSymbols')}
+                title={t('nextSentenceSymbols')}
+              >
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </button>
             )}
           </div>
 

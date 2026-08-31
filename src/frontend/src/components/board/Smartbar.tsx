@@ -198,7 +198,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
   // Always render to allow access to categories
 
   return (
-    <div className="w-full bg-brand/10 border-b border-brand/20 p-1.5 transition-all">
+    <div className="w-full min-w-0 bg-brand/10 border-b border-brand/20 p-1.5 transition-all">
       <div className="flex items-center justify-between gap-2 mb-1.5 px-1 overflow-x-auto">
         <div className="flex items-center gap-1.5 shrink-0">
           <Sparkles className="w-3.5 h-3.5 text-brand animate-pulse" />
@@ -288,7 +288,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
           <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-brand" />
         </div>
       ) : suggestions.length > 0 ? (
-        <div className="flex items-center gap-1 min-w-0 px-1">
+        <div className="flex w-full max-w-full min-w-0 items-center gap-1 overflow-hidden px-1">
           {(canScrollLeft || canScrollRight) && (
             <button
               type="button"
@@ -302,11 +302,20 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
             </button>
           )}
 
-          <div
-            ref={suggestionsContainerRef}
-            data-testid="smartbar-suggestions"
-            className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-2 scrollbar-hide touch-pan-x"
-          >
+          <div className="relative min-w-0 flex-1">
+            {canScrollLeft && (
+              <div
+                data-testid="smartbar-left-overflow-indicator"
+                className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-brand/25 via-brand/10 to-transparent"
+                aria-hidden="true"
+              />
+            )}
+
+            <div
+              ref={suggestionsContainerRef}
+              data-testid="smartbar-suggestions"
+              className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-2 scrollbar-hide touch-pan-x"
+            >
             {suggestions.map((suggestion, suggestionIndex) => {
             const isAI = suggestion.source === 'ai';
             const isPunctuation = suggestion.category === 'punctuation';
@@ -379,6 +388,15 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId }: SmartbarP
               </div>
             );
             })}
+            </div>
+
+            {canScrollRight && (
+              <div
+                data-testid="smartbar-right-overflow-indicator"
+                className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-brand/25 via-brand/10 to-transparent"
+                aria-hidden="true"
+              />
+            )}
           </div>
 
           {(canScrollLeft || canScrollRight) && (
