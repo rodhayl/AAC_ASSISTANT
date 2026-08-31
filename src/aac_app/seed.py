@@ -503,6 +503,79 @@ def _create_sample_symbols(session: Session) -> None:
             "keywords": "help, assist, support",
             "language": "en",
         },
+        # Technology / AI vocabulary so study topics like "Inteligencia
+        # Artificial y LLMs" have matching symbols for the topic-aware
+        # prediction tier to surface instead of only generic social words.
+        {
+            "label": "inteligencia artificial",
+            "description": "Sistemas que aprenden y razonan como una persona",
+            "category": "computing",
+            "keywords": "inteligencia artificial, IA, tecnología, ordenador",
+            "language": "es",
+        },
+        {
+            "label": "artificial intelligence",
+            "description": "Systems that learn and reason like a person",
+            "category": "computing",
+            "keywords": "artificial intelligence, AI, technology, computer",
+            "language": "en",
+        },
+        {
+            "label": "ordenador",
+            "description": "Máquina para procesar información",
+            "category": "computing",
+            "keywords": "ordenador, computadora, tecnología, pantalla",
+            "language": "es",
+        },
+        {
+            "label": "computer",
+            "description": "A machine for processing information",
+            "category": "computing",
+            "keywords": "computer, technology, screen",
+            "language": "en",
+        },
+        {
+            "label": "datos",
+            "description": "Información que un ordenador guarda y procesa",
+            "category": "computing",
+            "keywords": "datos, información, procesar, almacenar",
+            "language": "es",
+        },
+        {
+            "label": "data",
+            "description": "Information a computer stores and processes",
+            "category": "computing",
+            "keywords": "data, information, process, store",
+            "language": "en",
+        },
+        {
+            "label": "modelo de lenguaje",
+            "description": "Un programa que entiende y genera texto",
+            "category": "computing",
+            "keywords": "modelo de lenguaje, IA, texto, generar, LLM",
+            "language": "es",
+        },
+        {
+            "label": "language model",
+            "description": "A program that understands and generates text",
+            "category": "computing",
+            "keywords": "language model, AI, text, generate, LLM",
+            "language": "en",
+        },
+        {
+            "label": "pregunta",
+            "description": "Algo que se quiere saber o preguntar",
+            "category": "computing",
+            "keywords": "pregunta, preguntar, IA, consultar",
+            "language": "es",
+        },
+        {
+            "label": "prompt",
+            "description": "The instruction given to an AI",
+            "category": "computing",
+            "keywords": "prompt, instruction, AI, ask",
+            "language": "en",
+        },
     ]
 
     # Dedupe by (label, language) only: the category is descriptive metadata,
