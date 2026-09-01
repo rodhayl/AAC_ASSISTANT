@@ -1,0 +1,240 @@
+"""Tests for background SVG symbol auto-generation."""
+
+import threading
+from unittest.mock import patch
+
+import pytest
+
+from src.aac_app.models import Symbol
+from src.aac_app.services import symbol_svg_autogen as autogen
+
+
+@pytest.fixture(autouse=True)
+def _reset_autogen_state():
+    """Isolate the module-level dedup sets between tests."""
+    with autogen._lock:
+        autogen._in_flight.clear()
+        autogen._recent_failures.clear()
+    autogen.set_llm_provider_factory(None)
+    yield
+    with autogen._lock:
+        autogen._in_flight.clear()
+        autogen._recent_failures.clear()
+    autogen.set_llm_provider_factory(None)
+
+
+def test_autogen_disabled_under_testing(monkeypatch):
+    monkeypatch.setenv("TESTING", "1")
+    monkeypatch.delenv("AAC_AUTOGEN_SYMBOLS", raising=False)
+    assert autogen.autogen_enabled() is False
+
+    monkeypatch.setenv("TESTING", "1")
+    monkeypatch.setenv("AAC_AUTOGEN_SYMBOLS", "1")
+    assert autogen.autogen_enabled() is False
+
+    monkeypatch.delenv("TESTING", raising=False)
+    monkeypatch.setenv("AAC_AUTOGEN_SYMBOLS", "0")
+    assert autogen.autogen_enabled() is False
+
+    monkeypatch.delenv("TESTING", raising=False)
+    monkeypatch.setenv("AAC_AUTOGEN_SYMBOLS", "1")
+    assert autogen.autogen_enabled() is True
+
+
+def test_ensure_generated_spawns_exactly_one_thread_for_duplicate_calls():
+    """Concurrent calls for the same (label, language) start a single thread."""
+    spawned: list[threading.Thread] = []
+    original_start = threading.Thread.start
+
+    def capturing_start(self):
+        spawned.append(self)
+        return original_start(self)
+
+    autogen.set_llm_provider_factory(lambda: None)
+
+    with patch.object(threading.Thread, "start", capturing_start):
+        autogen.ensure_symbol_generated("nebulosa", "es")
+        autogen.ensure_symbol_generated("NEBULOSA", "es")
+        autogen.ensure_symbol_generated("nebulosa", "es-ES")
+
+    assert len(spawned) == 1
+    assert spawned[0].name.startswith("svg-autogen-")
+
+
+def test_ensure_generated_skips_empty_and_unknown_words():
+    spawned: list[threading.Thread] = []
+
+    def capturing_start(self):
+        spawned.append(self)
+
+    autogen.set_llm_provider_factory(lambda: None)
+    with patch.object(threading.Thread, "start", capturing_start):
+        autogen.ensure_symbol_generated("", "es")
+        autogen.ensure_symbol_generated("   ", "es")
+        autogen.ensure_symbol_generated("nebulosa", "")
+        autogen.ensure_symbol_generated("nebulosa", None)  # type: ignore[arg-type]
+    assert spawned == []
+
+
+def test_background_generation_persists_symbol_and_svg(
+    test_db_session, tmp_path, monkeypatch
+):
+    """A generated word becomes a real Symbol row with an SVG file."""
+    from src import config
+    from src.aac_app.db import get_session
+
+    monkeypatch.setattr(config, "UPLOADS_DIR", tmp_path, raising=False)
+    (tmp_path / "symbols").mkdir(parents=True, exist_ok=True)
+
+    class _FakeProvider:
+        def generate_sync(self, prompt, **kwargs) -> str:
+            return (
+                '{"background":"#ffffff",'
+                '"shapes":[{"kind":"circle","cx":0,"cy":0,"r":60,"fill":"#FFD166"},'
+                '{"kind":"circle","cx":0,"cy":0,"r":30,"fill":"#000000"}]}'
+            )
+
+    autogen.set_llm_provider_factory(lambda: _FakeProvider())
+    key = autogen._PendingKey("nebulosa", "es")
+    with autogen._lock:
+        autogen._in_flight.add(key)
+    with patch("src.aac_app.db.get_session", side_effect=get_session):
+        # Route the module's lazy get_session imports through the real factory,
+        # which reads DATABASE_URL set by the test fixture.
+        autogen._generate_in_background(key, "nebulosa", "es")
+
+    with autogen._lock:
+        assert key not in autogen._in_flight
+
+    row = test_db_session.query(Symbol).filter(Symbol.label == "nebulosa").first()
+    assert row is not None
+    assert row.language == "es"
+    assert row.image_path.startswith("/uploads/symbols/")
+    assert row.image_path.endswith(".svg")
+    saved = tmp_path / "symbols" / row.image_path.rsplit("/", 1)[1]
+    assert saved.is_file()
+    assert saved.read_text(encoding="utf-8").startswith("<?xml")
+
+
+def test_background_generation_skips_existing_symbol(
+    test_db_session, tmp_path, monkeypatch
+):
+    """A word that already has a symbol is never regenerated."""
+    from src import config
+    from src.aac_app.db import get_session
+
+    monkeypatch.setattr(config, "UPLOADS_DIR", tmp_path, raising=False)
+    existing = Symbol(
+        label="galaxia",
+        category="space",
+        language="es",
+        image_path="/symbols/galaxia.png",
+        is_builtin=True,
+    )
+    test_db_session.add(existing)
+    test_db_session.commit()
+
+    calls = []
+    autogen.set_llm_provider_factory(lambda: None)
+    # Force a fresh cache-free DB read via the test session's engine.
+    with (
+        patch.object(
+            autogen,
+            "_generate_sync_callable",
+            side_effect=lambda: calls.append(1) or None,
+        ),
+        patch("src.aac_app.db.get_session", side_effect=get_session),
+    ):
+        key = autogen._PendingKey("galaxia", "es")
+        autogen._generate_in_background(key, "galaxia", "es")
+
+    assert calls == []  # Existing symbol -> no generation attempt.
+
+
+def test_failed_generation_gets_cooldown_then_retries(test_db_session, monkeypatch):
+    """A provider failure records the key; retries defer until cooldown ends."""
+
+    def _exploding_generate(self, prompt, **kwargs) -> str:
+        raise RuntimeError("provider down")
+
+    class _ExplodingProvider:
+        generate_sync = _exploding_generate
+
+    autogen.set_llm_provider_factory(lambda: _ExplodingProvider())
+    key = autogen._PendingKey("quasar", "es")
+
+    started: list[threading.Thread] = []
+
+    def capturing_start(self):
+        # Run the thread target synchronously so failure recording is
+        # deterministic and no background thread outlives the test.
+        started.append(self)
+        return self.run()
+
+    with patch.object(
+        threading.Thread, "start", new=capturing_start
+    ):
+        # First attempt: the provider blows up -> failure recorded. The real
+        # thread runs once (synchronously through the capture wrapper).
+        autogen.ensure_symbol_generated("quasar", "es")
+    assert len(started) == 1
+    assert autogen._in_flight == set()
+    assert key in autogen._recent_failures
+
+    # A second call within the cooldown must not spawn another attempt.
+    with patch.object(threading.Thread, "start", new=capturing_start):
+        autogen.ensure_symbol_generated("quasar", "es")
+    assert len(started) == 1
+
+    # After the cooldown elapses the word is retried once.
+    with autogen._lock:
+        autogen._recent_failures[key] = 0  # long ago
+    with patch.object(threading.Thread, "start", new=capturing_start):
+        autogen.ensure_symbol_generated("quasar", "es")
+    assert len(started) == 2
+
+
+def test_prediction_hook_schedules_generation_for_text_only_word(
+    test_db_session, regular_user, monkeypatch
+):
+    """predict_next triggers background generation exactly for text-only words."""
+    from unittest.mock import Mock
+
+    from src.aac_app.services import prediction_service as ps_module
+    from src.aac_app.services import symbol_svg_autogen as autogen_module
+
+    service = ps_module.PredictionService()
+    monkeypatch.setitem(service._models, "es", {"bigrams": {}})
+    analytics = Mock()
+    analytics.suggest_next_symbol.return_value = []
+    monkeypatch.setattr(service, "analytics_service", analytics)
+    test_db_session.add_all(
+        [
+            Symbol(label="vaca", category="farm_animals", language="es", is_builtin=True),
+            Symbol(label="cow", category="farm_animals", language="en", is_builtin=True),
+        ]
+    )
+    test_db_session.commit()
+
+    scheduled: list[tuple[str, str]] = []
+    fetched = Mock(return_value=["nebulosa", "supernova", "telescopio"])
+    with patch.object(autogen_module, "autogen_enabled", return_value=True), patch.object(
+        autogen_module,
+        "ensure_symbol_generated",
+        side_effect=lambda word, lang: scheduled.append((word, lang)),
+    ):
+        try:
+            service.predict_next(
+                user_id=regular_user.id,
+                current_symbols=[],
+                limit=6,
+                language="es",
+                offset=0,
+                topic="astrofísica",
+                topic_word_fetcher=fetched,
+                db=test_db_session,
+            )
+        finally:
+            ps_module._topics_word_cache.clear()
+
+    assert scheduled == [("nebulosa", "es"), ("supernova", "es"), ("telescopio", "es")]

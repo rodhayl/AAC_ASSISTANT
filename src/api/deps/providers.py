@@ -29,7 +29,14 @@ from src.aac_app.services.local_vector_store import (
     LocalVectorStore,
     vector_store_operation_lock,
 )
+from src.aac_app.services.symbol_svg_autogen import set_llm_provider_factory
 from src.api import deps as deps_package
+
+# Background SVG auto-generation (Smartbar text-only words) needs the same
+# provider instance the request path uses. Register the factory lazily so
+# the module stays import-safe: the factory only calls back into this module
+# when a background thread actually needs to generate.
+set_llm_provider_factory(lambda: get_llm_provider())
 
 _ollama_provider: OllamaProvider | None = None
 _openrouter_provider: OpenRouterProvider | None = None

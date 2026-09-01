@@ -383,46 +383,22 @@ def generate_svg_symbol(
 
     from src.aac_app.services.svg_symbol_generator import (
         ShapeSpecError,
-        build_shape_spec_prompt,
-        parse_spec_response,
-        render_spec_to_svg,
+        generate_svg_text,
     )
 
-    svg_text: str | None = None
-    for attempt in range(2):
-        try:
-            prompt = build_shape_spec_prompt(label, language)
-            if attempt > 0:
-                prompt += (
-                    "\nThe previous attempt returned malformed JSON. "
-                    "Respond with ONLY valid JSON: no markdown, no trailing "
-                    "commas, no comments, no prose."
-                )
-            response = generate_sync(
-                prompt=prompt,
-                temperature=0.3,
-                max_tokens=900,
-            )
-            spec = parse_spec_response(response)
-            svg_text = render_spec_to_svg(spec)
-            break
-        except ShapeSpecError as exc:
-            logger.warning(
-                "Generated SVG spec rejected for {!r} (attempt {}): {}",
-                label,
-                attempt + 1,
-                exc,
-            )
-        except Exception as exc:
-            logger.error(f"LLM SVG generation failed for {label!r}: {exc}")
-            raise HTTPException(
-                status_code=502, detail="Failed to generate symbol image"
-            ) from exc
-    if not svg_text:
+    try:
+        svg_text = generate_svg_text(label, language, generate_sync)
+    except ShapeSpecError as exc:
+        logger.error(f"LLM SVG generation failed for {label!r}: {exc}")
         raise HTTPException(
             status_code=422,
             detail="Model did not return a valid shape spec; try again",
-        )
+        ) from exc
+    except Exception as exc:
+        logger.error(f"LLM SVG generation failed for {label!r}: {exc}")
+        raise HTTPException(
+            status_code=502, detail="Failed to generate symbol image"
+        ) from exc
 
     uploads_dir = config.UPLOADS_DIR / "symbols"
     uploads_dir.mkdir(parents=True, exist_ok=True)

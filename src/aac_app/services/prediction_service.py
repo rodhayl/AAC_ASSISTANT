@@ -570,7 +570,9 @@ class _PredictionContext:
                 continue
             # No symbol: emit a text-only suggestion. Board-scoped requests
             # must not leak words outside their scope, so this fallback only
-            # applies when no board restricts the vocabulary.
+            # applies when no board restricts the vocabulary. Meanwhile the
+            # pictogram is generated in the background (once per word) so a
+            # later request resolves it as a real symbol with an image.
             if self.allowed_symbol_ids is not None:
                 continue
             fake_id = -(abs(hash(normalized)) % 1000000)
@@ -586,6 +588,7 @@ class _PredictionContext:
                 }
             )
             self.seen_labels.add(normalized)
+            self._schedule_svg_generation(word)
 
     def suggest_history(self) -> None:
         """Tier 1: personalized suggestions from the user's usage history."""
@@ -847,6 +850,26 @@ class _PredictionContext:
                 confidence=0.18,
                 source="board_layout",
                 symbol_language=language_code,
+            )
+
+    def _schedule_svg_generation(self, word: str) -> None:
+        """Fire-and-forget background pictogram generation for a missing word.
+
+        Idempotent and non-blocking: dedup and thread spawning happen under
+        a cheap in-memory lock, so the Smartbar response latency is unaffected
+        and a symbol is generated at most once per (label, language).
+        """
+        try:
+            from src.aac_app.services.symbol_svg_autogen import (
+                autogen_enabled,
+                ensure_symbol_generated,
+            )
+
+            if autogen_enabled():
+                ensure_symbol_generated(word, self.lang)
+        except Exception as exc:
+            logger.warning(
+                "Could not schedule SVG generation for {!r}: {}", word, exc
             )
 
     def suggest_punctuation(self) -> None:

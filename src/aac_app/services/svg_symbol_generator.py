@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from typing import Any
 
 from loguru import logger
@@ -363,3 +364,43 @@ def parse_spec_response(response: str) -> dict:
         except (ValueError, TypeError) as inner:
             raise ShapeSpecError(f"invalid JSON spec: {inner}") from inner
     return validate_shape_spec(raw)
+
+
+def generate_svg_text(
+    label: str, language: str, generate_sync: Callable[..., str]
+) -> str:
+    """Ask the LLM for a pictogram shape spec and render it to an SVG string.
+
+    ``generate_sync`` is the provider's synchronous generator (``prompt=``,
+    ``temperature=``, ``max_tokens=`` kwargs). One retry is made when the
+    model returns malformed JSON; raises ``ShapeSpecError`` when neither
+    attempt was usable.
+    """
+    svg_text: str | None = None
+    for attempt in range(2):
+        prompt = build_shape_spec_prompt(label, language)
+        if attempt > 0:
+            prompt += (
+                "\nThe previous attempt returned malformed JSON. "
+                "Respond with ONLY valid JSON: no markdown, no trailing "
+                "commas, no comments, no prose."
+            )
+        try:
+            response = generate_sync(
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=900,
+            )
+            spec = parse_spec_response(response)
+            svg_text = render_spec_to_svg(spec)
+            break
+        except ShapeSpecError as exc:
+            logger.warning(
+                "Generated SVG spec rejected for {!r} (attempt {}): {}",
+                label,
+                attempt + 1,
+                exc,
+            )
+    if not svg_text:
+        raise ShapeSpecError(f"model did not return a valid shape spec for {label!r}")
+    return svg_text
