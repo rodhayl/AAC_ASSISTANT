@@ -247,9 +247,11 @@ def test_database_initialization_idempotency():
     assert session.query(User).count() == 0
     from src.aac_app.models import Symbol
 
-    # 12 concepts seeded in both UI locales (es + en); the second run must
-    # not add rows even for labels that already exist under other categories.
-    assert session.query(Symbol).count() == 24
+    # 17 concepts seeded in both UI locales (es + en, incl. computing/IA
+    # vocabulary for topic-aware predictions); count after the first run must
+    # not grow on the second run even for labels that already exist under
+    # other categories (e.g. an ARASAAC bulk import).
+    assert session.query(Symbol).count() == 34
     assert session.query(Achievement).count() == 3
     session.close()
     engine.dispose()

@@ -205,11 +205,13 @@ def test_suggest_next_symbol_handles_null_sessions_and_duplicate_next_rows(
         db=test_db_session,
     )
 
+    # Metadata (category, image, language) is read from the live Symbol row,
+    # not the denormalized usage-log snapshot.
     assert suggestions == [
         {
             "symbol_id": want.id,
             "label": "want",
-            "category": "test",
+            "category": "verb",
             "image_path": "want.png",
             "language": "en",
             "confidence": 1.0,
