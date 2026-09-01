@@ -267,6 +267,59 @@ def test_learning_question_output_gate_blocks_blocked_question(
     assert event is not None and event.verdict == "redirected"
 
 
+def test_learning_summary_output_gate_replaces_blocked_summary(
+    test_db_session, regular_user, mock_llm_provider, mock_speech_provider
+):
+    """An end-of-session summary that trips the filter is replaced by a
+    neutral fallback and logged."""
+    from src.aac_app.services.learning.service import LearningCompanionService
+
+    test_db_session.add(
+        GuardianProfile(
+            user_id=regular_user.id,
+            template_name="default",
+            safety_constraints={"trigger_words": ["guerra"]},
+            is_active=True,
+            created_by=regular_user.id,
+        )
+    )
+    session = LearningSession(
+        user_id=regular_user.id,
+        topic_name="frutas",
+        purpose="",
+        status="active",
+        conversation_history=[],
+        comprehension_score=0.5,
+        questions_answered=2,
+        correct_answers=1,
+    )
+    test_db_session.add(session)
+    test_db_session.commit()
+
+    async def generate(**kwargs):
+        prompt = kwargs.get("prompt", "")
+        if "summary" in prompt.lower():
+            return "¡Has aprendido mucho sobre la guerra!"
+        return "ok"
+
+    mock_llm_provider.generate = AsyncMock(side_effect=generate)
+    service = LearningCompanionService(mock_llm_provider, mock_speech_provider)
+
+    result = asyncio.run(
+        service.end_learning_session(session_id=session.id, db=test_db_session)
+    )
+    assert result["success"] is True
+    assert "guerra" not in result["summary"]
+    assert "Buen trabajo" in result["summary"] or "Great work" in result["summary"]
+    event = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.user_id == regular_user.id)
+        .filter(ContentSafetyEvent.verdict == "redirected")
+        .first()
+    )
+    assert event is not None
+
+
 def test_learning_response_sentinel_blocks_flagged_output(
     test_db_session, regular_user, mock_llm_provider, mock_speech_provider
 ):
