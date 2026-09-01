@@ -329,10 +329,10 @@ def build_shape_spec_prompt(label: str, language: str) -> str:
         "Flat, colorful AAC pictograms in ARASAAC style: one clear central "
         "concept, bold simple shapes, high contrast; no text, letters, "
         "numbers, or photos.\n"
-        "Draw a pictogram for the concept: "
+        "Draw a centered pictogram for the concept: "
         f'"{label}" (language: {lang_hint}).\n'
-        "Canvas 512x512, centered at (0,0); coordinates range roughly "
-        "-256 to +256.\n"
+        "Canvas 512x512, centered at (0,0). Center the drawing; keep all "
+        "shapes within about -200 to +200.\n"
         "Reply with ONLY this JSON:\n"
         '{\n'
         '  "background": "#ffffff",\n'
@@ -342,8 +342,9 @@ def build_shape_spec_prompt(label: str, language: str) -> str:
         "  ]\n"
         "}\n"
         "Allowed kinds: circle, ellipse, rect, line, polygon, polyline, "
-        "path. fill/stroke: hex like #FFD166 or \"none\". Max 8 shapes; "
-        "prefer circle/ellipse/rect, use path only when needed."
+        "path. fill/stroke: hex like #FFD166 or \"none\". polygon/polyline "
+        "\"points\" is a list of [x,y] pairs like [[0,0],[10,10]]. Max 8 "
+        "shapes; prefer circle/ellipse/rect, use path only when needed."
     )
 
 

@@ -130,7 +130,7 @@ def test_build_shape_spec_prompt_constrains_output():
         "polyline",
         "#FFD166",
         "512",
-        "-256",
+        "-200",
         "no text",
         "black hole",
     ):
@@ -140,13 +140,34 @@ def test_build_shape_spec_prompt_constrains_output():
     assert "Spanish" in es_prompt
 
 
+def test_build_shape_spec_prompt_requires_centered_placement():
+    """The prompt must keep telling the model to center the drawing and to
+    stay within a sensible radius: corner-placed pictograms (a shape at far
+    coordinates surviving validation) are the main output outlier, and the
+    constraint is what keeps them rare."""
+    prompt = build_shape_spec_prompt("corazón", "es")
+    assert "centered pictogram" in prompt
+    assert "Center the drawing" in prompt
+    assert "keep all shapes within" in prompt and "-200" in prompt
+
+
+def test_build_shape_spec_prompt_spells_out_polygon_points_format():
+    """The model emits polygon points as flat SVG strings ("-120,80 0,-120")
+    unless told otherwise, and validation drops those — which is why
+    mountain-type pictograms rendered as an off-center leftover circle. The
+    prompt must spell out the list-of-pairs format."""
+    prompt = build_shape_spec_prompt("montaña", "es")
+    assert "[x,y]" in prompt
+    assert "[[0,0],[10,10]]" in prompt
+
+
 def test_build_shape_spec_prompt_stays_under_token_budget():
     """The per-pictogram prompt is the biggest LLM-cost lever (sent once per
-    generated word), so it must stay compact. ~620 chars ≈ ~220 tokens vs the
+    generated word), so it must stay compact. ~720 chars ≈ ~290 tokens vs the
     ~310 before trimming; the cap allows the wording to evolve without
     silently ballooning the cost again."""
     prompt = build_shape_spec_prompt("agujero negro", "es")
-    assert len(prompt) <= 700
+    assert len(prompt) <= 760
 
 
 # --- rasterization -------------------------------------------------------
