@@ -138,6 +138,39 @@ def start_session(
     return result
 
 
+@router.post("/{session_id}/report")
+def report_message(
+    session_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Student flags an AI response as inappropriate.
+
+    Records a surface="chat" audit event with verdict "reported" so
+    teachers/admins can review it in the safety log. Always succeeds (the
+    child's report must never fail loudly); the event is best-effort.
+    """
+    from src.aac_app.services.content_safety import log_event
+
+    session = get_learning_session_or_404(
+        db,
+        session_id,
+        current_user,
+        message=lambda key: get_text(current_user, key),
+        require_active=False,
+    )
+    log_event(
+        user_id=session.user_id,
+        surface="chat",
+        direction="output",
+        verdict="reported",
+        matched=[],
+        detail=f"Student reported an AI message in session {session_id}",
+        db=db,
+    )
+    return {"success": True}
+
+
 @router.post("/{session_id}/ask", response_model=schemas.QuestionResponse)
 async def ask_question(
     session_id: int,

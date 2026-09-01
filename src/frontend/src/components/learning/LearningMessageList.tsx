@@ -1,8 +1,11 @@
-import { Bot, Edit, Grid as GridIcon } from 'lucide-react';
+import { useState } from 'react';
+import { Bot, Edit, Flag, Grid as GridIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SymbolMessageEditor } from '../SymbolMessageEditor';
 import { SymbolImage } from '../common/SymbolImage';
 import { IconButton } from '../ui/icon-button';
+import { useToastStore } from '../../store/toastStore';
+import api, { extractError } from '../../lib/api';
 import { cn } from '../../lib/utils';
 
 export interface LearningMessage {
@@ -19,6 +22,7 @@ export interface LearningMessage {
 interface LearningMessageListProps {
   messages: LearningMessage[];
   editingMessageIndex: number | null;
+  sessionId?: number | null;
   onEditMessage: (index: number) => void;
   onUpdateSymbols: (symbols: Array<{
     id: number;
@@ -32,11 +36,26 @@ interface LearningMessageListProps {
 export function LearningMessageList({
   messages,
   editingMessageIndex,
+  sessionId,
   onEditMessage,
   onUpdateSymbols,
   onCancelEdit,
 }: LearningMessageListProps) {
   const { t } = useTranslation('learning');
+  const addToast = useToastStore((state) => state.addToast);
+  // Set of message indexes already reported, so a child can't spam reports.
+  const [reported, setReported] = useState<Set<number>>(new Set());
+
+  const reportMessage = async (index: number) => {
+    if (!sessionId || reported.has(index)) return;
+    try {
+      await api.post(`/learning/${sessionId}/report`);
+      setReported((prev) => new Set(prev).add(index));
+      addToast(t('reportSent'), 'success');
+    } catch (err: unknown) {
+      addToast(extractError(err, t('reportFailed')), 'error');
+    }
+  };
 
   return (
     <>
@@ -98,6 +117,18 @@ export function LearningMessageList({
                     className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-surface/20 rounded"
                   >
                     <Edit className="w-3 h-3" />
+                  </IconButton>
+                )}
+                {message.role === 'assistant' && sessionId && (
+                  <IconButton
+                    label={reported.has(index) ? t('reported') : t('report')}
+                    aria-label={reported.has(index) ? t('reported') : t('report')}
+                    title={t('reportTitle')}
+                    disabled={reported.has(index)}
+                    onClick={() => { void reportMessage(index); }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-surface/20 rounded"
+                  >
+                    <Flag className="w-3 h-3" />
                   </IconButton>
                 )}
               </div>

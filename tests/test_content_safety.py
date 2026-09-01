@@ -315,6 +315,65 @@ def test_save_global_policy_roundtrip(test_db_session):
     assert policy.max_response_length == 30
 
 
+# --- Layer 0: prompt guardrails from the resolved policy --------------------
+
+
+def test_system_prompt_inherits_admin_global_terms(
+    test_db_session, regular_user, monkeypatch
+):
+    """A student with no guardian profile must still get the admin global
+    forbidden topics and trigger words in the system prompt (Layer 0)."""
+    import src.aac_app.services.content_safety as safety
+    from src.aac_app.services.guardian_profile_service import (
+        GuardianProfileService,
+    )
+
+    monkeypatch.setattr(
+        safety,
+        "load_global_policy",
+        lambda: ContentPolicy(
+            level="strict",
+            forbidden_topics=("astronomía",),
+            trigger_words=("guerra",),
+        ),
+    )
+    service = GuardianProfileService()
+    prompt = service.build_system_prompt(regular_user.id, db=test_db_session)
+    assert "astronomía" in prompt
+    assert "guerra" in prompt
+    assert "strict" in prompt.lower() or "G-rated" in prompt
+
+
+def test_system_prompt_merges_teacher_terms_into_global(
+    test_db_session, regular_user, monkeypatch
+):
+    """Teacher per-student terms and admin global terms both reach the prompt."""
+    import src.aac_app.services.content_safety as safety
+    from src.aac_app.services.guardian_profile_service import (
+        GuardianProfileService,
+    )
+
+    monkeypatch.setattr(
+        safety,
+        "load_global_policy",
+        lambda: ContentPolicy(level="standard", forbidden_topics=("astronomía",)),
+    )
+    test_db_session.add(
+        GuardianProfile(
+            user_id=regular_user.id,
+            template_name="default",
+            safety_constraints={"trigger_words": ["violencia"]},
+            is_active=True,
+            created_by=regular_user.id,
+        )
+    )
+    test_db_session.commit()
+    service = GuardianProfileService()
+    prompt = service.build_system_prompt(regular_user.id, db=test_db_session)
+    assert "astronomía" in prompt  # admin global
+    assert "violencia" in prompt  # teacher per-student
+
+
 # --- prediction integration ------------------------------------------------
 
 
@@ -720,6 +779,87 @@ def test_admin_events_and_clear(test_db_session):
     )
     assert cleared.status_code == 204
     assert test_db_session.query(ContentSafetyEvent).count() == 0
+
+
+def test_report_message_endpoint_logs_event(test_db_session):
+    from src.aac_app.models import LearningSession
+
+    student = _make_user(test_db_session, "safety_student6", "student")
+    session = LearningSession(
+        user_id=student.id,
+        topic_name="frutas",
+        purpose="",
+        status="active",
+        conversation_history=[],
+        comprehension_score=0.0,
+    )
+    test_db_session.add(session)
+    test_db_session.commit()
+
+    resp = client.post(
+        f"/api/learning/{session.id}/report",
+        headers=_headers(student),
+    )
+    assert resp.status_code == 200
+    event = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.user_id == student.id)
+        .first()
+    )
+    assert event is not None
+    assert event.surface == "chat" and event.verdict == "reported"
+
+    # Another student cannot report someone else's session.
+    other = _make_user(test_db_session, "safety_student7", "student")
+    denied = client.post(
+        f"/api/learning/{session.id}/report", headers=_headers(other)
+    )
+    assert denied.status_code == 403
+
+
+def test_schedule_svg_generation_respects_autogen_lock(
+    test_db_session, regular_user, monkeypatch
+):
+    from src.aac_app.services.prediction_service import _PredictionContext
+
+    policy = ContentPolicy(feature_locks={"block_autogen_pictograms": True})
+    service = _PredictionContext(
+        user_id=regular_user.id,
+        current_symbols=[],
+        language="es",
+        offset=0,
+        base_limit=10,
+        limit=10,
+        board_id=None,
+        db=test_db_session,
+        analytics_service=Mock(),
+        load_model=lambda lang: {"bigrams": {}},
+        content_policy=policy,
+    )
+    spawned: list = []
+
+    class _FakeThread:
+        def __init__(self, *a, **k):
+            self.args = a
+            self.kwargs = k
+            spawned.append(self)
+
+    monkeypatch.setattr(service, "_is_svg_generation_enabled", lambda: True)
+    monkeypatch.setattr(
+        "src.aac_app.services.symbol_svg_autogen.ensure_symbol_generated",
+        lambda *a, **k: None,
+    )
+    with patch("threading.Thread", _FakeThread):
+        service._schedule_svg_generation("estrella")
+    assert spawned == []  # the feature lock blocks spawning
+    event = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.user_id == regular_user.id)
+        .first()
+    )
+    assert event is not None
+    assert event.surface == "pictogram"
+    assert "block_autogen_pictograms" in (event.detail or "")
 
 
 def test_purge_ai_symbols_endpoint(test_db_session):

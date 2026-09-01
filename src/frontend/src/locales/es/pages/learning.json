@@ -155,5 +155,10 @@
     "conversation": "Conversación",
     "roleplay": "Juego de roles"
   },
-  "safetyRedirect": "¡Hablemos de otra cosa! Cuéntame qué tal tu día o qué has hecho hoy."
+  "safetyRedirect": "¡Hablemos de otra cosa! Cuéntame qué tal tu día o qué has hecho hoy.",
+  "report": "Informar",
+  "reportTitle": "Informar de una respuesta inapropiada",
+  "reported": "Informado",
+  "reportSent": "Gracias, hemos recibido tu informe.",
+  "reportFailed": "No se pudo enviar el informe."
 }

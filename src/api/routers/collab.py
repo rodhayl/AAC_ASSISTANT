@@ -216,7 +216,23 @@ async def board_channel(
                             check_text,
                             load_global_policy,
                             log_event,
+                            resolve_policy_for_user,
                         )
+
+                        # Per-student lock: a teacher/admin may disable collab
+                        # messaging entirely for this student.
+                        student_policy = resolve_policy_for_user(user.id, db=db)
+                        if student_policy.feature_blocked("block_social_messaging"):
+                            log_event(
+                                user_id=user.id,
+                                surface="social",
+                                direction="output",
+                                verdict="blocked",
+                                matched=[],
+                                detail="feature_lock: block_social_messaging",
+                                db=db,
+                            )
+                            continue
 
                         verdict = check_text(load_global_policy(), label_candidate)
                         if verdict.blocked:

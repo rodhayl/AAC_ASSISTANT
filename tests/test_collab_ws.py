@@ -37,6 +37,70 @@ def collab_client(setup_test_db):
             client.portal.call(app.state.shutdown_event.set)
 
 
+def test_collab_ws_block_social_messaging(test_db_session, test_password, collab_client):
+    """A student whose policy locks social messaging never sees collab
+    broadcasts carrying labels; the payload is dropped at the gate."""
+    client = collab_client
+
+    from src.aac_app.models import GuardianProfile
+
+    student = User(
+        username="collab_locked_student",
+        display_name="Collab Locked Student",
+        user_type="student",
+        password_hash="test-hash",
+    )
+    test_db_session.add(student)
+    test_db_session.flush()
+    board = CommunicationBoard(
+        user_id=student.id,
+        name="Locked Collab Board",
+        is_public=False,
+    )
+    test_db_session.add(board)
+    test_db_session.add(
+        GuardianProfile(
+            user_id=student.id,
+            template_name="default",
+            safety_constraints={"block_social_messaging": True},
+            is_active=True,
+            created_by=student.id,
+        )
+    )
+    test_db_session.commit()
+    test_db_session.refresh(board)
+
+    token = create_access_token(
+        data={"sub": student.username, "user_id": student.id, "user_type": student.user_type}
+    )
+
+    url = f"/api/collab/boards/{board.id}"
+    with (
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as ws1,
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as ws2,
+        finish_collab_connections(client, ws1, ws2),
+    ):
+        ws1.send_json({"op": "add", "label": "casa"})
+        # A follow-up ping from ws2 must be the FIRST message ws1 receives:
+        # if the labeled payload had passed the gate, the add would arrive
+        # before the ping.
+        ws2.send_json({"op": "ping"})
+        recv = ws1.receive_json()
+        assert recv["type"] == "board_change"
+        assert recv["payload"]["op"] == "ping"
+
+    from src.aac_app.models import ContentSafetyEvent
+
+    event = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.user_id == student.id)
+        .first()
+    )
+    assert event is not None
+    assert event.surface == "social" and event.verdict == "blocked"
+    assert "block_social_messaging" in (event.detail or "")
+
+
 def test_collab_board_ws_broadcast(test_password, collab_client):
     client = collab_client
 

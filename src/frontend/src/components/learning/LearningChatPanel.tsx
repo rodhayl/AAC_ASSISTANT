@@ -297,6 +297,7 @@ export function LearningChatPanel({
         <LearningMessageList
           messages={messages}
           editingMessageIndex={editingMessageIndex}
+          sessionId={currentSession?.session_id}
           onEditMessage={onEditMessage}
           onUpdateSymbols={onUpdateSymbols}
           onCancelEdit={onCancelEdit}

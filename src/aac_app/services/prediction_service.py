@@ -926,6 +926,19 @@ class _PredictionContext:
                 ensure_symbol_generated,
             )
 
+            if self.content_policy is not None and self.content_policy.feature_blocked(
+                "block_autogen_pictograms"
+            ):
+                log_event(
+                    user_id=self.user_id,
+                    surface="pictogram",
+                    direction="output",
+                    verdict="blocked",
+                    matched=[],
+                    detail="feature_lock: block_autogen_pictograms",
+                    db=self.db,
+                )
+                return
             if not self._is_svg_generation_enabled():
                 return
             if self.content_policy is not None:
