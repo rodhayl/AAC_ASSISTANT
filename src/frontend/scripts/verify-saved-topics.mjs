@@ -195,6 +195,10 @@ console.log('\n=== Student sees teacher topics ===');
   const commonCard = await page.locator('[data-testid="topic-card-general"]').count();
   check('Common topics stay in their own grid', commonCard > 0, `found ${commonCard}`);
 
+  // Each group heading carries the teacher's avatar initials.
+  const avatarCount = await page.locator('[data-testid^="topic-group-"] h3 span[aria-hidden="true"]').count();
+  check('Group headings show teacher avatars', avatarCount >= 2, `found ${avatarCount} avatars`);
+
   // The sidebar list must carry the same attribution when it mixes teachers.
   // It may already be open; only try to expand when the topic rows are hidden.
   const sidebarListVisible = await page.locator('button[title*="Colapsar"], button[title*="Collapse"], #comp-topic-select').count();

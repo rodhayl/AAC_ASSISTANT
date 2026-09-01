@@ -14,6 +14,7 @@ import {
 } from '../../lib/learningTopics';
 
 import { SectionTitle } from '@/components/ui/SectionTitle';
+import { TeacherAvatar } from './TeacherAvatar';
 
 interface BoardsAndTopicsSidebarProps {
     isOpen: boolean;
@@ -249,7 +250,8 @@ export function BoardsAndTopicsSidebar({
                                         <div className="text-sm font-semibold text-foreground">{topic.topic}</div>
                                         <div className="text-xs text-muted-foreground">{topic.board}</div>
                                         {showSavedBy && (
-                                            <div className="text-[11px] text-muted-foreground" title={topic.createdBy}>
+                                            <div className="flex items-center gap-1 text-[11px] text-muted-foreground" title={topic.createdBy}>
+                                                <TeacherAvatar name={topic.createdBy} />
                                                 {t('topicPicker.savedBy', { teacher: topic.createdBy })}
                                             </div>
                                         )}

@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { CheckCircle2, History, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SymbolImage } from '../common/SymbolImage';
+import { TeacherAvatar } from './TeacherAvatar';
 import { cn } from '../../lib/utils';
 
 export interface PickerTopic {
@@ -110,7 +111,8 @@ function TopicCard({
         </span>
       )}
       {showSavedBy && topic.savedBy && (
-        <span className="text-[10px] leading-tight text-muted-foreground/80 line-clamp-1" title={topic.savedBy}>
+        <span className="inline-flex items-center gap-1 text-[10px] leading-tight text-muted-foreground/80" title={topic.savedBy}>
+          <TeacherAvatar name={topic.savedBy} />
           {t('topicPicker.savedBy', { teacher: topic.savedBy })}
         </span>
       )}
@@ -193,7 +195,8 @@ export function TopicPicker({
           </div>
           {groups.teachers.map((group) => (
             <div key={group.teacher} className="mt-6" data-testid={`topic-group-${group.teacher}`}>
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <TeacherAvatar name={group.teacher} className="h-5 w-5 text-[10px]" />
                 {t('topicPicker.savedBy', { teacher: group.teacher })}
               </h3>
               <div className="mt-2">

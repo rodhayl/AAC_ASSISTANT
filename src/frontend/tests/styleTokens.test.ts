@@ -87,6 +87,8 @@ describe('dark-mode color pair guard', () => {
     'from-indigo-500', 'via-blue-500', 'to-purple-500',
     // Correct/incorrect game overlays (saturated fill + border, has dark:/30 pair)
     'border-green-500', 'border-red-500',
+    // TeacherAvatar initials (tiny saturated solid + white text, readable on both themes)
+    'bg-sky-500', 'bg-teal-500', 'bg-violet-500',
   ]);
 
   function classPools(src: string): string[] {
