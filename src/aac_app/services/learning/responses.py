@@ -112,20 +112,16 @@ class ResponseProcessingMixin:
                 # --- Layered content safety (Layer 1): gate the student's
                 # input *before* any LLM call and the resulting feedback
                 # before it is persisted. Resolve the effective policy once.
-                from ...services.content_safety import (
-                    check_text,
-                    log_event,
-                    resolve_policy_for_user,
-                )
+                from ...services import content_safety as _safety
 
-                policy = resolve_policy_for_user(session.user_id, db)
+                policy = _safety.resolve_policy_for_user(session.user_id, db)
                 block_reason = None
                 if policy.feature_blocked("block_ai_chat"):
                     block_reason = "feature_lock: block_ai_chat"
                 else:
-                    input_verdict = check_text(policy, student_response)
+                    input_verdict = _safety.check_text(policy, student_response)
                     if input_verdict.blocked:
-                        log_event(
+                        _safety.log_event(
                             user_id=session.user_id,
                             surface="chat",
                             direction="input",
@@ -442,9 +438,9 @@ class ResponseProcessingMixin:
                 # constrained retry asks the model for a safe rewrite; only if
                 # that is still blocked (or the retry fails) do we fall back
                 # to the friendly deflection.
-                output_verdict = check_text(policy, feedback_message)
+                output_verdict = _safety.check_text(policy, feedback_message)
                 if output_verdict.blocked:
-                    log_event(
+                    _safety.log_event(
                         user_id=session.user_id,
                         surface="chat",
                         direction="output",
@@ -471,7 +467,7 @@ class ResponseProcessingMixin:
                             if isinstance(retry_data, dict)
                             else ""
                         )
-                        if retry_text and check_text(policy, retry_text).allowed:
+                        if retry_text and _safety.check_text(policy, retry_text).allowed:
                             feedback_message = retry_text
                         else:
                             feedback_message = translation_service.get(
@@ -492,9 +488,7 @@ class ResponseProcessingMixin:
                     # child's chat because the sentinel service hiccuped (it
                     # fails open); it only narrows what the deterministic
                     # layer already allowed.
-                    from ...services.content_safety import moderate_output
-
-                    sentinel_verdict = await moderate_output(
+                    sentinel_verdict = await _safety.moderate_output(
                         self.llm.generate,
                         policy,
                         feedback_message,
