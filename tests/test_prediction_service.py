@@ -338,6 +338,46 @@ def test_predict_next_topic_surfaces_matching_symbols_first(
     assert suggestions[0]["label"] == "inteligencia artificial"
 
 
+def test_topic_tier_ranks_word_boundary_label_matches_above_embedded_tokens(
+    test_db_session, regular_user, monkeypatch
+):
+    """A label embedding a topic token ("fuegos artificiales") must not
+    outrank a label containing the topic words at word boundaries."""
+    service = PredictionService()
+    monkeypatch.setitem(service._models, "es", {"bigrams": {}})
+    test_db_session.add_all(
+        [
+            Symbol(label="inteligencia artificial", category="computing", language="es", keywords="inteligencia artificial, IA", is_builtin=True),
+            Symbol(label="fuegos artificiales", category="show", language="es", is_builtin=True),
+            Symbol(label="ver los fuegos artificiales", category="verb", language="es", is_builtin=True),
+        ]
+    )
+    test_db_session.commit()
+
+    analytics = Mock()
+    analytics.suggest_next_symbol.return_value = []
+    monkeypatch.setattr(service, "analytics_service", analytics)
+
+    suggestions = service.predict_next(
+        user_id=regular_user.id,
+        current_symbols=[],
+        limit=8,
+        language="es",
+        offset=0,
+        topic="Inteligencia Artificial y LLMs",
+        db=test_db_session,
+    )
+
+    topic_labels = [s["label"] for s in suggestions if s["source"] == "topic"]
+    # The exact topic phrase outranks labels that merely embed one token, and
+    # among the partial matches the shorter label wins.
+    assert topic_labels == [
+        "inteligencia artificial",
+        "fuegos artificiales",
+        "ver los fuegos artificiales",
+    ]
+
+
 def test_label_looks_bad_rejects_artifacts_and_paths():
     assert _label_looks_bad("frontend-icons")
     assert _label_looks_bad("node_modules/index")

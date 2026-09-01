@@ -1,4 +1,5 @@
 import json
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from threading import RLock
@@ -435,14 +436,46 @@ class _PredictionContext:
             logger.warning("Topic symbol query failed: {}", exc)
             return
 
-        def score(label: str, keywords: str | None) -> int:
-            text = f"{label} {keywords or ''}".lower()
-            return sum(1 for token in self.topic_tokens if token in text)
+        def _word_boundary_hit(text: str, token: str) -> bool:
+            """True when ``token`` appears as a whole word in ``text``."""
+            return bool(re.search(rf"(^|\W){re.escape(token)}($|\W)", text))
 
-        ranked = sorted(
-            rows,
-            key=lambda row: (-score(row[1] or "", row[5])),
-        )
+        def score(label: str, keywords: str | None) -> tuple[int, int]:
+            """Rank a symbol for the topic: (label hits, keyword hits).
+
+            Whole-word label matches are worth 3, token-prefix label matches
+            (e.g. "artificial" vs "fuegos artificiales") 1; keyword hits are
+            worth 2 (whole word) or 1 (anywhere). Sorting is lexicographic on
+            ``(-label_hits, -keyword_hits)`` so a label that actually contains
+            the topic words always outranks one that merely embeds a token.
+            """
+            label_lower = (label or "").lower()
+            keyword_lower = (keywords or "").lower()
+            label_hits = 0
+            keyword_hits = 0
+            for token in self.topic_tokens:
+                if _word_boundary_hit(label_lower, token):
+                    label_hits += 3
+                elif label_lower.startswith(token) or token in label_lower:
+                    label_hits += 1
+                if keyword_lower:
+                    if _word_boundary_hit(keyword_lower, token):
+                        keyword_hits += 2
+                    elif token in keyword_lower:
+                        keyword_hits += 1
+            return label_hits, keyword_hits
+
+        def topic_key(row):
+            label_hits, keyword_hits = score(row[1] or "", row[5])
+            return (
+                -label_hits,
+                -keyword_hits,
+                # Shorter labels win ties: a phrase matching the whole topic
+                # outranks a long label that merely happens to embed a token.
+                len(row[1] or ""),
+            )
+
+        ranked = sorted(rows, key=topic_key)
         for sid, label, cat, img, language_code, _kw in ranked:
             self.add_symbol(
                 symbol_id=sid,
