@@ -203,6 +203,10 @@ console.log('\n=== Student sees teacher topics ===');
   const countBadges = await page.locator('[data-testid^="topic-group-"] h3 span[title*="temas"], [data-testid^="topic-group-"] h3 span[title*="topics"]').count();
   check('Group headings show topic-count pills', countBadges >= 2, `found ${countBadges} pills`);
 
+  // A total summary line sits above the teacher groups.
+  const summary = await page.locator('[data-testid="topic-group-summary"]').first().innerText().catch(() => '');
+  check('Picker shows a total summary line above the groups', /temas|topics/.test(summary) && /profesores|teachers/.test(summary), `summary: "${summary}"`);
+
   // The sidebar list must carry the same attribution when it mixes teachers.
   // It may already be open; only try to expand when the topic rows are hidden.
   const sidebarListVisible = await page.locator('button[title*="Colapsar"], button[title*="Collapse"], #comp-topic-select').count();
@@ -220,6 +224,8 @@ console.log('\n=== Student sees teacher topics ===');
   check('Sidebar groups topics by teacher', sidebarGroups >= 2, `found ${sidebarGroups} groups`);
   const sidebarAvatars = await page.locator('[data-testid^="sidebar-topic-group-"] h4 span[aria-hidden="true"]').count();
   check('Sidebar group headings show teacher avatars', sidebarAvatars >= 2, `found ${sidebarAvatars} avatars`);
+  const sidebarSummary = await page.locator('[data-testid="sidebar-topic-group-summary"]').first().innerText().catch(() => '');
+  check('Sidebar shows a total summary line above the groups', /temas|topics/.test(sidebarSummary) && /profesores|teachers/.test(sidebarSummary), `summary: "${sidebarSummary}"`);
 
   await page.screenshot({ path: 'scripts/_saved_student.png', fullPage: true });
   await page.close();

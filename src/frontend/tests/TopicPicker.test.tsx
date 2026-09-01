@@ -183,6 +183,8 @@ describe('TopicPicker', () => {
     expect(screen.queryByText('Saved by Ms. Johnson', { selector: 'span' })).not.toBeInTheDocument();
     expect(screen.getByTestId('topic-card-saved-1')).toBeInTheDocument();
     expect(screen.getByTestId('topic-card-saved-3')).toBeInTheDocument();
+    // A total summary line sits above the teacher groups.
+    expect(screen.getByTestId('topic-group-summary')).toHaveTextContent('3 topics from 2 teachers');
   });
 
   it('stays flat when only one teacher saved topics', () => {
@@ -203,6 +205,8 @@ describe('TopicPicker', () => {
     // No grouping heading; the flat layout keeps the inline label on each card.
     expect(screen.queryByText('Saved by Ms. Johnson', { selector: 'h3' })).not.toBeInTheDocument();
     expect(screen.getAllByText('Saved by Ms. Johnson').length).toBe(2);
+    // No summary line in flat mode either.
+    expect(screen.queryByTestId('topic-group-summary')).not.toBeInTheDocument();
   });
 
   it('omits the saved-by label when not provided (single teacher)', () => {

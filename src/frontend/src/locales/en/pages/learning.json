@@ -167,6 +167,7 @@
     "practiced": "Practiced",
     "continue": "Continue",
     "savedBy": "Saved by {{teacher}}",
-    "topicCount": "{{count}} topics"
+    "topicCount": "{{count}} topics",
+    "summary": "{{topics}} topics from {{teachers}} teachers"
   }
 }

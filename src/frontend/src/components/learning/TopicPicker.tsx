@@ -193,6 +193,15 @@ export function TopicPicker({
               showSavedBy={false}
             />
           </div>
+          <p
+            className="mt-6 text-xs font-medium text-muted-foreground"
+            data-testid="topic-group-summary"
+          >
+            {t('topicPicker.summary', {
+              topics: groups.teachers.reduce((total, group) => total + group.topics.length, 0),
+              teachers: groups.teachers.length,
+            })}
+          </p>
           {groups.teachers.map((group) => (
             <div key={group.teacher} className="mt-6" data-testid={`topic-group-${group.teacher}`}>
               <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

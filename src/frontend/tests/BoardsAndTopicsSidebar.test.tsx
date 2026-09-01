@@ -37,6 +37,7 @@ const translate = (key: string, options?: Record<string, string>) => {
     by: 'By',
     'topicPicker.savedBy': `Saved by ${options?.teacher ?? ''}`,
     'topicPicker.topicCount': `${options?.count ?? ''} topics`,
+    'topicPicker.summary': `${options?.topics ?? ''} topics from ${options?.teachers ?? ''} teachers`,
     startStudy: 'Start',
     startingSession: 'Starting...',
     removeTopic: 'Remove topic',
@@ -112,6 +113,8 @@ describe('BoardsAndTopicsSidebar saved-by attribution', () => {
     expect(msHeading.querySelector('span[title]')?.getAttribute('title')).toBe('1 topics');
     expect(mrHeading.textContent).toContain('1');
     expect(mrHeading.querySelector('span[title]')?.getAttribute('title')).toBe('1 topics');
+    // A total summary line sits above the groups.
+    expect(screen.getByTestId('sidebar-topic-group-summary')).toHaveTextContent('2 topics from 2 teachers');
   });
 
   it('stays flat without labels when only one teacher saved topics', async () => {
@@ -126,5 +129,7 @@ describe('BoardsAndTopicsSidebar saved-by attribution', () => {
     });
     expect(screen.queryByText(/Saved by/)).not.toBeInTheDocument();
     expect(screen.queryByTestId(/sidebar-topic-group-/)).not.toBeInTheDocument();
+    // No summary line in flat mode either.
+    expect(screen.queryByTestId('sidebar-topic-group-summary')).not.toBeInTheDocument();
   });
 });

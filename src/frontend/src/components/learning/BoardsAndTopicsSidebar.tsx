@@ -250,7 +250,14 @@ export function BoardsAndTopicsSidebar({
                         {savedTopics.length === 0 ? (
                             <div className="text-sm text-muted-foreground text-center py-4">{t('noSavedTopics')}</div>
                         ) : teacherGroups ? (
-                            teacherGroups.map((group) => (
+                            <>
+                            <p className="px-1 pb-1 text-[11px] font-medium text-muted-foreground" data-testid="sidebar-topic-group-summary">
+                                {t('topicPicker.summary', {
+                                    topics: teacherGroups.reduce((total, group) => total + group.topics.length, 0),
+                                    teachers: teacherGroups.length,
+                                })}
+                            </p>
+                            {teacherGroups.map((group) => (
                                 <div key={group.teacher} data-testid={`sidebar-topic-group-${group.teacher}`}>
                                     <h4 className="flex items-center gap-1.5 px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                                         <TeacherAvatar name={group.teacher} className="h-4 w-4" />
@@ -293,7 +300,8 @@ export function BoardsAndTopicsSidebar({
                                         ))}
                                     </div>
                                 </div>
-                            ))
+                            ))}
+                            </>
                         ) : (
                             savedTopics.map((topic) => (
                                 <div key={topic.id} className="p-3 rounded-lg border border-border bg-background flex items-start gap-2">
