@@ -252,7 +252,7 @@ class TestUserServiceWrites:
         user = _make_user(test_db_session, "durable_updater", "student", test_password)
 
         response = client.put(
-            "/api/users/me",
+            "/api/auth/profile",
             headers=_token(user.id, user.username, "student"),
             json={"display_name": "Updated Name"},
         )

@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import StudentTeacher, User, UserSettings
+from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.aac_app.services.credential_service import mark_credentials_changed
 from src.api import schemas
@@ -79,30 +79,3 @@ class UserService:
             user.password_hash = get_password_hash(new_password)
             mark_credentials_changed(user)
             db.flush()
-
-    def update_user(self, db: Session, user_id: int, update_data: schemas.UserUpdate):
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            return None
-
-        if update_data.display_name:
-            user.display_name = update_data.display_name
-        if update_data.email:
-            user.email = update_data.email
-
-        if update_data.settings:
-            if not user.settings:
-                user.settings = UserSettings(user_id=user_id)
-                db.add(user.settings)
-
-            # Update settings fields
-            settings_dict = update_data.settings.model_dump(exclude_unset=True)
-            for key, value in settings_dict.items():
-                setattr(user.settings, key, value)
-
-        # The calling route owns the final commit. Flush here so callers
-        # receive database-generated values without splitting the update into
-        # a second transaction.
-        db.flush()
-        db.refresh(user)
-        return user

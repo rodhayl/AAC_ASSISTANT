@@ -69,12 +69,6 @@ class UserCreate(UserBase):
     created_by_teacher_id: int | None = None  # Auto-assign student to this teacher
 
 
-class UserUpdate(BaseModel):
-    display_name: str | None = None
-    email: EmailStr | None = None
-    settings: UserPreferencesUpdate | None = None
-
-
 class UserProfileUpdate(BaseModel):
     display_name: str | None = Field(None, max_length=100)
     email: EmailStr | None = None

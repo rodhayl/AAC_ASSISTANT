@@ -36,7 +36,7 @@
 - **Exact claim**: `users.py` + `UserService` are 100% dead duplicates; delete them.
 - **Repository evidence**: `src/api/routers/users.py` (315 lines) exists with 7 routes; `src/aac_app/services/user_service.py` exists.
 - **Evidence supporting**: route-name overlap with `auth_users.py`.
-- **Evidence contradicting**: Frontend actively calls `/users/students` (`Achievements.tsx:97`, `Students.tsx:223`), `/users/reset-password` (`Students.tsx:254`, `UserManagement.tsx:170`), `/users/me`. Distinct teacher-roster RBAC.
+- **Evidence contradicting**: Frontend actively calls `/users/students` (`Achievements.tsx:97`, `Students.tsx:223`), `/users/reset-password` (`Students.tsx:254`, `UserManagement.tsx:170`). Distinct teacher-roster RBAC. (`/users/me` was a redundant duplicate of `/api/auth/me` and was removed.)
 - **Independent verification**: grep frontend; read `users.py` handlers (403 checks for students verified).
 - **Verdict**: **VERIFIED** (V1 deletion proposal FALSE; retention correct).
 

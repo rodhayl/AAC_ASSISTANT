@@ -48,8 +48,8 @@ Roster helper: `verify_student_access` (`src/api/deps/auth.py:155–200`: studen
 
 | Method + Path | Handler | Anon | StSelf | StOther | AsgT | UnasgT | Admin | Enforcement (file:line) | V3 row verdict |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| GET `/api/users/me` | `get_current_user_info` | NO | YES | N/A | YES | YES | YES | dep `get_current_active_user` @27; returns `current_user` | **CORRECT** |
-| PUT `/api/users/me` | `update_current_user` | NO | YES | N/A | YES | YES | YES | dep @35; updates `current_user.id` only | **CORRECT** |
+| ~~GET `/api/users/me`~~ | removed (duplicate of `/api/auth/me`) | — | — | — | — | — | — | — | — |
+| ~~PUT `/api/users/me`~~ | removed (duplicate of `/api/auth/profile`) | — | — | — | — | — | — | — | — |
 | GET `/api/users/students` | `get_students` | NO | YES (returns `[self]` @63–65) | N/A | YES (assigned only) | NO (empty) | YES (all) | dep @50; role branches @54–66 | **CORRECT** |
 | POST `/api/users/students` | `create_student` | NO | **NO** (403 @76–84) | N/A | YES (auto-assigns self @96–101) | YES | YES | dep @72 + `user_type not in ["admin","teacher"] → 403` @76–84 | **WRONG** (V3: Student Self YES) |
 | POST `/api/users/assign-student` | `assign_student` | NO | **NO** (403 @130–134) | N/A | YES (self only @139–146) | YES | YES | dep @126 + 403 @130 + teacher-self @139 | **WRONG** (V3: Student Self YES) |

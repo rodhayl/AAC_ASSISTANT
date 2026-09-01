@@ -24,7 +24,7 @@ El entorno debe tener las cuentas de demostración que utiliza
 | Caso automatizado | Cubre |
 |---|---|
 | `pilot-gate.spec.ts` — setup/reutilización | Estado inicializado, denegación de segundo setup y redirección de `/setup` |
-| `pilot-gate.spec.ts` — API no autenticada | Denegación de `/api/users/me`, `/api/boards` y `/api/learning-modes/` |
+| `pilot-gate.spec.ts` — API no autenticada | Denegación de `/api/auth/me`, `/api/boards` y `/api/learning-modes/` |
 | `pilot-gate.spec.ts` — sesiones por rol | Refresh y workflow primario de Admin, Teacher y Student |
 | `pilot-gate.spec.ts` — logout | Token capturado antes de logout recibe `401` después del logout UI |
 | `pilot-gate.spec.ts` — AAC | Añadir, ordenar, backspace, clear y activación por teclado |

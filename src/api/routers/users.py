@@ -16,31 +16,10 @@ from src.api.schemas import (
     StudentAssignRequest,
     UserCreate,
     UserResponse,
-    UserUpdate,
 )
 
 router = APIRouter()
 user_service = UserService()
-
-
-@router.get("/me", response_model=UserResponse)
-def get_current_user_info(current_user: User = Depends(get_current_active_user)):
-    """Get current user info"""
-    return current_user
-
-
-@router.put("/me", response_model=UserResponse)
-def update_current_user(
-    user_update: UserUpdate,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db),
-):
-    """Update current user profile/settings"""
-    updated = user_service.update_user(db, current_user.id, user_update)
-    # Commit before responding so the updated profile is durable for the
-    # immediate follow-up reads in the UI.
-    db.commit()
-    return updated
 
 
 @router.get("/students", response_model=list[UserResponse])

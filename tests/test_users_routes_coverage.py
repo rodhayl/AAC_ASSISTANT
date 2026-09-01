@@ -57,7 +57,7 @@ def _token(user):
 
 def test_update_current_user_profile(regular_user, user_token):
     response = client.put(
-        "/api/users/me",
+        "/api/auth/profile",
         headers={"Authorization": f"Bearer {user_token}"},
         json={"display_name": "Nuevo Nombre", "email": "new@example.com"},
     )

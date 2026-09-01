@@ -91,7 +91,7 @@ test.describe('Pilot gate: initialized setup and unauthenticated boundaries', ()
     await page.goto('/login');
     await page.evaluate(() => localStorage.clear());
 
-    for (const endpoint of ['/api/users/me', '/api/boards', '/api/learning-modes/']) {
+    for (const endpoint of ['/api/auth/me', '/api/boards', '/api/learning-modes/']) {
       const response = await page.request.get(endpoint);
       expect(
         [401, 403],
@@ -141,13 +141,13 @@ test.describe('Pilot gate: logout revokes backend access', () => {
     await expect(page).toHaveURL(/\/$/);
 
     const token = await readStoredToken(page);
-    const beforeLogout = await page.request.get('/api/users/me', { headers: authHeaders(token) });
+    const beforeLogout = await page.request.get('/api/auth/me', { headers: authHeaders(token) });
     expect(beforeLogout.status()).toBe(200);
 
     await page.getByRole('button', { name: /sign out|cerrar sesión/i }).click();
     await expect(page).toHaveURL(/\/login(?:[/?#]|$)/);
 
-    const afterLogout = await page.request.get('/api/users/me', { headers: authHeaders(token) });
+    const afterLogout = await page.request.get('/api/auth/me', { headers: authHeaders(token) });
     expect(afterLogout.status()).toBe(401);
   });
 });

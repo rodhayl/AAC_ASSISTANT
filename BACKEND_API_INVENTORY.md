@@ -62,8 +62,8 @@ This document provides a comprehensive, endpoint-by-endpoint inventory of all ro
 | `POST` | `/api/users/reset-password` | `src.api.routers.users.reset_user_password` | Staff User | `ResetPasswordRequest`, `get_db` | `StatusResponse` | `src/frontend/src/pages/Students.tsx:253`, `UserManagement.tsx:170` | `tests/test_users_routes.py` | **Active**: Direct password reset by teacher for student (without knowing old password). |
 | `POST` | `/api/users/assign-student` | `src.api.routers.users.assign_student` | Staff User | `StudentAssignRequest`, `get_db` | JSON | Tests / Custom integrations | `tests/test_users_routes.py` | **Active**: Roster association creation. |
 | `DELETE` | `/api/users/assign-student/{student_id}/{teacher_id}` | `src.api.routers.users.unassign_student` | Staff User | `get_db` | JSON | Tests / Custom integrations | `tests/test_users_routes.py` | **Active**: Roster association removal. |
-| `GET` | `/api/users/me` | `src.api.routers.users.get_current_user_info` | Active User | `get_current_active_user` | `UserResponse` | None (Calls `/api/auth/me`) | `tests/test_users_routes.py` | **Redundant**: Duplicate of `GET /api/auth/me`. |
-| `PUT` | `/api/users/me` | `src.api.routers.users.update_current_user` | Active User | `UserUpdate`, `get_db` | `UserResponse` | None (Calls `/api/auth/profile`) | `tests/test_users_routes.py` | **Redundant**: Overlaps with `PUT /api/auth/profile`. |
+| ~~`GET` `/api/users/me`~~ | removed | duplicate of `GET /api/auth/me` (dead: no production caller) | | | | | | |
+| ~~`PUT` `/api/users/me`~~ | removed | duplicate of `PUT /api/auth/profile` (dead: no production caller) | | | | | | |
 
 ---
 

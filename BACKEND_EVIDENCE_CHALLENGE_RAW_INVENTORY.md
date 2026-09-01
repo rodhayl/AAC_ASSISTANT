@@ -256,8 +256,6 @@ GET    /api/settings/ui                src.api.routers.settings.get_ui_language
 PUT    /api/settings/ui                src.api.routers.settings.update_ui_language
 POST   /api/users/assign-student       src.api.routers.users.assign_student
 DELETE /api/users/assign-student/{student_id}/{teacher_id} src.api.routers.users.unassign_student
-GET    /api/users/me                   src.api.routers.users.get_current_user_info
-PUT    /api/users/me                   src.api.routers.users.update_current_user
 POST   /api/users/reset-password       src.api.routers.users.reset_user_password
 GET    /api/users/students             src.api.routers.users.get_students
 POST   /api/users/students             src.api.routers.users.create_student
