@@ -30,7 +30,7 @@ const baseProps = {
   isAdmin: false,
   showAdminReasoning: false,
   onShowAdminReasoningChange: vi.fn(),
-  onStartSession: vi.fn(),
+  topicPicker: null,
   editingMessageIndex: null,
   onEditMessage: vi.fn(),
   onUpdateSymbols: vi.fn(),

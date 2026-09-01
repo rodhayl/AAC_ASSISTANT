@@ -138,6 +138,39 @@ def start_session(
     return result
 
 
+@router.get("/topics")
+def get_learning_topics(
+    user_id: int,
+    service: LearningCompanionService = Depends(get_learning_service),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Return the topic pool + coverage for the student-facing topic picker.
+
+    Students read their own pool; teachers can read their roster students';
+    admins can read anyone's. The pool itself is static data (no LLM cost):
+    the nine canonical topics with practice coverage plus recently used
+    custom topics.
+    """
+    if user_id != current_user.id and current_user.user_type != "admin":
+        if current_user.user_type == "teacher":
+            verify_student_access(user_id, current_user, db)
+        else:
+            raise HTTPException(
+                status_code=403, detail=get_text(current_user, "errors.unauthorized")
+            )
+
+    result = service.get_topic_pool(user_id, db=db)
+
+    if not result["success"]:
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("error", get_text(current_user, "errors.unknownError")),
+        )
+
+    return result
+
+
 @router.post("/{session_id}/report")
 def report_message(
     session_id: int,

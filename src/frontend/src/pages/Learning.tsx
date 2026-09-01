@@ -18,8 +18,26 @@ import { SessionSummaryModal } from '../components/learning/SessionSummaryModal'
 import { useVoiceRecorder } from '../components/learning/useVoiceRecorder';
 import { useAssistantMessageSpeech } from '../hooks/useAssistantMessageSpeech';
 import { dedupeLearningSymbols } from '../lib/symbols';
+import {
+  COMMON_TOPIC_KEYS,
+  TOPIC_CANONICAL_NAME,
+  TOPIC_EMOJI,
+  findTopicPictogram,
+  normalizeTopic,
+  type CommonTopicKey,
+} from '../lib/topicCatalog';
+import {
+  TopicPicker,
+  type PickerRecentTopic,
+  type PickerTopic,
+} from '../components/learning/TopicPicker';
 
 type SymbolItem = LearningSymbolItem;
+
+interface TopicPoolResponse {
+  common?: Array<{ key: string; practiced?: boolean; last_used_at?: string | null }>;
+  recent?: Array<{ topic: string; purpose?: string; last_used_at?: string | null; count?: number }>;
+}
 
 export function Learning() {
   const messages = useLearningStore((state) => state.messages);
@@ -80,6 +98,7 @@ export function Learning() {
   const [isStartingSession, setIsStartingSession] = useState(false);
   const [sessionStartError, setSessionStartError] = useState<string | null>(null);
   const [providerNotice, setProviderNotice] = useState<string | null>(null);
+  const [topicPool, setTopicPool] = useState<TopicPoolResponse | null>(null);
   const skipInitialSpeech = useLearningStore((state) => state.skipInitialSpeech);
   const lastProviderHistoryLengthRef = useRef(0);
   const sessionStartErrorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -219,6 +238,32 @@ export function Learning() {
     }
   }, [fetchSessionHistory, user?.id]);
 
+  const fetchTopicPool = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const response = await api.get('/learning/topics', { params: { user_id: user.id } });
+      setTopicPool(response.data && typeof response.data === 'object' ? response.data : null);
+    } catch {
+      // The picker falls back to a full fresh pool; never block learning on it.
+      setTopicPool(null);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    void fetchTopicPool();
+  }, [fetchTopicPool]);
+
+  // When a session ends the picker returns; refresh coverage so the topic
+  // just practiced is marked and de-prioritized next time.
+  const hadSessionRef = useRef(false);
+  useEffect(() => {
+    const hasSession = Boolean(currentSession);
+    if (hadSessionRef.current && !hasSession) {
+      void fetchTopicPool();
+    }
+    hadSessionRef.current = hasSession;
+  }, [currentSession, fetchTopicPool]);
+
   // The selected mode may disable auto-asking (e.g. conversational modes like
   // roleplay). Combined with symbol-first view, auto-asking is paused: the
   // question card is hidden and auto-asks are skipped, while the manual
@@ -288,6 +333,66 @@ export function Learning() {
     // backend key stable while the UI remains free to translate its label.
     await startActivity('general conversation', 'practice');
     setShowHistory(false);
+  }, [startActivity]);
+
+  // Picker pool: the nine canonical topics (always available, coverage from
+  // the backend) plus the teacher/admin's saved topics (coverage matched
+  // against recently used sessions). Pictograms come from the prefetched
+  // symbol library; every card keeps an emoji fallback so the pool is never
+  // blank while images load or symbols are missing.
+  const pickerTopics = useMemo<PickerTopic[]>(() => {
+    const practicedByKey = new Map(
+      (topicPool?.common ?? []).map((entry) => [entry.key, Boolean(entry.practiced)]),
+    );
+    const recentByTopic = new Map<string, { purpose?: string }>();
+    for (const entry of topicPool?.recent ?? []) {
+      recentByTopic.set(normalizeTopic(entry.topic), { purpose: entry.purpose });
+    }
+
+    const common: PickerTopic[] = COMMON_TOPIC_KEYS.map((key) => {
+      const pictogram = findTopicPictogram(key, symbolItems, TOPIC_EMOJI[key]);
+      return {
+        key,
+        label: t(`topics.${key}`),
+        topic: TOPIC_CANONICAL_NAME[key as CommonTopicKey],
+        purpose: 'practice',
+        practiced: practicedByKey.get(key) ?? false,
+        imagePath: pictogram.imagePath,
+        emoji: pictogram.emoji,
+      };
+    });
+
+    const saved: PickerTopic[] = savedTopics.map((topic) => {
+      const pictogram = findTopicPictogram(topic.topic, symbolItems, '💡');
+      return {
+        key: `saved-${topic.id}`,
+        label: topic.topic,
+        sublabel: topic.board,
+        topic: topic.topic,
+        purpose: topic.board,
+        boardId: topic.boardId,
+        practiced: recentByTopic.has(normalizeTopic(topic.topic)),
+        imagePath: pictogram.imagePath,
+        emoji: pictogram.emoji,
+      };
+    });
+
+    return [...common, ...saved];
+  }, [savedTopics, symbolItems, t, topicPool]);
+
+  const pickerRecent = useMemo<PickerRecentTopic[]>(() => {
+    const poolKeys = new Set(pickerTopics.map((topic) => normalizeTopic(topic.topic)));
+    return (topicPool?.recent ?? [])
+      .filter((entry) => !poolKeys.has(normalizeTopic(entry.topic)))
+      .map((entry) => ({ topic: entry.topic, purpose: entry.purpose }));
+  }, [pickerTopics, topicPool]);
+
+  const handlePickTopic = useCallback((topic: PickerTopic) => {
+    void startActivity(topic.topic, topic.purpose ?? 'practice', topic.boardId);
+  }, [startActivity]);
+
+  const handleContinueRecent = useCallback((topic: string, purpose?: string) => {
+    void startActivity(topic, purpose || 'practice');
   }, [startActivity]);
   // Submit an answer; the store auto-requests the next adaptive question.
   const answerAndContinue = useCallback(async (answer: string) => {
@@ -548,7 +653,15 @@ export function Learning() {
           isAdmin={isAdmin}
           showAdminReasoning={showAdminReasoning}
           onShowAdminReasoningChange={setShowAdminReasoning}
-          onStartSession={() => { void handleNewConversation(); }}
+          topicPicker={
+            <TopicPicker
+              topics={pickerTopics}
+              recent={pickerRecent}
+              isStartingSession={isStartingSession}
+              onSelect={handlePickTopic}
+              onContinueRecent={handleContinueRecent}
+            />
+          }
           editingMessageIndex={editingMessageIndex}
           onEditMessage={setEditingMessageIndex}
           onUpdateSymbols={updateSymbolMessage}

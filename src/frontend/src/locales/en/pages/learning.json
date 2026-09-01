@@ -160,5 +160,11 @@
   "reportTitle": "Report an inappropriate response",
   "reported": "Reported",
   "reportSent": "Thank you, we received your report.",
-  "reportFailed": "Could not send the report."
+  "reportFailed": "Could not send the report.",
+  "topicPicker": {
+    "title": "What would you like to talk about?",
+    "subtitle": "Pick a topic and we'll start practicing together.",
+    "practiced": "Practiced",
+    "continue": "Continue"
+  }
 }

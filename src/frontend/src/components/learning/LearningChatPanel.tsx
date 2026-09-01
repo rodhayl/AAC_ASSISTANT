@@ -24,7 +24,8 @@ interface LearningChatPanelProps {
   isAdmin: boolean;
   showAdminReasoning: boolean;
   onShowAdminReasoningChange: (value: boolean) => void;
-  onStartSession: () => void;
+  /** Rendered in the empty (no session, no messages) state. */
+  topicPicker: React.ReactNode;
   editingMessageIndex: number | null;
   onEditMessage: (index: number) => void;
   onUpdateSymbols: (symbols: Array<{
@@ -61,7 +62,7 @@ export function LearningChatPanel({
   isAdmin,
   showAdminReasoning,
   onShowAdminReasoningChange,
-  onStartSession,
+  topicPicker,
   editingMessageIndex,
   onEditMessage,
   onUpdateSymbols,
@@ -285,13 +286,7 @@ export function LearningChatPanel({
         )}
 
         {messages.length === 0 && !isLoading && !currentSession && !isStartingSession && (
-          <div className="text-center text-muted-foreground mt-10">
-            <Bot className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-            <p>{t('promptStart')}</p>
-            <Button onClick={onStartSession} aria-label={t('startSessionLabel')} data-testid="learning-session-start" className="mt-4" disabled={isStartingSession} >
-              {isStartingSession ? t('startingSession') : t('startSession')}
-            </Button>
-          </div>
+          topicPicker
         )}
 
         <LearningMessageList

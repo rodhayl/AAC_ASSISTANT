@@ -2,7 +2,8 @@
 
 import contextlib
 import re
-from datetime import datetime
+import unicodedata
+from datetime import datetime, timedelta
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -16,6 +17,34 @@ from .history import append_history_entry
 # seconds of TTS to the first spoken message for zero value, so strip a
 # trailing whitespace-separated numeric token of 4+ digits before greeting.
 _TIMESTAMP_SUFFIX_RE = re.compile(r"\s+\d{4,}$")
+
+# The student-facing topic picker pool: canonical key -> the English topic
+# value stored on LearningSession when a session is started from that key.
+# Must stay in sync with the frontend topic catalog (topicCatalog.ts) and the
+# welcome-message topic_labels mapping in this module.
+COMMON_TOPICS: tuple[tuple[str, str], ...] = (
+    ("general", "general conversation"),
+    ("daily", "daily routines"),
+    ("food", "food and dining"),
+    ("school", "school and education"),
+    ("emotions", "emotions and feelings"),
+    ("travel", "travel and transport"),
+    ("hobbies", "hobbies and play"),
+    ("health", "health and body"),
+    ("shopping", "shopping"),
+)
+
+# A topic practiced inside this window counts as "covered" for the picker's
+# shuffle-bag ordering. Older sessions fall out of the window so children can
+# naturally re-learn topics after a break.
+TOPIC_COVERAGE_WINDOW_DAYS = 30
+
+
+def _normalize_topic(name: str) -> str:
+    """Lowercase, strip accents, and collapse whitespace for topic matching."""
+    text = unicodedata.normalize("NFD", name or "").lower()
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _speakable_display_name(display_name: str) -> str:
@@ -209,6 +238,125 @@ class SessionLifecycleMixin:
             topic=topic_label,
             board=board_label,
         )
+
+    def get_topic_pool(self, user_id: int, db: Session | None = None) -> dict:
+        """Build the topic pool + coverage for the student-facing picker.
+
+        ``common`` lists the nine canonical topics with a ``practiced`` flag
+        (a session on that topic inside the coverage window) and the most
+        recent ``last_used_at``. ``recent`` lists every other topic the user
+        has sessions on (custom/teacher topics), newest first, so the UI can
+        offer to continue them. When the student's policy blocks custom
+        topics, ``recent`` is empty: offering topics the session-start layer
+        would reject is a dead end for the student.
+        """
+        try:
+            with self._session_scope(db) as db:
+                from ...services.content_safety import resolve_policy_for_user
+                from ...services.translation_service import get_translation_service
+
+                user_lang = self._get_user_language(user_id, db)
+                translation = get_translation_service()
+
+                # Every label that can refer to a common topic (the canonical
+                # English name plus the localized label in the user's
+                # language), so sessions started from any UI surface count
+                # against the same picker topic.
+                key_by_name: dict[str, str] = {}
+                for key, canonical in COMMON_TOPICS:
+                    key_by_name[_normalize_topic(canonical)] = key
+                    localized = translation.get(
+                        user_lang, "pages/learning", f"topics.{key}"
+                    )
+                    if localized and localized != f"topics.{key}":
+                        key_by_name[_normalize_topic(localized)] = key
+
+                cutoff = datetime.now() - timedelta(days=TOPIC_COVERAGE_WINDOW_DAYS)
+                rows = (
+                    db.query(LearningSession.topic_name, LearningSession.started_at)
+                    .filter(LearningSession.user_id == user_id)
+                    .order_by(LearningSession.started_at.desc())
+                    .all()
+                )
+
+                last_used: dict[str, str | None] = {
+                    key: None for key, _ in COMMON_TOPICS
+                }
+                practiced: dict[str, bool] = {
+                    key: False for key, _ in COMMON_TOPICS
+                }
+                recent: dict[str, dict] = {}
+
+                for topic_name, started_at in rows:
+                    if not topic_name:
+                        continue
+                    normalized = _normalize_topic(topic_name)
+                    timestamp = started_at.isoformat() if started_at else None
+                    key = key_by_name.get(normalized)
+                    if key is not None:
+                        if started_at and started_at >= cutoff:
+                            practiced[key] = True
+                        if last_used[key] is None and timestamp:
+                            last_used[key] = timestamp
+                        continue
+                    entry = recent.setdefault(
+                        normalized,
+                        {
+                            "topic": topic_name,
+                            "last_used_at": None,
+                            "count": 0,
+                            "purpose": "",
+                        },
+                    )
+                    entry["count"] += 1
+                    if entry["last_used_at"] is None and timestamp:
+                        entry["last_used_at"] = timestamp
+                        entry["purpose"] = self._topic_purpose(db, topic_name)
+
+                policy = resolve_policy_for_user(user_id, db)
+                recent_list = (
+                    []
+                    if policy.feature_blocked("block_custom_topics")
+                    else [
+                        entry
+                        for entry in recent.values()
+                        if entry["last_used_at"] is not None
+                    ]
+                )
+
+                return {
+                    "success": True,
+                    "common": [
+                        {
+                            "key": key,
+                            "practiced": practiced[key],
+                            "last_used_at": last_used[key],
+                        }
+                        for key, _ in COMMON_TOPICS
+                    ],
+                    "recent": sorted(
+                        recent_list,
+                        key=lambda entry: entry["last_used_at"] or "",
+                        reverse=True,
+                    )[:8],
+                }
+        except Exception as e:
+            logger.error(f"Failed to build topic pool for user {user_id}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _topic_purpose(self, db: Session, topic_name: str) -> str:
+        """Most recent non-empty purpose for a topic (or '')."""
+        session = (
+            db.query(LearningSession)
+            .filter(
+                LearningSession.topic_name == topic_name,
+                LearningSession.purpose.isnot(None),
+                LearningSession.purpose != "",
+            )
+            .order_by(LearningSession.started_at.desc())
+            .first()
+        )
+        return session.purpose or "" if session else ""
 
     def get_session_progress(self, session_id: int, db: Session | None = None) -> dict:
         """Get current progress for a learning session"""

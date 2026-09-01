@@ -160,5 +160,11 @@
   "reportTitle": "Informar de una respuesta inapropiada",
   "reported": "Informado",
   "reportSent": "Gracias, hemos recibido tu informe.",
-  "reportFailed": "No se pudo enviar el informe."
+  "reportFailed": "No se pudo enviar el informe.",
+  "topicPicker": {
+    "title": "¿Sobre qué quieres hablar?",
+    "subtitle": "Elige un tema y empezaremos a practicar juntos.",
+    "practiced": "Practicado",
+    "continue": "Continuar"
+  }
 }

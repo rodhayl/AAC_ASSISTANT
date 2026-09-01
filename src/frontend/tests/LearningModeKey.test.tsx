@@ -84,11 +84,11 @@ vi.mock('react-i18next', () => ({
   },
 }));
 
+// The chat panel renders the real TopicPicker in its empty state; clicking a
+// topic card is the page's start-session affordance now.
 vi.mock('../src/components/learning/LearningChatPanel', () => ({
-  LearningChatPanel: ({ onStartSession }: { onStartSession: () => void }) => (
-    <button data-testid="start-session" onClick={() => onStartSession()}>
-      Start
-    </button>
+  LearningChatPanel: ({ topicPicker }: { topicPicker: React.ReactNode }) => (
+    <div data-testid="chat-panel">{topicPicker}</div>
   ),
 }))
 
@@ -147,7 +147,7 @@ describe('Learning mode dropdown', () => {
 
     const select = await screen.findByRole('combobox', { name: 'Mode:' })
     expect(select).toHaveValue('andalusian')
-    fireEvent.click(screen.getByTestId('start-session'))
+    fireEvent.click(screen.getByTestId('topic-card-general'))
 
     await waitFor(() => {
       expect(postApi).toHaveBeenCalledWith(
@@ -197,7 +197,7 @@ describe('Learning mode dropdown', () => {
     await screen.findByRole('option', { name: 'Andaluz' })
     fireEvent.change(select, { target: { value: 'andalusian' } })
 
-    fireEvent.click(screen.getByTestId('start-session'))
+    fireEvent.click(screen.getByTestId('topic-card-general'))
 
     await waitFor(() => {
       expect(postApi).toHaveBeenCalledWith(
@@ -212,7 +212,7 @@ describe('Learning mode dropdown', () => {
     render(<Learning />)
 
     await screen.findByRole('combobox', { name: 'Mode:' })
-    fireEvent.click(screen.getByTestId('start-session'))
+    fireEvent.click(screen.getByTestId('topic-card-general'))
 
     await waitFor(() => {
       expect(postApi).toHaveBeenCalledWith(
@@ -227,7 +227,7 @@ describe('Learning mode dropdown', () => {
     render(<Learning />)
 
     await screen.findByRole('combobox', { name: 'Mode:' })
-    fireEvent.click(screen.getByTestId('start-session'))
+    fireEvent.click(screen.getByTestId('topic-card-general'))
 
     await waitFor(() => {
       expect(postApi).toHaveBeenCalledWith(
@@ -250,7 +250,7 @@ describe('Learning mode dropdown', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Difficulty:' }), {
       target: { value: 'advanced' },
     })
-    fireEvent.click(screen.getByTestId('start-session'))
+    fireEvent.click(screen.getByTestId('topic-card-general'))
 
     await waitFor(() => {
       expect(postApi).toHaveBeenCalledWith(

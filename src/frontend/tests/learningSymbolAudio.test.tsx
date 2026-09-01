@@ -371,7 +371,8 @@ describe('Learning symbol-first and audio-first flows', () => {
     });
 
     render(<Learning />);
-    fireEvent.click(screen.getByTestId('learning-session-start'));
+    // The empty state is now the topic picker; pick a topic to start.
+    fireEvent.click(await screen.findByTestId('topic-card-general'));
 
     await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledWith(welcome, { rate: 0.9 }));
     expect(screen.getByText(welcome)).toBeInTheDocument();
@@ -394,7 +395,7 @@ describe('Learning symbol-first and audio-first flows', () => {
 
     render(<Learning />);
 
-    fireEvent.click(screen.getByTestId('learning-session-start'));
+    fireEvent.click(await screen.findByTestId('topic-card-general'));
 
     await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledWith(welcome, { rate: 0.9 }));
     await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledWith(question, { rate: 0.9 }));
