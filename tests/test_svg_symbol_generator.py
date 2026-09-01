@@ -119,8 +119,8 @@ def test_parse_spec_response_handles_fences_and_prose():
 
 def test_build_shape_spec_prompt_constrains_output():
     prompt = build_shape_spec_prompt("black hole", "en")
-    # Every quality-critical element must survive trimming: the JSON schema
-    # anchor, the coordinate system, the allowed kinds, and the style rules.
+    # Every quality-critical element must survive: the JSON schema anchor,
+    # the coordinate system, the allowed kinds, and the style rules.
     for required in (
         '"background"',
         '"shapes"',
@@ -140,13 +140,31 @@ def test_build_shape_spec_prompt_constrains_output():
     assert "Spanish" in es_prompt
 
 
+def test_build_shape_spec_prompt_is_concept_driven():
+    """The prompt must force a per-concept decision before the shapes: a
+    ``draws:`` plan line plus a composed example (a heart built from parts),
+    never a bare primitive anchor. Without these, abstract words collapsed
+    into the same generic blob — measured as near-identical images for
+    unrelated concepts ("energía del vacío" vs "teoría de cuerdas")."""
+    prompt = build_shape_spec_prompt("materia oscura", "es")
+    assert "draws:" in prompt
+    assert "ONE concrete image" in prompt
+    # The example must teach composition (2 circles + 1 polygon heart), not
+    # anchor a single primitive.
+    assert prompt.count('"kind": "circle"') >= 2
+    assert '"kind": "polygon"' in prompt
+    assert "[[-50,-5],[50,-5],[0,70]]" in prompt
+    # Real outlines via path/polygon are pushed over bare primitives.
+    assert "Use path or polygon for real outlines" in prompt
+    assert "umbrella canopy" in prompt
+
+
 def test_build_shape_spec_prompt_requires_centered_placement():
     """The prompt must keep telling the model to center the drawing and to
     stay within a sensible radius: corner-placed pictograms (a shape at far
     coordinates surviving validation) are the main output outlier, and the
     constraint is what keeps them rare."""
     prompt = build_shape_spec_prompt("corazón", "es")
-    assert "centered pictogram" in prompt
     assert "Center the drawing" in prompt
     assert "keep all shapes within" in prompt and "-200" in prompt
 
@@ -163,11 +181,12 @@ def test_build_shape_spec_prompt_spells_out_polygon_points_format():
 
 def test_build_shape_spec_prompt_stays_under_token_budget():
     """The per-pictogram prompt is the biggest LLM-cost lever (sent once per
-    generated word), so it must stay compact. ~720 chars ≈ ~290 tokens vs the
-    ~310 before trimming; the cap allows the wording to evolve without
-    silently ballooning the cost again."""
+    generated word), so it must stay compact. The concept-driven rewrite
+    (draws: plan + heart example + outline instruction) measures ~1190 chars
+    ≈ ~400 tokens; the cap allows that wording to evolve without silently
+    ballooning the cost again."""
     prompt = build_shape_spec_prompt("agujero negro", "es")
-    assert len(prompt) <= 760
+    assert len(prompt) <= 1250
 
 
 # --- rasterization -------------------------------------------------------

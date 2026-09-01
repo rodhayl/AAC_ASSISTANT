@@ -318,33 +318,48 @@ def render_spec_to_svg(spec: dict) -> str:
 def build_shape_spec_prompt(label: str, language: str) -> str:
     """Prompt the model for a strict JSON shape spec (never raw SVG).
 
-    Kept deliberately terse: the pictogram prompt is sent once per generated
-    word, so every wasted token multiplies across a topic burst. The JSON
-    schema anchor and the constraint list are the quality-critical parts;
-    prose is minimal. ``stroke``/``stroke_width`` are omitted from the
-    example on purpose - validation defaults ("none"/2) cover them.
+    Concept-driven, not primitive-driven: the model must first commit to ONE
+    concrete object to draw (the ``draws:`` line, which the parser tolerates
+    before the JSON), then compose shapes for that object. A sole-circle
+    example anchors every output to that primitive, and without a per-concept
+    decision step abstract words collapse into the same generic blob — the
+    measured failure mode was nearly identical images for unrelated concepts
+    ("energía del vacío" vs "teoría de cuerdas"). The example is therefore a
+    3-shape heart built from parts, and paths/polygons are pushed over
+    primitives because circles/rects cannot encode most meanings.
+
+    Still kept compact: the prompt is sent once per generated word, so every
+    wasted token multiplies across a topic burst.
     """
     lang_hint = "Spanish" if str(language).startswith("es") else "English"
     return (
-        "Flat, colorful AAC pictograms in ARASAAC style: one clear central "
-        "concept, bold simple shapes, high contrast; no text, letters, "
-        "numbers, or photos.\n"
-        "Draw a centered pictogram for the concept: "
-        f'"{label}" (language: {lang_hint}).\n'
-        "Canvas 512x512, centered at (0,0). Center the drawing; keep all "
-        "shapes within about -200 to +200.\n"
-        "Reply with ONLY this JSON:\n"
+        "Flat, colorful AAC pictogram for \""
+        f"{label}\" ({lang_hint}); simple bold shapes, high contrast, "
+        "ARASAAC style; no text, letters, numbers, or photos.\n"
+        "If the concept is abstract or complex, pick the ONE concrete image "
+        'people instantly associate with it (e.g. "materia oscura" -> dark '
+        'blob with stars, "tristeza" -> sad face, "amistad" -> linked hands).\n'
+        "First output one line starting with 'draws:' naming the object(s) "
+        "your shapes will draw (max 10 words), then ONLY the JSON:\n"
         '{\n'
         '  "background": "#ffffff",\n'
         '  "shapes": [\n'
-        '    { "kind": "circle", "cx": 0, "cy": 0, "r": 60, '
-        '"fill": "#FFD166" }\n'
+        '    { "kind": "circle", "cx": -45, "cy": -10, "r": 45, '
+        '"fill": "#FFD166" },\n'
+        '    { "kind": "circle", "cx": 45, "cy": -10, "r": 45, '
+        '"fill": "#FFD166" },\n'
+        '    { "kind": "polygon", "points": [[-50,-5],[50,-5],[0,70]], '
+        '"fill": "#EF476F" }\n'
         "  ]\n"
         "}\n"
-        "Allowed kinds: circle, ellipse, rect, line, polygon, polyline, "
-        "path. fill/stroke: hex like #FFD166 or \"none\". polygon/polyline "
-        "\"points\" is a list of [x,y] pairs like [[0,0],[10,10]]. Max 8 "
-        "shapes; prefer circle/ellipse/rect, use path only when needed."
+        "Canvas 512x512, centered at (0,0). Center the drawing; keep all "
+        "shapes within about -200 to +200.\n"
+        "Allowed kinds: circle, ellipse, rect, line, polygon, polyline, path. "
+        "Use path or polygon for real outlines (umbrella canopy, wings, "
+        "bodies, mountains, waves); use circle only for wheels, eyes, sun, "
+        'spots. Fill/stroke: hex like "#FFD166" or "none". polygon/polyline '
+        '"points" is a list of [x,y] pairs like [[0,0],[10,10]]. Max 8 '
+        "shapes."
     )
 
 
