@@ -136,7 +136,15 @@ def _apply_path_data(path: Any, d: str) -> Any:
 
 
 def _point_pairs(value: Any, max_points: int = 32) -> list[tuple[float, float]] | None:
-    """Validate a polygon/polyline points list: [[x, y], ...] within bounds."""
+    """Validate a polygon/polyline points list: [[x, y], ...] within bounds.
+
+    Points pass through in canvas-relative coordinates, exactly like every
+    other shape's ``cx``/``cy``: the renderer's ``origin="center"`` applies
+    the single +CENTER shift. Never shift them here — doing so double-shifts
+    every polygon (+CENTER here, +CENTER again at render time), which pinned
+    all polygon content to the bottom-right corner and clipped it at the
+    canvas edge (the deterministic corner 'delta').
+    """
     if not isinstance(value, list) or not value or len(value) > max_points:
         return None
     points: list[tuple[float, float]] = []
@@ -150,8 +158,8 @@ def _point_pairs(value: Any, max_points: int = 32) -> list[tuple[float, float]] 
             return None
         points.append(
             (
-                _clamp(float(pair[0]) + _CENTER, 0.0, _MAX_COORD),
-                _clamp(float(pair[1]) + _CENTER, 0.0, _MAX_COORD),
+                _clamp(float(pair[0]), -_MAX_COORD, _MAX_COORD),
+                _clamp(float(pair[1]), -_MAX_COORD, _MAX_COORD),
             )
         )
     return points
@@ -297,6 +305,8 @@ def render_spec_to_svg(spec: dict) -> str:
             )
         elif kind == "polygon":
             path = draw.Path(**common)
+            # Points are canvas-relative (see _point_pairs); origin="center"
+            # on the Drawing applies the single shift to every shape alike.
             first = shape["points"][0]
             path.M(first[0], first[1])
             for x, y in shape["points"][1:]:

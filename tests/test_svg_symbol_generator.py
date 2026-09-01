@@ -1,6 +1,6 @@
 """Unit tests for LLM-driven SVG symbol generation (Path 2)."""
 
-
+import io
 from unittest.mock import patch
 
 import pytest
@@ -80,6 +80,54 @@ def test_validate_shape_spec_rejects_structural_nonsense():
     # Non-numeric geometry drops the shape, and if nothing survives it fails.
     with pytest.raises(ShapeSpecError, match="no valid shapes"):
         validate_shape_spec({"shapes": [{"kind": "circle", "cx": "x", "cy": 0, "r": 10}]})
+
+
+def test_polygon_points_stay_relative_and_render_centered():
+    """Regression: polygon/polyline points were shifted by +CENTER in
+    validation while the renderer's origin="center" shifts them again,
+    double-moving every polygon 256px down-right and clipping it to the
+    canvas corner. This was the deterministic corner-pinned 'delta': the
+    model drew a perfectly centered triangle and the renderer butchered it.
+    Points must pass through relative (like cx/cy) so the single render-time
+    shift lands them centered."""
+    from PIL import Image
+
+    spec = validate_shape_spec(
+        {
+            "background": "#ffffff",
+            "shapes": [
+                {
+                    "kind": "polygon",
+                    "points": [[-100, 80], [100, 80], [0, -120]],
+                    "fill": "#EF476F",
+                },
+            ],
+        }
+    )
+    # Unit level: validation keeps points relative to the canvas center.
+    assert spec["shapes"][0]["points"] == [(-100.0, 80.0), (100.0, 80.0), (0.0, -120.0)]
+    # End to end: the rendered raster has the triangle centered, not pinned
+    # to the corner (256px render of the 512px SVG halves pixel units).
+    png = rasterize_svg_text(render_spec_to_svg(spec), size=256)
+    assert png is not None
+    im = Image.open(io.BytesIO(png)).convert("RGBA")
+    w, h = im.size
+    px = im.load()
+    xs, ys = [], []
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            if a > 40 and not (r > 235 and g > 235 and b > 235):
+                xs.append(x)
+                ys.append(y)
+    assert xs, "polygon should be visible"
+    size = max(max(xs) - min(xs), max(ys) - min(ys))
+    cx = (min(xs) + max(xs)) / 2 - w / 2
+    cy = (min(ys) + max(ys)) / 2 - h / 2
+    assert size > 60, f"polygon clipped by double-shift (size={size})"
+    assert abs(cx) <= 25 and abs(cy) <= 25, (
+        f"polygon corner-pinned: offset=({cx:.0f},{cy:.0f})"
+    )
 
 
 def test_render_spec_produces_well_formed_safe_svg():
