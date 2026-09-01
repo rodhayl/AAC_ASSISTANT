@@ -139,10 +139,11 @@ def get_ai_settings(
     temperature = _safe_float_setting(
         values.get("ai_temperature"), config.AI_TEMPERATURE, minimum=0.0, maximum=1.5
     )
+    # -1 = unlimited (default), 0 = disabled, positive = daily cap.
     autogen_daily_cap = _safe_int_setting(
         values.get("autogen_daily_cap"),
         config.AUTOGEN_DAILY_CAP,
-        minimum=0,
+        minimum=-1,
         maximum=500,
     )
 
@@ -285,8 +286,12 @@ def update_ai_settings(
 
     if "autogen_daily_cap" in settings and settings["autogen_daily_cap"] is not None:
         try:
-            value = int(settings["autogen_daily_cap"])
-            if not 0 <= value <= 500:
+            raw = settings["autogen_daily_cap"]
+            # Reject floats like 1.5 instead of silently truncating to 1.
+            if isinstance(raw, bool) or not isinstance(raw, int):
+                raise ValueError
+            value = int(raw)
+            if not -1 <= value <= 500:
                 raise ValueError
             updated_values["autogen_daily_cap"] = str(value)
         except (TypeError, ValueError):

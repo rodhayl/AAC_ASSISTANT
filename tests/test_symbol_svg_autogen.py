@@ -374,3 +374,74 @@ def test_generation_lock_makes_cap_hard_under_concurrency(test_db_session, monke
         autogen._generate_in_background(autogen._PendingKey("dos", "es"), "dos", "es")
     # Only the first thread (count 0 < cap 1) reached the LLM.
     assert generated == [1]
+
+
+def test_auto_generated_symbol_reused_across_future_conversations(
+    test_db_session, regular_user, monkeypatch
+):
+    """A pictogram generated once is reused in later conversations: a future
+    topic that surfaces the same word resolves it to the stored symbol (with
+    image) instead of emitting a text-only tile or regenerating it."""
+    from unittest.mock import Mock
+
+    from src.aac_app.services import prediction_service as ps_module
+    from src.aac_app.services import symbol_svg_autogen as autogen_module
+
+    service = ps_module.PredictionService()
+    monkeypatch.setitem(service._models, "es", {"bigrams": {}})
+    analytics = Mock()
+    analytics.suggest_next_symbol.return_value = []
+    monkeypatch.setattr(service, "analytics_service", analytics)
+
+    # Simulate a pictogram auto-generated in an earlier conversation: it has
+    # the autogen description marker and a stored image, exactly like a real
+    # background generation would leave behind.
+    generated = Symbol(
+        label="nebulosa",
+        description=autogen_module._AUTOGEN_DESC_PREFIX + " for the missing symbol 'nebulosa'.",
+        category="general",
+        image_path="/uploads/symbols/nebulosa.png",
+        keywords="nebulosa",
+        language="es",
+        is_builtin=False,
+    )
+    test_db_session.add_all(
+        [
+            generated,
+            Symbol(label="vaca", category="farm_animals", language="es", is_builtin=True),
+        ]
+    )
+    test_db_session.commit()
+
+    # A NEW topic (different conversation) whose word list happens to include
+    # the already-generated word.
+    fetched = Mock(return_value=["nebulosa", "pulsar"])
+    scheduled: list[str] = []
+    with patch.object(autogen_module, "autogen_enabled", return_value=True), patch.object(
+        autogen_module,
+        "ensure_symbol_generated",
+        side_effect=lambda word, lang: scheduled.append(word),
+    ):
+        try:
+            suggestions = service.predict_next(
+                user_id=regular_user.id,
+                current_symbols=[],
+                limit=6,
+                language="es",
+                offset=0,
+                topic="nuevo tema cósmico",
+                topic_word_fetcher=fetched,
+                db=test_db_session,
+            )
+        finally:
+            ps_module._topics_word_cache.clear()
+
+    by_label = {s["label"]: s for s in suggestions}
+    # "nebulosa" is reused: real symbol with the stored image, not text-only.
+    reused = by_label.get("nebulosa")
+    assert reused is not None
+    assert reused["symbol_id"] == generated.id
+    assert reused["image_path"] == "/uploads/symbols/nebulosa.png"
+    assert reused.get("is_text_only") is not True
+    # Only the truly-missing word gets scheduled for generation.
+    assert scheduled == ["pulsar"]

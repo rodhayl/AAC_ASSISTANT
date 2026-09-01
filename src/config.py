@@ -124,8 +124,9 @@ class Settings(BaseSettings):
     AI_MAX_TOKENS: int = 1024
     AI_TEMPERATURE: float = 0.5
     # Daily cap on auto-generated pictograms: LLM cost guard for the Smartbar
-    # background generation. 0 disables auto-generation entirely.
-    AUTOGEN_DAILY_CAP: int = 20
+    # background generation. -1 (default) = unlimited, 0 disables
+    # auto-generation entirely, any positive integer caps the day's output.
+    AUTOGEN_DAILY_CAP: int = -1
     OPENROUTER_API_KEY: str = ""
     GROQ_API_KEY: str = ""
 

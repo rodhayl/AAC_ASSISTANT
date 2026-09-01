@@ -14,7 +14,10 @@ const defaults = {
   AI_TEMPERATURE: import.meta.env.VITE_AI_TEMPERATURE
     ? Number(import.meta.env.VITE_AI_TEMPERATURE)
     : 0.5,
-  AUTOGEN_DAILY_CAP: Number(import.meta.env.VITE_AUTOGEN_DAILY_CAP) || 20,
+  // -1 = unlimited (default), 0 = disabled, positive = daily cap.
+  AUTOGEN_DAILY_CAP: Number.isFinite(Number(import.meta.env.VITE_AUTOGEN_DAILY_CAP))
+    ? Number(import.meta.env.VITE_AUTOGEN_DAILY_CAP)
+    : -1,
   APP_NAME: import.meta.env.VITE_APP_NAME || 'AAC Assistant',
   APP_VERSION: import.meta.env.VITE_APP_VERSION || '2.0.0',
 };

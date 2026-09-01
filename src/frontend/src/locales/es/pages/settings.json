@@ -125,7 +125,7 @@
     "temperature": "Temperatura",
     "temperatureHelp": "Valores bajos hacen respuestas más enfocadas y predecibles.",
     "autogenDailyCap": "Símbolos autogenerados al día",
-    "autogenDailyCapHelp": "Control de coste de IA: cuántos pictogramas faltantes se pueden generar automáticamente al día. Pon 0 para desactivar la autogeneración.",
+    "autogenDailyCapHelp": "Control de coste de IA para pictogramas autogenerados. Sin límite por defecto (-1); pon 0 para desactivar, o un número positivo para limitar cuántos se pueden generar al día.",
     "health": "Comprobar estado",
     "statusUp": "ok",
     "statusDown": "sin conexión",

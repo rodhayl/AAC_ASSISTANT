@@ -61,7 +61,7 @@ vi.mock('../src/config', () => ({
     OLLAMA_BASE_URL: 'http://localhost:11434',
     AI_MAX_TOKENS: 1024,
     AI_TEMPERATURE: 0.5,
-    AUTOGEN_DAILY_CAP: 20,
+    AUTOGEN_DAILY_CAP: -1,
   },
 }));
 
@@ -140,7 +140,7 @@ describe('AiProviderTab', () => {
           ollama_model: 'qwen:7b-q4_0',
           max_tokens: 1024,
           temperature: 0.5,
-          autogen_daily_cap: 20,
+          autogen_daily_cap: -1,
         }),
       );
     });

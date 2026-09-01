@@ -184,7 +184,8 @@ def _generate_in_background(key: _PendingKey, label: str, language: str) -> None
             # generated symbols for the day. A *fresh* count is required here
             # — the cached budget is TTL-bounded and would let several threads
             # spawned in the same instant all see a zero count and overshoot.
-            if _count_generated_today() >= _daily_cap():
+            cap = _daily_cap()
+            if cap >= 0 and _count_generated_today() >= cap:
                 logger.info(
                     "Skip auto-generating {!r}: daily auto-generation budget exhausted",
                     label,
@@ -275,21 +276,25 @@ def autogen_enabled() -> bool:
 # Daily LLM-cost cap: auto-generation stops for the day after this many
 # pictograms. The value lives in the persisted settings (admin-editable as
 # ``autogen_daily_cap``) with ``config.AUTOGEN_DAILY_CAP`` as the built-in
-# default; 0 disables auto-generation entirely. The count is cached briefly
-# so the Smartbar's per-keystroke fast path stays a memory read, while the
-# background thread re-queries before spending an LLM call.
+# default. -1 = unlimited (the default; pictograms are short/cheap), 0
+# disables auto-generation entirely, positive = daily cap. The count is
+# cached briefly so the Smartbar's per-keystroke fast path stays a memory
+# read, while the background thread re-queries before spending an LLM call.
 _AUTOGEN_DESC_PREFIX = "Auto-generated pictogram"
 _generated_today_cache: tuple[float, int] | None = None
 _GENERATED_TODAY_TTL_SECONDS = 10.0
 
 
 def _daily_cap() -> int:
-    """Return the configured daily auto-generation cap (>= 0)."""
+    """Return the configured daily auto-generation cap.
+
+    -1 = unlimited (the default), 0 = disabled, positive = daily cap.
+    """
     try:
         from src.api.deps.settings import get_setting_value
 
         value = get_setting_value("autogen_daily_cap", "")
-        return max(0, int(value)) if value else config.AUTOGEN_DAILY_CAP
+        return int(value) if value else config.AUTOGEN_DAILY_CAP
     except (TypeError, ValueError) as exc:
         logger.warning("Invalid autogen_daily_cap setting, using default: {}", exc)
         return config.AUTOGEN_DAILY_CAP
@@ -331,18 +336,28 @@ def _count_generated_today(session=None) -> int:
 
 
 def _daily_budget_remaining() -> int:
-    """Cached remaining budget: cap minus today's generated symbols."""
+    """Cached remaining budget: cap minus today's generated symbols.
+
+    An unlimited cap (-1) always reports a positive budget so generation is
+    never blocked by the quota; 0 still disables generation entirely.
+    """
     global _generated_today_cache
     now = time.monotonic()
     with _lock:
         if _generated_today_cache is not None:
             cached_at, count = _generated_today_cache
             if now - cached_at < _GENERATED_TODAY_TTL_SECONDS:
-                return max(0, _daily_cap() - count)
+                cap = _daily_cap()
+                if cap < 0:
+                    return 1
+                return max(0, cap - count)
     count = _count_generated_today()
     with _lock:
         _generated_today_cache = (now, count)
-    return max(0, _daily_cap() - count)
+    cap = _daily_cap()
+    if cap < 0:
+        return 1
+    return max(0, cap - count)
 
 
 def invalidate_generated_today_cache() -> None:
