@@ -119,12 +119,34 @@ def test_parse_spec_response_handles_fences_and_prose():
 
 def test_build_shape_spec_prompt_constrains_output():
     prompt = build_shape_spec_prompt("black hole", "en")
-    assert "JSON object" in prompt
-    assert "circle" in prompt
-    assert "no text" in prompt.lower() or "no text" in prompt
+    # Every quality-critical element must survive trimming: the JSON schema
+    # anchor, the coordinate system, the allowed kinds, and the style rules.
+    for required in (
+        '"background"',
+        '"shapes"',
+        '"kind"',
+        "circle",
+        "ellipse",
+        "polyline",
+        "#FFD166",
+        "512",
+        "-256",
+        "no text",
+        "black hole",
+    ):
+        assert required in prompt
     # Spanish hint for es locales.
     es_prompt = build_shape_spec_prompt("agujero negro", "es")
     assert "Spanish" in es_prompt
+
+
+def test_build_shape_spec_prompt_stays_under_token_budget():
+    """The per-pictogram prompt is the biggest LLM-cost lever (sent once per
+    generated word), so it must stay compact. ~620 chars ≈ ~220 tokens vs the
+    ~310 before trimming; the cap allows the wording to evolve without
+    silently ballooning the cost again."""
+    prompt = build_shape_spec_prompt("agujero negro", "es")
+    assert len(prompt) <= 700
 
 
 # --- rasterization -------------------------------------------------------

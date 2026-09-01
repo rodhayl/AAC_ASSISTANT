@@ -316,29 +316,34 @@ def render_spec_to_svg(spec: dict) -> str:
 
 
 def build_shape_spec_prompt(label: str, language: str) -> str:
-    """Prompt the model for a strict JSON shape spec (never raw SVG)."""
+    """Prompt the model for a strict JSON shape spec (never raw SVG).
+
+    Kept deliberately terse: the pictogram prompt is sent once per generated
+    word, so every wasted token multiplies across a topic burst. The JSON
+    schema anchor and the constraint list are the quality-critical parts;
+    prose is minimal. ``stroke``/``stroke_width`` are omitted from the
+    example on purpose - validation defaults ("none"/2) cover them.
+    """
     lang_hint = "Spanish" if str(language).startswith("es") else "English"
     return (
-        "You design simple pictograms for AAC (augmentative and alternative "
-        "communication), in a flat, colorful, easy-to-read style like "
-        "ARASAAC symbols: one clear central concept, bold simple shapes, "
-        "high contrast, no text, no letters, no numbers, no photos.\n"
+        "Flat, colorful AAC pictograms in ARASAAC style: one clear central "
+        "concept, bold simple shapes, high contrast; no text, letters, "
+        "numbers, or photos.\n"
         "Draw a pictogram for the concept: "
-        f'"{label}" (concept language: {lang_hint}).\n'
-        "The canvas is 512x512 units centered at (0,0), so coordinates range "
-        "roughly from -256 to +256.\n"
-        "Respond ONLY with a JSON object, no markdown, with this exact shape:\n"
+        f'"{label}" (language: {lang_hint}).\n'
+        "Canvas 512x512, centered at (0,0); coordinates range roughly "
+        "-256 to +256.\n"
+        "Reply with ONLY this JSON:\n"
         '{\n'
         '  "background": "#ffffff",\n'
         '  "shapes": [\n'
         '    { "kind": "circle", "cx": 0, "cy": 0, "r": 60, '
-        '"fill": "#FFD166", "stroke": "none", "stroke_width": 2 }\n'
+        '"fill": "#FFD166" }\n'
         "  ]\n"
         "}\n"
-        'Allowed "kind" values: circle, ellipse, rect, line, polygon, '
-        "polyline, path. Colors are hex like #FFD166 or \"none\". Use at "
-        "most 8 shapes. Prefer circles, ellipses and rects; only use a path "
-        "when a distinctive shape really needs one."
+        "Allowed kinds: circle, ellipse, rect, line, polygon, polyline, "
+        "path. fill/stroke: hex like #FFD166 or \"none\". Max 8 shapes; "
+        "prefer circle/ellipse/rect, use path only when needed."
     )
 
 
