@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 from loguru import logger
 
-from .base_provider import BaseLLMProvider
+from .base_provider import BaseLLMProvider, ProviderRateLimitError
 
 
 class OpenRouterProvider(BaseLLMProvider):
@@ -135,6 +135,10 @@ class OpenRouterProvider(BaseLLMProvider):
                 logger.error(
                     f"{type(self).__name__} API error: {response.status_code} - {response.text}"
                 )
+                if response.status_code == 429:
+                    raise ProviderRateLimitError(
+                        f"{type(self).__name__} rate limited (429): {response.text[:300]}"
+                    )
                 raise Exception(
                     f"{type(self).__name__} API error: {response.status_code}"
                 )
@@ -219,6 +223,10 @@ class OpenRouterProvider(BaseLLMProvider):
                 logger.error(
                     f"{type(self).__name__} API error: {response.status_code} - {response.text}"
                 )
+                if response.status_code == 429:
+                    raise ProviderRateLimitError(
+                        f"{type(self).__name__} rate limited (429): {response.text[:300]}"
+                    )
                 raise Exception(
                     f"{type(self).__name__} API error: {response.status_code}"
                 )

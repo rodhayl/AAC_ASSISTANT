@@ -56,15 +56,38 @@ class _PendingKey:
 # In-flight generation per (label, language) so concurrent Smartbar requests
 # for the same word do not fire duplicate LLM calls. Failed keys keep their
 # timestamp so the provider is not retried until the cooldown elapses.
+# ``_rate_limited`` remembers which failures were 429s, so those retry with
+# the short rate-limit cooldown instead of the generic one.
 _lock = threading.RLock()
 _in_flight: set[_PendingKey] = set()
 _recent_failures: dict[_PendingKey, float] = {}
+_rate_limited: set[_PendingKey] = set()
 
 # Serializes the budget check + LLM call + persist in background threads so
-# the daily cap is a hard limit even under concurrent Smartbar requests.
+# the daily cap is a hard limit even under concurrent Smartbar requests. The
+# same lock also paces consecutive LLM calls (``_last_llm_call_at``) so a
+# burst of missing words spaces its API requests instead of tripping the
+# provider's per-minute quota.
 _generation_lock = threading.Lock()
+_last_llm_call_at = 0.0
 
 _RETRY_COOLDOWN_SECONDS = 5 * 60
+
+
+def _pacing_seconds() -> float:
+    """Minimum gap between consecutive LLM calls (0 disables pacing)."""
+    try:
+        return max(0.0, float(config.AUTOGEN_PACING_SECONDS))
+    except (TypeError, ValueError):
+        return 1.5
+
+
+def _rate_limit_cooldown_seconds() -> float:
+    """Cooldown applied after a 429 rate-limit failure."""
+    try:
+        return max(0.0, float(config.AUTOGEN_RATE_LIMIT_COOLDOWN_SECONDS))
+    except (TypeError, ValueError):
+        return 30.0
 
 
 def _normalize_label(label: str) -> str:
@@ -166,9 +189,13 @@ def _generate_in_background(key: _PendingKey, label: str, language: str) -> None
 
     The budget check + LLM call + persist run under a dedicated lock so the
     daily cap is a *hard* limit: without it, threads spawned in the same
-    instant could all read a pre-persist count and overshoot together.
+    instant could all read a pre-persist count and overshoot together. The
+    same lock paces consecutive LLM calls (``_last_llm_call_at``), and a 429
+    rate-limit failure records a short cooldown so the word retries sooner.
     """
     failed = False
+    rate_limited = False
+    global _last_llm_call_at
     try:
         # Re-check right before spending an LLM call (race window between the
         # in-memory check and this thread actually running).
@@ -203,6 +230,18 @@ def _generate_in_background(key: _PendingKey, label: str, language: str) -> None
                 generate_svg_text,
             )
 
+            # Gentle pacing: space consecutive LLM calls so a topic with many
+            # missing words does not burst the provider's per-minute quota
+            # (the measured failure mode was a Groq 429 after 2-3 back-to-back
+            # calls). Sleeping under the lock is fine: threads queue and each
+            # one waits its turn, which is exactly the spacing we want.
+            pacing = _pacing_seconds()
+            if pacing > 0:
+                elapsed = time.monotonic() - _last_llm_call_at
+                if elapsed < pacing:
+                    time.sleep(pacing - elapsed)
+            _last_llm_call_at = time.monotonic()
+
             svg_text = generate_svg_text(label, language, generate_sync)
             _persist_generated_symbol(label, language, svg_text)
             logger.info("Auto-generated SVG symbol for {!r} (lang={})", label, language)
@@ -211,12 +250,27 @@ def _generate_in_background(key: _PendingKey, label: str, language: str) -> None
         logger.warning("Could not auto-generate pictogram for {!r}: {}", label, exc)
     except Exception as exc:
         failed = True
-        logger.error("Auto-generation of {!r} failed: {}", label, exc)
+        from src.aac_app.providers.base_provider import ProviderRateLimitError
+
+        if isinstance(exc, ProviderRateLimitError):
+            rate_limited = True
+            logger.warning(
+                "Auto-generation of {!r} rate limited (429); "
+                "will retry in ~{}s",
+                label,
+                int(_rate_limit_cooldown_seconds()),
+            )
+        else:
+            logger.error("Auto-generation of {!r} failed: {}", label, exc)
     finally:
         with _lock:
             _in_flight.discard(key)
             if failed:
                 _recent_failures[key] = time.monotonic()
+                if rate_limited:
+                    _rate_limited.add(key)
+                else:
+                    _rate_limited.discard(key)
 
 
 def ensure_symbol_generated(label: str, language: str) -> None:
@@ -244,9 +298,17 @@ def ensure_symbol_generated(label: str, language: str) -> None:
             return
         last_failure = _recent_failures.get(key)
         if last_failure is not None:
-            if time.monotonic() - last_failure < _RETRY_COOLDOWN_SECONDS:
+            # A 429 is transient (per-minute quota), so retry much sooner
+            # than a generic failure; the cooldown choice is stored per key.
+            cooldown = (
+                _rate_limit_cooldown_seconds()
+                if key in _rate_limited
+                else _RETRY_COOLDOWN_SECONDS
+            )
+            if time.monotonic() - last_failure < cooldown:
                 return
             _recent_failures.pop(key, None)
+            _rate_limited.discard(key)
         _in_flight.add(key)
 
     thread = threading.Thread(

@@ -9,6 +9,16 @@ from abc import ABC, abstractmethod
 from loguru import logger
 
 
+class ProviderRateLimitError(Exception):
+    """Raised when a provider rejects a request with HTTP 429.
+
+    Distinct from other failures because the limit is transient (a
+    per-minute quota) rather than a broken configuration: callers can
+    retry sooner and back off gently instead of waiting out a long
+    generic failure cooldown.
+    """
+
+
 class BaseLLMProvider(ABC):
     """Abstract base class for LLM providers"""
 

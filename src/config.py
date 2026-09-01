@@ -127,6 +127,14 @@ class Settings(BaseSettings):
     # background generation. -1 (default) = unlimited, 0 disables
     # auto-generation entirely, any positive integer caps the day's output.
     AUTOGEN_DAILY_CAP: int = -1
+    # Gentle pacing between queued pictogram generations (seconds): spacing
+    # LLM calls out avoids tripping the provider's per-minute quota (Groq 429s)
+    # when a topic has many missing words at once.
+    AUTOGEN_PACING_SECONDS: float = 1.5
+    # Cooldown after a 429 rate-limit failure before the word is retried.
+    # Much shorter than the generic failure cooldown because the quota is
+    # transient, not a broken configuration.
+    AUTOGEN_RATE_LIMIT_COOLDOWN_SECONDS: int = 30
     OPENROUTER_API_KEY: str = ""
     GROQ_API_KEY: str = ""
 

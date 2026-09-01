@@ -10,16 +10,22 @@ from src.aac_app.services import symbol_svg_autogen as autogen
 
 
 @pytest.fixture(autouse=True)
-def _reset_autogen_state():
+def _reset_autogen_state(monkeypatch):
     """Isolate the module-level dedup sets between tests."""
     with autogen._lock:
         autogen._in_flight.clear()
         autogen._recent_failures.clear()
+        autogen._rate_limited.clear()
+    autogen._last_llm_call_at = 0.0
+    # Keep unit tests fast: no real sleeps between LLM calls by default.
+    monkeypatch.setattr(autogen, "_pacing_seconds", lambda: 0.0)
     autogen.set_llm_provider_factory(None)
     yield
     with autogen._lock:
         autogen._in_flight.clear()
         autogen._recent_failures.clear()
+        autogen._rate_limited.clear()
+    autogen._last_llm_call_at = 0.0
     autogen.set_llm_provider_factory(None)
 
 
@@ -196,6 +202,80 @@ def test_failed_generation_gets_cooldown_then_retries(test_db_session, monkeypat
     with patch.object(threading.Thread, "start", new=capturing_start):
         autogen.ensure_symbol_generated("quasar", "es")
     assert len(started) == 2
+
+
+def test_rate_limited_generation_retries_sooner_than_generic_failure(
+    test_db_session, monkeypatch
+):
+    """A 429 records a short cooldown so the word retries well before the
+    generic 5-minute failure cooldown would allow."""
+    import time as time_module
+
+    from src.aac_app.providers.base_provider import ProviderRateLimitError
+
+    class _RateLimitedProvider:
+        def generate_sync(self, prompt, **kwargs) -> str:
+            raise ProviderRateLimitError("Groq rate limited (429)")
+
+    autogen.set_llm_provider_factory(lambda: _RateLimitedProvider())
+    key = autogen._PendingKey("quasar", "es")
+
+    started: list[threading.Thread] = []
+
+    def capturing_start(self):
+        started.append(self)
+        return self.run()
+
+    with patch.object(threading.Thread, "start", new=capturing_start):
+        autogen.ensure_symbol_generated("quasar", "es")
+    assert len(started) == 1
+    assert key in autogen._recent_failures
+    assert key in autogen._rate_limited
+
+    # 40s ago: inside the 5-min generic cooldown but past the 30s
+    # rate-limit cooldown -> the word retries now.
+    with autogen._lock:
+        autogen._recent_failures[key] = time_module.monotonic() - 40
+    with patch.object(threading.Thread, "start", new=capturing_start):
+        autogen.ensure_symbol_generated("quasar", "es")
+    assert len(started) == 2
+
+    # The same age for a generic failure is still inside its cooldown.
+    with autogen._lock:
+        autogen._rate_limited.discard(key)
+        autogen._recent_failures[key] = time_module.monotonic() - 40
+    with patch.object(threading.Thread, "start", new=capturing_start):
+        autogen.ensure_symbol_generated("quasar", "es")
+    assert len(started) == 2  # unchanged: blocked until the 5-minute mark
+
+
+def test_consecutive_generations_are_paced(test_db_session, monkeypatch):
+    """Queued pictograms space their LLM calls so a burst of missing words
+    does not trip the provider's per-minute quota (Groq 429s)."""
+    import time as time_module
+
+    monkeypatch.setattr(autogen, "_pacing_seconds", lambda: 0.2)
+    call_times: list[float] = []
+
+    class _PacedProvider:
+        def generate_sync(self, prompt, **kwargs) -> str:
+            call_times.append(time_module.monotonic())
+            return '{"background":"#fff","shapes":[{"kind":"circle","cx":0,"cy":0,"r":10,"fill":"#FFD166"}]}'
+
+    autogen.set_llm_provider_factory(lambda: _PacedProvider())
+    with (
+        patch.object(autogen, "_has_catalog_symbol", return_value=False),
+        patch.object(autogen, "_count_generated_today", return_value=0),
+        patch.object(autogen, "_persist_generated_symbol", return_value=None),
+    ):
+        for label in ("uno", "dos", "tres"):
+            autogen._generate_in_background(
+                autogen._PendingKey(label, "es"), label, "es"
+            )
+
+    assert len(call_times) == 3
+    assert call_times[1] - call_times[0] >= 0.15
+    assert call_times[2] - call_times[1] >= 0.15
 
 
 def test_prediction_hook_schedules_generation_for_text_only_word(

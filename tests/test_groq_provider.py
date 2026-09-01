@@ -83,3 +83,36 @@ def test_groq_generate_sync_requires_an_explicit_model():
     with pytest.raises(ValueError, match="model must be configured explicitly"):
         provider.generate_sync("hello")
     provider.close_sync()
+
+
+@pytest.mark.anyio
+async def test_groq_rate_limit_raises_provider_rate_limit_error(monkeypatch):
+    """A 429 surfaces as ProviderRateLimitError so callers can retry with a
+    short backoff instead of treating it like a broken configuration."""
+    from src.aac_app.providers.base_provider import ProviderRateLimitError
+
+    provider = GroqProvider(api_key="gsk-test", model="openai/gpt-oss-120b")
+    response = Mock()
+    response.status_code = 429
+    response.text = "rate limit exceeded"
+    monkeypatch.setattr(provider.client, "post", AsyncMock(return_value=response))
+
+    with pytest.raises(ProviderRateLimitError, match="429"):
+        await provider.generate("hello", max_tokens=32)
+    await provider.close()
+
+
+def test_groq_generate_sync_rate_limit_raises_provider_rate_limit_error(monkeypatch):
+    """The sync path (used by symbol auto-generation) surfaces 429 the same
+    way so the autogen service can apply its rate-limit cooldown."""
+    from src.aac_app.providers.base_provider import ProviderRateLimitError
+
+    provider = GroqProvider(api_key="gsk-test", model="openai/gpt-oss-120b")
+    response = Mock()
+    response.status_code = 429
+    response.text = "rate limit exceeded"
+    monkeypatch.setattr(provider.sync_client, "post", Mock(return_value=response))
+
+    with pytest.raises(ProviderRateLimitError, match="429"):
+        provider.generate_sync("hello", max_tokens=32)
+    provider.close_sync()
