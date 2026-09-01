@@ -239,3 +239,47 @@ def test_prediction_hook_schedules_generation_for_text_only_word(
             ps_module._topics_word_cache.clear()
 
     assert scheduled == [("nebulosa", "es"), ("supernova", "es"), ("telescopio", "es")]
+
+
+def test_text_only_suggestions_mark_is_generating_when_enabled(
+    test_db_session, regular_user, monkeypatch
+):
+    """With autogen on, text-only words carry is_generating for the frontend."""
+    from unittest.mock import Mock
+
+    from src.aac_app.services import prediction_service as ps_module
+    from src.aac_app.services import symbol_svg_autogen as autogen_module
+
+    service = ps_module.PredictionService()
+    monkeypatch.setitem(service._models, "es", {"bigrams": {}})
+    analytics = Mock()
+    analytics.suggest_next_symbol.return_value = []
+    monkeypatch.setattr(service, "analytics_service", analytics)
+    test_db_session.add_all(
+        [
+            Symbol(label="vaca", category="farm_animals", language="es", is_builtin=True),
+        ]
+    )
+    test_db_session.commit()
+
+    fetched = Mock(return_value=["nebulosa"])
+    with patch.object(autogen_module, "autogen_enabled", return_value=True), patch.object(
+        autogen_module, "ensure_symbol_generated", return_value=None
+    ):
+        try:
+            suggestions = service.predict_next(
+                user_id=regular_user.id,
+                current_symbols=[],
+                limit=4,
+                language="es",
+                offset=0,
+                topic="astrofísica",
+                topic_word_fetcher=fetched,
+                db=test_db_session,
+            )
+        finally:
+            ps_module._topics_word_cache.clear()
+
+    ai = [s for s in suggestions if s.get("is_text_only")]
+    assert ai and ai[0]["label"] == "nebulosa"
+    assert ai[0]["is_generating"] is True

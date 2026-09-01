@@ -576,6 +576,9 @@ class _PredictionContext:
             if self.allowed_symbol_ids is not None:
                 continue
             fake_id = -(abs(hash(normalized)) % 1000000)
+            # ``is_generating`` tells the frontend a pictogram is being made
+            # in the background, so it can show a "generating" state and
+            # auto-refresh — the tile upgrades to the real image when done.
             self.suggestions.append(
                 {
                     "symbol_id": fake_id,
@@ -585,6 +588,7 @@ class _PredictionContext:
                     "confidence": 0.7,
                     "source": "ai",
                     "is_text_only": True,
+                    "is_generating": self._is_svg_generation_enabled(),
                 }
             )
             self.seen_labels.add(normalized)
@@ -852,6 +856,16 @@ class _PredictionContext:
                 symbol_language=language_code,
             )
 
+    def _is_svg_generation_enabled(self) -> bool:
+        """True when background pictogram generation may run for this request."""
+        try:
+            from src.aac_app.services.symbol_svg_autogen import autogen_enabled
+
+            return autogen_enabled()
+        except Exception as exc:
+            logger.warning("Could not check SVG autogen flag: {}", exc)
+            return False
+
     def _schedule_svg_generation(self, word: str) -> None:
         """Fire-and-forget background pictogram generation for a missing word.
 
@@ -861,11 +875,10 @@ class _PredictionContext:
         """
         try:
             from src.aac_app.services.symbol_svg_autogen import (
-                autogen_enabled,
                 ensure_symbol_generated,
             )
 
-            if autogen_enabled():
+            if self._is_svg_generation_enabled():
                 ensure_symbol_generated(word, self.lang)
         except Exception as exc:
             logger.warning(

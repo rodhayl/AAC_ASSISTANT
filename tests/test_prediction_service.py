@@ -423,6 +423,9 @@ def test_topic_words_tier_surfaces_text_only_words_when_catalog_misses(
             assert item.get("is_text_only") is True
             assert item.get("image_path") is None
             assert item.get("category") is None
+            # Background pictogram generation is off in the test env, so the
+            # tile must not claim a pictogram is being generated.
+            assert item.get("is_generating") is False
 
 
 def test_topic_words_tier_reattaches_catalog_symbols_before_text_only(

@@ -26,6 +26,8 @@ interface Suggestion {
   source?: 'ai' | 'stats' | 'category' | 'punctuation';
   /** Word-only suggestion with no backing symbol/image (LLM topic vocabulary). */
   is_text_only?: boolean;
+  /** Pictogram is being generated in the background; the tile will upgrade. */
+  is_generating?: boolean;
 }
 
 type IntentType = 'general' | 'pronouns' | 'verbs' | 'articles' | 'nouns' | 'places';
@@ -34,6 +36,13 @@ type IntentType = 'general' | 'pronouns' | 'verbs' | 'articles' | 'nouns' | 'pla
 // fires many rapid `currentSentence` updates; debouncing collapses them into a
 // single request without delaying explicit intent/pagination changes.
 const SMARTBAR_DEBOUNCE_MS = 300;
+
+// While an LLM topic word is getting its pictogram generated in the
+// background, the Smartbar polls silently so the finished image appears in
+// place. Poll every few seconds, capped so a failed generation cannot keep
+// the request loop spinning indefinitely.
+const SMARTBAR_AUTOREFRESH_INTERVAL_MS = 4000;
+const SMARTBAR_AUTOREFRESH_MAX = 12;
 
 export function Smartbar({ currentSentence, onSelectSymbol, boardId, topic }: SmartbarProps) {
   const { t, i18n } = useTranslation('boards');
@@ -46,7 +55,11 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId, topic }: Sm
   const [isLoading, setIsLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [debouncedSentence, setDebouncedSentence] = useState(currentSentence);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [generatingSuggestion, setGeneratingSuggestion] = useState(false);
   const suggestionsContainerRef = useRef<HTMLDivElement>(null);
+  const silentRefreshRef = useRef(false);
+  const autoRefreshCountRef = useRef(0);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
@@ -106,8 +119,13 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId, topic }: Sm
       return merged;
     };
 
+    // Silent refreshes (auto-refresh while a pictogram is being generated)
+    // must not flash the full-width loading spinner on every poll.
+    const isSilentRefresh = silentRefreshRef.current;
+    silentRefreshRef.current = false;
+
     const fetchSuggestions = async () => {
-      setIsLoading(true);
+      if (!isSilentRefresh) setIsLoading(true);
       try {
         const labels = debouncedSentence
           .map(s => s.custom_text || s.symbol.label)
@@ -140,6 +158,13 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId, topic }: Sm
           // A short page means the backend has nothing left to offer, so the
           // "More" button must not keep re-fetching the same items.
           setHasMore(Array.isArray(response.data) && response.data.length >= SUGGESTIONS_PAGE_SIZE);
+          // While any suggestion is still waiting on a background pictogram,
+          // keep the tile in a "generating" state and schedule a silent
+          // refresh so the real image appears without another keystroke.
+          const pending = Array.isArray(response.data) && response.data.some(
+            (s: Suggestion) => s.is_text_only && s.is_generating
+          );
+          if (offset === 0) setGeneratingSuggestion(Boolean(pending));
         }
       } catch (error) {
         if (active && (error as { code?: string })?.code !== 'ERR_CANCELED') {
@@ -147,7 +172,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId, topic }: Sm
           if (offset === 0) setSuggestions([]);
         }
       } finally {
-        if (active) setIsLoading(false);
+        if (active && !isSilentRefresh) setIsLoading(false);
       }
     };
 
@@ -157,7 +182,25 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId, topic }: Sm
       active = false;
       controller.abort();
     };
-  }, [debouncedSentence, messages, activeIntent, offset, boardId, topic]); // Re-fetch when sentence OR chat updates
+  }, [debouncedSentence, messages, activeIntent, offset, boardId, topic, refreshKey]); // Re-fetch when sentence OR chat updates
+
+  // Auto-refresh while LLM topic words are still getting their pictograms:
+  // poll silently (no spinner) until the tiles upgrade to real images, with a
+  // safety cap so a failed generation cannot keep polling forever. The poll
+  // stops as soon as a refresh reports no more pending generation.
+  useEffect(() => {
+    if (!generatingSuggestion || isLoading) return;
+    if (autoRefreshCountRef.current >= SMARTBAR_AUTOREFRESH_MAX) {
+      setGeneratingSuggestion(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      autoRefreshCountRef.current += 1;
+      silentRefreshRef.current = true;
+      setRefreshKey(key => key + 1);
+    }, SMARTBAR_AUTOREFRESH_INTERVAL_MS);
+    return () => clearTimeout(timer);
+  }, [generatingSuggestion, isLoading, refreshKey]);
 
   useEffect(() => {
     const container = suggestionsContainerRef.current;
@@ -374,13 +417,29 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId, topic }: Sm
                   <div className={`absolute top-1.5 left-1.5 w-2 h-2 rounded-full ${categoryStyle.dot} opacity-80`} aria-hidden="true" />
                   <div className="h-[60%] w-full flex items-center justify-center mb-1">
                     {suggestion.is_text_only ? (
-                      // LLM topic vocabulary has no symbol or image: render a
-                      // letter tile so the word is still selectable.
-                      <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center">
-                        <span className="text-lg font-black uppercase text-muted-foreground">
-                          {suggestion.label.trim().charAt(0) || '…'}
-                        </span>
-                      </div>
+                      // LLM topic vocabulary has no symbol or image yet. While
+                      // the backend generates the pictogram, show a pulsing
+                      // "generating" spinner; once auto-refresh returns the
+                      // real symbol the tile renders its image instead.
+                      suggestion.is_generating ? (
+                        <div
+                          className="relative h-8 w-8 rounded-lg bg-muted flex items-center justify-center overflow-hidden"
+                          data-testid="smartbar-generating-tile"
+                          title={t('generating')}
+                        >
+                          <div className="absolute inset-0 bg-brand/10 animate-pulse" aria-hidden="true" />
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-brand" aria-hidden="true" />
+                          <span className="sr-only">{t('generating')}</span>
+                        </div>
+                      ) : (
+                        // Generation unavailable: static letter tile so the
+                        // word is still selectable.
+                        <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center">
+                          <span className="text-lg font-black uppercase text-muted-foreground">
+                            {suggestion.label.trim().charAt(0) || '…'}
+                          </span>
+                        </div>
+                      )
                     ) : (
                       <SymbolImage
                         imagePath={suggestion.image_path}

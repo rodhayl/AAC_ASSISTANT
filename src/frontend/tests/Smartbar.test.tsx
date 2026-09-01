@@ -160,6 +160,73 @@ describe('Smartbar', () => {
     expect(selected.symbol_id).toBe(-123);
     expect(selected.symbol.image_path).toBeNull();
   });
+
+  it('shows a generating state on text-only words awaiting a pictogram', async () => {
+    vi.mocked(api.post).mockResolvedValue({
+      data: [
+        {
+          symbol_id: -1,
+          label: 'quasar',
+          category: null,
+          image_path: null,
+          confidence: 0.7,
+          source: 'ai',
+          is_text_only: true,
+          is_generating: true,
+        },
+      ],
+    });
+
+    render(<Smartbar currentSentence={[]} onSelectSymbol={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('quasar')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('smartbar-generating-tile')).toBeInTheDocument();
+  });
+
+  it('auto-refreshes and upgrades the tile once the pictogram exists', async () => {
+    vi.useFakeTimers();
+    const onSelect = vi.fn();
+    const pending = {
+      symbol_id: -2,
+      label: 'singulares',
+      category: null,
+      image_path: null,
+      confidence: 0.7,
+      source: 'ai',
+      is_text_only: true,
+      is_generating: true,
+    };
+    const upgraded = {
+      symbol_id: 502,
+      label: 'singulares',
+      category: 'space',
+      image_path: '/uploads/symbols/x.png',
+      confidence: 0.7,
+      source: 'ai',
+    };
+    const postMock = vi.mocked(api.post);
+    postMock.mockResolvedValueOnce({ data: [pending] }).mockResolvedValueOnce({ data: [upgraded] });
+
+    render(<Smartbar currentSentence={[]} onSelectSymbol={onSelect} />);
+
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByTestId('smartbar-generating-tile')).toBeInTheDocument();
+    expect(postMock).toHaveBeenCalledTimes(1);
+
+    // Let the auto-refresh timer fire: the tile upgrades to the real image
+    // and the spinner disappears.
+    await act(async () => {
+      vi.advanceTimersByTime(4000);
+    });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(postMock).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId('smartbar-generating-tile')).not.toBeInTheDocument();
+    const image = screen.getByAltText('singulares');
+    expect(image).toHaveAttribute('src', '/uploads/symbols/x.png');
+  });
 });
 
 describe('Smartbar debounce', () => {
