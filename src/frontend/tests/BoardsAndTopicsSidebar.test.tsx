@@ -86,7 +86,7 @@ describe('BoardsAndTopicsSidebar saved-by attribution', () => {
     vi.clearAllMocks();
   });
 
-  it('shows the saved-by label when topics come from multiple teachers', async () => {
+  it('groups topics under per-teacher headings when teachers are mixed', async () => {
     loadMock.mockResolvedValue([
       { id: 1, board: 'El cielo', topic: 'Astronomía', createdBy: 'Ms. Johnson' },
       { id: 2, board: 'Recetas', topic: 'Cocina', createdBy: 'Mr. García' },
@@ -97,9 +97,15 @@ describe('BoardsAndTopicsSidebar saved-by attribution', () => {
       expect(screen.getByText('Saved by Ms. Johnson')).toBeInTheDocument();
     });
     expect(screen.getByText('Saved by Mr. García')).toBeInTheDocument();
+    // Each group carries the teacher's avatar (initials).
+    expect(screen.getByText('MJ')).toBeInTheDocument();
+    expect(screen.getByText('MG')).toBeInTheDocument();
+    // Group containers exist per teacher.
+    expect(screen.getByTestId('sidebar-topic-group-Ms. Johnson')).toBeInTheDocument();
+    expect(screen.getByTestId('sidebar-topic-group-Mr. García')).toBeInTheDocument();
   });
 
-  it('omits the label when only one teacher saved topics', async () => {
+  it('stays flat without labels when only one teacher saved topics', async () => {
     loadMock.mockResolvedValue([
       { id: 1, board: 'El cielo', topic: 'Astronomía', createdBy: 'Ms. Johnson' },
       { id: 2, board: 'Recetas', topic: 'Cocina', createdBy: 'Ms. Johnson' },
@@ -110,5 +116,6 @@ describe('BoardsAndTopicsSidebar saved-by attribution', () => {
       expect(screen.getByText('Astronomía')).toBeInTheDocument();
     });
     expect(screen.queryByText(/Saved by/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId(/sidebar-topic-group-/)).not.toBeInTheDocument();
   });
 });

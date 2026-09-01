@@ -211,6 +211,11 @@ console.log('\n=== Student sees teacher topics ===');
     'Sidebar list shows saved-by attribution (two teachers)',
     /guardado por|saved by/i.test(sidebarBody),
   );
+  // The sidebar groups topics per teacher with an avatar in each heading.
+  const sidebarGroups = await page.locator('[data-testid^="sidebar-topic-group-"]').count();
+  check('Sidebar groups topics by teacher', sidebarGroups >= 2, `found ${sidebarGroups} groups`);
+  const sidebarAvatars = await page.locator('[data-testid^="sidebar-topic-group-"] h4 span[aria-hidden="true"]').count();
+  check('Sidebar group headings show teacher avatars', sidebarAvatars >= 2, `found ${sidebarAvatars} avatars`);
 
   await page.screenshot({ path: 'scripts/_saved_student.png', fullPage: true });
   await page.close();

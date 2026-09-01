@@ -64,13 +64,19 @@ export function BoardsAndTopicsSidebar({
     const userId = user?.id ?? null;
     const canManageTopics = useMemo(() => user?.user_type === 'teacher' || user?.user_type === 'admin', [user?.user_type]);
 
-    // Attribution is only useful when the list mixes several teachers, so a
-    // lone teacher's topics (or the owner's own list) stay uncluttered — the
-    // same rule the topic picker uses.
-    const showSavedBy = useMemo(
-        () => new Set(savedTopics.map((topic) => topic.createdBy)).size > 1,
-        [savedTopics],
-    );
+    // When the list mixes several teachers, group the topics under per-teacher
+    // headings (avatar + name) — the same rule the topic picker uses. A lone
+    // teacher's topics (or the owner's own list) stay flat and uncluttered.
+    const teacherGroups = useMemo(() => {
+        const teachers = Array.from(
+            new Set(savedTopics.map((topic) => topic.createdBy).filter(Boolean)),
+        );
+        if (teachers.length < 2) return null;
+        return teachers.map((teacher) => ({
+            teacher,
+            topics: savedTopics.filter((topic) => topic.createdBy === teacher),
+        }));
+    }, [savedTopics]);
 
     const loadSavedTopics = useCallback(async () => {
         if (!userId) return;
@@ -240,21 +246,54 @@ export function BoardsAndTopicsSidebar({
                             </div>
                         </div>
                     )}
-                    <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                    <div className="flex-1 overflow-y-auto p-3 space-y-3">
                         {savedTopics.length === 0 ? (
                             <div className="text-sm text-muted-foreground text-center py-4">{t('noSavedTopics')}</div>
+                        ) : teacherGroups ? (
+                            teacherGroups.map((group) => (
+                                <div key={group.teacher} data-testid={`sidebar-topic-group-${group.teacher}`}>
+                                    <h4 className="flex items-center gap-1.5 px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                        <TeacherAvatar name={group.teacher} className="h-4 w-4" />
+                                        {t('topicPicker.savedBy', { teacher: group.teacher })}
+                                    </h4>
+                                    <div className="space-y-2">
+                                        {group.topics.map((topic) => (
+                                            <div key={topic.id} className="p-3 rounded-lg border border-border bg-background flex items-start gap-2">
+                                                <div className="flex-1">
+                                                    <div className="text-sm font-semibold text-foreground">{topic.topic}</div>
+                                                    <div className="text-xs text-muted-foreground">{topic.board}</div>
+                                                    <div className="mt-2 flex gap-2">
+                                                        <Button
+                                                            type="button"
+                                                            size="xs"
+                                                            onClick={() => user && handleStart(topic)}
+                                                            disabled={isStartingSession}
+                                                        >
+                                                            {isStartingSession ? t('startingSession') : t('startStudy')}
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                                {canManageTopics && (
+                                                    <IconButton
+                                                        label={t('removeTopic')}
+                                                        type="button"
+                                                        onClick={() => removeSavedTopic(topic.id)}
+                                                        className="text-muted-foreground hover:text-red-600 dark:text-red-400"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </IconButton>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))
                         ) : (
                             savedTopics.map((topic) => (
                                 <div key={topic.id} className="p-3 rounded-lg border border-border bg-background flex items-start gap-2">
                                     <div className="flex-1">
                                         <div className="text-sm font-semibold text-foreground">{topic.topic}</div>
                                         <div className="text-xs text-muted-foreground">{topic.board}</div>
-                                        {showSavedBy && (
-                                            <div className="flex items-center gap-1 text-[11px] text-muted-foreground" title={topic.createdBy}>
-                                                <TeacherAvatar name={topic.createdBy} />
-                                                {t('topicPicker.savedBy', { teacher: topic.createdBy })}
-                                            </div>
-                                        )}
                                         <div className="mt-2 flex gap-2">
                                             <Button
                                                 type="button"
