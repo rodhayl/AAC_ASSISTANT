@@ -378,6 +378,154 @@ def test_topic_tier_ranks_word_boundary_label_matches_above_embedded_tokens(
     ]
 
 
+def test_topic_words_tier_surfaces_text_only_words_when_catalog_misses(
+    test_db_session, regular_user, monkeypatch
+):
+    """A topic outside the symbol catalog gets LLM words as text-only
+    suggestions, so learners are never limited by the database symbols."""
+    service = PredictionService()
+    monkeypatch.setitem(service._models, "es", {"bigrams": {}})
+    analytics = Mock()
+    analytics.suggest_next_symbol.return_value = []
+    monkeypatch.setattr(service, "analytics_service", analytics)
+
+    # Catalog has nothing astrophysics-related.
+    test_db_session.add_all(
+        [
+            Symbol(label="vaca", category="farm_animals", language="es", is_builtin=True),
+            Symbol(label="cow", category="farm_animals", language="en", is_builtin=True),
+        ]
+    )
+    test_db_session.commit()
+
+    fetcher = Mock(return_value=["nebulosa", "supernova", "telescopio"])
+    try:
+        suggestions = service.predict_next(
+            user_id=regular_user.id,
+            current_symbols=[],
+            limit=6,
+            language="es",
+            offset=0,
+            topic="astrofísica",
+            topic_word_fetcher=fetcher,
+            db=test_db_session,
+        )
+    finally:
+        from src.aac_app.services import prediction_service as ps_module
+
+        ps_module._topics_word_cache.clear()
+
+    ai_labels = [s["label"] for s in suggestions if s["source"] == "ai"]
+    # The catalog miss falls back to the topic words first.
+    assert ai_labels[:3] == ["nebulosa", "supernova", "telescopio"]
+    for item in suggestions:
+        if item["source"] == "ai":
+            assert item.get("is_text_only") is True
+            assert item.get("image_path") is None
+            assert item.get("category") is None
+
+
+def test_topic_words_tier_reattaches_catalog_symbols_before_text_only(
+    test_db_session, regular_user, monkeypatch
+):
+    """A generated word that matches an existing symbol becomes a real
+    suggestion (with image) rather than a text-only one."""
+    service = PredictionService()
+    monkeypatch.setitem(service._models, "es", {"bigrams": {}})
+    analytics = Mock()
+    analytics.suggest_next_symbol.return_value = []
+    monkeypatch.setattr(service, "analytics_service", analytics)
+    estrella = Symbol(
+        label="estrella",
+        category="science",
+        language="es",
+        image_path="/symbols/estrella.png",
+        is_builtin=True,
+    )
+    test_db_session.add_all([estrella])
+    test_db_session.commit()
+
+    fetcher = Mock(return_value=["estrella", "planeta lejano"])
+    try:
+        suggestions = service.predict_next(
+            user_id=regular_user.id,
+            current_symbols=[],
+            limit=6,
+            language="es",
+            offset=0,
+            topic="astrofísica",
+            topic_word_fetcher=fetcher,
+            db=test_db_session,
+        )
+    finally:
+        from src.aac_app.services import prediction_service as ps_module
+
+        ps_module._topics_word_cache.clear()
+
+    ai = [s for s in suggestions if s["source"] == "ai"]
+    by_label = {s["label"]: s for s in ai}
+    assert by_label["estrella"]["symbol_id"] == estrella.id
+    assert by_label["estrella"]["image_path"] == "/symbols/estrella.png"
+    assert by_label["estrella"].get("is_text_only") is not True
+    assert by_label["planeta lejano"].get("is_text_only") is True
+
+
+def test_topic_word_fetcher_is_cached_and_skipped_when_catalog_covers(
+    test_db_session, regular_user, monkeypatch
+):
+    """The LLM fetcher runs once per (language, topic) and is never called
+    when the catalog already produced topic symbols."""
+    service = PredictionService()
+    monkeypatch.setitem(service._models, "es", {"bigrams": {}})
+    analytics = Mock()
+    analytics.suggest_next_symbol.return_value = []
+    monkeypatch.setattr(service, "analytics_service", analytics)
+    # Catalog DOES cover this topic, so the fetcher must not run.
+    test_db_session.add_all(
+        [
+            Symbol(label="inteligencia artificial", category="computing", language="es", keywords="IA", is_builtin=True),
+            Symbol(label="algoritmo", category="computing", language="es", keywords="IA", is_builtin=True),
+        ]
+    )
+    test_db_session.commit()
+    fetcher = Mock(side_effect=AssertionError("fetcher must not be called"))
+
+    suggestions = service.predict_next(
+        user_id=regular_user.id,
+        current_symbols=[],
+        limit=6,
+        language="es",
+        offset=0,
+        topic="Inteligencia Artificial",
+        topic_word_fetcher=fetcher,
+        db=test_db_session,
+    )
+    assert any(s["source"] == "topic" for s in suggestions)
+    assert not any(s.get("is_text_only") for s in suggestions)
+
+    # Uncached miss path: fetcher is consulted once per (lang, topic); repeated
+    # predict_next calls reuse the TTL cache instead of re-calling the LLM.
+    fetcher2 = Mock(return_value=["nebulosa", "quasar"])
+    try:
+        for _ in range(3):
+            service.predict_next(
+                user_id=regular_user.id,
+                current_symbols=[],
+                limit=4,
+                language="es",
+                offset=0,
+                topic="astrofísica",
+                topic_word_fetcher=fetcher2,
+                db=test_db_session,
+            )
+    finally:
+        from src.aac_app.services import prediction_service as ps_module
+
+        ps_module._topics_word_cache.clear()
+
+    assert fetcher2.call_count == 1
+
+
 def test_label_looks_bad_rejects_artifacts_and_paths():
     assert _label_looks_bad("frontend-icons")
     assert _label_looks_bad("node_modules/index")

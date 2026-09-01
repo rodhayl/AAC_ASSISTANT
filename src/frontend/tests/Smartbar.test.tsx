@@ -128,6 +128,38 @@ describe('Smartbar', () => {
     const loggedArguments = consoleError.mock.calls.flat().join(' ');
     expect(loggedArguments).not.toContain('same key');
   });
+
+  it('renders LLM text-only topic words and selects them as custom text', async () => {
+    vi.mocked(api.post).mockResolvedValue({
+      data: [
+        {
+          symbol_id: -123,
+          label: 'nebulosa',
+          category: null,
+          image_path: null,
+          confidence: 0.7,
+          source: 'ai',
+          is_text_only: true,
+        },
+      ],
+    });
+    const onSelect = vi.fn();
+
+    render(<Smartbar currentSentence={[]} onSelectSymbol={onSelect} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('nebulosa')).toBeInTheDocument();
+    });
+
+    // Text-only words carry no image; the letter tile substitutes.
+    expect(screen.getByText('n')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('nebulosa'));
+    const selected = onSelect.mock.calls[0][0];
+    expect(selected.custom_text).toBe('nebulosa');
+    expect(selected.symbol_id).toBe(-123);
+    expect(selected.symbol.image_path).toBeNull();
+  });
 });
 
 describe('Smartbar debounce', () => {

@@ -4,6 +4,9 @@ Provides REST endpoints for symbol usage analytics and insights.
 """
 
 
+import json
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -24,6 +27,7 @@ from src.api.deps import (
     get_board_or_404,
     get_current_active_user,
     get_db,
+    get_llm_provider,
     get_text,
     require_board_view_access,
 )
@@ -31,6 +35,74 @@ from src.api.schemas import NextSymbolRequest, SymbolUsageRequest
 
 router = APIRouter()
 analytics_service = SymbolAnalytics()
+
+
+# Capped topic-vocabulary expansion so a single bad provider response cannot
+# flood the Smartbar. TTL-bounded in-memory cache lives in PredictionService.
+_TOPIC_WORDS_MAX = 10
+
+
+def _parse_topic_words(response: str) -> list[str]:
+    """Extract a word list from a model response (JSON array or plain list)."""
+    text = (response or "").strip()
+    if not text:
+        return []
+    # Strip markdown fences that some providers wrap lists in.
+    if text.startswith("```"):
+        text = text.strip("`")
+        first_newline = text.find("\n")
+        if first_newline != -1:
+            text = text[first_newline + 1 :]
+    items: list[str] = []
+    stripped = text.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        try:
+            parsed = json.loads(stripped)
+            if isinstance(parsed, list):
+                items = [str(item) for item in parsed]
+        except (ValueError, TypeError):
+            items = []
+    if not items:
+        items = [
+            part.strip().strip('"\'-,•')
+            for part in re.split(r"[\n,;]+", stripped)
+            if part.strip()
+        ]
+    return [item for item in items if item][:_TOPIC_WORDS_MAX]
+
+
+def _build_topic_word_fetcher():
+    """Return a (language, topic) -> words callable backed by the LLM provider.
+
+    Built lazily per request and only used when the catalog misses the topic.
+    The provider is ignored on any failure; the prediction tiers then behave
+    exactly as before (pure catalog/history suggestions).
+    """
+
+    def fetch(language: str, topic: str) -> list[str]:
+        provider = get_llm_provider()
+        generate_sync = getattr(provider, "generate_sync", None)
+        if not callable(generate_sync):
+            return []
+        lang_name = "Spanish" if language.startswith("es") else "English"
+        prompt = (
+            f"List up to {_TOPIC_WORDS_MAX} short words or short phrases "
+            f"({lang_name}) a student studying the topic would want to say. "
+            f"Topic: {topic}.\n"
+            "Return only a comma-separated list, no numbering, no extra text."
+        )
+        try:
+            text = generate_sync(
+                prompt=prompt,
+                temperature=0.5,
+                max_tokens=150,
+            )
+            return _parse_topic_words(text)
+        except Exception as exc:
+            logger.warning("Topic word generation failed: {}", exc)
+            return []
+
+    return fetch
 
 
 def _log_usage_request(
@@ -289,7 +361,13 @@ def get_next_symbol_suggestions_post(
             if request.board_id is not None:
                 return []
 
-        # Get unified suggestions from PredictionService
+        # Get unified suggestions from PredictionService. When a topic is set
+        # and no catalog symbols match it, an LLM-generated word list expands
+        # the vocabulary so learners are never limited by the symbol database.
+        topic_word_fetcher = None
+        if request.topic and request.topic.strip():
+            topic_word_fetcher = _build_topic_word_fetcher()
+
         final_suggestions = prediction_service.predict_next(
             user_id=current_user.id,
             current_symbols=symbols_list,
@@ -299,6 +377,7 @@ def get_next_symbol_suggestions_post(
             board_id=request.board_id,
             topic=request.topic,
             db=db,
+            topic_word_fetcher=topic_word_fetcher,
         )
 
         logger.info(

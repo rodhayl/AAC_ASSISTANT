@@ -24,6 +24,8 @@ interface Suggestion {
   color?: string;
   confidence: number;
   source?: 'ai' | 'stats' | 'category' | 'punctuation';
+  /** Word-only suggestion with no backing symbol/image (LLM topic vocabulary). */
+  is_text_only?: boolean;
 }
 
 type IntentType = 'general' | 'pronouns' | 'verbs' | 'articles' | 'nouns' | 'places';
@@ -371,12 +373,22 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId, topic }: Sm
                 >
                   <div className={`absolute top-1.5 left-1.5 w-2 h-2 rounded-full ${categoryStyle.dot} opacity-80`} aria-hidden="true" />
                   <div className="h-[60%] w-full flex items-center justify-center mb-1">
-                    <SymbolImage
-                      imagePath={suggestion.image_path}
-                      alt={suggestion.label}
-                      className="h-full w-auto object-contain"
-                      missingImageLabel={t('imageUnavailable')}
-                    />
+                    {suggestion.is_text_only ? (
+                      // LLM topic vocabulary has no symbol or image: render a
+                      // letter tile so the word is still selectable.
+                      <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center">
+                        <span className="text-lg font-black uppercase text-muted-foreground">
+                          {suggestion.label.trim().charAt(0) || '…'}
+                        </span>
+                      </div>
+                    ) : (
+                      <SymbolImage
+                        imagePath={suggestion.image_path}
+                        alt={suggestion.label}
+                        className="h-full w-auto object-contain"
+                        missingImageLabel={t('imageUnavailable')}
+                      />
+                    )}
                   </div>
                   <span className={`text-xs font-bold leading-tight text-center w-full px-1 ${isPunctuation ? 'sr-only' : ''} text-foreground line-clamp-2`}>
                     {suggestion.label}

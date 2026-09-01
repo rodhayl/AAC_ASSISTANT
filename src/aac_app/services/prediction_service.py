@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from threading import RLock
@@ -79,6 +80,46 @@ def _tokenize_topic(topic: str) -> list[str]:
 # Punctuation appended after all real suggestions (only when they fit).
 PUNCTUATION: tuple[str, ...] = (".", ",", "?", "!")
 
+# A topic-word provider maps (language, topic) to a list of category words.
+# It is optional: when the catalog cannot cover the topic, the router supplies
+# an LLM-backed callable so learners are never limited by the symbol database.
+TopicWordFetcher = Callable[[str, str], list[str]]
+
+# LLM topic-word fetch is cached per (language, normalized topic) so repeated
+# keystrokes in the Smartbar do not re-call the provider. TTL bounds staleness
+# without ever re-generating on every prediction request.
+_TOPIC_WORD_TTL_SECONDS = 60 * 60
+_topics_word_cache: dict[tuple[str, str], tuple[float, tuple[str, ...]]] = {}
+_topics_word_lock = RLock()
+
+
+def _cached_topic_words(
+    language: str, topic: str, fetcher: TopicWordFetcher
+) -> tuple[str, ...]:
+    """Return topic words, generating once per (language, topic)."""
+    normalized_topic = (topic or "").strip().casefold()
+    if not normalized_topic:
+        return ()
+    key = (language, normalized_topic)
+    now = time.monotonic()
+    with _topics_word_lock:
+        cached = _topics_word_cache.get(key)
+        if cached is not None and now - cached[0] < _TOPIC_WORD_TTL_SECONDS:
+            return cached[1]
+    try:
+        words = fetcher(language, topic) or []
+    except Exception as exc:
+        logger.warning("Topic word generation failed: {}", exc)
+        words = []
+    result = tuple(
+        dict.fromkeys(
+            word.strip() for word in words if word and not _label_looks_bad(word)
+        )
+    )
+    with _topics_word_lock:
+        _topics_word_cache[key] = (now, result)
+    return result
+
 
 @dataclass(frozen=True)
 class _SymbolCatalogEntry:
@@ -138,6 +179,7 @@ class _PredictionContext:
         analytics_service: SymbolAnalytics,
         load_model: Callable[[str], dict],
         topic: str | None = None,
+        topic_word_fetcher: TopicWordFetcher | None = None,
     ) -> None:
         self.user_id = user_id
         self.current_symbols = current_symbols
@@ -151,8 +193,12 @@ class _PredictionContext:
         self._load_model = load_model
         # Topic tokens drive a topic-aware tier so predictions reflect the
         # subject under study instead of always surfacing the same global
-        # standard-library fallbacks.
+        # standard-library fallbacks. The fetcher, when supplied, generates
+        # topic vocabulary beyond the catalog so learners are not limited by
+        # the symbols present in the database.
+        self.topic = topic or ""
         self.topic_tokens = _tokenize_topic(topic or "")
+        self.topic_word_fetcher = topic_word_fetcher
 
         self.suggestions: list[dict] = []
         self.seen_labels: set[str] = set()
@@ -486,6 +532,60 @@ class _PredictionContext:
                 source="topic",
                 symbol_language=language_code,
             )
+
+    def suggest_topic_words(self) -> None:
+        """Tier 0b: LLM-generated words when the catalog cannot cover the topic.
+
+        Keys off the same topic as ``suggest_topic`` but is only consulted
+        when the catalog produced no topic symbols: a learner asking about a
+        subject outside the symbol database still gets usable vocabulary.
+        Each word is first matched against the catalog so an existing symbol
+        wins (image attached); any word without a symbol is surfaced as a
+        text-only suggestion so the user is never limited by the database.
+        """
+        if not self.topic_tokens or self.topic_word_fetcher is None:
+            return
+        # The catalog tier already filled the topic-ish slots; nothing to add.
+        if any(s["source"] == "topic" for s in self.suggestions):
+            return
+        words = _cached_topic_words(self.lang, self.topic, self.topic_word_fetcher)
+        for word in words:
+            if len(self.suggestions) >= self.base_limit:
+                break
+            normalized = self.normalize_label(word)
+            if not normalized or normalized in self.seen_labels:
+                continue
+            # Re-attach a catalog symbol when one exists (image preferred).
+            entry = self.resolve_symbol_for_label(word)
+            if entry is not None:
+                self.add_symbol(
+                    symbol_id=entry.id,
+                    label=entry.label,
+                    category=entry.category,
+                    image_path=entry.image_path,
+                    confidence=0.7,
+                    source="ai",
+                    symbol_language=entry.language,
+                )
+                continue
+            # No symbol: emit a text-only suggestion. Board-scoped requests
+            # must not leak words outside their scope, so this fallback only
+            # applies when no board restricts the vocabulary.
+            if self.allowed_symbol_ids is not None:
+                continue
+            fake_id = -(abs(hash(normalized)) % 1000000)
+            self.suggestions.append(
+                {
+                    "symbol_id": fake_id,
+                    "label": word,
+                    "category": None,
+                    "image_path": None,
+                    "confidence": 0.7,
+                    "source": "ai",
+                    "is_text_only": True,
+                }
+            )
+            self.seen_labels.add(normalized)
 
     def suggest_history(self) -> None:
         """Tier 1: personalized suggestions from the user's usage history."""
@@ -857,6 +957,7 @@ class PredictionService:
         board_id: int | None = None,
         db: Session | None = None,
         topic: str | None = None,
+        topic_word_fetcher: TopicWordFetcher | None = None,
     ) -> list[dict]:
         """
         Predict next symbols.
@@ -867,6 +968,10 @@ class PredictionService:
             limit: Max suggestions to return
             language: Language code (e.g., 'en', 'es-ES')
             offset: Pagination offset
+            topic_word_fetcher: Optional (language, topic) -> words provider.
+                When the catalog cannot cover the topic, generated words are
+                surfaced as text-only suggestions so learners are never
+                limited by the symbols present in the database.
 
         Returns:
             List of suggested symbol dicts
@@ -894,6 +999,7 @@ class PredictionService:
             analytics_service=self.analytics_service,
             load_model=self._load_model,
             topic=topic,
+            topic_word_fetcher=topic_word_fetcher,
         )
 
 
@@ -901,11 +1007,14 @@ class PredictionService:
 
         # Topic symbols rank first so a study subject actually shapes the
         # Smartbar instead of the same global standard-library words on every
-        # topic. Board content comes next (it is the user's chosen scope), then
-        # the global fallbacks fill remaining slots. ``suggest_board_library``
-        # is a no-op when no board is scoped, so a single call covers both
-        # cases.
+        # topic. When the catalog cannot cover the topic, LLM-generated words
+        # (``suggest_topic_words``) fill the gap as text-only suggestions, so
+        # learners are never limited by the symbols in the database. Board
+        # content comes next (it is the user's chosen scope), then the global
+        # fallbacks fill remaining slots. ``suggest_board_library`` is a no-op
+        # when no board is scoped, so a single call covers both cases.
         context.suggest_topic()
+        context.suggest_topic_words()
         context.suggest_board_library()
         context.suggest_history()
         context.suggest_ngrams()

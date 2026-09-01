@@ -151,6 +151,90 @@ class OpenRouterProvider(BaseLLMProvider):
             logger.error(f"{type(self).__name__} generation failed: {e}")
             raise
 
+    def generate_sync(
+        self,
+        prompt: str,
+        model: str | None = None,
+        system: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 500,
+        json_schema: dict | None = None,
+        **kwargs,
+    ) -> str:
+        """Synchronous completion for threadpool callers (e.g. next-symbol).
+
+        Mirrors ``generate`` but posts through the provider's ``sync_client``
+        so synchronous endpoints never need an event loop. Provider subclasses
+        (notably Groq) may override it to enforce the same model contract as
+        their async counterpart.
+        """
+        if not self.is_configured():
+            raise ValueError(
+                f"{type(self).__name__} not configured. Please provide API key."
+            )
+
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "HTTP-Referer": "https://aac-assistant.local",
+                "X-Title": "AAC Assistant 2.0",
+                "Content-Type": "application/json",
+            }
+
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
+
+            selected_model = model or self.default_model
+            payload: dict = {
+                "model": selected_model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "stream": False,
+            }
+
+            if type(self).__name__ == "GroqProvider" and selected_model.startswith(
+                "openai/gpt-oss-"
+            ):
+                payload["reasoning_format"] = "hidden"
+                payload["reasoning_effort"] = "low"
+
+            if json_schema is not None:
+                payload["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "response",
+                        "strict": True,
+                        "schema": json_schema,
+                    },
+                }
+
+            response = self.sync_client.post(
+                f"{self.base_url}/chat/completions", headers=headers, json=payload
+            )
+
+            if response.status_code != 200:
+                logger.error(
+                    f"{type(self).__name__} API error: {response.status_code} - {response.text}"
+                )
+                raise Exception(
+                    f"{type(self).__name__} API error: {response.status_code}"
+                )
+
+            result = response.json()
+            content = result["choices"][0]["message"].get("content")
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError(
+                    f"{type(self).__name__} returned an empty assistant response"
+                )
+            return content
+
+        except Exception as e:
+            logger.error(f"{type(self).__name__} sync generation failed: {e}")
+            raise
+
     async def get_available_models(self) -> dict[str, Any]:
         """Get list of available models from OpenRouter"""
         if not self.is_configured():

@@ -53,3 +53,30 @@ class GroqProvider(OpenRouterProvider):
             json_schema=json_schema,
             **kwargs,
         )
+
+    def generate_sync(
+        self,
+        prompt: str,
+        model: str | None = None,
+        system: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 500,
+        json_schema: dict | None = None,
+        **kwargs,
+    ) -> str:
+        """Synchronous Groq completion; same explicit-model rule as generate().
+
+        The model requirement must never fall back to the parent's default
+        model silently, so this mirrors the async contract exactly.
+        """
+        if not (model or self._configured_model):
+            raise ValueError("Groq model must be configured explicitly")
+        return super().generate_sync(
+            prompt=prompt,
+            model=model,
+            system=system,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            json_schema=json_schema,
+            **kwargs,
+        )
