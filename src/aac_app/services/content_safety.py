@@ -301,14 +301,20 @@ def resolve_policy_for_user(user_id: int | None, db=None) -> ContentPolicy:
         else:
             profile = db.query(GuardianProfile).filter_by(user_id=user_id).first()
         if profile is None or not profile.safety_constraints:
-            return global_policy
+            # Age-based default when the teacher has not set a level: younger
+            # students get a stricter floor than the admin global default.
+            return _age_level_policy(profile, global_policy)
         safety = profile.safety_constraints or {}
     except Exception as exc:
         logger.warning("Could not resolve per-student content policy: {}", exc)
         return global_policy
 
-    level = safety.get("content_filter_level") or global_policy.level
-    if level not in VALID_LEVELS:
+    explicit_level = safety.get("content_filter_level")
+    if explicit_level in VALID_LEVELS:
+        level = explicit_level
+    elif profile is not None and profile.age is not None:
+        level = default_level_for_age(profile.age)
+    else:
         level = global_policy.level
 
     forbidden = list(global_policy.forbidden_topics) + [
@@ -336,6 +342,26 @@ def resolve_policy_for_user(user_id: int | None, db=None) -> ContentPolicy:
         feature_locks=locks,
         sentinel_moderation=sentinel,
         max_response_length=max_len,
+    )
+
+
+def _age_level_policy(profile, global_policy: ContentPolicy) -> ContentPolicy:
+    """Policy for a profile without teacher-set constraints: the admin global
+    policy, with the level raised to the student's age-based default when the
+    admin level is looser (age floor, never a looser override)."""
+    level = global_policy.level
+    if profile is not None and profile.age is not None:
+        age_level = default_level_for_age(profile.age)
+        # A student's age floor only ever tightens, never loosens.
+        if LEVELS.index(age_level) < LEVELS.index(level):
+            level = age_level
+    return ContentPolicy(
+        level=level,
+        forbidden_topics=global_policy.forbidden_topics,
+        trigger_words=global_policy.trigger_words,
+        feature_locks=global_policy.feature_locks,
+        sentinel_moderation=global_policy.sentinel_moderation,
+        max_response_length=global_policy.max_response_length,
     )
 
 

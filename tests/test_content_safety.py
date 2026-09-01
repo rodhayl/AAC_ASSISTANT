@@ -210,6 +210,63 @@ def test_moderate_output_respects_daily_cap(test_db_session, monkeypatch):
     assert second.allowed and len(calls) == 1  # no second LLM call
 
 
+def test_learning_question_output_gate_blocks_blocked_question(
+    test_db_session, regular_user, mock_llm_provider, mock_speech_provider
+):
+    """A generated question whose text/choices trip the deterministic filter
+    is replaced by a safe neutral question and logged."""
+    from src.aac_app.services.learning.service import LearningCompanionService
+
+    # Profanity is strict-only; use a trigger word so standard suffices.
+    test_db_session.add(
+        GuardianProfile(
+            user_id=regular_user.id,
+            template_name="default",
+            safety_constraints={"trigger_words": ["guerra"]},
+            is_active=True,
+            created_by=regular_user.id,
+        )
+    )
+    session = LearningSession(
+        user_id=regular_user.id,
+        topic_name="frutas",
+        purpose="",
+        status="active",
+        conversation_history=[],
+        comprehension_score=0.0,
+    )
+    test_db_session.add(session)
+    test_db_session.commit()
+
+    async def generate(**kwargs):
+        prompt = kwargs.get("prompt", "")
+        if "Generate a " in prompt and "level question" in prompt:
+            return (
+                '{"question": "¿Qué es la guerra?", '
+                '"choices": ["Conflicto", "Manzana", "Agua"], "correct": 0}'
+            )
+        return '{"response": "ok"}'
+
+    mock_llm_provider.generate = AsyncMock(side_effect=generate)
+    service = LearningCompanionService(mock_llm_provider, mock_speech_provider)
+
+    result = asyncio.run(
+        service.ask_question(session_id=session.id, db=test_db_session)
+    )
+    assert result["success"] is True
+    assert "guerra" not in result["question_text"]
+    # The safe fallback question (Spanish user locale).
+    assert "saludar" in result["question_text"]
+    assert "Hola" in result["choices"]
+    event = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.user_id == regular_user.id)
+        .filter(ContentSafetyEvent.surface == "chat")
+        .first()
+    )
+    assert event is not None and event.verdict == "redirected"
+
+
 def test_learning_response_sentinel_blocks_flagged_output(
     test_db_session, regular_user, mock_llm_provider, mock_speech_provider
 ):
@@ -295,6 +352,61 @@ def test_resolve_policy_merges_guardian_profile_overrides(test_db_session):
     assert policy.feature_blocked("block_ai_chat")
     # No guardian profile → global defaults.
     assert resolve_policy_for_user(None).level == "standard"
+
+
+def test_resolve_policy_applies_age_floor_when_no_level_set(test_db_session):
+    """A young student without a teacher-set level gets the age-based strict
+    floor even when the admin global level is relaxed."""
+    import src.aac_app.services.content_safety as safety
+
+    student = _make_user(test_db_session, "safety_age1", "student")
+    test_db_session.add(
+        GuardianProfile(
+            user_id=student.id,
+            template_name="default",
+            age=6,
+            safety_constraints={},
+            is_active=True,
+            created_by=student.id,
+        )
+    )
+    test_db_session.commit()
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        safety, "load_global_policy", lambda: ContentPolicy(level="relaxed")
+    )
+    try:
+        policy = safety.resolve_policy_for_user(student.id, db=test_db_session)
+        assert policy.level == "strict"  # age 6 → strict, tighter than relaxed
+    finally:
+        monkeypatch.undo()
+
+
+def test_resolve_policy_teacher_level_wins_over_age_floor(test_db_session):
+    """An explicit teacher-set level overrides the age-based default."""
+    import src.aac_app.services.content_safety as safety
+
+    student = _make_user(test_db_session, "safety_age2", "student")
+    test_db_session.add(
+        GuardianProfile(
+            user_id=student.id,
+            template_name="default",
+            age=6,
+            safety_constraints={"content_filter_level": "relaxed"},
+            is_active=True,
+            created_by=student.id,
+        )
+    )
+    test_db_session.commit()
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        safety, "load_global_policy", lambda: ContentPolicy(level="relaxed")
+    )
+    try:
+        policy = safety.resolve_policy_for_user(student.id, db=test_db_session)
+        assert policy.level == "relaxed"  # explicit teacher choice respected
+    finally:
+        monkeypatch.undo()
 
 
 def test_save_global_policy_roundtrip(test_db_session):

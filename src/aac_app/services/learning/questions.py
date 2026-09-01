@@ -199,6 +199,43 @@ class QuestionGenerationMixin:
                     logger.error(f"Invalid question data structure: {question_data}")
                     return {"success": False, "error": "Invalid question format"}
 
+                # Layer-1 output gate: a generated question (text + choices)
+                # that trips the student's deterministic filter is dropped and
+                # replaced with a neutral retry-safe question rather than
+                # persisted. Logged as an audit event for teacher review.
+                from ...services import content_safety as _cs
+
+                q_policy = _cs.resolve_policy_for_user(session.user_id, db)
+                q_verdict = _cs.check_text(
+                    q_policy,
+                    " ".join([question_data["question"], *question_data["choices"]]),
+                )
+                if q_verdict.blocked:
+                    _cs.log_event(
+                        user_id=session.user_id,
+                        surface="chat",
+                        direction="output",
+                        verdict="redirected",
+                        matched=list(q_verdict.matched_terms),
+                        detail=question_data["question"][:300],
+                        db=db,
+                    )
+                    # Language-neutral safe fallback: never persist a blocked
+                    # question, always return a benign one.
+                    user_lang = self._get_user_language(session.user_id, db)
+                    if user_lang.startswith("es"):
+                        question_data = {
+                            "question": "¿Qué palabra usamos para saludar?",
+                            "choices": ["Hola", "Nube", "Azul"],
+                            "correct": 0,
+                        }
+                    else:
+                        question_data = {
+                            "question": "Which word do we use to say hello?",
+                            "choices": ["Hello", "Cloud", "Blue"],
+                            "correct": 0,
+                        }
+
                 # Store question in session
                 session.conversation_history = append_history_entry(
                     session.conversation_history,
