@@ -17,6 +17,8 @@ export interface AISettings {
   // Global LLM behavior controls
   max_tokens?: number;
   temperature?: number;
+  // Daily cap on auto-generated pictograms (0 disables auto-generation).
+  autogen_daily_cap?: number;
   can_edit: boolean;
 }
 

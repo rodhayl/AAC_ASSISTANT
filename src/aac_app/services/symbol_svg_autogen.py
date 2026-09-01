@@ -24,6 +24,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC
 
 from loguru import logger
 
@@ -58,6 +59,10 @@ class _PendingKey:
 _lock = threading.RLock()
 _in_flight: set[_PendingKey] = set()
 _recent_failures: dict[_PendingKey, float] = {}
+
+# Serializes the budget check + LLM call + persist in background threads so
+# the daily cap is a hard limit even under concurrent Smartbar requests.
+_generation_lock = threading.Lock()
 
 _RETRY_COOLDOWN_SECONDS = 5 * 60
 
@@ -139,6 +144,7 @@ def _persist_generated_symbol(label: str, language: str, svg_text: str) -> None:
         path.unlink(missing_ok=True)
         raise RuntimeError(f"Failed to persist auto-generated symbol for {label!r}")
 
+    invalidate_generated_today_cache()
     try:
         index_symbol(symbol)
     except Exception as exc:
@@ -152,10 +158,15 @@ def _persist_generated_symbol(label: str, language: str, svg_text: str) -> None:
 def _generate_in_background(key: _PendingKey, label: str, language: str) -> None:
     """Generate + persist one pictogram, then always clear the dedup entry.
 
-    A skipped-but-plausible case (no provider, or a symbol that appeared
-    meanwhile) does not count against the word. An actual generation failure
-    records the key in ``_recent_failures`` so the provider is not retried
-    until the cooldown elapses.
+    A skipped-but-plausible case (no provider, a symbol that appeared
+    meanwhile, or the daily budget exhausted) does not count against the
+    word. An actual generation failure records the key in
+    ``_recent_failures`` so the provider is not retried until the cooldown
+    elapses.
+
+    The budget check + LLM call + persist run under a dedicated lock so the
+    daily cap is a *hard* limit: without it, threads spawned in the same
+    instant could all read a pre-persist count and overshoot together.
     """
     failed = False
     try:
@@ -167,21 +178,33 @@ def _generate_in_background(key: _PendingKey, label: str, language: str) -> None
                 label,
             )
             return
-        generate_sync = _generate_sync_callable()
-        if generate_sync is None:
-            logger.info(
-                "Skip auto-generating {!r}: no LLM provider with sync generation",
-                label,
+        with _generation_lock:
+            # Hard daily budget stop at spend time: even if the Smartbar's
+            # cached flag looked green, never exceed the configured cap of
+            # generated symbols for the day. A *fresh* count is required here
+            # — the cached budget is TTL-bounded and would let several threads
+            # spawned in the same instant all see a zero count and overshoot.
+            if _count_generated_today() >= _daily_cap():
+                logger.info(
+                    "Skip auto-generating {!r}: daily auto-generation budget exhausted",
+                    label,
+                )
+                return
+            generate_sync = _generate_sync_callable()
+            if generate_sync is None:
+                logger.info(
+                    "Skip auto-generating {!r}: no LLM provider with sync generation",
+                    label,
+                )
+                return
+            from src.aac_app.services.svg_symbol_generator import (
+                ShapeSpecError,
+                generate_svg_text,
             )
-            return
-        from src.aac_app.services.svg_symbol_generator import (
-            ShapeSpecError,
-            generate_svg_text,
-        )
 
-        svg_text = generate_svg_text(label, language, generate_sync)
-        _persist_generated_symbol(label, language, svg_text)
-        logger.info("Auto-generated SVG symbol for {!r} (lang={})", label, language)
+            svg_text = generate_svg_text(label, language, generate_sync)
+            _persist_generated_symbol(label, language, svg_text)
+            logger.info("Auto-generated SVG symbol for {!r} (lang={})", label, language)
     except ShapeSpecError as exc:
         failed = True
         logger.warning("Could not auto-generate pictogram for {!r}: {}", label, exc)
@@ -209,6 +232,11 @@ def ensure_symbol_generated(label: str, language: str) -> None:
 
     language = normalize_language_code(language) or "en"
     key = _PendingKey(normalized, language)
+
+    # Cheap in-memory budget check (cached count) so the fast path stays
+    # non-blocking; the background thread re-checks freshly before the LLM.
+    if _daily_budget_remaining() <= 0:
+        return
 
     with _lock:
         if key in _in_flight:
@@ -242,3 +270,95 @@ def autogen_enabled() -> bool:
         return False
     setting = os.environ.get("AAC_AUTOGEN_SYMBOLS", "").strip().lower()
     return setting not in {"0", "false", "no", "off"}
+
+
+# Daily LLM-cost cap: auto-generation stops for the day after this many
+# pictograms. The value lives in the persisted settings (admin-editable as
+# ``autogen_daily_cap``) with ``config.AUTOGEN_DAILY_CAP`` as the built-in
+# default; 0 disables auto-generation entirely. The count is cached briefly
+# so the Smartbar's per-keystroke fast path stays a memory read, while the
+# background thread re-queries before spending an LLM call.
+_AUTOGEN_DESC_PREFIX = "Auto-generated pictogram"
+_generated_today_cache: tuple[float, int] | None = None
+_GENERATED_TODAY_TTL_SECONDS = 10.0
+
+
+def _daily_cap() -> int:
+    """Return the configured daily auto-generation cap (>= 0)."""
+    try:
+        from src.api.deps.settings import get_setting_value
+
+        value = get_setting_value("autogen_daily_cap", "")
+        return max(0, int(value)) if value else config.AUTOGEN_DAILY_CAP
+    except (TypeError, ValueError) as exc:
+        logger.warning("Invalid autogen_daily_cap setting, using default: {}", exc)
+        return config.AUTOGEN_DAILY_CAP
+    except Exception as exc:
+        logger.warning("Could not read autogen_daily_cap setting: {}", exc)
+        return config.AUTOGEN_DAILY_CAP
+
+
+def _count_generated_today(session=None) -> int:
+    """Number of auto-generated symbols already persisted today (UTC day)."""
+    from datetime import datetime
+
+    from sqlalchemy import func
+
+    from src.aac_app.db import get_session
+    from src.aac_app.models import Symbol
+
+    # ``created_at`` is written by SQLAlchemy's ``func.now()`` -> naive UTC
+    # in SQLite/Postgres, so the day boundary must be naive UTC as well.
+    day_start = datetime.now(UTC).replace(
+        tzinfo=None, hour=0, minute=0, second=0, microsecond=0
+    )
+
+    def query(db) -> int:
+        return (
+            db.query(func.count(Symbol.id))
+            .filter(
+                Symbol.description.like(f"{_AUTOGEN_DESC_PREFIX}%"),
+                Symbol.created_at >= day_start,
+            )
+            .scalar()
+            or 0
+        )
+
+    if session is not None:
+        return query(session)
+    with get_session() as session:
+        return query(session)
+
+
+def _daily_budget_remaining() -> int:
+    """Cached remaining budget: cap minus today's generated symbols."""
+    global _generated_today_cache
+    now = time.monotonic()
+    with _lock:
+        if _generated_today_cache is not None:
+            cached_at, count = _generated_today_cache
+            if now - cached_at < _GENERATED_TODAY_TTL_SECONDS:
+                return max(0, _daily_cap() - count)
+    count = _count_generated_today()
+    with _lock:
+        _generated_today_cache = (now, count)
+    return max(0, _daily_cap() - count)
+
+
+def invalidate_generated_today_cache() -> None:
+    """Drop the cached daily count after a persisted symbol mutation."""
+    global _generated_today_cache
+    with _lock:
+        _generated_today_cache = None
+
+
+def autogen_can_generate() -> bool:
+    """True when a pictogram can actually be generated right now.
+
+    Combines the environment switch with the daily cost cap: the Smartbar's
+    ``is_generating`` flag must not promise a pictogram when the budget is
+    exhausted, or its tiles would spin and poll forever without upgrading.
+    """
+    if not autogen_enabled():
+        return False
+    return _daily_budget_remaining() > 0

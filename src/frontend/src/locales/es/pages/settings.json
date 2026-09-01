@@ -124,6 +124,8 @@
     "maxTokensHelp": "Controla la longitud de las respuestas del tutor.",
     "temperature": "Temperatura",
     "temperatureHelp": "Valores bajos hacen respuestas más enfocadas y predecibles.",
+    "autogenDailyCap": "Símbolos autogenerados al día",
+    "autogenDailyCapHelp": "Control de coste de IA: cuántos pictogramas faltantes se pueden generar automáticamente al día. Pon 0 para desactivar la autogeneración.",
     "health": "Comprobar estado",
     "statusUp": "ok",
     "statusDown": "sin conexión",

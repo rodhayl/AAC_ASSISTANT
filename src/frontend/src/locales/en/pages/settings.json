@@ -124,6 +124,8 @@
     "maxTokensHelp": "Controls how long responses can be.",
     "temperature": "Temperature",
     "temperatureHelp": "Lower values are recommended for tutoring.",
+    "autogenDailyCap": "Auto-generated symbols per day",
+    "autogenDailyCapHelp": "LLM cost guard: how many missing pictograms can be generated automatically per day. Set to 0 to disable auto-generation.",
     "health": "Check Provider Health",
     "statusUp": "ok",
     "statusDown": "down",

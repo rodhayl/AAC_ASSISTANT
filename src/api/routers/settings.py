@@ -121,6 +121,7 @@ def get_ai_settings(
             "lmstudio_model",
             "ai_max_tokens",
             "ai_temperature",
+            "autogen_daily_cap",
         ),
     )
     provider = values.get("ai_provider") or "ollama"
@@ -137,6 +138,12 @@ def get_ai_settings(
     )
     temperature = _safe_float_setting(
         values.get("ai_temperature"), config.AI_TEMPERATURE, minimum=0.0, maximum=1.5
+    )
+    autogen_daily_cap = _safe_int_setting(
+        values.get("autogen_daily_cap"),
+        config.AUTOGEN_DAILY_CAP,
+        minimum=0,
+        maximum=500,
     )
 
     # Mask API keys for non-admins (or any user; admins see the raw value so
@@ -159,6 +166,7 @@ def get_ai_settings(
         "lmstudio_model": lmstudio_model,
         "max_tokens": max_tokens,
         "temperature": temperature,
+        "autogen_daily_cap": autogen_daily_cap,
         "can_edit": current_user.user_type == "admin",
     }
 
@@ -267,6 +275,25 @@ def update_ai_settings(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=get_text(
                     key="errors.settings.temperatureRange",
+                    accept_language=(
+                        current_user.settings.ui_language
+                        if current_user.settings
+                        else None
+                    ),
+                ),
+            )
+
+    if "autogen_daily_cap" in settings and settings["autogen_daily_cap"] is not None:
+        try:
+            value = int(settings["autogen_daily_cap"])
+            if not 0 <= value <= 500:
+                raise ValueError
+            updated_values["autogen_daily_cap"] = str(value)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=get_text(
+                    key="errors.settings.autogenCapRange",
                     accept_language=(
                         current_user.settings.ui_language
                         if current_user.settings

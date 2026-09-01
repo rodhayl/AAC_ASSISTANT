@@ -52,7 +52,10 @@ def test_ensure_generated_spawns_exactly_one_thread_for_duplicate_calls():
 
     autogen.set_llm_provider_factory(lambda: None)
 
-    with patch.object(threading.Thread, "start", capturing_start):
+    # The daily budget check must not hit the DB in this isolated test.
+    with patch.object(autogen, "_count_generated_today", return_value=0), patch.object(
+        threading.Thread, "start", capturing_start
+    ):
         autogen.ensure_symbol_generated("nebulosa", "es")
         autogen.ensure_symbol_generated("NEBULOSA", "es")
         autogen.ensure_symbol_generated("nebulosa", "es-ES")
@@ -283,3 +286,91 @@ def test_text_only_suggestions_mark_is_generating_when_enabled(
     ai = [s for s in suggestions if s.get("is_text_only")]
     assert ai and ai[0]["label"] == "nebulosa"
     assert ai[0]["is_generating"] is True
+
+
+def test_daily_budget_stops_generation_when_cap_reached(test_db_session, monkeypatch):
+    """Once the day's cap is used, no new generation is scheduled or run."""
+    autogen.invalidate_generated_today_cache()
+    monkeypatch.setattr(autogen, "_daily_cap", lambda: 2)
+
+    # Two symbols already generated today -> budget exhausted.
+
+    with patch.object(autogen, "_count_generated_today", return_value=2):
+        assert autogen._daily_budget_remaining() == 0
+        assert autogen.autogen_can_generate() is False
+
+        # Fast path: nothing is spawned when the budget is gone.
+        spawned: list[threading.Thread] = []
+
+        def capturing_start(self):
+            spawned.append(self)
+
+        with patch.object(threading.Thread, "start", new=capturing_start):
+            autogen.ensure_symbol_generated("nebulosa", "es")
+        assert spawned == []
+
+        # Hard stop at spend time even if a thread slipped through: the fresh
+        # count already equals the cap, so the provider must not be called.
+        calls = []
+        key = autogen._PendingKey("quasar", "es")
+        with patch.object(autogen, "_generate_sync_callable", side_effect=lambda: calls.append(1) or None), patch.object(
+            autogen, "_has_catalog_symbol", return_value=False
+        ):
+            autogen._generate_in_background(key, "quasar", "es")
+        assert calls == []
+
+    # With budget remaining, generation proceeds.
+    autogen.invalidate_generated_today_cache()
+    calls2 = []
+
+    class _FakeProvider:
+        def generate_sync(self, prompt, **kwargs) -> str:
+            calls2.append(1)
+            return '{"background":"#fff","shapes":[{"kind":"circle","cx":0,"cy":0,"r":10,"fill":"#FFD166"}]}'
+
+    autogen.set_llm_provider_factory(lambda: _FakeProvider())
+    with patch.object(autogen, "_count_generated_today", return_value=1), patch(
+        "src.aac_app.db.get_session",
+        side_effect=lambda: test_db_session,
+    ), patch.object(autogen, "_has_catalog_symbol", return_value=False):
+        autogen._generate_in_background(
+            autogen._PendingKey("galaxia", "es"), "galaxia", "es"
+        )
+    assert calls2 == [1]
+
+
+def test_zero_cap_disables_autogen(test_db_session, monkeypatch):
+    """A persisted cap of 0 disables auto-generation entirely."""
+    autogen.invalidate_generated_today_cache()
+    monkeypatch.setattr(autogen, "_daily_cap", lambda: 0)
+    with patch.object(autogen, "_count_generated_today", return_value=0):
+        assert autogen.autogen_can_generate() is False
+        spawned: list[threading.Thread] = []
+        with patch.object(threading.Thread, "start", new=lambda self: spawned.append(self)):
+            autogen.ensure_symbol_generated("nebulosa", "es")
+        assert spawned == []
+
+
+def test_generation_lock_makes_cap_hard_under_concurrency(test_db_session, monkeypatch):
+    """Concurrent background threads never exceed the cap: the check + LLM
+    call + persist run under a lock, so the second thread sees the count the
+    first one incremented."""
+    autogen.invalidate_generated_today_cache()
+    monkeypatch.setattr(autogen, "_daily_cap", lambda: 1)
+    counts = iter([0, 1])  # first thread sees 0, second sees 1 (already spent)
+    generated = []
+
+    class _FakeProvider:
+        def generate_sync(self, prompt, **kwargs) -> str:
+            generated.append(1)
+            return '{"background":"#fff","shapes":[{"kind":"circle","cx":0,"cy":0,"r":10,"fill":"#FFD166"}]}'
+
+    autogen.set_llm_provider_factory(lambda: _FakeProvider())
+    with patch.object(autogen, "_count_generated_today", side_effect=lambda: next(counts)), patch(
+        "src.aac_app.db.get_session",
+        side_effect=lambda: test_db_session,
+    ), patch.object(autogen, "_has_catalog_symbol", return_value=False):
+        autogen._generate_in_background(autogen._PendingKey("uno", "es"), "uno", "es")
+        autogen._generate_in_background(autogen._PendingKey("dos", "es"), "dos", "es")
+    # Only the first thread (count 0 < cap 1) reached the LLM.
+    assert generated == [1]

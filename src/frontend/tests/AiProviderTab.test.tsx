@@ -59,6 +59,9 @@ vi.mock('../src/pages/Settings/AiProviderFields', () => ({
 vi.mock('../src/config', () => ({
   config: {
     OLLAMA_BASE_URL: 'http://localhost:11434',
+    AI_MAX_TOKENS: 1024,
+    AI_TEMPERATURE: 0.5,
+    AUTOGEN_DAILY_CAP: 20,
   },
 }));
 
@@ -135,6 +138,9 @@ describe('AiProviderTab', () => {
         expect.objectContaining({
           provider: 'openrouter',
           ollama_model: 'qwen:7b-q4_0',
+          max_tokens: 1024,
+          temperature: 0.5,
+          autogen_daily_cap: 20,
         }),
       );
     });
@@ -173,6 +179,7 @@ describe('AiProviderTab', () => {
         lmstudio_base_url: 'http://localhost:1234/v1',
         max_tokens: 512,
         temperature: 0.4,
+        autogen_daily_cap: 8,
         can_edit: false,
       },
     });

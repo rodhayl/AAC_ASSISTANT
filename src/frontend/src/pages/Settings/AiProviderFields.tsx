@@ -17,6 +17,7 @@ interface AiProviderFieldsProps {
   lmStudioBaseUrl: string;
   maxTokens: number;
   temperature: number;
+  autogenDailyCap: number;
   ollamaModels: OllamaModel[];
   openRouterModels: OpenRouterModel[];
   lmStudioModels: OpenRouterModel[];
@@ -41,6 +42,7 @@ export function AiProviderFields({
   lmStudioBaseUrl,
   maxTokens,
   temperature,
+  autogenDailyCap,
   ollamaModels,
   openRouterModels,
   lmStudioModels,
@@ -427,6 +429,26 @@ export function AiProviderFields({
             aria-label={t('ai.temperature')}
           />
           <p className="mt-1 text-xs text-muted-foreground">{t('ai.temperatureHelp')}</p>
+        </div>
+        <div>
+          <FormLabel htmlFor="primary-autogen-daily-cap">
+            {t('ai.autogenDailyCap')}
+          </FormLabel>
+          <input
+            id="primary-autogen-daily-cap"
+            name="primary_autogen_daily_cap"
+            type="number"
+            min={0}
+            max={500}
+            step={1}
+            value={autogenDailyCap}
+            onChange={(event) =>
+              setAiOverride((prev) => ({ ...prev, autogen_daily_cap: Number(event.target.value) }))
+            }
+            className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand text-sm"
+            aria-label={t('ai.autogenDailyCap')}
+          />
+          <p className="mt-1 text-xs text-muted-foreground">{t('ai.autogenDailyCapHelp')}</p>
         </div>
       </div>
     </>

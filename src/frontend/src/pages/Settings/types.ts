@@ -43,6 +43,7 @@ export interface AiOverride {
   lmstudio_base_url?: string;
   max_tokens?: number;
   temperature?: number;
+  autogen_daily_cap?: number;
 }
 
 export interface VoiceStatus {

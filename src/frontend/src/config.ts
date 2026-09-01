@@ -14,6 +14,7 @@ const defaults = {
   AI_TEMPERATURE: import.meta.env.VITE_AI_TEMPERATURE
     ? Number(import.meta.env.VITE_AI_TEMPERATURE)
     : 0.5,
+  AUTOGEN_DAILY_CAP: Number(import.meta.env.VITE_AUTOGEN_DAILY_CAP) || 20,
   APP_NAME: import.meta.env.VITE_APP_NAME || 'AAC Assistant',
   APP_VERSION: import.meta.env.VITE_APP_VERSION || '2.0.0',
 };
@@ -44,6 +45,7 @@ export const config = {
   LMSTUDIO_BASE_URL: defaults.LMSTUDIO_BASE_URL,
   AI_MAX_TOKENS: defaults.AI_MAX_TOKENS,
   AI_TEMPERATURE: defaults.AI_TEMPERATURE,
+  AUTOGEN_DAILY_CAP: defaults.AUTOGEN_DAILY_CAP,
   
   // App
   APP_NAME: defaults.APP_NAME,

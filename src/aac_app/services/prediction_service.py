@@ -857,11 +857,18 @@ class _PredictionContext:
             )
 
     def _is_svg_generation_enabled(self) -> bool:
-        """True when background pictogram generation may run for this request."""
-        try:
-            from src.aac_app.services.symbol_svg_autogen import autogen_enabled
+        """True when background pictogram generation may run right now.
 
-            return autogen_enabled()
+        Includes the daily cost cap: when the auto-generation budget for the
+        day is exhausted the flag goes False, so the Smartbar shows the static
+        letter tile instead of a spinner that would never resolve.
+        """
+        try:
+            from src.aac_app.services.symbol_svg_autogen import (
+                autogen_can_generate,
+            )
+
+            return autogen_can_generate()
         except Exception as exc:
             logger.warning("Could not check SVG autogen flag: {}", exc)
             return False

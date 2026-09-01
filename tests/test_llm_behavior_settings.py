@@ -62,6 +62,7 @@ def test_primary_behavior_settings_exposed_and_persisted(admin_username):
     data = resp.json()
     assert data["max_tokens"] == 1024
     assert pytest.approx(data["temperature"], rel=1e-6) == 0.5
+    assert data["autogen_daily_cap"] == 20  # config.AUTOGEN_DAILY_CAP
 
     # Update behavior
     update = client.put(
@@ -72,6 +73,7 @@ def test_primary_behavior_settings_exposed_and_persisted(admin_username):
             "ollama_model": "llama3.2:latest",
             "max_tokens": 2048,
             "temperature": 0.6,
+            "autogen_daily_cap": 3,
         },
     )
     assert update.status_code == 200
@@ -84,6 +86,39 @@ def test_primary_behavior_settings_exposed_and_persisted(admin_username):
     data = verify.json()
     assert data["max_tokens"] == 2048
     assert pytest.approx(data["temperature"], rel=1e-6) == 0.6
+    assert data["autogen_daily_cap"] == 3
+
+
+def test_autogen_daily_cap_rejects_out_of_range(admin_username):
+    """The cost cap is bounded: negatives and absurd values are rejected."""
+    user_id, username, user_type = admin_username
+    headers = create_test_headers(user_id, username, user_type)
+
+    for bad_value in [-1, 501, "many"]:
+        update = client.put(
+            "/api/settings/ai",
+            headers=headers,
+            json={
+                "provider": "ollama",
+                "ollama_model": "llama3.2:latest",
+                "autogen_daily_cap": bad_value,
+            },
+        )
+        assert update.status_code == 400, f"cap={bad_value!r} should be rejected"
+
+    # Zero is allowed (disables auto-generation) and persists.
+    update = client.put(
+        "/api/settings/ai",
+        headers=headers,
+        json={
+            "provider": "ollama",
+            "ollama_model": "llama3.2:latest",
+            "autogen_daily_cap": 0,
+        },
+    )
+    assert update.status_code == 200
+    verify = client.get("/api/settings/ai", headers=headers).json()
+    assert verify["autogen_daily_cap"] == 0
 
 
 

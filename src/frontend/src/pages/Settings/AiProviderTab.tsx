@@ -106,6 +106,7 @@ export function AiProviderTab() {
     aiOverride.lmstudio_base_url ?? aiSettings?.lmstudio_base_url ?? config.LMSTUDIO_BASE_URL;
   const currentMaxTokens = aiOverride.max_tokens ?? aiSettings?.max_tokens ?? config.AI_MAX_TOKENS;
   const currentTemperature = aiOverride.temperature ?? aiSettings?.temperature ?? config.AI_TEMPERATURE;
+  const currentAutogenDailyCap = aiOverride.autogen_daily_cap ?? aiSettings?.autogen_daily_cap ?? config.AUTOGEN_DAILY_CAP;
   const readOnlyForCurrentUser =
     !isAdmin && readOnlyState?.requestKey === readOnlyRequestKey;
   const visibleAiSettings = isAdmin
@@ -211,6 +212,7 @@ export function AiProviderTab() {
     lmstudio_base_url: overrides.lmstudio_base_url ?? aiSettings?.lmstudio_base_url ?? config.LMSTUDIO_BASE_URL,
     max_tokens: overrides.max_tokens ?? aiSettings?.max_tokens ?? config.AI_MAX_TOKENS,
     temperature: overrides.temperature ?? aiSettings?.temperature ?? config.AI_TEMPERATURE,
+    autogen_daily_cap: overrides.autogen_daily_cap ?? aiSettings?.autogen_daily_cap ?? config.AUTOGEN_DAILY_CAP,
   }), [aiSettings]);
 
   const persistSettings = useCallback(async (overrides: AiOverride) => {
@@ -407,6 +409,7 @@ export function AiProviderTab() {
           lmStudioBaseUrl={currentLmStudioBaseUrl}
           maxTokens={currentMaxTokens}
           temperature={currentTemperature}
+          autogenDailyCap={currentAutogenDailyCap}
           ollamaModels={ollamaModels}
           openRouterModels={openRouterModels}
           lmStudioModels={lmStudioModels}

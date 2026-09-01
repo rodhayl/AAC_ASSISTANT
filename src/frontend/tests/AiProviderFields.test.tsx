@@ -13,6 +13,7 @@ vi.mock('react-i18next', () => ({
         'ai.selectModel': 'Select Model',
         'ai.maxTokens': 'Max tokens per reply',
         'ai.temperature': 'Temperature',
+        'ai.autogenDailyCap': 'Auto-generated symbols per day',
         'ai.refresh': 'Refresh',
         'ai.searchModels': 'Search models...',
         'ai.selected': 'Selected:',
@@ -35,6 +36,7 @@ const baseProps = {
   lmStudioBaseUrl: 'http://localhost:1234/v1',
   maxTokens: 1024,
   temperature: 0.5,
+  autogenDailyCap: 20,
   ollamaModels: [] as Array<{ name: string }>,
   openRouterModels: [] as Array<{ id: string; name: string }>,
   lmStudioModels: [] as Array<{ id: string; name: string }>,
@@ -70,5 +72,6 @@ describe('AiProviderFields', () => {
     expect(screen.getByLabelText('Select Model')).toBeInTheDocument();
     expect(screen.getByLabelText('Max tokens per reply')).toBeInTheDocument();
     expect(screen.getByLabelText('Temperature')).toBeInTheDocument();
+    expect(screen.getByLabelText('Auto-generated symbols per day')).toHaveValue(20);
   });
 });
