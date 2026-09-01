@@ -23,12 +23,15 @@ import {
   Minimize2,
   Maximize2,
   PlusCircle,
+  Sparkles,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/authStore';
 import { Button } from '../components/ui/button';
 import { useToastStore } from '../store/toastStore';
 import { BoardsAndTopicsSidebar } from '../components/learning/BoardsAndTopicsSidebar';
+import { TopicPicker, type PickerTopic } from '../components/learning/TopicPicker';
+import { useTopicPickerPool } from '../hooks/useTopicPickerPool';
 import { cn } from '../lib/utils';
 
 const EMPTY_BOARD_SYMBOLS: BoardSymbol[] = [];
@@ -69,6 +72,14 @@ export function Communication() {
   const [isPartnerOpen, setIsPartnerOpen] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(user?.settings?.voice_mode_enabled ?? true);
   const [isBoardsOpen, setIsBoardsOpen] = useState(false);
+  // Board-less topic conversation started from the picker in the board
+  // selection view: set when a topic card is tapped, cleared on exit.
+  const [boardlessTopic, setBoardlessTopic] = useState<string | null>(null);
+
+  const {
+    pickerTopics,
+    pickerRecent,
+  } = useTopicPickerPool();
 
   useEffect(() => {
     if (user?.settings?.voice_mode_enabled !== undefined) {
@@ -95,7 +106,7 @@ export function Communication() {
   }, [activeBoardId, currentBoard, currentSession, resetSession]);
 
   // Helper to start activity from sidebar
-  const handleStartActivity = async (topic: string, purpose: string, boardId?: number) => {
+  const handleStartActivity = useCallback(async (topic: string, purpose: string, boardId?: number) => {
     if (!user) return;
 
     setIsStartingSession(true);
@@ -109,9 +120,7 @@ export function Communication() {
         mode_key: defaultLearningModeKey,
       }, user.id);
       addToast(t('common:sessionStarted'), 'success');
-      // If a board was selected, we might want to switch to it? 
-      // Current behavior: The sidebar allows selecting a board for the SESSION context.
-      // If we want to VISUALLY switch to that board, we should:
+      // If a board was selected, we might want to switch to it?
       if (boardId) {
         setActiveBoardId(boardId);
       }
@@ -121,7 +130,7 @@ export function Communication() {
     } finally {
       setIsStartingSession(false);
     }
-  };
+  }, [addToast, defaultLearningModeKey, startSession, t, user]);
 
   // Fetch available boards on mount
   useEffect(() => {
@@ -342,6 +351,28 @@ export function Communication() {
     setSearchParams({});
   }, [setSearchParams]);
 
+  // Topic cards start a board-less session; the surface switches to the
+  // board-less conversation view once the session is active.
+  const handlePickTopic = useCallback((topic: PickerTopic) => {
+    setBoardlessTopic(topic.topic);
+    void handleStartActivity(topic.topic, topic.purpose ?? 'practice', topic.boardId);
+  }, [handleStartActivity]);
+
+  const handleContinueRecent = useCallback((topic: string, purpose?: string) => {
+    setBoardlessTopic(topic);
+    void handleStartActivity(topic, purpose || 'practice');
+  }, [handleStartActivity]);
+
+  // Leaving the board-less conversation returns to the board list and clears
+  // the topic session so its vocabulary does not linger.
+  const handleBoardlessHome = useCallback(() => {
+    resetSession();
+    setBoardlessTopic(null);
+    handleHome();
+  }, [handleHome, resetSession]);
+
+  const boardlessConversation = !activeBoardId && boardlessTopic !== null && Boolean(currentSession);
+
   const handleBack = useCallback(() => {
     if (history.length > 0) {
       const prevBoardId = history[history.length - 1];
@@ -449,6 +480,137 @@ export function Communication() {
     });
   }, [availableBoards, searchQuery]);
   const hasActiveSearch = searchQuery.trim().length > 0;
+
+  // RENDER: Board-less topic conversation (started from the picker in the
+  // board selection view). No grid — the Smartbar provides the AI topic
+  // vocabulary and the sentence strip + chat build the message.
+  if (boardlessConversation) {
+    const topicLabel = currentSession?.topic || boardlessTopic || '';
+    return (
+      <div className="flex h-full w-full bg-background overflow-hidden relative">
+        <div className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col">
+          {/* Header */}
+          <header className="glass-panel border-b border-border px-4 py-2 flex items-center justify-between shrink-0 z-10 h-14">
+            <div className="flex items-center gap-2 min-w-0">
+              <button
+                onClick={handleBoardlessHome}
+                className="p-2 hover:bg-surface-hover rounded-lg text-muted-foreground transition-colors shrink-0"
+                title={t('common:backToBoards')}
+                aria-label={t('common:backToBoards')}
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <h1 className="text-lg font-bold text-foreground truncate">
+                {topicLabel}
+              </h1>
+            </div>
+
+            <button
+              onClick={toggleFullscreen}
+              className="p-2 hover:bg-surface-hover rounded-lg text-muted-foreground transition-colors"
+              title={isFullscreen ? t('exitFullscreen') : t('enterFullscreen')}
+            >
+              {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+            </button>
+          </header>
+
+          {/* Sentence Strip */}
+          <div className="shrink-0 z-20">
+            <SentenceStrip
+              symbols={sentence}
+              onRemove={handleRemoveSentenceItem}
+              onClear={handleClearSentence}
+              onBackspace={handleBackspaceSentence}
+              onSpeak={handleSpeakSentence}
+              onSpeakItem={handleSpeakText}
+              onReorder={handleReorder}
+              onAskAI={handleSendToChat}
+              isSpeaking={isSpeaking}
+            />
+          </div>
+
+          {/* Smartbar (AI topic vocabulary) */}
+          <Smartbar
+            currentSentence={sentence}
+            onSelectSymbol={handleSelectSymbol}
+            boardId={null}
+            topic={currentSession?.topic ?? boardlessTopic}
+          />
+
+          {/* Placeholder where the grid would be */}
+          <main className="flex-1 overflow-y-auto p-6 flex items-center justify-center">
+            <div className="text-center max-w-md text-muted-foreground">
+              <Sparkles className="w-10 h-10 mx-auto mb-3 text-brand" />
+              <p className="text-sm">
+                {t('boards:boardlessTopicHint', { topic: topicLabel })}
+              </p>
+            </div>
+          </main>
+
+          {/* Toolbar */}
+          <div className="shrink-0 z-30 glass-panel border-t border-border w-full">
+            <CommunicationToolbar
+              onHome={handleBoardlessHome}
+              onBack={handleBoardlessHome}
+              onToggleKeyboard={() => setIsKeyboardOpen(prev => !prev)}
+              onToggleChat={() => setIsChatOpen(prev => !prev)}
+              onSearch={() => setIsSearchOpen(true)}
+              onContext={() => setIsBoardsOpen(prev => !prev)}
+              onPartnerMic={() => setIsPartnerOpen(true)}
+              onQuickResponse={handleQuickResponse}
+              onAttention={handleAttention}
+              isKeyboardOpen={isKeyboardOpen}
+              isChatOpen={isChatOpen}
+              canGoBack={false}
+            />
+          </div>
+        </div>
+
+        {/* Boards & Topics Sidebar */}
+        <BoardsAndTopicsSidebar
+          isOpen={isBoardsOpen}
+          onToggle={() => setIsBoardsOpen(!isBoardsOpen)}
+          onStartActivity={handleStartActivity}
+          isStartingSession={isStartingSession}
+          className="h-full border-l border-border"
+        />
+
+        {/* Chat Panel */}
+        <div
+          className={`
+            fixed inset-y-0 right-0 z-40 w-full sm:w-96 lg:w-[35%] glass-panel shadow-2xl transform transition-transform duration-300 ease-in-out
+            lg:relative lg:translate-x-0 lg:shadow-none lg:border-l lg:border-border/20
+            ${isChatOpen ? 'translate-x-0' : 'translate-x-full lg:hidden'}
+          `}
+        >
+          <CommunicationChat
+            voiceEnabled={voiceEnabled}
+            onVoiceToggle={handleVoiceToggle}
+            boardId={null}
+            boardName={topicLabel}
+          />
+        </div>
+
+        {/* Modals and Overlays */}
+        <KeyboardOverlay
+          isOpen={isKeyboardOpen}
+          onClose={() => setIsKeyboardOpen(false)}
+          onSpeak={handleSpeakText}
+        />
+
+        <PartnerOverlay
+          isOpen={isPartnerOpen}
+          onClose={() => setIsPartnerOpen(false)}
+        />
+
+        <SymbolSearchModal
+          isOpen={isSearchOpen}
+          onClose={() => setIsSearchOpen(false)}
+          onSelectSymbol={handleSelectSymbol}
+        />
+      </div>
+    );
+  }
 
   // RENDER: Board Selection View
   if (!activeBoardId) {
@@ -597,6 +759,27 @@ export function Communication() {
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand"></div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Board-less alternative: the same topic cards as Learning, so a
+              student can start a topic conversation without a board. */}
+          {!hasActiveSearch && (
+            <div className="mt-12 border-t border-border pt-8">
+              <h2 className="text-lg font-semibold text-foreground">
+                {t('boards:practiceTopicSection')}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t('boards:practiceTopicSectionHelp')}
+              </p>
+              <TopicPicker
+                topics={pickerTopics}
+                recent={pickerRecent}
+                isStartingSession={isStartingSession}
+                onSelect={handlePickTopic}
+                onContinueRecent={handleContinueRecent}
+                showTitle={false}
+              />
             </div>
           )}
         </div>

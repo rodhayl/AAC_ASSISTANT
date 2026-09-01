@@ -133,6 +133,10 @@ vi.mock('lucide-react', () => {
     Minimize2: Icon,
     Maximize2: Icon,
     PlusCircle: Icon,
+    Sparkles: Icon,
+    CheckCircle2: Icon,
+    History: Icon,
+    Loader2: Icon,
   };
 });
 
@@ -413,6 +417,53 @@ describe('Communication page', () => {
 
       fireEvent.click(screen.getByText('Load More'));
       expect(hoisted.boardStore.fetchBoards).toHaveBeenCalledWith(undefined, undefined, false, 2);
+    });
+  });
+
+  describe('boardless topic conversations', () => {
+    it('offers the topic picker cards on the board selection view', async () => {
+      hoisted.boardStore.boards = [];
+      renderCommunication();
+
+      expect(await screen.findByTestId('topic-card-general')).toBeInTheDocument();
+      expect(screen.getByTestId('topic-card-food')).toBeInTheDocument();
+      expect(screen.getByTestId('topic-card-shopping')).toBeInTheDocument();
+    });
+
+    it('starts a board-less conversation when a topic card is tapped', async () => {
+      hoisted.learning.startSession.mockImplementation(async () => {
+        hoisted.learning.currentSession = { session_id: 't1', topic: 'food and dining' };
+      });
+      renderCommunication();
+
+      fireEvent.click(await screen.findByTestId('topic-card-food'));
+
+      await waitFor(() =>
+        expect(screen.getByTestId('smartbar-topic')).toHaveTextContent('food and dining'),
+      );
+      expect(hoisted.learning.startSession).toHaveBeenCalledWith(
+        expect.objectContaining({ topic: 'food and dining' }),
+        expect.anything(),
+      );
+    });
+
+    it('returns to the board list and clears the session from a board-less conversation', async () => {
+      hoisted.learning.startSession.mockImplementation(async () => {
+        hoisted.learning.currentSession = { session_id: 't1', topic: 'food and dining' };
+      });
+      renderCommunication();
+
+      fireEvent.click(await screen.findByTestId('topic-card-food'));
+      await waitFor(() =>
+        expect(screen.getByTestId('smartbar-topic')).toHaveTextContent('food and dining'),
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Back to boards' }));
+
+      await waitFor(() =>
+        expect(screen.getByText('Morning Routine')).toBeInTheDocument(),
+      );
+      expect(hoisted.learning.resetSession).toHaveBeenCalled();
     });
   });
 

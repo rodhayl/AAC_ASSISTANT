@@ -12,7 +12,8 @@ import { cn } from '@/lib/utils';
 interface CommunicationChatProps {
   voiceEnabled: boolean;
   onVoiceToggle: () => void;
-  boardId: number;
+  /** Null when the conversation is a board-less topic session. */
+  boardId: number | null;
   boardName: string;
 }
 
@@ -62,7 +63,7 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
         topic,
         purpose: 'communication board',
         difficulty: 'adaptive',
-        board_id: boardId,
+        board_id: boardId ?? undefined,
         mode_key: defaultLearningModeKey,
       }, user.id).catch(err => {
         console.error('Failed to auto-start session:', err);
@@ -102,7 +103,7 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
           topic,
           purpose: 'communication board',
           difficulty: 'adaptive',
-          board_id: boardId,
+          board_id: boardId ?? undefined,
           mode_key: defaultLearningModeKey,
         }, user.id);
         activeSession = useLearningStore.getState().currentSession;
@@ -136,7 +137,7 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
     addToast,
     microphoneAccessMessage: t('errors.microphoneAccess'),
     sessionTopic: topic,
-    sessionBoardId: boardId,
+    sessionBoardId: boardId ?? undefined,
     modeKey: defaultLearningModeKey,
   });
 

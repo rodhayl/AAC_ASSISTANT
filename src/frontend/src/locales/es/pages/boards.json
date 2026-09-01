@@ -250,5 +250,8 @@
   "boardLoadFailed": "No se pudo cargar este tablero",
   "retry": "Reintentar",
   "backToBoards": "Volver a los tableros",
-  "sendToChatFailed": "No se pudo enviar la frase al asistente"
+  "sendToChatFailed": "No se pudo enviar la frase al asistente",
+  "practiceTopicSection": "¿O prefieres hablar sobre un tema?",
+  "practiceTopicSectionHelp": "Empieza una conversación sobre un tema; el asistente sugerirá palabras e imágenes. No hace falta un tablero.",
+  "boardlessTopicHint": "Estás conversando sobre {{topic}}. Toca las sugerencias para armar tu frase, o abre un tablero desde el menú."
 }

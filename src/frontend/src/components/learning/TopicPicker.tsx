@@ -30,6 +30,8 @@ interface TopicPickerProps {
   isStartingSession: boolean;
   onSelect: (topic: PickerTopic) => void;
   onContinueRecent: (topic: string, purpose?: string) => void;
+  /** Hide the built-in title/subtitle; the host page supplies its own. */
+  showTitle?: boolean;
 }
 
 function shuffle<T>(items: T[]): T[] {
@@ -61,6 +63,7 @@ export function TopicPicker({
   isStartingSession,
   onSelect,
   onContinueRecent,
+  showTitle = true,
 }: TopicPickerProps) {
   const { t } = useTranslation('learning');
   // Shuffle once per pool; stable across unrelated re-renders.
@@ -68,8 +71,12 @@ export function TopicPicker({
 
   return (
     <div className="mx-auto w-full max-w-2xl px-2 py-6 text-left">
-      <h2 className="text-lg font-semibold text-foreground">{t('topicPicker.title')}</h2>
-      <p className="mt-1 text-sm text-muted-foreground">{t('topicPicker.subtitle')}</p>
+      {showTitle && (
+        <>
+          <h2 className="text-lg font-semibold text-foreground">{t('topicPicker.title')}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t('topicPicker.subtitle')}</p>
+        </>
+      )}
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
         {ordered.map((topic) => (

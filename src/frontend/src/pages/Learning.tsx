@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { useLearningStore } from '../store/learningStore';
 import { useAuthStore } from '../store/authStore';
 import { useBoardStore } from '../store/boardStore';
-import { loadTopicsForUser, saveTopicsForUser, type SavedTopic } from '../lib/learningTopics';
 import api from '../lib/api';
 import { glossSymbolUtterance } from '../lib/gloss';
 import { tts } from '../lib/tts';
@@ -17,27 +16,13 @@ import type { LearningSymbolItem } from '../types';
 import { SessionSummaryModal } from '../components/learning/SessionSummaryModal';
 import { useVoiceRecorder } from '../components/learning/useVoiceRecorder';
 import { useAssistantMessageSpeech } from '../hooks/useAssistantMessageSpeech';
-import { dedupeLearningSymbols } from '../lib/symbols';
-import {
-  COMMON_TOPIC_KEYS,
-  TOPIC_CANONICAL_NAME,
-  TOPIC_EMOJI,
-  findTopicPictogram,
-  normalizeTopic,
-  type CommonTopicKey,
-} from '../lib/topicCatalog';
+import { useTopicPickerPool } from '../hooks/useTopicPickerPool';
 import {
   TopicPicker,
-  type PickerRecentTopic,
   type PickerTopic,
 } from '../components/learning/TopicPicker';
 
 type SymbolItem = LearningSymbolItem;
-
-interface TopicPoolResponse {
-  common?: Array<{ key: string; practiced?: boolean; last_used_at?: string | null }>;
-  recent?: Array<{ topic: string; purpose?: string; last_used_at?: string | null; count?: number }>;
-}
 
 export function Learning() {
   const messages = useLearningStore((state) => state.messages);
@@ -84,12 +69,8 @@ export function Learning() {
   const [showHistory, setShowHistory] = useState(false);
   const [selectedModeKey, setSelectedModeKey] = useState(defaultLearningModeKey);
   const [availableModes, setAvailableModes] = useState<Array<{ id: number; name: string; key: string; description: string; auto_ask_enabled?: boolean }>>([]);
-  const [savedTopics, setSavedTopics] = useState<SavedTopic[]>([]);
   const [symbolView, setSymbolView] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState('');
-  const [symbolItems, setSymbolItems] = useState<SymbolItem[]>([]);
-  const [symbolLang, setSymbolLang] = useState('');
-  const [symbolLoading, setSymbolLoading] = useState(false);
   const symbolViewWasOpenRef = useRef(false);
   const [symbolUtterance, setSymbolUtterance] = useState<SymbolItem[]>([]);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
@@ -98,8 +79,16 @@ export function Learning() {
   const [isStartingSession, setIsStartingSession] = useState(false);
   const [sessionStartError, setSessionStartError] = useState<string | null>(null);
   const [providerNotice, setProviderNotice] = useState<string | null>(null);
-  const [topicPool, setTopicPool] = useState<TopicPoolResponse | null>(null);
   const skipInitialSpeech = useLearningStore((state) => state.skipInitialSpeech);
+
+  const {
+    pickerTopics,
+    pickerRecent,
+    fetchSymbols,
+    symbolItems,
+    symbolLang,
+    symbolLoading,
+  } = useTopicPickerPool();
   const lastProviderHistoryLengthRef = useRef(0);
   const sessionStartErrorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -152,16 +141,6 @@ export function Learning() {
       setVoiceEnabled(user.settings.voice_mode_enabled);
     }
   }, [user?.settings?.voice_mode_enabled]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    setSavedTopics(loadTopicsForUser(user.id));
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    saveTopicsForUser(user.id, savedTopics);
-  }, [savedTopics, user?.id]);
 
   const loadAvailableModes = useCallback(async (preferredModeKey?: string) => {
     if (!user?.id) return;
@@ -238,32 +217,6 @@ export function Learning() {
     }
   }, [fetchSessionHistory, user?.id]);
 
-  const fetchTopicPool = useCallback(async () => {
-    if (!user?.id) return;
-    try {
-      const response = await api.get('/learning/topics', { params: { user_id: user.id } });
-      setTopicPool(response.data && typeof response.data === 'object' ? response.data : null);
-    } catch {
-      // The picker falls back to a full fresh pool; never block learning on it.
-      setTopicPool(null);
-    }
-  }, [user?.id]);
-
-  useEffect(() => {
-    void fetchTopicPool();
-  }, [fetchTopicPool]);
-
-  // When a session ends the picker returns; refresh coverage so the topic
-  // just practiced is marked and de-prioritized next time.
-  const hadSessionRef = useRef(false);
-  useEffect(() => {
-    const hasSession = Boolean(currentSession);
-    if (hadSessionRef.current && !hasSession) {
-      void fetchTopicPool();
-    }
-    hadSessionRef.current = hasSession;
-  }, [currentSession, fetchTopicPool]);
-
   // The selected mode may disable auto-asking (e.g. conversational modes like
   // roleplay). Combined with symbol-first view, auto-asking is paused: the
   // question card is hidden and auto-asks are skipped, while the manual
@@ -334,58 +287,6 @@ export function Learning() {
     await startActivity('general conversation', 'practice');
     setShowHistory(false);
   }, [startActivity]);
-
-  // Picker pool: the nine canonical topics (always available, coverage from
-  // the backend) plus the teacher/admin's saved topics (coverage matched
-  // against recently used sessions). Pictograms come from the prefetched
-  // symbol library; every card keeps an emoji fallback so the pool is never
-  // blank while images load or symbols are missing.
-  const pickerTopics = useMemo<PickerTopic[]>(() => {
-    const practicedByKey = new Map(
-      (topicPool?.common ?? []).map((entry) => [entry.key, Boolean(entry.practiced)]),
-    );
-    const recentByTopic = new Map<string, { purpose?: string }>();
-    for (const entry of topicPool?.recent ?? []) {
-      recentByTopic.set(normalizeTopic(entry.topic), { purpose: entry.purpose });
-    }
-
-    const common: PickerTopic[] = COMMON_TOPIC_KEYS.map((key) => {
-      const pictogram = findTopicPictogram(key, symbolItems, TOPIC_EMOJI[key]);
-      return {
-        key,
-        label: t(`topics.${key}`),
-        topic: TOPIC_CANONICAL_NAME[key as CommonTopicKey],
-        purpose: 'practice',
-        practiced: practicedByKey.get(key) ?? false,
-        imagePath: pictogram.imagePath,
-        emoji: pictogram.emoji,
-      };
-    });
-
-    const saved: PickerTopic[] = savedTopics.map((topic) => {
-      const pictogram = findTopicPictogram(topic.topic, symbolItems, '💡');
-      return {
-        key: `saved-${topic.id}`,
-        label: topic.topic,
-        sublabel: topic.board,
-        topic: topic.topic,
-        purpose: topic.board,
-        boardId: topic.boardId,
-        practiced: recentByTopic.has(normalizeTopic(topic.topic)),
-        imagePath: pictogram.imagePath,
-        emoji: pictogram.emoji,
-      };
-    });
-
-    return [...common, ...saved];
-  }, [savedTopics, symbolItems, t, topicPool]);
-
-  const pickerRecent = useMemo<PickerRecentTopic[]>(() => {
-    const poolKeys = new Set(pickerTopics.map((topic) => normalizeTopic(topic.topic)));
-    return (topicPool?.recent ?? [])
-      .filter((entry) => !poolKeys.has(normalizeTopic(entry.topic)))
-      .map((entry) => ({ topic: entry.topic, purpose: entry.purpose }));
-  }, [pickerTopics, topicPool]);
 
   const handlePickTopic = useCallback((topic: PickerTopic) => {
     void startActivity(topic.topic, topic.purpose ?? 'practice', topic.boardId);
@@ -477,30 +378,10 @@ export function Learning() {
     }
   };
 
-  const fetchSymbols = useCallback(async () => {
-    const requestedLanguage = symbolLanguage;
-    setSymbolLoading(true);
-    try {
-      const response = await api.get('/boards/symbols', {
-        params: { limit: 1000, language: requestedLanguage },
-      });
-      setSymbolItems(dedupeLearningSymbols(response.data || []));
-      setSymbolLang(requestedLanguage);
-    } catch {
-      setSymbolItems([]);
-    } finally {
-      setSymbolLoading(false);
-    }
-  }, [symbolLanguage]);
-
-  // Prefetch the symbol library in the background as soon as the page
-  // mounts so opening the symbol view never waits for the full fetch.
-  // Re-runs on language change to keep the library aligned with the
-  // active language.
-  useEffect(() => {
-    void fetchSymbols();
-  }, [fetchSymbols]);
-
+  // The hook prefetches the symbol library on mount and on language change.
+  // This effect is a safety net: if the library is still missing when the
+  // symbol view opens (prefetch in flight or failed), fetch it once — gated
+  // on the open transition so it cannot retry-loop while the view stays open.
   useEffect(() => {
     if (!symbolView) {
       symbolViewWasOpenRef.current = false;
@@ -509,11 +390,6 @@ export function Learning() {
     const justOpened = !symbolViewWasOpenRef.current;
     symbolViewWasOpenRef.current = true;
     setIsBoardsOpen(false);
-    // The library is prefetched on mount; only fetch here once, when the
-    // view opens and the data is missing for the current language (first
-    // open before the prefetch finished, or a failed prefetch), and no
-    // request is already in flight. Gating on the open transition prevents
-    // a retry loop while the view stays open.
     if (justOpened && !symbolLoading && symbolLang !== symbolLanguage) {
       void fetchSymbols();
     }

@@ -250,5 +250,8 @@
   "boardLoadFailed": "Could not load this board",
   "retry": "Retry",
   "backToBoards": "Back to boards",
-  "sendToChatFailed": "Could not send the phrase to the assistant"
+  "sendToChatFailed": "Could not send the phrase to the assistant",
+  "practiceTopicSection": "Or talk about a topic instead?",
+  "practiceTopicSectionHelp": "Start a conversation about a topic; the assistant suggests words and pictures. No board needed.",
+  "boardlessTopicHint": "You're talking about {{topic}}. Tap the suggestions to build your sentence, or open a board from the menu."
 }
