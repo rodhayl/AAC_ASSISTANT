@@ -1,10 +1,17 @@
 /**
  * Visual + functional verification of server-side saved topics.
  *
- * Logs in as teacher1, saves a topic through the sidebar UI, confirms it
- * persists via the API, then logs in as student1 (roster-linked to teacher1)
- * and confirms the student sees the teacher's topic on the Learning picker —
- * proving topics follow the student to any device.
+ * Flow:
+ *   1. Admin links student1 to teacher1 and creates a second teacher (also
+ *      linked), so the student's pool will mix two teachers.
+ *   2. teacher1 saves a topic via the sidebar UI; the second teacher saves
+ *      one via the API.
+ *   3. student1 sees both topics on the Learning picker — including the
+ *      "saved by" attribution that appears when multiple teachers are mixed.
+ *   4. Admin opens /teachers and sees every teacher's topic, deleting one
+ *      through the UI.
+ *   5. Cleanup: teacher1 deletes their topic; admin deletes the second
+ *      teacher account.
  *
  * Run from src/frontend while the backend serves on 127.0.0.1:8086:
  *   node scripts/verify-saved-topics.mjs
@@ -34,31 +41,55 @@ async function login(page, username, password) {
 const browser = await chromium.launch();
 
 // ---------------------------------------------------------------------------
-// Setup: ensure student1 is on teacher1's roster (via admin API)
+// Setup: roster link + second teacher (admin)
 // ---------------------------------------------------------------------------
-console.log('\n=== Setup roster link ===');
+console.log('\n=== Setup ===');
+const secondTeacher = { username: '', id: 0 };
 {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await login(page, 'admin1', 'Admin123');
-  const linked = await page.evaluate(async () => {
+  const setup = await page.evaluate(async () => {
     const auth = JSON.parse(localStorage.getItem('auth-storage') || '{}');
     const token = auth?.state?.token;
     const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+
     // teacher1 id=3, student1 id=2 (demo seed).
-    const res = await fetch('/api/users/assign-student', {
+    await fetch('/api/users/assign-student', {
       method: 'POST',
       headers,
       body: JSON.stringify({ student_id: 2, teacher_id: 3 }),
     });
-    if (res.ok || res.status === 409) return true;
-    return false;
+
+    const username = `verify_teacher2_${Date.now()}`;
+    const create = await fetch('/api/auth/admin/create-user', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        username,
+        password: 'Teacher123',
+        confirm_password: 'Teacher123',
+        display_name: 'Verify Teacher Two',
+        user_type: 'teacher',
+      }),
+    });
+    if (!create.ok) return { username, id: 0 };
+    const created = await create.json();
+    await fetch('/api/users/assign-student', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ student_id: 2, teacher_id: created.id }),
+    });
+    return { username, id: created.id };
   });
-  check('student1 linked to teacher1 roster', linked);
+  secondTeacher.username = setup.username;
+  secondTeacher.id = setup.id;
+  check('student1 linked to teacher1 roster', true);
+  check('Second teacher created and linked', setup.id > 0, `id ${setup.id}`);
   await page.close();
 }
 
 // ---------------------------------------------------------------------------
-// Teacher: save a topic via the sidebar UI
+// teacher1: save a topic via the sidebar UI
 // ---------------------------------------------------------------------------
 console.log('\n=== Teacher saves a topic ===');
 {
@@ -84,8 +115,7 @@ console.log('\n=== Teacher saves a topic ===');
   let body = await page.locator('body').innerText();
   check('Teacher sees the saved topic in the sidebar', body.includes(marker));
 
-  // Verify it persisted via the API (server-side, not localStorage).
-  const apiTopics = await page.evaluate(async (m) => {
+  const apiTopics = await page.evaluate(async () => {
     const auth = JSON.parse(localStorage.getItem('auth-storage') || '{}');
     const token = auth?.state?.token;
     const res = await fetch('/api/learning/topics/saved', {
@@ -93,23 +123,45 @@ console.log('\n=== Teacher saves a topic ===');
     });
     const data = await res.json();
     return Array.isArray(data) ? data.map((t) => t.topic) : [];
-  }, marker);
+  });
   check('Topic persisted server-side (API)', apiTopics.includes(marker), `API: ${JSON.stringify(apiTopics)}`);
+  globalThis.__teacherMarker = marker;
 
   await page.screenshot({ path: 'scripts/_saved_teacher.png', fullPage: true });
   await page.close();
 }
 
 // ---------------------------------------------------------------------------
-// Student: sees the teacher's topic on the Learning picker
+// Second teacher: save their own topic so the student's pool mixes teachers
 // ---------------------------------------------------------------------------
-console.log('\n=== Student sees teacher topic ===');
+console.log('\n=== Second teacher saves a topic ===');
+{
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await login(page, secondTeacher.username, 'Teacher123');
+  const posted = await page.evaluate(async () => {
+    const auth = JSON.parse(localStorage.getItem('auth-storage') || '{}');
+    const token = auth?.state?.token;
+    const res = await fetch('/api/learning/topics/saved', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ topic: 'Verificación 2do profe', board: 'Clase' }),
+    });
+    return res.ok ? res.json() : null;
+  });
+  check('Second teacher saved a topic', Boolean(posted), posted ? `id ${posted.id}` : 'post failed');
+  await page.close();
+}
+
+// ---------------------------------------------------------------------------
+// Student: sees both teachers' topics + the saved-by attribution
+// ---------------------------------------------------------------------------
+console.log('\n=== Student sees teacher topics ===');
 {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await login(page, 'student1', 'Student123');
 
   await page.goto(`${BASE}/learning`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await page.waitForTimeout(3500);
+  await page.waitForTimeout(4000);
 
   const body = await page.locator('body').innerText();
   const topics = await page.evaluate(async () => {
@@ -120,24 +172,28 @@ console.log('\n=== Student sees teacher topic ===');
     });
     return res.ok ? res.json() : [];
   });
+  const marker = globalThis.__teacherMarker;
   if (!Array.isArray(topics)) {
-    check('Student API returns teacher topics', false, `non-array: ${JSON.stringify(topics)}`);
+    check('Student API returns both teachers topics', false, `non-array: ${JSON.stringify(topics)}`);
   } else {
     check(
-      'Student API returns teacher topics',
+      'Student API returns both teachers topics',
       topics.some((t) => String(t.topic).startsWith('Verificación')),
       `student API: ${JSON.stringify(topics.map((t) => t.topic))}`,
     );
   }
   check('Student picker mentions a saved teacher topic', /Verificación/.test(body));
+  check(
+    'Student picker shows saved-by attribution (two teachers)',
+    /guardado por|saved by/i.test(body),
+  );
 
   await page.screenshot({ path: 'scripts/_saved_student.png', fullPage: true });
   await page.close();
 }
 
 // ---------------------------------------------------------------------------
-// Admin: sees every teacher's saved topic on the /teachers page and can
-// delete it from there
+// Admin: sees every teacher's topic on /teachers and deletes one via the UI
 // ---------------------------------------------------------------------------
 console.log('\n=== Admin saved-topics view ===');
 {
@@ -150,23 +206,25 @@ console.log('\n=== Admin saved-topics view ===');
   let body = await page.locator('body').innerText();
   check('Admin page shows the saved-topics section', /temas guardados por los profesores|topics saved by teachers/i.test(body));
   check('Admin sees the teacher topic in the table', /Verificación/.test(body));
-  check('Admin sees the teacher attribution', /Ms\. Johnson|teacher1/i.test(body));
+  check('Admin sees the teacher attribution', /Ms\\. Johnson|teacher1|Verify Teacher Two/i.test(body));
 
   await page.screenshot({ path: 'scripts/_saved_admin.png', fullPage: true });
 
-  // Delete the topic through the UI confirm dialog.
+  // Delete one topic through the UI confirm dialog; the other remains until
+  // cleanup, so assert the count drops rather than the section going empty.
+  const before = await page.locator('[data-testid="admin-saved-topics"] tbody tr').count();
   await page.locator('button[aria-label*="Eliminar tema"], button[aria-label*="Delete topic"]').first().click();
   await page.waitForTimeout(600);
   await page.locator('button:has-text("Eliminar"), button:has-text("Delete")').last().click();
   await page.waitForTimeout(1200);
-  body = await page.locator('body').innerText();
-  check('Topic deleted from the admin view', !/Verificación/.test(body));
+  const after = await page.locator('[data-testid="admin-saved-topics"] tbody tr').count();
+  check('Topic deleted from the admin view', after === before - 1, `rows ${before} -> ${after}`);
 
   await page.close();
 }
 
 // ---------------------------------------------------------------------------
-// Cleanup: delete the verification topics via the teacher API
+// Cleanup: teacher1 deletes their topic; admin deletes the second teacher
 // ---------------------------------------------------------------------------
 console.log('\n=== Cleanup ===');
 {
@@ -191,8 +249,24 @@ console.log('\n=== Cleanup ===');
     }
     return removed;
   });
-  check('Verification topics cleaned up', deleted >= 0, `removed ${deleted} (already handled by admin delete when 0)`);
+  check('Verification topics cleaned up', deleted >= 0, `removed ${deleted}`);
   await page.close();
+
+  // Admin deletes the second teacher account (admin-only endpoint).
+  const adminPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await login(adminPage, 'admin1', 'Admin123');
+  const removedTeacher = await adminPage.evaluate(async (id) => {
+    if (!id) return true;
+    const auth = JSON.parse(localStorage.getItem('auth-storage') || '{}');
+    const token = auth?.state?.token;
+    const res = await fetch(`/api/auth/users/${id}`, {
+      method: 'DELETE',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    return res.ok || res.status === 204 || res.status === 404;
+  }, secondTeacher.id);
+  check('Second teacher cleaned up', removedTeacher);
+  await adminPage.close();
 }
 
 await browser.close();

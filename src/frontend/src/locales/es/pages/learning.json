@@ -166,6 +166,7 @@
     "title": "¿Sobre qué quieres hablar?",
     "subtitle": "Elige un tema y empezaremos a practicar juntos.",
     "practiced": "Practicado",
-    "continue": "Continuar"
+    "continue": "Continuar",
+    "savedBy": "Guardado por {{teacher}}"
   }
 }

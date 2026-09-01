@@ -127,6 +127,40 @@ describe('TopicPicker', () => {
     );
   });
 
+  it('shows the saved-by label on cards when provided', () => {
+    const savedTopic = makeTopic({
+      key: 'saved-1',
+      label: 'Astronomía',
+      topic: 'Astronomía',
+      sublabel: 'El cielo',
+      savedBy: 'Ms. Johnson',
+    });
+    render(
+      <TopicPicker
+        topics={[savedTopic]}
+        recent={[]}
+        isStartingSession={false}
+        onSelect={vi.fn()}
+        onContinueRecent={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Saved by Ms. Johnson')).toBeInTheDocument();
+  });
+
+  it('omits the saved-by label when not provided (single teacher)', () => {
+    const savedTopic = makeTopic({ key: 'saved-1', label: 'Astronomía', topic: 'Astronomía' });
+    render(
+      <TopicPicker
+        topics={[savedTopic]}
+        recent={[]}
+        isStartingSession={false}
+        onSelect={vi.fn()}
+        onContinueRecent={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/Saved by/)).not.toBeInTheDocument();
+  });
+
   it('renders continue chips for recent topics and reports taps', () => {
     const recent: PickerRecentTopic[] = [
       { topic: 'El espacio', purpose: 'Viaje al espacio' },

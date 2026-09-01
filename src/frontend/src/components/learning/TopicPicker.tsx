@@ -16,6 +16,8 @@ export interface PickerTopic {
   practiced: boolean;
   imagePath?: string;
   emoji: string;
+  /** Teacher who saved this topic; set when the pool mixes several teachers. */
+  savedBy?: string;
 }
 
 export interface PickerRecentTopic {
@@ -116,6 +118,11 @@ export function TopicPicker({
             {topic.sublabel && (
               <span className="text-[11px] leading-tight text-muted-foreground line-clamp-1">
                 {topic.sublabel}
+              </span>
+            )}
+            {topic.savedBy && (
+              <span className="text-[10px] leading-tight text-muted-foreground/80 line-clamp-1" title={topic.savedBy}>
+                {t('topicPicker.savedBy', { teacher: topic.savedBy })}
               </span>
             )}
           </button>
