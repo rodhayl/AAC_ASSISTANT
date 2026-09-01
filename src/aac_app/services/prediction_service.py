@@ -887,7 +887,10 @@ class _PredictionContext:
 
         Idempotent and non-blocking: dedup and thread spawning happen under
         a cheap in-memory lock, so the Smartbar response latency is unaffected
-        and a symbol is generated at most once per (label, language).
+        and a symbol is generated at most once per (label, language). The
+        topic is forwarded as disambiguation context so homonyms resolve to
+        the meaning that fits the learner's current theme ("sierra" ->
+        mountains in a geography topic, a saw in a tools topic).
         """
         try:
             from src.aac_app.services.symbol_svg_autogen import (
@@ -895,7 +898,7 @@ class _PredictionContext:
             )
 
             if self._is_svg_generation_enabled():
-                ensure_symbol_generated(word, self.lang)
+                ensure_symbol_generated(word, self.lang, context=self.topic or None)
         except Exception as exc:
             logger.warning(
                 "Could not schedule SVG generation for {!r}: {}", word, exc

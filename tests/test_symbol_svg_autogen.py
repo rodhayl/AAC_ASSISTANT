@@ -126,6 +126,48 @@ def test_background_generation_persists_symbol_and_svg(
     assert saved.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
 
 
+def test_background_generation_passes_topic_context_into_prompt(
+    test_db_session, tmp_path, monkeypatch
+):
+    """The learning topic flows through ensure_symbol_generated into the LLM
+    prompt, so homonyms like "sierra"/"llave" disambiguate by context."""
+    from src import config
+    from src.aac_app.db import get_session
+
+    monkeypatch.setattr(config, "UPLOADS_DIR", tmp_path, raising=False)
+    (tmp_path / "symbols").mkdir(parents=True, exist_ok=True)
+
+    prompts: list[str] = []
+
+    class _RecordingProvider:
+        def generate_sync(self, prompt, **kwargs) -> str:
+            prompts.append(prompt)
+            return (
+                '{"background":"#ffffff",'
+                '"shapes":[{"kind":"circle","cx":0,"cy":0,"r":60,"fill":"#FFD166"}]}'
+            )
+
+    autogen.set_llm_provider_factory(lambda: _RecordingProvider())
+    started: list[threading.Thread] = []
+
+    def capturing_start(self):
+        started.append(self)
+        return self.run()
+
+    with patch("src.aac_app.db.get_session", side_effect=get_session), patch.object(
+        threading.Thread, "start", new=capturing_start
+    ):
+        autogen.ensure_symbol_generated("sierra", "es", context="geografía")
+
+    assert len(started) == 1
+    # The topic reached the LLM prompt through the whole spawn chain — this
+    # is the disambiguation contract (context is not part of the dedup key,
+    # so later topics still reuse the generated symbol without regenerating).
+    assert prompts, "provider should have been called with the prompt"
+    assert 'If "sierra" has several meanings' in prompts[0]
+    assert 'fits this context: "geografía"' in prompts[0]
+
+
 def test_background_generation_skips_existing_symbol(
     test_db_session, tmp_path, monkeypatch
 ):
@@ -305,7 +347,7 @@ def test_prediction_hook_schedules_generation_for_text_only_word(
     with patch.object(autogen_module, "autogen_enabled", return_value=True), patch.object(
         autogen_module,
         "ensure_symbol_generated",
-        side_effect=lambda word, lang: scheduled.append((word, lang)),
+        side_effect=lambda word, lang, context=None: scheduled.append((word, lang)),
     ):
         try:
             service.predict_next(
@@ -500,7 +542,7 @@ def test_auto_generated_symbol_reused_across_future_conversations(
     with patch.object(autogen_module, "autogen_enabled", return_value=True), patch.object(
         autogen_module,
         "ensure_symbol_generated",
-        side_effect=lambda word, lang: scheduled.append(word),
+        side_effect=lambda word, lang, context=None: scheduled.append(word),
     ):
         try:
             suggestions = service.predict_next(

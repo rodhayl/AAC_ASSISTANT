@@ -338,6 +338,58 @@ def test_predict_next_topic_surfaces_matching_symbols_first(
     assert suggestions[0]["label"] == "inteligencia artificial"
 
 
+def test_schedule_svg_generation_forwards_topic_as_context(
+    test_db_session, regular_user, monkeypatch
+):
+    """Homonym pictograms must receive the learning topic as disambiguation
+    context, so "sierra" in a geography topic is drawn as a mountain range
+    (and as a saw in a tools topic). Without a topic, no context is sent."""
+    from src.aac_app.services import symbol_svg_autogen as autogen
+    from src.aac_app.services.prediction_service import _PredictionContext
+
+    calls: list[tuple] = []
+    monkeypatch.setattr(
+        autogen,
+        "ensure_symbol_generated",
+        lambda word, lang, context=None: calls.append((word, lang, context)),
+    )
+
+    service = _PredictionContext(
+        user_id=regular_user.id,
+        current_symbols=[],
+        language="es",
+        offset=0,
+        base_limit=5,
+        limit=5,
+        board_id=None,
+        db=test_db_session,
+        analytics_service=Mock(),
+        load_model=lambda lang: {"bigrams": {}},
+        topic="geografía",
+    )
+    monkeypatch.setattr(service, "_is_svg_generation_enabled", lambda: True)
+    service._schedule_svg_generation("sierra")
+    assert calls == [("sierra", "es", "geografía")]
+
+    # Smartbar requests without a topic degrade gracefully to no context.
+    calls.clear()
+    service2 = _PredictionContext(
+        user_id=regular_user.id,
+        current_symbols=[],
+        language="es",
+        offset=0,
+        base_limit=5,
+        limit=5,
+        board_id=None,
+        db=test_db_session,
+        analytics_service=Mock(),
+        load_model=lambda lang: {"bigrams": {}},
+    )
+    monkeypatch.setattr(service2, "_is_svg_generation_enabled", lambda: True)
+    service2._schedule_svg_generation("llave")
+    assert calls == [("llave", "es", None)]
+
+
 def test_topic_tier_ranks_word_boundary_label_matches_above_embedded_tokens(
     test_db_session, regular_user, monkeypatch
 ):

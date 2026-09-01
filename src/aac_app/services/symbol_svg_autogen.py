@@ -178,7 +178,9 @@ def _persist_generated_symbol(label: str, language: str, svg_text: str) -> None:
         )
 
 
-def _generate_in_background(key: _PendingKey, label: str, language: str) -> None:
+def _generate_in_background(
+    key: _PendingKey, label: str, language: str, context: str | None = None
+) -> None:
     """Generate + persist one pictogram, then always clear the dedup entry.
 
     A skipped-but-plausible case (no provider, a symbol that appeared
@@ -242,7 +244,12 @@ def _generate_in_background(key: _PendingKey, label: str, language: str) -> None
                     time.sleep(pacing - elapsed)
             _last_llm_call_at = time.monotonic()
 
-            svg_text = generate_svg_text(label, language, generate_sync)
+            # The learning topic flows into the prompt so homonyms resolve to
+            # the meaning that fits the student's current theme ("sierra" ->
+            # mountain range in geography, saw in a tools board). It affects
+            # only this first generation: the catalog re-check reuses the
+            # symbol for any later topic, exactly like every other symbol.
+            svg_text = generate_svg_text(label, language, generate_sync, context)
             _persist_generated_symbol(label, language, svg_text)
             logger.info("Auto-generated SVG symbol for {!r} (lang={})", label, language)
     except ShapeSpecError as exc:
@@ -273,8 +280,15 @@ def _generate_in_background(key: _PendingKey, label: str, language: str) -> None
                     _rate_limited.discard(key)
 
 
-def ensure_symbol_generated(label: str, language: str) -> None:
+def ensure_symbol_generated(
+    label: str, language: str, context: str | None = None
+) -> None:
     """Schedule background SVG generation for a missing symbol (fire-and-forget).
+
+    ``context`` (the learning topic) is passed to the LLM prompt to
+    disambiguate homonyms on first generation; it is not part of the dedup
+    key, so an already-generated or in-flight symbol is still reused across
+    topics without regenerating.
 
     Cheap, non-blocking, idempotent: a symbol that already exists, is already
     being generated, or whose provider just failed is skipped. Safe to call on
@@ -313,7 +327,7 @@ def ensure_symbol_generated(label: str, language: str) -> None:
 
     thread = threading.Thread(
         target=_generate_in_background,
-        args=(key, normalized, language),
+        args=(key, normalized, language, context),
         name=f"svg-autogen-{normalized[:24]}",
         daemon=True,
     )

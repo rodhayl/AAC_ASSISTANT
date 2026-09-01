@@ -207,6 +207,31 @@ def test_build_shape_spec_prompt_is_concept_driven():
     assert "umbrella canopy" in prompt
 
 
+def test_build_shape_spec_prompt_carries_disambiguation_context():
+    """A passed context (learning topic) adds a homonym-disambiguation rule
+    so "sierra"/"llave"-style words resolve to the student's theme; without
+    context the prompt keeps the previous generic-wording behavior."""
+    plain = build_shape_spec_prompt("sierra", "es")
+    assert "has several meanings" not in plain
+    assert "fits this context" not in plain
+
+    prompt = build_shape_spec_prompt("sierra", "es", context="geografía")
+    assert 'If "sierra" has several meanings' in prompt
+    assert 'fits this context: "geografía"' in prompt
+    # The disambiguation line sits before the abstract-concept instruction so
+    # concrete meanings win over arbitrary symbols.
+    assert prompt.index("has several meanings") < prompt.index("abstract or complex")
+
+    # Long / noisy contexts are truncated to an ~80-char hint so the
+    # per-pictogram token budget cannot balloon with the topic string.
+    loud = "   " + "carpintería " * 60
+    trimmed = build_shape_spec_prompt("sierra", "es", context=loud)
+    assert 'fits this context: "carpintería' in trimmed
+    nine_words = " ".join(["carpintería"] * 9)
+    assert nine_words not in trimmed  # truncated, not echoed in full
+    assert len(trimmed) < len(plain) + 240
+
+
 def test_build_shape_spec_prompt_requires_centered_placement():
     """The prompt must keep telling the model to center the drawing and to
     stay within a sensible radius: corner-placed pictograms (a shape at far

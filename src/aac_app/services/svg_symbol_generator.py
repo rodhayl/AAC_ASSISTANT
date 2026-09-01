@@ -325,7 +325,9 @@ def render_spec_to_svg(spec: dict) -> str:
     return drawing.as_svg()
 
 
-def build_shape_spec_prompt(label: str, language: str) -> str:
+def build_shape_spec_prompt(
+    label: str, language: str, context: str | None = None
+) -> str:
     """Prompt the model for a strict JSON shape spec (never raw SVG).
 
     Concept-driven, not primitive-driven: the model must first commit to ONE
@@ -338,15 +340,28 @@ def build_shape_spec_prompt(label: str, language: str) -> str:
     3-shape heart built from parts, and paths/polygons are pushed over
     primitives because circles/rects cannot encode most meanings.
 
-    Still kept compact: the prompt is sent once per generated word, so every
-    wasted token multiplies across a topic burst.
+    ``context`` (usually the student's learning topic) disambiguates
+    homonyms when present: "sierra" in a geography topic is a mountain
+    range, in a tools topic a saw. It must stay a compact hint — the prompt
+    is sent once per generated word, so every wasted token multiplies across
+    a topic burst. The context affects only the first generation: once a
+    word has a pictogram the catalog re-check reuses it regardless of topic.
     """
     lang_hint = "Spanish" if str(language).startswith("es") else "English"
+    context_hint = ""
+    if context and context.strip():
+        concise = " ".join(context.strip().split())[:80]
+        context_hint = (
+            f"If \"{label}\" has several meanings, draw the meaning that "
+            f"fits this context: \"{concise}\"; otherwise draw the most "
+            "common everyday object.\n"
+        )
     return (
         "Flat, colorful AAC pictogram for \""
         f"{label}\" ({lang_hint}); simple bold shapes, high contrast, "
         "ARASAAC style; no text, letters, numbers, or photos.\n"
-        "If the concept is abstract or complex, pick the ONE concrete image "
+        + context_hint
+        + "If the concept is abstract or complex, pick the ONE concrete image "
         'people instantly associate with it (e.g. "materia oscura" -> dark '
         'blob with stars, "tristeza" -> sad face, "amistad" -> linked hands).\n'
         "First output one line starting with 'draws:' naming the object(s) "
@@ -399,18 +414,22 @@ def parse_spec_response(response: str) -> dict:
 
 
 def generate_svg_text(
-    label: str, language: str, generate_sync: Callable[..., str]
+    label: str,
+    language: str,
+    generate_sync: Callable[..., str],
+    context: str | None = None,
 ) -> str:
     """Ask the LLM for a pictogram shape spec and render it to an SVG string.
 
     ``generate_sync`` is the provider's synchronous generator (``prompt=``,
-    ``temperature=``, ``max_tokens=`` kwargs). One retry is made when the
-    model returns malformed JSON; raises ``ShapeSpecError`` when neither
-    attempt was usable.
+    ``temperature=``, ``max_tokens=`` kwargs). ``context`` (the learning
+    topic) disambiguates homonyms — see ``build_shape_spec_prompt``. One
+    retry is made when the model returns malformed JSON; raises
+    ``ShapeSpecError`` when neither attempt was usable.
     """
     svg_text: str | None = None
     for attempt in range(2):
-        prompt = build_shape_spec_prompt(label, language)
+        prompt = build_shape_spec_prompt(label, language, context)
         if attempt > 0:
             prompt += (
                 "\nThe previous attempt returned malformed JSON. "
