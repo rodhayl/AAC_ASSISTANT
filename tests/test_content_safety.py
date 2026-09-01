@@ -122,6 +122,154 @@ def test_feature_locks():
     assert not policy.feature_blocked("block_board_ai")
 
 
+# --- Layer 2: strict moderation sentinel ------------------------------------
+
+
+def test_moderate_output_inactive_for_standard_level():
+    from src.aac_app.services.content_safety import moderate_output
+
+    async def generate(**kwargs):
+        raise AssertionError("sentinel must not call the LLM off-strict")
+
+    policy = ContentPolicy(level="standard", sentinel_moderation=True)
+    verdict = asyncio.run(moderate_output(generate, policy, "hola"))
+    assert verdict.allowed
+
+
+def test_moderate_output_requires_sentinel_flag():
+    from src.aac_app.services.content_safety import moderate_output
+
+    async def generate(**kwargs):
+        raise AssertionError("sentinel must not call the LLM without the flag")
+
+    policy = ContentPolicy(level="strict", sentinel_moderation=False)
+    verdict = asyncio.run(moderate_output(generate, policy, "hola"))
+    assert verdict.allowed
+
+
+def test_moderate_output_blocks_on_llm_verdict(test_db_session):
+    from src.aac_app.services.content_safety import moderate_output
+
+    async def generate(**kwargs):
+        return "BLOCKED"
+
+    policy = ContentPolicy(level="strict", sentinel_moderation=True)
+    verdict = asyncio.run(
+        moderate_output(generate, policy, "algo inapropiado", db=test_db_session)
+    )
+    assert verdict.blocked
+    assert "sentinel" in verdict.matched_terms
+    event = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.surface == "sentinel")
+        .first()
+    )
+    assert event is not None and event.verdict == "blocked"
+
+
+def test_moderate_output_passes_and_fails_open(test_db_session, monkeypatch):
+    from src.aac_app.services.content_safety import moderate_output
+
+    async def generate(**kwargs):
+        return "ALLOWED"
+
+    policy = ContentPolicy(level="strict", sentinel_moderation=True)
+    verdict = asyncio.run(
+        moderate_output(generate, policy, "texto normal", db=test_db_session)
+    )
+    assert verdict.allowed
+
+    # Provider errors fail open: never block the child's chat.
+    async def broken(**kwargs):
+        raise RuntimeError("provider down")
+
+    verdict = asyncio.run(
+        moderate_output(broken, policy, "texto", db=test_db_session)
+    )
+    assert verdict.allowed
+
+
+def test_moderate_output_respects_daily_cap(test_db_session, monkeypatch):
+    import src.aac_app.services.content_safety as safety
+
+    calls: list[str] = []
+
+    async def generate(**kwargs):
+        calls.append(kwargs.get("prompt", ""))
+        return "ALLOWED"
+
+    policy = ContentPolicy(level="strict", sentinel_moderation=True)
+    monkeypatch.setattr(safety, "_sentinel_daily_cap", lambda: 1)
+    first = asyncio.run(
+        safety.moderate_output(generate, policy, "texto 1", db=test_db_session)
+    )
+    assert first.allowed and len(calls) == 1
+    second = asyncio.run(
+        safety.moderate_output(generate, policy, "texto 2", db=test_db_session)
+    )
+    assert second.allowed and len(calls) == 1  # no second LLM call
+
+
+def test_learning_response_sentinel_blocks_flagged_output(
+    test_db_session, regular_user, mock_llm_provider, mock_speech_provider
+):
+    from src.aac_app.services.learning.service import LearningCompanionService
+
+    def strict_profile():
+        test_db_session.add(
+            GuardianProfile(
+                user_id=regular_user.id,
+                template_name="default",
+                safety_constraints={
+                    "content_filter_level": "strict",
+                    "sentinel_moderation": True,
+                },
+                is_active=True,
+                created_by=regular_user.id,
+            )
+        )
+
+    strict_profile()
+    session = LearningSession(
+        user_id=regular_user.id,
+        topic_name="frutas",
+        purpose="",
+        status="active",
+        conversation_history=[],
+        comprehension_score=0.0,
+    )
+    test_db_session.add(session)
+    test_db_session.commit()
+
+    # The conversational response passes the deterministic filter but the
+    # sentinel flags it; the deflection replaces the message.
+    async def generate(**kwargs):
+        prompt = kwargs.get("prompt", "")
+        if "moderate" in prompt.lower() or "allowed or blocked" in prompt.lower():
+            return "BLOCKED"
+        return '{"response": "Vamos a hablar de animales"}'
+
+    mock_llm_provider.generate = AsyncMock(side_effect=generate)
+    service = LearningCompanionService(mock_llm_provider, mock_speech_provider)
+
+    result = asyncio.run(
+        service.process_response(
+            session_id=session.id,
+            student_response="quiero aprender de animales",
+            db=test_db_session,
+        )
+    )
+    assert result["success"] is True
+    assert "Vamos a hablar de animales" not in result["feedback_message"]
+    assert "otra cosa" in result["feedback_message"]
+    sentinel_events = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.surface == "sentinel")
+        .all()
+    )
+    assert len(sentinel_events) == 1 and sentinel_events[0].verdict == "blocked"
+
+
 # --- policy resolution ------------------------------------------------------
 
 

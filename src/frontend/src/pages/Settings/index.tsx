@@ -4,21 +4,23 @@ import { useAuthStore } from '../../store/authStore';
 import { usePreferences } from './usePreferences';
 import { AiProviderTab } from './AiProviderTab';
 import { AppearanceTab } from './AppearanceTab';
+import { ContentSafetyTab } from './ContentSafetyTab';
 import { DataManagementTab } from './DataManagementTab';
 import { LearningModesTab } from './LearningModesTab';
 import { ProfileTab } from './ProfileTab';
 import { SecurityTab } from './SecurityTab';
 import { VoiceTab } from './VoiceTab';
 
-type SectionId = 'profile' | 'appearance' | 'security' | 'voice' | 'ai' | 'learning-modes' | 'data';
+type SectionId = 'profile' | 'appearance' | 'security' | 'voice' | 'ai' | 'learning-modes' | 'content-safety' | 'data';
 
-const sectionAnchors: Array<{ id: SectionId; labelKey: string; staffOnly?: boolean }> = [
+const sectionAnchors: Array<{ id: SectionId; labelKey: string; staffOnly?: boolean; adminOnly?: boolean }> = [
   { id: 'profile', labelKey: 'tabs.profile' },
   { id: 'appearance', labelKey: 'tabs.appearance' },
   { id: 'security', labelKey: 'tabs.security' },
   { id: 'voice', labelKey: 'tabs.voice' },
   { id: 'ai', labelKey: 'tabs.ai' },
   { id: 'learning-modes', labelKey: 'tabs.learningModes', staffOnly: true },
+  { id: 'content-safety', labelKey: 'tabs.contentSafety', adminOnly: true },
   { id: 'data', labelKey: 'tabs.data' },
 ];
 
@@ -29,7 +31,9 @@ export function Settings() {
   const preferences = usePreferences();
   const isAdmin = user?.user_type === 'admin';
   const isStaff = isAdmin || user?.user_type === 'teacher';
-  const visibleSections = sectionAnchors.filter((section) => !section.staffOnly || isStaff);
+  const visibleSections = sectionAnchors.filter(
+    (section) => (!section.staffOnly || isStaff) && (!section.adminOnly || isAdmin),
+  );
 
   const navigateToSection = (section: SectionId) => {
     setActiveSection(section);
@@ -92,6 +96,7 @@ export function Settings() {
           onDefaultModeChange={preferences.saveDefaultLearningMode}
         />
       )}
+      {isAdmin && <ContentSafetyTab />}
       <DataManagementTab />
     </div>
   );

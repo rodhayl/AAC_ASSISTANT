@@ -23,12 +23,16 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
+import time
 import unicodedata
 from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
 
 from loguru import logger
+
+from src import config
 
 GLOBAL_POLICY_KEY = "content_safety_policy"
 
@@ -45,7 +49,7 @@ FEATURE_LOCKS = (
     "block_social_messaging",
 )
 
-SURFACES = ("chat", "topic", "words", "pictogram", "board", "social")
+SURFACES = ("chat", "topic", "words", "pictogram", "board", "social", "sentinel")
 
 
 # --- built-in term families (normalized: folded accents, lowercase) --------
@@ -428,6 +432,126 @@ def log_event(
                 session.commit()
     except Exception as exc:
         logger.warning("Failed to log content-safety event: {}", exc)
+
+
+# --- Layer 2: strict moderation sentinel (LLM re-check on chat output) ---
+# Cost-guarded: its own daily cap (``config.SENTINEL_DAILY_CAP``) and gentle
+# pacing between calls so the re-check cannot blow the provider token budget.
+# Counting uses the audit table itself (surface="sentinel"), so the number of
+# rows == the number of LLM calls spent today — one source of truth.
+
+_sentinel_lock = threading.Lock()
+_last_sentinel_call_at = 0.0
+
+
+def _sentinel_daily_cap() -> int:
+    try:
+        return int(config.SENTINEL_DAILY_CAP)
+    except (TypeError, ValueError):
+        return -1
+
+
+def _sentinel_pacing_seconds() -> float:
+    try:
+        return max(0.0, float(config.SENTINEL_PACING_SECONDS))
+    except (TypeError, ValueError):
+        return 1.5
+
+
+def _count_sentinel_today(db=None) -> int:
+    """Count sentinel verdicts persisted today (each row = one LLM call)."""
+    from datetime import datetime
+
+    from src.aac_app.db import get_session
+    from src.aac_app.models import ContentSafetyEvent
+
+    start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        if db is not None:
+            return (
+                db.query(ContentSafetyEvent)
+                .filter(
+                    ContentSafetyEvent.surface == "sentinel",
+                    ContentSafetyEvent.created_at >= start,
+                )
+                .count()
+            )
+        with get_session() as session:
+            return (
+                session.query(ContentSafetyEvent)
+                .filter(
+                    ContentSafetyEvent.surface == "sentinel",
+                    ContentSafetyEvent.created_at >= start,
+                )
+                .count()
+            )
+    except Exception as exc:
+        logger.warning("Could not count sentinel calls today: {}", exc)
+        return 0
+
+
+SENTINEL_PROMPT = (
+    "You moderate a children's learning assistant. Reply with a single word: "
+    "ALLOWED or BLOCKED.\n"
+    "Block text that is violent, sexual, hateful, promotes self-harm or drugs, "
+    "or is otherwise inappropriate for a child.\n"
+    "Message: {text}"
+)
+
+
+async def moderate_output(
+    generate,
+    policy: ContentPolicy,
+    text: str,
+    *,
+    user_id: int | None = None,
+    db=None,
+) -> Verdict:
+    """Layer-2 LLM moderation sentinel on generated chat output.
+
+    Only active for ``sentinel_moderation`` policies (strict level). Returns
+    an allowed verdict when the sentinel is off, the daily cap is exhausted,
+    the LLM is unavailable, or the message passes; a blocked verdict with the
+    matched term "sentinel" otherwise. Every spent call is recorded as a
+    surface="sentinel" audit event, so the admin log doubles as the cost
+    meter.
+    """
+    if not (policy.sentinel_moderation and policy.level == "strict"):
+        return Verdict(allowed=True)
+    cap = _sentinel_daily_cap()
+    if cap >= 0 and _count_sentinel_today(db) >= cap:
+        logger.info("Sentinel daily cap ({}) reached; skipping moderation", cap)
+        return Verdict(allowed=True)
+    global _last_sentinel_call_at
+    try:
+        with _sentinel_lock:
+            pacing = _sentinel_pacing_seconds()
+            if pacing > 0:
+                elapsed = time.monotonic() - _last_sentinel_call_at
+                if elapsed < pacing:
+                    time.sleep(pacing - elapsed)
+            _last_sentinel_call_at = time.monotonic()
+            raw = await generate(
+                prompt=SENTINEL_PROMPT.format(text=text[:600]),
+                temperature=0.0,
+                max_tokens=8,
+            )
+    except Exception as exc:
+        # Fail open on provider errors: never block a child's chat because
+        # the moderation service hiccuped.
+        logger.warning("Sentinel moderation unavailable: {}", exc)
+        return Verdict(allowed=True)
+    blocked = "blocked" in (raw or "").strip().lower()
+    log_event(
+        user_id=user_id,
+        surface="sentinel",
+        direction="output",
+        verdict="blocked" if blocked else "passed",
+        matched=["sentinel"] if blocked else [],
+        detail=(text[:200] if blocked else None),
+        db=db,
+    )
+    return Verdict(allowed=not blocked, matched_terms=("sentinel",) if blocked else ())
 
 
 def purge_ai_symbols(db=None) -> int:

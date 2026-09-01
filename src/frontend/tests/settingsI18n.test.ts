@@ -49,4 +49,59 @@ describe('settings i18n keys resolve', () => {
       expect(value.length).toBeGreaterThan(0);
     }
   });
+
+  it('resolves every content-safety tab key in the active locale', () => {
+    for (const key of [
+      'settings:tabs.contentSafety',
+      'settings:contentSafety.title',
+      'settings:contentSafety.subtitle',
+      'settings:contentSafety.level',
+      'settings:contentSafety.forbiddenTopics',
+      'settings:contentSafety.triggerWords',
+      'settings:contentSafety.featureLocks',
+      'settings:contentSafety.lockChat',
+      'settings:contentSafety.lockBoardAI',
+      'settings:contentSafety.lockCustomTopics',
+      'settings:contentSafety.lockAutogen',
+      'settings:contentSafety.lockSocial',
+      'settings:contentSafety.sentinel',
+      'settings:contentSafety.maxLength',
+      'settings:contentSafety.lockedFields',
+      'settings:contentSafety.save',
+      'settings:contentSafety.events',
+      'settings:contentSafety.noEvents',
+      'settings:contentSafety.clearEvents',
+      'settings:contentSafety.purge',
+      'settings:contentSafety.surface',
+      'settings:contentSafety.direction',
+      'settings:contentSafety.verdict',
+      'settings:contentSafety.matched',
+    ]) {
+      const value = i18n.t(key);
+      expect(value).not.toBe(key.split(':')[1]);
+      expect(value.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('resolves every guardian safety-tab key in the active locale', () => {
+    for (const key of [
+      'students:forbiddenTopics',
+      'students:triggerWords',
+      'students:featureGates',
+      'students:blockChat',
+      'students:blockBoardAI',
+      'students:blockCustomTopics',
+      'students:blockAutogen',
+      'students:blockSocial',
+      'students:sentinel',
+      'students:maxResponseLength',
+      'students:triStateOn',
+      'students:triStateDefault',
+      'students:triStateOff',
+    ]) {
+      const value = i18n.t(key);
+      expect(value).not.toBe(key.split(':')[1]);
+      expect(value.length).toBeGreaterThan(0);
+    }
+  });
 });

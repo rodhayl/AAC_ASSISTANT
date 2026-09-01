@@ -135,6 +135,11 @@ class Settings(BaseSettings):
     # Much shorter than the generic failure cooldown because the quota is
     # transient, not a broken configuration.
     AUTOGEN_RATE_LIMIT_COOLDOWN_SECONDS: int = 30
+    # Daily cap on strict-level LLM moderation sentinel calls (chat output
+    # re-checks). -1 = unlimited, 0 = sentinel disabled, positive = daily cap.
+    SENTINEL_DAILY_CAP: int = -1
+    # Pacing between sentinel LLM calls (seconds) to avoid provider quotas.
+    SENTINEL_PACING_SECONDS: float = 1.5
     OPENROUTER_API_KEY: str = ""
     GROQ_API_KEY: str = ""
 

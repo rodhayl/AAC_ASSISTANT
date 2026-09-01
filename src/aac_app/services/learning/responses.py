@@ -453,6 +453,25 @@ class ResponseProcessingMixin:
                     feedback_message = translation_service.get(
                         user_lang, "pages/learning", "safetyRedirect"
                     )
+                else:
+                    # Layer 2 (strict only): LLM moderation sentinel on the
+                    # generated output, cost-capped and paced. Never blocks a
+                    # child's chat because the sentinel service hiccuped (it
+                    # fails open); it only narrows what the deterministic
+                    # layer already allowed.
+                    from ...services.content_safety import moderate_output
+
+                    sentinel_verdict = await moderate_output(
+                        self.llm.generate,
+                        policy,
+                        feedback_message,
+                        user_id=session.user_id,
+                        db=db,
+                    )
+                    if sentinel_verdict.blocked:
+                        feedback_message = translation_service.get(
+                            user_lang, "pages/learning", "safetyRedirect"
+                        )
                 if policy.max_response_length is not None:
                     words = feedback_message.split()
                     if len(words) > policy.max_response_length:

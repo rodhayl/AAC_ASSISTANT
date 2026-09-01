@@ -235,18 +235,135 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                             <div>
                                 <label className="block text-sm font-medium mb-1">{t('students:contentFilterLevel')}</label>
                                 <select
-                                    value={profile.safety_constraints?.content_filter_level || 'standard'}
+                                    value={profile.safety_constraints?.content_filter_level || 'default'}
                                     onChange={e => setProfile({
                                         ...profile,
-                                        safety_constraints: { ...profile.safety_constraints, content_filter_level: e.target.value }
+                                        safety_constraints: {
+                                            ...profile.safety_constraints,
+                                            content_filter_level: e.target.value === 'default' ? undefined : e.target.value
+                                        }
                                     })}
                                     className="w-full p-2 border border-border rounded-lg bg-surface-hover"
                                 >
+                                    <option value="">{t('students:triStateDefault')}</option>
                                     <option value="strict">{t('students:strict')}</option>
                                     <option value="standard">{t('students:standard')}</option>
                                     <option value="relaxed">{t('students:relaxed')}</option>
                                 </select>
                             </div>
+
+                            <div>
+                                <label htmlFor="forbidden-topics" className="block text-sm font-medium mb-1">{t('students:forbiddenTopics')}</label>
+                                <textarea
+                                    id="forbidden-topics"
+                                    rows={3}
+                                    value={(profile.safety_constraints?.forbidden_topics ?? []).join('\n')}
+                                    onChange={e => {
+                                        const terms = e.target.value.split('\n').map(s => s.trim()).filter(Boolean);
+                                        setProfile({
+                                            ...profile,
+                                            safety_constraints: { ...profile.safety_constraints, forbidden_topics: terms }
+                                        });
+                                    }}
+                                    placeholder="astronomía"
+                                    className="w-full p-2 border border-border rounded-lg bg-surface-hover font-mono text-sm"
+                                />
+                                <p className="text-xs text-muted-foreground mt-1">{t('students:forbiddenTopicsHelp')}</p>
+                            </div>
+
+                            <div>
+                                <label htmlFor="trigger-words" className="block text-sm font-medium mb-1">{t('students:triggerWords')}</label>
+                                <textarea
+                                    id="trigger-words"
+                                    rows={3}
+                                    value={(profile.safety_constraints?.trigger_words ?? []).join('\n')}
+                                    onChange={e => {
+                                        const terms = e.target.value.split('\n').map(s => s.trim()).filter(Boolean);
+                                        setProfile({
+                                            ...profile,
+                                            safety_constraints: { ...profile.safety_constraints, trigger_words: terms }
+                                        });
+                                    }}
+                                    placeholder="guerra"
+                                    className="w-full p-2 border border-border rounded-lg bg-surface-hover font-mono text-sm"
+                                />
+                                <p className="text-xs text-muted-foreground mt-1">{t('students:triggerWordsHelp')}</p>
+                            </div>
+
+                            <div>
+                                <label htmlFor="max-response-length" className="block text-sm font-medium mb-1">{t('students:maxResponseLength')}</label>
+                                <input
+                                    id="max-response-length"
+                                    type="number"
+                                    min={0}
+                                    value={profile.safety_constraints?.max_response_length ?? ''}
+                                    onChange={e => setProfile({
+                                        ...profile,
+                                        safety_constraints: {
+                                            ...profile.safety_constraints,
+                                            max_response_length: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value))
+                                        }
+                                    })}
+                                    className="w-full p-2 border border-border rounded-lg bg-surface-hover"
+                                />
+                                <p className="text-xs text-muted-foreground mt-1">{t('students:maxResponseLengthHelp')}</p>
+                            </div>
+
+                            <div className="space-y-2">
+                                <div>
+                                    <span className="block text-sm font-medium">{t('students:featureGates')}</span>
+                                    <p className="text-xs text-muted-foreground mt-0.5">{t('students:featureGatesHelp')}</p>
+                                </div>
+                                {([
+                                    ['block_ai_chat', 'blockChat'],
+                                    ['block_board_ai', 'blockBoardAI'],
+                                    ['block_custom_topics', 'blockCustomTopics'],
+                                    ['block_autogen_pictograms', 'blockAutogen'],
+                                    ['block_social_messaging', 'blockSocial'],
+                                ] as const).map(([key, labelKey]) => {
+                                    const value = profile.safety_constraints?.[key];
+                                    return (
+                                        <div key={key} className="flex items-center justify-between gap-2 text-sm">
+                                            <span className="text-foreground">{t(`students:${labelKey}`)}</span>
+                                            <select
+                                                value={value === undefined ? 'default' : value ? 'true' : 'false'}
+                                                onChange={e => setProfile({
+                                                    ...profile,
+                                                    safety_constraints: {
+                                                        ...profile.safety_constraints,
+                                                        [key]: e.target.value === 'default' ? undefined : e.target.value === 'true'
+                                                    }
+                                                })}
+                                                className="w-36 p-2 border border-border rounded-lg bg-surface-hover text-sm"
+                                            >
+                                                <option value="default">{t('students:triStateDefault')}</option>
+                                                <option value="true">{t('students:triStateOn')}</option>
+                                                <option value="false">{t('students:triStateOff')}</option>
+                                            </select>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            <div className="flex items-start gap-2 text-sm">
+                                <span className="text-foreground">{t('students:sentinel')}</span>
+                                <select
+                                    value={profile.safety_constraints?.sentinel_moderation === undefined ? 'default' : profile.safety_constraints.sentinel_moderation ? 'true' : 'false'}
+                                    onChange={e => setProfile({
+                                        ...profile,
+                                        safety_constraints: {
+                                            ...profile.safety_constraints,
+                                            sentinel_moderation: e.target.value === 'default' ? undefined : e.target.value === 'true'
+                                        }
+                                    })}
+                                    className="w-36 p-2 border border-border rounded-lg bg-surface-hover text-sm ml-auto"
+                                >
+                                    <option value="default">{t('students:triStateDefault')}</option>
+                                    <option value="true">{t('students:triStateOn')}</option>
+                                    <option value="false">{t('students:triStateOff')}</option>
+                                </select>
+                            </div>
+                            <p className="text-xs text-muted-foreground -mt-2">{t('students:sentinelHelp')}</p>
                         </div>
                     )}
 

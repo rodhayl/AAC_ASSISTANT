@@ -157,6 +157,12 @@ export interface SafetyConstraints {
   forbidden_topics?: string[];
   trigger_words?: string[];
   max_response_length?: number;
+  block_ai_chat?: boolean;
+  block_board_ai?: boolean;
+  block_custom_topics?: boolean;
+  block_autogen_pictograms?: boolean;
+  block_social_messaging?: boolean;
+  sentinel_moderation?: boolean;
 }
 
 export interface CompanionPersona {
