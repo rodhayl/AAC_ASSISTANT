@@ -69,10 +69,11 @@ describe('dark-mode color pair guard', () => {
     // Status/solid buttons in feature pages (white text, readable on dark)
     'bg-emerald-700', 'bg-emerald-800',
     // Notification dots / recording badges (saturated, white icon or dot)
-    'bg-red-500', 'bg-purple-500', 'bg-orange-500',
+    'bg-red-500', 'bg-orange-500',
     'bg-orange-600', // hover of the recording badge (same saturated solid)
-    // Category dots (symbolCategoryStyle.ts) — saturated on both themes
-    'bg-indigo-500', 'bg-emerald-500', 'bg-rose-500', 'bg-amber-500', 'bg-purple-500',
+    // Category dots (symbolCategoryStyle.ts) + Smartbar AI badge — all from
+    // the shared avatar palette (avatarPalette.ts), saturated on both themes
+    'bg-indigo-500', 'bg-emerald-500', 'bg-rose-500', 'bg-amber-500', 'bg-violet-500',
     // Correct-answer / solid state buttons (white text)
     'bg-green-700',
     // Mid-tone icons readable on near-black (icons, not text)

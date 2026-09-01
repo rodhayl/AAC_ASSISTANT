@@ -80,6 +80,20 @@ if (boardId) {
   check('All colored dots come from the avatar palette', nonPalette.length === 0, `non-palette: ${JSON.stringify([...new Set(nonPalette)])}`);
   check('No purple-500 dots remain (emotions uses violet now)', !dotClasses.includes('bg-purple-500'));
 
+  // The Smartbar AI badge must also come from the palette (violet, not purple).
+  const aiBadgeClass = await page.evaluate(() => {
+    const el = document.querySelector('[title*="AI"][class*="rounded-full"], [class*="rounded-full"][title*="IA"]');
+    if (!el) return null;
+    const cls = typeof el.className === 'string' ? el.className : '';
+    const match = cls.match(/bg-[a-z]+-500/);
+    return match ? match[0] : null;
+  });
+  if (aiBadgeClass) {
+    check('Smartbar AI badge uses a palette color', PALETTE.includes(aiBadgeClass), aiBadgeClass);
+  } else {
+    console.log('  (no AI suggestion badge visible on this board — skipped)');
+  }
+
   await page.screenshot({ path: 'scripts/_category_dots.png', fullPage: true });
 }
 
