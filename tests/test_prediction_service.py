@@ -473,17 +473,18 @@ def test_topic_words_tier_reattaches_catalog_symbols_before_text_only(
     assert by_label["planeta lejano"].get("is_text_only") is True
 
 
-def test_topic_word_fetcher_is_cached_and_skipped_when_catalog_covers(
+def test_topic_word_fetcher_is_cached_and_skipped_when_catalog_fully_covers(
     test_db_session, regular_user, monkeypatch
 ):
     """The LLM fetcher runs once per (language, topic) and is never called
-    when the catalog already produced topic symbols."""
+    when the catalog tier alone already fills the requested slots."""
     service = PredictionService()
     monkeypatch.setitem(service._models, "es", {"bigrams": {}})
     analytics = Mock()
     analytics.suggest_next_symbol.return_value = []
     monkeypatch.setattr(service, "analytics_service", analytics)
-    # Catalog DOES cover this topic, so the fetcher must not run.
+    # Catalog fully covers this topic at limit=1 ("inteligencia artificial"
+    # matches a token; "algoritmo" does not), so the fetcher must not run.
     test_db_session.add_all(
         [
             Symbol(label="inteligencia artificial", category="computing", language="es", keywords="IA", is_builtin=True),
@@ -496,7 +497,7 @@ def test_topic_word_fetcher_is_cached_and_skipped_when_catalog_covers(
     suggestions = service.predict_next(
         user_id=regular_user.id,
         current_symbols=[],
-        limit=6,
+        limit=1,
         language="es",
         offset=0,
         topic="Inteligencia Artificial",
@@ -505,6 +506,7 @@ def test_topic_word_fetcher_is_cached_and_skipped_when_catalog_covers(
     )
     assert any(s["source"] == "topic" for s in suggestions)
     assert not any(s.get("is_text_only") for s in suggestions)
+    fetcher.assert_not_called()
 
     # Uncached miss path: fetcher is consulted once per (lang, topic); repeated
     # predict_next calls reuse the TTL cache instead of re-calling the LLM.
@@ -527,6 +529,62 @@ def test_topic_word_fetcher_is_cached_and_skipped_when_catalog_covers(
         ps_module._topics_word_cache.clear()
 
     assert fetcher2.call_count == 1
+
+
+def test_topic_words_tier_keeps_filling_when_catalog_only_partially_covers(
+    test_db_session, regular_user, monkeypatch
+):
+    """Once the first generated pictogram lands in the catalog the topic tier
+    produces some symbols, but the still-pending topic words must keep
+    appearing (text-only) so their tiles upgrade in place instead of
+    vanishing mid-generation."""
+    service = PredictionService()
+    monkeypatch.setitem(service._models, "es", {"bigrams": {}})
+    analytics = Mock()
+    analytics.suggest_next_symbol.return_value = []
+    monkeypatch.setattr(service, "analytics_service", analytics)
+    # Partial coverage: one symbol matches the topic token "cuántica", the
+    # rest of the topic vocabulary is still missing.
+    test_db_session.add_all(
+        [
+            Symbol(
+                label="gravedad cuántica",
+                category="science",
+                language="es",
+                image_path="/symbols/gravedad.png",
+                is_builtin=False,
+            ),
+            Symbol(label="vaca", category="farm_animals", language="es", is_builtin=True),
+        ]
+    )
+    test_db_session.commit()
+
+    fetcher = Mock(return_value=["agujero negro", "materia oscura", "teoría de cuerdas"])
+    try:
+        suggestions = service.predict_next(
+            user_id=regular_user.id,
+            current_symbols=[],
+            limit=6,
+            language="es",
+            offset=0,
+            topic="astrofísica cuántica",
+            topic_word_fetcher=fetcher,
+            db=test_db_session,
+        )
+    finally:
+        from src.aac_app.services import prediction_service as ps_module
+
+        ps_module._topics_word_cache.clear()
+
+    # The catalog symbol shows as a topic-tier suggestion WITH its image...
+    topic_item = next(s for s in suggestions if s["source"] == "topic")
+    assert topic_item["label"] == "gravedad cuántica"
+    assert topic_item["image_path"] == "/symbols/gravedad.png"
+    # ...and the still-missing words keep appearing as text-only, so the
+    # Smartbar never loses the pending tiles mid-generation.
+    ai = [s for s in suggestions if s["source"] == "ai"]
+    assert [s["label"] for s in ai] == ["agujero negro", "materia oscura", "teoría de cuerdas"]
+    assert all(s.get("is_text_only") for s in ai)
 
 
 def test_label_looks_bad_rejects_artifacts_and_paths():

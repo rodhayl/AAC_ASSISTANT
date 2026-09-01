@@ -534,19 +534,28 @@ class _PredictionContext:
             )
 
     def suggest_topic_words(self) -> None:
-        """Tier 0b: LLM-generated words when the catalog cannot cover the topic.
+        """Tier 0b: LLM-generated words filling whatever the catalog missed.
 
-        Keys off the same topic as ``suggest_topic`` but is only consulted
-        when the catalog produced no topic symbols: a learner asking about a
-        subject outside the symbol database still gets usable vocabulary.
-        Each word is first matched against the catalog so an existing symbol
-        wins (image attached); any word without a symbol is surfaced as a
-        text-only suggestion so the user is never limited by the database.
+        Keys off the same topic as ``suggest_topic`` and fills the remaining
+        slots when the catalog did not fully cover the topic: a learner
+        asking about a subject outside the symbol database still gets usable
+        vocabulary. Each word is first matched against the catalog so an
+        existing symbol wins (image attached); any word without a symbol is
+        surfaced as a text-only suggestion so the user is never limited by
+        the database.
+
+        The tier keeps running while the catalog only *partially* covers the
+        topic: once the first generated pictogram lands in the catalog,
+        ``suggest_topic`` produces some symbols, but the still-pending topic
+        words must keep appearing so their tiles upgrade in place instead of
+        vanishing mid-generation. The LLM fetch itself stays cached per
+        (language, topic), and a fully-covered topic (catalog tier already at
+        the limit) still skips it entirely.
         """
         if not self.topic_tokens or self.topic_word_fetcher is None:
             return
-        # The catalog tier already filled the topic-ish slots; nothing to add.
-        if any(s["source"] == "topic" for s in self.suggestions):
+        # The catalog tier already filled the slots; nothing to add.
+        if len(self.suggestions) >= self.base_limit:
             return
         words = _cached_topic_words(self.lang, self.topic, self.topic_word_fetcher)
         for word in words:
