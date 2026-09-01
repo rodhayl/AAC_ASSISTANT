@@ -480,6 +480,38 @@ def test_save_global_policy_roundtrip(test_db_session):
     assert policy.max_response_length == 30
 
 
+def test_save_global_policy_invalidates_settings_cache(test_db_session):
+    """Regression: saving the global policy must invalidate the process-local
+    settings cache, otherwise every read (including the admin PUT response
+    itself) returns the stale first-read value and saves appear to no-op."""
+    import src.aac_app.services.content_safety as safety_mod
+    from src.api.deps.settings import clear_settings_cache, get_setting_value
+
+    clear_settings_cache()
+    try:
+        # Prime the cache with the current (default) value, then save over it.
+        assert safety_mod.load_global_policy().level == "standard"
+        save_global_policy(
+            {
+                "level": "strict",
+                "forbidden_topics": ["guerra", "violencia"],
+                "trigger_words": ["matar"],
+                "feature_locks": {},
+                "sentinel_moderation": True,
+                "max_response_length": None,
+                "locked_fields": [],
+            }
+        )
+        # The cached getter (used by load_global_policy / the GET endpoint)
+        # must now see the fresh value without an explicit cache clear.
+        assert get_setting_value(safety_mod.GLOBAL_POLICY_KEY, "") != ""
+        assert safety_mod.load_global_policy().level == "strict"
+        assert safety_mod.load_global_policy().forbidden_topics == ("guerra", "violencia")
+        assert safety_mod.load_global_policy().trigger_words == ("matar",)
+    finally:
+        clear_settings_cache()
+
+
 # --- Layer 0: prompt guardrails from the resolved policy --------------------
 
 

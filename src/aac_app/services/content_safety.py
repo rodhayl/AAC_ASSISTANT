@@ -279,6 +279,14 @@ def save_global_policy(data: dict[str, Any]) -> ContentPolicy:
             db.add(setting)
         setting.setting_value = json.dumps(normalized, ensure_ascii=False)
         db.commit()
+    # Drop the process-local settings cache entry so the next read returns
+    # the freshly persisted policy instead of the stale first-read value.
+    try:
+        from src.api.deps.settings import invalidate_setting
+
+        invalidate_setting(GLOBAL_POLICY_KEY)
+    except Exception as exc:
+        logger.warning("Could not invalidate global policy cache: {}", exc)
     return _policy_from_dict(normalized)
 
 
