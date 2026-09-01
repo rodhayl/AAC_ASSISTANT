@@ -183,12 +183,16 @@ vi.mock('../src/components/board/SentenceStrip', () => ({
 }));
 
 vi.mock('../src/components/board/Smartbar', () => ({
-  Smartbar: ({ onSelectSymbol }: {
+  Smartbar: ({ onSelectSymbol, topic }: {
     onSelectSymbol: (s: BoardSymbol) => void;
+    topic?: string | null;
   }) => (
-    <button onClick={() => onSelectSymbol(makeSymbol(99, 'smart'))}>
-      smart-select
-    </button>
+    <div>
+      <button onClick={() => onSelectSymbol(makeSymbol(99, 'smart'))}>
+        smart-select
+      </button>
+      {topic && <span data-testid="smartbar-topic">{topic}</span>}
+    </div>
   ),
 }));
 
@@ -418,6 +422,23 @@ describe('Communication page', () => {
       fireEvent.click(screen.getByRole('button', { name: /Morning Routine/i }));
       expect(hoisted.boardStore.fetchBoard).toHaveBeenCalledWith(1);
       expect(screen.getByTestId('grid')).toBeInTheDocument();
+    });
+
+    it('uses the board name as Smartbar topic (board is the Communication context)', () => {
+      // Even with an unrelated learning session open, the active board wins.
+      hoisted.learning.currentSession = {
+        session_id: 's1',
+        topic: 'Comida y Cena',
+      };
+      renderCommunication();
+      fireEvent.click(screen.getByRole('button', { name: /Morning Routine/i }));
+      expect(screen.getByTestId('smartbar-topic')).toHaveTextContent('Morning Routine');
+    });
+
+    it('omits the Smartbar topic before a board is opened', () => {
+      hoisted.boardStore.currentBoard = null;
+      renderCommunication();
+      expect(screen.queryByTestId('smartbar-topic')).not.toBeInTheDocument();
     });
 
     it('shows the board loading spinner when no board is loaded yet', () => {

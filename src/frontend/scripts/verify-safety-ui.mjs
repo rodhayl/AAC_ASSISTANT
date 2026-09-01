@@ -98,6 +98,14 @@ await page.screenshot({ path: 'scripts/_safety_learning.png', fullPage: true });
 body = await page.locator('body').innerText();
 check('Learning page loads', /learning|aprendizaje|estudiar|study/i.test(body));
 
+// --- Communication page ---
+console.log('\n=== Communication page ===');
+await page.goto(`${BASE}/communication`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+await page.waitForTimeout(2500);
+await page.screenshot({ path: 'scripts/_safety_communication.png', fullPage: true });
+body = await page.locator('body').innerText();
+check('Communication page loads', /communication|comunicación|board|tablero/i.test(body));
+
 await browser.close();
 
 if (failures.length) {

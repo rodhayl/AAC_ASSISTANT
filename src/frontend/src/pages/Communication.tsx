@@ -323,6 +323,19 @@ export function Communication() {
       });
   }, [sentence, currentSession, currentBoard, defaultLearningModeKey, isChatLoading, submitSymbolAnswer, isChatOpen, user, startSession, addToast, t]);
 
+  // Topic context for the Smartbar. The board is the primary context in the
+  // Communication surface, so the board name wins (a student on the
+  // "Animales" board gets animal vocabulary even if an unrelated learning
+  // session is still open). When no board is active, fall back to the active
+  // session topic so the surface keeps the AI topic words and auto-generated
+  // pictograms from the learning flow. No board/session -> no topic (plain
+  // catalog suggestions, no LLM spend).
+  const smartbarTopic = useMemo(() => {
+    const boardName = currentBoard?.name?.trim();
+    if (boardName) return boardName;
+    return currentSession?.topic || null;
+  }, [currentSession, currentBoard]);
+
   const handleHome = useCallback(() => {
     setActiveBoardId(null);
     setHistory([]);
@@ -671,6 +684,7 @@ export function Communication() {
           currentSentence={sentence}
           onSelectSymbol={handleSelectSymbol}
           boardId={currentBoard?.id}
+          topic={smartbarTopic}
         />
 
         {/* Grid Area */}
