@@ -951,6 +951,69 @@ def test_admin_events_and_clear(test_db_session):
     assert test_db_session.query(ContentSafetyEvent).count() == 0
 
 
+def test_board_ai_autogen_filters_blocked_labels(
+    test_db_session, admin_user, admin_token, setup_test_db
+):
+    """AI auto-generated board labels blocked by the policy are never placed
+    on the board: the create-board auto-generation loop drops them."""
+    import src.aac_app.services.content_safety as safety
+    from src.aac_app.models import BoardSymbol, CommunicationBoard
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        safety, "load_global_policy", lambda: ContentPolicy(level="standard")
+    )
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch as _patch
+
+    items = [
+        {"label": "casa", "symbol_key": "casa"},
+        {"label": "pistola", "symbol_key": "pistola"},
+    ]
+    fake_provider = Mock()
+    try:
+        with (
+            _patch(
+                "src.api.routers.board_ai._resolve_provider_for_board",
+                return_value=fake_provider,
+            ),
+            _patch(
+                "src.api.routers.board_ai.BoardGenerationService.generate_board_items",
+                new=AsyncMock(return_value=items),
+            ),
+        ):
+            response = client.post(
+                "/api/boards/",
+                params={"user_id": admin_user.id},
+                headers={"Authorization": f"Bearer {admin_token}"},
+                json={
+                    "name": "Gated AI Board",
+                    "ai_enabled": True,
+                    "ai_provider": "groq",
+                    "ai_model": "@primary",
+                    "grid_rows": 2,
+                    "grid_cols": 2,
+                },
+            )
+        assert response.status_code == 200, response.text
+        board = (
+            test_db_session.query(CommunicationBoard)
+            .filter(CommunicationBoard.name == "Gated AI Board")
+            .first()
+        )
+        assert board is not None
+        placed = (
+            test_db_session.query(BoardSymbol)
+            .filter(BoardSymbol.board_id == board.id)
+            .all()
+        )
+        labels = [bs.symbol.label for bs in placed]
+        assert "casa" in labels
+        assert "pistola" not in labels
+    finally:
+        monkeypatch.undo()
+
+
 def test_report_message_endpoint_logs_event(test_db_session):
     from src.aac_app.models import LearningSession
 

@@ -246,7 +246,26 @@ async def create_board(
 
                 logger.info(f"AI generated {len(items)} items")
 
+                # Per-student output gate on generated board labels: the
+                # global admission gate in get_or_create_symbol is defense in
+                # depth; the student's resolved policy (admin + teacher) is
+                # authoritative here.
+                from src.aac_app.services import content_safety as _safety
+
+                gen_policy = _safety.resolve_policy_for_user(current_user.id, db)
                 for idx, item in enumerate(items):
+                    label_verdict = _safety.check_text(gen_policy, item.get("label", ""))
+                    if label_verdict.blocked:
+                        _safety.log_event(
+                            user_id=current_user.id,
+                            surface="board",
+                            direction="output",
+                            verdict="blocked",
+                            matched=list(label_verdict.matched_terms),
+                            detail=f"generated label: {item.get('label', '')[:200]}",
+                            db=db,
+                        )
+                        continue
                     symbol_key = item["symbol_key"]
                     symbol, is_new = get_or_create_symbol(
                         db, item["label"], symbol_key, current_user
