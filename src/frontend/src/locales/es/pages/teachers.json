@@ -58,5 +58,23 @@
     "resetPassword": "Resetear Pass",
     "resetPasswordAria": "Restablecer contraseña para {{name}}",
     "resetPasswordTitle": "Restablecer Contraseña"
+  },
+  "savedTopics": {
+    "title": "Temas guardados por los profesores",
+    "subtitle": "Revisa y elimina los temas que los profesores han guardado para sus estudiantes.",
+    "empty": "Ningún profesor ha guardado temas todavía.",
+    "topic": "Tema",
+    "board": "Contexto",
+    "teacher": "Profesor",
+    "savedAt": "Guardado",
+    "delete": "Eliminar",
+    "deleteConfirm": "¿Eliminar este tema guardado?",
+    "deleteSuccess": "Tema eliminado",
+    "deleteFailed": "No se pudo eliminar el tema",
+    "loadFailed": "No se pudieron cargar los temas guardados",
+    "actions": {
+      "deleteTitle": "Eliminar tema",
+      "deleteAria": "Eliminar tema {topic}"
+    }
   }
 }

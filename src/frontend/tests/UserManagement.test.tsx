@@ -75,6 +75,20 @@ const translate = (key: string, options?: { name?: string }) => {
     'errors.updateFailed': 'Failed to update',
     'errors.createFailed': 'Failed to create teacher',
     'errors.resetPasswordFailed': 'Failed to reset password',
+    'savedTopics.title': 'Topics saved by teachers',
+    'savedTopics.subtitle': 'Review and remove topics teachers have saved for their students.',
+    'savedTopics.empty': 'No teacher has saved topics yet.',
+    'savedTopics.topic': 'Topic',
+    'savedTopics.board': 'Context',
+    'savedTopics.teacher': 'Teacher',
+    'savedTopics.savedAt': 'Saved',
+    'savedTopics.delete': 'Delete',
+    'savedTopics.deleteConfirm': 'Delete this saved topic?',
+    'savedTopics.deleteSuccess': 'Topic deleted',
+    'savedTopics.deleteFailed': 'Could not delete the topic',
+    'savedTopics.loadFailed': 'Could not load saved topics',
+    'savedTopics.actions.deleteTitle': 'Delete topic',
+    'savedTopics.actions.deleteAria': `Delete topic ${options?.topic ?? ''}`,
   };
   return translations[key] ?? key;
 };
@@ -103,10 +117,24 @@ const admin = {
   created_at: '2026-01-01T00:00:00Z',
 };
 
+const savedTopic = {
+  id: 10,
+  user_id: 2,
+  board: 'El cielo',
+  topic: 'Astronomía',
+  created_by: 'Teacher One',
+  created_at: '2026-01-05T00:00:00Z',
+};
+
 describe('UserManagementPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(api.get).mockResolvedValue({ data: [teacher] } as never);
+    // The teachers page (admin) also fetches the saved-topics overview;
+    // default it to empty so existing tests stay focused on user rows.
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.includes('/learning/topics/saved')) return { data: [] } as never;
+      return { data: [teacher] } as never;
+    });
   });
 
   it('loads the selected role and surfaces password validation before posting', async () => {
@@ -129,6 +157,57 @@ describe('UserManagementPage', () => {
 
     expect((await screen.findAllByText('Passwords do not match')).length).toBe(2);
     expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('shows the admin saved-topics overview on the teachers page', async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.includes('/learning/topics/saved')) return { data: [savedTopic] } as never;
+      return { data: [teacher] } as never;
+    });
+    render(<UserManagementPage role="teacher" />);
+
+    expect(await screen.findByText('Topics saved by teachers')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith('/learning/topics/saved', {
+        params: { scope: 'all' },
+      }),
+    );
+    expect(await screen.findByText('Astronomía')).toBeInTheDocument();
+    expect(screen.getByText('El cielo')).toBeInTheDocument();
+    expect(screen.getAllByText('Teacher One').length).toBeGreaterThan(0);
+  });
+
+  it('deletes a saved topic through the admin view', async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.includes('/learning/topics/saved')) return { data: [savedTopic] } as never;
+      return { data: [teacher] } as never;
+    });
+    vi.mocked(api.delete).mockResolvedValue({} as never);
+    render(<UserManagementPage role="teacher" />);
+    await screen.findByText('Astronomía');
+    await screen.findByText('Topics saved by teachers');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete topic Astronomía' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() =>
+      expect(api.delete).toHaveBeenCalledWith('/learning/topics/saved/10'),
+    );
+    await waitFor(() => {
+      expect(screen.queryByText('Astronomía')).not.toBeInTheDocument();
+    });
+  });
+
+  it('does not show the saved-topics section on the admins page', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: [admin] } as never);
+    render(<UserManagementPage role="admin" />);
+    await screen.findByText('Admin');
+
+    expect(screen.queryByText('Topics saved by teachers')).not.toBeInTheDocument();
+    expect(api.get).not.toHaveBeenCalledWith('/learning/topics/saved', {
+      params: { scope: 'all' },
+    });
   });
 
   it('disables the delete button for the current admin (self-delete)', async () => {

@@ -58,5 +58,23 @@
     "resetPassword": "Reset Pwd",
     "resetPasswordAria": "Reset password for {{name}}",
     "resetPasswordTitle": "Reset Password"
+  },
+  "savedTopics": {
+    "title": "Topics saved by teachers",
+    "subtitle": "Review and remove topics teachers have saved for their students.",
+    "empty": "No teacher has saved topics yet.",
+    "topic": "Topic",
+    "board": "Context",
+    "teacher": "Teacher",
+    "savedAt": "Saved",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this saved topic?",
+    "deleteSuccess": "Topic deleted",
+    "deleteFailed": "Could not delete the topic",
+    "loadFailed": "Could not load saved topics",
+    "actions": {
+      "deleteTitle": "Delete topic",
+      "deleteAria": "Delete topic {topic}"
+    }
   }
 }

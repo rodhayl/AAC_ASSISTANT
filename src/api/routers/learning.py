@@ -173,15 +173,25 @@ def get_learning_topics(
 
 @router.get("/topics/saved", response_model=list[schemas.SavedTopicResponse])
 def list_saved_topics(
+    scope: str = Query("own"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """Return the saved topics visible to the current user.
 
-    Teachers/admins see their own topics; students see the topics their
-    roster teachers saved (so they follow the student to any device).
+    Teachers/admins see their own topics by default; students see the
+    topics their roster teachers saved (so they follow the student to any
+    device). Admins may pass ``scope=all`` to list every teacher's topics
+    (used by the admin topic-management view).
     """
-    if current_user.user_type in ("teacher", "admin"):
+    if scope == "all":
+        if current_user.user_type != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail=get_text(current_user, "errors.unauthorized"),
+            )
+        query = db.query(SavedTopic)
+    elif current_user.user_type in ("teacher", "admin"):
         query = db.query(SavedTopic).filter(SavedTopic.user_id == current_user.id)
     else:
         teacher_ids = [

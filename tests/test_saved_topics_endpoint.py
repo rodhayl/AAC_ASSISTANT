@@ -211,3 +211,63 @@ def test_delete_missing_topic_returns_404(teacher_user):
         headers=create_test_headers(teacher_user.id, teacher_user.username, "teacher"),
     )
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Admin all-teachers view (scope=all)
+# ---------------------------------------------------------------------------
+
+
+def test_admin_lists_all_teachers_topics_with_scope_all(
+    admin_user, admin_token, teacher_user, test_db_session
+):
+    other = User(
+        username="saved_topics_admin_scope_teacher",
+        display_name="Scope Teacher",
+        user_type="teacher",
+        password_hash=get_password_hash("TeacherPass123"),
+        is_active=True,
+    )
+    test_db_session.add(other)
+    test_db_session.commit()
+    test_db_session.refresh(other)
+
+    t1 = _create_topic(test_db_session, teacher_user, "Astronomía", "El cielo")
+    t2 = _create_topic(test_db_session, other, "Cocina", "Recetas")
+
+    response = client.get(
+        "/api/learning/topics/saved?scope=all",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 200
+    entries = response.json()
+    assert [entry["id"] for entry in entries] == [t2.id, t1.id]
+    by_id = {entry["id"]: entry for entry in entries}
+    assert by_id[t1.id]["created_by"] == "Saved Topics Teacher"
+    assert by_id[t2.id]["created_by"] == "Scope Teacher"
+
+
+def test_admin_scope_all_ignores_own_topics_duplication(
+    admin_user, admin_token, teacher_user, test_db_session
+):
+    own = _create_topic(test_db_session, admin_user, "Admin tema", "General")
+    _create_topic(test_db_session, teacher_user, "Teacher tema", "Clase")
+
+    response = client.get(
+        "/api/learning/topics/saved?scope=all",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 200
+    ids = [entry["id"] for entry in response.json()]
+    assert ids.count(own.id) == 1
+
+
+def test_non_admin_cannot_use_scope_all(
+    teacher_user, student_user, test_db_session
+):
+    for user, user_type in [(teacher_user, "teacher"), (student_user, "student")]:
+        response = client.get(
+            "/api/learning/topics/saved?scope=all",
+            headers=create_test_headers(user.id, user.username, user_type),
+        )
+        assert response.status_code == 403

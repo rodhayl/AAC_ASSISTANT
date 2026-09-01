@@ -46,6 +46,25 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     isOpen: false,
     user: null,
   })
+
+  // Admin-only view of every teacher's saved topics (management surface on
+  // the /teachers page). Loaded separately so the section degrades cleanly
+  // if the topic API is unavailable.
+  const showSavedTopics = role === 'teacher' && user?.user_type === 'admin'
+  const [savedTopics, setSavedTopics] = useState<Array<{
+    id: number
+    user_id: number
+    board: string
+    topic: string
+    created_by: string
+    created_at: string | null
+  }>>([])
+  const [savedTopicsError, setSavedTopicsError] = useState<string | null>(null)
+  const [deleteTopicState, setDeleteTopicState] = useState<{ isOpen: boolean; topic: { id: number; topic: string } | null }>({
+    isOpen: false,
+    topic: null,
+  })
+  const [deleteTopicLoading, setDeleteTopicLoading] = useState(false)
   const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false)
   const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null)
   const [resetPasswordValue, setResetPasswordValue] = useState('')
@@ -62,6 +81,23 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     }
     setManagedUsers(response.data as User[])
   }, [role])
+
+  const loadSavedTopics = useCallback(async () => {
+    if (!showSavedTopics) return
+    try {
+      const response = await api.get('/learning/topics/saved', {
+        params: { scope: 'all' },
+      })
+      if (!Array.isArray(response.data)) {
+        throw new Error('Invalid response format: expected array')
+      }
+      setSavedTopics(response.data)
+      setSavedTopicsError(null)
+    } catch (loadError: unknown) {
+      console.error('Failed to load saved topics:', loadError)
+      setSavedTopicsError(extractError(loadError, t('savedTopics.loadFailed')))
+    }
+  }, [showSavedTopics, t])
 
   useEffect(() => {
     let cancelled = false
@@ -80,10 +116,11 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       }
     }
     void load()
+    if (showSavedTopics) void loadSavedTopics()
     return () => {
       cancelled = true
     }
-  }, [loadUsers, role, t, user])
+  }, [loadUsers, role, t, user, showSavedTopics, loadSavedTopics])
 
   const clearCreateForm = () => {
     setNewUsername('')
@@ -157,6 +194,23 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       setError(extractError(updateError, t('errors.updateFailed')))
     } finally {
       setUpdateLoading(false)
+    }
+  }
+
+  const handleDeleteTopic = async () => {
+    const selectedTopic = deleteTopicState.topic
+    if (!selectedTopic) return
+
+    setDeleteTopicLoading(true)
+    try {
+      await api.delete(`/learning/topics/saved/${selectedTopic.id}`)
+      setSavedTopics(previous => previous.filter(item => item.id !== selectedTopic.id))
+      addToast(t('savedTopics.deleteSuccess'), 'success')
+    } catch (deleteError: unknown) {
+      setError(extractError(deleteError, t('savedTopics.deleteFailed')))
+    } finally {
+      setDeleteTopicLoading(false)
+      setDeleteTopicState({ isOpen: false, topic: null })
     }
   }
 
@@ -272,6 +326,61 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
         </div>
       )}
 
+      {showSavedTopics && (
+        <section className="space-y-3" data-testid="admin-saved-topics">
+          <div>
+            <h2 className="text-xl font-bold text-foreground">{t('savedTopics.title')}</h2>
+            <p className="mt-1 text-sm font-medium text-muted-foreground">{t('savedTopics.subtitle')}</p>
+          </div>
+          {savedTopicsError && (
+            <div className="rounded-lg bg-red-50 p-4 text-red-600 dark:bg-red-900/30 dark:text-red-400">
+              {savedTopicsError}
+            </div>
+          )}
+          {savedTopics.length === 0 ? (
+            !savedTopicsError && (
+              <div className="glass-panel rounded-xl p-6 text-center text-muted-foreground">
+                {t('savedTopics.empty')}
+              </div>
+            )
+          ) : (
+            <div className="glass-panel overflow-hidden rounded-xl">
+              <table className="min-w-full divide-y divide-border">
+                <thead className="border-b border-border/50 bg-background/50">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('savedTopics.topic')}</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('savedTopics.board')}</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('savedTopics.teacher')}</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('savedTopics.savedAt')}</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('table.actions')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border bg-transparent">
+                  {savedTopics.map(item => (
+                    <tr key={item.id}>
+                      <td className="px-6 py-4 text-sm font-medium text-foreground">{item.topic}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{item.board || '-'}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{item.created_by}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">
+                        {item.created_at ? new Date(item.created_at).toLocaleDateString() : '-'}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">
+                        <button
+                          onClick={() => setDeleteTopicState({ isOpen: true, topic: { id: item.id, topic: item.topic } })}
+                          className="rounded px-3 py-1 text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30"
+                          aria-label={t('savedTopics.actions.deleteAria', { topic: item.topic })}
+                          title={t('savedTopics.actions.deleteTitle')}
+                        >{t('savedTopics.delete')}</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
       {editId != null && (
         <Dialog open onOpenChange={(open) => { if (!open) setEditId(null) }}>
           <DialogContent showCloseButton={false} className="max-w-md p-6">
@@ -365,6 +474,18 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
         onClose={() => setDeleteState({ isOpen: false, user: null })}
         variant="danger"
         isLoading={deleteLoading}
+      />
+
+      <ConfirmDialog
+        isOpen={deleteTopicState.isOpen}
+        title={t('savedTopics.actions.deleteTitle')}
+        description={t('savedTopics.deleteConfirm')}
+        confirmText={t('savedTopics.delete')}
+        cancelText={t('cancel')}
+        onConfirm={handleDeleteTopic}
+        onClose={() => setDeleteTopicState({ isOpen: false, topic: null })}
+        variant="danger"
+        isLoading={deleteTopicLoading}
       />
     </div>
   )

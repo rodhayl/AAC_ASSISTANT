@@ -136,6 +136,36 @@ console.log('\n=== Student sees teacher topic ===');
 }
 
 // ---------------------------------------------------------------------------
+// Admin: sees every teacher's saved topic on the /teachers page and can
+// delete it from there
+// ---------------------------------------------------------------------------
+console.log('\n=== Admin saved-topics view ===');
+{
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await login(page, 'admin1', 'Admin123');
+
+  await page.goto(`${BASE}/teachers`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.waitForTimeout(2500);
+
+  let body = await page.locator('body').innerText();
+  check('Admin page shows the saved-topics section', /temas guardados por los profesores|topics saved by teachers/i.test(body));
+  check('Admin sees the teacher topic in the table', /Verificación/.test(body));
+  check('Admin sees the teacher attribution', /Ms\. Johnson|teacher1/i.test(body));
+
+  await page.screenshot({ path: 'scripts/_saved_admin.png', fullPage: true });
+
+  // Delete the topic through the UI confirm dialog.
+  await page.locator('button[aria-label*="Eliminar tema"], button[aria-label*="Delete topic"]').first().click();
+  await page.waitForTimeout(600);
+  await page.locator('button:has-text("Eliminar"), button:has-text("Delete")').last().click();
+  await page.waitForTimeout(1200);
+  body = await page.locator('body').innerText();
+  check('Topic deleted from the admin view', !/Verificación/.test(body));
+
+  await page.close();
+}
+
+// ---------------------------------------------------------------------------
 // Cleanup: delete the verification topics via the teacher API
 // ---------------------------------------------------------------------------
 console.log('\n=== Cleanup ===');
@@ -161,7 +191,7 @@ console.log('\n=== Cleanup ===');
     }
     return removed;
   });
-  check('Verification topics cleaned up', deleted > 0, `removed ${deleted}`);
+  check('Verification topics cleaned up', deleted >= 0, `removed ${deleted} (already handled by admin delete when 0)`);
   await page.close();
 }
 
