@@ -19,6 +19,7 @@ from src.api.deps import (
     get_current_active_user,
     get_current_staff_user,
     get_db,
+    get_llm_provider,
     get_text,
     require_board_owner_or_admin,
     validate_board_position,
@@ -347,6 +348,118 @@ async def upload_symbol(
         index_symbol(db_symbol)
     except Exception as exc:
         logger.warning("Symbol image saved but indexing failed: {}", exc)
+    return db_symbol
+
+
+@router.post("/symbols/generate-svg", response_model=schemas.SymbolResponse)
+def generate_svg_symbol(
+    label: str = Form(...),
+    description: str = Form(None),
+    category: str = Form("general"),
+    keywords: str = Form(None),
+    language: str = Form("en"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_staff_user),
+):
+    """Generate a pictogram for a label the catalog does not contain.
+
+    The LLM emits a strict JSON *shape spec* (never raw SVG), which is
+    validated and rendered with drawsvg — so the only tags/attributes ever
+    written are ones we control. The rendered SVG is stored under the symbol
+    uploads directory and a normal symbol row is created.
+    """
+    language = normalize_language_code(language) or "en"
+    label = label.strip()
+    if not label:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(user=current_user, key="errors.validation"),
+        )
+
+    provider = get_llm_provider()
+    generate_sync = getattr(provider, "generate_sync", None)
+    if not callable(generate_sync):
+        raise HTTPException(status_code=503, detail="LLM provider has no sync generation")
+
+    from src.aac_app.services.svg_symbol_generator import (
+        ShapeSpecError,
+        build_shape_spec_prompt,
+        parse_spec_response,
+        render_spec_to_svg,
+    )
+
+    svg_text: str | None = None
+    for attempt in range(2):
+        try:
+            prompt = build_shape_spec_prompt(label, language)
+            if attempt > 0:
+                prompt += (
+                    "\nThe previous attempt returned malformed JSON. "
+                    "Respond with ONLY valid JSON: no markdown, no trailing "
+                    "commas, no comments, no prose."
+                )
+            response = generate_sync(
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=900,
+            )
+            spec = parse_spec_response(response)
+            svg_text = render_spec_to_svg(spec)
+            break
+        except ShapeSpecError as exc:
+            logger.warning(
+                "Generated SVG spec rejected for {!r} (attempt {}): {}",
+                label,
+                attempt + 1,
+                exc,
+            )
+        except Exception as exc:
+            logger.error(f"LLM SVG generation failed for {label!r}: {exc}")
+            raise HTTPException(
+                status_code=502, detail="Failed to generate symbol image"
+            ) from exc
+    if not svg_text:
+        raise HTTPException(
+            status_code=422,
+            detail="Model did not return a valid shape spec; try again",
+        )
+
+    uploads_dir = config.UPLOADS_DIR / "symbols"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    name = f"{uuid.uuid4().hex}.svg"
+    path = uploads_dir / name
+    try:
+        with path.open("w", encoding="utf-8") as f:
+            f.write(svg_text)
+    except OSError:
+        remove_owned_upload(f"/uploads/symbols/{name}", uploads_dir)
+        raise HTTPException(status_code=500, detail="Failed to store symbol image")
+
+    db_symbol = Symbol(
+        label=label,
+        description=description,
+        category=category,
+        image_path=f"/uploads/symbols/{name}",
+        audio_path=None,
+        keywords=keywords,
+        language=language,
+        is_builtin=False,
+    )
+    db.add(db_symbol)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        remove_owned_upload(f"/uploads/symbols/{name}", uploads_dir)
+        raise HTTPException(status_code=500, detail="Failed to create symbol")
+    try:
+        db.refresh(db_symbol)
+    except Exception as exc:
+        logger.warning("Generated symbol persisted but refresh failed: {}", exc)
+    try:
+        index_symbol(db_symbol)
+    except Exception as exc:
+        logger.warning("Generated symbol saved but indexing failed: {}", exc)
     return db_symbol
 
 
