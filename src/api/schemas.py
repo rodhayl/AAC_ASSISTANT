@@ -203,6 +203,26 @@ class LearningModeResponse(LearningModeBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+class SavedTopicCreate(BaseModel):
+    """Payload for saving a topic from the teacher/admin sidebar."""
+
+    board: str = Field("", max_length=100)
+    board_id: int | None = None
+    topic: str = Field(..., min_length=1, max_length=200)
+
+class SavedTopicResponse(BaseModel):
+    """A saved topic as exposed to teachers/admins (owners) and students."""
+
+    id: int
+    user_id: int
+    board: str
+    board_id: int | None = None
+    topic: str
+    created_by: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
 class LearningModePreviewRequest(BaseModel):
     """Preview the exact LLM system prompt a learning mode would produce."""
 

@@ -1,34 +1,114 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { addTopic, loadTopicsForUser, removeTopic } from '../src/lib/learningTopics';
-import type { SavedTopic } from '../src/lib/learningTopics';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  addTopic,
+  loadTopicsForUser,
+  migrateLocalTopicsToBackend,
+  removeTopic,
+} from '../src/lib/learningTopics';
+import api from '../src/lib/api';
+
+vi.mock('../src/lib/api', () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+    delete: vi.fn(),
+  },
+}));
+
+const apiMock = api as unknown as {
+  get: ReturnType<typeof vi.fn>;
+  post: ReturnType<typeof vi.fn>;
+  delete: ReturnType<typeof vi.fn>;
+};
 
 const userId = 123;
 
-describe('learningTopics storage', () => {
+describe('learningTopics backend store', () => {
   beforeEach(() => {
     localStorage.clear();
+    vi.clearAllMocks();
   });
 
-  it('saves and loads topics per user', () => {
-    const topic: SavedTopic = { id: 1, board: 'Board A', topic: 'Greetings', createdBy: 'Teacher' };
-    addTopic(userId, topic);
-    const loaded = loadTopicsForUser(userId);
-    expect(loaded).toHaveLength(1);
-    expect(loaded[0].topic).toBe('Greetings');
+  it('loads topics from the backend', async () => {
+    apiMock.get.mockResolvedValue({
+      data: [
+        { id: 1, board: 'Board A', board_id: 7, topic: 'Greetings', created_by: 'Teacher' },
+        { id: 2, board: 'Board B', topic: 'Colors', created_by: 'Teacher' },
+      ],
+    });
+
+    const loaded = await loadTopicsForUser(userId);
+    expect(loaded).toEqual([
+      { id: 1, board: 'Board A', boardId: 7, topic: 'Greetings', createdBy: 'Teacher' },
+      { id: 2, board: 'Board B', topic: 'Colors', createdBy: 'Teacher' },
+    ]);
+    expect(apiMock.get).toHaveBeenCalledWith('/learning/topics/saved');
   });
 
-  it('does not leak topics across users', () => {
-    addTopic(userId, { id: 1, board: 'Board A', topic: 'Greetings', createdBy: 'Teacher' });
-    addTopic(999, { id: 2, board: 'Board B', topic: 'Colors', createdBy: 'Teacher' });
-    expect(loadTopicsForUser(userId)).toHaveLength(1);
-    expect(loadTopicsForUser(999)).toHaveLength(1);
-    expect(loadTopicsForUser(userId)[0].topic).toBe('Greetings');
+  it('returns an empty list when the backend has no topics', async () => {
+    apiMock.get.mockResolvedValue({ data: [] });
+    expect(await loadTopicsForUser(userId)).toEqual([]);
   });
 
-  it('removes a topic', () => {
-    addTopic(userId, { id: 1, board: 'Board A', topic: 'Greetings', createdBy: 'Teacher' });
-    const after = removeTopic(userId, 1);
-    expect(after).toHaveLength(0);
-    expect(loadTopicsForUser(userId)).toHaveLength(0);
+  it('adds a topic through the backend', async () => {
+    apiMock.post.mockResolvedValue({
+      data: { id: 10, board: 'Board A', topic: 'Greetings', created_by: 'Teacher' },
+    });
+
+    const created = await addTopic(userId, { board: 'Board A', topic: 'Greetings' });
+    expect(created).toEqual({ id: 10, board: 'Board A', topic: 'Greetings', createdBy: 'Teacher' });
+    expect(apiMock.post).toHaveBeenCalledWith('/learning/topics/saved', {
+      board: 'Board A',
+      board_id: null,
+      topic: 'Greetings',
+    });
+  });
+
+  it('removes a topic through the backend', async () => {
+    apiMock.delete.mockResolvedValue({});
+    await removeTopic(userId, 42);
+    expect(apiMock.delete).toHaveBeenCalledWith('/learning/topics/saved/42');
+  });
+
+  it('migrates legacy localStorage topics into the backend once', async () => {
+    localStorage.setItem(
+      `learning-topics-${userId}`,
+      JSON.stringify([
+        { id: 1, board: 'Board A', topic: 'Greetings', createdBy: 'Teacher' },
+        { id: 2, board: 'Board B', boardId: 3, topic: 'Colors', createdBy: 'Teacher' },
+      ]),
+    );
+    apiMock.post.mockResolvedValue({});
+
+    await migrateLocalTopicsToBackend(userId);
+
+    expect(apiMock.post).toHaveBeenCalledTimes(2);
+    expect(apiMock.post).toHaveBeenNthCalledWith(1, '/learning/topics/saved', {
+      board: 'Board A',
+      board_id: null,
+      topic: 'Greetings',
+    });
+    expect(apiMock.post).toHaveBeenNthCalledWith(2, '/learning/topics/saved', {
+      board: 'Board B',
+      board_id: 3,
+      topic: 'Colors',
+    });
+    expect(localStorage.getItem(`learning-topics-${userId}`)).toBeNull();
+  });
+
+  it('keeps local topics when the migration upload fails', async () => {
+    localStorage.setItem(
+      `learning-topics-${userId}`,
+      JSON.stringify([{ id: 1, board: 'Board A', topic: 'Greetings', createdBy: 'Teacher' }]),
+    );
+    apiMock.post.mockRejectedValue(new Error('offline'));
+
+    await migrateLocalTopicsToBackend(userId);
+    expect(localStorage.getItem(`learning-topics-${userId}`)).not.toBeNull();
+  });
+
+  it('skips migration when there is no legacy data', async () => {
+    await migrateLocalTopicsToBackend(userId);
+    expect(apiMock.post).not.toHaveBeenCalled();
   });
 });

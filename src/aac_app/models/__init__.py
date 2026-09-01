@@ -17,6 +17,7 @@ from .learning import (
     LearningPlan,
     LearningSession,
     LearningTask,
+    SavedTopic,
     UserProgress,
 )
 from .notification import Notification
@@ -42,6 +43,7 @@ __all__ = [
     "LearningSession",
     "LearningTask",
     "Notification",
+    "SavedTopic",
     "StudentTeacher",
     "Symbol",
     "SymbolUsageLog",

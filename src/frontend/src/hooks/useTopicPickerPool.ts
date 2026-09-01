@@ -45,8 +45,20 @@ export function useTopicPickerPool() {
 
   useEffect(() => {
     if (!user?.id) return;
-    setSavedTopics(loadTopicsForUser(user.id));
-  }, [user?.id]);
+    let cancelled = false;
+    const canManage = user.user_type === 'teacher' || user.user_type === 'admin';
+    void loadTopicsForUser(user.id, canManage)
+      .then((topics) => {
+        if (!cancelled) setSavedTopics(topics);
+      })
+      .catch(() => {
+        // The picker falls back to an empty saved list; never block on it.
+        if (!cancelled) setSavedTopics([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.user_type]);
 
   const fetchTopicPool = useCallback(async () => {
     if (!user?.id) return;

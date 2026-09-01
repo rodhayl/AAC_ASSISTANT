@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
@@ -54,21 +54,43 @@ export function BoardsAndTopicsSidebar({
         return Array.from(uniqueBoards.values());
     }, [assignedBoards, boards]);
 
-    const [topicsRevision, setTopicsRevision] = useState(0);
     const [selectedBoardId, setSelectedBoardId] = useState<string>('');
     const [topicMode, setTopicMode] = useState<'common' | 'custom'>('common');
     const [customTopic, setCustomTopic] = useState('');
     const [customPurpose, setCustomPurpose] = useState('');
+    const [savedTopics, setSavedTopics] = useState<SavedTopic[]>([]);
 
     const userId = user?.id ?? null;
     const canManageTopics = useMemo(() => user?.user_type === 'teacher' || user?.user_type === 'admin', [user?.user_type]);
-    const savedTopics = useMemo<SavedTopic[]>(() => {
-        // Recompute when topicsRevision changes after add/remove actions.
-        void topicsRevision;
-        return userId ? loadTopicsForUser(userId) : [];
-    }, [userId, topicsRevision]);
 
-    const addSavedTopic = () => {
+    const loadSavedTopics = useCallback(async () => {
+        if (!userId) return;
+        try {
+            const topics = await loadTopicsForUser(userId, canManageTopics);
+            setSavedTopics(topics);
+        } catch {
+            setSavedTopics([]);
+        }
+    }, [userId, canManageTopics]);
+
+    useEffect(() => {
+        if (!userId) return;
+        let cancelled = false;
+        // Teachers/admins trigger the one-time localStorage migration; students
+        // read the topics their roster teachers saved (server-side).
+        void loadTopicsForUser(userId, canManageTopics)
+            .then((topics) => {
+                if (!cancelled) setSavedTopics(topics);
+            })
+            .catch(() => {
+                if (!cancelled) setSavedTopics([]);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [userId, canManageTopics]);
+
+    const addSavedTopic = async () => {
         let topicName = customTopic.trim();
         if (topicMode === 'common' && customTopic) {
             topicName = t(`topics.${customTopic}`);
@@ -88,25 +110,31 @@ export function BoardsAndTopicsSidebar({
             }
         }
 
-        const topic: SavedTopic = {
-            id: Date.now(),
-            board: boardName,
-            ...(boardId !== undefined ? { boardId } : {}),
-            topic: topicName,
-            createdBy: user?.display_name || user?.username || t('teacherDefault'),
-        };
-        addTopicHelper(user.id, topic);
-        setTopicsRevision((value) => value + 1);
+        try {
+            await addTopicHelper(user.id, {
+                board: boardName,
+                ...(boardId !== undefined ? { boardId } : {}),
+                topic: topicName,
+            });
+            await loadSavedTopics();
+        } catch {
+            // Keep the form intact so the teacher can retry.
+            return;
+        }
         setCustomTopic('');
         setCustomPurpose('');
         setTopicMode('common');
         setSelectedBoardId('');
     };
 
-    const removeSavedTopic = (id: number) => {
+    const removeSavedTopic = async (id: number) => {
         if (!user?.id) return;
-        removeTopicHelper(user.id, id);
-        setTopicsRevision((value) => value + 1);
+        try {
+            await removeTopicHelper(user.id, id);
+            await loadSavedTopics();
+        } catch {
+            // Deletion failure leaves the list untouched.
+        }
     };
 
     const handleStart = (savedTopic: SavedTopic) => {

@@ -95,7 +95,8 @@
     "noSymbolsProvided": "No symbols provided",
     "submitAnswerFailed": "Could not submit the answer.",
     "submitVoiceAnswerFailed": "Could not submit the voice answer.",
-    "submitSymbolAnswerFailed": "Could not submit the symbol answer."
+    "submitSymbolAnswerFailed": "Could not submit the symbol answer.",
+    "topicNotFound": "Topic not found"
   },
   "feedback": {
     "goodTry": "Good try! Keep practicing and you will improve."

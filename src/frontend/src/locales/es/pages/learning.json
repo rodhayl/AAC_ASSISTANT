@@ -95,7 +95,8 @@
     "noSymbolsProvided": "No se proporcionaron símbolos",
     "submitAnswerFailed": "No se pudo enviar la respuesta.",
     "submitVoiceAnswerFailed": "No se pudo enviar la respuesta de voz.",
-    "submitSymbolAnswerFailed": "No se pudo enviar la respuesta con símbolos."
+    "submitSymbolAnswerFailed": "No se pudo enviar la respuesta con símbolos.",
+    "topicNotFound": "Tema no encontrado"
   },
   "feedback": {
     "goodTry": "¡Buen intento! Sigue practicando y mejorarás."

@@ -5,7 +5,7 @@ import os
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import LearningMode, User, UserSettings
+from src.aac_app.models import LearningMode, SavedTopic, StudentTeacher, User, UserSettings
 from src.aac_app.services.learning.service import LearningCompanionService
 from src.api import schemas
 from src.api.deps import (
@@ -169,6 +169,81 @@ def get_learning_topics(
         )
 
     return result
+
+
+@router.get("/topics/saved", response_model=list[schemas.SavedTopicResponse])
+def list_saved_topics(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Return the saved topics visible to the current user.
+
+    Teachers/admins see their own topics; students see the topics their
+    roster teachers saved (so they follow the student to any device).
+    """
+    if current_user.user_type in ("teacher", "admin"):
+        query = db.query(SavedTopic).filter(SavedTopic.user_id == current_user.id)
+    else:
+        teacher_ids = [
+            row.teacher_id
+            for row in db.query(StudentTeacher).filter(
+                StudentTeacher.student_id == current_user.id
+            )
+        ]
+        if not teacher_ids:
+            return []
+        query = db.query(SavedTopic).filter(SavedTopic.user_id.in_(teacher_ids))
+    return query.order_by(SavedTopic.created_at.desc(), SavedTopic.id.desc()).all()
+
+
+@router.post(
+    "/topics/saved",
+    response_model=schemas.SavedTopicResponse,
+    status_code=201,
+)
+def create_saved_topic(
+    payload: schemas.SavedTopicCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Save a topic (teacher/admin only; students consume, never create)."""
+    if current_user.user_type not in ("teacher", "admin"):
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(current_user, "errors.unauthorized"),
+        )
+
+    topic = SavedTopic(
+        user_id=current_user.id,
+        board=payload.board.strip()[:100],
+        board_id=payload.board_id,
+        topic=payload.topic.strip()[:200],
+        created_by=current_user.display_name or current_user.username,
+    )
+    db.add(topic)
+    db.commit()
+    db.refresh(topic)
+    return topic
+
+
+@router.delete("/topics/saved/{topic_id}", status_code=204)
+def delete_saved_topic(
+    topic_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a saved topic (owner, or admin for any topic)."""
+    topic = db.query(SavedTopic).filter(SavedTopic.id == topic_id).first()
+    if topic is None:
+        raise HTTPException(status_code=404, detail=get_text(current_user, "errors.topicNotFound"))
+    if topic.user_id != current_user.id and current_user.user_type != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(current_user, "errors.unauthorized"),
+        )
+    db.delete(topic)
+    db.commit()
+    return None
 
 
 @router.post("/{session_id}/report")
