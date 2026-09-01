@@ -188,6 +188,13 @@ console.log('\n=== Student sees teacher topics ===');
     /guardado por|saved by/i.test(body),
   );
 
+  // With two teachers, the picker groups cards under per-teacher headings
+  // and keeps the common topic cards in their own grid above.
+  const groupCount = await page.locator('[data-testid^="topic-group-"]').count();
+  check('Picker groups saved cards by teacher', groupCount >= 2, `found ${groupCount} groups`);
+  const commonCard = await page.locator('[data-testid="topic-card-general"]').count();
+  check('Common topics stay in their own grid', commonCard > 0, `found ${commonCard}`);
+
   // The sidebar list must carry the same attribution when it mixes teachers.
   // It may already be open; only try to expand when the topic rows are hidden.
   const sidebarListVisible = await page.locator('button[title*="Colapsar"], button[title*="Collapse"], #comp-topic-select').count();

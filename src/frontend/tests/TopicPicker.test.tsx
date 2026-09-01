@@ -147,6 +147,56 @@ describe('TopicPicker', () => {
     expect(screen.getByText('Saved by Ms. Johnson')).toBeInTheDocument();
   });
 
+  it('groups saved cards under per-teacher headings when teachers are mixed', () => {
+    const common = makeTopic({ key: 'general', label: 'General', topic: 'general', savedBy: undefined });
+    const msTopics = [
+      makeTopic({ key: 'saved-1', label: 'Astronomía', topic: 'Astronomía', savedBy: 'Ms. Johnson' }),
+      makeTopic({ key: 'saved-2', label: 'Cocina', topic: 'Cocina', savedBy: 'Ms. Johnson' }),
+    ];
+    const mrTopics = [
+      makeTopic({ key: 'saved-3', label: 'Fútbol', topic: 'Fútbol', savedBy: 'Mr. García' }),
+    ];
+    render(
+      <TopicPicker
+        topics={[common, ...msTopics, ...mrTopics]}
+        recent={[]}
+        isStartingSession={false}
+        onSelect={vi.fn()}
+        onContinueRecent={vi.fn()}
+      />,
+    );
+
+    // Common topics stay in the unlabeled grid.
+    expect(screen.getByTestId('topic-card-general')).toBeInTheDocument();
+    // Per-teacher sections exist and carry the attribution as the heading.
+    expect(screen.getByText('Saved by Ms. Johnson')).toBeInTheDocument();
+    expect(screen.getByText('Saved by Mr. García')).toBeInTheDocument();
+    // Cards inside the groups do not repeat the inline label.
+    expect(screen.queryByText('Saved by Ms. Johnson', { selector: 'span' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('topic-card-saved-1')).toBeInTheDocument();
+    expect(screen.getByTestId('topic-card-saved-3')).toBeInTheDocument();
+  });
+
+  it('stays flat when only one teacher saved topics', () => {
+    const msTopics = [
+      makeTopic({ key: 'saved-1', label: 'Astronomía', topic: 'Astronomía', savedBy: 'Ms. Johnson' }),
+      makeTopic({ key: 'saved-2', label: 'Cocina', topic: 'Cocina', savedBy: 'Ms. Johnson' }),
+    ];
+    render(
+      <TopicPicker
+        topics={msTopics}
+        recent={[]}
+        isStartingSession={false}
+        onSelect={vi.fn()}
+        onContinueRecent={vi.fn()}
+      />,
+    );
+
+    // No grouping heading; the flat layout keeps the inline label on each card.
+    expect(screen.queryByText('Saved by Ms. Johnson', { selector: 'h3' })).not.toBeInTheDocument();
+    expect(screen.getAllByText('Saved by Ms. Johnson').length).toBe(2);
+  });
+
   it('omits the saved-by label when not provided (single teacher)', () => {
     const savedTopic = makeTopic({ key: 'saved-1', label: 'Astronomía', topic: 'Astronomía' });
     render(
