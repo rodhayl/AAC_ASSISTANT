@@ -1,16 +1,6 @@
 import { useMemo } from 'react';
+import { AVATAR_BG_COLORS } from '../../lib/avatarPalette';
 import { cn } from '../../lib/utils';
-
-const AVATAR_COLORS = [
-  'bg-indigo-500',
-  'bg-sky-500',
-  'bg-emerald-500',
-  'bg-amber-500',
-  'bg-rose-500',
-  'bg-violet-500',
-  'bg-teal-500',
-  'bg-orange-500',
-];
 
 function hashName(name: string): number {
   let hash = 0;
@@ -41,7 +31,7 @@ export function TeacherAvatar({
   className?: string;
 }) {
   const color = useMemo(
-    () => AVATAR_COLORS[hashName(name) % AVATAR_COLORS.length],
+    () => AVATAR_BG_COLORS[hashName(name) % AVATAR_BG_COLORS.length],
     [name],
   );
   return (
