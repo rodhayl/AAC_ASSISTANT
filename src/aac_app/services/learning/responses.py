@@ -438,7 +438,10 @@ class ResponseProcessingMixin:
                 )
 
                 # Output gate: never persist a feedback/answer that trips the
-                # deterministic filter, whatever the LLM produced.
+                # deterministic filter, whatever the LLM produced. One
+                # constrained retry asks the model for a safe rewrite; only if
+                # that is still blocked (or the retry fails) do we fall back
+                # to the friendly deflection.
                 output_verdict = check_text(policy, feedback_message)
                 if output_verdict.blocked:
                     log_event(
@@ -450,9 +453,39 @@ class ResponseProcessingMixin:
                         detail=feedback_message[:300],
                         db=db,
                     )
-                    feedback_message = translation_service.get(
-                        user_lang, "pages/learning", "safetyRedirect"
-                    )
+                    try:
+                        retry_raw = await self.llm.generate(
+                            prompt=(
+                                "The previous message was flagged as "
+                                "inappropriate for a child. Rewrite it to be "
+                                "kind, neutral and age-appropriate in 1-2 "
+                                f"sentences. {self._lang_instruction(user_lang)}\n"
+                                f"Message: {feedback_message[:500]}"
+                            ),
+                            temperature=0.3,
+                            max_tokens=self.default_max_tokens,
+                        )
+                        retry_data = extract_json_object(retry_raw)
+                        retry_text = (
+                            (retry_data or {}).get("response", "").strip()
+                            if isinstance(retry_data, dict)
+                            else ""
+                        )
+                        if retry_text and check_text(policy, retry_text).allowed:
+                            feedback_message = retry_text
+                        else:
+                            feedback_message = translation_service.get(
+                                user_lang, "pages/learning", "safetyRedirect"
+                            )
+                    except Exception as retry_exc:
+                        logger.warning(
+                            "Constrained retry failed for user {}: {}",
+                            session.user_id,
+                            retry_exc,
+                        )
+                        feedback_message = translation_service.get(
+                            user_lang, "pages/learning", "safetyRedirect"
+                        )
                 else:
                     # Layer 2 (strict only): LLM moderation sentinel on the
                     # generated output, cost-capped and paced. Never blocks a

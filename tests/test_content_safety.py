@@ -731,6 +731,10 @@ def test_learning_response_replaces_blocked_output(
     from src.aac_app.services.learning.service import LearningCompanionService
 
     async def generate(**kwargs):
+        prompt = kwargs.get("prompt", "")
+        if "inappropriate for a child" in prompt:
+            # Constrained retry produces a safe rewrite.
+            return '{"response": "Vamos a hablar de algo divertido"}'
         return '{"response": "Esto es una mierda, claro que sí"}'
 
     mock_llm_provider.generate = AsyncMock(side_effect=generate)
@@ -766,7 +770,8 @@ def test_learning_response_replaces_blocked_output(
     )
     assert result["success"] is True
     assert "mierda" not in result["feedback_message"]
-    assert "otra cosa" in result["feedback_message"]  # Spanish deflection
+    # The constrained retry rewrite is kept (not the raw deflection).
+    assert "divertido" in result["feedback_message"]
     event = (
         test_db_session.query(ContentSafetyEvent)
         .filter(ContentSafetyEvent.user_id == regular_user.id)
