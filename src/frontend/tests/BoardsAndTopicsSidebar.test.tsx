@@ -104,8 +104,14 @@ describe('BoardsAndTopicsSidebar saved-by attribution', () => {
     // Group containers exist per teacher, with the topic count in the heading.
     expect(screen.getByTestId('sidebar-topic-group-Ms. Johnson')).toBeInTheDocument();
     expect(screen.getByTestId('sidebar-topic-group-Mr. García')).toBeInTheDocument();
-    // One topic per teacher, so the count badge appears in both headings.
-    expect(screen.getAllByText('1 topics')).toHaveLength(2);
+    // One topic per teacher, so a number-only count pill appears in both
+    // headings (full text as the tooltip).
+    const msHeading = screen.getByTestId('sidebar-topic-group-Ms. Johnson').querySelector('h4')!;
+    const mrHeading = screen.getByTestId('sidebar-topic-group-Mr. García').querySelector('h4')!;
+    expect(msHeading.textContent).toContain('1');
+    expect(msHeading.querySelector('span[title]')?.getAttribute('title')).toBe('1 topics');
+    expect(mrHeading.textContent).toContain('1');
+    expect(mrHeading.querySelector('span[title]')?.getAttribute('title')).toBe('1 topics');
   });
 
   it('stays flat without labels when only one teacher saved topics', async () => {

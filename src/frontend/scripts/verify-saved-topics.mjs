@@ -198,9 +198,10 @@ console.log('\n=== Student sees teacher topics ===');
   // Each group heading carries the teacher's avatar initials.
   const avatarCount = await page.locator('[data-testid^="topic-group-"] h3 span[aria-hidden="true"]').count();
   check('Group headings show teacher avatars', avatarCount >= 2, `found ${avatarCount} avatars`);
-  // And a topic-count badge (e.g. "1 temas" / "1 topics").
-  const countBadges = await page.locator('[data-testid^="topic-group-"] h3 span:has-text("temas"), [data-testid^="topic-group-"] h3 span:has-text("topics")').count();
-  check('Group headings show topic counts', countBadges >= 2, `found ${countBadges} count badges`);
+  // And a number-only topic-count pill per group (e.g. "2"), whose tooltip
+  // carries the full text.
+  const countBadges = await page.locator('[data-testid^="topic-group-"] h3 span[title*="temas"], [data-testid^="topic-group-"] h3 span[title*="topics"]').count();
+  check('Group headings show topic-count pills', countBadges >= 2, `found ${countBadges} pills`);
 
   // The sidebar list must carry the same attribution when it mixes teachers.
   // It may already be open; only try to expand when the topic rows are hidden.

@@ -255,8 +255,11 @@ export function BoardsAndTopicsSidebar({
                                     <h4 className="flex items-center gap-1.5 px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                                         <TeacherAvatar name={group.teacher} className="h-4 w-4" />
                                         {t('topicPicker.savedBy', { teacher: group.teacher })}
-                                        <span className="rounded-full bg-surface px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                            {t('topicPicker.topicCount', { count: group.topics.length })}
+                                        <span
+                                            className="rounded-full bg-surface px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                                            title={t('topicPicker.topicCount', { count: group.topics.length })}
+                                        >
+                                            {group.topics.length}
                                         </span>
                                     </h4>
                                     <div className="space-y-2">

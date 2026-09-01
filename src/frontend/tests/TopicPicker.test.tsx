@@ -169,11 +169,16 @@ describe('TopicPicker', () => {
     // Common topics stay in the unlabeled grid.
     expect(screen.getByTestId('topic-card-general')).toBeInTheDocument();
     // Per-teacher sections exist and carry the attribution as the heading,
-    // with the per-teacher topic count.
+    // with the per-teacher topic count in a number-only pill (full text as
+    // the tooltip).
     expect(screen.getByText('Saved by Ms. Johnson')).toBeInTheDocument();
     expect(screen.getByText('Saved by Mr. García')).toBeInTheDocument();
-    expect(screen.getByText('2 topics')).toBeInTheDocument();
-    expect(screen.getByText('1 topics')).toBeInTheDocument();
+    const msHeading = screen.getByTestId('topic-group-Ms. Johnson').querySelector('h3')!;
+    const mrHeading = screen.getByTestId('topic-group-Mr. García').querySelector('h3')!;
+    expect(msHeading.textContent).toContain('2');
+    expect(msHeading.querySelector('span[title]')?.getAttribute('title')).toBe('2 topics');
+    expect(mrHeading.textContent).toContain('1');
+    expect(mrHeading.querySelector('span[title]')?.getAttribute('title')).toBe('1 topics');
     // Cards inside the groups do not repeat the inline label.
     expect(screen.queryByText('Saved by Ms. Johnson', { selector: 'span' })).not.toBeInTheDocument();
     expect(screen.getByTestId('topic-card-saved-1')).toBeInTheDocument();
