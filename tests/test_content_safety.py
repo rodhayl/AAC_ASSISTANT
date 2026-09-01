@@ -542,6 +542,73 @@ def test_system_prompt_merges_teacher_terms_into_global(
 # --- prediction integration ------------------------------------------------
 
 
+def test_session_start_blocks_forbidden_topic(
+    test_db_session, regular_user, monkeypatch
+):
+    """A session on a topic the student's policy forbids never starts."""
+    from src.aac_app.services.learning.service import LearningCompanionService
+
+    test_db_session.add(
+        GuardianProfile(
+            user_id=regular_user.id,
+            template_name="default",
+            safety_constraints={"forbidden_topics": ["astronomía"]},
+            is_active=True,
+            created_by=regular_user.id,
+        )
+    )
+    test_db_session.commit()
+    service = LearningCompanionService(Mock(), Mock())
+
+    result = service.start_learning_session(
+        user_id=regular_user.id,
+        topic="astronomía para niños",
+        db=test_db_session,
+    )
+    assert result["success"] is False
+    assert result.get("safety_blocked") is True
+    event = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.user_id == regular_user.id)
+        .first()
+    )
+    assert event is not None and event.surface == "topic" and event.verdict == "blocked"
+
+
+def test_session_start_honors_custom_topic_lock(
+    test_db_session, regular_user
+):
+    """The teacher/admin feature lock on custom topics blocks session start."""
+    from src.aac_app.services.learning.service import LearningCompanionService
+
+    test_db_session.add(
+        GuardianProfile(
+            user_id=regular_user.id,
+            template_name="default",
+            safety_constraints={"block_custom_topics": True},
+            is_active=True,
+            created_by=regular_user.id,
+        )
+    )
+    test_db_session.commit()
+    service = LearningCompanionService(Mock(), Mock())
+
+    result = service.start_learning_session(
+        user_id=regular_user.id,
+        topic="los animales",
+        db=test_db_session,
+    )
+    assert result["success"] is False
+    assert result.get("safety_blocked") is True
+    event = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.user_id == regular_user.id)
+        .first()
+    )
+    assert event is not None
+    assert "block_custom_topics" in (event.detail or "")
+
+
 def test_predict_next_drops_blocked_topic(
     test_db_session, regular_user, monkeypatch
 ):
