@@ -96,6 +96,24 @@ describe('learningTopics backend store', () => {
     expect(localStorage.getItem(`learning-topics-${userId}`)).toBeNull();
   });
 
+  it('migrates once when called concurrently (sidebar + pool mount together)', async () => {
+    localStorage.setItem(
+      `learning-topics-${userId}`,
+      JSON.stringify([{ id: 1, board: 'Board A', topic: 'Greetings', createdBy: 'Teacher' }]),
+    );
+    apiMock.post.mockResolvedValue({});
+
+    // Two surfaces (BoardsAndTopicsSidebar + useTopicPickerPool) both run the
+    // migration on mount; the second must wait and find nothing left.
+    await Promise.all([
+      migrateLocalTopicsToBackend(userId),
+      migrateLocalTopicsToBackend(userId),
+    ]);
+
+    expect(apiMock.post).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem(`learning-topics-${userId}`)).toBeNull();
+  });
+
   it('keeps local topics when the migration upload fails', async () => {
     localStorage.setItem(
       `learning-topics-${userId}`,

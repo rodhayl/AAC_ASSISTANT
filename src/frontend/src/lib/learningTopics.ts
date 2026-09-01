@@ -33,12 +33,27 @@ function loadLocalTopics(userId: number): SavedTopic[] {
   return [];
 }
 
+// The Learning page mounts both the sidebar and the topic-picker pool, and
+// each triggers the migration on mount. Serialize them through a single
+// in-flight promise so the second caller waits for the first to finish (and
+// find the localStorage key already gone) instead of double-posting.
+let migrationInFlight: Promise<void> | null = null;
+
 /**
  * One-time migration: push topics still sitting in legacy localStorage into
  * the backend, then clear the local copy. Only call for users who can
  * create topics (teacher/admin) — the endpoint rejects students.
  */
-export async function migrateLocalTopicsToBackend(userId: number): Promise<void> {
+export function migrateLocalTopicsToBackend(userId: number): Promise<void> {
+  if (!migrationInFlight) {
+    migrationInFlight = doMigrateLocalTopics(userId).finally(() => {
+      migrationInFlight = null;
+    });
+  }
+  return migrationInFlight;
+}
+
+async function doMigrateLocalTopics(userId: number): Promise<void> {
   const local = loadLocalTopics(userId);
   if (local.length === 0) return;
   try {
