@@ -22,7 +22,6 @@ from __future__ import annotations
 import os
 import threading
 import time
-import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -104,22 +103,18 @@ def _has_catalog_symbol(label: str) -> bool:
 
 
 def _persist_generated_symbol(label: str, language: str, svg_text: str) -> None:
-    """Write the SVG file, create the Symbol row, and index it."""
+    """Write the image file (PNG when rasterization works, else SVG), create
+    the Symbol row, and index it."""
     from src.aac_app.db import get_session
     from src.aac_app.models import Symbol
+    from src.aac_app.services.svg_symbol_generator import (
+        write_generated_symbol_image,
+    )
     from src.aac_app.services.vector_utils import index_symbol
 
     uploads_dir = config.UPLOADS_DIR / "symbols"
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-    name = f"{uuid.uuid4().hex}.svg"
-    public_path = f"/uploads/symbols/{name}"
-    path = uploads_dir / name
-    try:
-        with path.open("w", encoding="utf-8") as f:
-            f.write(svg_text)
-    except OSError:
-        path.unlink(missing_ok=True)
-        raise
+    public_path = write_generated_symbol_image(svg_text, uploads_dir)
+    path = uploads_dir / public_path.rsplit("/", 1)[1]
 
     symbol: Symbol | None = None
     commit_ok = False

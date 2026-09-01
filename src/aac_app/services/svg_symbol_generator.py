@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from collections.abc import Callable
 from typing import Any
 
@@ -404,3 +405,50 @@ def generate_svg_text(
     if not svg_text:
         raise ShapeSpecError(f"model did not return a valid shape spec for {label!r}")
     return svg_text
+
+
+def rasterize_svg_text(svg_text: str, size: int | None = None) -> bytes | None:
+    """Render an SVG string to PNG bytes via resvg, or None when unavailable.
+
+    resvg-py is a pure-wheel Rust binding with no system cairo dependency. A
+    `None` return (missing package, invalid SVG) lets callers fall back to
+    storing the SVG itself, so a renderer problem never blocks generation.
+    """
+    if not isinstance(svg_text, str) or not svg_text.strip():
+        return None
+    try:
+        import resvg_py
+    except ImportError:
+        return None
+    try:
+        kwargs: dict = {"svg_string": svg_text}
+        if size is not None:
+            kwargs["width"] = size
+            kwargs["height"] = size
+        data = resvg_py.svg_to_bytes(**kwargs)
+        return bytes(data) if data else None
+    except Exception as exc:
+        logger.warning("SVG rasterization failed: {}", exc)
+        return None
+
+
+def write_generated_symbol_image(
+    svg_text: str, uploads_dir, size: int = 512
+) -> str:
+    """Persist a generated pictogram, preferring PNG like other uploads.
+
+    Writes ``<uploads_dir>/<uuid>.png`` when resvg is available and the
+    rasterization succeeds; otherwise falls back to ``<uuid>.svg`` so the
+    pictogram still works without the renderer. Returns the public path
+    (``/uploads/symbols/<name>``) the Symbol row should store.
+    """
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    name = f"{uuid.uuid4().hex}.png"
+    data = rasterize_svg_text(svg_text, size=size)
+    if data is None:
+        name = f"{uuid.uuid4().hex}.svg"
+        data = svg_text.encode("utf-8")
+    path = uploads_dir / name
+    with path.open("wb") as f:
+        f.write(data)
+    return f"/uploads/symbols/{name}"

@@ -400,22 +400,22 @@ def generate_svg_symbol(
             status_code=502, detail="Failed to generate symbol image"
         ) from exc
 
-    uploads_dir = config.UPLOADS_DIR / "symbols"
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-    name = f"{uuid.uuid4().hex}.svg"
-    path = uploads_dir / name
     try:
-        with path.open("w", encoding="utf-8") as f:
-            f.write(svg_text)
+        from src.aac_app.services.svg_symbol_generator import (
+            write_generated_symbol_image,
+        )
+
+        public_path = write_generated_symbol_image(svg_text, config.UPLOADS_DIR / "symbols")
     except OSError:
-        remove_owned_upload(f"/uploads/symbols/{name}", uploads_dir)
         raise HTTPException(status_code=500, detail="Failed to store symbol image")
+
+    uploads_dir = config.UPLOADS_DIR / "symbols"
 
     db_symbol = Symbol(
         label=label,
         description=description,
         category=category,
-        image_path=f"/uploads/symbols/{name}",
+        image_path=public_path,
         audio_path=None,
         keywords=keywords,
         language=language,
@@ -426,7 +426,7 @@ def generate_svg_symbol(
         db.commit()
     except Exception:
         db.rollback()
-        remove_owned_upload(f"/uploads/symbols/{name}", uploads_dir)
+        remove_owned_upload(public_path, uploads_dir)
         raise HTTPException(status_code=500, detail="Failed to create symbol")
     try:
         db.refresh(db_symbol)

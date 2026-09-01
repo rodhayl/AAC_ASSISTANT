@@ -24,6 +24,7 @@ dependencies = [
     "bcrypt==5.0.0",
     "websockets==17.0.1",
     "drawsvg>=2.4,<3",
+    "resvg-py>=0.5.0",
 ]
 
 [project.optional-dependencies]

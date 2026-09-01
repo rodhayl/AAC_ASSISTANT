@@ -1,14 +1,18 @@
 """Unit tests for LLM-driven SVG symbol generation (Path 2)."""
 
 
+from unittest.mock import patch
+
 import pytest
 
 from src.aac_app.services.svg_symbol_generator import (
     ShapeSpecError,
     build_shape_spec_prompt,
     parse_spec_response,
+    rasterize_svg_text,
     render_spec_to_svg,
     validate_shape_spec,
+    write_generated_symbol_image,
 )
 
 # --- spec validation ------------------------------------------------------
@@ -123,6 +127,73 @@ def test_build_shape_spec_prompt_constrains_output():
     assert "Spanish" in es_prompt
 
 
+# --- rasterization -------------------------------------------------------
+
+
+def test_rasterize_svg_text_returns_valid_png():
+    svg = render_spec_to_svg(
+        validate_shape_spec(
+            {
+                "background": "#ffffff",
+                "shapes": [
+                    {"kind": "circle", "cx": 0, "cy": 0, "r": 60, "fill": "#FFD166"},
+                ],
+            }
+        )
+    )
+    png = rasterize_svg_text(svg, size=256)
+    assert png is not None
+    assert png.startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_rasterize_svg_text_returns_none_without_resvg():
+    with patch.dict("sys.modules", {"resvg_py": None}):
+        assert rasterize_svg_text("<svg></svg>") is None
+    assert rasterize_svg_text("") is None
+    assert rasterize_svg_text("not valid svg at all") is None
+
+
+def test_write_generated_symbol_image_prefers_png(tmp_path):
+    svg = render_spec_to_svg(
+        validate_shape_spec(
+            {
+                "background": "#ffffff",
+                "shapes": [
+                    {"kind": "circle", "cx": 0, "cy": 0, "r": 60, "fill": "#FFD166"},
+                ],
+            }
+        )
+    )
+    public_path = write_generated_symbol_image(svg, tmp_path)
+    assert public_path.startswith("/uploads/symbols/")
+    assert public_path.endswith(".png")
+    saved = tmp_path / public_path.rsplit("/", 1)[1]
+    assert saved.is_file()
+    assert saved.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_write_generated_symbol_image_falls_back_to_svg(tmp_path):
+    svg = render_spec_to_svg(
+        validate_shape_spec(
+            {
+                "background": "#ffffff",
+                "shapes": [
+                    {"kind": "circle", "cx": 0, "cy": 0, "r": 60, "fill": "#FFD166"},
+                ],
+            }
+        )
+    )
+    with patch(
+        "src.aac_app.services.svg_symbol_generator.rasterize_svg_text",
+        return_value=None,
+    ):
+        public_path = write_generated_symbol_image(svg, tmp_path)
+    assert public_path.endswith(".svg")
+    saved = tmp_path / public_path.rsplit("/", 1)[1]
+    assert saved.is_file()
+    assert saved.read_text(encoding="utf-8").startswith("<?xml")
+
+
 # --- endpoint wiring ------------------------------------------------------
 
 
@@ -171,8 +242,8 @@ def test_generate_svg_symbol_route_creates_symbol_with_svg(
     body = response.json()
     assert body["label"] == "agujero negro"
     assert body["image_path"].startswith("/uploads/symbols/")
-    assert body["image_path"].endswith(".svg")
-    # The symbol row was created in the test DB, and the SVG file exists.
+    assert body["image_path"].endswith(".png")
+    # The symbol row was created in the test DB, and the PNG file exists.
     saved = (tmp_path / "symbols" / body["image_path"].rsplit("/", 1)[1])
     assert saved.is_file()
-    assert saved.read_text(encoding="utf-8").startswith("<?xml")
+    assert saved.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")

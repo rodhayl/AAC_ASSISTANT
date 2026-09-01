@@ -44,11 +44,11 @@ def test_autogen_disabled_under_testing(monkeypatch):
 def test_ensure_generated_spawns_exactly_one_thread_for_duplicate_calls():
     """Concurrent calls for the same (label, language) start a single thread."""
     spawned: list[threading.Thread] = []
-    original_start = threading.Thread.start
 
     def capturing_start(self):
+        # Record the spawn only; never run the target so the test DB is not
+        # touched by a real background thread.
         spawned.append(self)
-        return original_start(self)
 
     autogen.set_llm_provider_factory(lambda: None)
 
@@ -110,10 +110,11 @@ def test_background_generation_persists_symbol_and_svg(
     assert row is not None
     assert row.language == "es"
     assert row.image_path.startswith("/uploads/symbols/")
-    assert row.image_path.endswith(".svg")
+    assert row.image_path.endswith(".png")
     saved = tmp_path / "symbols" / row.image_path.rsplit("/", 1)[1]
     assert saved.is_file()
-    assert saved.read_text(encoding="utf-8").startswith("<?xml")
+    # Rasterized PNG (magic header), like every other symbol upload.
+    assert saved.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
 
 
 def test_background_generation_skips_existing_symbol(
