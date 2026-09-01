@@ -15,11 +15,48 @@ import { Toggle } from '../components/ui/Toggle'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { ResetPasswordModal } from '../components/common/ResetPasswordModal'
 import { GuardianProfileModal } from '../components/students/GuardianProfileModal'
-import { Sparkles, Volume2 } from 'lucide-react'
+import { ChevronDown, Sparkles, Volume2 } from 'lucide-react'
 import { LoadingState } from '../components/ui/LoadingState'
 import { useToastStore } from '../store/toastStore'
 import { FormLabel } from '@/components/ui/FormLabel'
 import { Button } from '../components/ui/button';
+
+type TriState = 'default' | 'true' | 'false'
+
+interface CreateSafetyState {
+  age: string
+  filterLevel: 'default' | 'strict' | 'standard' | 'relaxed'
+  forbiddenTopics: string
+  triggerWords: string
+  block_ai_chat: TriState
+  block_board_ai: TriState
+  block_custom_topics: TriState
+  block_autogen_pictograms: TriState
+  block_social_messaging: TriState
+  sentinel_moderation: TriState
+}
+
+const DEFAULT_SAFETY: CreateSafetyState = {
+  age: '',
+  filterLevel: 'default',
+  forbiddenTopics: '',
+  triggerWords: '',
+  block_ai_chat: 'default',
+  block_board_ai: 'default',
+  block_custom_topics: 'default',
+  block_autogen_pictograms: 'default',
+  block_social_messaging: 'default',
+  sentinel_moderation: 'default',
+}
+
+// Mirrors the guardian-profile modal's feature-gate list and label keys.
+const FEATURE_LOCK_FIELDS = [
+  ['block_ai_chat', 'blockChat'],
+  ['block_board_ai', 'blockBoardAI'],
+  ['block_custom_topics', 'blockCustomTopics'],
+  ['block_autogen_pictograms', 'blockAutogen'],
+  ['block_social_messaging', 'blockSocial'],
+] as const
 
 
 export function Students() {
@@ -43,6 +80,8 @@ export function Students() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [createLoading, setCreateLoading] = useState(false)
+  const [showSafetySection, setShowSafetySection] = useState(false)
+  const [newSafety, setNewSafety] = useState<CreateSafetyState>(DEFAULT_SAFETY)
 
   const [assignModalOpen, setAssignModalOpen] = useState(false)
   const [selectedStudent, setSelectedStudent] = useState<User | null>(null)
@@ -207,6 +246,36 @@ export function Students() {
       return
     }
 
+    // Only send safety configuration when the teacher/admin actually set
+    // something: a plain create keeps the automatic age-based floor and the
+    // admin global policy, with no guardian profile row.
+    const triStateToBool = (value: TriState) => value === 'true' ? true : value === 'false' ? false : undefined
+    const safety = showSafetySection && (
+      newSafety.age !== '' ||
+      newSafety.filterLevel !== 'default' ||
+      newSafety.forbiddenTopics.trim() !== '' ||
+      newSafety.triggerWords.trim() !== '' ||
+      newSafety.block_ai_chat !== 'default' ||
+      newSafety.block_board_ai !== 'default' ||
+      newSafety.block_custom_topics !== 'default' ||
+      newSafety.block_autogen_pictograms !== 'default' ||
+      newSafety.block_social_messaging !== 'default' ||
+      newSafety.sentinel_moderation !== 'default'
+    )
+      ? {
+          ...(newSafety.age ? { age: Number(newSafety.age) } : {}),
+          ...(newSafety.filterLevel !== 'default' ? { content_filter_level: newSafety.filterLevel } : {}),
+          forbidden_topics: newSafety.forbiddenTopics.split('\n').map((s) => s.trim()).filter(Boolean),
+          trigger_words: newSafety.triggerWords.split('\n').map((s) => s.trim()).filter(Boolean),
+          block_ai_chat: triStateToBool(newSafety.block_ai_chat),
+          block_board_ai: triStateToBool(newSafety.block_board_ai),
+          block_custom_topics: triStateToBool(newSafety.block_custom_topics),
+          block_autogen_pictograms: triStateToBool(newSafety.block_autogen_pictograms),
+          block_social_messaging: triStateToBool(newSafety.block_social_messaging),
+          sentinel_moderation: triStateToBool(newSafety.sentinel_moderation),
+        }
+      : undefined
+
     try {
       if (user?.user_type === 'admin') {
         await api.post('/auth/admin/create-user', {
@@ -215,7 +284,8 @@ export function Students() {
           confirm_password: confirmPassword,
           display_name: newDisplayName,
           email: newEmail || undefined,
-          user_type: 'student'
+          user_type: 'student',
+          ...(safety ? { safety } : {}),
         })
       } else {
         // This staff route creates the student and atomically adds the
@@ -228,6 +298,7 @@ export function Students() {
           display_name: newDisplayName,
           email: newEmail || undefined,
           user_type: 'student',
+          ...(safety ? { safety } : {}),
         })
       }
 
@@ -238,6 +309,8 @@ export function Students() {
       setNewEmail('')
       setNewPassword('')
       setConfirmPassword('')
+      setNewSafety(DEFAULT_SAFETY)
+      setShowSafetySection(false)
       setCreateModalOpen(false)
       addToast(t('success.created'), 'success')
     } catch (e: unknown) {
@@ -497,11 +570,16 @@ export function Students() {
                     setNewEmail('')
                     setNewPassword('')
                     setConfirmPassword('')
+                    setNewSafety(DEFAULT_SAFETY)
+                    setShowSafetySection(false)
                     setError(null)
                   }
                 }}
               >
-                <DialogContent showCloseButton={false} className="max-w-md p-6">
+                {/* The safety section can grow the form taller than the
+                    viewport; the modal scrolls internally so the submit
+                    button stays reachable on small screens. */}
+                <DialogContent showCloseButton={false} className="max-w-md p-6 max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="text-lg font-semibold text-foreground">
                       {t('createTitle')}
@@ -576,6 +654,103 @@ export function Students() {
                       </div>
                     )}
 
+                    <div className="rounded-lg border border-border p-3">
+                      <button
+                        type="button"
+                        onClick={() => setShowSafetySection((visible) => !visible)}
+                        aria-expanded={showSafetySection}
+                        className="flex w-full items-center justify-between text-sm font-semibold text-foreground"
+                      >
+                        <span>{t('createSafety')}</span>
+                        <ChevronDown className={`w-4 h-4 transition-transform ${showSafetySection ? 'rotate-180' : ''}`} />
+                      </button>
+                      {showSafetySection && (
+                        <div className="mt-3 space-y-3 border-t border-border pt-3" data-testid="create-safety-section">
+                          <p className="text-xs text-muted-foreground">{t('createSafetyHelp')}</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <FormLabel htmlFor="create-student-age">{t('age')}</FormLabel>
+                              <input
+                                id="create-student-age"
+                                type="number"
+                                min={1}
+                                max={100}
+                                value={newSafety.age}
+                                onChange={(e) => setNewSafety({ ...newSafety, age: e.target.value })}
+                                className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground"
+                              />
+                            </div>
+                            <div>
+                              <FormLabel htmlFor="create-student-filter-level">{t('contentFilterLevel')}</FormLabel>
+                              <select
+                                id="create-student-filter-level"
+                                value={newSafety.filterLevel}
+                                onChange={(e) => setNewSafety({ ...newSafety, filterLevel: e.target.value as CreateSafetyState['filterLevel'] })}
+                                className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground"
+                              >
+                                <option value="default">{t('triStateDefault')}</option>
+                                <option value="strict">{t('strict')}</option>
+                                <option value="standard">{t('standard')}</option>
+                                <option value="relaxed">{t('relaxed')}</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div>
+                            <FormLabel htmlFor="create-student-forbidden-topics">{t('forbiddenTopics')}</FormLabel>
+                            <textarea
+                              id="create-student-forbidden-topics"
+                              rows={2}
+                              value={newSafety.forbiddenTopics}
+                              onChange={(e) => setNewSafety({ ...newSafety, forbiddenTopics: e.target.value })}
+                              placeholder="astronomía"
+                              className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground font-mono text-sm"
+                            />
+                          </div>
+                          <div>
+                            <FormLabel htmlFor="create-student-trigger-words">{t('triggerWords')}</FormLabel>
+                            <textarea
+                              id="create-student-trigger-words"
+                              rows={2}
+                              value={newSafety.triggerWords}
+                              onChange={(e) => setNewSafety({ ...newSafety, triggerWords: e.target.value })}
+                              placeholder="guerra"
+                              className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground font-mono text-sm"
+                            />
+                          </div>
+                          <div>
+                            <span className="block text-sm font-medium text-foreground">{t('featureGates')}</span>
+                            <p className="text-xs text-muted-foreground mt-0.5">{t('featureGatesHelp')}</p>
+                          </div>
+                          {FEATURE_LOCK_FIELDS.map(([key, labelKey]) => (
+                            <div key={key} className="flex items-center justify-between gap-2 text-sm">
+                              <span className="text-foreground">{t(labelKey)}</span>
+                              <select
+                                value={newSafety[key]}
+                                onChange={(e) => setNewSafety({ ...newSafety, [key]: e.target.value as TriState })}
+                                className="w-36 px-3 py-2 border border-border rounded-lg bg-surface text-foreground text-sm"
+                              >
+                                <option value="default">{t('triStateDefault')}</option>
+                                <option value="true">{t('triStateOn')}</option>
+                                <option value="false">{t('triStateOff')}</option>
+                              </select>
+                            </div>
+                          ))}
+                          <div className="flex items-center justify-between gap-2 text-sm">
+                            <span className="text-foreground">{t('sentinel')}</span>
+                            <select
+                              value={newSafety.sentinel_moderation}
+                              onChange={(e) => setNewSafety({ ...newSafety, sentinel_moderation: e.target.value as TriState })}
+                              className="w-36 px-3 py-2 border border-border rounded-lg bg-surface text-foreground text-sm"
+                            >
+                              <option value="default">{t('triStateDefault')}</option>
+                              <option value="true">{t('triStateOn')}</option>
+                              <option value="false">{t('triStateOff')}</option>
+                            </select>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="flex justify-end gap-3 mt-6">
                       <button
                         type="button"
@@ -586,6 +761,8 @@ export function Students() {
                           setNewEmail('')
                           setNewPassword('')
                           setConfirmPassword('')
+                          setNewSafety(DEFAULT_SAFETY)
+                          setShowSafetySection(false)
                           setError(null)
                         }}
                         className="px-4 py-2 text-foreground hover:bg-surface-hover rounded-lg"

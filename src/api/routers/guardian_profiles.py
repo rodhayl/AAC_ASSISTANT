@@ -46,10 +46,17 @@ def get_current_teacher_or_admin(
     return current_user
 
 
-def _enforce_locked_safety_fields(
+def enforce_locked_safety_fields(
     safety: dict, current_user: User
 ) -> dict:
-    """Reject teacher overrides of admin-locked safety fields."""
+    """Reject teacher overrides of admin-locked safety fields.
+
+    Admins define the locks and pin the org floor, so they may always set
+    any per-student field — including at account creation; the lock only
+    constrains teachers.
+    """
+    if current_user.user_type == "admin":
+        return safety
     locked = set(safety_service.locked_fields())
     submitted = {k for k in safety if k in locked}
     if submitted:
@@ -251,7 +258,7 @@ def create_student_profile(
             exclude_none=True
         )
     if profile_data.safety_constraints:
-        changes["safety_constraints"] = _enforce_locked_safety_fields(
+        changes["safety_constraints"] = enforce_locked_safety_fields(
             profile_data.safety_constraints.model_dump(exclude_none=True),
             current_user,
         )
@@ -331,7 +338,7 @@ def update_student_profile(
             exclude_none=True
         )
     if profile_data.safety_constraints is not None:
-        changes["safety_constraints"] = _enforce_locked_safety_fields(
+        changes["safety_constraints"] = enforce_locked_safety_fields(
             profile_data.safety_constraints.model_dump(exclude_none=True),
             current_user,
         )

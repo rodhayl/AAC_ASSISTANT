@@ -38,6 +38,7 @@ from src.api.deps import (
     get_text,
 )
 from src.api.routers.auth_helpers import (
+    apply_student_safety_at_creation,
     conditional_limiter,
     ensure_username_email_available,
     validate_email_format,
@@ -49,7 +50,7 @@ router = APIRouter()
 @router.post("/admin/create-user", response_model=schemas.UserResponse)
 def admin_create_user(
     request: Request,
-    user: schemas.UserCreate,
+    user: schemas.StaffStudentCreate,
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
@@ -154,6 +155,11 @@ def admin_create_user(
         created_by_username=current_user.username,
         ip_address=client_ip
     )
+
+    # Optional one-step safety configuration for students (age, filter level,
+    # forbidden topics/words, feature gates). Admins may set admin-locked
+    # fields; the payload is ignored for non-student roles.
+    apply_student_safety_at_creation(db, new_user, user.safety, current_user)
 
     # Commit before responding: FastAPI resumes this yield dependency's
     # teardown after the response is sent, so a follow-up request could

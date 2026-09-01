@@ -351,6 +351,129 @@ describe('Students page', () => {
     );
   });
 
+  it('sends safety configuration when set through the teacher route', async () => {
+    const user = userEvent.setup();
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByRole('button', { name: /create/i }));
+    await user.type(screen.getByLabelText('Username *'), 'safe_student');
+    await user.type(screen.getByLabelText('Display Name *'), 'Safe Student');
+    await user.type(screen.getByLabelText('Password *'), 'StudentPass123');
+
+    await user.click(screen.getByText('Safety configuration (optional)'));
+    const section = await screen.findByTestId('create-safety-section');
+    await user.type(within(section).getByLabelText('Age'), '7');
+    await user.selectOptions(
+      within(section).getByLabelText('Content Filter Level'),
+      'strict',
+    );
+    await user.type(
+      within(section).getByLabelText('Forbidden topics'),
+      'astronomía\nguerra',
+    );
+    // Block learning chat: locate the row by its label and pick Blocked.
+    const chatRow = within(section).getByText('Block learning chat').closest('div')!;
+    await user.selectOptions(within(chatRow).getByRole('combobox'), 'true');
+
+    await user.click(screen.getByText('Create Student'));
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/users/students', {
+        username: 'safe_student',
+        password: 'StudentPass123',
+        display_name: 'Safe Student',
+        email: undefined,
+        user_type: 'student',
+        safety: {
+          age: 7,
+          content_filter_level: 'strict',
+          forbidden_topics: ['astronomía', 'guerra'],
+          trigger_words: [],
+          block_ai_chat: true,
+          block_board_ai: undefined,
+          block_custom_topics: undefined,
+          block_autogen_pictograms: undefined,
+          block_social_messaging: undefined,
+          sentinel_moderation: undefined,
+        },
+      }),
+    );
+  });
+
+  it('sends safety configuration when set through the admin route', async () => {
+    const user = userEvent.setup();
+    asAdmin();
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByRole('button', { name: /create/i }));
+    await user.type(screen.getByLabelText('Username *'), 'admin_safe');
+    await user.type(screen.getByLabelText('Display Name *'), 'Admin Safe');
+    await user.type(screen.getByLabelText('Password *'), 'StudentPass123');
+    await user.type(screen.getByLabelText('Confirm Password'), 'StudentPass123');
+
+    await user.click(screen.getByText('Safety configuration (optional)'));
+    const section = await screen.findByTestId('create-safety-section');
+    await user.selectOptions(
+      within(section).getByLabelText('Content Filter Level'),
+      'standard',
+    );
+    await user.type(within(section).getByLabelText('Trigger words'), 'matar');
+    const socialRow = within(section).getByText('Block social messaging').closest('div')!;
+    await user.selectOptions(within(socialRow).getByRole('combobox'), 'true');
+
+    await user.click(screen.getByText('Create Student'));
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/auth/admin/create-user', {
+        username: 'admin_safe',
+        password: 'StudentPass123',
+        confirm_password: 'StudentPass123',
+        display_name: 'Admin Safe',
+        email: undefined,
+        user_type: 'student',
+        safety: {
+          age: undefined,
+          content_filter_level: 'standard',
+          forbidden_topics: [],
+          trigger_words: ['matar'],
+          block_ai_chat: undefined,
+          block_board_ai: undefined,
+          block_custom_topics: undefined,
+          block_autogen_pictograms: undefined,
+          block_social_messaging: true,
+          sentinel_moderation: undefined,
+        },
+      }),
+    );
+  });
+
+  it('omits safety when the section is opened but left untouched', async () => {
+    const user = userEvent.setup();
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByRole('button', { name: /create/i }));
+    await user.type(screen.getByLabelText('Username *'), 'plain_safe');
+    await user.type(screen.getByLabelText('Display Name *'), 'Plain Safe');
+    await user.type(screen.getByLabelText('Password *'), 'StudentPass123');
+    await user.click(screen.getByText('Safety configuration (optional)'));
+    await screen.findByTestId('create-safety-section');
+
+    await user.click(screen.getByText('Create Student'));
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/users/students', {
+        username: 'plain_safe',
+        password: 'StudentPass123',
+        display_name: 'Plain Safe',
+        email: undefined,
+        user_type: 'student',
+      }),
+    );
+  });
+
   it('cancels the create-student modal', async () => {
     const user = userEvent.setup();
     render(<Students />);

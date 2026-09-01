@@ -124,5 +124,7 @@
   "maxResponseLengthHelp": "Empty = no limit.",
   "triStateOn": "Blocked",
   "triStateDefault": "Admin default",
-  "triStateOff": "Allowed"
+  "triStateOff": "Allowed",
+  "createSafety": "Safety configuration (optional)",
+  "createSafetyHelp": "Set age, filter level and blocks now. Leave empty to apply automatic defaults."
 }

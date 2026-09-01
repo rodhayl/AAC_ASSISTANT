@@ -124,5 +124,7 @@
   "maxResponseLengthHelp": "Vacío = sin límite.",
   "triStateOn": "Bloqueado",
   "triStateDefault": "Por defecto del admin",
-  "triStateOff": "Permitido"
+  "triStateOff": "Permitido",
+  "createSafety": "Configuración de seguridad (opcional)",
+  "createSafetyHelp": "Define la edad, el nivel de filtro y los bloqueos ahora. Si lo dejas vacío, se aplicarán los valores por defecto automáticos."
 }

@@ -69,6 +69,20 @@ class UserCreate(UserBase):
     created_by_teacher_id: int | None = None  # Auto-assign student to this teacher
 
 
+class StaffStudentCreate(UserCreate):
+    """Staff (teacher/admin) student-creation payload.
+
+    Adds an optional per-student safety configuration applied atomically at
+    creation. Public registration intentionally keeps the plain UserCreate
+    contract so a self-registering student can never attach safety data to
+    their own account.
+    """
+
+    # String annotation: StudentSafetyCreate is defined later in this module
+    # (it reuses SafetyConstraintsSchema); pydantic resolves it at build time.
+    safety: "StudentSafetyCreate | None" = None
+
+
 class UserProfileUpdate(BaseModel):
     display_name: str | None = Field(None, max_length=100)
     email: EmailStr | None = None
@@ -624,6 +638,12 @@ class SafetyConstraintsSchema(BaseModel):
     block_social_messaging: bool | None = None
     # Strict-level LLM moderation sentinel on chat output.
     sentinel_moderation: bool | None = None
+
+
+class StudentSafetyCreate(SafetyConstraintsSchema):
+    """Per-student safety configuration supplied at account creation."""
+
+    age: int | None = Field(None, ge=1, le=100, description="Student age (1-100)")
 
 
 class CompanionPersonaSchema(BaseModel):

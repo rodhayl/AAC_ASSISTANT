@@ -7,14 +7,15 @@ from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.user_service import UserService
 from src.api.deps import get_current_active_user, get_db, get_text
 from src.api.routers.auth_helpers import (
+    apply_student_safety_at_creation,
     ensure_username_email_available,
     validate_email_format,
     validate_password_strength,
 )
 from src.api.schemas import (
     ResetPasswordRequest,
+    StaffStudentCreate,
     StudentAssignRequest,
-    UserCreate,
     UserResponse,
 )
 
@@ -47,7 +48,7 @@ def get_students(
 @router.post("/students", response_model=UserResponse)
 def create_student(
     request: Request,
-    user: UserCreate,
+    user: StaffStudentCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -91,6 +92,10 @@ def create_student(
             )
 
     created = user_service.create_user(db, user)
+    # Optional one-step safety configuration: age, filter level, forbidden
+    # topics/words and feature gates land in the guardian profile inside the
+    # same transaction as the user row (teacher lock rules still apply).
+    apply_student_safety_at_creation(db, created, user.safety, current_user)
     # Commit before responding: the UI re-fetches the student list right
     # after this create, and the request dependency's teardown commit runs
     # only after the response is sent.

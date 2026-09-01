@@ -20,8 +20,83 @@ from src.aac_app.services.auth_service import password_strength_error_key
 from src.api import schemas
 from src.api.deps import get_text
 
+# Shared with the guardian-profiles router. guardian_profiles imports only
+# src.api.deps + services (never auth_helpers), so this is acyclic.
+from src.api.routers.guardian_profiles import enforce_locked_safety_fields
+
 _F = TypeVar("_F", bound=Callable[..., Any])
 _limiter_instance = Limiter(key_func=get_remote_address)
+
+
+def apply_student_safety_at_creation(
+    db: Session,
+    user: User,
+    safety: schemas.StudentSafetyCreate | None,
+    current_user: User,
+) -> None:
+    """Persist optional per-student safety configuration during creation.
+
+    Creates (or fills) the student's guardian profile in the same transaction
+    as the user row, so a student can be created with age, filter level,
+    forbidden topics/trigger words and feature gates in one step — or without
+    any of it, in which case the automatic age-based floor and admin global
+    policy apply as usual. Teachers cannot override admin-locked fields;
+    admins set the locks, so they can set anything.
+    """
+    if safety is None or user.user_type != "student":
+        return
+    from src.aac_app.models import GuardianProfile
+    from src.aac_app.services import content_safety as safety_service
+
+    level = safety.content_filter_level
+    if level is not None and level not in safety_service.VALID_LEVELS:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=current_user, key="errors.safety.invalidLevel"
+            ),
+        )
+
+    constraints: dict[str, Any] = {
+        "forbidden_topics": [
+            str(term).strip()
+            for term in (safety.forbidden_topics or [])
+            if str(term).strip()
+        ],
+        "trigger_words": [
+            str(term).strip()
+            for term in (safety.trigger_words or [])
+            if str(term).strip()
+        ],
+    }
+    if level is not None:
+        constraints["content_filter_level"] = level
+    for key in safety_service.FEATURE_LOCKS:
+        value = getattr(safety, key)
+        if isinstance(value, bool):
+            constraints[key] = value
+    if safety.sentinel_moderation is not None:
+        constraints["sentinel_moderation"] = safety.sentinel_moderation
+    if safety.max_response_length is not None:
+        constraints["max_response_length"] = safety.max_response_length
+
+    enforce_locked_safety_fields(constraints, current_user)
+
+    profile = db.query(GuardianProfile).filter_by(user_id=user.id).first()
+    if profile is None:
+        profile = GuardianProfile(
+            user_id=user.id,
+            created_by=current_user.id,
+            template_name="default",
+        )
+        db.add(profile)
+        db.flush()
+    if safety.age is not None:
+        profile.age = safety.age
+    merged = dict(profile.safety_constraints or {})
+    merged.update(constraints)
+    profile.safety_constraints = merged
+    profile.updated_by = current_user.id
 
 
 def conditional_limiter(rate: str) -> Callable[[_F], _F]:
