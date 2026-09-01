@@ -166,6 +166,7 @@
     "subtitle": "Elige un tema y empezaremos a practicar juntos.",
     "practiced": "Practicado",
     "continue": "Continuar",
-    "savedBy": "Guardado por {{teacher}}"
+    "savedBy": "Guardado por {{teacher}}",
+    "topicCount": "{{count}} temas"
   }
 }

@@ -36,6 +36,7 @@ const translate = (key: string, options?: Record<string, string>) => {
     noSavedTopics: 'No saved topics',
     by: 'By',
     'topicPicker.savedBy': `Saved by ${options?.teacher ?? ''}`,
+    'topicPicker.topicCount': `${options?.count ?? ''} topics`,
     startStudy: 'Start',
     startingSession: 'Starting...',
     removeTopic: 'Remove topic',
@@ -100,9 +101,11 @@ describe('BoardsAndTopicsSidebar saved-by attribution', () => {
     // Each group carries the teacher's avatar (initials).
     expect(screen.getByText('MJ')).toBeInTheDocument();
     expect(screen.getByText('MG')).toBeInTheDocument();
-    // Group containers exist per teacher.
+    // Group containers exist per teacher, with the topic count in the heading.
     expect(screen.getByTestId('sidebar-topic-group-Ms. Johnson')).toBeInTheDocument();
     expect(screen.getByTestId('sidebar-topic-group-Mr. García')).toBeInTheDocument();
+    // One topic per teacher, so the count badge appears in both headings.
+    expect(screen.getAllByText('1 topics')).toHaveLength(2);
   });
 
   it('stays flat without labels when only one teacher saved topics', async () => {

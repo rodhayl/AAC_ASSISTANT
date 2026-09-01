@@ -198,6 +198,9 @@ export function TopicPicker({
               <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <TeacherAvatar name={group.teacher} className="h-5 w-5 text-[10px]" />
                 {t('topicPicker.savedBy', { teacher: group.teacher })}
+                <span className="rounded-full bg-surface px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  {t('topicPicker.topicCount', { count: group.topics.length })}
+                </span>
               </h3>
               <div className="mt-2">
                 <TopicGrid
