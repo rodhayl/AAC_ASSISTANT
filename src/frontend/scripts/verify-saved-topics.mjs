@@ -188,6 +188,19 @@ console.log('\n=== Student sees teacher topics ===');
     /guardado por|saved by/i.test(body),
   );
 
+  // The sidebar list must carry the same attribution when it mixes teachers.
+  // It may already be open; only try to expand when the topic rows are hidden.
+  const sidebarListVisible = await page.locator('button[title*="Colapsar"], button[title*="Collapse"], #comp-topic-select').count();
+  if (sidebarListVisible === 0) {
+    await page.locator('button[title*="Expandir"], button[title*="Expand"]').first().click();
+    await page.waitForTimeout(600);
+  }
+  const sidebarBody = await page.locator('body').innerText();
+  check(
+    'Sidebar list shows saved-by attribution (two teachers)',
+    /guardado por|saved by/i.test(sidebarBody),
+  );
+
   await page.screenshot({ path: 'scripts/_saved_student.png', fullPage: true });
   await page.close();
 }

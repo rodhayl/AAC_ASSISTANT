@@ -39,7 +39,6 @@
   "topicStudy": "Topic to study",
   "saveTopic": "Save topic",
   "noSavedTopics": "No saved topics yet.",
-  "by": "By",
   "removeTopic": "Remove topic",
   "showThinking": "Show thinking",
   "welcomeMessage": "Hello, {{name}}. Today we'll practice {{topic}}.",

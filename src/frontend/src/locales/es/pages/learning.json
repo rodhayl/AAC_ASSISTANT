@@ -39,7 +39,6 @@
   "topicStudy": "Tema a estudiar",
   "saveTopic": "Guardar tema",
   "noSavedTopics": "Aún no hay temas guardados.",
-  "by": "Por",
   "removeTopic": "Eliminar tema",
   "showThinking": "Mostrar razonamiento",
   "welcomeMessage": "Hola, {{name}}. Hoy vamos a practicar {{topic}}.",

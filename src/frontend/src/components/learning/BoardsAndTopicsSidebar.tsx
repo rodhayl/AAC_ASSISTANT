@@ -63,6 +63,14 @@ export function BoardsAndTopicsSidebar({
     const userId = user?.id ?? null;
     const canManageTopics = useMemo(() => user?.user_type === 'teacher' || user?.user_type === 'admin', [user?.user_type]);
 
+    // Attribution is only useful when the list mixes several teachers, so a
+    // lone teacher's topics (or the owner's own list) stay uncluttered — the
+    // same rule the topic picker uses.
+    const showSavedBy = useMemo(
+        () => new Set(savedTopics.map((topic) => topic.createdBy)).size > 1,
+        [savedTopics],
+    );
+
     const loadSavedTopics = useCallback(async () => {
         if (!userId) return;
         try {
@@ -240,7 +248,11 @@ export function BoardsAndTopicsSidebar({
                                     <div className="flex-1">
                                         <div className="text-sm font-semibold text-foreground">{topic.topic}</div>
                                         <div className="text-xs text-muted-foreground">{topic.board}</div>
-                                        <div className="text-[11px] text-muted-foreground">{t('by')} {topic.createdBy}</div>
+                                        {showSavedBy && (
+                                            <div className="text-[11px] text-muted-foreground" title={topic.createdBy}>
+                                                {t('topicPicker.savedBy', { teacher: topic.createdBy })}
+                                            </div>
+                                        )}
                                         <div className="mt-2 flex gap-2">
                                             <Button
                                                 type="button"
