@@ -1,0 +1,631 @@
+"""Layered content-safety tests: deterministic filters, policy resolution,
+and enforcement across prediction, autogen, learning chat, boards, and the
+admin/teacher API surface."""
+
+import asyncio
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+from fastapi import HTTPException
+from fastapi.testclient import TestClient
+
+from src.aac_app.models import (
+    ContentSafetyEvent,
+    GuardianProfile,
+    LearningSession,
+    StudentTeacher,
+    Symbol,
+    User,
+)
+from src.aac_app.services.content_safety import (
+    ContentPolicy,
+    check_text,
+    default_level_for_age,
+    normalize_text,
+    resolve_policy_for_user,
+    save_global_policy,
+)
+from src.api.main import app
+from tests.auth_helpers import create_test_token
+
+client = TestClient(app)
+pytestmark = pytest.mark.usefixtures("setup_test_db")
+
+
+def _make_user(test_db_session, username, user_type, password="TestPassword123"):
+    from src.aac_app.services.auth_service import get_password_hash
+
+    user = User(
+        username=username,
+        email=f"{username}@test.com",
+        password_hash=get_password_hash(password),
+        user_type=user_type,
+        is_active=True,
+        display_name=username.title(),
+    )
+    test_db_session.add(user)
+    test_db_session.commit()
+    test_db_session.refresh(user)
+    return user
+
+
+def _headers(user) -> dict:
+    return {
+        "Authorization": f"Bearer {create_test_token(user.id, user.username, user.user_type)}"
+    }
+
+
+# --- deterministic filter ---------------------------------------------------
+
+
+def test_normalize_text_folds_accents_and_case():
+    # Inverted punctuation is kept; accents and case are folded, runs of
+    # whitespace collapse to a single space.
+    assert normalize_text("¡Hola, ¿Qué Tal?  CÉLULA!") == "¡hola, ¿que tal? celula!"
+    assert normalize_text("") == ""
+    assert normalize_text(None) == ""
+
+
+def test_check_text_blocks_per_family_at_each_level():
+    standard = ContentPolicy(level="standard")
+    strict = ContentPolicy(level="strict")
+    relaxed = ContentPolicy(level="relaxed")
+    # Adult and self-harm are blocked at every level.
+    assert check_text(standard, "quiero hablar de sexo").blocked
+    assert check_text(relaxed, "me duele, quiero morir").blocked
+    # Weapons/profanity only at standard/strict (not relaxed).
+    assert check_text(standard, "hablemos de pistolas").blocked
+    assert not check_text(relaxed, "hablemos de pistolas").blocked
+    assert check_text(strict, "eres un idiota").blocked
+    assert not check_text(standard, "eres un idiota").blocked
+
+
+def test_check_text_never_blocks_everyday_aac_vocabulary():
+    base = ContentPolicy(level="strict")
+    for text in (
+        "la célula", "célula animal", "quiero agua", "estropeado",
+        "estoy triste porque perdí mi juguete", "la muerte de la célula",
+        "me duele la barriga", "coger el autobús",
+    ):
+        assert check_text(base, text).allowed, text
+
+
+def test_check_text_handles_plurals_and_family_audit():
+    standard = ContentPolicy(level="standard")
+    verdict = check_text(standard, "las bombas y pistolas")
+    assert verdict.blocked
+    assert "weapons" in verdict.matched_families
+    assert any("weapons" in t or t in ("bomba", "pistola") for t in verdict.matched_terms)
+
+
+def test_check_text_uses_custom_topics_and_trigger_words():
+    policy = ContentPolicy(
+        level="standard",
+        forbidden_topics=("astronomía",),
+        trigger_words=("guerra",),
+    )
+    assert check_text(policy, "me encanta la astronomia").blocked
+    assert check_text(policy, "hay guerra").blocked
+    assert check_text(policy, "me gustan las estrellas").allowed
+
+
+def test_default_level_for_age():
+    assert default_level_for_age(6) == "strict"
+    assert default_level_for_age(10) == "standard"
+    assert default_level_for_age(16) == "relaxed"
+    assert default_level_for_age(None) == "standard"
+
+
+def test_feature_locks():
+    policy = ContentPolicy(feature_locks={"block_ai_chat": True})
+    assert policy.feature_blocked("block_ai_chat")
+    assert not policy.feature_blocked("block_board_ai")
+
+
+# --- policy resolution ------------------------------------------------------
+
+
+def test_resolve_policy_merges_guardian_profile_overrides(test_db_session):
+    student = _make_user(test_db_session, "safety_student1", "student")
+    profile = GuardianProfile(
+        user_id=student.id,
+        template_name="default",
+        safety_constraints={
+            "content_filter_level": "strict",
+            "trigger_words": ["violencia"],
+            "block_ai_chat": True,
+        },
+        is_active=True,
+        created_by=student.id,
+    )
+    test_db_session.add(profile)
+    test_db_session.commit()
+
+    policy = resolve_policy_for_user(student.id, db=test_db_session)
+    assert policy.level == "strict"
+    assert "violencia" in policy.trigger_words
+    assert policy.feature_blocked("block_ai_chat")
+    # No guardian profile → global defaults.
+    assert resolve_policy_for_user(None).level == "standard"
+
+
+def test_save_global_policy_roundtrip(test_db_session):
+    policy = save_global_policy(
+        {
+            "level": "strict",
+            "forbidden_topics": ["astronomía"],
+            "trigger_words": ["guerra"],
+            "feature_locks": {"block_board_ai": True, "block_ai_chat": False},
+            "sentinel_moderation": True,
+            "max_response_length": 30,
+            "locked_fields": ["block_ai_chat"],
+        }
+    )
+    assert policy.level == "strict"
+    assert policy.feature_blocked("block_board_ai")
+    assert not policy.feature_blocked("block_ai_chat")
+    assert policy.max_response_length == 30
+
+
+# --- prediction integration ------------------------------------------------
+
+
+def test_predict_next_drops_blocked_topic(
+    test_db_session, regular_user, monkeypatch
+):
+    from src.aac_app.services.prediction_service import PredictionService
+
+    service = PredictionService()
+    monkeypatch.setitem(service._models, "es", {"bigrams": {}})
+    analytics = Mock()
+    analytics.suggest_next_symbol.return_value = []
+    monkeypatch.setattr(service, "analytics_service", analytics)
+    fetcher = Mock(side_effect=AssertionError("fetcher must not run for blocked topic"))
+    policy = ContentPolicy(level="standard", forbidden_topics=("astronomía",))
+
+    suggestions = service.predict_next(
+        user_id=regular_user.id,
+        current_symbols=[],
+        limit=5,
+        language="es",
+        offset=0,
+        topic="astronomía para niños",
+        topic_word_fetcher=fetcher,
+        content_policy=policy,
+        db=test_db_session,
+    )
+    # The blocked topic produces no topic tier and no generated words.
+    assert not any(s["source"] == "topic" for s in suggestions)
+    assert not any(s.get("is_text_only") for s in suggestions)
+    fetcher.assert_not_called()
+    event = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.user_id == regular_user.id)
+        .first()
+    )
+    assert event is not None
+    assert event.surface == "topic"
+    assert event.verdict == "redirected"
+
+
+def test_predict_next_filters_topic_words_by_policy(
+    test_db_session, regular_user, monkeypatch
+):
+    from src.aac_app.services.prediction_service import PredictionService
+
+    service = PredictionService()
+    monkeypatch.setitem(service._models, "es", {"bigrams": {}})
+    analytics = Mock()
+    analytics.suggest_next_symbol.return_value = []
+    monkeypatch.setattr(service, "analytics_service", analytics)
+    scheduled: list[str] = []
+    monkeypatch.setattr(
+        "src.aac_app.services.symbol_svg_autogen.ensure_symbol_generated",
+        lambda *a, **k: scheduled.append(a[0] or k.get("context", "")),
+    )
+    policy = ContentPolicy(level="standard", trigger_words=("violencia",))
+    fetched_words = ["estrella", "violencia", "paz", "pistola"]
+    from unittest.mock import Mock as _Mock
+
+    fetcher = _Mock(return_value=fetched_words)
+
+    import src.aac_app.services.prediction_service as ps_module
+
+    try:
+        suggestions = service.predict_next(
+            user_id=regular_user.id,
+            current_symbols=[],
+            limit=10,
+            language="es",
+            offset=0,
+            topic="planetas",
+            topic_word_fetcher=fetcher,
+            content_policy=policy,
+            db=test_db_session,
+        )
+    finally:
+        ps_module._topics_word_cache.clear()
+
+    labels = [s["label"] for s in suggestions]
+    assert "estrella" in labels
+    assert "violencia" not in labels
+    assert "pistola" not in labels
+    events = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.user_id == regular_user.id)
+        .all()
+    )
+    blocked_words = [e for e in events if e.surface == "words"]
+    assert len(blocked_words) == 2
+
+
+def test_schedule_svg_generation_skips_blocked_labels(
+    test_db_session, regular_user, monkeypatch
+):
+    from src.aac_app.services.prediction_service import _PredictionContext
+
+    policy = ContentPolicy(level="standard", trigger_words=("pistola",))
+    service = _PredictionContext(
+        user_id=regular_user.id,
+        current_symbols=[],
+        language="es",
+        offset=0,
+        base_limit=10,
+        limit=10,
+        board_id=None,
+        db=test_db_session,
+        analytics_service=Mock(),
+        load_model=lambda lang: {"bigrams": {}},
+        content_policy=policy,
+    )
+    spawned: list = []
+
+    class _FakeThread:
+        def __init__(self, *a, **k):
+            self.args = a
+            self.kwargs = k
+            spawned.append(self)
+
+    monkeypatch.setattr(
+        "src.aac_app.services.symbol_svg_autogen.ensure_symbol_generated",
+        lambda *a, **k: None,
+    )
+    monkeypatch.setattr(service, "_is_svg_generation_enabled", lambda: True)
+    with patch("threading.Thread", _FakeThread):
+        service._schedule_svg_generation("pistola de juguete")
+    assert spawned == []
+    event = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.user_id == regular_user.id)
+        .first()
+    )
+    assert event is not None and event.surface == "pictogram"
+
+
+# --- autogen server gate ----------------------------------------------------
+
+
+def test_autogen_background_blocks_label_via_global_policy(
+    test_db_session, monkeypatch
+):
+    import src.aac_app.services.content_safety as safety
+    from src.aac_app.services import symbol_svg_autogen as autogen
+
+    monkeypatch.setattr(
+        safety, "load_global_policy", lambda: ContentPolicy(level="standard", trigger_words=("pistola",))
+    )
+    calls: list[str] = []
+
+    class _RecordingProvider:
+        def generate_sync(self, prompt, **kwargs) -> str:
+            calls.append(prompt)
+            return '{"background":"#fff","shapes":[{"kind":"circle","cx":0,"cy":0,"r":10,"fill":"#FFD166"}]}'
+
+    autogen.set_llm_provider_factory(lambda: _RecordingProvider())
+    key = autogen._PendingKey("pistolas", "es")
+    with (
+        patch.object(autogen, "_has_catalog_symbol", return_value=False),
+        patch.object(autogen, "_count_generated_today", return_value=0),
+    ):
+        autogen._generate_in_background(key, "pistolas", "es")
+
+    assert calls == []  # blocked before any LLM spend
+    with autogen._lock:
+        assert key not in autogen._in_flight
+    event = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.surface == "pictogram")
+        .first()
+    )
+    assert event is not None
+
+
+# --- board label admission gate --------------------------------------------
+
+
+def test_get_or_create_symbol_rejects_blocked_new_labels(
+    test_db_session, monkeypatch
+):
+    import src.aac_app.services.content_safety as safety
+    from src.api.routers.board_ai import get_or_create_symbol
+
+    monkeypatch.setattr(
+        safety, "load_global_policy", lambda: ContentPolicy(level="standard", trigger_words=("cuchillo",))
+    )
+    with pytest.raises(HTTPException) as excinfo:
+        get_or_create_symbol(test_db_session, "un cuchillo", "cuchillo", user=None)
+    assert excinfo.value.status_code == 400
+
+    # Curated labels pass through untouched.
+    monkeypatch.setattr(
+        safety, "load_global_policy", lambda: ContentPolicy(level="standard")
+    )
+    symbol, created = get_or_create_symbol(
+        test_db_session, "cookie", "cookie", user=None
+    )
+    assert created and symbol.label == "cookie"
+
+
+# --- learning chat gates ---------------------------------------------------
+
+
+def test_learning_response_redirects_blocked_input(
+    test_db_session, regular_user, mock_llm_provider, mock_speech_provider
+):
+    from src.aac_app.services.learning.service import LearningCompanionService
+
+    service = LearningCompanionService(mock_llm_provider, mock_speech_provider)
+    session = LearningSession(
+        user_id=regular_user.id,
+        topic_name="frutas",
+        purpose="",
+        status="active",
+        conversation_history=[],
+        comprehension_score=0.0,
+    )
+    test_db_session.add(session)
+    test_db_session.commit()
+    mock_llm_provider.generate = AsyncMock()
+
+    result = asyncio.run(
+        service.process_response(
+            session_id=session.id,
+            student_response="quiero hablar de sexo",
+            db=test_db_session,
+        )
+    )
+    assert result["success"] is True
+    # Friendly deflection in the user's locale; never the raw refusal.
+    assert "otra cosa" in result["feedback_message"]
+    mock_llm_provider.generate.assert_not_called()
+    event = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.user_id == regular_user.id)
+        .first()
+    )
+    assert event is not None and event.direction == "input" and event.verdict == "redirected"
+
+
+def test_learning_response_replaces_blocked_output(
+    test_db_session, regular_user, mock_llm_provider, mock_speech_provider
+):
+    from src.aac_app.services.learning.service import LearningCompanionService
+
+    async def generate(**kwargs):
+        return '{"response": "Esto es una mierda, claro que sí"}'
+
+    mock_llm_provider.generate = AsyncMock(side_effect=generate)
+    service = LearningCompanionService(mock_llm_provider, mock_speech_provider)
+    session = LearningSession(
+        user_id=regular_user.id,
+        topic_name="frutas",
+        purpose="",
+        status="active",
+        conversation_history=[],
+        comprehension_score=0.0,
+    )
+    # Profanity is only filtered at the strict level — the student needs a
+    # strict guardian profile (the production path teachers configure).
+    test_db_session.add(
+        GuardianProfile(
+            user_id=regular_user.id,
+            template_name="default",
+            safety_constraints={"content_filter_level": "strict"},
+            is_active=True,
+            created_by=regular_user.id,
+        )
+    )
+    test_db_session.add(session)
+    test_db_session.commit()
+
+    result = asyncio.run(
+        service.process_response(
+            session_id=session.id,
+            student_response="me siento muy bien hoy",
+            db=test_db_session,
+        )
+    )
+    assert result["success"] is True
+    assert "mierda" not in result["feedback_message"]
+    assert "otra cosa" in result["feedback_message"]  # Spanish deflection
+    event = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.user_id == regular_user.id)
+        .first()
+    )
+    assert event is not None and event.direction == "output"
+
+
+# --- admin API --------------------------------------------------------------
+
+
+def test_admin_global_policy_api(test_db_session):
+    admin = _make_user(test_db_session, "safety_admin1", "admin")
+    teacher = _make_user(test_db_session, "safety_teacher1", "teacher")
+    student = _make_user(test_db_session, "safety_student2", "student")
+
+    # Non-admins are forbidden.
+    for user in (student, teacher):
+        resp = client.get("/api/settings/content-safety", headers=_headers(user))
+        assert resp.status_code == 403
+
+    payload = {
+        "level": "strict",
+        "forbidden_topics": ["astronomía"],
+        "trigger_words": ["guerra"],
+        "feature_locks": {"block_ai_chat": False, "block_board_ai": True},
+        "sentinel_moderation": True,
+        "max_response_length": 40,
+        "locked_fields": ["block_ai_chat"],
+    }
+    put = client.put(
+        "/api/settings/content-safety", headers=_headers(admin), json=payload
+    )
+    assert put.status_code == 200, put.text
+    body = put.json()
+    assert body["level"] == "strict"
+    assert body["feature_locks"]["block_board_ai"] is True
+    assert body["locked_fields"] == ["block_ai_chat"]
+
+    got = client.get("/api/settings/content-safety", headers=_headers(admin)).json()
+    assert got["trigger_words"] == ["guerra"]
+    # cleanup
+    client.put(
+        "/api/settings/content-safety",
+        headers=_headers(admin),
+        json={
+            "level": "standard",
+            "forbidden_topics": [],
+            "trigger_words": [],
+            "feature_locks": {},
+            "sentinel_moderation": False,
+            "locked_fields": [],
+        },
+    )
+
+
+def test_teacher_cannot_override_locked_field(test_db_session):
+    admin = _make_user(test_db_session, "safety_admin2", "admin")
+    teacher = _make_user(test_db_session, "safety_teacher2", "teacher")
+    student = _make_user(test_db_session, "safety_student3", "student")
+    test_db_session.add(StudentTeacher(teacher_id=teacher.id, student_id=student.id))
+    test_db_session.commit()
+
+    client.put(
+        "/api/settings/content-safety",
+        headers=_headers(admin),
+        json={
+            "level": "standard",
+            "forbidden_topics": [],
+            "trigger_words": [],
+            "feature_locks": {},
+            "sentinel_moderation": False,
+            "locked_fields": ["block_ai_chat"],
+        },
+    )
+    try:
+        resp = client.post(
+            f"/api/guardian-profiles/students/{student.id}",
+            headers=_headers(teacher),
+            json={
+                "template_name": "default",
+                "safety_constraints": {"block_ai_chat": True, "block_board_ai": True},
+            },
+        )
+        assert resp.status_code == 403
+        assert "block_ai_chat" in resp.json()["detail"]
+    finally:
+        client.put(
+            "/api/settings/content-safety",
+            headers=_headers(admin),
+            json={
+                "level": "standard",
+                "forbidden_topics": [],
+                "trigger_words": [],
+                "feature_locks": {},
+                "sentinel_moderation": False,
+                "locked_fields": [],
+            },
+        )
+
+
+def test_admin_events_and_clear(test_db_session):
+    admin = _make_user(test_db_session, "safety_admin3", "admin")
+    event = ContentSafetyEvent(
+        user_id=None,
+        surface="pictogram",
+        direction="output",
+        verdict="blocked",
+        matched=["weapons*"],
+        detail="autogen label: pistola",
+    )
+    test_db_session.add(event)
+    test_db_session.commit()
+
+    listed = client.get(
+        "/api/settings/content-safety/events", headers=_headers(admin)
+    ).json()
+    assert any(e["surface"] == "pictogram" for e in listed)
+
+    cleared = client.delete(
+        "/api/settings/content-safety/events", headers=_headers(admin)
+    )
+    assert cleared.status_code == 204
+    assert test_db_session.query(ContentSafetyEvent).count() == 0
+
+
+def test_purge_ai_symbols_endpoint(test_db_session):
+    admin = _make_user(test_db_session, "safety_admin4", "admin")
+    autogen = Symbol(
+        label="nebulosa",
+        description="Auto-generated pictogram for the missing symbol 'nebulosa'.",
+        category="general",
+        image_path="/uploads/symbols/nonexistent.png",
+        language="es",
+        is_builtin=False,
+    )
+    curated = Symbol(label="casa", category="home", language="es", is_builtin=True)
+    test_db_session.add_all([autogen, curated])
+    test_db_session.commit()
+
+    resp = client.delete(
+        "/api/settings/content-safety/ai-symbols", headers=_headers(admin)
+    )
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 1
+    assert test_db_session.query(Symbol).filter(Symbol.id == curated.id).count() == 1
+    assert (
+        test_db_session.query(Symbol)
+        .filter(Symbol.label == "nebulosa")
+        .count()
+        == 0
+    )
+
+
+def test_teacher_lists_student_safety_events(test_db_session):
+    teacher = _make_user(test_db_session, "safety_teacher5", "teacher")
+    student = _make_user(test_db_session, "safety_student5", "student")
+    test_db_session.add(StudentTeacher(teacher_id=teacher.id, student_id=student.id))
+    test_db_session.add(
+        ContentSafetyEvent(
+            user_id=student.id,
+            surface="chat",
+            direction="input",
+            verdict="redirected",
+            matched=["sexo"],
+        )
+    )
+    test_db_session.commit()
+
+    resp = client.get(
+        f"/api/guardian-profiles/students/{student.id}/safety-events",
+        headers=_headers(teacher),
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
+    # A student cannot read their own safety log.
+    denied = client.get(
+        f"/api/guardian-profiles/students/{student.id}/safety-events",
+        headers=_headers(student),
+    )
+    assert denied.status_code == 403

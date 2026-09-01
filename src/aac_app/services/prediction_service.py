@@ -180,6 +180,7 @@ class _PredictionContext:
         load_model: Callable[[str], dict],
         topic: str | None = None,
         topic_word_fetcher: TopicWordFetcher | None = None,
+        content_policy=None,
     ) -> None:
         self.user_id = user_id
         self.current_symbols = current_symbols
@@ -199,6 +200,9 @@ class _PredictionContext:
         self.topic = topic or ""
         self.topic_tokens = _tokenize_topic(topic or "")
         self.topic_word_fetcher = topic_word_fetcher
+        # Resolved content-safety policy (None = feature not wired for this
+        # request, e.g. warmup). Gates topic words and pictogram scheduling.
+        self.content_policy = content_policy
 
         self.suggestions: list[dict] = []
         self.seen_labels: set[str] = set()
@@ -558,6 +562,27 @@ class _PredictionContext:
         if len(self.suggestions) >= self.base_limit:
             return
         words = _cached_topic_words(self.lang, self.topic, self.topic_word_fetcher)
+        # Layered content safety: never surface or schedule a topic word the
+        # student's effective policy blocks (and never spend LLM tokens on it).
+        if self.content_policy is not None:
+            from src.aac_app.services.content_safety import check_text, log_event
+
+            filtered: list[str] = []
+            for candidate in words:
+                verdict = check_text(self.content_policy, candidate)
+                if verdict.blocked:
+                    log_event(
+                        user_id=self.user_id,
+                        surface="words",
+                        direction="output",
+                        verdict="blocked",
+                        matched=list(verdict.matched_terms),
+                        detail=f"topic word: {candidate[:200]}",
+                        db=self.db,
+                    )
+                else:
+                    filtered.append(candidate)
+            words = filtered
         for word in words:
             if len(self.suggestions) >= self.base_limit:
                 break
@@ -893,12 +918,30 @@ class _PredictionContext:
         mountains in a geography topic, a saw in a tools topic).
         """
         try:
+            from src.aac_app.services.content_safety import (
+                check_text,
+                log_event,
+            )
             from src.aac_app.services.symbol_svg_autogen import (
                 ensure_symbol_generated,
             )
 
-            if self._is_svg_generation_enabled():
-                ensure_symbol_generated(word, self.lang, context=self.topic or None)
+            if not self._is_svg_generation_enabled():
+                return
+            if self.content_policy is not None:
+                label_verdict = check_text(self.content_policy, word)
+                if label_verdict.blocked:
+                    log_event(
+                        user_id=self.user_id,
+                        surface="pictogram",
+                        direction="output",
+                        verdict="blocked",
+                        matched=list(label_verdict.matched_terms),
+                        detail=f"autogen label: {word[:200]}",
+                        db=self.db,
+                    )
+                    return
+            ensure_symbol_generated(word, self.lang, context=self.topic or None)
         except Exception as exc:
             logger.warning(
                 "Could not schedule SVG generation for {!r}: {}", word, exc
@@ -1013,6 +1056,7 @@ class PredictionService:
         db: Session | None = None,
         topic: str | None = None,
         topic_word_fetcher: TopicWordFetcher | None = None,
+        content_policy=None,
     ) -> list[dict]:
         """
         Predict next symbols.
@@ -1027,6 +1071,10 @@ class PredictionService:
                 When the catalog cannot cover the topic, generated words are
                 surfaced as text-only suggestions so learners are never
                 limited by the symbols present in the database.
+            content_policy: Optional resolved content-safety policy. When
+                given, blocked topics are dropped, blocked topic words are
+                never suggested, and pictogram generation for blocked labels
+                is skipped (each gate logs a content-safety event).
 
         Returns:
             List of suggested symbol dicts
@@ -1042,6 +1090,42 @@ class PredictionService:
         safe_offset = min(offset, 250)
         base_limit = min(limit + safe_offset, 300)
 
+        # Layered content safety: a blocked topic loses its topic tiers (and
+        # the custom-topics feature lock drops it entirely) instead of feeding
+        # the fetcher or the catalog matcher.
+        if content_policy is not None:
+            from src.aac_app.services.content_safety import (
+                check_text,
+                log_event,
+            )
+
+            if content_policy.feature_blocked("block_custom_topics"):
+                if topic and topic.strip():
+                    log_event(
+                        user_id=user_id,
+                        surface="topic",
+                        direction="input",
+                        verdict="blocked",
+                        detail=f"feature_lock: block_custom_topics; topic: {topic[:120]}",
+                        db=db,
+                    )
+                topic = None
+                topic_word_fetcher = None
+            elif topic and topic.strip():
+                topic_verdict = check_text(content_policy, topic)
+                if topic_verdict.blocked:
+                    log_event(
+                        user_id=user_id,
+                        surface="topic",
+                        direction="input",
+                        verdict="redirected",
+                        matched=list(topic_verdict.matched_terms),
+                        detail=topic[:300],
+                        db=db,
+                    )
+                    topic = None
+                    topic_word_fetcher = None
+
         context = _PredictionContext(
             user_id=user_id,
             current_symbols=current_symbols,
@@ -1055,6 +1139,7 @@ class PredictionService:
             load_model=self._load_model,
             topic=topic,
             topic_word_fetcher=topic_word_fetcher,
+            content_policy=content_policy,
         )
 
 

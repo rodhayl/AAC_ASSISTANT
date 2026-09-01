@@ -40,6 +40,7 @@ from src.api.routers import (
     board_assignments,
     boards,
     collab,
+    content_safety,
     export_import,
     guardian_profiles,
     learning,
@@ -478,6 +479,7 @@ app.include_router(
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(guardian_profiles.router)  # Guardian profiles for Learning Companion
 app.include_router(settings.router)
+app.include_router(content_safety.router)
 app.include_router(collab.router)
 app.include_router(providers.router)
 app.include_router(admin.router)

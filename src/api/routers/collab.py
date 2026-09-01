@@ -200,6 +200,46 @@ async def board_channel(
                 if not has_access and board.is_public:
                     continue
 
+                # Layer-1 content gate on board-change payloads that carry a
+                # free-text label (e.g. an added symbol). Blocked labels are
+                # never fanned out to the room; the REST admission gates
+                # (get_or_create_symbol) are the authoritative DB guard, this
+                # protects every connected peer from forged/malformed input.
+                label_candidate = (
+                    data.get("label")
+                    if isinstance(data, dict)
+                    else None
+                )
+                if isinstance(label_candidate, str) and label_candidate.strip():
+                    try:
+                        from src.aac_app.services.content_safety import (
+                            check_text,
+                            load_global_policy,
+                            log_event,
+                        )
+
+                        verdict = check_text(load_global_policy(), label_candidate)
+                        if verdict.blocked:
+                            log_event(
+                                user_id=user.id,
+                                surface="social",
+                                direction="output",
+                                verdict="blocked",
+                                matched=list(verdict.matched_terms),
+                                detail=f"collab label: {label_candidate[:200]}",
+                                db=db,
+                            )
+                            logger.info(
+                                "Blocked collab label from {}: {!r}",
+                                user.username,
+                                label_candidate[:80],
+                            )
+                            continue
+                    except Exception as exc:
+                        logger.warning(
+                            "Content gate unavailable for collab payload: {}", exc
+                        )
+
                 message = {
                     "type": "board_change",
                     "board_id": board_id,

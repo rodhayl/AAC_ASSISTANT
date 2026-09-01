@@ -273,6 +273,15 @@
       "alreadyCompleted": "Initial administrator setup has already been completed.",
       "defaultPasswordForbidden": "The development default password is not permitted for administrator setup.",
       "adminCreated": "Administrator account created successfully"
+    },
+    "safety": {
+      "blockedTopic": "That topic isn't available right now. Let's choose something else!",
+      "blockedBoardPrompt": "This request can't be processed. Try describing a different board.",
+      "boardAiDisabled": "AI board creation is turned off for this account.",
+      "suggestionBlocked": "This suggestion can't be added.",
+      "symbolBlocked": "That label can't be used.",
+      "invalidLevel": "Invalid content filter level. Use strict, standard or relaxed.",
+      "fieldLocked": "These fields are locked by the administrator and cannot be changed: {{fields}}"
     }
   },
   "symbolEditor": {

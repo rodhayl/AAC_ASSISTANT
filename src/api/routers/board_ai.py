@@ -91,6 +91,34 @@ def get_or_create_symbol(
     )
     if existing is not None:
         return existing, False
+    # Server-wide layer-1 admission gate: a brand-new symbol whose label the
+    # global policy blocks is never created, wherever the request came from.
+    # (Per-student policies are enforced at the request layer, which knows
+    # the student.) Curated/existing catalog symbols pass through untouched.
+    try:
+        from src.aac_app.services.content_safety import (
+            check_text as _check,
+        )
+        from src.aac_app.services.content_safety import (
+            load_global_policy as _load_policy,
+        )
+
+        if _check(_load_policy(), label).blocked:
+            logger.warning(
+                f"Rejecting symbol label blocked by content policy: {label!r}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(
+                    user=user,
+                    key="errors.safety.symbolBlocked",
+                    label=label,
+                ),
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.debug("Content-policy gate unavailable; skipping label check")
     created = Symbol(
         label=label.strip(),
         keywords=symbol_key,
@@ -358,6 +386,41 @@ async def generate_ai_suggestions(
     ts = get_translation_service()
     lang = ts.resolve_language(current_user)
 
+    # Layered content safety (Layer 1): a blocked board-AI request (feature
+    # lock, prompt, board name/description) never reaches the LLM; generated
+    # item labels are filtered before they reach the student.
+    from src.aac_app.services.content_safety import (
+        check_text,
+        log_event,
+        resolve_policy_for_user,
+    )
+
+    content_policy = resolve_policy_for_user(current_user.id, db)
+    if content_policy.feature_blocked("block_board_ai"):
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(user=current_user, key="errors.safety.boardAiDisabled"),
+        )
+    refine_prompt = payload.refine_prompt if payload else ""
+    probe = " ".join(
+        filter(None, [board.name, board.description or "", refine_prompt])
+    )
+    probe_verdict = check_text(content_policy, probe)
+    if probe_verdict.blocked:
+        log_event(
+            user_id=current_user.id,
+            surface="board",
+            direction="input",
+            verdict="blocked",
+            matched=list(probe_verdict.matched_terms),
+            detail=probe[:300],
+            db=db,
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(user=current_user, key="errors.safety.blockedBoardPrompt"),
+        )
+
     # Calculate item count: use payload if provided, otherwise derive from grid, default to 12
     item_count = 12
     if payload and payload.item_count:
@@ -370,13 +433,31 @@ async def generate_ai_suggestions(
             board.name,
             board.description or "",
             item_count=item_count,
-            refine_prompt=payload.refine_prompt if payload else "",
+            refine_prompt=refine_prompt,
             regenerate=payload.regenerate if payload else False,
             language=lang,
         )
         if not items:
             raise RuntimeError("AI returned no valid items")
-        return {"items": items}
+        safe_items: list[dict] = []
+        for item in items:
+            label = (item.get("label") or item.get("name") or "").strip()
+            verdict = check_text(content_policy, label)
+            if verdict.blocked:
+                log_event(
+                    user_id=current_user.id,
+                    surface="board",
+                    direction="output",
+                    verdict="blocked",
+                    matched=list(verdict.matched_terms),
+                    detail=f"generated label: {label[:200]}",
+                    db=db,
+                )
+                continue
+            safe_items.append(item)
+        if not safe_items:
+            raise RuntimeError("AI returned no valid items")
+        return {"items": safe_items}
     except Exception as e:
         logger.error(f"Failed to generate AI suggestions for board {board_id}: {e}")
         detail_msg = get_text(
@@ -413,6 +494,32 @@ def apply_ai_suggestion(
             detail=get_text(
                 user=current_user, key="errors.boards.suggestionLabelRequired"
             ),
+        )
+
+    # Layered content safety: a suggestion the student's effective policy
+    # blocks is never applied to the board. get_or_create_symbol also runs a
+    # server-wide admission gate for brand-new symbols (defense in depth).
+    from src.aac_app.services.content_safety import (
+        check_text,
+        log_event,
+        resolve_policy_for_user,
+    )
+
+    content_policy = resolve_policy_for_user(current_user.id, db)
+    label_verdict = check_text(content_policy, item.label)
+    if label_verdict.blocked:
+        log_event(
+            user_id=current_user.id,
+            surface="board",
+            direction="output",
+            verdict="blocked",
+            matched=list(label_verdict.matched_terms),
+            detail=f"applied label: {item.label[:200]}",
+            db=db,
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(user=current_user, key="errors.safety.suggestionBlocked"),
         )
 
     symbol_key = item.symbol_key or item.label.lower().replace(" ", "_")

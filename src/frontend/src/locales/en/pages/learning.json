@@ -118,12 +118,13 @@
   "aiAssistant": "AI Assistant",
   "conversationPartner": "Conversation Partner",
   "panelSubtitle": "Practice questions, explanations, and conversational support",
-  "voiceOff": "Voice Off",    "difficulty": {
-      "adaptive": "Adaptive",
-      "basic": "Basic",
-      "intermediate": "Intermediate",
-      "advanced": "Advanced"
-    },
+  "voiceOff": "Voice Off",
+  "difficulty": {
+    "adaptive": "Adaptive",
+    "basic": "Basic",
+    "intermediate": "Intermediate",
+    "advanced": "Advanced"
+  },
   "providerSwitched": "Switched to {{provider}}",
   "toggleSymbolView": "Toggle symbol-first view",
   "newQuestionTitle": "Get a new question",
@@ -153,5 +154,6 @@
     "quiz": "Quiz",
     "conversation": "Conversation",
     "roleplay": "Roleplay"
-  }
+  },
+  "safetyRedirect": "Let's talk about something else! Tell me about your day or what you did today."
 }

@@ -616,12 +616,20 @@ class CommunicationStyleSchema(BaseModel):
 
 
 class SafetyConstraintsSchema(BaseModel):
-    """Safety configuration for content filtering"""
+    """Safety configuration for content filtering (Layer 1 + 2)."""
 
     content_filter_level: str | None = None  # strict, standard, relaxed
     forbidden_topics: list[str] | None = None
     trigger_words: list[str] | None = None
     max_response_length: int | None = None
+    # Per-student feature gates. ``None`` = follow the admin global setting.
+    block_ai_chat: bool | None = None
+    block_board_ai: bool | None = None
+    block_custom_topics: bool | None = None
+    block_autogen_pictograms: bool | None = None
+    block_social_messaging: bool | None = None
+    # Strict-level LLM moderation sentinel on chat output.
+    sentinel_moderation: bool | None = None
 
 
 class CompanionPersonaSchema(BaseModel):
@@ -679,6 +687,34 @@ class GuardianProfileResponse(BaseModel):
     updated_by: int | None = None
     created_at: str | None = None
     updated_at: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ContentSafetyPolicySchema(BaseModel):
+    """Admin-configurable global content policy (server-wide default)."""
+
+    level: str = "standard"
+    forbidden_topics: list[str] = []
+    trigger_words: list[str] = []
+    feature_locks: dict[str, bool] = {}
+    sentinel_moderation: bool = False
+    max_response_length: int | None = None
+    # Fields teachers may not override per student.
+    locked_fields: list[str] = []
+
+
+class ContentSafetyEventSchema(BaseModel):
+    """One logged content-safety verdict."""
+
+    id: int
+    user_id: int | None = None
+    surface: str
+    direction: str
+    verdict: str
+    matched: list[str] = []
+    detail: str | None = None
+    created_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

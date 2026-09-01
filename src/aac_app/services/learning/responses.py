@@ -109,6 +109,70 @@ class ResponseProcessingMixin:
                 user_lang = self._get_user_language(session.user_id, db)
                 translation_service = TranslationService()
 
+                # --- Layered content safety (Layer 1): gate the student's
+                # input *before* any LLM call and the resulting feedback
+                # before it is persisted. Resolve the effective policy once.
+                from ...services.content_safety import (
+                    check_text,
+                    log_event,
+                    resolve_policy_for_user,
+                )
+
+                policy = resolve_policy_for_user(session.user_id, db)
+                block_reason = None
+                if policy.feature_blocked("block_ai_chat"):
+                    block_reason = "feature_lock: block_ai_chat"
+                else:
+                    input_verdict = check_text(policy, student_response)
+                    if input_verdict.blocked:
+                        log_event(
+                            user_id=session.user_id,
+                            surface="chat",
+                            direction="input",
+                            verdict="redirected",
+                            matched=list(input_verdict.matched_terms),
+                            detail=student_response[:300],
+                            db=db,
+                        )
+                        block_reason = "blocked input"
+                if block_reason is not None:
+                    # Friendly deflection: never call the LLM for blocked
+                    # input, never reveal why in child-facing language.
+                    deflection = translation_service.get(
+                        user_lang, "pages/learning", "safetyRedirect"
+                    )
+                    entry = {
+                        "type": "response",
+                        "student_answer": student_response,
+                        "is_correct": False,
+                        "feedback": deflection,
+                        "confidence": 0.5,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                    if is_symbol and symbols:
+                        entry["mode"] = "symbol"
+                        entry["symbols"] = symbols
+                    session.conversation_history = append_history_entry(
+                        session.conversation_history, entry
+                    )
+                    self._persist_history(session, db)
+                    logger.info(
+                        "Learning chat input {} for user {}", block_reason, session.user_id
+                    )
+                    return {
+                        "success": True,
+                        "is_correct": False,
+                        "transcription": student_response if is_voice else None,
+                        "feedback_message": deflection,
+                        "answer_revealed": False,
+                        "confidence": 0.5,
+                        "comprehension_score": session.comprehension_score,
+                        "next_action": "continue_questions",
+                        "questions_answered": session.questions_answered,
+                        "correct_answers": session.correct_answers,
+                        "provider_used": self.provider_type,
+                    }
+
                 # If there's a specific question, evaluate the answer
                 if last_question and (
                     isinstance(last_question.get("question"), str)
@@ -372,6 +436,27 @@ class ResponseProcessingMixin:
                 feedback_message = analysis_data.get("encouraging_feedback") or (
                     translation_service.get(user_lang, "pages/learning", default_feedback_key)
                 )
+
+                # Output gate: never persist a feedback/answer that trips the
+                # deterministic filter, whatever the LLM produced.
+                output_verdict = check_text(policy, feedback_message)
+                if output_verdict.blocked:
+                    log_event(
+                        user_id=session.user_id,
+                        surface="chat",
+                        direction="output",
+                        verdict="redirected",
+                        matched=list(output_verdict.matched_terms),
+                        detail=feedback_message[:300],
+                        db=db,
+                    )
+                    feedback_message = translation_service.get(
+                        user_lang, "pages/learning", "safetyRedirect"
+                    )
+                if policy.max_response_length is not None:
+                    words = feedback_message.split()
+                    if len(words) > policy.max_response_length:
+                        feedback_message = " ".join(words[: policy.max_response_length]) + "…"
 
                 # Store response
                 entry = {

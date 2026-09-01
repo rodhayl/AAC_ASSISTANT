@@ -364,8 +364,49 @@ def get_next_symbol_suggestions_post(
         # Get unified suggestions from PredictionService. When a topic is set
         # and no catalog symbols match it, an LLM-generated word list expands
         # the vocabulary so learners are never limited by the symbol database.
+        #
+        # Layered content safety: resolve the student's effective policy once,
+        # drop a blocked/custom-locked topic (friendly silent fallback for
+        # prediction — the chat/topic surfaces surface explicit redirects),
+        # and hand the policy to predict_next so topic words and pictogram
+        # generation are gated too.
+        from src.aac_app.services.content_safety import (
+            check_text,
+            log_event,
+            resolve_policy_for_user,
+        )
+
+        content_policy = resolve_policy_for_user(current_user.id, db)
+        effective_topic = request.topic
+        if effective_topic and effective_topic.strip():
+            if content_policy.feature_blocked("block_custom_topics"):
+                log_event(
+                    user_id=current_user.id,
+                    surface="topic",
+                    direction="input",
+                    verdict="blocked",
+                    detail=(
+                        f"feature_lock: block_custom_topics; topic: {effective_topic[:120]}"
+                    ),
+                    db=db,
+                )
+                effective_topic = ""
+            else:
+                topic_verdict = check_text(content_policy, effective_topic)
+                if topic_verdict.blocked:
+                    log_event(
+                        user_id=current_user.id,
+                        surface="topic",
+                        direction="input",
+                        verdict="redirected",
+                        matched=list(topic_verdict.matched_terms),
+                        detail=effective_topic[:300],
+                        db=db,
+                    )
+                    effective_topic = ""
+
         topic_word_fetcher = None
-        if request.topic and request.topic.strip():
+        if effective_topic and effective_topic.strip():
             topic_word_fetcher = _build_topic_word_fetcher()
 
         final_suggestions = prediction_service.predict_next(
@@ -375,9 +416,10 @@ def get_next_symbol_suggestions_post(
             language=user_lang,
             offset=offset,
             board_id=request.board_id,
-            topic=request.topic,
+            topic=effective_topic,
             db=db,
             topic_word_fetcher=topic_word_fetcher,
+            content_policy=content_policy,
         )
 
         logger.info(

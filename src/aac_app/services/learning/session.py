@@ -47,6 +47,38 @@ class SessionLifecycleMixin:
                 if not user:
                     return {"success": False, "error": "User not found"}
 
+                # Layered content safety (Layer 1): never start a session on a
+                # topic the student's effective policy blocks, and honor the
+                # teacher/admin feature lock on custom topics.
+                from ...services.content_safety import (
+                    check_text,
+                    log_event,
+                    resolve_policy_for_user,
+                )
+
+                policy = resolve_policy_for_user(user_id, db)
+                topic_verdict = check_text(policy, topic)
+                blocked_by_lock = policy.feature_blocked("block_custom_topics")
+                if blocked_by_lock or topic_verdict.blocked:
+                    log_event(
+                        user_id=user_id,
+                        surface="topic",
+                        direction="input",
+                        verdict="blocked",
+                        matched=list(topic_verdict.matched_terms),
+                        detail=(
+                            f"feature_lock: block_custom_topics; topic: {topic[:120]}"
+                            if blocked_by_lock
+                            else topic[:300]
+                        ),
+                        db=db,
+                    )
+                    return {
+                        "success": False,
+                        "error": "Blocked topic",
+                        "safety_blocked": True,
+                    }
+
                 # Create learning plan and task
                 plan = LearningPlan(
                     user_id=user_id,

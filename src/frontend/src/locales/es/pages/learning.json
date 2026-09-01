@@ -154,5 +154,6 @@
     "quiz": "Cuestionario",
     "conversation": "Conversación",
     "roleplay": "Juego de roles"
-  }
+  },
+  "safetyRedirect": "¡Hablemos de otra cosa! Cuéntame qué tal tu día o qué has hecho hoy."
 }

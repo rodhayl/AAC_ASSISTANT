@@ -17,7 +17,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import User
+from src.aac_app.models import ContentSafetyEvent, User
+from src.aac_app.services import content_safety as safety_service
 from src.aac_app.services.guardian_profile_service import get_guardian_profile_service
 from src.aac_app.services.template_manager import get_template_manager
 from src.api import schemas
@@ -43,6 +44,24 @@ def get_current_teacher_or_admin(
             ),
         )
     return current_user
+
+
+def _enforce_locked_safety_fields(
+    safety: dict, current_user: User
+) -> dict:
+    """Reject teacher overrides of admin-locked safety fields."""
+    locked = set(safety_service.locked_fields())
+    submitted = {k for k in safety if k in locked}
+    if submitted:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=get_text(
+                user=current_user,
+                key="errors.safety.fieldLocked",
+                fields=", ".join(sorted(submitted)),
+            ),
+        )
+    return safety
 
 
 # --- Template Endpoints ---
@@ -232,8 +251,9 @@ def create_student_profile(
             exclude_none=True
         )
     if profile_data.safety_constraints:
-        changes["safety_constraints"] = profile_data.safety_constraints.model_dump(
-            exclude_none=True
+        changes["safety_constraints"] = _enforce_locked_safety_fields(
+            profile_data.safety_constraints.model_dump(exclude_none=True),
+            current_user,
         )
     if profile_data.companion_persona:
         changes["companion_persona"] = profile_data.companion_persona.model_dump(
@@ -311,8 +331,9 @@ def update_student_profile(
             exclude_none=True
         )
     if profile_data.safety_constraints is not None:
-        changes["safety_constraints"] = profile_data.safety_constraints.model_dump(
-            exclude_none=True
+        changes["safety_constraints"] = _enforce_locked_safety_fields(
+            profile_data.safety_constraints.model_dump(exclude_none=True),
+            current_user,
         )
     if profile_data.companion_persona is not None:
         changes["companion_persona"] = profile_data.companion_persona.model_dump(
@@ -345,6 +366,27 @@ def update_student_profile(
         f"Guardian profile updated for student {student_id} by {current_user.username}"
     )
     return profile
+
+
+@router.get(
+    "/students/{student_id}/safety-events",
+    response_model=list[schemas.ContentSafetyEventSchema],
+)
+def list_student_safety_events(
+    student_id: int,
+    limit: int = Query(50, ge=1, le=500),
+    current_user: User = Depends(get_current_teacher_or_admin),
+    db: Session = Depends(get_db),
+):
+    """Recent content-safety verdicts for one roster student."""
+    verify_student_access(student_id, current_user, db)
+    return (
+        db.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.user_id == student_id)
+        .order_by(ContentSafetyEvent.id.desc())
+        .limit(limit)
+        .all()
+    )
 
 
 @router.delete("/students/{student_id}")

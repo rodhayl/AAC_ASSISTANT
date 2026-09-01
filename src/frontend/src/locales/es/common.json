@@ -273,6 +273,15 @@
       "alreadyCompleted": "La configuración inicial del administrador ya se ha completado.",
       "defaultPasswordForbidden": "No se permite usar la contraseña predeterminada de desarrollo para configurar el administrador.",
       "adminCreated": "Cuenta de administrador creada correctamente"
+    },
+    "safety": {
+      "blockedTopic": "Ese tema no está disponible ahora. ¡Elijamos otro!",
+      "blockedBoardPrompt": "Esta petición no se puede procesar. Prueba a describir otro tablero.",
+      "boardAiDisabled": "La creación de tableros con IA está desactivada para esta cuenta.",
+      "suggestionBlocked": "Esta sugerencia no se puede añadir.",
+      "symbolBlocked": "Esa etiqueta no se puede usar.",
+      "invalidLevel": "Nivel de filtro de contenido no válido. Usa estricto, estándar o relajado.",
+      "fieldLocked": "Estos campos están bloqueados por el administrador y no se pueden cambiar: {{fields}}"
     }
   },
   "symbolEditor": {

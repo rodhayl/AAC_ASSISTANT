@@ -10,6 +10,7 @@ from .audit_log import AuditLog, FailedLoginAttempt
 from .base import Base
 from .board import BoardAssignment, BoardSymbol, CommunicationBoard
 from .collaboration import CollaborationSession
+from .content_safety import ContentSafetyEvent
 from .guardian import GuardianProfile, GuardianProfileHistory
 from .learning import (
     LearningMode,
@@ -32,6 +33,7 @@ __all__ = [
     "BoardSymbol",
     "CollaborationSession",
     "CommunicationBoard",
+    "ContentSafetyEvent",
     "FailedLoginAttempt",
     "GuardianProfile",
     "GuardianProfileHistory",

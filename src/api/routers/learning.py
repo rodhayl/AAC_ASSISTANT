@@ -125,6 +125,11 @@ def start_session(
     )
 
     if not result["success"]:
+        if result.get("safety_blocked"):
+            raise HTTPException(
+                status_code=403,
+                detail=get_text(current_user, "errors.safety.blockedTopic"),
+            )
         raise HTTPException(
             status_code=400,
             detail=result.get("error", get_text(current_user, "errors.unknownError")),

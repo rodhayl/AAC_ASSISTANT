@@ -199,6 +199,38 @@ def _generate_in_background(
     rate_limited = False
     global _last_llm_call_at
     try:
+        # Layer-1 content gate (server-wide): never spend an LLM call on a
+        # label the global policy blocks, whatever the call path (Smartbar,
+        # topic words, future callers). Per-student overrides are enforced
+        # upstream (prediction service) where the student is known.
+        try:
+            from src.aac_app.services.content_safety import (
+                check_text as _safety_check,
+            )
+            from src.aac_app.services.content_safety import (
+                load_global_policy as _load_policy,
+            )
+            from src.aac_app.services.content_safety import (
+                log_event as _log_event,
+            )
+
+            _verdict = _safety_check(_load_policy(), label)
+            if _verdict.blocked:
+                _log_event(
+                    user_id=None,
+                    surface="pictogram",
+                    direction="output",
+                    verdict="blocked",
+                    matched=list(_verdict.matched_terms),
+                    detail=f"autogen label (server gate): {label[:200]}",
+                )
+                logger.info("Blocked auto-generation of {!r}: content policy", label)
+                return
+        except Exception as exc:
+            logger.warning(
+                "Content gate unavailable for autogen label {!r}: {}", label, exc
+            )
+
         # Re-check right before spending an LLM call (race window between the
         # in-memory check and this thread actually running).
         if _has_catalog_symbol(label):
