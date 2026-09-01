@@ -97,7 +97,8 @@
       "settingTooLong": "{{setting}} supera la longitud máxima de {{maximum}} caracteres.",
       "settingUrlInvalid": "{{setting}} debe ser una URL HTTP o HTTPS válida.",
       "updated": "Ajustes actualizados correctamente",
-      "uiLanguageUpdated": "Idioma de la interfaz actualizado"
+      "uiLanguageUpdated": "Idioma de la interfaz actualizado",
+      "autogenCapRange": "autogen_daily_cap debe ser un entero entre -1 y 500"
     },
     "notifications": {
       "invalidToken": "Token inválido",
@@ -218,7 +219,8 @@
       "systemEditAdminOnly": "Solo los administradores pueden editar modos de aprendizaje del sistema",
       "editForbidden": "No tienes autorización para editar este modo de aprendizaje",
       "systemDeleteAdminOnly": "Solo los administradores pueden eliminar modos de aprendizaje del sistema",
-      "deleteForbidden": "No tienes autorización para eliminar este modo de aprendizaje"
+      "deleteForbidden": "No tienes autorización para eliminar este modo de aprendizaje",
+      "defaultNotFound": "El modo de aprendizaje por defecto ya no existe"
     },
     "admin": {
       "databaseResetFailed": "Error al restablecer la base de datos: {{error}}",

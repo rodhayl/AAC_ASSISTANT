@@ -97,7 +97,8 @@
       "settingTooLong": "{{setting}} exceeds the maximum length of {{maximum}} characters.",
       "settingUrlInvalid": "{{setting}} must be a valid HTTP or HTTPS URL.",
       "updated": "Settings updated successfully",
-      "uiLanguageUpdated": "UI language updated"
+      "uiLanguageUpdated": "UI language updated",
+      "autogenCapRange": "autogen_daily_cap must be an integer between -1 and 500"
     },
     "notifications": {
       "invalidToken": "Invalid token",
@@ -218,7 +219,8 @@
       "systemEditAdminOnly": "Only admins can edit system learning modes",
       "editForbidden": "You are not authorized to edit this learning mode",
       "systemDeleteAdminOnly": "Only admins can delete system learning modes",
-      "deleteForbidden": "You are not authorized to delete this learning mode"
+      "deleteForbidden": "You are not authorized to delete this learning mode",
+      "defaultNotFound": "The default learning mode no longer exists"
     },
     "admin": {
       "databaseResetFailed": "Failed to reset database: {{error}}",

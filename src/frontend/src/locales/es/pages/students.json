@@ -124,6 +124,5 @@
   "maxResponseLengthHelp": "Vacío = sin límite.",
   "triStateOn": "Bloqueado",
   "triStateDefault": "Por defecto del admin",
-  "triStateOff": "Permitido",
-  "adminLocked": "Bloqueado por el administrador"
+  "triStateOff": "Permitido"
 }
