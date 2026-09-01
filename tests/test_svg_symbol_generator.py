@@ -232,6 +232,74 @@ def test_build_shape_spec_prompt_carries_disambiguation_context():
     assert len(trimmed) < len(plain) + 240
 
 
+# --- ambiguous-word AAC meaning regression suite --------------------------
+# The ambiguous-word audit (letters + homonyms, 3 live runs each) found the
+# model deterministically picks a homonym meaning with no way to know the
+# student's theme ("cola" -> soda bottle, "banco" -> bank building, "beta" ->
+# the Greek letter). These tests pin the AAC-appropriate meaning for every
+# audited word and prove the hint reaches the effective prompt.
+
+
+def test_aac_meaning_hints_cover_every_audited_ambiguous_word():
+    """Every audited ambiguous word has a pinned AAC meaning (or is
+    deliberately left to the topic context), so the no-topic Smartbar cannot
+    silently drift back to the misleading training prior."""
+    from src.aac_app.services.svg_symbol_generator import AAC_MEANING_HINTS
+
+    audited = {
+        "banco", "beta", "cola", "copa", "delta", "gato", "lima",
+        "llave", "mango", "muñeca", "omega", "pico", "ratón",
+        "sierra", "vela",
+    }
+    # "omega" (the letter itself is the meaning) and "sierra" (mountains vs
+    # saw genuinely needs the topic) are intentionally not pinned statically.
+    assert audited - {"omega", "sierra"} <= set(AAC_MEANING_HINTS)
+
+
+def test_each_aac_meaning_hint_reaches_the_no_topic_prompt():
+    """The pinned meaning is embedded in the effective prompt for every
+    audited word, so the background generation actually receives it."""
+    from src.aac_app.services.svg_symbol_generator import AAC_MEANING_HINTS
+
+    for word, meaning in AAC_MEANING_HINTS.items():
+        prompt = build_shape_spec_prompt(word, "es")
+        assert f'If "{word}" has several meanings' in prompt
+        assert f'fits this context: "{meaning}"' in prompt
+
+
+def test_aac_meaning_spot_checks_pin_appropriate_meanings():
+    """The classic offenders resolve to the classroom meaning, not the
+    model's training prior (soda / bank / Greek letter / computer)."""
+    from src.aac_app.services.svg_symbol_generator import AAC_MEANING_HINTS
+
+    assert "tail" in AAC_MEANING_HINTS["cola"]
+    assert "bottle" not in AAC_MEANING_HINTS["cola"]
+    assert "bench" in AAC_MEANING_HINTS["banco"]
+    assert "bank building" not in AAC_MEANING_HINTS["banco"]
+    assert "betta fish" in AAC_MEANING_HINTS["beta"]
+    assert "letter" not in AAC_MEANING_HINTS["beta"]
+    # The animal meaning is selected; the computer-mouse sense is explicitly
+    # excluded, not presented as an option.
+    assert "the animal" in AAC_MEANING_HINTS["ratón"]
+    assert "not a computer mouse" in AAC_MEANING_HINTS["ratón"]
+    assert "door key" in AAC_MEANING_HINTS["llave"]
+
+
+def test_explicit_topic_overrides_static_meaning_hint():
+    """A real learning topic wins over the pinned default, so a tools board
+    can still turn "sierra"-style words toward the theme's meaning."""
+    prompt = build_shape_spec_prompt("cola", "es", context="animales de la granja")
+    assert 'fits this context: "animales de la granja"' in prompt
+    assert 'fits this context: "the tail of an animal"' not in prompt
+
+
+def test_no_meaning_hint_without_ambiguous_word_or_topic():
+    """Unambiguous words (and unknown ones) get no disambiguation line, so
+    the token budget stays stable outside the pinned set."""
+    assert "has several meanings" not in build_shape_spec_prompt("gato feliz", "es")
+    assert "has several meanings" not in build_shape_spec_prompt("telescopio", "es")
+
+
 def test_build_shape_spec_prompt_requires_centered_placement():
     """The prompt must keep telling the model to center the drawing and to
     stay within a sensible radius: corner-placed pictograms (a shape at far

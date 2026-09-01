@@ -32,6 +32,29 @@ _ALLOWED_KINDS = frozenset(
 # cannot smuggle e.g. ``url(javascript:...)`` through a fill value.
 _COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 
+# AAC-appropriate meaning for ambiguous/homonym words, used when no learning
+# topic is available to disambiguate (e.g. the home Smartbar). Without this
+# the model deterministically picks its training prior: "cola" -> a soda
+# bottle, "banco" -> a bank building, "beta" -> the Greek letter. A real
+# topic context always wins over these defaults (see
+# ``build_shape_spec_prompt``). Keys are normalized labels (stripped,
+# lowercased, no accents stripped).
+AAC_MEANING_HINTS: dict[str, str] = {
+    "banco": "a bench to sit on",
+    "beta": "a betta fish (small colorful aquarium fish)",
+    "cola": "the tail of an animal",
+    "copa": "a drinking cup or glass",
+    "delta": "the triangular delta where a river meets the sea",
+    "gato": "a cat (the pet animal)",
+    "lima": "a green lime fruit",
+    "llave": "a door key",
+    "mango": "a mango fruit",
+    "muñeca": "a doll",
+    "pico": "a bird's beak",
+    "ratón": "a small mouse (the animal, not a computer mouse)",
+    "vela": "a candle",
+}
+
 # Unified drawing canvas: everything is centered in a 512x512 viewBox.
 CANVAS = 512.0
 _CENTER = CANVAS / 2.0
@@ -348,9 +371,15 @@ def build_shape_spec_prompt(
     word has a pictogram the catalog re-check reuses it regardless of topic.
     """
     lang_hint = "Spanish" if str(language).startswith("es") else "English"
+    # An explicit learning topic wins; without one, fall back to the pinned
+    # AAC meaning for ambiguous words so the home Smartbar still disambiguates
+    # ("cola" -> tail, never a soda bottle).
+    topic = (context or "").strip()
+    if not topic:
+        topic = AAC_MEANING_HINTS.get((label or "").strip().lower(), "")
     context_hint = ""
-    if context and context.strip():
-        concise = " ".join(context.strip().split())[:80]
+    if topic:
+        concise = " ".join(topic.split())[:80]
         context_hint = (
             f"If \"{label}\" has several meanings, draw the meaning that "
             f"fits this context: \"{concise}\"; otherwise draw the most "
