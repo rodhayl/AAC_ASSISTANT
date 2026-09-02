@@ -37,7 +37,7 @@ function loadLocalTopics(userId: number): SavedTopic[] {
 // each triggers the migration on mount. Serialize them through a single
 // in-flight promise so the second caller waits for the first to finish (and
 // find the localStorage key already gone) instead of double-posting.
-let migrationInFlight: Promise<void> | null = null;
+const migrationsInFlight = new Map<number, Promise<void>>();
 
 /**
  * One-time migration: push topics still sitting in legacy localStorage into
@@ -45,12 +45,16 @@ let migrationInFlight: Promise<void> | null = null;
  * create topics (teacher/admin) — the endpoint rejects students.
  */
 export function migrateLocalTopicsToBackend(userId: number): Promise<void> {
-  if (!migrationInFlight) {
-    migrationInFlight = doMigrateLocalTopics(userId).finally(() => {
-      migrationInFlight = null;
-    });
-  }
-  return migrationInFlight;
+  const existing = migrationsInFlight.get(userId);
+  if (existing) return existing;
+
+  const migration = doMigrateLocalTopics(userId).finally(() => {
+    if (migrationsInFlight.get(userId) === migration) {
+      migrationsInFlight.delete(userId);
+    }
+  });
+  migrationsInFlight.set(userId, migration);
+  return migration;
 }
 
 async function doMigrateLocalTopics(userId: number): Promise<void> {

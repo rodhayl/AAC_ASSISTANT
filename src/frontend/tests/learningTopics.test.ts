@@ -125,6 +125,28 @@ describe('learningTopics backend store', () => {
     expect(localStorage.getItem(`learning-topics-${userId}`)).not.toBeNull();
   });
 
+  it('does not share an in-flight migration between different users', async () => {
+    const otherUserId = userId + 1;
+    localStorage.setItem(
+      `learning-topics-${userId}`,
+      JSON.stringify([{ id: 1, board: 'Board A', topic: 'Greetings', createdBy: 'Teacher' }]),
+    );
+    localStorage.setItem(
+      `learning-topics-${otherUserId}`,
+      JSON.stringify([{ id: 2, board: 'Board B', topic: 'Colors', createdBy: 'Other Teacher' }]),
+    );
+    apiMock.post.mockResolvedValue({});
+
+    await Promise.all([
+      migrateLocalTopicsToBackend(userId),
+      migrateLocalTopicsToBackend(otherUserId),
+    ]);
+
+    expect(apiMock.post).toHaveBeenCalledTimes(2);
+    expect(localStorage.getItem(`learning-topics-${userId}`)).toBeNull();
+    expect(localStorage.getItem(`learning-topics-${otherUserId}`)).toBeNull();
+  });
+
   it('skips migration when there is no legacy data', async () => {
     await migrateLocalTopicsToBackend(userId);
     expect(apiMock.post).not.toHaveBeenCalled();

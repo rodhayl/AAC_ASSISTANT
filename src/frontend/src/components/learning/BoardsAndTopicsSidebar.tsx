@@ -93,21 +93,16 @@ export function BoardsAndTopicsSidebar({
     }, [userId, canManageTopics]);
 
     useEffect(() => {
-        if (!userId) return;
         let cancelled = false;
         // Teachers/admins trigger the one-time localStorage migration; students
         // read the topics their roster teachers saved (server-side).
-        void loadTopicsForUser(userId, canManageTopics)
-            .then((topics) => {
-                if (!cancelled) setSavedTopics(topics);
-            })
-            .catch(() => {
-                if (!cancelled) setSavedTopics([]);
-            });
+        void Promise.resolve().then(() => loadSavedTopics()).catch(() => {
+            if (!cancelled) setSavedTopics([]);
+        });
         return () => {
             cancelled = true;
         };
-    }, [userId, canManageTopics]);
+    }, [loadSavedTopics]);
 
     const addSavedTopic = async () => {
         let topicName = customTopic.trim();

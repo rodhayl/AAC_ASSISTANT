@@ -16,6 +16,10 @@ describe('symbol category styles', () => {
       // The dot must come from the shared palette, not a one-off class.
       expect(AVATAR_BG_COLORS).toContain(expected);
     }
+    expect(getCategoryStyle('emotions').border).toContain('violet');
+    expect(getCategoryStyle('emotions').hoverBorder).toContain('violet');
+    expect(getCategoryStyle('emotions').badgeBg).toContain('violet');
+    expect(getCategoryStyle('emotions').badgeText).toContain('violet');
   });
 
   it('keeps punctuation and general dots neutral', () => {

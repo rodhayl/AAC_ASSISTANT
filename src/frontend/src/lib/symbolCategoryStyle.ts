@@ -1,4 +1,4 @@
-import { AVATAR_BG_COLORS } from './avatarPalette'
+import { AVATAR_BG_COLORS } from './avatarPalette';
 
 export type CategoryKind =
   | 'pronouns'
@@ -13,7 +13,7 @@ export type CategoryKind =
 // avatars share one saturated solid visual language. (Emotions uses violet,
 // matching the palette, instead of a near-duplicate purple.)
 // Palette order: indigo, sky, emerald, amber, rose, violet, teal, orange.
-const [DOT_PRONOUNS, , DOT_VERBS, DOT_NOUNS, DOT_ARTICLES, DOT_EMOTIONS] = AVATAR_BG_COLORS
+const [DOT_PRONOUNS, , DOT_VERBS, DOT_NOUNS, DOT_ARTICLES, DOT_EMOTIONS] = AVATAR_BG_COLORS;
 
 export interface CategoryStyle {
   kind: CategoryKind
@@ -100,10 +100,10 @@ const STYLES: Record<CategoryKind, Omit<CategoryStyle, 'kind'>> = {
     dot: DOT_NOUNS,
   },
   emotions: {
-    border: 'border-purple-200 dark:border-purple-800/70',
-    hoverBorder: 'hover:border-purple-400 dark:hover:border-purple-500',
-    badgeBg: 'bg-purple-100 dark:bg-purple-900/60',
-    badgeText: 'text-purple-700 dark:text-purple-200',
+    border: 'border-violet-200 dark:border-violet-800/70',
+    hoverBorder: 'hover:border-violet-400 dark:hover:border-violet-500',
+    badgeBg: 'bg-violet-100 dark:bg-violet-900/60',
+    badgeText: 'text-violet-700 dark:text-violet-200',
     dot: DOT_EMOTIONS,
   },
   punctuation: {

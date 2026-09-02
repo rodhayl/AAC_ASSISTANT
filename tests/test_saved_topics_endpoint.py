@@ -6,7 +6,7 @@ POST (teacher/admin only), and DELETE (owner, admin override, 404).
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models import SavedTopic, StudentTeacher, User
+from src.aac_app.models import CommunicationBoard, SavedTopic, StudentTeacher, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.api.main import app
 from tests.auth_helpers import create_test_headers
@@ -60,16 +60,21 @@ def _create_topic(db, user, topic="El espacio", board="Viaje al espacio"):
 
 
 def test_teacher_creates_and_lists_own_topics(teacher_user, test_db_session):
+    board = CommunicationBoard(user_id=teacher_user.id, name="Los animales")
+    test_db_session.add(board)
+    test_db_session.commit()
+    test_db_session.refresh(board)
+
     response = client.post(
         "/api/learning/topics/saved",
-        json={"topic": "Animales", "board": "Los animales", "board_id": 7},
+        json={"topic": "Animales", "board": "Los animales", "board_id": board.id},
         headers=create_test_headers(teacher_user.id, teacher_user.username, "teacher"),
     )
     assert response.status_code == 201
     created = response.json()
     assert created["topic"] == "Animales"
     assert created["board"] == "Los animales"
-    assert created["board_id"] == 7
+    assert created["board_id"] == board.id
     assert created["user_id"] == teacher_user.id
     assert created["created_by"] == "Saved Topics Teacher"
     assert "id" in created and "created_at" in created
@@ -80,6 +85,56 @@ def test_teacher_creates_and_lists_own_topics(teacher_user, test_db_session):
     )
     assert listed.status_code == 200
     assert [entry["topic"] for entry in listed.json()] == ["Animales"]
+
+
+def test_saved_topic_rejects_missing_board(teacher_user):
+    response = client.post(
+        "/api/learning/topics/saved",
+        json={"topic": "Animales", "board": "Los animales", "board_id": 999999},
+        headers=create_test_headers(teacher_user.id, teacher_user.username, "teacher"),
+    )
+    assert response.status_code == 404
+
+
+def test_saved_topic_rejects_private_board_owned_by_another_teacher(
+    teacher_user, test_db_session
+):
+    other = User(
+        username="saved_topics_private_board_owner",
+        display_name="Private Board Owner",
+        user_type="teacher",
+        password_hash=get_password_hash("TeacherPass123"),
+        is_active=True,
+    )
+    test_db_session.add(other)
+    test_db_session.commit()
+    test_db_session.refresh(other)
+    board = CommunicationBoard(user_id=other.id, name="Private")
+    test_db_session.add(board)
+    test_db_session.commit()
+    test_db_session.refresh(board)
+
+    response = client.post(
+        "/api/learning/topics/saved",
+        json={"topic": "Privado", "board": "Private", "board_id": board.id},
+        headers=create_test_headers(teacher_user.id, teacher_user.username, "teacher"),
+    )
+    assert response.status_code == 403
+
+
+def test_saved_topic_accepts_owned_board(teacher_user, test_db_session):
+    board = CommunicationBoard(user_id=teacher_user.id, name="Owned")
+    test_db_session.add(board)
+    test_db_session.commit()
+    test_db_session.refresh(board)
+
+    response = client.post(
+        "/api/learning/topics/saved",
+        json={"topic": "Owned topic", "board": "Owned", "board_id": board.id},
+        headers=create_test_headers(teacher_user.id, teacher_user.username, "teacher"),
+    )
+    assert response.status_code == 201
+    assert response.json()["board_id"] == board.id
 
 
 def test_student_cannot_create_topic(student_user):

@@ -223,6 +223,10 @@ def create_saved_topic(
             detail=get_text(current_user, "errors.unauthorized"),
         )
 
+    if payload.board_id is not None:
+        board = get_board_or_404(db, payload.board_id, current_user)
+        require_board_view_access(board, current_user, db)
+
     topic = SavedTopic(
         user_id=current_user.id,
         board=payload.board.strip()[:100],
