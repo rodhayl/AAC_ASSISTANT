@@ -157,6 +157,71 @@ console.log('\n=== Pagination on /teachers ===');
 }
 
 // ---------------------------------------------------------------------------
+// Search: filtering composes with pagination and highlights matches
+// ---------------------------------------------------------------------------
+console.log('\n=== Search + highlight ===');
+{
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await login(page, 'admin1', 'Admin123');
+  await page.goto(`${BASE}/teachers`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.waitForSelector('[data-testid="admin-saved-topics"] tbody tr', { timeout: 20000 });
+  await page.waitForTimeout(1000);
+
+  // No marks before a search is active.
+  const marksBefore = await page.locator('[data-testid="admin-saved-topics"] mark').count();
+  check('No highlight marks before searching', marksBefore === 0, `marks: ${marksBefore}`);
+
+  // Search for a distinctive term; items 1..9 are "Paginación <marker> 01"..
+  // "09", so searching "08" must narrow the table to that single row.
+  const searchTerm = `${runMarker} 08`;
+  await page.getByLabel(/Search saved topics|Buscar temas guardados/).fill(searchTerm);
+  await page.waitForTimeout(1500); // debounce + refetch
+
+  const searchTotal = await page.locator('[data-testid="saved-topics-total"]').innerText();
+  check('Search narrows the total to 1', /1/.test(searchTotal) && !/[2-9]/.test(searchTotal.replace(/^\D*1/, '')), `total: "${searchTotal}"`);
+
+  const searchRows = await page.locator('[data-testid="admin-saved-topics"] tbody tr').count();
+  check('Search shows a single row', searchRows === 1, `rows: ${searchRows}`);
+
+  // Search composes with pagination: the filtered total fits one page, and
+  // both directions are disabled.
+  const prevDisabledSearch = await page.getByRole('button', { name: /Previous|Anterior/ }).isDisabled();
+  const nextDisabledSearch = await page.getByRole('button', { name: /Next|Siguiente/ }).isDisabled();
+  check('Page controls adapt to the filtered result', prevDisabledSearch && nextDisabledSearch);
+
+  // The matched segments are highlighted in the topic cell. The board cell
+  // shows no highlight here: the term matched the topic, and the board text
+  // ("Paginación") does not contain the full search term.
+  const topicMarks = await page.locator('[data-testid="admin-saved-topics"] tbody tr td:nth-child(1) mark').allInnerTexts();
+  const boardMarks = await page.locator('[data-testid="admin-saved-topics"] tbody tr td:nth-child(2) mark').allInnerTexts();
+  check('Matched topic segments highlighted', topicMarks.length > 0, `marks: ${JSON.stringify(topicMarks)}`);
+  check('Board without term overlap stays unhighlighted', boardMarks.length === 0, `marks: ${JSON.stringify(boardMarks)}`);
+
+  // Searching the board text highlights the board cell instead.
+  await page.getByLabel(/Search saved topics|Buscar temas guardados/).fill('Paginaci');
+  await page.waitForTimeout(1500);
+  const boardMarksNow = await page.locator('[data-testid="admin-saved-topics"] tbody tr td:nth-child(2) mark').allInnerTexts();
+  check('Board segments highlight when the term matches the board', boardMarksNow.length > 0, `marks: ${JSON.stringify(boardMarksNow.slice(0, 3))}`);
+
+  // Prefix search matches the remaining numbered items. The earlier
+  // deletion removed item 01 (the oldest row), so 02..09 = 8 rows.
+  await page.getByLabel(/Search saved topics|Buscar temas guardados/).fill(`${runMarker} 0`);
+  await page.waitForTimeout(1500);
+  const prefixRows = await page.locator('[data-testid="admin-saved-topics"] tbody tr').count();
+  check('Prefix search matches items 02..09 after the deletion', prefixRows === 8, `rows: ${prefixRows}`);
+
+  // Clearing the search restores the full list and removes all marks.
+  await page.getByLabel(/Search saved topics|Buscar temas guardados/).fill('');
+  await page.waitForTimeout(1500);
+  const rowsAfterClear = await page.locator('[data-testid="admin-saved-topics"] tbody tr').count();
+  check('Clearing the search restores the full page', rowsAfterClear === 25, `rows: ${rowsAfterClear}`);
+  const marksAfterClear = await page.locator('[data-testid="admin-saved-topics"] mark').count();
+  check('Highlight marks removed after clearing', marksAfterClear === 0, `marks: ${marksAfterClear}`);
+
+  await page.close();
+}
+
+// ---------------------------------------------------------------------------
 // Cleanup: remove every verification topic
 // ---------------------------------------------------------------------------
 console.log('\n=== Cleanup ===');
