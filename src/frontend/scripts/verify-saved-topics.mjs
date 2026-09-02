@@ -27,7 +27,27 @@ function check(name, ok, detail = '') {
   if (!ok) failures.push(name);
 }
 
+const authBlobs = new Map(); // username -> persisted auth-storage blob
+
 async function login(page, username, password) {
+  // Reuse a captured session for repeat logins of the same user: hitting the
+  // token endpoint once per section trips the production login rate limiter
+  // (HTTP 429) and aborts verification. The blob is the full zustand persist
+  // payload, so the app restores the session exactly as after a fresh login.
+  const cached = authBlobs.get(username);
+  if (cached) {
+    await page.addInitScript((blob) => {
+      localStorage.setItem('auth-storage', blob);
+    }, cached);
+    await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1200);
+    const restored = await page.evaluate(() => {
+      const auth = JSON.parse(localStorage.getItem('auth-storage') || '{}');
+      return Boolean(auth?.state?.token);
+    });
+    if (restored) return;
+    authBlobs.delete(username); // stale session; fall through to a fresh login
+  }
   await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForTimeout(800);
   await page.locator('#username').fill(username);
@@ -43,6 +63,8 @@ async function login(page, username, password) {
     if (!authenticated) throw new Error(`Login failed for ${username}`);
   });
   await page.waitForTimeout(1200);
+  const blob = await page.evaluate(() => localStorage.getItem('auth-storage'));
+  if (blob) authBlobs.set(username, blob);
 }
 
 const browser = await chromium.launch();
@@ -152,6 +174,29 @@ console.log('\n=== Teacher saves a topic ===');
   }, marker);
   check('Duplicate save rejected with an error toast', /ya est\u00E1 guardado|already saved/i.test(afterDupBody), `toast text present`);
   check('Duplicate save did not create a second row', dupCount === 1, `rows for marker: ${dupCount}`);
+
+  // Accent/case/whitespace folding: a variant of the same topic must also be
+  // rejected as a duplicate (server-side normalization matches the session
+  // flow's topic folding). The variant reuses the original topic's board so
+  // only the text differs.
+  const variantPost = await page.evaluate(async ({ marker }) => {
+    const auth = JSON.parse(localStorage.getItem('auth-storage') || '{}');
+    const token = auth?.state?.token;
+    const listRes = await fetch('/api/learning/topics/saved', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    const topics = await listRes.json();
+    const original = (Array.isArray(topics) ? topics : []).find((t) => t.topic === marker);
+    if (!original) return { status: 0 };
+    const folded = marker.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const res = await fetch('/api/learning/topics/saved', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ topic: `  ${folded}  `, board: original.board, board_id: original.board_id ?? null }),
+    });
+    return { status: res.status };
+  }, { marker });
+  check('Accent/case/whitespace variant rejected as duplicate', variantPost.status === 409, `status ${variantPost.status}`);
 
   // Remember teacher1's original display name so the rename flow can restore it.
   globalThis.__teacher1OriginalName = await page.evaluate(async () => {
@@ -433,6 +478,102 @@ console.log('\n=== Student sees teacher topics ===');
 }
 
 // ---------------------------------------------------------------------------
+// Board lifecycle: a topic whose board is deleted still starts, without a
+// dangling board_id on the session
+// ---------------------------------------------------------------------------
+console.log('\n=== Board lifecycle (deleted board) ===');
+{
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await login(page, 'teacher1', 'Teacher123');
+  const lifecycle = await page.evaluate(async (runMarker) => {
+    const auth = JSON.parse(localStorage.getItem('auth-storage') || '{}');
+    const token = auth?.state?.token;
+    const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+
+    // 1. Create a disposable board (creation is scoped to a user_id).
+    const boardRes = await fetch('/api/boards?user_id=3', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: `${runMarker} board` }),
+    });
+    if (!boardRes.ok) return { error: `board create ${boardRes.status}` };
+    const board = await boardRes.json();
+
+    // 2. Save a topic referencing it.
+    const topicName = `${runMarker} vida`;
+    const topicRes = await fetch('/api/learning/topics/saved', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ topic: topicName, board: board.name, board_id: board.id }),
+    });
+    if (!topicRes.ok) return { error: `topic create ${topicRes.status}` };
+    const topic = await topicRes.json();
+
+    // 3. Start a session from it while the board still exists (sanity).
+    const sessionRes = await fetch('/api/learning/start?user_id=3', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ topic: topicName, purpose: board.name, difficulty: 'basic', board_id: board.id }),
+    });
+    if (!sessionRes.ok) return { error: `session start ${sessionRes.status}` };
+    const session = await sessionRes.json();
+
+    // 4. Delete the board.
+    const delRes = await fetch(`/api/boards/${board.id}`, {
+      method: 'DELETE',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!delRes.ok && delRes.status !== 204) return { error: `board delete ${delRes.status}` };
+
+    return { boardId: board.id, topicId: topic.id, topicName, sessionId: session.session_id };
+  }, runMarker);
+  check('Board/topic/session lifecycle setup', !lifecycle.error, lifecycle.error ?? `board ${lifecycle.boardId}`);
+
+  if (!lifecycle.error) {
+    // 5. After the board is gone, starting a session with the stale board_id
+    //    is rejected (404) rather than silently persisting a dead reference.
+    const staleStart = await page.evaluate(async ({ boardId, topicName }) => {
+      const auth = JSON.parse(localStorage.getItem('auth-storage') || '{}');
+      const token = auth?.state?.token;
+      const res = await fetch('/api/learning/start?user_id=3', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ topic: topicName, purpose: 'x', difficulty: 'basic', board_id: boardId }),
+      });
+      return res.status;
+    }, { boardId: lifecycle.boardId, topicName: lifecycle.topicName });
+    check('Starting a session with a deleted board ID is rejected', staleStart === 404, `status ${staleStart}`);
+
+    // 6. The frontend drops the dangling ID, so a session started from the
+    //    sidebar after deletion runs board-less and still succeeds.
+    const boardlessStart = await page.evaluate(async ({ topicName }) => {
+      const auth = JSON.parse(localStorage.getItem('auth-storage') || '{}');
+      const token = auth?.state?.token;
+      const res = await fetch('/api/learning/start?user_id=3', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ topic: topicName, purpose: 'x', difficulty: 'basic', board_id: null }),
+      });
+      return res.status;
+    }, { topicName: lifecycle.topicName });
+    check('Session starts without board context after board deletion', boardlessStart === 200, `status ${boardlessStart}`);
+
+    // 7. The saved topic itself survives the board deletion (no FK).
+    const topicSurvives = await page.evaluate(async (topicId) => {
+      const auth = JSON.parse(localStorage.getItem('auth-storage') || '{}');
+      const token = auth?.state?.token;
+      const res = await fetch('/api/learning/topics/saved', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const topics = await res.json();
+      return (Array.isArray(topics) ? topics : []).some((t) => t.id === topicId);
+    }, lifecycle.topicId);
+    check('Saved topic survives board deletion', topicSurvives);
+  }
+  await page.close();
+}
+
+// ---------------------------------------------------------------------------
 // Admin: sees every teacher's topic on /teachers and deletes one via the UI
 // ---------------------------------------------------------------------------
 console.log('\n=== Admin saved-topics view ===');
@@ -486,8 +627,11 @@ console.log('\n=== Cleanup ===');
     });
     const topics = await res.json();
     let removed = 0;
+    // Fold case/accents so variants left behind by earlier failed runs
+    // (e.g. "VERIFICACION ...") are also cleaned up.
+    const fold = (text) => String(text).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     for (const t of Array.isArray(topics) ? topics : []) {
-      if (String(t.topic).startsWith('Verificación')) {
+      if (fold(t.topic).startsWith('VERIFICACION')) {
         const del = await fetch(`/api/learning/topics/saved/${t.id}`, {
           method: 'DELETE',
           headers: token ? { Authorization: `Bearer ${token}` } : {},
