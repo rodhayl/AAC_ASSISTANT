@@ -72,6 +72,8 @@
     "deleteSuccess": "Tema eliminado",
     "deleteFailed": "No se pudo eliminar el tema",
     "loadFailed": "No se pudieron cargar los temas guardados",
+    "searchPlaceholder": "Buscar por tema, contexto o profesor",
+    "searchAria": "Buscar temas guardados",
     "total": "{{count}} temas en total",
     "pageSize": "{{size}} por página",
     "pageSizeAria": "Temas por página",

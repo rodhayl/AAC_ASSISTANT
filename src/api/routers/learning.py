@@ -6,6 +6,7 @@ import unicodedata
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import LearningMode, SavedTopic, StudentTeacher, User, UserSettings
@@ -223,6 +224,7 @@ def list_saved_topics(
     scope: str = Query("own"),
     limit: int | None = Query(None, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    search: str = Query("", max_length=200),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
     response: Response = None,
@@ -236,6 +238,7 @@ def list_saved_topics(
 
     ``limit``/``offset`` paginate large collections; when ``limit`` is
     omitted the full list is returned so existing clients keep working.
+    ``search`` filters case-insensitively by topic, board, or creator name.
     """
     if scope == "all":
         if current_user.user_type != "admin":
@@ -256,6 +259,32 @@ def list_saved_topics(
         if not teacher_ids:
             return []
         filters = [SavedTopic.user_id.in_(teacher_ids)]
+
+    search_text = search.strip()
+    if search_text:
+        # Creator matching uses the refreshed display name: resolve the
+        # matching users first, then keep their topics alongside topic/board
+        # matches. Escaping % and _ keeps a query of "100%" literal.
+        escaped = (
+            search_text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        pattern = f"%{escaped}%"
+        matching_creator_ids = [
+            row.id
+            for row in db.query(User.id).filter(
+                (User.display_name.ilike(pattern, escape="\\"))
+                | (User.username.ilike(pattern, escape="\\"))
+            )
+        ]
+        search_filters = [
+            SavedTopic.topic.ilike(pattern, escape="\\"),
+            SavedTopic.board.ilike(pattern, escape="\\"),
+        ]
+        if matching_creator_ids:
+            search_filters.append(SavedTopic.created_by_user_id.in_(matching_creator_ids))
+        # Legacy rows without a stable creator ID can still match by snapshot.
+        search_filters.append(SavedTopic.created_by.ilike(pattern, escape="\\"))
+        filters.append(or_(*search_filters))
 
     if limit is not None:
         # Paginated callers (admin topic management) also need the unpaginated

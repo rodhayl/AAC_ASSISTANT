@@ -87,6 +87,8 @@ const translate = (key: string, options?: { name?: string }) => {
     'savedTopics.deleteSuccess': 'Topic deleted',
     'savedTopics.deleteFailed': 'Could not delete the topic',
     'savedTopics.loadFailed': 'Could not load saved topics',
+    'savedTopics.searchPlaceholder': 'Search by topic, board, or teacher',
+    'savedTopics.searchAria': 'Search saved topics',
     'savedTopics.total': `${options?.count ?? ''} topics in total`,
     'savedTopics.pageSize': `${options?.size ?? ''} per page`,
     'savedTopics.pageSizeAria': 'Topics per page',
@@ -258,6 +260,30 @@ describe('UserManagementPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Previous' }));
     await screen.findByText('Tema 1');
     expect(screen.getByTestId('saved-topics-page-indicator')).toHaveTextContent('Page 1 of 2');
+  });
+
+  it('filters saved topics through the debounced search box', async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.includes('/learning/topics/saved')) {
+        return { data: [savedTopic], headers: { 'x-total-count': '1' } } as never;
+      }
+      return { data: [teacher] } as never;
+    });
+    render(<UserManagementPage role="teacher" />);
+    await screen.findByText('Astronomía');
+
+    const searchBox = screen.getByLabelText('Search saved topics');
+    fireEvent.change(searchBox, { target: { value: 'astro' } });
+
+    // The request is debounced: nothing fires immediately.
+    expect(api.get).not.toHaveBeenCalledWith('/learning/topics/saved', expect.objectContaining({
+      params: expect.objectContaining({ search: 'astro' }),
+    }));
+    await waitFor(() => {
+      expect(api.get).toHaveBeenCalledWith('/learning/topics/saved', {
+        params: { scope: 'all', limit: 25, offset: 0, search: 'astro' },
+      });
+    });
   });
 
   it('changes the page size and returns to the first page', async () => {

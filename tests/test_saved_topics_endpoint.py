@@ -488,3 +488,42 @@ def test_list_creator_falls_back_to_legacy_snapshot(
     assert response.status_code == 200
     entry = next(item for item in response.json() if item["id"] == topic.id)
     assert entry["created_by_name"] == "Saved Topics Teacher"
+
+
+def test_list_search_filters_by_topic_board_and_creator(
+    teacher_user, test_db_session
+):
+    t1 = _create_topic(test_db_session, teacher_user, "Astronomía", "El cielo")
+    t2 = _create_topic(test_db_session, teacher_user, "Cocina", "Recetas")
+    headers = create_test_headers(teacher_user.id, teacher_user.username, "teacher")
+
+    # Topic match.
+    by_topic = client.get(
+        "/api/learning/topics/saved?search=astronom", headers=headers
+    )
+    assert [entry["id"] for entry in by_topic.json()] == [t1.id]
+
+    # Board match.
+    by_board = client.get("/api/learning/topics/saved?search=recetas", headers=headers)
+    assert [entry["id"] for entry in by_board.json()] == [t2.id]
+
+    # Creator display-name match returns the teacher's topics.
+    by_creator = client.get(
+        "/api/learning/topics/saved?search=saved+topics", headers=headers
+    )
+    assert {entry["id"] for entry in by_creator.json()} == {t1.id, t2.id}
+
+    # No match -> empty list.
+    none = client.get("/api/learning/topics/saved?search=zzznomatch", headers=headers)
+    assert none.json() == []
+
+    # SQL wildcards are escaped: a literal percent matches nothing here.
+    wildcard = client.get("/api/learning/topics/saved?search=%25", headers=headers)
+    assert wildcard.json() == []
+
+    # Search composes with pagination; the total reflects the filtered set.
+    paged = client.get(
+        "/api/learning/topics/saved?search=saved+topics&limit=1", headers=headers
+    )
+    assert len(paged.json()) == 1
+    assert paged.headers.get("X-Total-Count") == "2"

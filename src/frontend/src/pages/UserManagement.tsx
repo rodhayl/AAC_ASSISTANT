@@ -67,6 +67,17 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
   const [savedTopicsPage, setSavedTopicsPage] = useState(1)
   const [savedTopicsPageSize, setSavedTopicsPageSize] = useState<number>(25)
   const [savedTopicsTotal, setSavedTopicsTotal] = useState(0)
+  const [savedTopicsSearch, setSavedTopicsSearch] = useState('')
+  // Debounced copy of the search box: requests fire only after typing stops,
+  // keeping keystrokes from hammering the API.
+  const [savedTopicsSearchQuery, setSavedTopicsSearchQuery] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSavedTopicsSearchQuery(savedTopicsSearch.trim())
+      setSavedTopicsPage(1)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [savedTopicsSearch])
   const [deleteTopicState, setDeleteTopicState] = useState<{ isOpen: boolean; topic: { id: number; topic: string } | null }>({
     isOpen: false,
     topic: null,
@@ -93,7 +104,12 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     if (!showSavedTopics) return
     try {
       const response = await api.get('/learning/topics/saved', {
-        params: { scope: 'all', limit: savedTopicsPageSize, offset: (savedTopicsPage - 1) * savedTopicsPageSize },
+        params: {
+          scope: 'all',
+          limit: savedTopicsPageSize,
+          offset: (savedTopicsPage - 1) * savedTopicsPageSize,
+          ...(savedTopicsSearchQuery ? { search: savedTopicsSearchQuery } : {}),
+        },
       })
       if (!Array.isArray(response.data)) {
         throw new Error('Invalid response format: expected array')
@@ -112,7 +128,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       console.error('Failed to load saved topics:', loadError)
       setSavedTopicsError(extractError(loadError, t('savedTopics.loadFailed')))
     }
-  }, [showSavedTopics, t, savedTopicsPage, savedTopicsPageSize])
+  }, [showSavedTopics, t, savedTopicsPage, savedTopicsPageSize, savedTopicsSearchQuery])
 
   useEffect(() => {
     let cancelled = false
@@ -354,6 +370,15 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
               {savedTopicsError}
             </div>
           )}
+          <input
+            type="search"
+            value={savedTopicsSearch}
+            onChange={(event) => setSavedTopicsSearch(event.target.value)}
+            placeholder={t('savedTopics.searchPlaceholder')}
+            aria-label={t('savedTopics.searchAria')}
+            data-testid="saved-topics-search"
+            className="w-full max-w-sm rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
+          />
           {savedTopics.length === 0 ? (
             !savedTopicsError && (
               <div className="glass-panel rounded-xl p-6 text-center text-muted-foreground">
