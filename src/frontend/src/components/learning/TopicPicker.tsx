@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { SymbolImage } from '../common/SymbolImage';
 import { TeacherAvatar } from './TeacherAvatar';
 import { cn } from '../../lib/utils';
+import { groupTopicsByTeacher } from '../../lib/teacherTopicGroups';
 
 export interface PickerTopic {
   key: string;
@@ -19,6 +20,7 @@ export interface PickerTopic {
   emoji: string;
   /** Teacher who saved this topic; set when the pool mixes several teachers. */
   savedBy?: string;
+  savedByUserId?: number;
 }
 
 export interface PickerRecentTopic {
@@ -161,20 +163,23 @@ export function TopicPicker({
   // When saved topics mix several teachers, group them under a per-teacher
   // heading (the cards then drop their inline label — the section says it).
   const groups = useMemo(() => {
-    const teachers = Array.from(
-      new Set(topics.map((topic) => topic.savedBy).filter((name): name is string => Boolean(name))),
+    const savedGroups = groupTopicsByTeacher(
+      topics
+        .filter((topic): topic is PickerTopic & { savedBy: string } => Boolean(topic.savedBy))
+        .map((topic) => ({
+          ...topic,
+          createdBy: topic.savedBy,
+          createdByUserId: topic.savedByUserId,
+        })),
     );
-    if (teachers.length < 2) return null;
-    const teacherGroups = teachers.map((teacher) => ({
-      teacher,
-      topics: orderByPractice(topics.filter((topic) => topic.savedBy === teacher)),
-    }));
-    teacherGroups.sort(
-      (left, right) => right.topics.length - left.topics.length || left.teacher.localeCompare(right.teacher),
-    );
+    if (!savedGroups) return null;
     return {
       common: ordered.filter((topic) => !topic.savedBy),
-      teachers: teacherGroups,
+      teachers: savedGroups.map((group) => ({
+        teacher: group.teacher,
+        teacherId: group.teacherId,
+        topics: orderByPractice(group.topics),
+      })),
     };
   }, [ordered, topics]);
 
@@ -207,7 +212,7 @@ export function TopicPicker({
             })}
           </p>
           {groups.teachers.map((group) => (
-            <div key={group.teacher} className="mt-6" data-testid={`topic-group-${group.teacher}`}>
+            <div key={group.teacherId ?? group.teacher} className="mt-6" data-testid={`topic-group-${group.teacher}`}>
               <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <TeacherAvatar name={group.teacher} className="h-5 w-5 text-[10px]" />
                 {t('topicPicker.savedBy', { teacher: group.teacher })}

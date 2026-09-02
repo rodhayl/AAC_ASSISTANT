@@ -6,6 +6,7 @@ export type SavedTopic = {
   boardId?: number;
   topic: string;
   createdBy: string;
+  createdByUserId?: number;
 };
 
 /**
@@ -16,6 +17,11 @@ export type SavedTopic = {
  */
 
 const keyForUser = (userId: number) => `learning-topics-${userId}`;
+
+function isDuplicateResponse(error: unknown): boolean {
+  const response = (error as { response?: { status?: unknown } } | null)?.response;
+  return response?.status === 409;
+}
 
 function loadLocalTopics(userId: number): SavedTopic[] {
   try {
@@ -58,19 +64,32 @@ export function migrateLocalTopicsToBackend(userId: number): Promise<void> {
 }
 
 async function doMigrateLocalTopics(userId: number): Promise<void> {
+  const storageKey = keyForUser(userId);
   const local = loadLocalTopics(userId);
   if (local.length === 0) return;
   try {
     for (const topic of local) {
-      await api.post('/learning/topics/saved', {
-        board: topic.board,
-        board_id: topic.boardId ?? null,
-        topic: topic.topic,
-      });
+      try {
+        await api.post('/learning/topics/saved', {
+          board: topic.board,
+          board_id: topic.boardId ?? null,
+          topic: topic.topic,
+        });
+      } catch (error) {
+        // A 409 means a previous attempt already persisted this item; treat
+        // it as confirmed so retries can finish the remaining legacy items.
+        if (!isDuplicateResponse(error)) throw error;
+      }
+      // Remove each item immediately after success. If the browser closes or
+      // the connection fails midway, a retry cannot resend already migrated
+      // items. A duplicate response is also safe: the server's uniqueness
+      // policy treats it as already migrated.
+      const remaining = loadLocalTopics(userId).filter((candidate) => candidate.id !== topic.id);
+      if (remaining.length === 0) localStorage.removeItem(storageKey);
+      else localStorage.setItem(storageKey, JSON.stringify(remaining));
     }
-    localStorage.removeItem(keyForUser(userId));
   } catch {
-    // Keep the local copy so the migration retries on the next load.
+    // Keep only the unconfirmed items so the migration retries safely.
   }
 }
 
@@ -80,13 +99,16 @@ function mapFromApi(raw: {
   board_id?: number | null;
   topic: string;
   created_by: string;
+  created_by_user_id?: number | null;
+  created_by_name?: string | null;
 }): SavedTopic {
   return {
     id: raw.id,
     board: raw.board,
     ...(raw.board_id != null ? { boardId: raw.board_id } : {}),
     topic: raw.topic,
-    createdBy: raw.created_by,
+    createdBy: raw.created_by_name || raw.created_by,
+    ...(raw.created_by_user_id != null ? { createdByUserId: raw.created_by_user_id } : {}),
   };
 }
 
@@ -103,7 +125,7 @@ export async function loadTopicsForUser(
 
 export async function addTopic(
   _userId: number,
-  topic: Omit<SavedTopic, 'id' | 'createdBy'>
+  topic: Omit<SavedTopic, 'id' | 'createdBy' | 'createdByUserId'>
 ): Promise<SavedTopic> {
   const { data } = await api.post('/learning/topics/saved', {
     board: topic.board,

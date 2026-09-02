@@ -76,6 +76,8 @@ def _ensure_sqlite_columns(engine: Engine) -> None:
             ("symbol_usage_logs", "semantic_intent", "VARCHAR(20)"),
             ("symbol_usage_logs", "context_topic", "VARCHAR(100)"),
             ("learning_sessions", "board_id", "INTEGER"),
+            ("saved_topics", "board_id", "INTEGER"),
+            ("saved_topics", "created_by_user_id", "INTEGER"),
         )
         for table, column, definition in columns:
             if table_exists(table) and not has_column(table, column):
@@ -83,6 +85,14 @@ def _ensure_sqlite_columns(engine: Engine) -> None:
                 connection.execute(
                     text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
                 )
+
+        if table_exists("saved_topics") and has_column("saved_topics", "created_by_user_id"):
+            connection.execute(
+                text(
+                    "UPDATE saved_topics SET created_by_user_id = user_id "
+                    "WHERE created_by_user_id IS NULL"
+                )
+            )
 
         if table_exists("learning_modes") and not has_column("learning_modes", "updated_at"):
             logger.info("DB upgrade: adding learning_modes.updated_at")
@@ -155,6 +165,9 @@ def _ensure_sqlite_indexes(engine: Engine) -> None:
             "learning_sessions",
             "status, ended_at",
         ),
+        ("ix_saved_topics_user_created", "saved_topics", "user_id, created_at"),
+        ("ix_saved_topics_board", "saved_topics", "board_id"),
+        ("ix_saved_topics_creator", "saved_topics", "created_by_user_id"),
         (
             "ix_notifications_user_read_created",
             "notifications",

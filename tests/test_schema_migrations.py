@@ -77,6 +77,26 @@ def test_schema_ensure_upgrades_legacy_sqlite_without_losing_data():
         connection.execute(
             text(
                 """
+                CREATE TABLE saved_topics (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    board VARCHAR(100) NOT NULL,
+                    topic VARCHAR(200) NOT NULL,
+                    created_by VARCHAR(100) NOT NULL,
+                    created_at DATETIME
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO saved_topics (id, user_id, board, topic, created_by) "
+                "VALUES (1, 1, 'Board A', 'Topic A', 'Legacy')"
+            )
+        )
+        connection.execute(
+            text(
+                """
                 CREATE TABLE learning_modes (
                     id INTEGER PRIMARY KEY,
                     created_at DATETIME
@@ -120,13 +140,24 @@ def test_schema_ensure_upgrades_legacy_sqlite_without_losing_data():
         column["name"] for column in inspector.get_columns("learning_sessions")
     }
 
+    # Saved-topic creator identity is additive and backfilled from user_id.
+    saved_columns = {
+        column["name"] for column in inspector.get_columns("saved_topics")
+    }
+    assert {"board_id", "created_by_user_id"} <= saved_columns
+
     with engine.connect() as connection:
-        assert connection.execute(text("SELECT username FROM users WHERE id = 1")).scalar_one() == (
-            "legacy"
-        )
+        assert connection.execute(
+            text("SELECT username FROM users WHERE id = 1")
+        ).scalar_one() == "legacy"
         assert connection.execute(
             text("SELECT security_version FROM users WHERE id = 1")
         ).scalar_one() == 1
+        assert connection.execute(
+            text("SELECT created_by_user_id FROM saved_topics WHERE id = 1")
+        ).scalar_one() == 1
+
+
 
     # A second ensure is the normal restart path and must remain idempotent.
     schema.ensure(engine)
@@ -189,6 +220,7 @@ def test_schema_ensure_adds_targeted_indexes_to_current_schema():
                 "learning_sessions",
                 "notifications",
                 "learning_modes",
+                "saved_topics",
             )
             for row in connection.execute(text(f'PRAGMA index_list("{table}")'))
         }
@@ -207,6 +239,8 @@ def test_schema_ensure_adds_targeted_indexes_to_current_schema():
         "ix_notifications_user_read_created",
         "ix_notifications_user_created",
         "ix_learning_modes_key",
+        "ix_saved_topics_user_created",
+        "ix_saved_topics_board",
     } <= indexes
 
     with engine.connect() as connection:

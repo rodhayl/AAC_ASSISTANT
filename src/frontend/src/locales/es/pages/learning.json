@@ -24,7 +24,6 @@
   "inProgress": "⋯ En progreso",
   "startingSession": "Iniciando sesión...",
   "mayTake": "(Esto puede tardar hasta 30 segundos)",
-  "promptStart": "¡Inicia una conversación o elige una actividad abajo!",
   "startSession": "Iniciar sesión",
   "typeAnswer": "Escribe tu respuesta...",
   "stopReview": "Detener y revisar",
@@ -35,7 +34,6 @@
   "sendMessage": "Enviar mensaje",
   "boardOptional": "Tablero o contexto (opcional)",
   "boardNameDefault": "General",
-  "teacherDefault": "Profesor",
   "topicStudy": "Tema a estudiar",
   "saveTopic": "Guardar tema",
   "noSavedTopics": "Aún no hay temas guardados.",
@@ -95,7 +93,8 @@
     "submitAnswerFailed": "No se pudo enviar la respuesta.",
     "submitVoiceAnswerFailed": "No se pudo enviar la respuesta de voz.",
     "submitSymbolAnswerFailed": "No se pudo enviar la respuesta con símbolos.",
-    "topicNotFound": "Tema no encontrado"
+    "topicNotFound": "Tema no encontrado",
+    "topicAlreadySaved": "Este tema ya está guardado"
   },
   "feedback": {
     "goodTry": "¡Buen intento! Sigue practicando y mejorarás."
@@ -135,7 +134,6 @@
   "closeSummary": "Cerrar resumen",
   "errorPrefix": "Error: {{message}}",
   "endSessionTitle": "Terminar esta sesión y ver un resumen",
-  "startSessionLabel": "Iniciar sesión",
   "stopRecordingLabel": "Detener grabación",
   "sendRecordingLabel": "Enviar grabación",
   "discardRecordingLabel": "Descartar grabación",

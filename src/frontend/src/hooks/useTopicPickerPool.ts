@@ -135,7 +135,9 @@ export function useTopicPickerPool() {
 
     // Attribution is only useful when the pool mixes several teachers, so a
     // lone teacher's topics stay uncluttered.
-    const distinctCreators = new Set(savedTopics.map((t) => t.createdBy));
+    const distinctCreators = new Set(
+      savedTopics.map((topic) => topic.createdByUserId != null ? `id:${topic.createdByUserId}` : `name:${topic.createdBy}`),
+    );
     const showSavedBy = distinctCreators.size > 1;
 
     const saved: PickerTopic[] = savedTopics.map((topic) => {
@@ -150,7 +152,12 @@ export function useTopicPickerPool() {
         practiced: recentByTopic.has(normalizeTopic(topic.topic)),
         imagePath: pictogram.imagePath,
         emoji: pictogram.emoji,
-        ...(showSavedBy ? { savedBy: topic.createdBy } : {}),
+        ...(showSavedBy
+          ? {
+              savedBy: topic.createdBy,
+              savedByUserId: topic.createdByUserId,
+            }
+          : {}),
       };
     });
 

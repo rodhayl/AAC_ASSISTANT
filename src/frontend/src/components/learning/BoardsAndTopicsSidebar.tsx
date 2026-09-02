@@ -15,6 +15,7 @@ import {
 
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { TeacherAvatar } from './TeacherAvatar';
+import { groupTopicsByTeacher } from '../../lib/teacherTopicGroups';
 
 interface BoardsAndTopicsSidebarProps {
     isOpen: boolean;
@@ -67,20 +68,7 @@ export function BoardsAndTopicsSidebar({
     // When the list mixes several teachers, group the topics under per-teacher
     // headings (avatar + name) — the same rule the topic picker uses. A lone
     // teacher's topics (or the owner's own list) stay flat and uncluttered.
-    const teacherGroups = useMemo(() => {
-        const teachers = Array.from(
-            new Set(savedTopics.map((topic) => topic.createdBy).filter(Boolean)),
-        );
-        if (teachers.length < 2) return null;
-        const groups = teachers.map((teacher) => ({
-            teacher,
-            topics: savedTopics.filter((topic) => topic.createdBy === teacher),
-        }));
-        groups.sort(
-            (left, right) => right.topics.length - left.topics.length || left.teacher.localeCompare(right.teacher),
-        );
-        return groups;
-    }, [savedTopics]);
+    const teacherGroups = useMemo(() => groupTopicsByTeacher(savedTopics), [savedTopics]);
 
     const loadSavedTopics = useCallback(async () => {
         if (!userId) return;
@@ -257,7 +245,7 @@ export function BoardsAndTopicsSidebar({
                                 })}
                             </p>
                             {teacherGroups.map((group) => (
-                                <div key={group.teacher} data-testid={`sidebar-topic-group-${group.teacher}`}>
+                                <div key={group.teacherId ?? group.teacher} data-testid={`sidebar-topic-group-${group.teacher}`}>
                                     <h4 className="flex items-center gap-1.5 px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                                         <TeacherAvatar name={group.teacher} className="h-4 w-4" />
                                         {t('topicPicker.savedBy', { teacher: group.teacher })}

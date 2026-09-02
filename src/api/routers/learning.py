@@ -25,6 +25,14 @@ from src.api.file_uploads import DEFAULT_MAX_AUDIO_BYTES, save_audio_upload
 router = APIRouter()
 
 
+def _creator_name(db: Session, topic: SavedTopic) -> str:
+    """Resolve the current display name for the topic's stable creator."""
+    if topic.created_by_user_id is None:
+        return topic.created_by
+    creator = db.get(User, topic.created_by_user_id)
+    return (creator.display_name or creator.username) if creator else topic.created_by
+
+
 def get_text(user: User, key: str, **kwargs) -> str:
     """Translate a learning-namespace message for the current user."""
     return get_shared_text(user, key, namespace="pages/learning", **kwargs)
@@ -203,7 +211,10 @@ def list_saved_topics(
         if not teacher_ids:
             return []
         query = db.query(SavedTopic).filter(SavedTopic.user_id.in_(teacher_ids))
-    return query.order_by(SavedTopic.created_at.desc(), SavedTopic.id.desc()).all()
+    topics = query.order_by(SavedTopic.created_at.desc(), SavedTopic.id.desc()).all()
+    for topic in topics:
+        topic.created_by_name = _creator_name(db, topic)
+    return topics
 
 
 @router.post(
@@ -227,16 +238,35 @@ def create_saved_topic(
         board = get_board_or_404(db, payload.board_id, current_user)
         require_board_view_access(board, current_user, db)
 
+    board_name = payload.board.strip()[:100]
+    topic_name = payload.topic.strip()[:200]
+    duplicate_query = db.query(SavedTopic).filter(
+        SavedTopic.user_id == current_user.id,
+        SavedTopic.topic == topic_name,
+        SavedTopic.board == board_name,
+    )
+    if payload.board_id is None:
+        duplicate_query = duplicate_query.filter(SavedTopic.board_id.is_(None))
+    else:
+        duplicate_query = duplicate_query.filter(SavedTopic.board_id == payload.board_id)
+    if duplicate_query.first() is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=get_text(current_user, "errors.topicAlreadySaved"),
+        )
+
     topic = SavedTopic(
         user_id=current_user.id,
-        board=payload.board.strip()[:100],
+        board=board_name,
         board_id=payload.board_id,
-        topic=payload.topic.strip()[:200],
+        topic=topic_name,
         created_by=current_user.display_name or current_user.username,
+        created_by_user_id=current_user.id,
     )
     db.add(topic)
     db.commit()
     db.refresh(topic)
+    topic.created_by_name = _creator_name(db, topic)
     return topic
 
 

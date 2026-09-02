@@ -147,6 +147,38 @@ describe('learningTopics backend store', () => {
     expect(localStorage.getItem(`learning-topics-${otherUserId}`)).toBeNull();
   });
 
+  it('removes each legacy item immediately after a successful upload', async () => {
+    localStorage.setItem(
+      `learning-topics-${userId}`,
+      JSON.stringify([
+        { id: 1, board: 'Board A', topic: 'Greetings', createdBy: 'Teacher' },
+        { id: 2, board: 'Board B', topic: 'Colors', createdBy: 'Teacher' },
+      ]),
+    );
+    let calls = 0;
+    apiMock.post.mockImplementation(async () => {
+      calls += 1;
+      if (calls === 2) throw new Error('offline');
+      return {};
+    });
+
+    await migrateLocalTopicsToBackend(userId);
+    expect(JSON.parse(localStorage.getItem(`learning-topics-${userId}`) ?? '[]')).toEqual([
+      { id: 2, board: 'Board B', topic: 'Colors', createdBy: 'Teacher' },
+    ]);
+  });
+
+  it('treats duplicate migration responses as already completed', async () => {
+    localStorage.setItem(
+      `learning-topics-${userId}`,
+      JSON.stringify([{ id: 1, board: 'Board A', topic: 'Greetings', createdBy: 'Teacher' }]),
+    );
+    apiMock.post.mockRejectedValue({ response: { status: 409 } });
+
+    await migrateLocalTopicsToBackend(userId);
+    expect(localStorage.getItem(`learning-topics-${userId}`)).toBeNull();
+  });
+
   it('skips migration when there is no legacy data', async () => {
     await migrateLocalTopicsToBackend(userId);
     expect(apiMock.post).not.toHaveBeenCalled();

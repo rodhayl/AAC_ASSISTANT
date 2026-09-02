@@ -122,6 +122,56 @@ def test_saved_topic_rejects_private_board_owned_by_another_teacher(
     assert response.status_code == 403
 
 
+def test_saved_topic_rejects_duplicate_for_same_teacher_and_board(
+    teacher_user, test_db_session
+):
+    board = CommunicationBoard(user_id=teacher_user.id, name="Duplicate board")
+    test_db_session.add(board)
+    test_db_session.commit()
+    test_db_session.refresh(board)
+    payload = {"topic": "Same topic", "board": "Duplicate board", "board_id": board.id}
+    headers = create_test_headers(teacher_user.id, teacher_user.username, "teacher")
+
+    first = client.post("/api/learning/topics/saved", json=payload, headers=headers)
+    second = client.post("/api/learning/topics/saved", json=payload, headers=headers)
+
+    assert first.status_code == 201
+    assert second.status_code == 409
+
+
+def test_saved_topic_exposes_created_by_user_id_and_current_name(
+    teacher_user, test_db_session
+):
+    board = CommunicationBoard(user_id=teacher_user.id, name="Identity board")
+    test_db_session.add(board)
+    test_db_session.commit()
+    test_db_session.refresh(board)
+
+    created = client.post(
+        "/api/learning/topics/saved",
+        json={"topic": "Topic", "board": "Identity board", "board_id": board.id},
+        headers=create_test_headers(teacher_user.id, teacher_user.username, "teacher"),
+    )
+    assert created.status_code == 201
+    payload = created.json()
+    assert payload["created_by_user_id"] == teacher_user.id
+    assert payload["created_by_name"] == "Saved Topics Teacher"
+
+    teacher_user.display_name = "Renamed Teacher"
+    test_db_session.commit()
+
+    listed = client.get(
+        "/api/learning/topics/saved",
+        headers=create_test_headers(teacher_user.id, teacher_user.username, "teacher"),
+    )
+    assert listed.status_code == 200
+    entry = next(item for item in listed.json() if item["id"] == payload["id"])
+    # The stable name is refreshed from the user row; legacy field keeps old.
+    assert entry["created_by_name"] == "Renamed Teacher"
+    assert entry["created_by"] == "Saved Topics Teacher"
+
+
+
 def test_saved_topic_accepts_owned_board(teacher_user, test_db_session):
     board = CommunicationBoard(user_id=teacher_user.id, name="Owned")
     test_db_session.add(board)

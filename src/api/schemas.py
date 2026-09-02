@@ -219,6 +219,8 @@ class SavedTopicResponse(BaseModel):
     board_id: int | None = None
     topic: str
     created_by: str
+    created_by_user_id: int | None = None
+    created_by_name: str | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

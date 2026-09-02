@@ -24,7 +24,6 @@
   "inProgress": "⋯ In Progress",
   "startingSession": "Starting session...",
   "mayTake": "(This may take up to 30 seconds)",
-  "promptStart": "Start a conversation or choose an activity below!",
   "startSession": "Start Session",
   "typeAnswer": "Type your answer...",
   "stopReview": "Stop and review",
@@ -35,7 +34,6 @@
   "sendMessage": "Send message",
   "boardOptional": "Board or context (optional)",
   "boardNameDefault": "General",
-  "teacherDefault": "Teacher",
   "topicStudy": "Topic to study",
   "saveTopic": "Save topic",
   "noSavedTopics": "No saved topics yet.",
@@ -95,7 +93,8 @@
     "submitAnswerFailed": "Could not submit the answer.",
     "submitVoiceAnswerFailed": "Could not submit the voice answer.",
     "submitSymbolAnswerFailed": "Could not submit the symbol answer.",
-    "topicNotFound": "Topic not found"
+    "topicNotFound": "Topic not found",
+    "topicAlreadySaved": "This topic is already saved"
   },
   "feedback": {
     "goodTry": "Good try! Keep practicing and you will improve."
@@ -135,7 +134,6 @@
   "closeSummary": "Close summary",
   "errorPrefix": "Error: {{message}}",
   "endSessionTitle": "End this session and see a summary",
-  "startSessionLabel": "Start Session",
   "stopRecordingLabel": "Stop recording",
   "sendRecordingLabel": "Send recording",
   "discardRecordingLabel": "Discard recording",

@@ -32,9 +32,12 @@ class SavedTopic(Base):
     board_id = Column(Integer, nullable=True)
     topic = Column(String(200), nullable=False)
     created_by = Column(String(100), nullable=False)
+    # Stable creator identity; nullable for rows created before this field.
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=func.now())
 
-    user = relationship("User")
+    user = relationship("User", foreign_keys=[user_id])
+    creator = relationship("User", foreign_keys=[created_by_user_id])
 
 
 class LearningSession(Base):
