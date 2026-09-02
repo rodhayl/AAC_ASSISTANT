@@ -29,7 +29,7 @@ export function Register() {
       })
       navigate('/')
     } catch {
-      console.error('Registration failed')
+      // The store exposes the localized failure in the form status message.
     }
   }
 

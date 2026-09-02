@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import api, { extractError } from '../lib/api';
 import { registerAuthStateReader } from '../lib/authState';
-import type { User } from '../types';
+import type { AuthSetupData, RegistrationData, User } from '../types';
 import { useLocaleStore } from './localeStore';
 import { useThemeStore } from './themeStore';
 import i18n from '../i18n/index';
@@ -17,10 +17,8 @@ interface AuthState {
   sessionExpiresAt: number | null;
   
   login: (username: string, password: string) => Promise<void>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  setupAdmin: (setupData: any) => Promise<void>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  register: (userData: any) => Promise<void>;
+  setupAdmin: (setupData: AuthSetupData) => Promise<void>;
+  register: (userData: RegistrationData) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
   refreshAccessToken: () => Promise<boolean>;
@@ -162,8 +160,7 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setupAdmin: async (setupData: any) => {
+      setupAdmin: async (setupData: AuthSetupData) => {
         set({ isLoading: true, error: null });
         try {
           const response = await api.post('/auth/setup', setupData);
@@ -188,8 +185,7 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      register: async (userData: any) => {
+      register: async (userData: RegistrationData) => {
         set({ isLoading: true, error: null });
         try {
           await api.post('/auth/register', userData);
@@ -250,8 +246,8 @@ export const useAuthStore = create<AuthState>()(
             set({ user: fetchedUser, isAuthenticated: true });
           } catch (error: unknown) {
             // If offline, don't log out
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            if ((error as any)?.code === 'ERR_OFFLINE' || (error as any)?.message === 'offline') {
+            const apiError = error as { code?: unknown; message?: unknown };
+            if (apiError.code === 'ERR_OFFLINE' || apiError.message === 'offline') {
               return;
             }
             // If we can't get user details, token might be invalid on server side
@@ -287,8 +283,8 @@ export const useAuthStore = create<AuthState>()(
           return false;
         } catch (error: unknown) {
           // If offline, don't clear session, just return false (failed to refresh)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          if ((error as any)?.code === 'ERR_OFFLINE' || (error as any)?.message === 'offline') {
+          const apiError = error as { code?: unknown; message?: unknown };
+          if (apiError.code === 'ERR_OFFLINE' || apiError.message === 'offline') {
             return false;
           }
           // Refresh failed

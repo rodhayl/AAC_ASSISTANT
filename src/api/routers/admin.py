@@ -50,8 +50,8 @@ def reset_database(user=Depends(get_current_admin_user)):
         logger.info(f"Database reset completed successfully by {user.username}")
         return {"ok": True}
     except Exception as e:
-        logger.error(f"Failed to reset database: {e}")
-        error_msg = get_text(
-            user=user, key="errors.admin.databaseResetFailed", error=str(e)
-        )
-        raise HTTPException(status_code=500, detail=error_msg) from e
+        logger.exception("Failed to reset database")
+        raise HTTPException(
+            status_code=500,
+            detail=get_text(user=user, key="errors.admin.databaseResetFailed"),
+        ) from e

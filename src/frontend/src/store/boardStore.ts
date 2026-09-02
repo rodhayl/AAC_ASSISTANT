@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Board, BoardSymbol } from '../types';
+import type { Board, BoardCreateData, BoardSymbol } from '../types';
 import api, { apiOffline, extractError } from '../lib/api';
 import i18n from '../i18n/index';
 import { useNotificationsStore } from './notificationsStore';
@@ -29,8 +29,7 @@ interface BoardState {
   fetchBoards: (userId?: number, name?: string, forceRefresh?: boolean, page?: number) => Promise<void>;
   fetchAssignedBoards: (studentId: number, forceRefresh?: boolean) => Promise<void>;
   fetchBoard: (id: number, forceRefresh?: boolean) => Promise<void>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  createBoard: (boardData: any, userId: number) => Promise<void>;
+  createBoard: (boardData: BoardCreateData, userId: number) => Promise<void>;
   updateBoard: (id: number, boardData: Partial<Board>) => Promise<void>;
   deleteBoard: (id: number, skipRefresh?: boolean) => Promise<void>;
   duplicateBoard: (id: number, userId: number) => Promise<void>;
@@ -42,9 +41,7 @@ interface BoardState {
 }
 
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-const PAGE_SIZE = 100;
-
-let boardRequestSequence = 0;
+const PAGE_SIZE = 100;let boardRequestSequence = 0;
 let boardsRequestSequence = 0;
 let assignedBoardsRequestSequence = 0;
 let listRequestCount = 0;
@@ -179,15 +176,13 @@ export const useBoardStore = create<BoardState>((set, get) => {
         isBoardLoading: false,
       });
     } catch (error: unknown) {
-      console.error('Fetch board error:', error);
       if (requestId === boardRequestSequence) {
         set({ error: extractError(error, i18n.t('boards:boardLoadFailed')), isBoardLoading: false });
       }
     }
   },
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  createBoard: async (boardData: any, userId) => {
+  createBoard: async (boardData: BoardCreateData, userId) => {
     beginMutation();
     try {
       await api.post('/boards/', boardData, {
@@ -197,10 +192,6 @@ export const useBoardStore = create<BoardState>((set, get) => {
       await get().fetchBoards(currentUserId, currentSearchQuery, true, 1);
       finishMutation();
     } catch (error: unknown) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if (typeof error === 'object' && error && (error as any).message === 'offline') {
-        // Offline handling logic if needed
-      }
       finishMutation(extractError(error, 'Failed to create board'));
       throw error;
     }
@@ -461,12 +452,10 @@ export const useBoardStore = create<BoardState>((set, get) => {
         assignedBoardsLastFetchTime:
           state.assignedBoardsStudentId === studentId ? null : state.assignedBoardsLastFetchTime,
       }));
-      try {
-        useNotificationsStore.getState().add({
-          title: i18n.t('boards:boardAssigned'),
-          message: i18n.t('boards:boardAssignedTo', { boardId, studentId }),
-        })
-      } catch { /* notification optional */ }
+      useNotificationsStore.getState().add({
+        title: i18n.t('boards:boardAssigned'),
+        message: i18n.t('boards:boardAssignedTo', { boardId, studentId }),
+      })
       finishMutation();
     } catch (e: unknown) {
       finishMutation(extractError(e, 'Failed to assign board'));

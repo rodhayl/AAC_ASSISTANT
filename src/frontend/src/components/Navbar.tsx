@@ -84,14 +84,14 @@ export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
                 });
               }
             } catch {
-              /* Ignore malformed individual events. */
+              // Ignore malformed individual events; one bad notification
+              // must not terminate the stream.
             }
           }
         }
-      } catch (error) {
+        } catch (error) {
         if ((error as { name?: string })?.name === 'AbortError') return;
         // Notification delivery is optional and must not disrupt the AAC UI.
-        console.debug('Notification stream unavailable');
       }
 
       // The stream ended or dropped; reconnect with exponential backoff so a

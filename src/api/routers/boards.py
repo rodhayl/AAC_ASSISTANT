@@ -200,10 +200,8 @@ def delete_board(
     db_board = get_board_or_404(db, board_id, current_user)
     require_board_owner_or_admin(db_board, current_user)
 
-    # Delete associated symbols (cascade should handle this but let's be safe if needed,
-    # but currently BoardSymbol is the link. Cascade delete on DB level usually handles it if configured)
-    # SQLAlchemy relationship cascade="all, delete" might be needed on model.
-    # Let's assume manual cleanup of association table if not.
+    # Remove association rows explicitly before deleting the board. This keeps
+    # the endpoint safe on databases where ORM cascade settings differ.
     db.query(BoardSymbol).filter(BoardSymbol.board_id == board_id).delete()
     db.query(BoardAssignment).filter(BoardAssignment.board_id == board_id).delete()
     # Other boards may link to this board through a symbol; clear those

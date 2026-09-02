@@ -89,9 +89,6 @@ export interface Board {
   locale?: string;
   is_language_learning?: boolean;
 }
-// Ensure Board is exported
-
-
 export interface Achievement {
   name: string;
   description: string;
@@ -111,6 +108,37 @@ export interface AchievementFull extends Achievement {
   created_at?: string;
   criteria_type?: string | null;
   criteria_value?: number | null;
+}
+
+export interface BoardCreateData {
+  name: string;
+  description?: string;
+  category: string;
+  is_public?: boolean;
+  is_template?: boolean;
+  grid_rows?: number;
+  grid_cols?: number;
+  locale?: string;
+  is_language_learning?: boolean;
+  ai_enabled?: boolean;
+  ai_provider?: string;
+  ai_model?: string;
+}
+
+export interface AuthSetupData {
+  username: string;
+  password: string;
+  confirm_password: string;
+  email?: string;
+  display_name?: string;
+}
+
+export interface RegistrationData {
+  username: string;
+  password: string;
+  email?: string;
+  display_name?: string;
+  user_type?: User['user_type'];
 }
 
 export interface LearningSessionStart {

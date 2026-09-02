@@ -120,7 +120,9 @@ export function Boards() {
 
   // Preload AI settings
   useEffect(() => {
-    if (!aiSettings) fetchAISettings().catch(() => {});
+    if (!aiSettings) {
+      void fetchAISettings();
+    }
   }, [aiSettings, fetchAISettings]);
 
   const primaryProvider = aiSettings?.provider;
@@ -156,7 +158,8 @@ export function Boards() {
       setStudentsLoading(true);
       try {
         const res = await api.get('/auth/users');
-        setStudents((res.data as User[]).filter(u => u.user_type === 'student'));
+        const loadedStudents: User[] = res.data;
+        setStudents(loadedStudents.filter(u => u.user_type === 'student'));
       } catch {
         setAssignError(t('loadStudentsError'));
       } finally {

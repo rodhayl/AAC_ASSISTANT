@@ -171,12 +171,12 @@ async def create_board(
         )
 
     if board.ai_enabled and (not board.ai_provider or not board.ai_model):
-            raise HTTPException(
-                status_code=400,
-                detail=get_text(
-                    user=current_user, key="errors.boards.aiProviderRequired"
-                ),
-            )
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=current_user, key="errors.boards.aiProviderRequired"
+            ),
+        )
     payload = board.model_dump()
     # Extract symbols to handle manually (SQLAlchemy doesn't handle list of dicts for relationship automatically)
     symbols_data = payload.pop("symbols", []) if "symbols" in payload else []
@@ -234,11 +234,12 @@ async def create_board(
                 ai_service = BoardGenerationService(provider)
 
                 # Calculate item count based on grid size, default to 12 if not specified
-                item_count = 12
-                if board.grid_rows and board.grid_cols:
-                    item_count = min(board.grid_rows * board.grid_cols, 100)
-
-                    items = await ai_service.generate_board_items(
+                item_count = (
+                    min(board.grid_rows * board.grid_cols, 100)
+                    if board.grid_rows and board.grid_cols
+                    else 12
+                )
+                items = await ai_service.generate_board_items(
                     board.name,
                     board.description,
                     item_count=item_count,

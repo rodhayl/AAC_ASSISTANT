@@ -6,7 +6,7 @@ import os
 import re
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, TypeVar
+from typing import Any, ParamSpec
 
 from fastapi import HTTPException
 from slowapi import Limiter
@@ -24,7 +24,7 @@ from src.api.deps import get_text
 # src.api.deps + services (never auth_helpers), so this is acyclic.
 from src.api.routers.guardian_profiles import enforce_locked_safety_fields
 
-_F = TypeVar("_F", bound=Callable[..., Any])
+_P = ParamSpec("_P")
 _limiter_instance = Limiter(key_func=get_remote_address)
 
 
@@ -99,19 +99,19 @@ def apply_student_safety_at_creation(
     profile.updated_by = current_user.id
 
 
-def conditional_limiter(rate: str) -> Callable[[_F], _F]:
+def conditional_limiter(rate: str) -> Callable[[Callable[_P, Any]], Callable[_P, Any]]:
     """Apply rate limiting in production while keeping tests deterministic."""
 
-    def decorator(func: _F) -> _F:
+    def decorator(func: Callable[_P, Any]) -> Callable[_P, Any]:
         limited_func = _limiter_instance.limit(rate)(func)
 
         @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> Any:
             if os.getenv("TESTING", "0") == "1":
                 return func(*args, **kwargs)
             return limited_func(*args, **kwargs)
 
-        return wrapper  # type: ignore[return-value]
+        return wrapper
 
     return decorator
 

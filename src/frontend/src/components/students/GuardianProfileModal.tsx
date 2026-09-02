@@ -24,7 +24,8 @@ interface GuardianProfileModalProps {
     student: User | null;
 }
 
-type Tab = 'general' | 'persona' | 'safety';
+const PROFILE_TABS = ['general', 'persona', 'safety'] as const;
+type Tab = (typeof PROFILE_TABS)[number];
 
 export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfileModalProps) {
     const { t } = useTranslation(['students', 'common']);
@@ -53,13 +54,14 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                 const profileRes = await api.get(`/guardian-profiles/students/${student.id}`);
                 setProfile(profileRes.data);
                 setSelectedTemplate(profileRes.data.template_name);
-            } catch (e: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
-                if (e.response?.status === 404) {
+            } catch (error: unknown) {
+                const status = (error as { response?: { status?: number } }).response?.status;
+                if (status === 404) {
                     // No profile yet, use default
                     setProfile({});
                     setSelectedTemplate('default');
                 } else {
-                    throw e;
+                    throw error;
                 }
             }
         } catch {
@@ -103,8 +105,8 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                 await api.post(`/guardian-profiles/students/${student.id}`, data);
             }
             setSuccess(t('students:success.saved'));
-        } catch (e: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
-            setError(extractError(e, t('students:errors.saveFailed')));
+        } catch (error: unknown) {
+            setError(extractError(error, t('students:errors.saveFailed')));
         } finally {
             setLoading(false);
         }
@@ -131,10 +133,10 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                 <div className="flex-1 overflow-y-auto p-6">
                     {/* Tabs */}
                     <div className="flex gap-2 mb-6 border-b border-border">
-                        {['general', 'persona', 'safety'].map(tab => (
+                        {PROFILE_TABS.map(tab => (
                             <button
                                 key={tab}
-                                onClick={() => setActiveTab(tab as Tab)}
+                                onClick={() => setActiveTab(tab)}
                                 className={`px-4 py-2 font-medium border-b-2 transition-colors ${activeTab === tab
                                         ? 'border-brand text-brand'
                                         : 'border-transparent text-muted-foreground hover:text-foreground'

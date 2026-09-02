@@ -101,7 +101,7 @@ def admin_create_user(
         )
 
     # Validate user_type
-    valid_types = ['student', 'teacher', 'admin']
+    valid_types = ("student", "teacher", "admin")
     if user.user_type not in valid_types:
         raise HTTPException(
             status_code=400,
@@ -453,8 +453,8 @@ def update_user(
     # affect role checks and uniqueness before mutating the row. This keeps the
     # endpoint consistent with admin_create_user and update_profile, which
     # already reject invalid roles and duplicate emails.
-    valid_types = ['student', 'teacher', 'admin']
-    if 'user_type' in payload and payload.get('user_type') not in valid_types:
+    valid_types = ("student", "teacher", "admin")
+    if "user_type" in payload and payload.get("user_type") not in valid_types:
         raise HTTPException(
             status_code=400,
             detail=get_text(

@@ -8,6 +8,30 @@ import {
   DialogTitle,
 } from '../ui/dialog';
 
+interface SpeechRecognitionResultEvent extends Event {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: (() => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance;
+
+type SpeechRecognitionWindow = Window & {
+  SpeechRecognition?: SpeechRecognitionConstructor;
+  webkitSpeechRecognition?: SpeechRecognitionConstructor;
+};
+
 interface PartnerOverlayProps {
   isOpen: boolean;
   onClose: () => void;
@@ -17,8 +41,7 @@ export function PartnerOverlay({ isOpen, onClose }: PartnerOverlayProps) {
   const { t, i18n } = useTranslation('boards');
   const [transcript, setTranscript] = useState('');
   const [isListening, setIsListening] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const isMounted = useRef(false);
 
   useEffect(() => {
@@ -46,8 +69,12 @@ export function PartnerOverlay({ isOpen, onClose }: PartnerOverlayProps) {
       return;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const speechWindow = window as SpeechRecognitionWindow;
+    const SpeechRecognition = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setTranscript(t('speechNotAvailable'));
+      return;
+    }
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
 
@@ -68,8 +95,7 @@ export function PartnerOverlay({ isOpen, onClose }: PartnerOverlayProps) {
       }
     };
     
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionResultEvent) => {
       let finalTranscript = '';
       for (let i = event.resultIndex; i < event.results.length; ++i) {
           finalTranscript += event.results[i][0].transcript;

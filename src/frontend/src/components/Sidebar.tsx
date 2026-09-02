@@ -82,7 +82,9 @@ export function Sidebar({ className, isOpen = true, onNavigate }: SidebarProps) 
                   else if (link.href === '/teachers' || link.href === '/admins') import('../pages/UserManagement')
                   else if (link.href === '/settings') import('../pages/Settings')
                   else if (link.href === '/') import('../pages/Dashboard')
-                } catch { /* preload errors are non-critical */ }
+                } catch {
+                  // Preload failures are non-critical; navigation still works.
+                }
               }}
             >
               <Icon className="w-5 h-5" />

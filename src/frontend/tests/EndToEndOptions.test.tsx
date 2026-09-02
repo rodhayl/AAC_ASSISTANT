@@ -67,6 +67,7 @@ const mockTTSState = {
   setSelectedVoice: vi.fn(),
   localVoice: 'default',
   setLocalVoice: vi.fn(),
+  setLocalSpeed: vi.fn(),
   setTTSProvider: vi.fn(),
 };
 vi.mock('../src/store/ttsStore', () => ({

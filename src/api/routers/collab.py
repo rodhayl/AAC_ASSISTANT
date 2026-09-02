@@ -163,8 +163,9 @@ async def board_channel(
 
         # Mark the room registration before awaiting accept so cancellation in
         # this tiny handoff window still triggers the outer cleanup path.
-        connected = True
+        connected = False
         await manager.connect(board_id, websocket, subprotocol=auth_subprotocol)
+        connected = True
         shutdown_event = getattr(websocket.app.state, "shutdown_event", None)
         if not getattr(websocket.app.state, "lifespan_active", False):
             shutdown_event = None

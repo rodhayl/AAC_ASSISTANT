@@ -338,8 +338,9 @@ api.interceptors.request.use((config) => {
       : headers?.Authorization !== undefined || headers?.authorization !== undefined;
   if (token && !explicitAuthorization) {
     const bearer = token;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    config.headers = { ...config.headers, Authorization: `Bearer ${bearer}` } as any;
+    const requestHeaders = AxiosHeaders.from(config.headers ?? {});
+    requestHeaders.set('Authorization', `Bearer ${bearer}`);
+    config.headers = requestHeaders;
   }
   // Send the UI language to the backend so unauthenticated requests (login,
   // setup, register) and any error that precedes user-preference resolution
@@ -392,8 +393,7 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.config && !error.config.headers) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      error.config.headers = {} as any;
+      error.config.headers = new AxiosHeaders();
     }
 
     const status = error?.response?.status;
@@ -425,14 +425,18 @@ api.interceptors.response.use(
             }
             return api.request(retryConfig);
           }
-        } catch { /* fall through to logout */ }
+        } catch {
+          // Fall through to the logout path when refresh fails.
+        }
       }
       try {
         logout?.();
         if (typeof window !== 'undefined') {
           window.location.href = '/login';
         }
-      } catch { /* ignore logout errors during redirect */ }
+      } catch {
+        // Logout and redirect are best-effort during an invalid session.
+      }
     }
     return Promise.reject(error);
   }

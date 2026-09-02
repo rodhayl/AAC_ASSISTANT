@@ -138,6 +138,7 @@ def _log_usage_request(
 
 
 @router.post("/usage", status_code=status.HTTP_201_CREATED)
+@router.post("/log", status_code=status.HTTP_201_CREATED)
 def log_symbol_usage(
     request: SymbolUsageRequest,
     current_user: User = Depends(get_current_active_user),
@@ -435,36 +436,6 @@ def get_next_symbol_suggestions_post(
                 user=current_user,
                 key="errors.analytics.suggestionsFailed",
                 error=str(e),
-            ),
-        )
-
-
-
-@router.post("/log", status_code=status.HTTP_201_CREATED)
-def log_symbol_usage_legacy(
-    request: SymbolUsageRequest,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db),
-):
-    """Log symbol usage for older clients that still use ``/analytics/log``."""
-    try:
-        _log_usage_request(
-            request,
-            current_user,
-            db,
-            failure_detail=get_text(
-                user=current_user, key="errors.analytics.logSymbolFailed"
-            ),
-        )
-        return {"status": "success"}
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error("Failed to log symbol usage: {}", exc)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=get_text(
-                user=current_user, key="errors.analytics.logSymbolFailed"
             ),
         )
 
