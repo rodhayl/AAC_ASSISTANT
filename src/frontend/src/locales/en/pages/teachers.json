@@ -72,6 +72,12 @@
     "deleteSuccess": "Topic deleted",
     "deleteFailed": "Could not delete the topic",
     "loadFailed": "Could not load saved topics",
+    "total": "{{count}} topics in total",
+    "pageSize": "{{size}} per page",
+    "pageSizeAria": "Topics per page",
+    "prevPage": "Previous",
+    "nextPage": "Next",
+    "pageIndicator": "Page {{page}} of {{pages}}",
     "actions": {
       "deleteTitle": "Delete topic",
       "deleteAria": "Delete topic {topic}"

@@ -49,8 +49,10 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
 
   // Admin-only view of every teacher's saved topics (management surface on
   // the /teachers page). Loaded separately so the section degrades cleanly
-  // if the topic API is unavailable.
+  // if the topic API is unavailable. Large collections are paginated via the
+  // backend's limit/offset; the unpaginated total arrives as X-Total-Count.
   const showSavedTopics = role === 'teacher' && user?.user_type === 'admin'
+  const SAVED_TOPICS_PAGE_SIZES = [25, 50, 100] as const
   const [savedTopics, setSavedTopics] = useState<Array<{
     id: number
     user_id: number
@@ -62,6 +64,9 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     created_at: string | null
   }>>([])
   const [savedTopicsError, setSavedTopicsError] = useState<string | null>(null)
+  const [savedTopicsPage, setSavedTopicsPage] = useState(1)
+  const [savedTopicsPageSize, setSavedTopicsPageSize] = useState<number>(25)
+  const [savedTopicsTotal, setSavedTopicsTotal] = useState(0)
   const [deleteTopicState, setDeleteTopicState] = useState<{ isOpen: boolean; topic: { id: number; topic: string } | null }>({
     isOpen: false,
     topic: null,
@@ -88,18 +93,26 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     if (!showSavedTopics) return
     try {
       const response = await api.get('/learning/topics/saved', {
-        params: { scope: 'all' },
+        params: { scope: 'all', limit: savedTopicsPageSize, offset: (savedTopicsPage - 1) * savedTopicsPageSize },
       })
       if (!Array.isArray(response.data)) {
         throw new Error('Invalid response format: expected array')
       }
       setSavedTopics(response.data)
+      const total = Number(response.headers?.['x-total-count'])
+      setSavedTopicsTotal(Number.isFinite(total) ? total : response.data.length)
+      // A deletion on the last page can leave the page number past the end;
+      // step back one page instead of showing an empty grid forever.
+      if (response.data.length === 0 && savedTopicsPage > 1) {
+        setSavedTopicsPage(savedTopicsPage - 1)
+        return
+      }
       setSavedTopicsError(null)
     } catch (loadError: unknown) {
       console.error('Failed to load saved topics:', loadError)
       setSavedTopicsError(extractError(loadError, t('savedTopics.loadFailed')))
     }
-  }, [showSavedTopics, t])
+  }, [showSavedTopics, t, savedTopicsPage, savedTopicsPageSize])
 
   useEffect(() => {
     let cancelled = false
@@ -206,7 +219,9 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     setDeleteTopicLoading(true)
     try {
       await api.delete(`/learning/topics/saved/${selectedTopic.id}`)
-      setSavedTopics(previous => previous.filter(item => item.id !== selectedTopic.id))
+      // Refetch instead of filtering locally so the total and page position
+      // stay correct when the deleted row was on the current page.
+      await loadSavedTopics()
       addToast(t('savedTopics.deleteSuccess'), 'success')
     } catch (deleteError: unknown) {
       setError(extractError(deleteError, t('savedTopics.deleteFailed')))
@@ -378,6 +393,44 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
                   ))}
                 </tbody>
               </table>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/50 px-6 py-3 text-sm text-muted-foreground">
+                <span data-testid="saved-topics-total">
+                  {t('savedTopics.total', { count: savedTopicsTotal })}
+                </span>
+                <div className="flex items-center gap-2">
+                  <select
+                    aria-label={t('savedTopics.pageSizeAria')}
+                    value={savedTopicsPageSize}
+                    onChange={(event) => {
+                      setSavedTopicsPageSize(Number(event.target.value))
+                      setSavedTopicsPage(1)
+                    }}
+                    className="rounded-lg border border-border bg-surface px-2 py-1 text-sm text-foreground"
+                  >
+                    {SAVED_TOPICS_PAGE_SIZES.map(size => (
+                      <option key={size} value={size}>{t('savedTopics.pageSize', { size })}</option>
+                    ))}
+                  </select>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setSavedTopicsPage(page => Math.max(1, page - 1))}
+                    disabled={savedTopicsPage <= 1}
+                    aria-label={t('savedTopics.prevPage')}
+                  >{t('savedTopics.prevPage')}</Button>
+                  <span data-testid="saved-topics-page-indicator">
+                    {t('savedTopics.pageIndicator', {
+                      page: savedTopicsPage,
+                      pages: Math.max(1, Math.ceil(savedTopicsTotal / savedTopicsPageSize)),
+                    })}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setSavedTopicsPage(page => page + 1)}
+                    disabled={savedTopicsPage >= Math.ceil(savedTopicsTotal / savedTopicsPageSize)}
+                    aria-label={t('savedTopics.nextPage')}
+                  >{t('savedTopics.nextPage')}</Button>
+                </div>
+              </div>
             </div>
           )}
         </section>

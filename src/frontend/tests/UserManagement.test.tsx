@@ -87,6 +87,12 @@ const translate = (key: string, options?: { name?: string }) => {
     'savedTopics.deleteSuccess': 'Topic deleted',
     'savedTopics.deleteFailed': 'Could not delete the topic',
     'savedTopics.loadFailed': 'Could not load saved topics',
+    'savedTopics.total': `${options?.count ?? ''} topics in total`,
+    'savedTopics.pageSize': `${options?.size ?? ''} per page`,
+    'savedTopics.pageSizeAria': 'Topics per page',
+    'savedTopics.prevPage': 'Previous',
+    'savedTopics.nextPage': 'Next',
+    'savedTopics.pageIndicator': `Page ${options?.page ?? ''} of ${options?.pages ?? ''}`,
     'savedTopics.actions.deleteTitle': 'Delete topic',
     'savedTopics.actions.deleteAria': `Delete topic ${options?.topic ?? ''}`,
   };
@@ -169,7 +175,7 @@ describe('UserManagementPage', () => {
     expect(await screen.findByText('Topics saved by teachers')).toBeInTheDocument();
     await waitFor(() =>
       expect(api.get).toHaveBeenCalledWith('/learning/topics/saved', {
-        params: { scope: 'all' },
+        params: { scope: 'all', limit: 25, offset: 0 },
       }),
     );
     expect(await screen.findByText('Astronomía')).toBeInTheDocument();
@@ -178,11 +184,19 @@ describe('UserManagementPage', () => {
   });
 
   it('deletes a saved topic through the admin view', async () => {
+    let topicsAfterDelete = [savedTopic];
     vi.mocked(api.get).mockImplementation(async (url: string) => {
-      if (url.includes('/learning/topics/saved')) return { data: [savedTopic] } as never;
+      if (url.includes('/learning/topics/saved')) {
+        return { data: topicsAfterDelete, headers: { 'x-total-count': String(topicsAfterDelete.length) } } as never;
+      }
       return { data: [teacher] } as never;
     });
-    vi.mocked(api.delete).mockResolvedValue({} as never);
+    vi.mocked(api.delete).mockImplementation(async () => {
+      // Deleting the last topic empties the collection; the refetch must
+      // observe that instead of re-listing the stale row.
+      topicsAfterDelete = [];
+      return {} as never;
+    });
     render(<UserManagementPage role="teacher" />);
     await screen.findByText('Astronomía');
     await screen.findByText('Topics saved by teachers');
@@ -206,8 +220,75 @@ describe('UserManagementPage', () => {
 
     expect(screen.queryByText('Topics saved by teachers')).not.toBeInTheDocument();
     expect(api.get).not.toHaveBeenCalledWith('/learning/topics/saved', {
-      params: { scope: 'all' },
+      params: { scope: 'all', limit: 25, offset: 0 },
     });
+  });
+
+  it('pages through saved topics with the page controls', async () => {
+    // Two pages of 25: the mock serves the requested window from a 30-item
+    // collection and reports the unpaginated total via the header.
+    const collection = Array.from({ length: 30 }, (_, index) => ({
+      ...savedTopic,
+      id: 100 + index,
+      topic: `Tema ${index + 1}`,
+    }));
+    vi.mocked(api.get).mockImplementation(async (url: string, config?: { params?: { limit?: number; offset?: number } }) => {
+      if (url.includes('/learning/topics/saved')) {
+        const { limit = 25, offset = 0 } = config?.params ?? {};
+        return {
+          data: collection.slice(offset, offset + (limit as number)),
+          headers: { 'x-total-count': String(collection.length) },
+        } as never;
+      }
+      return { data: [teacher] } as never;
+    });
+    render(<UserManagementPage role="teacher" />);
+
+    await screen.findByText('Tema 1');
+    expect(screen.getByTestId('saved-topics-total')).toHaveTextContent('30 topics in total');
+    expect(screen.getByTestId('saved-topics-page-indicator')).toHaveTextContent('Page 1 of 2');
+    expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await screen.findByText('Tema 26');
+    expect(screen.getByTestId('saved-topics-page-indicator')).toHaveTextContent('Page 2 of 2');
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    expect(screen.queryByText('Tema 1')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous' }));
+    await screen.findByText('Tema 1');
+    expect(screen.getByTestId('saved-topics-page-indicator')).toHaveTextContent('Page 1 of 2');
+  });
+
+  it('changes the page size and returns to the first page', async () => {
+    const collection = Array.from({ length: 30 }, (_, index) => ({
+      ...savedTopic,
+      id: 200 + index,
+      topic: `Tema grande ${index + 1}`,
+    }));
+    vi.mocked(api.get).mockImplementation(async (url: string, config?: { params?: { limit?: number; offset?: number } }) => {
+      if (url.includes('/learning/topics/saved')) {
+        const { limit = 25, offset = 0 } = config?.params ?? {};
+        return {
+          data: collection.slice(offset, offset + (limit as number)),
+          headers: { 'x-total-count': String(collection.length) },
+        } as never;
+      }
+      return { data: [teacher] } as never;
+    });
+    render(<UserManagementPage role="teacher" />);
+    await screen.findByText('Tema grande 1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await screen.findByText('Tema grande 26');
+
+    fireEvent.change(screen.getByLabelText('Topics per page'), { target: { value: '50' } });
+    await waitFor(() => {
+      expect(api.get).toHaveBeenCalledWith('/learning/topics/saved', {
+        params: { scope: 'all', limit: 50, offset: 0 },
+      });
+    });
+    expect(await screen.findByText('Tema grande 1')).toBeInTheDocument();
   });
 
   it('disables the delete button for the current admin (self-delete)', async () => {

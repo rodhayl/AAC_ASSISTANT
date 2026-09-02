@@ -3,8 +3,9 @@ import contextlib
 import os
 import re
 import unicodedata
+from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import LearningMode, SavedTopic, StudentTeacher, User, UserSettings
@@ -224,6 +225,7 @@ def list_saved_topics(
     offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
+    response: Response = None,
 ):
     """Return the saved topics visible to the current user.
 
@@ -241,9 +243,9 @@ def list_saved_topics(
                 status_code=403,
                 detail=get_text(current_user, "errors.unauthorized"),
             )
-        query = db.query(SavedTopic)
+        filters: list[Any] = []
     elif current_user.user_type in ("teacher", "admin"):
-        query = db.query(SavedTopic).filter(SavedTopic.user_id == current_user.id)
+        filters = [SavedTopic.user_id == current_user.id]
     else:
         teacher_ids = [
             row.teacher_id
@@ -253,8 +255,21 @@ def list_saved_topics(
         ]
         if not teacher_ids:
             return []
-        query = db.query(SavedTopic).filter(SavedTopic.user_id.in_(teacher_ids))
-    query = query.order_by(SavedTopic.created_at.desc(), SavedTopic.id.desc())
+        filters = [SavedTopic.user_id.in_(teacher_ids)]
+
+    if limit is not None:
+        # Paginated callers (admin topic management) also need the unpaginated
+        # total to render page controls; expose it as a header so the response
+        # body stays a plain list for existing clients.
+        response.headers["X-Total-Count"] = str(
+            db.query(SavedTopic).filter(*filters).count()
+        )
+
+    query = (
+        db.query(SavedTopic)
+        .filter(*filters)
+        .order_by(SavedTopic.created_at.desc(), SavedTopic.id.desc())
+    )
     if offset:
         query = query.offset(offset)
     if limit is not None:

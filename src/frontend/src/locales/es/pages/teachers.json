@@ -72,6 +72,12 @@
     "deleteSuccess": "Tema eliminado",
     "deleteFailed": "No se pudo eliminar el tema",
     "loadFailed": "No se pudieron cargar los temas guardados",
+    "total": "{{count}} temas en total",
+    "pageSize": "{{size}} por página",
+    "pageSizeAria": "Temas por página",
+    "prevPage": "Anterior",
+    "nextPage": "Siguiente",
+    "pageIndicator": "Página {{page}} de {{pages}}",
     "actions": {
       "deleteTitle": "Eliminar tema",
       "deleteAria": "Eliminar tema {topic}"

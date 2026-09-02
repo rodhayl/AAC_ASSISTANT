@@ -466,6 +466,12 @@ def test_list_pagination_limit_and_offset(teacher_user, test_db_session):
     )
     assert negative_offset.status_code == 422
 
+    # The unpaginated total accompanies paginated responses so page controls
+    # can render; unpaginated responses carry no header (plain-list contract).
+    assert page.headers.get("X-Total-Count") == "6"
+    assert second.headers.get("X-Total-Count") == "6"
+    assert "X-Total-Count" not in full.headers
+
 
 def test_list_creator_falls_back_to_legacy_snapshot(
     teacher_user, test_db_session
