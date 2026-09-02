@@ -286,6 +286,52 @@ describe('UserManagementPage', () => {
     });
   });
 
+  it('highlights matched text in topic and board cells during search', async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.includes('/learning/topics/saved')) {
+        return { data: [savedTopic], headers: { 'x-total-count': '1' } } as never;
+      }
+      return { data: [teacher] } as never;
+    });
+    render(<UserManagementPage role="teacher" />);
+    await screen.findByText('Astronomía');
+
+    // No marks before a search is active.
+    expect(screen.queryByText(/Astronom\u00eda/)?.closest('mark')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Search saved topics'), { target: { value: 'AsTrO' } });
+
+    // Case-insensitive match inside the topic cell.
+    const topicMark = await screen.findByText('Astro');
+    expect(topicMark.closest('mark')).not.toBeNull();
+
+    // A different term highlights the board cell instead ("El cielo" ->
+    // the matched segment keeps the original casing "cielo").
+    fireEvent.change(screen.getByLabelText('Search saved topics'), { target: { value: 'cieLo' } });
+    const boardMark = await screen.findByText('cielo');
+    expect(boardMark.closest('mark')).not.toBeNull();
+  });
+
+  it('clears the highlight when the search is emptied', async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.includes('/learning/topics/saved')) {
+        return { data: [savedTopic], headers: { 'x-total-count': '1' } } as never;
+      }
+      return { data: [teacher] } as never;
+    });
+    render(<UserManagementPage role="teacher" />);
+    await screen.findByText('Astronomía');
+
+    fireEvent.change(screen.getByLabelText('Search saved topics'), { target: { value: 'cielo' } });
+    await screen.findByText('cielo');
+    expect(screen.getByText('cielo').closest('mark')).not.toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Search saved topics'), { target: { value: '' } });
+    await waitFor(() => {
+      expect(screen.queryByText(/cielo/)?.closest('mark')).toBeNull();
+    });
+  });
+
   it('changes the page size and returns to the first page', async () => {
     const collection = Array.from({ length: 30 }, (_, index) => ({
       ...savedTopic,

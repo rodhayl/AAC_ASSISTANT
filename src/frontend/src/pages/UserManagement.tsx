@@ -17,6 +17,21 @@ import { Button } from '../components/ui/button'
 
 export type ManagedUserRole = 'teacher' | 'admin'
 
+/**
+ * Split text into literal and highlighted segments for an active search
+ * term. Case-insensitive, and the term is regex-escaped so wildcards such
+ * as "100%" match literally. Returns the original string when no term is
+ * given so cells render as plain text.
+ */
+function splitHighlight(text: string, term: string): Array<{ text: string; highlight: boolean }> {
+  if (!term) return [{ text, highlight: false }]
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const parts = text.split(new RegExp(`(${escaped})`, 'ig'))
+  return parts
+    .filter(part => part !== '')
+    .map(part => ({ text: part, highlight: part.toLowerCase() === term.toLowerCase() }))
+}
+
 interface UserManagementPageProps {
   role: ManagedUserRole
 }
@@ -400,8 +415,22 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
                 <tbody className="divide-y divide-border bg-transparent">
                   {savedTopics.map(item => (
                     <tr key={item.id}>
-                      <td className="px-6 py-4 text-sm font-medium text-foreground">{item.topic}</td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground">{item.board || '-'}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-foreground">
+                        {splitHighlight(item.topic, savedTopicsSearchQuery).map((segment, index) =>
+                          segment.highlight
+                            ? <mark key={index} className="rounded bg-yellow-100 px-0.5 text-inherit dark:bg-yellow-500/30">{segment.text}</mark>
+                            : <span key={index}>{segment.text}</span>,
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">
+                        {item.board
+                          ? splitHighlight(item.board, savedTopicsSearchQuery).map((segment, index) =>
+                              segment.highlight
+                                ? <mark key={index} className="rounded bg-yellow-100 px-0.5 text-inherit dark:bg-yellow-500/30">{segment.text}</mark>
+                                : <span key={index}>{segment.text}</span>,
+                            )
+                          : '-'}
+                      </td>
                       <td className="px-6 py-4 text-sm text-muted-foreground">{item.created_by_name || item.created_by}</td>
                       <td className="px-6 py-4 text-sm text-muted-foreground">
                         {item.created_at ? new Date(item.created_at).toLocaleDateString() : '-'}
