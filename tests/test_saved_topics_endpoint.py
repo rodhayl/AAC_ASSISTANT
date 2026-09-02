@@ -139,6 +139,37 @@ def test_saved_topic_rejects_duplicate_for_same_teacher_and_board(
     assert second.status_code == 409
 
 
+def test_saved_topic_duplicate_detection_folds_case_accents_and_whitespace(
+    teacher_user, test_db_session
+):
+    """"Astrofísica", " astrofisica ", and "ASTROFISICA" are one topic."""
+    board = CommunicationBoard(user_id=teacher_user.id, name="Fold board")
+    test_db_session.add(board)
+    test_db_session.commit()
+    test_db_session.refresh(board)
+    headers = create_test_headers(teacher_user.id, teacher_user.username, "teacher")
+
+    first = client.post(
+        "/api/learning/topics/saved",
+        json={"topic": "Astrofísica", "board": "Fold board", "board_id": board.id},
+        headers=headers,
+    )
+    variants = client.post(
+        "/api/learning/topics/saved",
+        json={"topic": "  astrofisica  ", "board": "Fold board", "board_id": board.id},
+        headers=headers,
+    )
+    upper = client.post(
+        "/api/learning/topics/saved",
+        json={"topic": "ASTROFISICA", "board": "Fold board", "board_id": board.id},
+        headers=headers,
+    )
+
+    assert first.status_code == 201
+    assert variants.status_code == 409
+    assert upper.status_code == 409
+
+
 def test_saved_topic_exposes_created_by_user_id_and_current_name(
     teacher_user, test_db_session
 ):

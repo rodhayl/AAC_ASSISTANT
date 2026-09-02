@@ -152,7 +152,10 @@ export function BoardsAndTopicsSidebar({
         const board = savedTopic.boardId !== undefined
             ? availableBoards.find((item) => item.id === savedTopic.boardId)
             : availableBoards.find((item) => item.name === savedTopic.board);
-        onStartActivity(savedTopic.topic, savedTopic.board, board?.id ?? savedTopic.boardId);
+        // A topic whose board was deleted (or is no longer shared with this
+        // user) still starts fine — it just runs without board context — so
+        // drop the dangling ID instead of persisting it on the session.
+        onStartActivity(savedTopic.topic, savedTopic.board, board?.id);
     };
 
     return (

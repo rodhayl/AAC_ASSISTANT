@@ -1,6 +1,8 @@
 
 import contextlib
 import os
+import re
+import unicodedata
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
@@ -23,6 +25,18 @@ from src.api.deps import (
 from src.api.file_uploads import DEFAULT_MAX_AUDIO_BYTES, save_audio_upload
 
 router = APIRouter()
+
+
+def _normalize_topic_text(name: str) -> str:
+    """Fold case, accents, and whitespace so duplicates match across variants.
+
+    Mirrors the topic normalization in
+    ``src.aac_app.services.learning.session`` so a topic saved as
+    "Astrofísica" correctly conflicts with " astrofisica ".
+    """
+    text = unicodedata.normalize("NFD", name or "").lower()
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _creator_name(db: Session, topic: SavedTopic) -> str:
@@ -240,16 +254,24 @@ def create_saved_topic(
 
     board_name = payload.board.strip()[:100]
     topic_name = payload.topic.strip()[:200]
-    duplicate_query = db.query(SavedTopic).filter(
-        SavedTopic.user_id == current_user.id,
-        SavedTopic.topic == topic_name,
-        SavedTopic.board == board_name,
+    if not topic_name:
+        raise HTTPException(
+            status_code=422,
+            detail=get_text(current_user, "errors.topicNotFound"),
+        )
+    # Duplicate detection compares folded text so "Astrofísica", " astrofisica ",
+    # and "ASTROFISICA" all resolve to the same topic.
+    duplicate_candidates = (
+        db.query(SavedTopic)
+        .filter(SavedTopic.user_id == current_user.id, SavedTopic.board == board_name)
+        .all()
     )
-    if payload.board_id is None:
-        duplicate_query = duplicate_query.filter(SavedTopic.board_id.is_(None))
-    else:
-        duplicate_query = duplicate_query.filter(SavedTopic.board_id == payload.board_id)
-    if duplicate_query.first() is not None:
+    normalized_topic = _normalize_topic_text(topic_name)
+    duplicate_exists = any(
+        _normalize_topic_text(existing.topic) == normalized_topic
+        for existing in duplicate_candidates
+    )
+    if duplicate_exists:
         raise HTTPException(
             status_code=409,
             detail=get_text(current_user, "errors.topicAlreadySaved"),

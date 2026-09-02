@@ -159,6 +159,34 @@ Learning-session question flow (`src/frontend/src/components/learning/` and
   correct answers, and the LLM-generated summary from
   `POST /api/learning/{id}/end`).
 
+Saved learning topics (`/api/learning/topics/saved`, models in
+`src/aac_app/models/learning.py`):
+
+- Topics live in the backend (`saved_topics` table) so a student sees their
+  teachers' topics on any device. Teachers and admins create topics; students
+  consume them read-only.
+- **Ownership and attribution.** Each row stores a stable
+  `created_by_user_id` (backfilled from the legacy `user_id` column by the
+  additive schema upgrade in `src/aac_app/schema.py`) plus a legacy
+  `created_by` name snapshot. The API resolves a current `created_by_name`
+  from the user row, so renamed teachers display correctly everywhere; the
+  topic picker and sidebar group topics by the stable ID (two teachers with
+  the same display name stay separate). Deleting a teacher account removes
+  their saved topics.
+- **Duplicates.** Creating a topic identical (after folding case, accents,
+  and whitespace) to one the same teacher already saved for the same board
+  returns HTTP 409; the sidebar surfaces this with an error toast.
+- **Board references.** `board_id` is validated against an existing,
+  accessible board at creation time but is intentionally not a foreign key:
+  a topic whose board is later deleted still starts, just without board
+  context (the frontend drops the dangling ID instead of persisting it).
+- **Legacy migration.** Topics that predate server-side storage lived in
+  localStorage (`learning-topics-<userId>`). On their first teacher/admin
+  login the frontend migrates them one topic at a time, removing each item
+  from localStorage immediately after confirmation, so an interrupted or
+  retried migration never duplicates or loses data (HTTP 409 counts as
+  already migrated).
+
 ## 4. API overview
 
 Local API base URL: `http://127.0.0.1:8086/api`

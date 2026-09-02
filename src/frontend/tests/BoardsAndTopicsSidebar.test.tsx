@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { BoardsAndTopicsSidebar } from '../src/components/learning/BoardsAndTopicsSidebar';
 import { loadTopicsForUser } from '../src/lib/learningTopics';
 
@@ -137,5 +137,38 @@ describe('BoardsAndTopicsSidebar saved-by attribution', () => {
     expect(screen.queryByTestId(/sidebar-topic-group-/)).not.toBeInTheDocument();
     // No summary line in flat mode either.
     expect(screen.queryByTestId('sidebar-topic-group-summary')).not.toBeInTheDocument();
+  });
+
+  it('drops the board ID when the topic board no longer exists', async () => {
+    // The user only sees one accessible board (id 7). A saved topic
+    // referencing a deleted board (id 99) must start without board context.
+    boardState.boards = [{ id: 7, name: 'Visible' } as never];
+    loadMock.mockResolvedValue([
+      { id: 1, board: 'Deleted board', boardId: 99, topic: 'Astronomía', createdBy: 'Ms. Johnson' },
+      { id: 2, board: 'Visible', boardId: 7, topic: 'Cocina', createdBy: 'Ms. Johnson' },
+    ]);
+    const startActivity = vi.fn();
+    render(
+      <BoardsAndTopicsSidebar
+        isOpen
+        onToggle={vi.fn()}
+        onStartActivity={startActivity}
+        isStartingSession={false}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Astronomía')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Start' })[0]);
+    await waitFor(() => {
+      // No boardId: the dangling reference is dropped instead of persisted.
+      expect(startActivity).toHaveBeenCalledWith('Astronomía', 'Deleted board', undefined);
+    });
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Start' })[1]);
+    await waitFor(() => {
+      expect(startActivity).toHaveBeenCalledWith('Cocina', 'Visible', 7);
+    });
   });
 });
