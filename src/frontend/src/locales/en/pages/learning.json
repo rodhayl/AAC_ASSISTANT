@@ -36,6 +36,8 @@
   "boardNameDefault": "General",
   "topicStudy": "Topic to study",
   "saveTopic": "Save topic",
+  "saveTopicSuccess": "Topic saved",
+  "saveTopicFailed": "Could not save the topic",
   "noSavedTopics": "No saved topics yet.",
   "removeTopic": "Remove topic",
   "showThinking": "Show thinking",

@@ -3,9 +3,11 @@ import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
 import { useBoardStore } from '../../store/boardStore';
+import { useToastStore } from '../../store/toastStore';
 import { Button } from '../ui/button';
 import { IconButton } from '../ui/icon-button';
 import { cn } from '../../lib/utils';
+import { extractError } from '../../lib/api';
 import {
     loadTopicsForUser,
     addTopic as addTopicHelper,
@@ -45,6 +47,7 @@ export function BoardsAndTopicsSidebar({
     className = ""
 }: BoardsAndTopicsSidebarProps) {
     const { t } = useTranslation('learning');
+    const addToast = useToastStore((state) => state.addToast);
     const user = useAuthStore((state) => state.user);
     const boards = useBoardStore((state) => state.boards);
     const assignedBoards = useBoardStore((state) => state.assignedBoards);
@@ -119,8 +122,11 @@ export function BoardsAndTopicsSidebar({
                 topic: topicName,
             });
             await loadSavedTopics();
-        } catch {
-            // Keep the form intact so the teacher can retry.
+            addToast(t('saveTopicSuccess'), 'success');
+        } catch (error) {
+            // Surface the failure (e.g. the duplicate-topic 409) so the
+            // teacher knows the topic was not saved; keep the form intact.
+            addToast(extractError(error, t('saveTopicFailed')), 'error');
             return;
         }
         setCustomTopic('');

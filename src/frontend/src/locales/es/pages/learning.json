@@ -36,6 +36,8 @@
   "boardNameDefault": "General",
   "topicStudy": "Tema a estudiar",
   "saveTopic": "Guardar tema",
+  "saveTopicSuccess": "Tema guardado",
+  "saveTopicFailed": "No se pudo guardar el tema",
   "noSavedTopics": "Aún no hay temas guardados.",
   "removeTopic": "Eliminar tema",
   "showThinking": "Mostrar razonamiento",

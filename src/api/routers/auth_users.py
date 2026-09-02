@@ -18,6 +18,7 @@ from src.aac_app.models import (
     LearningSession,
     LearningTask,
     Notification,
+    SavedTopic,
     StudentTeacher,
     SymbolUsageLog,
     User,
@@ -706,6 +707,17 @@ def delete_user(
     db.execute(delete(UserProgress).where(UserProgress.user_id == user_id))
     db.execute(delete(Notification).where(Notification.user_id == user_id))
     db.execute(delete(UserSettings).where(UserSettings.user_id == user_id))
+    # A teacher's saved topics belong to their account; deleting the account
+    # must not orphan them (they would linger in the admin scope=all view and
+    # dangle their creator FK). Clear the nullable creator reference first so
+    # topics another author saved through this user are never attributed to a
+    # deleted account.
+    db.execute(
+        update(SavedTopic)
+        .where(SavedTopic.created_by_user_id == user_id)
+        .values(created_by_user_id=None)
+    )
+    db.execute(delete(SavedTopic).where(SavedTopic.user_id == user_id))
 
     # These records can remain useful after their author is removed, so clear
     # nullable attribution or target fields rather than deleting shared data.

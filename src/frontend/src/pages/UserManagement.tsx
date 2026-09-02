@@ -57,6 +57,8 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     board: string
     topic: string
     created_by: string
+    // Refreshed from the creator's current display name (stable identity).
+    created_by_name?: string | null
     created_at: string | null
   }>>([])
   const [savedTopicsError, setSavedTopicsError] = useState<string | null>(null)
@@ -360,7 +362,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
                     <tr key={item.id}>
                       <td className="px-6 py-4 text-sm font-medium text-foreground">{item.topic}</td>
                       <td className="px-6 py-4 text-sm text-muted-foreground">{item.board || '-'}</td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground">{item.created_by}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{item.created_by_name || item.created_by}</td>
                       <td className="px-6 py-4 text-sm text-muted-foreground">
                         {item.created_at ? new Date(item.created_at).toLocaleDateString() : '-'}
                       </td>

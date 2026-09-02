@@ -65,6 +65,56 @@ def test_admin_manage_teachers(setup_test_db, admin_token, test_db_session):
     assert response.status_code == 404
 
 
+def test_deleting_teacher_removes_their_saved_topics(
+    setup_test_db, admin_token, test_db_session
+):
+    """Account deletion must not orphan saved topics or their creator FK."""
+    from src.aac_app.models import SavedTopic
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    create = client.post(
+        "/api/auth/admin/create-user",
+        json={
+            "username": "topic_owner_teacher",
+            "password": "TeacherPass123",
+            "confirm_password": "TeacherPass123",
+            "display_name": "Topic Owner",
+            "user_type": "teacher",
+        },
+        headers=headers,
+    )
+    assert create.status_code == 200
+    teacher_id = create.json()["id"]
+
+    topic = SavedTopic(
+        user_id=teacher_id,
+        board="Board",
+        topic="Topic",
+        created_by="Topic Owner",
+        created_by_user_id=teacher_id,
+    )
+    test_db_session.add(topic)
+    test_db_session.commit()
+    test_db_session.refresh(topic)
+
+    response = client.delete(f"/api/auth/users/{teacher_id}", headers=headers)
+    assert response.status_code == 200
+
+    remaining = (
+        test_db_session.query(SavedTopic)
+        .filter(SavedTopic.id == topic.id)
+        .first()
+    )
+    assert remaining is None
+    # No dangling creator references either.
+    dangling = (
+        test_db_session.query(SavedTopic)
+        .filter(SavedTopic.created_by_user_id == teacher_id)
+        .count()
+    )
+    assert dangling == 0
+
+
 def test_update_user_validates_role_email_and_active_flag(setup_test_db, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
 
