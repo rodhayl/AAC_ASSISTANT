@@ -407,3 +407,78 @@ def test_non_admin_cannot_use_scope_all(
             headers=create_test_headers(user.id, user.username, user_type),
         )
         assert response.status_code == 403
+
+
+def test_list_creator_names_resolve_in_one_batch(
+    teacher_user, test_db_session, monkeypatch
+):
+    """Many topics share creators; the list must not query per topic."""
+    for index in range(5):
+        _create_topic(test_db_session, teacher_user, f"Tema {index}", "Clase")
+
+    queries = []
+    original_get = test_db_session.get
+
+    def tracking_get(entity, pk):
+        queries.append((entity.__name__, pk))
+        return original_get(entity, pk)
+
+    monkeypatch.setattr(test_db_session, "get", tracking_get)
+
+    response = client.get(
+        "/api/learning/topics/saved",
+        headers=create_test_headers(teacher_user.id, teacher_user.username, "teacher"),
+    )
+    assert response.status_code == 200
+    entries = response.json()
+    assert len(entries) == 5
+    assert all(entry["created_by_name"] == "Saved Topics Teacher" for entry in entries)
+    # The batched resolver must not fall back to per-topic db.get(User, id).
+    assert not any(entity == "User" for entity, _pk in queries)
+
+
+def test_list_pagination_limit_and_offset(teacher_user, test_db_session):
+    for index in range(6):
+        _create_topic(test_db_session, teacher_user, f"Tema {index}", "Clase")
+    headers = create_test_headers(teacher_user.id, teacher_user.username, "teacher")
+
+    full = client.get("/api/learning/topics/saved", headers=headers)
+    assert full.status_code == 200
+    all_ids = [entry["id"] for entry in full.json()]
+
+    page = client.get(
+        "/api/learning/topics/saved?limit=4", headers=headers
+    )
+    assert page.status_code == 200
+    assert [entry["id"] for entry in page.json()] == all_ids[:4]
+
+    second = client.get(
+        "/api/learning/topics/saved?limit=4&offset=4", headers=headers
+    )
+    assert second.status_code == 200
+    assert [entry["id"] for entry in second.json()] == all_ids[4:]
+
+    # limit=0 and negative values are rejected by validation.
+    invalid = client.get("/api/learning/topics/saved?limit=0", headers=headers)
+    assert invalid.status_code == 422
+    negative_offset = client.get(
+        "/api/learning/topics/saved?offset=-1", headers=headers
+    )
+    assert negative_offset.status_code == 422
+
+
+def test_list_creator_falls_back_to_legacy_snapshot(
+    teacher_user, test_db_session
+):
+    """A creator whose account was deleted keeps the legacy name snapshot."""
+    topic = _create_topic(test_db_session, teacher_user, "Huérfana", "Clase")
+    topic.created_by_user_id = None
+    test_db_session.commit()
+
+    response = client.get(
+        "/api/learning/topics/saved",
+        headers=create_test_headers(teacher_user.id, teacher_user.username, "teacher"),
+    )
+    assert response.status_code == 200
+    entry = next(item for item in response.json() if item["id"] == topic.id)
+    assert entry["created_by_name"] == "Saved Topics Teacher"

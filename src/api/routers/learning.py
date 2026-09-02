@@ -47,6 +47,30 @@ def _creator_name(db: Session, topic: SavedTopic) -> str:
     return (creator.display_name or creator.username) if creator else topic.created_by
 
 
+def _attach_creator_names(db: Session, topics: list[SavedTopic]) -> None:
+    """Attach ``created_by_name`` to each topic using one query for all creators.
+
+    The list endpoints previously issued one ``db.get(User)`` per topic; with
+    many topics that is an N+1. Topics sharing a creator resolve in a single
+    batch, and deleted creators fall back to the legacy name snapshot.
+    """
+    creator_ids = {
+        topic.created_by_user_id
+        for topic in topics
+        if topic.created_by_user_id is not None
+    }
+    names: dict[int, str] = {}
+    if creator_ids:
+        creators = db.query(User).filter(User.id.in_(creator_ids)).all()
+        names = {
+            creator.id: (creator.display_name or creator.username)
+            for creator in creators
+        }
+    for topic in topics:
+        resolved = names.get(topic.created_by_user_id) if topic.created_by_user_id is not None else None
+        topic.created_by_name = resolved or topic.created_by
+
+
 def get_text(user: User, key: str, **kwargs) -> str:
     """Translate a learning-namespace message for the current user."""
     return get_shared_text(user, key, namespace="pages/learning", **kwargs)
@@ -196,6 +220,8 @@ def get_learning_topics(
 @router.get("/topics/saved", response_model=list[schemas.SavedTopicResponse])
 def list_saved_topics(
     scope: str = Query("own"),
+    limit: int | None = Query(None, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -205,6 +231,9 @@ def list_saved_topics(
     topics their roster teachers saved (so they follow the student to any
     device). Admins may pass ``scope=all`` to list every teacher's topics
     (used by the admin topic-management view).
+
+    ``limit``/``offset`` paginate large collections; when ``limit`` is
+    omitted the full list is returned so existing clients keep working.
     """
     if scope == "all":
         if current_user.user_type != "admin":
@@ -225,9 +254,13 @@ def list_saved_topics(
         if not teacher_ids:
             return []
         query = db.query(SavedTopic).filter(SavedTopic.user_id.in_(teacher_ids))
-    topics = query.order_by(SavedTopic.created_at.desc(), SavedTopic.id.desc()).all()
-    for topic in topics:
-        topic.created_by_name = _creator_name(db, topic)
+    query = query.order_by(SavedTopic.created_at.desc(), SavedTopic.id.desc())
+    if offset:
+        query = query.offset(offset)
+    if limit is not None:
+        query = query.limit(limit)
+    topics = query.all()
+    _attach_creator_names(db, topics)
     return topics
 
 
