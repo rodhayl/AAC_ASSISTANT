@@ -105,6 +105,12 @@ describe('BoardsAndTopicsSidebar saved-by attribution', () => {
     // Group containers exist per teacher, with the topic count in the heading.
     expect(screen.getByTestId('sidebar-topic-group-Ms. Johnson')).toBeInTheDocument();
     expect(screen.getByTestId('sidebar-topic-group-Mr. García')).toBeInTheDocument();
+    const groupIds = Array.from(document.querySelectorAll('[data-testid^="sidebar-topic-group-"]:not([data-testid="sidebar-topic-group-summary"])'))
+      .map((element) => element.getAttribute('data-testid'));
+    expect(groupIds).toEqual([
+      'sidebar-topic-group-Mr. García',
+      'sidebar-topic-group-Ms. Johnson',
+    ]);
     // One topic per teacher, so a number-only count pill appears in both
     // headings (full text as the tooltip).
     const msHeading = screen.getByTestId('sidebar-topic-group-Ms. Johnson').querySelector('h4')!;

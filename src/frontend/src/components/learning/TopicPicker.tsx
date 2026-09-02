@@ -165,12 +165,16 @@ export function TopicPicker({
       new Set(topics.map((topic) => topic.savedBy).filter((name): name is string => Boolean(name))),
     );
     if (teachers.length < 2) return null;
+    const teacherGroups = teachers.map((teacher) => ({
+      teacher,
+      topics: orderByPractice(topics.filter((topic) => topic.savedBy === teacher)),
+    }));
+    teacherGroups.sort(
+      (left, right) => right.topics.length - left.topics.length || left.teacher.localeCompare(right.teacher),
+    );
     return {
       common: ordered.filter((topic) => !topic.savedBy),
-      teachers: teachers.map((teacher) => ({
-        teacher,
-        topics: orderByPractice(topics.filter((topic) => topic.savedBy === teacher)),
-      })),
+      teachers: teacherGroups,
     };
   }, [ordered, topics]);
 

@@ -173,6 +173,9 @@ describe('TopicPicker', () => {
     // the tooltip).
     expect(screen.getByText('Saved by Ms. Johnson')).toBeInTheDocument();
     expect(screen.getByText('Saved by Mr. García')).toBeInTheDocument();
+    const groupIds = Array.from(document.querySelectorAll('[data-testid^="topic-group-"]'))
+      .map((element) => element.getAttribute('data-testid'));
+    expect(groupIds.indexOf('topic-group-Ms. Johnson')).toBeLessThan(groupIds.indexOf('topic-group-Mr. García'));
     const msHeading = screen.getByTestId('topic-group-Ms. Johnson').querySelector('h3')!;
     const mrHeading = screen.getByTestId('topic-group-Mr. García').querySelector('h3')!;
     expect(msHeading.textContent).toContain('2');

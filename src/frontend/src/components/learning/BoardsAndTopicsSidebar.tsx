@@ -72,10 +72,14 @@ export function BoardsAndTopicsSidebar({
             new Set(savedTopics.map((topic) => topic.createdBy).filter(Boolean)),
         );
         if (teachers.length < 2) return null;
-        return teachers.map((teacher) => ({
+        const groups = teachers.map((teacher) => ({
             teacher,
             topics: savedTopics.filter((topic) => topic.createdBy === teacher),
         }));
+        groups.sort(
+            (left, right) => right.topics.length - left.topics.length || left.teacher.localeCompare(right.teacher),
+        );
+        return groups;
     }, [savedTopics]);
 
     const loadSavedTopics = useCallback(async () => {
