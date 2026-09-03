@@ -15,33 +15,14 @@ from ..db import get_session
 from ..models import BoardSymbol, Symbol, SymbolUsageLog
 from ..services.runtime_translation import normalize_language_code
 from ..services.symbol_analytics import SymbolAnalytics
-from ..services.symbol_catalog import category_is_noun, standard_library_labels
-
-# Labels matching these patterns are internal dev artifacts — never suggest them.
-_BAD_LABEL_SUBSTRINGS: tuple[str, ...] = (
-    "frontend-",
-    "comm-",
-    "node_modules",
-    "dist/",
-    "build/",
-    "src-",
+from ..services.symbol_catalog import (
+    category_is_noun,
+    label_looks_bad,
+    standard_library_labels,
 )
 
-
-def _label_looks_bad(label: str) -> bool:
-    """True when a label is clearly an internal path/id, not a real symbol."""
-    lower = (label or "").strip().lower()
-    if not lower:
-        return True
-    if len(lower) > 50:
-        return True
-    if any(p in lower for p in _BAD_LABEL_SUBSTRINGS):
-        return True
-    if "/" in lower or "\\" in lower:
-        return True
-    # More than 3 hyphens is almost certainly a path/id, not a word.
-    return lower.count("-") > 3
-
+# Re-exported under the historical private name (tests import it from here).
+_label_looks_bad = label_looks_bad
 
 # Common stop-words excluded from topic tokenization so a topic like
 # "Inteligencia Artificial y LLMs" focuses on inteligencia/artificial/llms.
@@ -297,16 +278,45 @@ class _PredictionContext:
         normalized_label = self.normalize_label(localized_label)
         if not normalized_label or normalized_label in self.seen_labels:
             return
-        self.suggestions.append(
-            {
-                "symbol_id": symbol_id,
-                "label": localized_label,
-                "category": category,
-                "image_path": image_path,
-                "confidence": confidence,
-                "source": source,
-            }
+        self._push_suggestion(
+            symbol_id=symbol_id,
+            label=localized_label,
+            category=category,
+            image_path=image_path,
+            confidence=confidence,
+            source=source,
+            normalized_label=normalized_label,
         )
+
+    def _push_suggestion(
+        self,
+        *,
+        symbol_id: int,
+        label: str,
+        category: str | None,
+        image_path: str | None,
+        confidence: float,
+        source: str,
+        normalized_label: str,
+        extra: dict | None = None,
+    ) -> None:
+        """Append one suggestion dict and record its label as seen.
+
+        Single construction site for the suggestion payload shape so
+        ``add_symbol`` and the text-only/punctuation fallbacks cannot drift
+        apart when the contract gains a key.
+        """
+        suggestion = {
+            "symbol_id": symbol_id,
+            "label": label,
+            "category": category,
+            "image_path": image_path,
+            "confidence": confidence,
+            "source": source,
+        }
+        if extra:
+            suggestion.update(extra)
+        self.suggestions.append(suggestion)
         self.seen_labels.add(normalized_label)
 
     def get_symbol_buckets(self) -> dict[str, tuple[_SymbolCatalogEntry, ...]]:
@@ -613,19 +623,19 @@ class _PredictionContext:
             # ``is_generating`` tells the frontend a pictogram is being made
             # in the background, so it can show a "generating" state and
             # auto-refresh — the tile upgrades to the real image when done.
-            self.suggestions.append(
-                {
-                    "symbol_id": fake_id,
-                    "label": word,
-                    "category": None,
-                    "image_path": None,
-                    "confidence": 0.7,
-                    "source": "ai",
+            self._push_suggestion(
+                symbol_id=fake_id,
+                label=word,
+                category=None,
+                image_path=None,
+                confidence=0.7,
+                source="ai",
+                normalized_label=normalized,
+                extra={
                     "is_text_only": True,
                     "is_generating": self._is_svg_generation_enabled(),
-                }
+                },
             )
-            self.seen_labels.add(normalized)
             self._schedule_svg_generation(word)
 
     def suggest_history(self) -> None:
@@ -967,20 +977,19 @@ class _PredictionContext:
         for punct in PUNCTUATION:
             if len(self.suggestions) >= self.limit:
                 break
-            if self.normalize_label(punct) in self.seen_labels:
+            normalized = self.normalize_label(punct)
+            if normalized in self.seen_labels:
                 continue
             fake_id = -(abs(hash(punct)) % 1000000)
-            self.suggestions.append(
-                {
-                    "symbol_id": fake_id,
-                    "label": punct,
-                    "category": "punctuation",
-                    "image_path": None,
-                    "confidence": 1.0,
-                    "source": "punctuation",
-                }
+            self._push_suggestion(
+                symbol_id=fake_id,
+                label=punct,
+                category="punctuation",
+                image_path=None,
+                confidence=1.0,
+                source="punctuation",
+                normalized_label=normalized,
             )
-            self.seen_labels.add(self.normalize_label(punct))
 
 
 class PredictionService:

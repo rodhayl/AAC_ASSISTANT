@@ -70,7 +70,7 @@ async def _save_symbol_image(file: UploadFile, current_user: User) -> str:
         file,
         invalid_type_detail=get_text(user=current_user, key="errors.boards.invalidFileType"),
         too_large_detail=get_text(user=current_user, key="errors.boards.fileTooLarge"),
-        empty_detail=get_text(user=current_user, key="errors.boards.invalidFileType"),
+        empty_detail=get_text(user=current_user, key="errors.boards.emptyFile"),
     )
     name = f"{uuid.uuid4().hex}{ext}"
     path = uploads_dir / name

@@ -19,19 +19,31 @@ export type SavedTopic = {
 const keyForUser = (userId: number) => `learning-topics-${userId}`;
 
 function isDuplicateResponse(error: unknown): boolean {
-  const response = (error as { response?: { status?: unknown } } | null)?.response;
-  return response?.status === 409;
+  if (typeof error !== 'object' || error === null || !('response' in error)) {
+    return false;
+  }
+  const response = error.response;
+  if (typeof response !== 'object' || response === null || !('status' in response)) {
+    return false;
+  }
+  return response.status === 409;
 }
 
 function loadLocalTopics(userId: number): SavedTopic[] {
   try {
     const raw = localStorage.getItem(keyForUser(userId));
     if (!raw) return [];
-    const parsed = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
     if (Array.isArray(parsed)) {
       return parsed.filter(
-        (t) => typeof t?.id === 'number' && typeof t?.topic === 'string'
-      ) as SavedTopic[];
+        (t: unknown): t is SavedTopic =>
+          typeof t === 'object' &&
+          t !== null &&
+          'id' in t &&
+          typeof t.id === 'number' &&
+          'topic' in t &&
+          typeof t.topic === 'string',
+      );
     }
   } catch {
     /* ignore */

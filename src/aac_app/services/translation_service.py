@@ -1,9 +1,21 @@
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from loguru import logger
+
+
+class UserSettingsLanguage(Protocol):
+    """Structural contract for the user-settings language preference."""
+
+    ui_language: str | None
+
+
+class UserLanguage(Protocol):
+    """Structural contract for resolving a user's UI language."""
+
+    settings: UserSettingsLanguage | None
 
 
 class TranslationService:
@@ -29,19 +41,16 @@ class TranslationService:
         self._initialized = True
 
     def resolve_language(
-        self, user: Any = None, accept_language: str | None = None
+        self, user: UserLanguage | None = None, accept_language: str | None = None
     ) -> str:
         """
         Resolve the best language to use based on user settings or headers.
         """
         # 1. User preference
-        if (
-            user
-            and hasattr(user, "settings")
-            and user.settings
-            and user.settings.ui_language
-        ):
-            return user.settings.ui_language
+        settings = user.settings if user is not None else None
+        ui_language = settings.ui_language if settings is not None else None
+        if ui_language:
+            return ui_language
 
         # 2. Accept-Language header
         if accept_language:

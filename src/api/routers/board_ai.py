@@ -10,6 +10,7 @@ from src.aac_app.providers.lmstudio_provider import LMStudioProvider
 from src.aac_app.providers.ollama_provider import OllamaProvider
 from src.aac_app.providers.openrouter_provider import OpenRouterProvider
 from src.aac_app.services.board_generation_service import BoardGenerationService
+from src.aac_app.services.symbol_catalog import label_looks_bad
 from src.aac_app.services.symbol_image_backfill import schedule_symbol_image_download
 from src.aac_app.services.translation_service import get_translation_service
 from src.aac_app.services.vector_utils import index_symbol
@@ -28,34 +29,9 @@ from src.api.routers.board_helpers import SUPPORTED_AI_PROVIDERS
 
 router = APIRouter()
 
-# Labels that match these patterns are internal dev artifacts, not real
-# symbols. Reject them so they never reach the database or suggestions.
-_INVALID_LABEL_PATTERNS: list[str] = [
-    "frontend-",
-    "comm-",
-    "node_modules",
-    "dist/",
-    "build/",
-]
-
-
 def _is_valid_symbol_label(label: str) -> bool:
     """Return False for labels that are clearly internal paths or IDs."""
-    if not label or not label.strip():
-        return False
-    clean = label.strip()
-    if len(clean) > 50:
-        return False
-    lower = clean.lower()
-    if any(p in lower for p in _INVALID_LABEL_PATTERNS):
-        return False
-    # Reject identifiers that look like file-system paths or internal IDs
-    # (multiple consecutive hyphens, or more than 3 hyphen-delimited segments).
-    if lower.startswith("src-") or "-src-" in lower:
-        return False
-    if lower.count("-") > 3:
-        return False
-    return not ("/" in lower or "\\" in lower)
+    return not label_looks_bad(label)
 
 
 def get_or_create_symbol(

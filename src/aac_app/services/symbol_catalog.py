@@ -9,6 +9,32 @@ apart.
 
 from __future__ import annotations
 
+# Labels that match these substrings are internal dev artifacts, not real
+# symbols. Reject them so they never reach the database or suggestions.
+BAD_LABEL_SUBSTRINGS: tuple[str, ...] = (
+    "frontend-",
+    "comm-",
+    "node_modules",
+    "dist/",
+    "build/",
+    "src-",
+)
+
+
+def label_looks_bad(label: str) -> bool:
+    """True when a label is clearly an internal path/id, not a real symbol."""
+    lower = (label or "").strip().lower()
+    if not lower:
+        return True
+    if len(lower) > 50:
+        return True
+    if any(p in lower for p in BAD_LABEL_SUBSTRINGS):
+        return True
+    if "/" in lower or "\\" in lower:
+        return True
+    # More than 3 hyphens is almost certainly a path/id, not a word.
+    return lower.count("-") > 3
+
 EN_PRONOUNS: tuple[str, ...] = (
     "I",
     "you",

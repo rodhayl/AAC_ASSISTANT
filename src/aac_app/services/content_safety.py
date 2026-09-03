@@ -20,6 +20,7 @@ teacher overrides are rejected for them.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -557,19 +558,27 @@ async def moderate_output(
         logger.info("Sentinel daily cap ({}) reached; skipping moderation", cap)
         return Verdict(allowed=True)
     global _last_sentinel_call_at
+    # Reserve the next call slot under the lock, then pace outside of it: this
+    # coroutine runs on the event loop, so a blocking sleep here (or holding a
+    # threading lock across the ``await`` below) would stall every concurrent
+    # request. Reserving ``now + wait`` keeps spacing across threads/coroutines
+    # without blocking the loop.
+    with _sentinel_lock:
+        pacing = _sentinel_pacing_seconds()
+        wait = 0.0
+        if pacing > 0:
+            elapsed = time.monotonic() - _last_sentinel_call_at
+            if elapsed < pacing:
+                wait = pacing - elapsed
+        _last_sentinel_call_at = time.monotonic() + wait
+    if wait:
+        await asyncio.sleep(wait)
     try:
-        with _sentinel_lock:
-            pacing = _sentinel_pacing_seconds()
-            if pacing > 0:
-                elapsed = time.monotonic() - _last_sentinel_call_at
-                if elapsed < pacing:
-                    time.sleep(pacing - elapsed)
-            _last_sentinel_call_at = time.monotonic()
-            raw = await generate(
-                prompt=SENTINEL_PROMPT.format(text=text[:600]),
-                temperature=0.0,
-                max_tokens=8,
-            )
+        raw = await generate(
+            prompt=SENTINEL_PROMPT.format(text=text[:600]),
+            temperature=0.0,
+            max_tokens=8,
+        )
     except Exception as exc:
         # Fail open on provider errors: never block a child's chat because
         # the moderation service hiccuped.

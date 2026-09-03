@@ -9,6 +9,10 @@ from sqlalchemy.orm import Session
 
 from ...models import LearningSession
 from ...services.learning.history import append_history_entry
+from .common import difficulty_for_score
+
+# Matches fenced code blocks (``` or ```json) wrapping provider output.
+_CODE_BLOCK_PATTERN = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 
 
 def extract_json_object(text: str | None) -> dict | None:
@@ -22,7 +26,7 @@ def extract_json_object(text: str | None) -> dict | None:
         return None
 
     candidates = [text.strip()]
-    fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+    fenced = _CODE_BLOCK_PATTERN.search(text)
     if fenced:
         candidates.append(fenced.group(1).strip())
 
@@ -173,12 +177,7 @@ class QuestionGenerationMixin:
 
                 # Adjust difficulty based on comprehension
                 if difficulty is None:
-                    if session.comprehension_score < 0.4:
-                        difficulty = "basic"
-                    elif session.comprehension_score < 0.7:
-                        difficulty = "intermediate"
-                    else:
-                        difficulty = "advanced"
+                    difficulty = difficulty_for_score(session.comprehension_score)
 
                 # Get conversation history (last 3 exchanges)
                 recent_history = (

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.user_service import UserService
-from src.api.deps import get_current_active_user, get_db, get_text
+from src.api.deps import get_current_active_user, get_db, get_request_text, get_text
 from src.api.routers.auth_helpers import (
     apply_student_safety_at_creation,
     ensure_username_email_available,
@@ -56,11 +56,7 @@ def create_student(
     if current_user.user_type not in ["admin", "teacher"]:
         raise HTTPException(
             status_code=403,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.users.unauthorizedCreateStudents",
-            ),
+            detail=get_request_text(request, "errors.users.unauthorizedCreateStudents", user=current_user),
         )
 
     # Force user_type to student
@@ -123,11 +119,7 @@ def assign_student(
     if current_user.user_type == "teacher" and target_teacher_id != current_user.id:
         raise HTTPException(
             status_code=403,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.users.assignOnlySelf",
-            ),
+            detail=get_request_text(request, "errors.users.assignOnlySelf", user=current_user),
         )
 
     # Check if student exists
@@ -183,11 +175,7 @@ def unassign_student(
     if current_user.user_type == "teacher" and teacher_id != current_user.id:
         raise HTTPException(
             status_code=403,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.users.unassignOnlySelf",
-            ),
+            detail=get_request_text(request, "errors.users.unassignOnlySelf", user=current_user),
         )
 
     # Check if assignment exists
@@ -229,11 +217,7 @@ def reset_user_password(
     if target_user_id is None:
         raise HTTPException(
             status_code=400,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.users.studentIdRequired",
-            ),
+            detail=get_request_text(request, "errors.users.studentIdRequired", user=current_user),
         )
 
     # Fetch user
@@ -252,22 +236,14 @@ def reset_user_password(
         if target_user_id == current_user.id:
             raise HTTPException(
                 status_code=400,
-                detail=get_text(
-                    user=current_user,
-                    accept_language=request.headers.get("accept-language"),
-                    key="errors.users.cannotResetOwnPassword",
-                ),
+                detail=get_request_text(request, "errors.users.cannotResetOwnPassword", user=current_user),
             )
     elif current_user.user_type == "teacher":
         # Teacher can only reset assigned students
         if user.user_type != "student":
             raise HTTPException(
                 status_code=403,
-                detail=get_text(
-                    user=current_user,
-                    accept_language=request.headers.get("accept-language"),
-                    key="errors.users.resetOnlyStudents",
-                ),
+                detail=get_request_text(request, "errors.users.resetOnlyStudents", user=current_user),
             )
 
         # Check assignment
@@ -282,11 +258,7 @@ def reset_user_password(
         if not assignment:
             raise HTTPException(
                 status_code=403,
-                detail=get_text(
-                    user=current_user,
-                    accept_language=request.headers.get("accept-language"),
-                    key="errors.users.notAssignedToTeacher",
-                ),
+                detail=get_request_text(request, "errors.users.notAssignedToTeacher", user=current_user),
             )
 
     validate_password_strength(data.new_password, user=current_user)

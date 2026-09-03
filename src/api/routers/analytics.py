@@ -282,32 +282,38 @@ def get_next_symbol_suggestions_post(
                         raise RuntimeError("Required symbol translation returned no text")
                     return translated
 
+                # Intents sharing the "category list plus label list" shape are
+                # table-driven so pronouns/articles cannot drift apart.
+                _INTENT_LABEL_FILTERS = {
+                    "pronouns": (PRONOUN_CATEGORIES, intent_pronouns),
+                    "articles": (ARTICLE_CATEGORIES, intent_articles),
+                }
+                _INTENT_CATEGORY_ONLY_FILTERS = {
+                    "verbs": VERB_CATEGORIES,
+                    "places": PLACE_CATEGORIES,
+                }
+
                 def apply_intent_filter(q):
-                    if intent == "pronouns":
-                        pronouns = intent_pronouns(user_lang)
+                    if intent in _INTENT_LABEL_FILTERS:
+                        categories, labels_fn = _INTENT_LABEL_FILTERS[intent]
+                        words = [w.lower() for w in labels_fn(user_lang)]
                         return q.filter(
                             or_(
-                                Symbol.category.in_(PRONOUN_CATEGORIES),
-                                func.lower(Symbol.label).in_([p.lower() for p in pronouns]),
+                                Symbol.category.in_(categories),
+                                func.lower(Symbol.label).in_(words),
                             )
                         )
-                    if intent == "articles":
-                        articles = intent_articles(user_lang)
+                    if intent in _INTENT_CATEGORY_ONLY_FILTERS:
                         return q.filter(
-                            or_(
-                                Symbol.category.in_(ARTICLE_CATEGORIES),
-                                func.lower(Symbol.label).in_([a.lower() for a in articles]),
+                            Symbol.category.in_(
+                                _INTENT_CATEGORY_ONLY_FILTERS[intent]
                             )
                         )
-                    if intent == "verbs":
-                        return q.filter(Symbol.category.in_(VERB_CATEGORIES))
                     if intent == "nouns":
                         return q.filter(
                             Symbol.category.isnot(None),
                             ~Symbol.category.in_(NON_NOUN_CATEGORIES),
                         )
-                    if intent == "places":
-                        return q.filter(Symbol.category.in_(PLACE_CATEGORIES))
                     return q
 
                 def format_results(rows, *, offset, limit):

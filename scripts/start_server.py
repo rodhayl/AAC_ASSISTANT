@@ -178,7 +178,7 @@ def _wait_for_process_with_signal_handling(
     previous_sigterm = signal.getsignal(signal.SIGTERM)
     previous_sigbreak = signal.getsignal(signal.SIGBREAK) if hasattr(signal, "SIGBREAK") else None
 
-    def _request_shutdown(signum, frame):  # type: ignore[unused-argument]
+    def _request_shutdown(_signum, _frame):
         shutdown_requested.set()
 
     signal.signal(signal.SIGINT, _request_shutdown)

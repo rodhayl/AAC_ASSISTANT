@@ -160,8 +160,10 @@
     "boards": {
       "invalidFileType": "Invalid file type; only images are allowed",
       "fileTooLarge": "File too large; max 5MB",
+      "emptyFile": "Empty file; please choose a file with content",
       "invalidAudioType": "Invalid audio file; use WAV, WebM, OGG, MP3, or MP4",
       "audioFileTooLarge": "Audio file too large; max 10MB",
+      "emptyAudioFile": "Empty audio file; please record something first",
       "symbolNotFound": "Symbol not found",
       "symbolInUse": "Symbol is in use on boards; remove or use force=true",
       "unauthorizedAssignments": "Not authorized to view these assignments",

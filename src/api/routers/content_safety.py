@@ -21,13 +21,9 @@ from src.api.deps import get_current_admin_user, get_db, get_text
 router = APIRouter(prefix="/api/settings/content-safety", tags=["content-safety"])
 
 
-def _get_admin(current_user: User = Depends(get_current_admin_user)) -> User:
-    return current_user
-
-
 @router.get("", response_model=schemas.ContentSafetyPolicySchema)
 def get_global_policy(
-    current_user: User = Depends(_get_admin),
+    current_user: User = Depends(get_current_admin_user),
 ):
     """Return the current global content policy (what every student gets by
     default before teacher overrides)."""
@@ -48,7 +44,7 @@ def get_global_policy(
 @router.put("", response_model=schemas.ContentSafetyPolicySchema)
 def update_global_policy(
     payload: schemas.ContentSafetyPolicySchema,
-    current_user: User = Depends(_get_admin),
+    current_user: User = Depends(get_current_admin_user),
 ):
     """Replace the global content policy. This is the server-wide floor every
     student resolves from; per-student overrides (guardian profiles) can only
@@ -68,7 +64,7 @@ def update_global_policy(
 def list_safety_events(
     limit: int = Query(50, ge=1, le=500),
     surface: str | None = Query(None),
-    current_user: User = Depends(_get_admin),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
     """Recent content-safety verdicts across all students."""
@@ -80,7 +76,7 @@ def list_safety_events(
 
 @router.delete("/events", status_code=status.HTTP_204_NO_CONTENT)
 def clear_safety_events(
-    current_user: User = Depends(_get_admin),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
     """Clear the safety-event audit log."""
@@ -91,7 +87,7 @@ def clear_safety_events(
 
 @router.delete("/ai-symbols")
 def purge_ai_symbols(
-    current_user: User = Depends(_get_admin),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
     """Delete every auto-generated pictogram symbol and its image file."""

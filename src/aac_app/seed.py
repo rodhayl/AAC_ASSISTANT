@@ -33,14 +33,6 @@ DEFAULT_COMMUNICATION_BOARD_NAME = "Comunicación General"
 LEGACY_COMMUNICATION_BOARD_NAME = "General Communication"
 
 
-def _env_flag(name: str, default: bool = False) -> bool:
-    """Read a boolean environment flag."""
-    raw_value = os.environ.get(name)
-    if raw_value is None:
-        return default
-    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _seed_password_for(username: str) -> str:
     """Resolve a sample user password from environment variables."""
     per_user = os.environ.get(f"AAC_SEED_{username.upper()}_PASSWORD")
@@ -67,7 +59,7 @@ def init_database(*, ensure_schema: bool = True) -> None:
         _ensure_bootstrap_admin(session)
         _rename_legacy_default_board(session)
 
-        if _env_flag("AAC_SEED_SAMPLE_DATA", default=False):
+        if config.get_bool("AAC_SEED_SAMPLE_DATA", False):
             _create_sample_users(session)
             _create_sample_boards(session)
             logger.warning(

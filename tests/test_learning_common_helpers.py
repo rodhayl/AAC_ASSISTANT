@@ -1,6 +1,11 @@
 """Unit tests for shared learning prompt/response helpers (common.py)."""
 
-from src.aac_app.services.learning.common import AACPromptProfile, _strip_reasoning
+from src.aac_app.services.learning.common import (
+    AACPromptProfile,
+    _strip_reasoning,
+    difficulty_for_score,
+    next_action_for,
+)
 
 # ---------------------------------------------------------------------------
 # _strip_reasoning
@@ -134,3 +139,40 @@ def test_get_params_returns_tuned_limits():
     profile = AACPromptProfile()
     params = profile.get_params()
     assert params == {"max_tokens": 150, "temperature": 0.6}
+
+
+# ---------------------------------------------------------------------------
+# Comprehension policy (shared by questions.py and responses.py)
+# ---------------------------------------------------------------------------
+
+
+def test_difficulty_for_score_bands():
+    assert difficulty_for_score(0.0) == "basic"
+    assert difficulty_for_score(0.39) == "basic"
+    assert difficulty_for_score(0.4) == "intermediate"
+    assert difficulty_for_score(0.69) == "intermediate"
+    assert difficulty_for_score(0.7) == "advanced"
+    assert difficulty_for_score(1.0) == "advanced"
+
+
+def test_next_action_for_progress():
+    assert (
+        next_action_for(comprehension_score=0.9, questions_answered=5)
+        == "ready_for_activity"
+    )
+    assert (
+        next_action_for(comprehension_score=0.9, questions_answered=4)
+        == "continue_questions"
+    )
+    assert (
+        next_action_for(comprehension_score=0.2, questions_answered=3)
+        == "review_needed"
+    )
+    assert (
+        next_action_for(comprehension_score=0.2, questions_answered=2)
+        == "continue_questions"
+    )
+    assert (
+        next_action_for(comprehension_score=0.6, questions_answered=10)
+        == "continue_questions"
+    )

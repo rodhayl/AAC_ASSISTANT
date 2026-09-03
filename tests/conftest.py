@@ -80,6 +80,22 @@ def test_db_session(test_db_engine):
     session.close()
 
 
+@pytest.fixture(scope="function")
+def client(test_db_session):
+    """FastAPI test client bound to the function-scoped test database."""
+    from fastapi.testclient import TestClient
+
+    def override_get_db():
+        try:
+            yield test_db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+
+
 @pytest.fixture(autouse=False)
 def setup_test_db(test_db_engine):
     """

@@ -296,6 +296,12 @@ async def _close_llm_provider_async(provider: Any | None) -> None:
             logger.warning("LLM provider cleanup failed: {}", exc)
 
 
+# Public alias for routers that create short-lived provider clients (e.g.
+# settings model listing). The canonical best-effort async cleanup lives here
+# so routers do not reimplement it.
+close_provider_async = _close_llm_provider_async
+
+
 def get_ollama_provider() -> OllamaProvider:
     """Return the configured Ollama provider singleton."""
     global _ollama_provider

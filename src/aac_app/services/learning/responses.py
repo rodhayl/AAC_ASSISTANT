@@ -12,6 +12,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from ...models import LearningSession
 from ...services.achievement_system import AchievementSystem
 from ...services.translation_service import TranslationService
+from .common import next_action_for
 from .history import append_history_entry
 from .questions import extract_json_object
 
@@ -591,12 +592,10 @@ class ResponseProcessingMixin:
                     )
 
                 # Determine next action
-                if session.comprehension_score >= 0.8 and session.questions_answered >= 5:
-                    next_action = "ready_for_activity"
-                elif session.comprehension_score < 0.4 and session.questions_answered >= 3:
-                    next_action = "review_needed"
-                else:
-                    next_action = "continue_questions"
+                next_action = next_action_for(
+                    comprehension_score=session.comprehension_score,
+                    questions_answered=session.questions_answered,
+                )
 
                 # The frontend keeps the same question open while the tutor
                 # is still giving hints; once the full answer has been

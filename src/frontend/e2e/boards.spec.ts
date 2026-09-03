@@ -1,6 +1,10 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+
+type StorageEntry = { name: string; value: string };
+type StoredAuth = { origins: { localStorage: StorageEntry[] }[] };
+type SeededBoard = { id: number; name: string };
 
 test.describe('Boards - Student', () => {
   test.use({ storageState: 'playwright/.auth/student.json' });
@@ -156,10 +160,9 @@ test.describe('Boards - Pagination & Bulk (Real)', () => {
     const authPath = path.resolve('playwright/.auth/student.json');
     if (!fs.existsSync(authPath)) return;
     
-    const authContent = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
+    const authContent = JSON.parse(fs.readFileSync(authPath, 'utf-8')) as StoredAuth;
     const storage = authContent.origins[0].localStorage;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const authStorage = storage.find((item: any) => item.name === 'auth-storage');
+    const authStorage = storage.find((item: StorageEntry) => item.name === 'auth-storage');
     if (!authStorage) return;
     
     const state = JSON.parse(authStorage.value).state;
@@ -300,9 +303,8 @@ test.describe('Boards - Pagination & Bulk (Real)', () => {
     // Delete remaining Seeded Boards via API
     const authPath = path.resolve('playwright/.auth/student.json');
     if (!fs.existsSync(authPath)) return;
-    const authContent = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const authStorage = authContent.origins[0].localStorage.find((i: any) => i.name === 'auth-storage');
+    const authContent = JSON.parse(fs.readFileSync(authPath, 'utf-8')) as StoredAuth;
+    const authStorage = authContent.origins[0].localStorage.find((i: StorageEntry) => i.name === 'auth-storage');
     if (!authStorage) return;
     const token = JSON.parse(authStorage.value).state.token;
     // Extract user_id from token
@@ -320,9 +322,8 @@ test.describe('Boards - Pagination & Bulk (Real)', () => {
     });
     
     if (res.ok()) {
-        const boards = await res.json();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const seeded = boards.filter((b: any) => b.name.startsWith('Seeded Board'));
+        const boards = (await res.json()) as SeededBoard[];
+        const seeded = boards.filter((b: SeededBoard) => b.name.startsWith('Seeded Board'));
         console.log(`[Cleanup] Deleting ${seeded.length} remaining seeded boards...`);
         
         const promises = [];
@@ -343,8 +344,7 @@ test.describe('Boards - Pagination & Bulk (Real)', () => {
 
 
 // Helper
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function deleteBoard(page: any, name: string) {
+async function deleteBoard(page: Page, name: string) {
     // Search for the board first to ensure it's visible
     await page.getByPlaceholder(/search|buscar/i).fill(name);
     await page.waitForTimeout(1000);

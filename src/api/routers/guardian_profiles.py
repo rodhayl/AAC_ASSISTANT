@@ -23,6 +23,7 @@ from src.aac_app.services.guardian_profile_service import get_guardian_profile_s
 from src.aac_app.services.template_manager import get_template_manager
 from src.api import schemas
 from src.api.deps import (
+    STAFF_USER_TYPES,
     get_current_active_user,
     get_db,
     get_text,
@@ -36,7 +37,7 @@ def get_current_teacher_or_admin(
     current_user: User = Depends(get_current_active_user),
 ) -> User:
     """Dependency that requires teacher or admin role."""
-    if current_user.user_type not in ("teacher", "admin"):
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=get_text(

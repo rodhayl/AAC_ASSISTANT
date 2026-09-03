@@ -11,6 +11,7 @@ from src.api.deps import (
     get_achievement_system,
     get_current_active_user,
     get_db,
+    get_request_text,
     get_text,
     verify_student_access,
 )
@@ -44,11 +45,7 @@ def get_categories(
     if current_user.user_type not in ["teacher", "admin"]:
         raise HTTPException(
             status_code=403,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.achievements.viewCategories",
-            ),
+            detail=get_request_text(request, "errors.achievements.viewCategories", user=current_user),
         )
     return system.get_categories()
 
@@ -62,11 +59,7 @@ def get_criteria_types(
     if current_user.user_type not in ["teacher", "admin"]:
         raise HTTPException(
             status_code=403,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.achievements.viewCriteriaTypes",
-            ),
+            detail=get_request_text(request, "errors.achievements.viewCriteriaTypes", user=current_user),
         )
     return [
         "sessions_completed",
@@ -92,11 +85,7 @@ def list_all_achievements(
     if current_user.user_type not in ["teacher", "admin"]:
         raise HTTPException(
             status_code=403,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.achievements.manage",
-            ),
+            detail=get_request_text(request, "errors.achievements.manage", user=current_user),
         )
 
     session = db
@@ -113,9 +102,9 @@ def list_all_achievements(
             category=a.category or "general",
             points=a.points or 10,
             icon=a.icon or "🏆",
-            is_manual=a.is_manual if hasattr(a, 'is_manual') and a.is_manual else False,
+            is_manual=bool(a.is_manual),
             created_by=a.created_by,
-            target_user_id=a.target_user_id if hasattr(a, 'target_user_id') else None,
+            target_user_id=a.target_user_id,
             is_active=a.is_active,
             created_at=a.created_at,
             criteria_type=a.criteria_type,
@@ -137,11 +126,7 @@ def create_achievement(
     if current_user.user_type not in ["teacher", "admin"]:
         raise HTTPException(
             status_code=403,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.achievements.create",
-            ),
+            detail=get_request_text(request, "errors.achievements.create", user=current_user),
         )
 
     _validate_criteria_pair(
@@ -211,11 +196,7 @@ def update_achievement(
     if current_user.user_type not in ["teacher", "admin"]:
         raise HTTPException(
             status_code=403,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.achievements.update",
-            ),
+            detail=get_request_text(request, "errors.achievements.update", user=current_user),
         )
 
     session = db
@@ -232,11 +213,7 @@ def update_achievement(
     if achievement.created_by != current_user.id and current_user.user_type != "admin":
         raise HTTPException(
             status_code=403,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.achievements.updateOwnOnly",
-            ),
+            detail=get_request_text(request, "errors.achievements.updateOwnOnly", user=current_user),
         )
 
     if "target_user_id" in data.model_fields_set:
@@ -292,9 +269,9 @@ def update_achievement(
         category=achievement.category or "general",
         points=achievement.points or 10,
         icon=achievement.icon or "🏆",
-        is_manual=achievement.is_manual if hasattr(achievement, 'is_manual') else False,
+        is_manual=bool(achievement.is_manual),
         created_by=achievement.created_by,
-        target_user_id=achievement.target_user_id if hasattr(achievement, 'target_user_id') else None,
+        target_user_id=achievement.target_user_id,
         is_active=achievement.is_active,
         created_at=achievement.created_at,
         criteria_type=achievement.criteria_type,
@@ -313,11 +290,7 @@ def delete_achievement(
     if current_user.user_type not in ["teacher", "admin"]:
         raise HTTPException(
             status_code=403,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.achievements.delete",
-            ),
+            detail=get_request_text(request, "errors.achievements.delete", user=current_user),
         )
 
     session = db
@@ -332,22 +305,14 @@ def delete_achievement(
     if achievement.created_by is None:
         raise HTTPException(
             status_code=403,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.achievements.cannotDeleteSystem",
-            ),
+            detail=get_request_text(request, "errors.achievements.cannotDeleteSystem", user=current_user),
         )
 
     # Only creator or admin can delete
     if achievement.created_by != current_user.id and current_user.user_type != "admin":
         raise HTTPException(
             status_code=403,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.achievements.deleteOwnOnly",
-            ),
+            detail=get_request_text(request, "errors.achievements.deleteOwnOnly", user=current_user),
         )
 
     # Delete associated user achievements first
@@ -375,11 +340,7 @@ def award_achievement(
     if current_user.user_type not in ["teacher", "admin"]:
         raise HTTPException(
             status_code=403,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.achievements.award",
-            ),
+            detail=get_request_text(request, "errors.achievements.award", user=current_user),
         )
 
     session = db
@@ -406,11 +367,7 @@ def award_achievement(
     if existing:
         raise HTTPException(
             status_code=400,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.achievements.alreadyAwarded",
-            ),
+            detail=get_request_text(request, "errors.achievements.alreadyAwarded", user=current_user),
         )
 
     # Award the achievement

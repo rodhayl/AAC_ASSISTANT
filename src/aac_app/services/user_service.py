@@ -1,9 +1,17 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.aac_app.services.credential_service import mark_credentials_changed
-from src.api import schemas
+
+if TYPE_CHECKING:
+    # Annotation-only: importing src.api at runtime would couple the service
+    # layer to the API package (whose __init__ loads all routers).
+    from src.api import schemas
 
 
 class UserService:

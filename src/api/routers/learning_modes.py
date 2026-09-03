@@ -7,6 +7,7 @@ from src.aac_app.models import LearningMode, User, UserSettings
 from src.aac_app.services.guardian_profile_service import get_guardian_profile_service
 from src.aac_app.services.learning.service import LearningCompanionService
 from src.api.deps import (
+    STAFF_USER_TYPES,
     get_current_active_user,
     get_db,
     get_learning_service,
@@ -65,7 +66,7 @@ def preview_learning_mode_system_prompt(
     Teachers/admins can preview against a specific student to see the final
     prompt that student's sessions will use.
     """
-    if current_user.user_type not in ("admin", "teacher"):
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_text(user=current_user, key="errors.learningModes.staffOnly"),
@@ -108,7 +109,7 @@ def preview_learning_mode_system_prompt(
     temperature = None
     max_tokens = None
     if payload.sample_question and payload.sample_question.strip():
-        user_lang = service._get_user_language(target_user_id, db)
+        user_lang = service.get_user_language(target_user_id, db)
         user_message = service.build_conversation_user_prompt(
             student_message=payload.sample_question.strip(),
             topic=payload.topic or "general conversation",

@@ -628,7 +628,7 @@ def test_preview_system_prompt_with_sample_question(
     expected_message = service.build_conversation_user_prompt(
         student_message=question,
         topic="general conversation",
-        lang=service._get_user_language(admin_user.id, db=test_db_session),
+        lang=service.get_user_language(admin_user.id, db=test_db_session),
     )
     assert data["user_message"] == expected_message
 

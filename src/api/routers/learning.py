@@ -13,6 +13,7 @@ from src.aac_app.models import LearningMode, SavedTopic, StudentTeacher, User, U
 from src.aac_app.services.learning.service import LearningCompanionService
 from src.api import schemas
 from src.api.deps import (
+    STAFF_USER_TYPES,
     get_board_or_404,
     get_current_active_user,
     get_db,
@@ -247,7 +248,7 @@ def list_saved_topics(
                 detail=get_text(current_user, "errors.unauthorized"),
             )
         filters: list[Any] = []
-    elif current_user.user_type in ("teacher", "admin"):
+    elif current_user.user_type in STAFF_USER_TYPES:
         filters = [SavedTopic.user_id == current_user.id]
     else:
         teacher_ids = [
@@ -319,7 +320,7 @@ def create_saved_topic(
     db: Session = Depends(get_db),
 ):
     """Save a topic (teacher/admin only; students consume, never create)."""
-    if current_user.user_type not in ("teacher", "admin"):
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_text(current_user, "errors.unauthorized"),
@@ -519,7 +520,7 @@ async def submit_voice_answer(
             ),
             empty_detail=get_shared_text(
                 user=current_user,
-                key="errors.boards.invalidAudioType",
+                key="errors.boards.emptyAudioFile",
                 namespace="common",
             ),
         )

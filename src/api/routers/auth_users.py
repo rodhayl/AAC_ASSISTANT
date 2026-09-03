@@ -32,10 +32,12 @@ from src.aac_app.services.credential_service import mark_credentials_changed
 from src.aac_app.services.lockout_service import lockout_service
 from src.api import schemas
 from src.api.deps import (
+    STAFF_USER_TYPES,
     authorize_user_access,
     get_current_active_user,
     get_current_admin_user,
     get_db,
+    get_request_text,
     get_text,
 )
 from src.api.routers.auth_helpers import (
@@ -239,7 +241,7 @@ def get_student_summaries(
     db: Session = Depends(get_db),
 ):
     """Return visible students and assigned boards without per-student requests."""
-    if current_user.user_type not in {"admin", "teacher"}:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_text(
@@ -457,10 +459,10 @@ def update_user(
     if "user_type" in payload and payload.get("user_type") not in valid_types:
         raise HTTPException(
             status_code=400,
-            detail=get_text(
+            detail=get_request_text(
+                request,
+                "errors.auth.invalidUserType",
                 user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.auth.invalidUserType",
                 types=", ".join(valid_types),
             ),
         )
@@ -486,11 +488,7 @@ def update_user(
             if other_active_admins == 0:
                 raise HTTPException(
                     status_code=400,
-                    detail=get_text(
-                        user=current_user,
-                        accept_language=request.headers.get("accept-language"),
-                        key="errors.auth.lastAdminRequired",
-                    ),
+                    detail=get_request_text(request, "errors.auth.lastAdminRequired", user=current_user),
                 )
 
     # Mirror the profile-update contract: a blank display name is rejected so
@@ -500,11 +498,7 @@ def update_user(
         if not display_name:
             raise HTTPException(
                 status_code=400,
-                detail=get_text(
-                    user=current_user,
-                    accept_language=request.headers.get("accept-language"),
-                    key="errors.auth.displayNameRequired",
-                ),
+            detail=get_request_text(request, "errors.auth.displayNameRequired", user=current_user),
             )
 
     new_email = payload.get('email')
@@ -523,11 +517,7 @@ def update_user(
             if db.query(User).filter(User.email == new_email, User.id != user.id).first():
                 raise HTTPException(
                     status_code=400,
-                    detail=get_text(
-                        user=current_user,
-                        accept_language=request.headers.get("accept-language"),
-                        key="errors.auth.emailTaken",
-                    ),
+                    detail=get_request_text(request, "errors.auth.emailTaken", user=current_user),
                 )
 
     if 'is_active' in payload and not isinstance(payload['is_active'], bool):
@@ -557,11 +547,7 @@ def delete_user(
     if current_user.id == user_id:
         raise HTTPException(
             status_code=400,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.auth.cannotDeleteOwnAccount",
-            ),
+            detail=get_request_text(request, "errors.auth.cannotDeleteOwnAccount", user=current_user),
         )
 
     user = db.query(User).filter(User.id == user_id).first()
@@ -587,11 +573,7 @@ def delete_user(
         if other_active_admins == 0:
             raise HTTPException(
                 status_code=400,
-                detail=get_text(
-                    user=current_user,
-                    accept_language=request.headers.get("accept-language"),
-                    key="errors.auth.lastAdminRequired",
-                ),
+                detail=get_request_text(request, "errors.auth.lastAdminRequired", user=current_user),
             )
 
     # Delete dependent rows explicitly instead of relying on ORM relationship

@@ -26,7 +26,7 @@ class AACExpanderService:
 
     def _load_grammar_rules(self) -> dict:
         """Load grammar expansion rules."""
-        return {
+        rules = {
             # Article insertion rules
             "article": {
                 "patterns": [
@@ -105,6 +105,17 @@ class AACExpanderService:
                 "thanks": "Thank you",
             },
         }
+        # Precompile match patterns once: every expansion reuses them and all
+        # call sites match case-insensitively, so the flag lives here instead
+        # of being recompiled (and re-parsed) on each rule application.
+        for group in ("article", "pronoun", "verb", "tense", "question"):
+            group_rules = rules[group]
+            if "patterns" in group_rules:
+                group_rules["patterns"] = [
+                    (re.compile(pattern, re.IGNORECASE), replacement)
+                    for pattern, replacement in group_rules["patterns"]
+                ]
+        return rules
 
     def expand(
         self,
@@ -338,7 +349,7 @@ class AACExpanderService:
         for pattern, replacement_func in self.grammar_rules["tense"].get(
             "patterns", []
         ):
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = pattern.search(text)
             if match and callable(replacement_func):
                 new_text = replacement_func(match)
                 if new_text:
@@ -349,15 +360,15 @@ class AACExpanderService:
     def _apply_pronoun_rules(self, text: str) -> tuple[str, str | None]:
         """Apply pronoun normalization rules."""
         for pattern, replacement in self.grammar_rules["pronoun"]["patterns"]:
-            if re.search(pattern, text, re.IGNORECASE):
-                text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+            if pattern.search(text):
+                text = pattern.sub(replacement, text)
                 return text, "pronoun_fix"
         return text, None
 
     def _apply_article_rules(self, text: str) -> tuple[str, str | None]:
         """Apply article insertion rules."""
         for pattern, replacement_func in self.grammar_rules["article"]["patterns"]:
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = pattern.search(text)
             if match and callable(replacement_func):
                 new_text = replacement_func(match)
                 if new_text:
@@ -368,7 +379,7 @@ class AACExpanderService:
     def _apply_verb_rules(self, text: str) -> tuple[str, str | None]:
         """Apply verb conjugation rules."""
         for pattern, replacement in self.grammar_rules["verb"]["patterns"]:
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = pattern.search(text)
             if match:
                 if callable(replacement):
                     new_text = replacement(match)
@@ -376,7 +387,7 @@ class AACExpanderService:
                         text = text[: match.start()] + new_text + text[match.end() :]
                         return text, "verb_conjugation"
                 else:
-                    text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+                    text = pattern.sub(replacement, text)
                     return text, "verb_conjugation"
         return text, None
 
@@ -392,7 +403,7 @@ class AACExpanderService:
         else:
             # Check for question words
             for pattern, replacement_func in self.grammar_rules["question"]["patterns"]:
-                match = re.search(pattern, text, re.IGNORECASE)
+                match = pattern.search(text)
                 if match and callable(replacement_func):
                     new_text = replacement_func(match)
                     if new_text:

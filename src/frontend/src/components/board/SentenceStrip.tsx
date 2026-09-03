@@ -113,7 +113,7 @@ export const SentenceStrip = memo(function SentenceStrip({
   );
 
   const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
+    setActiveId(String(event.active.id));
   };
 
   const handleDragEnd = (event: DragEndEvent) => {

@@ -2,6 +2,39 @@
 
 import re
 
+# Pedagogical policy shared by question-difficulty selection (questions.py)
+# and next-action decisions (responses.py). Keep the thresholds in one place
+# so the two modules cannot drift apart.
+COMPREHENSION_REVIEW_BELOW = 0.4
+COMPREHENSION_READY_AT = 0.8
+COMPREHENSION_INTERMEDIATE_BELOW = 0.7
+MIN_ANSWERS_FOR_READY = 5
+MIN_ANSWERS_FOR_REVIEW = 3
+
+
+def difficulty_for_score(score: float) -> str:
+    """Map a comprehension score to a question difficulty band."""
+    if score < COMPREHENSION_REVIEW_BELOW:
+        return "basic"
+    if score < COMPREHENSION_INTERMEDIATE_BELOW:
+        return "intermediate"
+    return "advanced"
+
+
+def next_action_for(*, comprehension_score: float, questions_answered: int) -> str:
+    """Map session progress to the frontend next-action hint."""
+    if (
+        comprehension_score >= COMPREHENSION_READY_AT
+        and questions_answered >= MIN_ANSWERS_FOR_READY
+    ):
+        return "ready_for_activity"
+    if (
+        comprehension_score < COMPREHENSION_REVIEW_BELOW
+        and questions_answered >= MIN_ANSWERS_FOR_REVIEW
+    ):
+        return "review_needed"
+    return "continue_questions"
+
 
 def _strip_reasoning(text: str) -> str:
     """

@@ -123,12 +123,7 @@ def voice_status(current_user: User = Depends(get_current_active_user)):
     stt_installed = is_faster_whisper_available()
     configured_stt_model = normalize_stt_model(get_setting_value("stt_model", DEFAULT_STT_MODEL))
     ffmpeg_installed = _executable_available("ffmpeg")
-    try:
-        auto_install_supported, auto_install_reason = _voice_auto_install_support(current_user)
-    except TypeError:
-        # Preserve compatibility with lightweight test and plugin overrides
-        # that still expose the original zero-argument helper.
-        auto_install_supported, auto_install_reason = _voice_auto_install_support()
+    auto_install_supported, auto_install_reason = _voice_auto_install_support(current_user)
     return {
         "stt": {
             "provider": "faster-whisper",
@@ -372,12 +367,7 @@ def install_tts_dependencies(
     current_user: User = Depends(get_current_admin_user),
 ):
     """Install the optional kokoro-onnx extra and download its model files."""
-    try:
-        auto_install_supported, auto_install_reason = _voice_auto_install_support(current_user)
-    except TypeError:
-        # Preserve compatibility with lightweight test and plugin overrides
-        # that still expose the original zero-argument helper.
-        auto_install_supported, auto_install_reason = _voice_auto_install_support()
+    auto_install_supported, auto_install_reason = _voice_auto_install_support(current_user)
     if not auto_install_supported:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -443,12 +433,7 @@ def install_voice_dependencies(
     current_user: User = Depends(get_current_admin_user),
 ):
     """Install the optional faster-whisper voice extra on Windows source checkouts."""
-    try:
-        auto_install_supported, auto_install_reason = _voice_auto_install_support(current_user)
-    except TypeError:
-        # Preserve compatibility with lightweight test and plugin overrides
-        # that still expose the original zero-argument helper.
-        auto_install_supported, auto_install_reason = _voice_auto_install_support()
+    auto_install_supported, auto_install_reason = _voice_auto_install_support(current_user)
     if not auto_install_supported:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

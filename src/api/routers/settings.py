@@ -16,6 +16,7 @@ from src.aac_app.providers.ollama_provider import OllamaProvider
 from src.aac_app.providers.openrouter_provider import OpenRouterProvider
 from src.api.deps import (
     clear_settings_cache,
+    close_provider_async,
     get_current_active_user,
     get_current_admin_user,
     get_db,
@@ -24,6 +25,7 @@ from src.api.deps import (
 )
 from src.api.deps import providers as provider_deps
 from src.api.routers.auth_helpers import SUPPORTED_UI_LANGUAGES, update_user_settings
+from src.api.routers.board_helpers import SUPPORTED_AI_PROVIDERS
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -82,23 +84,6 @@ def _safe_float_setting(value: str | None, default: float, *, minimum: float, ma
     except (TypeError, ValueError):
         return default
     return min(max(parsed, minimum), maximum)
-
-
-async def _close_provider(provider: Any | None) -> None:
-    """Best-effort cleanup for short-lived provider clients used by settings."""
-    if provider is None:
-        return
-    close_async = getattr(provider, "close_async", None)
-    close = getattr(provider, "close", None)
-    close_method = close_async if callable(close_async) else close
-    if not callable(close_method):
-        return
-    try:
-        result = close_method()
-        if hasattr(result, "__await__"):
-            await result
-    except Exception as exc:
-        logger.debug("Provider cleanup failed after settings request: {}", exc)
 
 
 # Endpoints
@@ -181,7 +166,7 @@ def update_ai_settings(
     """Update AI provider settings (admin only)"""
     # Validate provider
     provider = settings.get("provider")
-    if provider not in ["ollama", "openrouter", "lmstudio", "groq"]:
+    if provider not in SUPPORTED_AI_PROVIDERS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=get_text(
@@ -371,7 +356,7 @@ async def get_ollama_models(
             ),
         )
     finally:
-        await _close_provider(provider)
+        await close_provider_async(provider)
 
 
 @router.get("/ai/models/openrouter")
@@ -423,7 +408,7 @@ async def get_openrouter_models(
             ),
         )
     finally:
-        await _close_provider(provider)
+        await close_provider_async(provider)
 
 
 @router.get("/ai/models/groq")
@@ -475,7 +460,7 @@ async def get_groq_models(
             ),
         )
     finally:
-        await _close_provider(provider)
+        await close_provider_async(provider)
 
 
 @router.get("/ai/models/lmstudio")
@@ -520,7 +505,7 @@ async def get_lmstudio_models(
             ),
         )
     finally:
-        await _close_provider(provider)
+        await close_provider_async(provider)
 
 
 # UI Language endpoints

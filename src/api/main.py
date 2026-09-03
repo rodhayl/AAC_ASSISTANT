@@ -55,6 +55,22 @@ from src.api.routers import config as config_router
 from src.api.spa import ImmutableStaticFiles, SPAStaticFiles, resolve_frontend_directory
 
 
+def _background_task_runnable(app: FastAPI, task_label: str) -> bool:
+    """Shared prelude for optional startup background tasks.
+
+    Returns False (after logging why) when the database failed to initialize
+    or the process runs under pytest, so each background coroutine does not
+    repeat the same two guards with slightly different messages.
+    """
+    if not app.state.database_ready:
+        logger.warning(f"Skipping {task_label} because database initialization failed")
+        return False
+    if os.environ.get("TESTING") == "1":
+        logger.info(f"Skipping {task_label} during tests")
+        return False
+    return True
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize services on startup."""
@@ -129,13 +145,7 @@ async def lifespan(app: FastAPI):
 
     async def backfill_symbol_images_in_background() -> None:
         try:
-            if not app.state.database_ready:
-                logger.warning(
-                    "Skipping symbol image backfill because database initialization failed"
-                )
-                return
-            if os.environ.get("TESTING") == "1":
-                logger.info("Skipping symbol image backfill during tests")
+            if not _background_task_runnable(app, "symbol image backfill"):
                 return
             if not config.get_bool("AAC_ENABLE_SYMBOL_IMAGE_BACKFILL", False):
                 logger.info("Symbol image backfill disabled by configuration")
@@ -159,13 +169,7 @@ async def lifespan(app: FastAPI):
 
     async def import_arasaac_library_in_background() -> None:
         try:
-            if not app.state.database_ready:
-                logger.warning(
-                    "Skipping ARASAAC library import because database initialization failed"
-                )
-                return
-            if os.environ.get("TESTING") == "1":
-                logger.info("Skipping ARASAAC library import during tests")
+            if not _background_task_runnable(app, "ARASAAC library import"):
                 return
             if not config.get_bool("AAC_ENABLE_ARASAAC_LIBRARY_IMPORT", False):
                 logger.info("ARASAAC library import disabled by configuration")
@@ -191,13 +195,7 @@ async def lifespan(app: FastAPI):
 
     async def rebuild_ngrams_in_background() -> None:
         try:
-            if not app.state.database_ready:
-                logger.warning(
-                    "Skipping n-gram rebuild because database initialization failed"
-                )
-                return
-            if os.environ.get("TESTING") == "1":
-                logger.info("Skipping n-gram rebuild during tests")
+            if not _background_task_runnable(app, "n-gram rebuild"):
                 return
             if not config.get_bool("AAC_ENABLE_NGRAM_REBUILD", False):
                 logger.info("N-gram rebuild disabled by configuration")
@@ -232,13 +230,7 @@ async def lifespan(app: FastAPI):
     # PredictionService.warmup).
     async def warmup_prediction_in_background() -> None:
         try:
-            if not app.state.database_ready:
-                logger.warning(
-                    "Skipping prediction warmup because database initialization failed"
-                )
-                return
-            if os.environ.get("TESTING") == "1":
-                logger.info("Skipping prediction warmup during tests")
+            if not _background_task_runnable(app, "prediction warmup"):
                 return
             await asyncio.to_thread(prediction_service.warmup)
             logger.info("Prediction warmup complete")

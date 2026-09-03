@@ -293,9 +293,11 @@ export function LearningModesTab({
     if (!pendingDeleteMode) return;
     setDeletingMode(true);
     try {
-      const response = await api.delete(`/learning-modes/${pendingDeleteMode.id}`);
+      const response = await api.delete<{ default_learning_mode?: string }>(
+        `/learning-modes/${pendingDeleteMode.id}`,
+      );
       const deletedKey = pendingDeleteMode.key;
-      const nextDefaultModeKey = response.data?.default_learning_mode as string | undefined;
+      const nextDefaultModeKey = response.data?.default_learning_mode;
       setPendingDeleteMode(null);
       const modes = await fetchLearningModes();
       let resolvedDefaultModeKey = nextDefaultModeKey || defaultModeKey;

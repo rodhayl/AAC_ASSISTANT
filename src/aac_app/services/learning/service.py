@@ -220,3 +220,7 @@ class LearningCompanionService(
         except Exception as exc:
             logger.debug("Failed to read user language for user {}: {}", user_id, exc)
         return "es"
+
+    def get_user_language(self, user_id: int, db: Session | None = None) -> str:
+        """Public alias for cross-layer callers (routers, tests)."""
+        return self._get_user_language(user_id, db)

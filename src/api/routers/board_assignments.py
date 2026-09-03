@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 from src.aac_app.models import BoardAssignment, BoardSymbol, CommunicationBoard, User
 from src.api import schemas
 from src.api.deps import (
+    STAFF_USER_TYPES,
     get_board_or_404,
     get_current_active_user,
     get_db,
@@ -55,7 +56,7 @@ def assign_board_to_student(
 ):
     # Assignment management is a staff action. Board ownership alone must not
     # let a student change another student's roster or forge distribution.
-    if current_user.user_type not in {"admin", "teacher"}:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_text(user=current_user, key="errors.boards.unauthorizedAssign"),
@@ -107,7 +108,7 @@ def unassign_board_from_student(
 ):
     # Assignment management is a staff action. Board ownership alone must not
     # let a student change another student's roster or forge distribution.
-    if current_user.user_type not in {"admin", "teacher"}:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_text(user=current_user, key="errors.boards.unauthorizedUnassign"),

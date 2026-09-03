@@ -712,10 +712,10 @@ class GuardianProfileResponse(BaseModel):
     template_name: str
     age: int | None = None
     gender: str | None = None
-    medical_context: dict | None = None
-    communication_style: dict | None = None
-    safety_constraints: dict | None = None
-    companion_persona: dict | None = None
+    medical_context: MedicalContextSchema | None = None
+    communication_style: CommunicationStyleSchema | None = None
+    safety_constraints: SafetyConstraintsSchema | None = None
+    companion_persona: CompanionPersonaSchema | None = None
     custom_instructions: str | None = None
     private_notes: str | None = None
     is_active: bool = True

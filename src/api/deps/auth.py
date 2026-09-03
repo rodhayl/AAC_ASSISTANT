@@ -17,6 +17,12 @@ from .db import get_db
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 
+# User types allowed to perform staff actions (teacher rosters, board
+# assignment, content management). Single source of truth for the role
+# check repeated across routers and dependencies.
+STAFF_USER_TYPES = frozenset({"admin", "teacher"})
+
+
 def validate_token(token: str, db: Session) -> User | None:
     """Validate a JWT and return its database user, if present.
 
@@ -86,19 +92,38 @@ def get_text(
     return service.get(lang, namespace, key, **kwargs)
 
 
+def get_request_text(
+    request: Request,
+    key: str = "errors.unknown",
+    *,
+    user: User | None = None,
+    namespace: str = "common",
+    **kwargs,
+) -> str:
+    """Translate a message using the request's Accept-Language header.
+
+    Single choke point for the header lookup previously repeated at every
+    translated error site, so a header-name typo cannot silently fall back
+    to the default language in one endpoint.
+    """
+    return get_text(
+        user=user,
+        key=key,
+        accept_language=request.headers.get("accept-language"),
+        namespace=namespace,
+        **kwargs,
+    )
+
+
 def get_current_user(
     request: Request,
     token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     """Authenticate the current request and return its user."""
-    accept_language = request.headers.get("accept-language")
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=get_text(
-            key="errors.credentialsInvalid",
-            accept_language=accept_language,
-        ),
+        detail=get_request_text(request, "errors.credentialsInvalid"),
         headers={"WWW-Authenticate": "Bearer"},
     )
 
@@ -144,7 +169,7 @@ def get_current_staff_user(
     current_user: User = Depends(get_current_active_user),
 ) -> User:
     """Require an active teacher or administrator account."""
-    if current_user.user_type not in {"admin", "teacher"}:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=get_text(user=current_user, key="errors.insufficientPrivileges"),

@@ -15,23 +15,26 @@ from src import config
 
 # JWT Configuration
 # Load from .env via the shared configuration module (environment variables take precedence)
-JWT_SECRET_KEY = config.get("JWT_SECRET_KEY", "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION")
+_INSECURE_DEFAULT_SECRET = "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION"
+JWT_SECRET_KEY = config.get("JWT_SECRET_KEY", _INSECURE_DEFAULT_SECRET)
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 120  # 2 hours
 REFRESH_TOKEN_EXPIRE_DAYS = 7  # 7 days
 
 # Enforce secure secret in production
-if config.get("ENVIRONMENT", "development") == "production":  # noqa: SIM102
-    if JWT_SECRET_KEY == "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION":
-        raise ValueError(
-            "CRITICAL SECURITY ERROR: JWT_SECRET_KEY must be set to a secure value in production. "
-            "Generate one with: python -c 'import secrets; print(secrets.token_hex(32))'"
-        )
+if (
+    config.get("ENVIRONMENT", "development") == "production"
+    and JWT_SECRET_KEY == _INSECURE_DEFAULT_SECRET
+):
+    raise ValueError(
+        "CRITICAL SECURITY ERROR: JWT_SECRET_KEY must be set to a secure value in production. "
+        "Generate one with: python -c 'import secrets; print(secrets.token_hex(32))'"
+    )
 
 
 def _require_secure_secret() -> None:
     """Refuse to mint tokens with the placeholder secret in production."""
-    if JWT_SECRET_KEY != "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION":
+    if JWT_SECRET_KEY != _INSECURE_DEFAULT_SECRET:
         return
     logger.critical(
         "JWT_SECRET_KEY is using default insecure value! Set JWT_SECRET_KEY environment variable."
@@ -180,7 +183,7 @@ def create_refresh_token(data: dict[str, Any]) -> str:
 
 
 # Warning on module import if using insecure default
-if JWT_SECRET_KEY == "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION":
+if JWT_SECRET_KEY == _INSECURE_DEFAULT_SECRET:
     logger.warning(
         "=" * 80 + "\n"
         "WARNING: Using default JWT_SECRET_KEY! This is INSECURE.\n"

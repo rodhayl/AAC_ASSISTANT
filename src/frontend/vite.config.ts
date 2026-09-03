@@ -3,6 +3,10 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+// Backend port is configurable via VITE_BACKEND_PORT (see src/config.ts and
+// .env.example); the dev proxy must follow it instead of hardcoding 8086.
+const backendPort = process.env.VITE_BACKEND_PORT || '8086'
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -42,7 +46,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8086',
+        target: `http://127.0.0.1:${backendPort}`,
         changeOrigin: true,
         secure: false,
       },

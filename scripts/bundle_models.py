@@ -72,60 +72,74 @@ def _download_kokoro_to_bundle(bundle_models_dir: Path) -> bool:
         tts_mod.kokoro_model_dir = original
 
 
+def _download_step(label: str, ready: bool, action) -> bool:
+    """Run one model download unless its cache is already present.
+
+    Returns True when the model is ready (previously cached or just
+    downloaded). Any download failure is logged and reported as False so
+    ``download_all`` can finish the remaining models before failing.
+    """
+    if ready:
+        logger.info("{} already cached; skipping download", label)
+        return True
+    try:
+        return bool(action())
+    except Exception as exc:  # noqa: BLE001 - report any download failure
+        logger.error("Failed to download {}: {}", label, exc)
+        return False
+
+
+def _download_fastembed(output_dir: Path) -> bool:
+    from fastembed import TextEmbedding
+
+    logger.info("Downloading fastembed model '{}' into {}", MODEL_NAME, output_dir)
+    TextEmbedding(model_name=MODEL_NAME, cache_dir=str(output_dir), lazy_load=True)
+    logger.success("fastembed model ready")
+    return True
+
+
+def _download_whisper(output_dir: Path, stt_model: str) -> bool:
+    from faster_whisper import WhisperModel
+
+    logger.info("Downloading faster-whisper '{}' into {}", stt_model, output_dir)
+    WhisperModel(
+        stt_model,
+        device="cpu",
+        compute_type="int8",
+        download_root=str(output_dir),
+    )
+    logger.success("faster-whisper '{}' ready", stt_model)
+    return True
+
+
+def _download_kokoro_bundle(output_dir: Path) -> bool:
+    logger.info("Downloading Kokoro model files into {}", output_dir / "kokoro")
+    if _download_kokoro_to_bundle(output_dir):
+        logger.success("Kokoro model files ready")
+        return True
+    logger.error("Kokoro model download did not produce valid files")
+    return False
+
+
 def download_all(output_dir: Path, stt_model: str = DEFAULT_STT_MODEL) -> bool:
     """Download all models into ``output_dir``; returns True when all are ready."""
+    from functools import partial
+
     output_dir.mkdir(parents=True, exist_ok=True)
-    ok = True
 
-    # --- fastembed ---
-    if _fastembed_ready(output_dir):
-        logger.info("fastembed model already cached; skipping download")
-    else:
-        try:
-            from fastembed import TextEmbedding
-
-            logger.info("Downloading fastembed model '{}' into {}", MODEL_NAME, output_dir)
-            TextEmbedding(model_name=MODEL_NAME, cache_dir=str(output_dir), lazy_load=True)
-            logger.success("fastembed model ready")
-        except Exception as exc:  # noqa: BLE001 - report any download failure
-            logger.error("Failed to download fastembed model: {}", exc)
-            ok = False
-
-    # --- faster-whisper ---
-    if _whisper_ready(output_dir, stt_model):
-        logger.info("faster-whisper '{}' already cached; skipping download", stt_model)
-    else:
-        try:
-            from faster_whisper import WhisperModel
-
-            logger.info("Downloading faster-whisper '{}' into {}", stt_model, output_dir)
-            WhisperModel(
-                stt_model,
-                device="cpu",
-                compute_type="int8",
-                download_root=str(output_dir),
-            )
-            logger.success("faster-whisper '{}' ready", stt_model)
-        except Exception as exc:  # noqa: BLE001 - report any download failure
-            logger.error("Failed to download faster-whisper '{}': {}", stt_model, exc)
-            ok = False
-
-    # --- Kokoro (~353 MB total) ---
-    if _kokoro_ready(output_dir):
-        logger.info("Kokoro model files already cached; skipping download")
-    else:
-        try:
-            logger.info("Downloading Kokoro model files into {}", output_dir / "kokoro")
-            if _download_kokoro_to_bundle(output_dir):
-                logger.success("Kokoro model files ready")
-            else:
-                logger.error("Kokoro model download did not produce valid files")
-                ok = False
-        except Exception as exc:  # noqa: BLE001 - report any download failure
-            logger.error("Failed to download Kokoro model files: {}", exc)
-            ok = False
-
-    return ok
+    steps = (
+        ("fastembed model", _fastembed_ready(output_dir), partial(_download_fastembed, output_dir)),
+        (
+            f"faster-whisper '{stt_model}'",
+            _whisper_ready(output_dir, stt_model),
+            partial(_download_whisper, output_dir, stt_model),
+        ),
+        ("Kokoro model files", _kokoro_ready(output_dir), partial(_download_kokoro_bundle, output_dir)),
+    )
+    # Evaluate every step even when one fails (no short-circuit): a failed
+    # model must not skip the remaining downloads.
+    results = [_download_step(label, ready, action) for label, ready, action in steps]
+    return all(results)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -8,6 +8,9 @@ from ..providers.groq_provider import GroqProvider
 from ..providers.lmstudio_provider import LMStudioProvider
 from ..providers.openrouter_provider import OpenRouterProvider
 
+# Matches fenced code blocks (``` or ```json) wrapping provider output.
+_CODE_BLOCK_PATTERN = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```")
+
 
 def _normalize_label(value: str) -> str:
     return " ".join((value or "").strip().lower().split())
@@ -137,8 +140,7 @@ class BoardGenerationService:
 
             # Normalize harmless presentation wrappers before strict validation.
             clean_response = response.strip()
-            code_block_pattern = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```")
-            match = code_block_pattern.search(clean_response)
+            match = _CODE_BLOCK_PATTERN.search(clean_response)
             if match:
                 clean_response = match.group(1).strip()
             else:

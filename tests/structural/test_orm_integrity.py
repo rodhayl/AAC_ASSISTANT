@@ -54,6 +54,8 @@ def test_foreign_keys_defined():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
 
-    # If we got here, the SQL generation works (no invalid column types/references)
-    assert True
+    # create_all must materialize every mapped table, not merely not raise.
+    inspector = inspect(engine)
+    created = set(inspector.get_table_names())
+    assert created == set(Base.metadata.tables)
     engine.dispose()

@@ -398,10 +398,12 @@ class TestIndexAllSymbolsEmptyLibrary:
 
         @contextmanager
         def mock_get_session():
+            # Mirror the real SQLAlchemy Query API: every clause returns the
+            # query itself so production needs no test-double fallbacks.
             mock_db = Mock()
             query = mock_db.query.return_value
             query.order_by.return_value = query
-            query.yield_per.return_value = []
+            query.yield_per.return_value = query
             query.first.return_value = None
             yield mock_db
 

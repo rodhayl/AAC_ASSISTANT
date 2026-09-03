@@ -10,6 +10,8 @@ from typing import Any
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
+from src.aac_app.models.notification import Notification
+
 SUBSCRIBER_QUEUE_MAXSIZE = 100
 _PENDING_NOTIFICATIONS_KEY = "aac_pending_notification_events"
 
@@ -106,7 +108,7 @@ def unsubscribe(user_id: int, queue: asyncio.Queue[dict[str, Any]]) -> None:
             _subscribers.pop(user_id, None)
 
 
-def notification_payload(notification: Any) -> dict[str, Any]:
+def notification_payload(notification: Notification) -> dict[str, Any]:
     """Convert a notification ORM object into the public SSE payload."""
     return {
         "id": notification.id,
@@ -120,12 +122,12 @@ def notification_payload(notification: Any) -> dict[str, Any]:
     }
 
 
-def publish_notification(notification: Any) -> None:
+def publish_notification(notification: Notification) -> None:
     """Publish a persisted notification to all subscribers for its user."""
     _publish_event(notification_payload(notification), notification.user_id)
 
 
-def stage_notification(session: Session, notification: Any) -> None:
+def stage_notification(session: Session, notification: Notification) -> None:
     """Stage a notification event for publication after ``session`` commits."""
     pending = session.info.setdefault(_PENDING_NOTIFICATIONS_KEY, [])
     pending.append((notification_payload(notification), notification.user_id))

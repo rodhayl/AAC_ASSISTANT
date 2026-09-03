@@ -18,6 +18,20 @@ from ..models import (
 from .achievement_catalog import PREDEFINED_ACHIEVEMENTS
 from .notification_events import stage_notification
 
+# Maps each automatic criteria type to its key in the user-stats dict built
+# by _get_user_stats/_get_progress_stats. Single source of truth shared by
+# _meets_criteria and _calculate_progress_generic so the two evaluations
+# cannot drift apart.
+_CRITERIA_STAT_KEYS = {
+    "sessions_completed": "sessions_completed",
+    "correct_answers": "total_correct_answers",
+    "comprehension_score": "average_comprehension",
+    "vocabulary_size": "vocabulary_size",
+    "topics_completed": "topics_completed",
+    "consecutive_days": "consecutive_days",
+    "voice_usage": "voice_usage",
+}
+
 
 class AchievementSystem:
     """Gamification and achievement system for AAC learning"""
@@ -251,21 +265,10 @@ class AchievementSystem:
         criteria_type: str, criteria_value: float, stats: dict
     ) -> bool:
         """Evaluate a single criteria type against computed user stats."""
-        if criteria_type == "sessions_completed":
-            return stats["sessions_completed"] >= criteria_value
-        elif criteria_type == "correct_answers":
-            return stats["total_correct_answers"] >= criteria_value
-        elif criteria_type == "comprehension_score":
-            return stats["average_comprehension"] >= criteria_value
-        elif criteria_type == "vocabulary_size":
-            return stats["vocabulary_size"] >= criteria_value
-        elif criteria_type == "topics_completed":
-            return stats["topics_completed"] >= criteria_value
-        elif criteria_type == "consecutive_days":
-            return stats["consecutive_days"] >= criteria_value
-        elif criteria_type == "voice_usage":
-            return stats["voice_usage"] >= criteria_value
-        return False
+        stat_key = _CRITERIA_STAT_KEYS.get(criteria_type)
+        if stat_key is None:
+            return False
+        return stats[stat_key] >= criteria_value
 
     def _award_achievement(self, user_id: int, achievement_key: str, session) -> bool:
         """Award an achievement to a user"""
@@ -494,22 +497,7 @@ class AchievementSystem:
             # satisfied by every non-negative statistic.
             return 100.0
 
-        current_value = 0.0
-
-        if criteria_type == "sessions_completed":
-            current_value = stats.get("sessions_completed", 0)
-        elif criteria_type == "correct_answers":
-            current_value = stats.get("total_correct_answers", 0)
-        elif criteria_type == "comprehension_score":
-            current_value = stats.get("average_comprehension", 0)
-        elif criteria_type == "vocabulary_size":
-            current_value = stats.get("vocabulary_size", 0)
-        elif criteria_type == "topics_completed":
-            current_value = stats.get("topics_completed", 0)
-        elif criteria_type == "consecutive_days":
-            current_value = stats.get("consecutive_days", 0)
-        elif criteria_type == "voice_usage":
-            current_value = stats.get("voice_usage", 0)
+        current_value = stats.get(_CRITERIA_STAT_KEYS.get(criteria_type, ""), 0)
 
         progress = (current_value / criteria_value) * 100 if criteria_value > 0 else 0
         return min(progress, 100.0)  # Cap at 100%

@@ -215,8 +215,14 @@ class OpenRouterProvider(BaseLLMProvider):
                     },
                 }
 
+            # The shared sync client defaults to a short timeout for quick
+            # calls (model listing); generations need the same budget as the
+            # async path, so override it per request.
             response = self.sync_client.post(
-                f"{self.base_url}/chat/completions", headers=headers, json=payload
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=30.0,
             )
 
             if response.status_code != 200:

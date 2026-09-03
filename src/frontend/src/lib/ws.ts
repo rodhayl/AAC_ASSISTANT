@@ -40,7 +40,7 @@ export function createWSClient(
       nextSocket.onmessage = (ev) => {
         if (socket !== nextSocket || closed) return
         try {
-          const msg = JSON.parse(ev.data) as unknown
+          const msg: unknown = JSON.parse(ev.data)
           if (handlers.onMessage) handlers.onMessage(msg)
         } catch { /* parse failed */ }
       }

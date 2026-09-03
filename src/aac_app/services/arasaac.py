@@ -75,19 +75,16 @@ class ArasaacService:
         """
         Download a symbol image from ARASAAC.
         """
+        hi_res_url = f"{ARASAAC_IMAGE_BASE}/{arasaac_id}/{arasaac_id}_2500.png"  # Try high res first
         try:
-            url = f"{ARASAAC_IMAGE_BASE}/{arasaac_id}/{arasaac_id}_2500.png"  # Try high res first
-            response = await self.client.get(url)
-            if response.status_code != 200:
-                # Fallback to 500px
-                url = f"{ARASAAC_IMAGE_BASE}/{arasaac_id}/{arasaac_id}_500.png"
-                response = await self.client.get(url)
-
-            response.raise_for_status()
-            return response.content
+            response = await self.client.get(hi_res_url)
         except Exception as e:
             logger.error(f"Failed to download ARASAAC image {arasaac_id}: {e}")
             return None
+        if response.status_code != 200:
+            # Fallback to 500px
+            return await self.download_symbol_image_500(arasaac_id)
+        return response.content
 
     async def download_symbol_image_500(self, arasaac_id: int) -> bytes | None:
         """

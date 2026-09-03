@@ -17,6 +17,24 @@ from src.aac_app.models import Symbol
 from src.aac_app.services.arasaac import ArasaacService
 from src.aac_app.services.runtime_translation import normalize_language_code
 
+# Query tokenization helpers for ARASAAC search: dev-artifact words that must
+# never become search queries, and the separators precompiled once instead of
+# per symbol during a backfill run.
+_QUERY_STOPWORDS = frozenset(
+    {
+        "frontend",
+        "comm",
+        "communication",
+        "symbol",
+        "disposable",
+        "export",
+        "roundtrip",
+        "general",
+    }
+)
+_QUERY_SPLIT_PATTERN = re.compile(r"[,;/]")
+_QUERY_SEPARATOR_PATTERN = re.compile(r"[_-]+")
+
 
 def _missing_image_clause():
     return or_(Symbol.image_path.is_(None), func.trim(Symbol.image_path) == "")
@@ -103,16 +121,6 @@ def _best_arasaac_match(label: str, results: list[dict]) -> dict | None:
 def _search_queries(symbol: Symbol) -> list[str]:
     seen: set[str] = set()
     queries: list[str] = []
-    stopwords = {
-        "frontend",
-        "comm",
-        "communication",
-        "symbol",
-        "disposable",
-        "export",
-        "roundtrip",
-        "general",
-    }
 
     def add(candidate: str | None) -> None:
         normalized = _normalize_text(candidate)
@@ -126,11 +134,11 @@ def _search_queries(symbol: Symbol) -> list[str]:
     for field in (symbol.keywords, symbol.description, symbol.category):
         if not field:
             continue
-        for phrase in re.split(r"[,;/]", field):
-            cleaned = re.sub(r"[_-]+", " ", phrase).strip()
+        for phrase in _QUERY_SPLIT_PATTERN.split(field):
+            cleaned = _QUERY_SEPARATOR_PATTERN.sub(" ", phrase).strip()
             add(cleaned)
             for token in cleaned.split():
-                if len(token) < 2 or token.casefold() in stopwords:
+                if len(token) < 2 or token.casefold() in _QUERY_STOPWORDS:
                     continue
                 if not any(char.isalpha() for char in token):
                     continue

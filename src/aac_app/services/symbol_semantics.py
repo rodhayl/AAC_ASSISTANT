@@ -8,6 +8,12 @@ Analyzes AAC symbol sequences for semantic patterns and intent.
 class SymbolSemantics:
     """Analyzes AAC symbol sequences for semantic patterns and intent."""
 
+    # Intent confidence tiers: keyword hits outrank structural pattern hits,
+    # which outrank the "statement" fallback guess.
+    KEYWORD_MATCH_CONFIDENCE = 0.85
+    PATTERN_MATCH_CONFIDENCE = 0.65
+    FALLBACK_CONFIDENCE = 0.4
+
     # Category-based semantic roles
     SEMANTIC_ROLES = {
         "person": ["agent", "subject", "pronoun"],
@@ -120,16 +126,16 @@ class SymbolSemantics:
         for intent_name, intent_data in self.intent_patterns.items():
             for keyword in intent_data["keywords"]:
                 if keyword in labels:
-                    return intent_name, 0.85
+                    return intent_name, self.KEYWORD_MATCH_CONFIDENCE
 
         # Check pattern matches (medium confidence)
         for intent_name, intent_data in self.intent_patterns.items():
             for pattern in intent_data["patterns"]:
                 if self._matches_pattern(roles, pattern):
-                    return intent_name, 0.65
+                    return intent_name, self.PATTERN_MATCH_CONFIDENCE
 
         # Fallback
-        return "statement", 0.4
+        return "statement", self.FALLBACK_CONFIDENCE
 
     def _matches_pattern(self, roles: list[str], pattern: list[str]) -> bool:
         """Check if semantic roles match intent pattern."""

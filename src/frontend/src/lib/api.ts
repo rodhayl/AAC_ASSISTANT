@@ -78,28 +78,24 @@ const OFFLINE_EXCLUDED_ENDPOINTS = new Set([
   '/auth/logout',
 ]);
 
+function pathnameOf(url: string): string | null {
+  try {
+    return new URL(url, 'http://localhost').pathname.replace(/^\/api(?=\/)/, '');
+  } catch {
+    return null;
+  }
+}
+
 export function isAuthFlowEndpoint(url?: string): boolean {
   if (!url) return false;
-
-  try {
-    const pathname = new URL(url, 'http://localhost').pathname
-      .replace(/^\/api(?=\/)/, '');
-    return AUTH_FLOW_ENDPOINTS.has(pathname);
-  } catch {
-    return false;
-  }
+  const pathname = pathnameOf(url);
+  return pathname !== null && AUTH_FLOW_ENDPOINTS.has(pathname);
 }
 
 function isOfflineExcludedEndpoint(url?: string): boolean {
   if (!url) return false;
-
-  try {
-    const pathname = new URL(url, 'http://localhost').pathname
-      .replace(/^\/api(?=\/)/, '');
-    return OFFLINE_EXCLUDED_ENDPOINTS.has(pathname);
-  } catch {
-    return false;
-  }
+  const pathname = pathnameOf(url);
+  return pathname !== null && OFFLINE_EXCLUDED_ENDPOINTS.has(pathname);
 }
 
 let offline = typeof navigator !== 'undefined' ? !navigator.onLine : false;

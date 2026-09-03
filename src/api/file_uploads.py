@@ -47,6 +47,25 @@ def _has_audio_signature(content: bytes, content_type: str) -> bool:
     return False
 
 
+async def _read_bounded_chunks(
+    upload: UploadFile, *, max_bytes: int, too_large_detail: str
+):
+    """Yield upload chunks while enforcing the byte budget.
+
+    Shared by the in-memory and temp-file readers so the chunk size,
+    budget accounting, and 413 policy cannot drift apart.
+    """
+    total = 0
+    while True:
+        chunk = await upload.read(min(1024 * 1024, max_bytes - total + 1))
+        if not chunk:
+            return
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(status_code=413, detail=too_large_detail)
+        yield chunk
+
+
 async def read_upload_bytes(
     upload: UploadFile,
     *,
@@ -69,18 +88,14 @@ async def read_upload_bytes(
             detail=invalid_type_detail or too_large_detail,
         )
 
-    chunks: list[bytes] = []
-    total = 0
-    while True:
-        chunk = await upload.read(min(1024 * 1024, max_bytes - total + 1))
-        if not chunk:
-            break
-        total += len(chunk)
-        if total > max_bytes:
-            raise HTTPException(status_code=413, detail=too_large_detail)
-        chunks.append(chunk)
+    chunks = [
+        chunk
+        async for chunk in _read_bounded_chunks(
+            upload, max_bytes=max_bytes, too_large_detail=too_large_detail
+        )
+    ]
 
-    if total == 0:
+    if not chunks:
         raise HTTPException(status_code=400, detail=empty_detail)
     return b"".join(chunks)
 
@@ -113,15 +128,12 @@ async def save_audio_upload(
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
             temp_path = temp_file.name
-            while True:
-                chunk = await upload.read(min(1024 * 1024, max_bytes - total + 1))
-                if not chunk:
-                    break
+            async for chunk in _read_bounded_chunks(
+                upload, max_bytes=max_bytes, too_large_detail=too_large_detail
+            ):
                 total += len(chunk)
                 if len(prefix) < 32:
                     prefix.extend(chunk[: 32 - len(prefix)])
-                if total > max_bytes:
-                    raise HTTPException(status_code=413, detail=too_large_detail)
                 temp_file.write(chunk)
         if total == 0:
             raise HTTPException(status_code=400, detail=empty_detail)
