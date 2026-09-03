@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
@@ -83,10 +83,15 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
   const [savedTopicsPageSize, setSavedTopicsPageSize] = useState<number>(25)
   const [savedTopicsTotal, setSavedTopicsTotal] = useState(0)
   const [savedTopicsSearch, setSavedTopicsSearch] = useState('')
+  const [savedTopicsSearchQuery, setSavedTopicsSearchQuery] = useState('')
+  const savedTopicsSearchEffectMountedRef = useRef(false)
   // Debounced copy of the search box: requests fire only after typing stops,
   // keeping keystrokes from hammering the API.
-  const [savedTopicsSearchQuery, setSavedTopicsSearchQuery] = useState('')
   useEffect(() => {
+    if (!savedTopicsSearchEffectMountedRef.current) {
+      savedTopicsSearchEffectMountedRef.current = true
+      return
+    }
     const timer = setTimeout(() => {
       setSavedTopicsSearchQuery(savedTopicsSearch.trim())
       setSavedTopicsPage(1)
@@ -104,14 +109,17 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
   const [resetPasswordLoading, setResetPasswordLoading] = useState(false)
   const [updateLoading, setUpdateLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
+  const managedUsersRequestRef = useRef(0)
 
   const loadUsers = useCallback(async () => {
+    const requestId = ++managedUsersRequestRef.current
     const response = await api.get('/auth/users', {
       params: { limit: 1000, user_type: role },
     })
     if (!Array.isArray(response.data)) {
       throw new Error('Invalid response format: expected array')
     }
+    if (requestId !== managedUsersRequestRef.current) return
     setManagedUsers(response.data as User[])
   }, [role])
 
@@ -165,6 +173,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     if (showSavedTopics) void loadSavedTopics()
     return () => {
       cancelled = true
+      managedUsersRequestRef.current += 1
     }
   }, [loadUsers, role, t, user, showSavedTopics, loadSavedTopics])
 

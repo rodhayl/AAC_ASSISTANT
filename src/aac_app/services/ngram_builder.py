@@ -12,6 +12,8 @@ the bundled files, so the effective model is learned from real usage.
 
 import asyncio
 import json
+import os
+import tempfile
 from collections import Counter, defaultdict
 from datetime import timedelta
 from pathlib import Path
@@ -89,13 +91,16 @@ def collect_usage_bigrams(
         logs = (
             session.query(SymbolUsageLog)
             .order_by(
+                SymbolUsageLog.user_id,
                 SymbolUsageLog.session_id,
                 SymbolUsageLog.timestamp,
                 SymbolUsageLog.position_in_utterance,
+                SymbolUsageLog.id,
             )
             .yield_per(1000)
         )
 
+        current_user_id: int | None = None
         current_locale: str | None = None
         current_sequence: list[str] = []
         current_session = None
@@ -122,6 +127,7 @@ def collect_usage_bigrams(
             positions, so single-symbol utterances (position 0) never chain
             into a fake sequence.
             """
+            user_changed = current_user_id != log.user_id
             session_changed = current_session != log.session_id
             time_gap = (
                 current_timestamp is not None
@@ -134,7 +140,7 @@ def collect_usage_bigrams(
                 and log.position_in_utterance is not None
                 and log.position_in_utterance <= last_position
             )
-            return session_changed or bool(time_gap) or position_reset
+            return user_changed or session_changed or bool(time_gap) or position_reset
 
         for log in logs:
             if new_utterance(log):
@@ -146,12 +152,21 @@ def collect_usage_bigrams(
             if locale is None:
                 current_sequence = []
                 current_locale = None
+                current_user_id = log.user_id
                 current_session = log.session_id
                 current_timestamp = log.timestamp
                 last_position = log.position_in_utterance
                 continue
 
+            # A reused learning session can contain symbols from more than one
+            # locale. Never assign a mixed-language sequence to whichever
+            # locale happened to be logged last.
+            if current_locale is not None and current_locale != locale:
+                flush_sequence()
+                current_sequence = []
+
             current_sequence.append((log.symbol_label or "").strip())
+            current_user_id = log.user_id
             current_locale = locale
             current_session = log.session_id
             current_timestamp = log.timestamp
@@ -228,8 +243,28 @@ def rebuild_ngram_models(
         merged = _merge_models(_bundled_bigrams(locale_key), learned_model)
 
         output_path = output_dir / f"{locale_key}.json"
-        with open(output_path, "w", encoding="utf-8") as handle:
-            json.dump({"bigrams": merged}, handle, ensure_ascii=False, indent=2)
+        temporary_path: Path | None = None
+        try:
+            # Readers may load models while the periodic rebuild runs. Write
+            # beside the destination and atomically replace it only after the
+            # complete JSON document has been flushed.
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=output_dir,
+                prefix=f".{locale_key}.",
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                temporary_path = Path(handle.name)
+                json.dump({"bigrams": merged}, handle, ensure_ascii=False, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary_path, output_path)
+            temporary_path = None
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
         written[locale_key] = output_path
 
         learned_count = sum(len(words) for words in learned_model.values())

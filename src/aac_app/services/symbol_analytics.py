@@ -400,7 +400,7 @@ class SymbolAnalytics:
             intent_counts = (
                 db.query(
                     SymbolUsageLog.semantic_intent,
-                    func.count(func.distinct(SymbolUsageLog.session_id)).label(
+                    func.count(SymbolUsageLog.id).label(
                         "utterance_count"
                     ),
                 )

@@ -223,6 +223,35 @@ def _ensure_sqlite_indexes(engine: Engine) -> None:
                 )
             )
 
+        if "board_assignments" in existing_tables:
+            assignment_columns = {
+                row[1]
+                for row in connection.execute(
+                    text("PRAGMA table_info(board_assignments)")
+                )
+            }
+            if {"id", "board_id", "student_id"} <= assignment_columns:
+                # Older databases allowed duplicate assignments because the
+                # ORM uniqueness rule was introduced after the table existed.
+                # Keep the earliest row (and its audit metadata), then enforce
+                # the invariant at the database boundary for concurrent writes.
+                connection.execute(
+                    text(
+                        "DELETE FROM board_assignments "
+                        "WHERE id NOT IN ("
+                        "SELECT MIN(id) FROM board_assignments "
+                        "GROUP BY board_id, student_id"
+                        ")"
+                    )
+                )
+                connection.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS "
+                        "uq_board_assignments_board_student "
+                        "ON board_assignments (board_id, student_id)"
+                    )
+                )
+
 
 def _ensure_foreign_key_actions(engine: Engine) -> None:
     """Rebuild tables whose FK constraints lack ON DELETE actions.

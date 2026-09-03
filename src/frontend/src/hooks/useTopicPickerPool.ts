@@ -39,6 +39,9 @@ export function useTopicPickerPool() {
   const [symbolItems, setSymbolItems] = useState<LearningSymbolItem[]>([]);
   const [symbolLang, setSymbolLang] = useState('');
   const [symbolLoading, setSymbolLoading] = useState(false);
+  const topicPoolGenerationRef = useRef(0);
+  const topicPoolRequestRef = useRef(0);
+  const symbolRequestRef = useRef(0);
 
   const currentLang = i18n?.language?.split('-')[0] || 'en';
   const symbolLanguage = currentLang === 'es' ? 'es' : 'en';
@@ -60,14 +63,32 @@ export function useTopicPickerPool() {
     };
   }, [user?.id, user?.user_type]);
 
+  useEffect(() => {
+    topicPoolGenerationRef.current += 1;
+    setTopicPool(null);
+  }, [user?.id]);
+
   const fetchTopicPool = useCallback(async () => {
     if (!user?.id) return;
+    const generation = topicPoolGenerationRef.current;
+    const request = ++topicPoolRequestRef.current;
     try {
       const response = await api.get('/learning/topics', { params: { user_id: user.id } });
+      if (
+        generation !== topicPoolGenerationRef.current ||
+        request !== topicPoolRequestRef.current
+      ) {
+        return;
+      }
       setTopicPool(response.data && typeof response.data === 'object' ? response.data : null);
     } catch {
       // The picker falls back to a full fresh pool; never block learning on it.
-      setTopicPool(null);
+      if (
+        generation === topicPoolGenerationRef.current &&
+        request === topicPoolRequestRef.current
+      ) {
+        setTopicPool(null);
+      }
     }
   }, [user?.id]);
 
@@ -76,17 +97,23 @@ export function useTopicPickerPool() {
   }, [fetchTopicPool]);
 
   const fetchSymbols = useCallback(async () => {
+    const request = ++symbolRequestRef.current;
     setSymbolLoading(true);
     try {
       const response = await api.get('/boards/symbols', {
         params: { limit: 1000, language: symbolLanguage },
       });
+      if (request !== symbolRequestRef.current) return;
       setSymbolItems(dedupeLearningSymbols(response.data || []));
       setSymbolLang(symbolLanguage);
     } catch {
-      setSymbolItems([]);
+      if (request === symbolRequestRef.current) {
+        setSymbolItems([]);
+      }
     } finally {
-      setSymbolLoading(false);
+      if (request === symbolRequestRef.current) {
+        setSymbolLoading(false);
+      }
     }
   }, [symbolLanguage]);
 
@@ -94,6 +121,9 @@ export function useTopicPickerPool() {
   // language so card pictograms never wait for a fetch.
   useEffect(() => {
     void fetchSymbols();
+    return () => {
+      symbolRequestRef.current += 1;
+    };
   }, [fetchSymbols]);
 
   // When a session ends the picker returns; refresh coverage so the topic

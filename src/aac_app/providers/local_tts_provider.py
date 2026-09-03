@@ -17,6 +17,8 @@ Spanish voices included in the v1.0 voice pack: ``ef_dora`` (female),
 from __future__ import annotations
 
 import io
+import os
+import tempfile
 import threading
 import wave
 from pathlib import Path
@@ -343,18 +345,35 @@ def download_kokoro_model() -> bool:
             logger.info("Kokoro model file already present: {}", dest.name)
             continue
         logger.info("Downloading Kokoro model file {} -> {}", url.split("/")[-1], dest)
+        temporary_path: Path | None = None
         try:
-            with urllib.request.urlopen(url, timeout=600) as response, open(
-                dest, "wb"
+            # Keep an existing valid file usable if a network response fails
+            # halfway through. The temporary file lives beside the target so
+            # os.replace is atomic on the same filesystem.
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=directory,
+                prefix=f".{dest.name}.",
+                suffix=".tmp",
+                delete=False,
             ) as out:
-                while True:
-                    chunk = response.read(1024 * 512)
-                    if not chunk:
-                        break
-                    out.write(chunk)
+                temporary_path = Path(out.name)
+                with urllib.request.urlopen(url, timeout=600) as response:
+                    while True:
+                        chunk = response.read(1024 * 512)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                out.flush()
+                os.fsync(out.fileno())
+            os.replace(temporary_path, dest)
+            temporary_path = None
         except Exception as exc:
             logger.error("Failed to download {}: {}", url, exc)
             return False
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
 
     if model_files_present():
         logger.success("Kokoro model files are ready in {}", directory)

@@ -305,17 +305,6 @@ class TemplateManager:
             max_len = safety["max_response_length"]
             prompt_parts.append(f"Keep responses under {max_len} words.")
 
-        # Medical context awareness (generalized, not specific conditions)
-        medical = profile.get("medical_context", {})
-        if medical.get("sensitivities"):
-            prompt_parts.append(
-                f"Be sensitive to: {', '.join(medical['sensitivities'])}."
-            )
-        if medical.get("accessibility_needs"):
-            prompt_parts.append(
-                f"Accessibility considerations: {', '.join(medical['accessibility_needs'])}."
-            )
-
         # Core AAC principles (always included)
         prompt_parts.append(
             """

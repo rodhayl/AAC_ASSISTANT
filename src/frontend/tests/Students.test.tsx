@@ -780,4 +780,50 @@ describe('Students page', () => {
     expect(await screen.findByText('Guardian Profile: Leo')).toBeInTheDocument();
     expect(screen.queryByText('Profile saved successfully')).not.toBeInTheDocument();
   });
+
+  it('ignores a student roster response from a previous auth context', async () => {
+    let resolveFirst: ((value: { data: unknown[] }) => void) | undefined;
+    let resolveSecond: ((value: { data: unknown[] }) => void) | undefined;
+    let rosterCalls = 0;
+
+    api.get.mockImplementation((url: string) => {
+      if (url === '/auth/users/student-summaries') {
+        rosterCalls += 1;
+        return new Promise<{ data: unknown[] }>((resolve) => {
+          if (rosterCalls === 1) resolveFirst = resolve;
+          else resolveSecond = resolve;
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    const { rerender } = render(<Students />);
+    await waitFor(() => expect(resolveFirst).toBeDefined());
+
+    act(() => {
+      authState.user = {
+        ...authState.user,
+        id: 2,
+        username: 'teacher-two',
+        display_name: 'Teacher Two',
+      };
+    });
+    rerender(<Students />);
+    await waitFor(() => expect(resolveSecond).toBeDefined());
+
+    await act(async () => {
+      resolveFirst?.({ data: [studentSummary] });
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('Leo')).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveSecond?.({
+        data: [{ ...studentSummary, id: 11, username: 'student11', display_name: 'Maya' }],
+      });
+      await Promise.resolve();
+    });
+    expect(await screen.findByText('Maya')).toBeInTheDocument();
+    expect(screen.queryByText('Leo')).not.toBeInTheDocument();
+  });
 });

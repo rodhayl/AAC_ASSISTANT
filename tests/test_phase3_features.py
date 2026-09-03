@@ -129,17 +129,25 @@ def test_export_endpoint(teacher_user, test_board):
     assert data["meta"]["schema_version"] == "2"
 
 
-def test_export_deduplicates_duplicate_assignments(
+def test_export_keeps_repeated_assignment_requests_idempotent(
     test_db_session, test_board, test_student, teacher_user
 ):
-    """Repeated assignment rows must not duplicate a board in an export."""
-    test_db_session.add_all(
-        [
-            BoardAssignment(board_id=test_board.id, student_id=test_student.id),
-            BoardAssignment(board_id=test_board.id, student_id=test_student.id),
-        ]
+    """Repeated assignment requests must export one assigned board."""
+    test_db_session.add(
+        StudentTeacher(teacher_id=teacher_user.id, student_id=test_student.id)
     )
     test_db_session.commit()
+
+    teacher_headers = create_test_headers(
+        teacher_user.id, teacher_user.username, teacher_user.user_type
+    )
+    for _ in range(2):
+        response = client.post(
+            f"/api/boards/{test_board.id}/assign",
+            json={"student_id": test_student.id},
+            headers=teacher_headers,
+        )
+        assert response.status_code == 200
 
     headers = create_test_headers(
         test_student.id, test_student.username, test_student.user_type
@@ -327,17 +335,25 @@ def test_get_assigned_boards(test_db_session, test_board, test_student):
     assert boards[0]["id"] == test_board.id
 
 
-def test_assigned_boards_deduplicate_duplicate_assignment_rows(
-    test_db_session, test_board, test_student
+def test_assigned_boards_keeps_repeated_assignment_requests_idempotent(
+    test_db_session, test_board, test_student, teacher_user
 ):
-    """A legacy duplicate assignment cannot duplicate the board response."""
-    test_db_session.add_all(
-        [
-            BoardAssignment(board_id=test_board.id, student_id=test_student.id),
-            BoardAssignment(board_id=test_board.id, student_id=test_student.id),
-        ]
+    """Repeated assignment requests must return one assigned board."""
+    test_db_session.add(
+        StudentTeacher(teacher_id=teacher_user.id, student_id=test_student.id)
     )
     test_db_session.commit()
+
+    teacher_headers = create_test_headers(
+        teacher_user.id, teacher_user.username, teacher_user.user_type
+    )
+    for _ in range(2):
+        response = client.post(
+            f"/api/boards/{test_board.id}/assign",
+            json={"student_id": test_student.id},
+            headers=teacher_headers,
+        )
+        assert response.status_code == 200
 
     headers = create_test_headers(
         test_student.id, test_student.username, test_student.user_type

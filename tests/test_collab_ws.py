@@ -8,6 +8,7 @@ from starlette.websockets import WebSocketDisconnect
 from src.aac_app.models import BoardAssignment, CommunicationBoard, StudentTeacher, User
 from src.aac_app.utils.jwt_utils import create_access_token
 from src.api.main import app
+from src.api.routers.collab import ConnectionManager
 
 
 @contextmanager
@@ -35,6 +36,19 @@ def collab_client(setup_test_db):
             yield client
         finally:
             client.portal.call(app.state.shutdown_event.set)
+
+
+def test_connection_manager_removes_empty_rooms():
+    manager = ConnectionManager()
+    first = object()
+    second = object()
+
+    manager.rooms[42] = {first, second}
+    manager.disconnect(42, first)
+    assert manager.rooms == {42: {second}}
+
+    manager.disconnect(42, second)
+    assert manager.rooms == {}
 
 
 def test_collab_ws_block_social_messaging(test_db_session, test_password, collab_client):

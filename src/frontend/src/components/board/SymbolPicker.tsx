@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Search, ArrowUp, ArrowDown, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useToastStore } from '../../store/toastStore';
@@ -46,6 +46,7 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
   const [reorderMode, setReorderMode] = useState(false);
   const [reorderedSymbols, setReorderedSymbols] = useState<Symbol[]>([]);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const symbolRequestIdRef = useRef(0);
 
   useEffect(() => {
     if (!isOpen && (previewUrl || uploadFile)) {
@@ -70,6 +71,7 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
   }, [isOpen]);
 
   const fetchSymbols = useCallback(async () => {
+    const requestId = ++symbolRequestIdRef.current;
     setIsLoading(true);
     try {
       const params: Record<string, string> = {};
@@ -81,21 +83,31 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
       }
 
       const response = await api.get('/boards/symbols', { params });
+      if (requestId !== symbolRequestIdRef.current) return;
       setSymbols(response.data);
     } catch (error) {
-      console.error('Failed to fetch symbols:', error);
+      if (requestId === symbolRequestIdRef.current) {
+        console.error('Failed to fetch symbols:', error);
+      }
     } finally {
-      setIsLoading(false);
+      if (requestId === symbolRequestIdRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [selectedCategory, searchTerm]);
 
   useEffect(() => {
     if (isOpen) {
       const timeoutId = setTimeout(() => {
-        fetchSymbols();
+        void fetchSymbols();
       }, 300);
-      return () => clearTimeout(timeoutId);
+      return () => {
+        clearTimeout(timeoutId);
+        symbolRequestIdRef.current += 1;
+      };
     }
+    symbolRequestIdRef.current += 1;
+    return undefined;
   }, [isOpen, fetchSymbols]);
 
   const toggleReorderMode = useCallback(() => {

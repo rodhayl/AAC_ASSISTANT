@@ -28,7 +28,12 @@ class ConnectionManager:
 
     def disconnect(self, board_id: int, websocket: WebSocket):
         with contextlib.suppress(Exception):
-            self.rooms.get(board_id, set()).discard(websocket)
+            room = self.rooms.get(board_id)
+            if room is None:
+                return
+            room.discard(websocket)
+            if not room:
+                self.rooms.pop(board_id, None)
         logger.info(f"WS disconnected from board {board_id}")
 
     async def broadcast(

@@ -888,7 +888,7 @@ class TestSafetyConfiguration:
         assert "violence" in safety["forbidden_topics"]
         assert "scary" in safety["trigger_words"]
 
-    def test_medical_context_stored_but_private(self, test_password):
+    def test_medical_context_stored_but_private(self, test_password, test_db_session):
         """Should store medical context privately (never sent to LLM)."""
         teacher = create_user("teacher_s2", "teacher", test_password)
         student = create_user("student_s2", "student", test_password, assigned_teacher_id=teacher["id"])
@@ -913,8 +913,19 @@ class TestSafetyConfiguration:
         assert "autism_spectrum" in medical["diagnoses"]
         assert "loud_noises" in medical["sensitivities"]
 
-        # Note: The actual prompt should NOT contain this medical info
-        # This would be verified in integration tests with actual LLM
+        # Confidential medical/accessibility data is stored for authorized
+        # profile views but must never be copied into an LLM system prompt.
+        from src.aac_app.services.guardian_profile_service import GuardianProfileService
+
+        prompt = GuardianProfileService().build_system_prompt(
+            student["id"],
+            db=test_db_session,
+        )
+        assert "autism_spectrum" not in prompt
+        assert "anxiety" not in prompt
+        assert "loud_noises" not in prompt
+        assert "bright_lights" not in prompt
+        assert "Needs extra processing time" not in prompt
 
 
 # --- Student Listing Tests ---

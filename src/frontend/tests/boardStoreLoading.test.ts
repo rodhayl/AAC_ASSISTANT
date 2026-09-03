@@ -156,6 +156,36 @@ describe('board store loading state', () => {
     expect(api.get).toHaveBeenCalledTimes(2);
   });
 
+  it('ignores a stale board mutation after an auth-context reset', async () => {
+    const mutation = deferred<{ data: { id: number; name: string } }>();
+    const oldBoard = { id: 1, user_id: 7, name: 'Old board' };
+    const freshBoard = { id: 1, user_id: 8, name: 'Fresh board' };
+    vi.mocked(api.put).mockReturnValue(mutation.promise as never);
+
+    useBoardStore.setState({
+      boards: [oldBoard],
+      currentBoard: oldBoard,
+    });
+    const updatePromise = useBoardStore.getState().updateBoard(1, { name: 'Stale update' });
+    expect(useBoardStore.getState().isLoading).toBe(true);
+
+    useBoardStore.getState().reset();
+    useBoardStore.setState({
+      boards: [freshBoard],
+      currentBoard: freshBoard,
+    });
+
+    mutation.resolve({ data: { id: 1, name: 'Stale server response' } });
+    await updatePromise;
+
+    expect(useBoardStore.getState()).toMatchObject({
+      boards: [freshBoard],
+      currentBoard: freshBoard,
+      isLoading: false,
+      error: null,
+    });
+  });
+
   it('ignores a stale board response after navigation changes the requested board', async () => {
     const firstBoardRequest = deferred<{ data: { id: number; symbols: [] } }>();
     const secondBoardRequest = deferred<{ data: { id: number; symbols: [] } }>();

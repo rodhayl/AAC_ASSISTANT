@@ -91,4 +91,36 @@ describe('settings store', () => {
       expect(useSettingsStore.getState().loading).toBe(false);
     },
   );
+
+  it('keeps the newest model-list response when requests overlap', async () => {
+    let resolveFirst: ((value: { data: { models: Array<{ id: string }> } }) => void) | undefined;
+    let resolveSecond: ((value: { data: { models: Array<{ id: string }> } }) => void) | undefined;
+    let requests = 0;
+    (api.get as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      requests += 1;
+      return new Promise<{ data: { models: Array<{ id: string }> } }>((resolve) => {
+        if (requests === 1) resolveFirst = resolve;
+        else resolveSecond = resolve;
+      });
+    });
+
+    const firstRequest = useSettingsStore.getState().fetchOpenRouterModels('old-key');
+    const secondRequest = useSettingsStore.getState().fetchOpenRouterModels('new-key');
+
+    resolveSecond?.({ data: { models: [{ id: 'new-model' }] } });
+    await secondRequest;
+    expect(useSettingsStore.getState().openRouterModels).toEqual([{ id: 'new-model' }]);
+    expect(useSettingsStore.getState().loading).toBe(false);
+
+    resolveFirst?.({ data: { models: [{ id: 'old-model' }] } });
+    await firstRequest;
+    expect(useSettingsStore.getState().openRouterModels).toEqual([{ id: 'new-model' }]);
+    expect(useSettingsStore.getState().loading).toBe(false);
+    expect(api.get).toHaveBeenNthCalledWith(1, '/settings/ai/models/openrouter', {
+      headers: { 'X-OpenRouter-API-Key': 'old-key' },
+    });
+    expect(api.get).toHaveBeenNthCalledWith(2, '/settings/ai/models/openrouter', {
+      headers: { 'X-OpenRouter-API-Key': 'new-key' },
+    });
+  });
 });

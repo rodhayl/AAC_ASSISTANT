@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UserManagementPage } from '../src/pages/UserManagement';
@@ -557,5 +557,50 @@ describe('UserManagementPage', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     expect(await screen.findByText('Failed to delete')).toBeInTheDocument();
+  });
+
+  it('ignores a user-list response from a previous auth context', async () => {
+    let resolveFirst: ((value: { data: unknown[] }) => void) | undefined;
+    let resolveSecond: ((value: { data: unknown[] }) => void) | undefined;
+    let userListCalls = 0;
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/auth/users') {
+        userListCalls += 1;
+        return new Promise<{ data: unknown[] }>((resolve) => {
+          if (userListCalls === 1) resolveFirst = resolve;
+          else resolveSecond = resolve;
+        });
+      }
+      if (url.includes('/learning/topics/saved')) return Promise.resolve({ data: [] }) as never;
+      return Promise.resolve({ data: [] }) as never;
+    });
+
+    const { rerender } = render(<UserManagementPage role="teacher" />);
+    await waitFor(() => expect(resolveFirst).toBeDefined());
+
+    act(() => {
+      authState.user = {
+        id: 2,
+        username: 'admin2',
+        display_name: 'Admin Two',
+        user_type: 'admin',
+      };
+    });
+    rerender(<UserManagementPage role="teacher" />);
+    await waitFor(() => expect(resolveSecond).toBeDefined());
+
+    await act(async () => {
+      resolveFirst?.({ data: [teacher] });
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('Teacher One')).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveSecond?.({ data: [{ ...teacher, id: 3, username: 'teacher2', display_name: 'Teacher Two' }] });
+      await Promise.resolve();
+    });
+    expect(await screen.findByText('Teacher Two')).toBeInTheDocument();
+    expect(screen.queryByText('Teacher One')).not.toBeInTheDocument();
   });
 });

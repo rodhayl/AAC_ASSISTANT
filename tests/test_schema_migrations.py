@@ -164,6 +164,46 @@ def test_schema_ensure_upgrades_legacy_sqlite_without_losing_data():
     engine.dispose()
 
 
+def test_schema_ensure_deduplicates_legacy_board_assignments():
+    """Legacy duplicate assignments collapse before uniqueness is enforced."""
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE board_assignments ("
+                "id INTEGER PRIMARY KEY, board_id INTEGER NOT NULL, "
+                "student_id INTEGER NOT NULL, assigned_by INTEGER, created_at DATETIME)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO board_assignments "
+                "(id, board_id, student_id, assigned_by) VALUES "
+                "(1, 10, 20, 30), (2, 10, 20, 31), (3, 11, 20, 30)"
+            )
+        )
+
+    schema.ensure(engine)
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                "SELECT id, board_id, student_id, assigned_by "
+                "FROM board_assignments ORDER BY id"
+            )
+        ).fetchall()
+        indexes = {
+            row[1]
+            for row in connection.execute(
+                text('PRAGMA index_list("board_assignments")')
+            )
+        }
+
+    assert rows == [(1, 10, 20, 30), (3, 11, 20, 30)]
+    assert "uq_board_assignments_board_student" in indexes
+    engine.dispose()
+
+
 def test_schema_ensure_skips_indexes_for_partial_legacy_tables():
     """A partial legacy table cannot make startup fail while upgrading."""
     engine = create_engine("sqlite:///:memory:")

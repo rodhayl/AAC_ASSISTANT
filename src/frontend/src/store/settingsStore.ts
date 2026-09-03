@@ -61,21 +61,28 @@ interface SettingsState {
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => {
+  let modelRequestSequence = 0;
+
   // The three model-fetch actions share one load-and-store shape; only the
-  // endpoint, state key, and failure message differ.
+  // endpoint, state key, and failure message differ. A newer request wins so
+  // an older response cannot replace a list fetched with newer credentials or
+  // clear its loading/error state while it is still in flight.
   const fetchModelList = async (
     endpoint: string,
     stateKey: 'ollamaModels' | 'openRouterModels' | 'lmStudioModels' | 'groqModels',
     failureMessage: string,
     headers?: Record<string, string>
   ) => {
+    const requestId = ++modelRequestSequence;
     set({ loading: true, error: null });
     try {
       const response = headers
         ? await api.get(endpoint, { headers })
         : await api.get(endpoint);
+      if (requestId !== modelRequestSequence) return;
       set({ [stateKey]: response.data.models, loading: false });
     } catch (error: unknown) {
+      if (requestId !== modelRequestSequence) return;
       const message = extractError(error, failureMessage);
       set({ error: message, loading: false });
     }

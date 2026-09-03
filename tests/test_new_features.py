@@ -590,6 +590,68 @@ def test_replaying_same_import_is_idempotent(client):
     assert len(history.json()["sessions"]) == 1
 
 
+def test_replaying_legacy_board_import_with_omitted_placement_defaults_is_idempotent(
+    client, test_db_session
+):
+    registration = client.post(
+        "/api/auth/register",
+        json={
+            "username": "legacy_replay_importer",
+            "password": "LegacyReplay123",
+            "display_name": "Legacy Replay Importer",
+            "user_type": "student",
+        },
+    )
+    assert registration.status_code == 200
+    user_id = registration.json()["id"]
+    headers = create_test_headers(user_id, "legacy_replay_importer", "student")
+
+    symbol = Symbol(label="legacy symbol", category="general")
+    test_db_session.add(symbol)
+    test_db_session.commit()
+    test_db_session.refresh(symbol)
+
+    base = {
+        "meta": {
+            "exported_at": "2024-01-01T00:00:00Z",
+            "username": "legacy_replay_importer",
+        },
+        "boards": [
+            {
+                "name": "Legacy Replay Board",
+                "symbols": [{"symbol_id": symbol.id}],
+            }
+        ],
+        "assignedBoards": [],
+        "achievements": [],
+        "totalPoints": 0,
+        "learningHistory": [],
+    }
+    payload = {
+        **base,
+        "meta": {
+            **base["meta"],
+            "checksum_sha256": compute_checksum(base),
+            "schema_version": "2",
+        },
+    }
+
+    first = client.post("/api/data/import", json=payload, headers=headers)
+    assert first.status_code == 200, first.text
+    second = client.post("/api/data/import", json=payload, headers=headers)
+    assert second.status_code == 200, second.text
+
+    boards = client.get(
+        "/api/boards/", params={"user_id": user_id}, headers=headers
+    )
+    assert boards.status_code == 200
+    matching = [
+        board for board in boards.json() if board["name"] == "Legacy Replay Board"
+    ]
+    assert len(matching) == 1
+    assert matching[0]["symbols"][0]["is_visible"] is True
+
+
 def test_replaying_assigned_board_import_is_idempotent(client, test_db_session):
     registration = client.post(
         "/api/auth/register",

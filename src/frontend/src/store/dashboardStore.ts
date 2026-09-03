@@ -28,13 +28,20 @@ interface DashboardState {
   fetchDashboardData: (userId: number) => Promise<void>;
 }
 
-export const useDashboardStore = create<DashboardState>((set) => ({
+const DASHBOARD_INITIAL_STATE = {
   stats: null,
   recentActivity: [],
   isLoading: false,
   error: null,
+} satisfies Pick<DashboardState, 'stats' | 'recentActivity' | 'isLoading' | 'error'>;
+
+let dashboardRequestId = 0;
+
+export const useDashboardStore = create<DashboardState>((set) => ({
+  ...DASHBOARD_INITIAL_STATE,
 
   fetchDashboardData: async (userId: number) => {
+    const requestId = ++dashboardRequestId;
     set({ isLoading: true, error: null });
     try {
       // Fetch multiple endpoints in parallel
@@ -71,6 +78,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
         timestamp: session.created_at
       }));
 
+      if (requestId !== dashboardRequestId) return;
       set({
         stats: {
           learningStreak,
@@ -81,10 +89,22 @@ export const useDashboardStore = create<DashboardState>((set) => ({
         isLoading: false
       });
     } catch (error: unknown) {
+      if (requestId !== dashboardRequestId) return;
       set({ error: extractError(error, i18n.t('dashboard:errors.loadFailed')), isLoading: false });
     }
   }
 }));
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('aac:auth-logout', () => {
+    dashboardRequestId += 1;
+    useDashboardStore.setState(DASHBOARD_INITIAL_STATE);
+  });
+  window.addEventListener('aac:auth-context-changed', () => {
+    dashboardRequestId += 1;
+    useDashboardStore.setState(DASHBOARD_INITIAL_STATE);
+  });
+}
 
 function calculateStreak(sessions: LearningHistoryItem[]): number {
   if (sessions.length === 0) return 0;

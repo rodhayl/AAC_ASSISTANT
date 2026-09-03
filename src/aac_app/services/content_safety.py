@@ -306,9 +306,23 @@ def resolve_policy_for_user(user_id: int | None, db=None) -> ContentPolicy:
 
         if db is None:
             with get_session() as session:
-                profile = session.query(GuardianProfile).filter_by(user_id=user_id).first()
+                profile = (
+                    session.query(GuardianProfile)
+                    .filter(
+                        GuardianProfile.user_id == user_id,
+                        GuardianProfile.is_active.is_(True),
+                    )
+                    .first()
+                )
         else:
-            profile = db.query(GuardianProfile).filter_by(user_id=user_id).first()
+            profile = (
+                db.query(GuardianProfile)
+                .filter(
+                    GuardianProfile.user_id == user_id,
+                    GuardianProfile.is_active.is_(True),
+                )
+                .first()
+            )
         if profile is None or not profile.safety_constraints:
             # Age-based default when the teacher has not set a level: younger
             # students get a stricter floor than the admin global default.

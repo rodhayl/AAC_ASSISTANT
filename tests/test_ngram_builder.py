@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from src import config
-from src.aac_app.models import LearningSession, Symbol, SymbolUsageLog
+from src.aac_app.models import LearningSession, Symbol, SymbolUsageLog, User
 from src.aac_app.services import ngram_builder
 from src.aac_app.services.ngram_builder import (
     collect_usage_bigrams,
@@ -128,6 +128,127 @@ def test_collect_usage_bigrams_groups_by_locale_and_session(
     assert learned["en"][("want", "milk")] == 1
     assert learned["es"][("quiero", "galleta")] == 1
     assert "en" not in learned or ("quiero", "galleta") not in learned.get("en", {})
+
+
+def test_collect_usage_bigrams_does_not_join_anonymous_logs_across_users(
+    test_db_session, regular_user
+):
+    """Anonymous legacy logs from different users cannot form one phrase."""
+    want = Symbol(label="want", category="verb", language="en")
+    cookie = Symbol(label="cookie", category="noun", language="en")
+    other_user = User(
+        username="ngram_other_user",
+        password_hash="test",
+        display_name="Other Ngram User",
+        user_type="standard",
+        is_active=True,
+    )
+    test_db_session.add_all([want, cookie, other_user])
+    test_db_session.flush()
+
+    start = datetime(2024, 1, 1, 12, 0, 0)
+    _add_log(
+        test_db_session,
+        user_id=regular_user.id,
+        label="want",
+        symbol_id=want.id,
+        position=0,
+        timestamp=start,
+    )
+    _add_log(
+        test_db_session,
+        user_id=other_user.id,
+        label="cookie",
+        symbol_id=cookie.id,
+        position=1,
+        timestamp=start + timedelta(seconds=1),
+    )
+    test_db_session.commit()
+
+    assert collect_usage_bigrams(db=test_db_session) == {}
+
+
+def test_collect_usage_bigrams_splits_locale_changes_within_a_session(
+    test_db_session, regular_user
+):
+    """A reused session cannot create a cross-language transition."""
+    want = Symbol(label="want", category="verb", language="en")
+    cookie = Symbol(label="cookie", category="noun", language="en")
+    quiero = Symbol(label="quiero", category="verb", language="es")
+    galleta = Symbol(label="galleta", category="noun", language="es")
+    test_db_session.add_all([want, cookie, quiero, galleta])
+    test_db_session.flush()
+
+    session = LearningSession(user_id=regular_user.id, topic_name="mixed-locale")
+    test_db_session.add(session)
+    test_db_session.flush()
+    start = datetime(2024, 1, 1, 12, 0, 0)
+    _add_log(
+        test_db_session,
+        user_id=regular_user.id,
+        label="want",
+        symbol_id=want.id,
+        position=0,
+        session_id=session.id,
+        timestamp=start,
+    )
+    _add_log(
+        test_db_session,
+        user_id=regular_user.id,
+        label="cookie",
+        symbol_id=cookie.id,
+        position=1,
+        session_id=session.id,
+        timestamp=start + timedelta(seconds=1),
+    )
+    _add_log(
+        test_db_session,
+        user_id=regular_user.id,
+        label="quiero",
+        symbol_id=quiero.id,
+        position=2,
+        session_id=session.id,
+        timestamp=start + timedelta(seconds=2),
+    )
+    _add_log(
+        test_db_session,
+        user_id=regular_user.id,
+        label="galleta",
+        symbol_id=galleta.id,
+        position=3,
+        session_id=session.id,
+        timestamp=start + timedelta(seconds=3),
+    )
+    test_db_session.commit()
+
+    learned = collect_usage_bigrams(db=test_db_session)
+
+    assert learned["en"][("want", "cookie")] == 1
+    assert learned["es"][("quiero", "galleta")] == 1
+    assert ("cookie", "quiero") not in learned["en"]
+    assert ("cookie", "quiero") not in learned["es"]
+
+
+def test_rebuild_ngram_models_preserves_previous_file_when_serialization_fails(
+    test_db_session, regular_user, ngrams_data_dir, monkeypatch
+):
+    """A failed rebuild never exposes a truncated replacement model."""
+    output_dir = ngrams_data_dir / "ngrams"
+    output_dir.mkdir(parents=True)
+    output_path = output_dir / "en.json"
+    previous = '{"bigrams": {"old": {"value": 1.0}}}\n'
+    output_path.write_text(previous, encoding="utf-8")
+
+    def fail_dump(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(ngram_builder.json, "dump", fail_dump)
+
+    with pytest.raises(OSError, match="disk full"):
+        rebuild_ngram_models(db=test_db_session, locales=("en",))
+
+    assert output_path.read_text(encoding="utf-8") == previous
+    assert list(output_dir.glob(".en.*.tmp")) == []
 
 
 def test_rebuild_ngram_models_writes_fused_models(

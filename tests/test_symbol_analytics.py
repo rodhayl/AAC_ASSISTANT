@@ -462,6 +462,56 @@ def test_suggest_next_symbol_falls_back_to_shorter_suffix(
     assert [item["label"] for item in suggestions] == ["milk"]
 
 
+
+def test_usage_stats_counts_each_utterance_even_without_session_id(
+    test_db_session, regular_user
+):
+    """Intent and length stats count every position-zero utterance record."""
+    base = datetime.now() - timedelta(minutes=1)
+    shared_session = LearningSession(user_id=regular_user.id, topic_name="shared")
+    test_db_session.add(shared_session)
+    test_db_session.flush()
+
+    utterances = ((None, 0), (None, 1), (shared_session.id, 2), (shared_session.id, 3))
+    for session_id, index in utterances:
+        timestamp = base + timedelta(seconds=index)
+        _add_log(
+            test_db_session,
+            user_id=regular_user.id,
+            label="I",
+            symbol_id=None,
+            position=0,
+            session_id=session_id,
+            timestamp=timestamp,
+        )
+        _add_log(
+            test_db_session,
+            user_id=regular_user.id,
+            label="want",
+            symbol_id=None,
+            position=1,
+            session_id=session_id,
+            timestamp=timestamp + timedelta(milliseconds=1),
+        )
+    # Mark each utterance start after insertion; selecting by position avoids
+    # relying on SQLite's datetime string precision in a per-row range query.
+    test_db_session.flush()
+    for log in test_db_session.query(SymbolUsageLog).filter(
+        SymbolUsageLog.position_in_utterance == 0
+    ):
+        log.semantic_intent = "REQUEST"
+        log.utterance_length = 2
+
+    test_db_session.commit()
+
+    stats = SymbolAnalytics().get_usage_stats(
+        regular_user.id, days=1, db=test_db_session
+    )
+
+    assert stats["intent_distribution"] == {"REQUEST": 4}
+    assert stats["average_utterance_length"] == 2.0
+
+
 def test_history_transitions_cache_reflects_new_usage(
     test_db_session, regular_user
 ):

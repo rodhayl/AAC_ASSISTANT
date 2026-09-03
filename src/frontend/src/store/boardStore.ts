@@ -46,19 +46,25 @@ let boardsRequestSequence = 0;
 let assignedBoardsRequestSequence = 0;
 let listRequestCount = 0;
 let mutationRequestCount = 0;
+let mutationContext = 0;
 
 export const useBoardStore = create<BoardState>((set, get) => {
   const beginMutation = () => {
+    const context = mutationContext;
     mutationRequestCount += 1;
     set({ isLoading: true, error: null });
+    return context;
   };
 
-  const finishMutation = (errorMessage?: string) => {
+  const finishMutation = (context: number, errorMessage?: string) => {
+    if (context !== mutationContext) return;
     mutationRequestCount = Math.max(0, mutationRequestCount - 1);
     set(errorMessage
       ? { error: errorMessage, isLoading: mutationRequestCount > 0 }
       : { isLoading: mutationRequestCount > 0 });
   };
+
+  const isCurrentMutation = (context: number) => context === mutationContext;
 
   return {
   boards: [],
@@ -183,67 +189,72 @@ export const useBoardStore = create<BoardState>((set, get) => {
   },
 
   createBoard: async (boardData: BoardCreateData, userId) => {
-    beginMutation();
+    const context = beginMutation();
     try {
       await api.post('/boards/', boardData, {
         params: { user_id: userId } // In real app, userId comes from token
       });
+      if (!isCurrentMutation(context)) return;
       const { currentUserId, currentSearchQuery } = get();
       await get().fetchBoards(currentUserId, currentSearchQuery, true, 1);
-      finishMutation();
+      finishMutation(context);
     } catch (error: unknown) {
-      finishMutation(extractError(error, 'Failed to create board'));
+      finishMutation(context, extractError(error, 'Failed to create board'));
       throw error;
     }
   },
 
   updateBoard: async (id, boardData) => {
-    beginMutation();
+    const context = beginMutation();
     try {
       const response = await api.put(`/boards/${id}`, boardData);
+      if (!isCurrentMutation(context)) return;
       set((state) => ({
         boards: state.boards.map(b => b.id === id ? response.data : b),
         currentBoard: state.currentBoard?.id === id ? response.data : state.currentBoard,
       }));
-      finishMutation();
+      finishMutation(context);
     } catch (error: unknown) {
-      finishMutation(extractError(error, 'Failed to update board'));
+      finishMutation(context, extractError(error, 'Failed to update board'));
       throw error;
     }
   },
 
   deleteBoard: async (id, skipRefresh = false) => {
-    beginMutation();
+    const context = beginMutation();
     try {
       await api.delete(`/boards/${id}`);
+      if (!isCurrentMutation(context)) return;
       
       if (skipRefresh) {
         set((state) => ({
           boards: state.boards.filter(b => b.id !== id),
           currentBoard: state.currentBoard?.id === id ? null : state.currentBoard,
         }));
-        finishMutation();
+        finishMutation(context);
       } else {
         const { currentUserId, currentSearchQuery } = get();
         // Always refresh page 1 to handle pagination gaps correctly
         await get().fetchBoards(currentUserId, currentSearchQuery, true, 1);
-        finishMutation();
+        if (!isCurrentMutation(context)) return;
+        finishMutation(context);
       }
     } catch (error: unknown) {
-      finishMutation(extractError(error, 'Failed to delete board'));
+      finishMutation(context, extractError(error, 'Failed to delete board'));
       throw error;
     }
   },
 
   duplicateBoard: async (id, userId) => {
-    beginMutation();
+    const context = beginMutation();
     try {
       if (apiOffline.isOffline()) {
         throw new Error(
           i18n.t('boards:offlineDuplicateUnsupported'),
         );
       }
-      const base: Board = (await api.get(`/boards/${id}`)).data
+      const base: Board = (await api.get(`/boards/${id}`)).data;
+      if (!isCurrentMutation(context)) return;
       // Preserve grid, locale and the language-learning flag so a duplicate is
       // a faithful copy. AI content generation is intentionally NOT triggered
       // on duplicate: the board is created with AI disabled, its symbols are
@@ -260,6 +271,7 @@ export const useBoardStore = create<BoardState>((set, get) => {
         is_language_learning: base.is_language_learning ?? false,
         ai_enabled: false
       }, { params: { user_id: userId } });
+      if (!isCurrentMutation(context)) return;
       const newBoard = createRes.data;
       // A copied symbol keeps its folder link only when the new owner can
       // actually view the target board. Resolving every link before the first
@@ -268,6 +280,7 @@ export const useBoardStore = create<BoardState>((set, get) => {
       // boards deleted since the source board was built).
       const effectiveLinkedIds = new Map<number, number | null>();
       for (const s of base.symbols || []) {
+        if (!isCurrentMutation(context)) return;
         if (s.linked_board_id == null) {
           effectiveLinkedIds.set(s.id, null);
           continue;
@@ -276,12 +289,15 @@ export const useBoardStore = create<BoardState>((set, get) => {
           await api.get(`/boards/${s.linked_board_id}`, {
             params: { skip_translation: true },
           });
+          if (!isCurrentMutation(context)) return;
           effectiveLinkedIds.set(s.id, s.linked_board_id);
         } catch {
+          if (!isCurrentMutation(context)) return;
           effectiveLinkedIds.set(s.id, null);
         }
       }
       for (const s of base.symbols || []) {
+        if (!isCurrentMutation(context)) return;
         await api.post(`/boards/${newBoard.id}/symbols`, {
           symbol_id: s.symbol?.id ?? s.symbol_id,
           position_x: s.position_x,
@@ -294,16 +310,19 @@ export const useBoardStore = create<BoardState>((set, get) => {
         });
       }
       if (base.ai_enabled) {
+        if (!isCurrentMutation(context)) return;
         await api.put(`/boards/${newBoard.id}`, {
           ai_enabled: true,
           ai_provider: base.ai_provider,
           ai_model: base.ai_model
         });
       }
+      if (!isCurrentMutation(context)) return;
       await get().fetchBoards(userId, get().currentSearchQuery, true, 1);
-      finishMutation();
+      if (!isCurrentMutation(context)) return;
+      finishMutation(context);
     } catch (e: unknown) {
-      finishMutation(extractError(e, 'Failed to duplicate board'));
+      finishMutation(context, extractError(e, 'Failed to duplicate board'));
       throw e;
     }
   },
@@ -354,7 +373,7 @@ export const useBoardStore = create<BoardState>((set, get) => {
   },
 
   addSymbolToBoard: async (boardId, symbolId, position) => {
-    beginMutation();
+    const context = beginMutation();
     try {
       const response = await api.post(`/boards/${boardId}/symbols`, {
         symbol_id: symbolId,
@@ -363,6 +382,7 @@ export const useBoardStore = create<BoardState>((set, get) => {
         size: 1,
         is_visible: true
       });
+      if (!isCurrentMutation(context)) return response.data;
       
       // Update current board if it's the one being modified
       const currentBoard = get().currentBoard;
@@ -374,18 +394,19 @@ export const useBoardStore = create<BoardState>((set, get) => {
           }
         });
       }
-      finishMutation();
+      finishMutation(context);
       return response.data;
     } catch (error: unknown) {
-      finishMutation(extractError(error, 'Failed to add symbol'));
+      finishMutation(context, extractError(error, 'Failed to add symbol'));
       throw error;
     }
   },
 
   deleteBoardSymbol: async (boardId, symbolId, signal) => {
-    beginMutation();
+    const context = beginMutation();
     try {
       await api.delete(`/boards/${boardId}/symbols/${symbolId}`, { signal });
+      if (!isCurrentMutation(context)) return;
       
       // Update current board symbols
       const currentBoard = get().currentBoard;
@@ -397,23 +418,25 @@ export const useBoardStore = create<BoardState>((set, get) => {
           }
         });
       }
-      finishMutation();
+      finishMutation(context);
     } catch (error: unknown) {
-      finishMutation(extractError(error, 'Failed to delete symbol'));
+      finishMutation(context, extractError(error, 'Failed to delete symbol'));
       throw error;
     }
   },
 
   batchUpdateSymbols: async (boardId, updates) => {
-    beginMutation();
+    const context = beginMutation();
     try {
       await api.put(`/boards/${boardId}/symbols/batch`, updates);
+      if (!isCurrentMutation(context)) return;
       
       // Refresh the board to get updated symbols
       await get().fetchBoard(boardId, true);
-      finishMutation();
+      if (!isCurrentMutation(context)) return;
+      finishMutation(context);
     } catch (error: unknown) {
-      finishMutation(extractError(error, 'Failed to batch update symbols'));
+      finishMutation(context, extractError(error, 'Failed to batch update symbols'));
       throw error;
     }
   },
@@ -422,6 +445,8 @@ export const useBoardStore = create<BoardState>((set, get) => {
     boardRequestSequence += 1;
     boardsRequestSequence += 1;
     assignedBoardsRequestSequence += 1;
+    mutationContext += 1;
+    mutationRequestCount = 0;
     set({
       boards: [],
       assignedBoards: [],
@@ -442,12 +467,13 @@ export const useBoardStore = create<BoardState>((set, get) => {
   },
 
   assignBoardToStudent: async (boardId, studentId, assignedBy) => {
-    beginMutation();
+    const context = beginMutation();
     try {
       await api.post(`/boards/${boardId}/assign`, {
         student_id: studentId,
         assigned_by: assignedBy
       });
+      if (!isCurrentMutation(context)) return;
       set((state) => ({
         assignedBoardsLastFetchTime:
           state.assignedBoardsStudentId === studentId ? null : state.assignedBoardsLastFetchTime,
@@ -456,9 +482,9 @@ export const useBoardStore = create<BoardState>((set, get) => {
         title: i18n.t('boards:boardAssigned'),
         message: i18n.t('boards:boardAssignedTo', { boardId, studentId }),
       })
-      finishMutation();
+      finishMutation(context);
     } catch (e: unknown) {
-      finishMutation(extractError(e, 'Failed to assign board'));
+      finishMutation(context, extractError(e, 'Failed to assign board'));
       throw e;
     }
   }

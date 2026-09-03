@@ -407,6 +407,38 @@ def test_resolve_policy_merges_guardian_profile_overrides(test_db_session):
     assert resolve_policy_for_user(None).level == "standard"
 
 
+def test_resolve_policy_ignores_inactive_guardian_profile(test_db_session):
+    """Soft-deleted profile settings must not remain an active policy source."""
+    import src.aac_app.services.content_safety as safety
+
+    student = _make_user(test_db_session, "safety_inactive_profile", "student")
+    test_db_session.add(
+        GuardianProfile(
+            user_id=student.id,
+            template_name="default",
+            safety_constraints={
+                "content_filter_level": "strict",
+                "trigger_words": ["private-trigger"],
+                "block_ai_chat": True,
+            },
+            is_active=False,
+            created_by=student.id,
+        )
+    )
+    test_db_session.commit()
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        safety, "load_global_policy", lambda: ContentPolicy(level="relaxed")
+    )
+    try:
+        policy = safety.resolve_policy_for_user(student.id, db=test_db_session)
+        assert policy.level == "relaxed"
+        assert "private-trigger" not in policy.trigger_words
+        assert not policy.feature_blocked("block_ai_chat")
+    finally:
+        monkeypatch.undo()
+
+
 def test_resolve_policy_applies_age_floor_when_no_level_set(test_db_session):
     """A young student without a teacher-set level gets the age-based strict
     floor even when the admin global level is relaxed."""

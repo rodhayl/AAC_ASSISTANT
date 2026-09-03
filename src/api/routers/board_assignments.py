@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from src.aac_app.models import BoardAssignment, BoardSymbol, CommunicationBoard, User
@@ -95,7 +96,23 @@ def assign_board_to_student(
         board_id=board_id, student_id=payload.student_id, assigned_by=current_user.id
     )
     db.add(assignment)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # The existence check above is not sufficient under concurrent
+        # requests. Let the database uniqueness invariant arbitrate the race,
+        # then make the losing request idempotent after its rollback.
+        db.rollback()
+        existing = (
+            db.query(BoardAssignment)
+            .filter(
+                BoardAssignment.board_id == board_id,
+                BoardAssignment.student_id == payload.student_id,
+            )
+            .first()
+        )
+        if existing is None:
+            raise
     return {"ok": True}
 
 

@@ -17,6 +17,7 @@ from src.aac_app.providers.local_speech_provider import (
     SUPPORTED_STT_MODELS,
     is_faster_whisper_available,
     normalize_stt_model,
+    refresh_faster_whisper_availability,
 )
 from src.aac_app.providers.local_tts_provider import (
     get_local_tts_provider,
@@ -382,6 +383,12 @@ def install_tts_dependencies(
         )
 
     uv_command = _uv_command()
+    if uv_command is None:
+        _tts_download_lock.release()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=get_text(user=current_user, key="errors.providers.uvUnavailable"),
+        )
     try:
         if not get_local_tts_provider().is_installed():
             logger.info("Admin {} requested kokoro-onnx installation", current_user.username)
@@ -479,6 +486,7 @@ def install_voice_dependencies(
             cwd=config.PROJECT_ROOT,
             check=True,
         )
+        refresh_faster_whisper_availability()
         provider_deps.reset_providers()
     except subprocess.CalledProcessError as exc:
         logger.error(

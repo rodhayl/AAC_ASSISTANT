@@ -73,6 +73,42 @@ def test_model_cache_permission_errors_degrade_to_unavailable(monkeypatch):
     assert mod.model_files_present() is False
 
 
+def test_failed_model_download_preserves_existing_file_and_cleans_temp(
+    monkeypatch, tmp_path
+):
+    """A failed network response cannot truncate a previously cached file."""
+    import urllib.request
+
+    from src.aac_app.providers import local_tts_provider as mod
+
+    directory = tmp_path / "kokoro"
+    directory.mkdir()
+    model_path = directory / mod.KOKORO_MODEL_FILENAME
+    previous = b"previous model bytes"
+    model_path.write_bytes(previous)
+    monkeypatch.setattr(mod, "kokoro_model_dir", lambda: directory)
+
+    class FailingResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _size):
+            raise OSError("connection interrupted")
+
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: FailingResponse(),
+    )
+
+    assert mod.download_kokoro_model() is False
+    assert model_path.read_bytes() == previous
+    assert list(directory.glob(".*.tmp")) == []
+
+
 def test_provider_reports_unavailable_without_dependency(monkeypatch):
     """Without kokoro-onnx the provider must degrade cleanly (no import crash)."""
     from src.aac_app.providers import local_tts_provider as mod

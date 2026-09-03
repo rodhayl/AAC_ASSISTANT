@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '../store/authStore'
 import api, { extractError } from '../lib/api'
 import type { Board, StudentBoardSummary, User, UserPreferences } from '../types'
@@ -99,8 +99,10 @@ export function Students() {
   const [preferencesStudent, setPreferencesStudent] = useState<User | null>(null)
   const [studentPreferences, setStudentPreferences] = useState<Pick<UserPreferences, 'voice_mode_enabled'>>({ voice_mode_enabled: true })
   const [preferencesLoading, setPreferencesLoading] = useState(false)
+  const studentsLoadRequestRef = useRef(0)
 
   const loadStudents = useCallback(async (rethrow = false) => {
+    const requestId = ++studentsLoadRequestRef.current
     setLoading(true)
     setError(null)
     try {
@@ -111,6 +113,7 @@ export function Students() {
         params: { limit: 500 },
       })
       const summaries = res.data as StudentBoardSummary[]
+      if (requestId !== studentsLoadRequestRef.current) return
       setStudents(summaries)
       setAssignedBoards(
         Object.fromEntries(
@@ -118,15 +121,23 @@ export function Students() {
         ),
       )
     } catch (e: unknown) {
+      if (requestId !== studentsLoadRequestRef.current) return
       setError(extractError(e, t('errors.loadFailed')))
       if (rethrow) throw e
     } finally {
-      setLoading(false)
+      if (requestId === studentsLoadRequestRef.current) {
+        setLoading(false)
+      }
     }
   }, [t])
 
   useEffect(() => {
     void loadStudents()
+    return () => {
+      // Invalidate a roster response when the authenticated user changes or
+      // the page unmounts; a late result must not repopulate another session.
+      studentsLoadRequestRef.current += 1
+    }
   }, [loadStudents, user])
 
   const loadAvailableBoards = async () => {

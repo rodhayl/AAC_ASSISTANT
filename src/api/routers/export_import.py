@@ -309,7 +309,11 @@ def _board_content_matches(
                 symbol.get("position_x") or 0,
                 symbol.get("position_y") or 0,
                 symbol.get("size") or 1,
-                bool(symbol.get("is_visible")),
+                (
+                    True
+                    if symbol.get("is_visible") is None
+                    else bool(symbol["is_visible"])
+                ),
                 symbol.get("custom_text"),
                 symbol.get("color"),
             )
