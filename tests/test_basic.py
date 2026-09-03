@@ -20,27 +20,22 @@ def test_services():
 
 def test_models():
     """Test that database models can be imported"""
-    try:
-        from src.aac_app.models import LearningSession, User
-        from src.aac_app.seed import init_database
+    from src.aac_app.models import LearningSession, User
+    from src.aac_app.seed import init_database
 
-        assert User is not None
-        assert LearningSession is not None
-        assert init_database is not None
-    except ImportError as e:
-        pytest.skip(f"Model import failed: {e}")
+    assert User is not None
+    assert LearningSession is not None
+    assert init_database is not None
 
 
 def test_database_initialization():
     """Test database initialization"""
-    try:
-        from src.aac_app.seed import init_database
+    from src.aac_app.seed import init_database
 
-        # This should not raise an exception
-        init_database()
-        assert True
-    except Exception as e:
-        pytest.skip(f"Database initialization failed: {e}")
+    # The autouse reset_production_db fixture points DATABASE_URL at an
+    # isolated in-memory database, so a real failure here is a regression
+    # and must fail the test rather than be skipped.
+    init_database()
 
 
 if __name__ == "__main__":

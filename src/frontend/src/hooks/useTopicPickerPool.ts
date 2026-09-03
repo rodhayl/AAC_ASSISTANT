@@ -47,6 +47,9 @@ export function useTopicPickerPool() {
   const symbolLanguage = currentLang === 'es' ? 'es' : 'en';
 
   useEffect(() => {
+    // Do not retain the previous account's saved topics while anonymous or
+    // while the next account's request is in flight.
+    setSavedTopics([]);
     if (!user?.id) return;
     let cancelled = false;
     const canManage = user.user_type === 'teacher' || user.user_type === 'admin';

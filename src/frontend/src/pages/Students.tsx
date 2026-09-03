@@ -100,19 +100,38 @@ export function Students() {
   const [studentPreferences, setStudentPreferences] = useState<Pick<UserPreferences, 'voice_mode_enabled'>>({ voice_mode_enabled: true })
   const [preferencesLoading, setPreferencesLoading] = useState(false)
   const studentsLoadRequestRef = useRef(0)
+  const availableBoardsRequestRef = useRef(0)
+  const preferencesRequestRef = useRef(0)
+  const assignMutationRequestRef = useRef(0)
+  const studentMutationRequestRef = useRef(0)
+  const studentContextKey = `${user?.id ?? 'anonymous'}:${user?.user_type ?? 'anonymous'}`
+  const studentContextRef = useRef(studentContextKey)
+  studentContextRef.current = studentContextKey
 
   const loadStudents = useCallback(async (rethrow = false) => {
     const requestId = ++studentsLoadRequestRef.current
     setLoading(true)
     setError(null)
     try {
-      const res = await api.get('/auth/users/student-summaries', {
-        // Use the backend's maximum page size: admins with large rosters must
-        // not silently lose students beyond the old hardcoded 100. The backend
-        // caps the page at 500 and this page has no pagination UI yet.
-        params: { limit: 500 },
-      })
-      const summaries = res.data as StudentBoardSummary[]
+      const summaries: StudentBoardSummary[] = []
+      let skip = 0
+      const pageSize = 500
+      while (true) {
+        if (requestId !== studentsLoadRequestRef.current) return
+        const res = await api.get('/auth/users/student-summaries', {
+          // The endpoint is paginated at 500 rows. Continue until the final
+          // page so large admin rosters are not silently truncated.
+          params: { ...(skip > 0 ? { skip } : {}), limit: pageSize },
+        })
+        const page = res.data as StudentBoardSummary[]
+        if (requestId !== studentsLoadRequestRef.current) return
+        if (!Array.isArray(page)) {
+          throw new Error('Invalid response format: expected array')
+        }
+        summaries.push(...page)
+        if (page.length < pageSize) break
+        skip += page.length
+      }
       if (requestId !== studentsLoadRequestRef.current) return
       setStudents(summaries)
       setAssignedBoards(
@@ -132,22 +151,75 @@ export function Students() {
   }, [t])
 
   useEffect(() => {
+    // Clear all account-scoped UI before loading the next roster. Without this
+    // reset, the previous account's students and assignment chips remain
+    // visible during the new request and can be acted on with the new token.
+    studentsLoadRequestRef.current += 1
+    availableBoardsRequestRef.current += 1
+    preferencesRequestRef.current += 1
+    assignMutationRequestRef.current += 1
+    studentMutationRequestRef.current += 1
+    setStudents([])
+    setAssignedBoards({})
+    setAvailableBoards([])
+    setAssignModalOpen(false)
+    setSelectedStudent(null)
+    setPreferencesModalOpen(false)
+    setPreferencesStudent(null)
+    setPreferencesLoading(false)
+    setEditId(null)
+    setDeleteState({ isOpen: false, student: null })
+    setResetPasswordModalOpen(false)
+    setResetPasswordStudent(null)
+    setResetPasswordValue('')
+    setGuardianModalOpen(false)
+    setSelectedGuardianStudent(null)
+    setCreateModalOpen(false)
+    setCreateLoading(false)
+    setError(null)
+
     void loadStudents()
     return () => {
-      // Invalidate a roster response when the authenticated user changes or
-      // the page unmounts; a late result must not repopulate another session.
+      // Invalidate every request tied to the previous authenticated context;
+      // late modal/list responses must not update a new session or an
+      // unmounted page.
       studentsLoadRequestRef.current += 1
+      availableBoardsRequestRef.current += 1
+      preferencesRequestRef.current += 1
+      assignMutationRequestRef.current += 1
+      studentMutationRequestRef.current += 1
     }
-  }, [loadStudents, user])
+  }, [loadStudents, studentContextKey])
 
-  const loadAvailableBoards = async () => {
+  const loadAvailableBoards = async (requestId: number) => {
     try {
       // Admins may assign any teacher's board, so list everything for them;
-      // teachers stay scoped to their own boards.
-      const params = user?.user_type === 'admin' ? undefined : { user_id: user?.id }
-      const res = await api.get('/boards/', { params })
-      setAvailableBoards(res.data)
+      // teachers stay scoped to their own boards. The endpoint is paginated;
+      // continue past the first page for large board libraries.
+      const boards: Board[] = []
+      let skip = 0
+      const pageSize = 1000
+      while (true) {
+        if (requestId !== availableBoardsRequestRef.current) return
+        const params = {
+          ...(skip > 0 ? { skip } : {}),
+          limit: pageSize,
+          ...(user?.user_type === 'admin' ? {} : { user_id: user?.id }),
+        }
+        const res = await api.get('/boards/', { params })
+        if (requestId !== availableBoardsRequestRef.current) return
+        const page = res.data as Board[]
+        if (!Array.isArray(page)) {
+          throw new Error('Invalid response format: expected array')
+        }
+        boards.push(...page)
+        if (page.length < pageSize) break
+        skip += page.length
+      }
+      if (requestId !== availableBoardsRequestRef.current) return
+      setAvailableBoards(boards)
     } catch (e) {
+      if (requestId !== availableBoardsRequestRef.current) return
       setError(extractError(e, t('errors.loadBoardsFailed')))
       console.error('Failed to load boards:', e)
     }
@@ -156,24 +228,40 @@ export function Students() {
   const handleDeleteStudent = async () => {
     // Only rendered inside the confirm dialog, which requires a student.
     const s = deleteState.student!
+    const contextKey = studentContextKey
+    const requestId = ++studentMutationRequestRef.current
+    const isCurrentRequest = () =>
+      requestId === studentMutationRequestRef.current &&
+      studentContextRef.current === contextKey
 
     try {
       await api.delete(`/auth/users/${s.id}`)
+      if (!isCurrentRequest()) return
       setStudents(prev => prev.filter(x => x.id !== s.id))
       setDeleteState({ isOpen: false, student: null })
       addToast(t('success.deleted'), 'success')
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.deleteFailed')))
-      setDeleteState({ isOpen: false, student: null })
+      if (isCurrentRequest()) {
+        setError(extractError(e, t('errors.deleteFailed')))
+        setDeleteState({ isOpen: false, student: null })
+      }
     }
   }
 
   const handleAssignBoard = async (boardId: number) => {
     // Only rendered inside the assign modal, which requires a selected student.
     const studentId = selectedStudent!.id
+    const contextId = availableBoardsRequestRef.current
+    const requestId = ++assignMutationRequestRef.current
     setAssignLoading(true)
     try {
       await api.post(`/boards/${boardId}/assign`, { student_id: studentId })
+      if (
+        contextId !== availableBoardsRequestRef.current ||
+        requestId !== assignMutationRequestRef.current
+      ) {
+        return
+      }
       const board = availableBoards.find((candidate) => candidate.id === boardId)
       if (board) {
         setAssignedBoards((prev) => {
@@ -187,67 +275,120 @@ export function Students() {
           }
         })
       }
-      setAssignModalOpen(false)
+      closeAssignModal()
       addToast(t('success.boardAssigned'), 'success')
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.assignFailed')))
+      if (
+        contextId === availableBoardsRequestRef.current &&
+        requestId === assignMutationRequestRef.current
+      ) {
+        setError(extractError(e, t('errors.assignFailed')))
+      }
     } finally {
-      setAssignLoading(false)
+      if (
+        contextId === availableBoardsRequestRef.current &&
+        requestId === assignMutationRequestRef.current
+      ) {
+        setAssignLoading(false)
+      }
     }
   }
 
   const handleUnassignBoard = async (studentId: number, boardId: number) => {
+    const contextKey = studentContextKey
+    const requestId = ++studentMutationRequestRef.current
+    const isCurrentRequest = () =>
+      requestId === studentMutationRequestRef.current &&
+      studentContextRef.current === contextKey
     try {
       await api.delete(`/boards/${boardId}/assign/${studentId}`)
+      if (!isCurrentRequest()) return
       setAssignedBoards((prev) => ({
         ...prev,
         [studentId]: (prev[studentId] || []).filter((board) => board.id !== boardId),
       }))
       addToast(t('success.boardUnassigned'), 'success')
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.unassignFailed')))
+      if (isCurrentRequest()) {
+        setError(extractError(e, t('errors.unassignFailed')))
+      }
     }
   }
 
   const openAssignModal = async (student: User) => {
+    const requestId = ++availableBoardsRequestRef.current
+    assignMutationRequestRef.current += 1
     setSelectedStudent(student)
-    await loadAvailableBoards()
-    setAssignModalOpen(true)
+    await loadAvailableBoards(requestId)
+    if (requestId === availableBoardsRequestRef.current) {
+      setAssignModalOpen(true)
+    }
+  }
+
+  const closeAssignModal = () => {
+    availableBoardsRequestRef.current += 1
+    assignMutationRequestRef.current += 1
+    setAssignLoading(false)
+    setAssignModalOpen(false)
+    setSelectedStudent(null)
   }
 
   const openPreferencesModal = async (student: User) => {
+    const requestId = ++preferencesRequestRef.current
     setPreferencesStudent(student)
     setPreferencesLoading(true)
     setPreferencesModalOpen(true)
     try {
       const res = await api.get(`/auth/users/${student.id}/preferences`)
+      if (requestId !== preferencesRequestRef.current) return
       setStudentPreferences({ voice_mode_enabled: res.data.voice_mode_enabled ?? true })
     } catch (e) {
+      if (requestId !== preferencesRequestRef.current) return
       console.error(e)
       setStudentPreferences({ voice_mode_enabled: true })
       addToast(t('errors.profileLoadFailed'), 'error')
     } finally {
-      setPreferencesLoading(false)
+      if (requestId === preferencesRequestRef.current) {
+        setPreferencesLoading(false)
+      }
     }
+  }
+
+  const closePreferencesModal = () => {
+    preferencesRequestRef.current += 1
+    setPreferencesLoading(false)
+    setPreferencesModalOpen(false)
+    setPreferencesStudent(null)
   }
 
   const saveStudentPreferences = async () => {
     // Only rendered inside the preferences modal, which requires a student.
+    const requestId = preferencesRequestRef.current
     setPreferencesLoading(true)
     try {
       await api.put(`/auth/users/${preferencesStudent!.id}/preferences`, studentPreferences)
-      setPreferencesModalOpen(false)
+      if (requestId !== preferencesRequestRef.current) return
+      closePreferencesModal()
       setPreferencesStudent(null)
       addToast(t('success.saved'), 'success')
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.updateFailed')))
+      if (requestId === preferencesRequestRef.current) {
+        setError(extractError(e, t('errors.updateFailed')))
+      }
     } finally {
-      setPreferencesLoading(false)
+      if (requestId === preferencesRequestRef.current) {
+        setPreferencesLoading(false)
+      }
     }
   }
 
   const handleCreateStudent = async (e: React.FormEvent) => {
     e.preventDefault()
+    const contextKey = studentContextKey
+    const requestId = ++studentMutationRequestRef.current
+    const isCurrentRequest = () =>
+      requestId === studentMutationRequestRef.current &&
+      studentContextRef.current === contextKey
     setCreateLoading(true)
     setError(null)
 
@@ -314,6 +455,7 @@ export function Students() {
       }
 
       await loadStudents(true)
+      if (!isCurrentRequest()) return
 
       setNewUsername('')
       setNewDisplayName('')
@@ -325,15 +467,24 @@ export function Students() {
       setCreateModalOpen(false)
       addToast(t('success.created'), 'success')
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.createFailed')))
+      if (isCurrentRequest()) {
+        setError(extractError(e, t('errors.createFailed')))
+      }
     } finally {
-      setCreateLoading(false)
+      if (isCurrentRequest()) {
+        setCreateLoading(false)
+      }
     }
   }
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
     // Only rendered inside the reset-password modal, which requires a student.
+    const contextKey = studentContextKey
+    const requestId = ++studentMutationRequestRef.current
+    const isCurrentRequest = () =>
+      requestId === studentMutationRequestRef.current &&
+      studentContextRef.current === contextKey
     setResetPasswordLoading(true)
     setError(null)
     try {
@@ -341,14 +492,19 @@ export function Students() {
         user_id: resetPasswordStudent!.id,
         new_password: resetPasswordValue
       })
+      if (!isCurrentRequest()) return
       setResetPasswordModalOpen(false)
       setResetPasswordValue('')
       setResetPasswordStudent(null)
       addToast(t('success.passwordReset'), 'success')
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.resetPasswordFailed')))
+      if (isCurrentRequest()) {
+        setError(extractError(e, t('errors.resetPasswordFailed')))
+      }
     } finally {
-      setResetPasswordLoading(false)
+      if (isCurrentRequest()) {
+        setResetPasswordLoading(false)
+      }
     }
   }
 
@@ -523,7 +679,7 @@ export function Students() {
 
           {
             assignModalOpen && selectedStudent && (
-              <Dialog open onOpenChange={(open) => { if (!open) setAssignModalOpen(false) }}>
+              <Dialog open onOpenChange={(open) => { if (!open) closeAssignModal() }}>
                 <DialogContent showCloseButton={false} className="max-w-md p-6">
                   <DialogHeader>
                     <DialogTitle className="text-lg font-semibold text-foreground">
@@ -560,7 +716,7 @@ export function Students() {
                   </div>
                   <div className="mt-4 flex justify-end">
                     <button
-                      onClick={() => setAssignModalOpen(false)}
+                      onClick={closeAssignModal}
                       className="px-4 py-2 text-foreground hover:bg-surface-hover rounded-lg"
                     >{t('close')}</button>
                   </div>
@@ -815,7 +971,7 @@ export function Students() {
 
       {
         preferencesModalOpen && preferencesStudent && (
-          <Dialog open onOpenChange={(open) => { if (!open) setPreferencesModalOpen(false) }}>
+          <Dialog open onOpenChange={(open) => { if (!open) closePreferencesModal() }}>
             <DialogContent showCloseButton={false} className="max-w-md p-6">
               <DialogHeader>
                 <DialogTitle className="text-lg font-semibold text-foreground">
@@ -846,7 +1002,7 @@ export function Students() {
 
                   <div className="flex justify-end gap-3 mt-6">
                     <button
-                      onClick={() => setPreferencesModalOpen(false)}
+                      onClick={closePreferencesModal}
                       className="px-4 py-2 text-foreground hover:bg-surface-hover rounded-lg"
                     >
                       {t('cancel')}

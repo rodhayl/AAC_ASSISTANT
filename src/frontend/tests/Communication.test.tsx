@@ -301,6 +301,17 @@ vi.mock('../src/components/learning/BoardsAndTopicsSidebar', () => ({
   ),
 }));
 
+vi.mock('../src/hooks/useTopicPickerPool', () => ({
+  useTopicPickerPool: () => ({
+    pickerTopics: [
+      { key: 'general', label: 'General', topic: 'general', purpose: 'practice', practiced: false, emoji: '💬' },
+      { key: 'food', label: 'Food', topic: 'food and dining', purpose: 'practice', practiced: false, emoji: '🍎' },
+      { key: 'shopping', label: 'Shopping', topic: 'shopping', purpose: 'practice', practiced: false, emoji: '🛒' },
+    ],
+    pickerRecent: [],
+  }),
+}));
+
 import { Communication } from '../src/pages/Communication';
 
 function makeSymbol(id: number, label: string, overrides: Partial<BoardSymbol> = {}): BoardSymbol {

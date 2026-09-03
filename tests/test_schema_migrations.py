@@ -204,6 +204,46 @@ def test_schema_ensure_deduplicates_legacy_board_assignments():
     engine.dispose()
 
 
+def test_schema_ensure_deduplicates_legacy_student_teacher_assignments():
+    """Legacy roster duplicates collapse before uniqueness is enforced."""
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE student_teachers ("
+                "id INTEGER PRIMARY KEY, student_id INTEGER NOT NULL, "
+                "teacher_id INTEGER NOT NULL, created_at DATETIME)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO student_teachers "
+                "(id, student_id, teacher_id) VALUES "
+                "(1, 20, 30), (2, 20, 30), (3, 21, 30)"
+            )
+        )
+
+    schema.ensure(engine)
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                "SELECT id, student_id, teacher_id "
+                "FROM student_teachers ORDER BY id"
+            )
+        ).fetchall()
+        indexes = {
+            row[1]
+            for row in connection.execute(
+                text('PRAGMA index_list("student_teachers")')
+            )
+        }
+
+    assert rows == [(1, 20, 30), (3, 21, 30)]
+    assert "uq_student_teachers_student_teacher" in indexes
+    engine.dispose()
+
+
 def test_schema_ensure_skips_indexes_for_partial_legacy_tables():
     """A partial legacy table cannot make startup fail while upgrading."""
     engine = create_engine("sqlite:///:memory:")

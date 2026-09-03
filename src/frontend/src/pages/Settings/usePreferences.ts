@@ -48,8 +48,12 @@ export function usePreferences() {
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   const userId = user?.id;
+  const preferencesRequestRef = useRef(0);
+  const activeUserIdRef = useRef<number | undefined>(userId);
 
   useEffect(() => {
+    const requestId = ++preferencesRequestRef.current;
+    activeUserIdRef.current = userId;
     let active = true;
     userEditedRef.current = false;
     const activeUser = useAuthStore.getState().user;
@@ -60,7 +64,12 @@ export function usePreferences() {
         const res = await api.get('/auth/preferences');
         // Do not clobber edits made before the initial hydration resolved, or
         // apply a response belonging to a previous authenticated user.
-        if (!active || userEditedRef.current) return;
+        if (
+          !active ||
+          requestId !== preferencesRequestRef.current ||
+          activeUserIdRef.current !== userId ||
+          userEditedRef.current
+        ) return;
         const voice = res.data.tts_voice || 'default';
         const darkMode = res.data.dark_mode ?? false;
         const language = normalizeUILanguage(res.data.ui_language);
@@ -95,6 +104,7 @@ export function usePreferences() {
     void loadPreferences();
     return () => {
       active = false;
+      preferencesRequestRef.current += 1;
     };
   }, [userId]);
 
@@ -156,7 +166,11 @@ export function usePreferences() {
 
   const saveDefaultLearningMode = useCallback(async (defaultModeKey: string) => {
     if (!user) return;
+    const requestId = ++preferencesRequestRef.current;
+    const savedUserId = user.id;
     const previousModeKey = preferences.default_learning_mode || 'practice';
+    const isCurrentRequest = () =>
+      requestId === preferencesRequestRef.current && activeUserIdRef.current === savedUserId;
     setPreferences((prev) => ({ ...prev, default_learning_mode: defaultModeKey }));
     setPrefsLoading(true);
     setPrefsSaveSuccess(false);
@@ -165,6 +179,7 @@ export function usePreferences() {
       const res = await api.put('/auth/preferences', {
         default_learning_mode: defaultModeKey,
       });
+      if (!isCurrentRequest()) return;
       const savedModeKey = res.data.default_learning_mode || defaultModeKey;
       setPreferencesState((prev) => ({ ...prev, default_learning_mode: savedModeKey }));
       updateAuthSettings(res.data);
@@ -172,22 +187,31 @@ export function usePreferences() {
       setPrefsSaveSuccess(true);
       addToast(t('learningModes.defaultModeSaved'), 'success');
     } catch (err: unknown) {
+      if (!isCurrentRequest()) return;
       setPreferencesState((prev) => ({ ...prev, default_learning_mode: previousModeKey }));
       setPrefsSaveError(t('errors.saveFailed'));
       addToast(t('errors.saveFailed'), 'error');
       throw err;
     } finally {
-      setPrefsLoading(false);
+      if (isCurrentRequest()) {
+        setPrefsLoading(false);
+      }
     }
   }, [addToast, notifyLearningModeChange, preferences.default_learning_mode, setPreferences, t, updateAuthSettings, user]);
 
   const handleSavePreferences = async () => {
+    const savedUserId = user?.id;
+    const requestId = ++preferencesRequestRef.current;
+    const isCurrentRequest = () =>
+      requestId === preferencesRequestRef.current &&
+      activeUserIdRef.current === savedUserId;
     setPrefsLoading(true);
     setPrefsSaveSuccess(false);
     setPrefsSaveError(null);
     try {
       if (user) {
         const res = await api.put('/auth/preferences', preferences);
+        if (!isCurrentRequest()) return;
         const { setDarkMode, setHighContrast } = useThemeStore.getState();
         const { setLocale } = useLocaleStore.getState();
         const { setSelectedVoice } = useTTSStore.getState();
@@ -196,6 +220,7 @@ export function usePreferences() {
         setDarkMode(preferences.dark_mode);
         setHighContrast(preferences.high_contrast);
         await setLocale(preferences.ui_language);
+        if (!isCurrentRequest()) return;
         setSelectedVoice(preferences.tts_voice);
         setTTSProvider(preferences.tts_provider);
         setLocalVoice(preferences.tts_local_voice);
@@ -207,11 +232,15 @@ export function usePreferences() {
         addToast(t('preferences.saved'), 'success');
       }
     } catch (err: unknown) {
-      console.error('Failed to save preferences:', err);
-      setPrefsSaveError(t('errors.saveFailed'));
-      addToast(t('errors.saveFailed'), 'error');
+      if (isCurrentRequest()) {
+        console.error('Failed to save preferences:', err);
+        setPrefsSaveError(t('errors.saveFailed'));
+        addToast(t('errors.saveFailed'), 'error');
+      }
     } finally {
-      setPrefsLoading(false);
+      if (isCurrentRequest()) {
+        setPrefsLoading(false);
+      }
     }
   };
 

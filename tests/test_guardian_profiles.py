@@ -1033,12 +1033,8 @@ class TestStudentListing:
         )
         test_db_session.add_all([teacher, assigned, unassigned])
         test_db_session.flush()
-        test_db_session.add_all(
-            [
-                StudentTeacher(student_id=assigned.id, teacher_id=teacher.id),
-                # Duplicate legacy assignment must not duplicate the roster row.
-                StudentTeacher(student_id=assigned.id, teacher_id=teacher.id),
-            ]
+        test_db_session.add(
+            StudentTeacher(student_id=assigned.id, teacher_id=teacher.id)
         )
         test_db_session.commit()
 

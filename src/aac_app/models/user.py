@@ -1,6 +1,16 @@
 """User accounts, preferences, and teacher/student relationships."""
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, func
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -66,6 +76,13 @@ class StudentTeacher(Base):
     """Association between students and teachers."""
 
     __tablename__ = "student_teachers"
+    __table_args__ = (
+        UniqueConstraint(
+            "student_id",
+            "teacher_id",
+            name="uq_student_teachers_student_teacher",
+        ),
+    )
 
     id = Column(Integer, primary_key=True)
     student_id = Column(Integer, ForeignKey("users.id"), nullable=False)

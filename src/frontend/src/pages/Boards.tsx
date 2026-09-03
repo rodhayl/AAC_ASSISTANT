@@ -59,6 +59,7 @@ export function Boards() {
   const [assignLoading, setAssignLoading] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
+  const studentsRequestRef = useRef(0);
 
   const [deleteBoardId, setDeleteBoardId] = useState<number | null>(null);
   const [selectedBoardIds, setSelectedBoardIds] = useState<Set<number>>(new Set());
@@ -73,6 +74,25 @@ export function Boards() {
   const lastSearchQueryRef = useRef(searchQuery);
   const userId = user?.id;
   const userType = user?.user_type;
+  const studentsContextKey = `${userId ?? 'anonymous'}:${userType ?? 'anonymous'}`;
+  const studentsContextRef = useRef(studentsContextKey);
+  studentsContextRef.current = studentsContextKey;
+
+  useEffect(() => {
+    // The student roster is account-scoped. Clear it before the next account's
+    // request starts so an old roster cannot remain actionable in the panel.
+    studentsRequestRef.current += 1;
+    setStudents([]);
+    setStudentsLoading(false);
+    setAssignOpenId(null);
+    setAssignLoading(false);
+    setAssignError(null);
+    setSelectedStudentId(null);
+    return () => {
+      studentsRequestRef.current += 1;
+    };
+  }, [studentsContextKey]);
+
   useEffect(() => {
     if (!userId || !userType) {
       lastBoardRequestKeyRef.current = null;
@@ -151,34 +171,96 @@ export function Boards() {
   }, [aiEnabled, primaryReady, t]);
 
   const openAssign = async (boardId: number) => {
+    const contextKey = studentsContextKey;
+    if (studentsContextRef.current !== contextKey) return;
+    const requestId = ++studentsRequestRef.current;
     setAssignOpenId(boardId);
     setAssignError(null);
     setSelectedStudentId(null);
     if (!students.length) {
       setStudentsLoading(true);
       try {
-        const res = await api.get('/auth/users');
-        const loadedStudents: User[] = res.data;
-        setStudents(loadedStudents.filter(u => u.user_type === 'student'));
+        const loadedStudents: User[] = [];
+        let skip = 0;
+        const pageSize = 1000;
+        while (true) {
+          if (
+            requestId !== studentsRequestRef.current ||
+            studentsContextRef.current !== contextKey
+          ) return;
+          const params = {
+            ...(skip > 0 ? { skip } : {}),
+            limit: pageSize,
+            user_type: 'student',
+          };
+          const res = await api.get('/auth/users', { params });
+          if (
+            requestId !== studentsRequestRef.current ||
+            studentsContextRef.current !== contextKey
+          ) return;
+          const page = res.data as User[];
+          if (!Array.isArray(page)) {
+            throw new Error('Invalid response format: expected array');
+          }
+          loadedStudents.push(...page);
+          if (page.length < pageSize) break;
+          skip += page.length;
+        }
+        if (
+          requestId !== studentsRequestRef.current ||
+          studentsContextRef.current !== contextKey
+        ) return;
+        setStudents(loadedStudents);
       } catch {
-        setAssignError(t('loadStudentsError'));
+        if (
+          requestId === studentsRequestRef.current &&
+          studentsContextRef.current === contextKey
+        ) {
+          setAssignError(t('loadStudentsError'));
+        }
       } finally {
-        setStudentsLoading(false);
+        if (
+          requestId === studentsRequestRef.current &&
+          studentsContextRef.current === contextKey
+        ) {
+          setStudentsLoading(false);
+        }
       }
     }
   };
 
+  const closeAssign = () => {
+    studentsRequestRef.current += 1;
+    setAssignOpenId(null);
+    setStudentsLoading(false);
+    setAssignLoading(false);
+    setAssignError(null);
+    setSelectedStudentId(null);
+  };
+
   const submitAssign = async (boardId: number) => {
     if (!selectedStudentId) return;
+    const contextKey = studentsContextKey;
+    const requestId = studentsRequestRef.current;
+    const assignedStudentId = selectedStudentId;
+    const assignedBy = user?.id;
+    const isCurrentRequest = () =>
+      requestId === studentsRequestRef.current &&
+      studentsContextRef.current === contextKey;
     setAssignLoading(true);
     setAssignError(null);
     try {
-      await assignBoardToStudent(boardId, selectedStudentId, user?.id);
-      setAssignOpenId(null);
+      await assignBoardToStudent(boardId, assignedStudentId, assignedBy);
+      if (!isCurrentRequest()) return;
+      closeAssign();
     } catch {
-      setAssignError(t('assignBoardError'));
+      if (isCurrentRequest()) {
+        setAssignError(t('assignBoardError'));
+      }
     } finally {
-      setAssignLoading(false);
+      if (isCurrentRequest()) {
+        setAssignLoading(false);
+      }
     }
   };
 
@@ -584,7 +666,7 @@ export function Boards() {
                     <Button variant="default" size="sm" onClick={() => submitAssign(board.id)} loading={assignLoading} disabled={!selectedStudentId}>
                       {t('assign')}
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setAssignOpenId(null)}>
+                    <Button variant="ghost" size="sm" onClick={closeAssign}>
                       {t('close')}
                     </Button>
                   </div>

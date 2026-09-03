@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { Trophy, Star, Lock, CheckCircle, Settings, Plus, Pencil, Trash2, Award, X, Users } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import api, { extractError } from '../lib/api'
@@ -61,21 +61,48 @@ export function Achievements() {
     criteria_type: null,
     criteria_value: null,
   })
+  const dataRequestRef = useRef(0)
+  const checkRequestRef = useRef(0)
+  const managementRequestRef = useRef(0)
+  const userContextRef = useRef('')
+  const [dataContextKey, setDataContextKey] = useState<string | null>(null)
+  const [managementContextKey, setManagementContextKey] = useState<string | null>(null)
   const { t } = useTranslation('achievements')
+
+  const userContextKey = `${user?.id ?? 'anonymous'}:${user?.user_type ?? 'anonymous'}`
+  userContextRef.current = userContextKey
+  const visibleAchievements = dataContextKey === userContextKey ? achievements : []
+  const visiblePoints = dataContextKey === userContextKey ? points : 0
+  const visibleAllAchievements = managementContextKey === userContextKey ? allAchievements : []
+  const visibleStudents = useMemo(
+    () => managementContextKey === userContextKey ? students : [],
+    [managementContextKey, students, userContextKey],
+  )
+  const visibleCategories = managementContextKey === userContextKey ? categories : []
+  const visibleCriteriaTypes = managementContextKey === userContextKey ? criteriaTypes : []
+  const isCurrentContext = (contextKey: string) => userContextRef.current === contextKey
 
   const filteredStudents = useMemo(() => {
     const search = studentSearch.trim().toLowerCase()
-    if (!search) return students
-    return students.filter((student) =>
+    if (!search) return visibleStudents
+    return visibleStudents.filter((student) =>
       student.display_name.toLowerCase().includes(search) ||
       student.username.toLowerCase().includes(search),
     )
-  }, [studentSearch, students])
+  }, [studentSearch, visibleStudents])
 
   const isTeacherOrAdmin = user?.user_type === 'teacher' || user?.user_type === 'admin'
 
   const loadData = useCallback(async () => {
-    if (!user) return
+    const contextKey = userContextKey
+    const requestId = ++dataRequestRef.current
+    if (!user?.id) {
+      setAchievements([])
+      setPoints(0)
+      setDataContextKey(null)
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError(null)
     try {
@@ -83,71 +110,142 @@ export function Achievements() {
         api.get(`/achievements/user/${user.id}`),
         api.get(`/achievements/user/${user.id}/points`)
       ])
+      if (requestId !== dataRequestRef.current || !isCurrentContext(contextKey)) return
+      if (!Array.isArray(achRes.data) || typeof ptsRes.data !== 'number') {
+        throw new Error('Invalid achievements response format')
+      }
       setAchievements(achRes.data)
       setPoints(ptsRes.data)
+      setDataContextKey(contextKey)
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.loadFailed')))
+      if (requestId === dataRequestRef.current && isCurrentContext(contextKey)) {
+        setError(extractError(e, t('errors.loadFailed')))
+      }
     } finally {
-      setLoading(false)
+      if (requestId === dataRequestRef.current && isCurrentContext(contextKey)) {
+        setLoading(false)
+      }
     }
-  }, [user, t])
+  }, [t, user?.id, userContextKey])
+
+  const loadAllStudents = async (): Promise<User[]> => {
+    const loaded: User[] = []
+    let skip = 0
+    const pageSize = 500
+    while (true) {
+      const response = skip === 0
+        ? await api.get('/users/students')
+        : await api.get('/users/students', { params: { skip, limit: pageSize } })
+      if (!Array.isArray(response.data)) {
+        throw new Error('Invalid response format: expected array')
+      }
+      loaded.push(...(response.data as User[]))
+      if (response.data.length < pageSize) return loaded
+      skip += response.data.length
+    }
+  }
 
   const loadManagementData = useCallback(async () => {
+    const contextKey = userContextKey
+    const requestId = ++managementRequestRef.current
     setError(null)
 
     const labels = ['all achievements', 'students', 'categories', 'criteria types']
     const requests = [
-      api.get('/achievements/').then((response) => setAllAchievements(response.data)),
-      api.get('/users/students').then((response) => setStudents(response.data)),
-      api.get('/achievements/categories').then((response) => setCategories(response.data)),
-      api.get('/achievements/criteria-types').then((response) => setCriteriaTypes(response.data)),
+      api.get('/achievements/'),
+      loadAllStudents().then((data) => ({ data })),
+      api.get('/achievements/categories'),
+      api.get('/achievements/criteria-types'),
     ]
     const results = await Promise.allSettled(requests)
+    if (requestId !== managementRequestRef.current || !isCurrentContext(contextKey)) return
+
+    const [achievementsResult, studentsResult, categoriesResult, criteriaTypesResult] = results
+    if (achievementsResult.status === 'fulfilled') {
+      if (!Array.isArray(achievementsResult.value.data)) {
+        throw new Error('Invalid response format: expected array')
+      }
+      setAllAchievements(achievementsResult.value.data)
+    }
+    if (studentsResult.status === 'fulfilled') setStudents(studentsResult.value.data)
+    if (categoriesResult.status === 'fulfilled') {
+      if (!Array.isArray(categoriesResult.value.data)) {
+        throw new Error('Invalid response format: expected array')
+      }
+      setCategories(categoriesResult.value.data)
+    }
+    if (criteriaTypesResult.status === 'fulfilled') {
+      if (!Array.isArray(criteriaTypesResult.value.data)) {
+        throw new Error('Invalid response format: expected array')
+      }
+      setCriteriaTypes(criteriaTypesResult.value.data)
+    }
+    setManagementContextKey(contextKey)
+
     const failed = results.find((result) => result.status === 'rejected')
     if (failed?.status === 'rejected') {
       const failedIndex = results.indexOf(failed)
       console.error(`Failed to load ${labels[failedIndex]}`, failed.reason)
       setError(t('errors.managementLoadFailed'))
     }
-  }, [t])
+  }, [t, userContextKey])
 
   useEffect(() => {
-    loadData()
+    void loadData()
+    return () => {
+      dataRequestRef.current += 1
+      checkRequestRef.current += 1
+    }
   }, [loadData])
 
   useEffect(() => {
-    if (showManage) {
-      void loadManagementData()
+    if (!showManage || !user) {
+      managementRequestRef.current += 1
+      return
     }
-  }, [showManage, loadManagementData])
+    void loadManagementData()
+    return () => {
+      managementRequestRef.current += 1
+    }
+  }, [showManage, loadManagementData, user])
 
   const handleCheck = async () => {
     if (!user) return
+    const contextKey = userContextKey
+    const requestId = ++checkRequestRef.current
     setLoading(true)
     setError(null)
     try {
       await api.post(`/achievements/user/${user.id}/check`)
+      if (requestId !== checkRequestRef.current || !isCurrentContext(contextKey)) return
       await loadData()
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.checkFailed')))
+      if (requestId === checkRequestRef.current && isCurrentContext(contextKey)) {
+        setError(extractError(e, t('errors.checkFailed')))
+      }
     } finally {
-      setLoading(false)
+      if (requestId === checkRequestRef.current && isCurrentContext(contextKey)) {
+        setLoading(false)
+      }
     }
   }
 
   const handleCreate = async () => {
+    const contextKey = userContextKey
     try {
       await api.post('/achievements/', formData)
+      if (!isCurrentContext(contextKey)) return
       setShowModal(false)
       resetForm()
       void loadManagementData()
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.createFailed')))
+      if (isCurrentContext(contextKey)) setError(extractError(e, t('errors.createFailed')))
     }
   }
 
   const handleUpdate = async () => {
     // Only rendered inside the editor modal, which requires an achievement.
+    const contextKey = userContextKey
     try {
       await api.put(`/achievements/${editingAchievement!.id}`, {
         name: formData.name,
@@ -159,12 +257,13 @@ export function Achievements() {
         criteria_type: formData.criteria_type ?? null,
         criteria_value: formData.criteria_value ?? null,
       })
+      if (!isCurrentContext(contextKey)) return
       setShowModal(false)
       setEditingAchievement(null)
       resetForm()
       void loadManagementData()
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.updateFailed')))
+      if (isCurrentContext(contextKey)) setError(extractError(e, t('errors.updateFailed')))
     }
   }
 
@@ -173,16 +272,20 @@ export function Achievements() {
 
   const confirmDeleteAchievement = async () => {
     if (pendingDeleteId == null) return
+    const contextKey = userContextKey
     setIsDeleting(true)
     try {
       await api.delete(`/achievements/${pendingDeleteId}`)
+      if (!isCurrentContext(contextKey)) return
       setPendingDeleteId(null)
       void loadManagementData()
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.deleteFailed')))
-      setPendingDeleteId(null)
+      if (isCurrentContext(contextKey)) {
+        setError(extractError(e, t('errors.deleteFailed')))
+        setPendingDeleteId(null)
+      }
     } finally {
-      setIsDeleting(false)
+      if (isCurrentContext(contextKey)) setIsDeleting(false)
     }
   }
 
@@ -191,8 +294,10 @@ export function Achievements() {
   }
 
   const handleAward = async () => {
+    const contextKey = userContextKey
     try {
       await api.post(`/achievements/${awardingAchievementId}/award`, { user_id: selectedStudentId })
+      if (!isCurrentContext(contextKey)) return
       setShowAwardModal(false)
       setAwardingAchievementId(null)
       setSelectedStudentId(null)
@@ -200,7 +305,7 @@ export function Achievements() {
     } catch (e: unknown) {
       // Surface the failure in the shared error banner instead of a native
       // alert() so the experience matches the rest of the app.
-      setError(extractError(e, t('errors.awardFailed')))
+      if (isCurrentContext(contextKey)) setError(extractError(e, t('errors.awardFailed')))
     }
   }
 
@@ -267,7 +372,7 @@ export function Achievements() {
         </div>
         <div>
           <p className="text-sm text-muted-foreground">{t('totalPoints')}</p>
-          <p className="text-2xl font-bold text-foreground">{points}</p>
+          <p className="text-2xl font-bold text-foreground">{visiblePoints}</p>
         </div>
       </div>
 
@@ -276,7 +381,7 @@ export function Achievements() {
       )}
 
       {/* Management Section */}
-      {showManage && isTeacherOrAdmin && (
+      {showManage && isTeacherOrAdmin && managementContextKey === userContextKey && (
         <div className="bg-surface rounded-xl shadow-sm border border-border p-6">
           <div className="flex justify-between items-center mb-4">
             <SectionTitle>{t('manageTitle')}</SectionTitle>
@@ -299,7 +404,7 @@ export function Achievements() {
                 </tr>
               </thead>
               <tbody>
-                {allAchievements.map(a => (
+                {visibleAllAchievements.map(a => (
                   <tr key={a.id} className="border-b border-border hover:bg-surface-hover/50">
                     <td className="px-4 py-3 text-2xl">{a.icon}</td>
                     <td className="px-4 py-3 font-medium text-foreground">{localizeAchievementName(a.name, t)}</td>
@@ -347,14 +452,14 @@ export function Achievements() {
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand"></div>
         </div>
-      ) : achievements.length === 0 ? (
+      ) : visibleAchievements.length === 0 ? (
         <div className="text-center py-12 bg-muted rounded-xl border-2 border-dashed border-border">
           <Trophy className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
           <p className="text-muted-foreground">{t('none')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {achievements.map((a) => {
+          {visibleAchievements.map((a) => {
             const isUnlocked = !!a.earned_at;
             return (
               <div
@@ -449,7 +554,7 @@ export function Achievements() {
                   <FormLabel>{t('category')}</FormLabel>
                   <select value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })}
                     className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground">
-                    {categories.map(cat => (
+                    {visibleCategories.map(cat => (
                       <option key={cat} value={cat}>{t(`categories.${cat}`, cat.charAt(0).toUpperCase() + cat.slice(1))}</option>
                     ))}
                   </select>
@@ -484,7 +589,7 @@ export function Achievements() {
                       <label className="block text-xs font-medium text-muted-foreground mb-1">{t('criteriaType')}</label>
                       <select value={formData.criteria_type} onChange={e => setFormData({ ...formData, criteria_type: e.target.value })}
                         className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-foreground">
-                        {criteriaTypes.map(ct => (
+                        {visibleCriteriaTypes.map(ct => (
                           <option key={ct} value={ct}>{t(`criteria.${ct}`, ct.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '))}</option>
                         ))}
                       </select>
@@ -498,7 +603,7 @@ export function Achievements() {
                 )}
               </div>
 
-              {students.length > 0 && (
+              {visibleStudents.length > 0 && (
                 <div>
                   <FormLabel>
                     <Users className="w-4 h-4 inline mr-1" />
@@ -507,7 +612,7 @@ export function Achievements() {
                   <select value={formData.target_user_id ?? ''} onChange={e => setFormData({ ...formData, target_user_id: e.target.value ? parseInt(e.target.value) : null })}
                     className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground">
                     <option value="">{t('allStudents')}</option>
-                    {students.map(s => <option key={s.id} value={s.id}>{s.display_name} ({s.username})</option>)}
+                    {visibleStudents.map(s => <option key={s.id} value={s.id}>{s.display_name} ({s.username})</option>)}
                   </select>
                 </div>
               )}
@@ -527,7 +632,7 @@ export function Achievements() {
       )}
 
       {/* Award Modal */}
-      {showAwardModal && (
+      {showAwardModal && managementContextKey === userContextKey && (
         <Dialog open onOpenChange={(open) => { if (!open) { setShowAwardModal(false); setAwardingAchievementId(null); } }}>
           <DialogContent showCloseButton={false} className="max-w-sm p-6">
             <div className="flex justify-between items-center mb-4">
@@ -536,10 +641,10 @@ export function Achievements() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            {allAchievements.find((a) => a.id === awardingAchievementId) && (
+            {visibleAllAchievements.find((a) => a.id === awardingAchievementId) && (
               <p className="text-sm text-muted-foreground mb-4 flex items-center gap-2">
-                <span className="text-xl">{allAchievements.find((a) => a.id === awardingAchievementId)!.icon}</span>
-                {localizeAchievementName(allAchievements.find((a) => a.id === awardingAchievementId)!.name, t)}
+                <span className="text-xl">{visibleAllAchievements.find((a) => a.id === awardingAchievementId)!.icon}</span>
+                {localizeAchievementName(visibleAllAchievements.find((a) => a.id === awardingAchievementId)!.name, t)}
               </p>
             )}
 
@@ -589,7 +694,7 @@ export function Achievements() {
       )}
 
       {/* Delete Confirmation Modal */}
-      {pendingDeleteId != null && (
+      {pendingDeleteId != null && managementContextKey === userContextKey && (
         <Dialog open onOpenChange={(open) => { if (!open) setPendingDeleteId(null) }}>
           <DialogContent showCloseButton={false} className="max-w-sm p-6">
             <div className="flex justify-between items-center mb-4">
@@ -603,10 +708,10 @@ export function Achievements() {
             <p className="text-sm text-muted-foreground mb-2">
               {t('confirmDelete')}
             </p>
-            {allAchievements.find((a) => a.id === pendingDeleteId) && (
+            {visibleAllAchievements.find((a) => a.id === pendingDeleteId) && (
               <p className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
-                <span className="text-xl">{allAchievements.find((a) => a.id === pendingDeleteId)!.icon}</span>
-                {localizeAchievementName(allAchievements.find((a) => a.id === pendingDeleteId)!.name, t)}
+                <span className="text-xl">{visibleAllAchievements.find((a) => a.id === pendingDeleteId)!.icon}</span>
+                {localizeAchievementName(visibleAllAchievements.find((a) => a.id === pendingDeleteId)!.name, t)}
               </p>
             )}
             <div className="flex justify-end gap-3">

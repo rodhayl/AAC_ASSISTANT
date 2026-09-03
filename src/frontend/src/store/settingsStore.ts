@@ -60,8 +60,11 @@ interface SettingsState {
   fetchGroqModels: (apiKey?: string) => Promise<void>;
 }
 
+let modelRequestSequence = 0;
+let settingsRequestSequence = 0;
+let updateRequestSequence = 0;
+
 export const useSettingsStore = create<SettingsState>((set, get) => {
-  let modelRequestSequence = 0;
 
   // The three model-fetch actions share one load-and-store shape; only the
   // endpoint, state key, and failure message differ. A newer request wins so
@@ -98,22 +101,27 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
     error: null,
 
     fetchAISettings: async () => {
+      const requestId = ++settingsRequestSequence;
       set({ loading: true, error: null });
       try {
         const response = await api.get('/settings/ai');
+        if (requestId !== settingsRequestSequence) return;
         set({ aiSettings: response.data, loading: false });
       } catch (error: unknown) {
+        if (requestId !== settingsRequestSequence) return;
         const message = extractError(error, tSettings('settings:ai.fetchFailed'));
         set({ error: message, loading: false });
       }
     },
 
     updateAISettings: async (settings: Partial<AISettings>) => {
+      const requestId = ++updateRequestSequence;
       set({ loading: true, error: null });
       try {
         await api.put('/settings/ai', settings);
         await get().fetchAISettings();
       } catch (error: unknown) {
+        if (requestId !== updateRequestSequence) return;
         const message = extractError(error, tSettings('settings:ai.updateFailed'));
         set({ error: message, loading: false });
         throw error;
@@ -153,3 +161,22 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
     },
   };
 });
+
+if (typeof window !== 'undefined') {
+  const resetForAuthContextChange = () => {
+    settingsRequestSequence += 1;
+    updateRequestSequence += 1;
+    modelRequestSequence += 1;
+    useSettingsStore.setState({
+      aiSettings: null,
+      ollamaModels: [],
+      openRouterModels: [],
+      lmStudioModels: [],
+      groqModels: [],
+      loading: false,
+      error: null,
+    });
+  };
+  window.addEventListener('aac:auth-logout', resetForAuthContextChange);
+  window.addEventListener('aac:auth-context-changed', resetForAuthContextChange);
+}

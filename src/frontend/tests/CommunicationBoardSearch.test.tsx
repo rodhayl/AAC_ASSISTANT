@@ -147,6 +147,10 @@ vi.mock('../src/components/learning/BoardsAndTopicsSidebar', () => ({
   BoardsAndTopicsSidebar: () => null,
 }));
 
+vi.mock('../src/hooks/useTopicPickerPool', () => ({
+  useTopicPickerPool: () => ({ pickerTopics: [], pickerRecent: [] }),
+}));
+
 import { Communication } from '../src/pages/Communication';
 
 const makeBoard = (overrides: Partial<Board> = {}): Board => ({

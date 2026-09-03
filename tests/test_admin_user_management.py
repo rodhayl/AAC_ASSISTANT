@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from src.aac_app.models import StudentTeacher, User
+from src.aac_app.models import User
 from src.api.main import app
 
 client = TestClient(app)
@@ -267,7 +267,7 @@ def test_auth_user_pagination_is_deterministically_ordered(setup_test_db, admin_
     assert set(created_ids).issubset(first_ids + second_ids)
 
 
-def test_teacher_user_pagination_deduplicates_legacy_assignments(
+def test_teacher_user_pagination_is_idempotent_for_repeated_assignments(
     setup_test_db, admin_token, test_db_session
 ):
     headers = {"Authorization": f"Bearer {admin_token}"}
@@ -298,16 +298,27 @@ def test_teacher_user_pagination_deduplicates_legacy_assignments(
     assert student_response.status_code == 200, student_response.text
     student = student_response.json()
 
-    test_db_session.add_all(
-        [
-            StudentTeacher(student_id=student["id"], teacher_id=teacher["id"]),
-            StudentTeacher(student_id=student["id"], teacher_id=teacher["id"]),
-        ]
+    # Assignment creation is idempotent even when two callers submit the
+    # same relationship. Legacy duplicate-row cleanup is covered by the schema
+    # migration test; the live endpoint must return one roster member.
+    from tests.auth_helpers import create_test_headers
+
+    teacher_headers = create_test_headers(teacher["id"], teacher["username"], "teacher")
+    assignment_payload = {"student_id": student["id"], "teacher_id": teacher["id"]}
+    first_assignment = client.post(
+        "/api/users/assign-student",
+        json=assignment_payload,
+        headers=teacher_headers,
     )
-    test_db_session.commit()
+    second_assignment = client.post(
+        "/api/users/assign-student",
+        json=assignment_payload,
+        headers=teacher_headers,
+    )
+    assert first_assignment.status_code in {200, 201}
+    assert second_assignment.status_code == 200
 
     # The request must be authenticated as the teacher, not the admin.
-    from tests.auth_helpers import create_test_headers
 
     teacher_page = client.get(
         "/api/auth/users",

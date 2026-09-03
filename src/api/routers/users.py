@@ -1,6 +1,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import StudentTeacher, User
@@ -147,10 +148,26 @@ def assign_student(
     if exists:
         return {"message": get_text(user=current_user, key="assignmentAlreadyExists"), "status": "exists"}
 
-    # Create assignment
+    # Create assignment. The database uniqueness constraint closes the race
+    # between the existence check above and the insert; a concurrent request
+    # that loses that race is still an idempotent success for the caller.
     assignment = StudentTeacher(student_id=data.student_id, teacher_id=target_teacher_id)
-    db.add(assignment)
-    db.commit()
+    try:
+        db.add(assignment)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if not (
+            db.query(StudentTeacher)
+            .filter_by(student_id=data.student_id, teacher_id=target_teacher_id)
+            .first()
+        ):
+            raise
+        return {
+            "message": get_text(user=current_user, key="assignmentAlreadyExists"),
+            "status": "exists",
+        }
+
     return JSONResponse(
         status_code=201,
         content={"message": get_text(user=current_user, key="studentAssigned"), "status": "created"}

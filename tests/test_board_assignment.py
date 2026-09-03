@@ -298,9 +298,6 @@ def test_teacher_cannot_access_or_modify_unassigned_student(teacher_and_student,
     )
     test_db_session.add(other_student)
     test_db_session.flush()
-    test_db_session.add(
-        StudentTeacher(student_id=assigned_student.id, teacher_id=teacher.id)
-    )
     test_db_session.commit()
 
     teacher_headers = create_test_headers(teacher.id, teacher.username, teacher.user_type)

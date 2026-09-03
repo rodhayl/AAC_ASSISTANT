@@ -251,6 +251,34 @@ def _ensure_sqlite_indexes(engine: Engine) -> None:
                         "ON board_assignments (board_id, student_id)"
                     )
                 )
+        if "student_teachers" in existing_tables:
+            student_teacher_columns = {
+                row[1]
+                for row in connection.execute(
+                    text("PRAGMA table_info(student_teachers)")
+                )
+            }
+            if {"id", "student_id", "teacher_id"} <= student_teacher_columns:
+                # Older databases allowed duplicate roster assignments. Keep
+                # the earliest row, then enforce the same invariant declared by
+                # the ORM so concurrent assignment requests cannot duplicate a
+                # student/teacher relationship.
+                connection.execute(
+                    text(
+                        "DELETE FROM student_teachers "
+                        "WHERE id NOT IN ("
+                        "SELECT MIN(id) FROM student_teachers "
+                        "GROUP BY student_id, teacher_id"
+                        ")"
+                    )
+                )
+                connection.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS "
+                        "uq_student_teachers_student_teacher "
+                        "ON student_teachers (student_id, teacher_id)"
+                    )
+                )
 
 
 def _ensure_foreign_key_actions(engine: Engine) -> None:

@@ -42,6 +42,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
   const namespace = role === 'teacher' ? 'teachers' : 'admins'
   const { t } = useTranslation([namespace, 'settings'])
   const [managedUsers, setManagedUsers] = useState<User[]>([])
+  const [managedUsersContextKey, setManagedUsersContextKey] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -67,6 +68,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
   // if the topic API is unavailable. Large collections are paginated via the
   // backend's limit/offset; the unpaginated total arrives as X-Total-Count.
   const showSavedTopics = role === 'teacher' && user?.user_type === 'admin'
+  const managementContextKey = `${user?.id ?? 'anonymous'}:${user?.user_type ?? 'anonymous'}:${role}`
   const SAVED_TOPICS_PAGE_SIZES = [25, 50, 100] as const
   const [savedTopics, setSavedTopics] = useState<Array<{
     id: number
@@ -78,6 +80,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     created_by_name?: string | null
     created_at: string | null
   }>>([])
+  const [savedTopicsContextKey, setSavedTopicsContextKey] = useState<string | null>(null)
   const [savedTopicsError, setSavedTopicsError] = useState<string | null>(null)
   const [savedTopicsPage, setSavedTopicsPage] = useState(1)
   const [savedTopicsPageSize, setSavedTopicsPageSize] = useState<number>(25)
@@ -110,21 +113,59 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
   const [updateLoading, setUpdateLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
   const managedUsersRequestRef = useRef(0)
+  const savedTopicsRequestRef = useRef(0)
+  const managementMutationRequestRef = useRef(0)
+  const mountedRef = useRef(false)
+  const managementContextRef = useRef(managementContextKey)
+  managementContextRef.current = managementContextKey
 
+  const visibleManagedUsers = managedUsersContextKey === managementContextKey ? managedUsers : []
+  const visibleSavedTopics = savedTopicsContextKey === managementContextKey ? savedTopics : []
   const loadUsers = useCallback(async () => {
+    const contextKey = managementContextKey
     const requestId = ++managedUsersRequestRef.current
-    const response = await api.get('/auth/users', {
-      params: { limit: 1000, user_type: role },
-    })
-    if (!Array.isArray(response.data)) {
-      throw new Error('Invalid response format: expected array')
+    const users: User[] = []
+    let skip = 0
+    const pageSize = 1000
+    while (true) {
+      if (
+        !mountedRef.current ||
+        requestId !== managedUsersRequestRef.current ||
+        managementContextRef.current !== contextKey
+      ) return
+      const response = await api.get('/auth/users', {
+        params: {
+          ...(skip > 0 ? { skip } : {}),
+          limit: pageSize,
+          user_type: role,
+        },
+      })
+      if (
+        !mountedRef.current ||
+        requestId !== managedUsersRequestRef.current ||
+        managementContextRef.current !== contextKey
+      ) return
+      if (!Array.isArray(response.data)) {
+        throw new Error('Invalid response format: expected array')
+      }
+      users.push(...(response.data as User[]))
+      if (response.data.length < pageSize) break
+      skip += response.data.length
     }
-    if (requestId !== managedUsersRequestRef.current) return
-    setManagedUsers(response.data as User[])
-  }, [role])
+    if (
+      !mountedRef.current ||
+      requestId !== managedUsersRequestRef.current ||
+      managementContextRef.current !== contextKey
+    ) return
+    setManagedUsers(users)
+    setManagedUsersContextKey(contextKey)
+  }, [managementContextKey, role])
+
 
   const loadSavedTopics = useCallback(async () => {
     if (!showSavedTopics) return
+    const contextKey = managementContextKey
+    const requestId = ++savedTopicsRequestRef.current
     try {
       const response = await api.get('/learning/topics/saved', {
         params: {
@@ -134,10 +175,16 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
           ...(savedTopicsSearchQuery ? { search: savedTopicsSearchQuery } : {}),
         },
       })
+      if (
+        !mountedRef.current ||
+        requestId !== savedTopicsRequestRef.current ||
+        managementContextRef.current !== contextKey
+      ) return
       if (!Array.isArray(response.data)) {
         throw new Error('Invalid response format: expected array')
       }
       setSavedTopics(response.data)
+      setSavedTopicsContextKey(contextKey)
       const total = Number(response.headers?.['x-total-count'])
       setSavedTopicsTotal(Number.isFinite(total) ? total : response.data.length)
       // A deletion on the last page can leave the page number past the end;
@@ -148,10 +195,25 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       }
       setSavedTopicsError(null)
     } catch (loadError: unknown) {
+      if (
+        !mountedRef.current ||
+        requestId !== savedTopicsRequestRef.current ||
+        managementContextRef.current !== contextKey
+      ) return
       console.error('Failed to load saved topics:', loadError)
       setSavedTopicsError(extractError(loadError, t('savedTopics.loadFailed')))
     }
-  }, [showSavedTopics, t, savedTopicsPage, savedTopicsPageSize, savedTopicsSearchQuery])
+  }, [showSavedTopics, t, savedTopicsPage, savedTopicsPageSize, savedTopicsSearchQuery, managementContextKey])
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      managedUsersRequestRef.current += 1
+      savedTopicsRequestRef.current += 1
+      managementMutationRequestRef.current += 1
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -170,12 +232,35 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       }
     }
     void load()
-    if (showSavedTopics) void loadSavedTopics()
     return () => {
       cancelled = true
       managedUsersRequestRef.current += 1
     }
-  }, [loadUsers, role, t, user, showSavedTopics, loadSavedTopics])
+  }, [loadUsers, managementContextKey, role, t])
+
+  useEffect(() => {
+    if (!showSavedTopics) {
+      savedTopicsRequestRef.current += 1
+      return
+    }
+    void loadSavedTopics()
+    return () => {
+      savedTopicsRequestRef.current += 1
+    }
+  }, [showSavedTopics, loadSavedTopics])
+
+  const beginMutation = () => {
+    const requestId = ++managementMutationRequestRef.current
+    const contextKey = managementContextKey
+    return {
+      requestId,
+      contextKey,
+      isCurrent: () =>
+        mountedRef.current &&
+        requestId === managementMutationRequestRef.current &&
+        managementContextRef.current === contextKey,
+    }
+  }
 
   const clearCreateForm = () => {
     setNewUsername('')
@@ -189,16 +274,23 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     const selectedUser = deleteState.user
     if (!selectedUser) return
 
+    const mutation = beginMutation()
     setDeleteLoading(true)
     try {
       await api.delete(`/auth/users/${selectedUser.id}`)
+      if (!mutation.isCurrent()) return
       setManagedUsers(previous => previous.filter(item => item.id !== selectedUser.id))
+      setManagedUsersContextKey(mutation.contextKey)
       addToast(t('success.deleted'), 'success')
     } catch (deleteError: unknown) {
-      setError(extractError(deleteError, t('errors.deleteFailed')))
+      if (mutation.isCurrent()) {
+        setError(extractError(deleteError, t('errors.deleteFailed')))
+      }
     } finally {
-      setDeleteLoading(false)
-      setDeleteState({ isOpen: false, user: null })
+      if (mutation.isCurrent()) {
+        setDeleteLoading(false)
+        setDeleteState({ isOpen: false, user: null })
+      }
     }
   }
 
@@ -209,6 +301,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
       return
     }
 
+    const mutation = beginMutation()
     setCreateLoading(true)
     setError(null)
     try {
@@ -221,18 +314,22 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
         user_type: role,
       })
       await loadUsers()
+      if (!mutation.isCurrent()) return
       clearCreateForm()
       setCreateModalOpen(false)
       addToast(t('success.created'), 'success')
     } catch (createError: unknown) {
-      setError(extractError(createError, t('errors.createFailed')))
+      if (mutation.isCurrent()) {
+        setError(extractError(createError, t('errors.createFailed')))
+      }
     } finally {
-      setCreateLoading(false)
+      if (mutation.isCurrent()) setCreateLoading(false)
     }
   }
 
   const handleUpdate = async () => {
     if (!editId) return
+    const mutation = beginMutation()
     setUpdateLoading(true)
     try {
       // Send the email as typed (empty string included) so clearing the
@@ -242,13 +339,17 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
         display_name: editDisplayName,
         email: editEmail,
       })
+      if (!mutation.isCurrent()) return
       setManagedUsers(previous => previous.map(item => item.id === editId ? response.data : item))
+      setManagedUsersContextKey(mutation.contextKey)
       setEditId(null)
       addToast(t('success.updated'), 'success')
     } catch (updateError: unknown) {
-      setError(extractError(updateError, t('errors.updateFailed')))
+      if (mutation.isCurrent()) {
+        setError(extractError(updateError, t('errors.updateFailed')))
+      }
     } finally {
-      setUpdateLoading(false)
+      if (mutation.isCurrent()) setUpdateLoading(false)
     }
   }
 
@@ -256,18 +357,24 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     const selectedTopic = deleteTopicState.topic
     if (!selectedTopic) return
 
+    const mutation = beginMutation()
     setDeleteTopicLoading(true)
     try {
       await api.delete(`/learning/topics/saved/${selectedTopic.id}`)
       // Refetch instead of filtering locally so the total and page position
       // stay correct when the deleted row was on the current page.
       await loadSavedTopics()
+      if (!mutation.isCurrent()) return
       addToast(t('savedTopics.deleteSuccess'), 'success')
     } catch (deleteError: unknown) {
-      setError(extractError(deleteError, t('savedTopics.deleteFailed')))
+      if (mutation.isCurrent()) {
+        setError(extractError(deleteError, t('savedTopics.deleteFailed')))
+      }
     } finally {
-      setDeleteTopicLoading(false)
-      setDeleteTopicState({ isOpen: false, topic: null })
+      if (mutation.isCurrent()) {
+        setDeleteTopicLoading(false)
+        setDeleteTopicState({ isOpen: false, topic: null })
+      }
     }
   }
 
@@ -275,6 +382,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     event.preventDefault()
     if (!resetPasswordUser) return
 
+    const mutation = beginMutation()
     setResetPasswordLoading(true)
     setError(null)
     try {
@@ -282,14 +390,17 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
         user_id: resetPasswordUser.id,
         new_password: resetPasswordValue,
       })
+      if (!mutation.isCurrent()) return
       setResetPasswordModalOpen(false)
       setResetPasswordValue('')
       setResetPasswordUser(null)
       addToast(t('success.passwordReset'), 'success')
     } catch (resetError: unknown) {
-      setError(extractError(resetError, t('errors.resetPasswordFailed')))
+      if (mutation.isCurrent()) {
+        setError(extractError(resetError, t('errors.resetPasswordFailed')))
+      }
     } finally {
-      setResetPasswordLoading(false)
+      if (mutation.isCurrent()) setResetPasswordLoading(false)
     }
   }
 
@@ -327,7 +438,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-border bg-transparent divide-border">
-              {managedUsers.map(item => (
+              {visibleManagedUsers.map(item => (
                 <tr key={item.id}>
                   <td className="px-6 py-4 text-sm text-foreground">
                     {item.display_name}
@@ -375,7 +486,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
               ))}
             </tbody>
           </table>
-          {managedUsers.length === 0 && (
+          {visibleManagedUsers.length === 0 && (
             <div className="p-6 text-center text-muted-foreground">
               {t(role === 'teacher' ? 'noTeachers' : 'noAdmins')}
             </div>
@@ -403,7 +514,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
             data-testid="saved-topics-search"
             className="w-full max-w-sm rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
           />
-          {savedTopics.length === 0 ? (
+          {visibleSavedTopics.length === 0 ? (
             !savedTopicsError && (
               <div className="glass-panel rounded-xl p-6 text-center text-muted-foreground">
                 {t('savedTopics.empty')}
@@ -422,7 +533,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border bg-transparent">
-                  {savedTopics.map(item => (
+                  {visibleSavedTopics.map(item => (
                     <tr key={item.id}>
                       <td className="px-6 py-4 text-sm font-medium text-foreground">
                         {splitHighlight(item.topic, savedTopicsSearchQuery).map((segment, index) =>

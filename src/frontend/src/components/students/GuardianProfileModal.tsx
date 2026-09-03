@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Save, Sparkles, AlertTriangle, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import api, { extractError } from '../../lib/api';
@@ -36,9 +36,11 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
     const [activeTab, setActiveTab] = useState<Tab>('general');
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
+    const requestRef = useRef(0);
 
     const loadData = useCallback(async () => {
         if (!student) return;
+        const requestId = ++requestRef.current;
         setLoading(true);
         setError(null);
         // Clear any success state left by a previous student: reopening the
@@ -47,14 +49,17 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
         try {
             // Load templates
             const templatesRes = await api.get('/guardian-profiles/templates');
+            if (requestId !== requestRef.current) return;
             setTemplates(templatesRes.data);
 
             // Load existing profile
             try {
                 const profileRes = await api.get(`/guardian-profiles/students/${student.id}`);
+                if (requestId !== requestRef.current) return;
                 setProfile(profileRes.data);
                 setSelectedTemplate(profileRes.data.template_name);
             } catch (error: unknown) {
+                if (requestId !== requestRef.current) return;
                 const status = (error as { response?: { status?: number } }).response?.status;
                 if (status === 404) {
                     // No profile yet, use default
@@ -65,30 +70,50 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                 }
             }
         } catch {
-            setError(t('students:errors.profileLoadFailed'));
+            if (requestId === requestRef.current) {
+                setError(t('students:errors.profileLoadFailed'));
+            }
         } finally {
-            setLoading(false);
+            if (requestId === requestRef.current) {
+                setLoading(false);
+            }
         }
     }, [student, t]);
 
+    const closeModal = useCallback(() => {
+        requestRef.current += 1;
+        setLoading(false);
+        setSuccess(null);
+        onClose();
+    }, [onClose]);
+
     useEffect(() => {
         if (!isOpen || !success) return;
-        const timeoutId = setTimeout(onClose, 1500);
+        const timeoutId = setTimeout(closeModal, 1500);
         return () => clearTimeout(timeoutId);
-    }, [isOpen, onClose, success]);
+    }, [isOpen, closeModal, success]);
 
     useEffect(() => {
-        if (!isOpen && success) setSuccess(null);
-    }, [isOpen, success]);
-
-    useEffect(() => {
-        if (isOpen && student) {
-            loadData();
-        }
+        // Invalidate the previous student's requests before clearing the form,
+        // so a late profile response cannot repopulate this modal.
+        requestRef.current += 1;
+        setLoading(false);
+        setError(null);
+        setSuccess(null);
+        setProfile({});
+        setSelectedTemplate('');
+        setActiveTab('general');
+        if (!isOpen || !student) return;
+        void loadData();
+        return () => {
+            requestRef.current += 1;
+        };
     }, [isOpen, student, loadData]);
 
     const handleSave = async () => {
         if (!student) return;
+        const requestId = ++requestRef.current;
+        const studentId = student.id;
         setLoading(true);
         setError(null);
         setSuccess(null);
@@ -100,22 +125,28 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
             };
 
             if (profile.id) {
-                await api.put(`/guardian-profiles/students/${student.id}`, data);
+                await api.put(`/guardian-profiles/students/${studentId}`, data);
             } else {
-                await api.post(`/guardian-profiles/students/${student.id}`, data);
+                await api.post(`/guardian-profiles/students/${studentId}`, data);
             }
-            setSuccess(t('students:success.saved'));
+            if (requestId === requestRef.current) {
+                setSuccess(t('students:success.saved'));
+            }
         } catch (error: unknown) {
-            setError(extractError(error, t('students:errors.saveFailed')));
+            if (requestId === requestRef.current) {
+                setError(extractError(error, t('students:errors.saveFailed')));
+            }
         } finally {
-            setLoading(false);
+            if (requestId === requestRef.current) {
+                setLoading(false);
+            }
         }
     };
 
     if (!isOpen) return null;
 
     return (
-        <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+        <Dialog open={isOpen} onOpenChange={(open) => { if (!open) closeModal(); }}>
             <DialogContent
                 showCloseButton={false}
                 className="max-w-md p-0 max-h-[90vh] overflow-hidden"
@@ -126,7 +157,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                         <Sparkles className="w-5 h-5 text-indigo-500" />
                         {t('students:guardianProfile')}: {student?.display_name}
                     </DialogTitle>
-                    <button onClick={onClose} className="p-2 hover:bg-muted rounded-full" aria-label={t('common:close')}><X className="w-6 h-6" /></button>
+                    <button onClick={closeModal} className="p-2 hover:bg-muted rounded-full" aria-label={t('common:close')}><X className="w-6 h-6" /></button>
                 </DialogHeader>
 
                 {/* Content */}
@@ -387,7 +418,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                 {/* Footer */}
                 <div className="p-6 border-t border-border flex justify-end gap-3">
                     <button
-                        onClick={onClose}
+                        onClick={closeModal}
                         className="px-4 py-2 text-muted-foreground hover:bg-muted rounded-lg"
                     >
                         {t('students:cancel')}

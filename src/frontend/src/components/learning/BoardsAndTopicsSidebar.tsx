@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
@@ -64,44 +64,60 @@ export function BoardsAndTopicsSidebar({
     const [customTopic, setCustomTopic] = useState('');
     const [customPurpose, setCustomPurpose] = useState('');
     const [savedTopics, setSavedTopics] = useState<SavedTopic[]>([]);
+    const [savedTopicsContextKey, setSavedTopicsContextKey] = useState<string | null>(null);
+    const savedTopicsRequestRef = useRef(0);
 
     const userId = user?.id ?? null;
     const canManageTopics = useMemo(() => user?.user_type === 'teacher' || user?.user_type === 'admin', [user?.user_type]);
+    const savedTopicsContext = `${userId ?? 'anonymous'}:${canManageTopics ? 'manager' : 'viewer'}`;
+    const visibleSavedTopics = useMemo(
+        () => savedTopicsContextKey === savedTopicsContext ? savedTopics : [],
+        [savedTopics, savedTopicsContext, savedTopicsContextKey],
+    );
 
     // When the list mixes several teachers, group the topics under per-teacher
     // headings (avatar + name) — the same rule the topic picker uses. A lone
     // teacher's topics (or the owner's own list) stay flat and uncluttered.
-    const teacherGroups = useMemo(() => groupTopicsByTeacher(savedTopics), [savedTopics]);
+    const teacherGroups = useMemo(() => groupTopicsByTeacher(visibleSavedTopics), [visibleSavedTopics]);
 
     const loadSavedTopics = useCallback(async () => {
         if (!userId) return;
+        const requestId = ++savedTopicsRequestRef.current;
         try {
             const topics = await loadTopicsForUser(userId, canManageTopics);
-            setSavedTopics(topics);
+            if (requestId === savedTopicsRequestRef.current) {
+                setSavedTopics(topics);
+                setSavedTopicsContextKey(savedTopicsContext);
+            }
         } catch {
-            setSavedTopics([]);
+            if (requestId === savedTopicsRequestRef.current) {
+                setSavedTopics([]);
+                setSavedTopicsContextKey(savedTopicsContext);
+            }
         }
-    }, [userId, canManageTopics]);
+    }, [userId, canManageTopics, savedTopicsContext]);
 
     useEffect(() => {
-        let cancelled = false;
+        // The context key hides the previous account's topics immediately;
+        // this generation also invalidates a response from the old account.
+        savedTopicsRequestRef.current += 1;
+        if (!userId) return;
         // Teachers/admins trigger the one-time localStorage migration; students
         // read the topics their roster teachers saved (server-side).
-        void Promise.resolve().then(() => loadSavedTopics()).catch(() => {
-            if (!cancelled) setSavedTopics([]);
-        });
+        void Promise.resolve().then(() => loadSavedTopics());
         return () => {
-            cancelled = true;
+            savedTopicsRequestRef.current += 1;
         };
-    }, [loadSavedTopics]);
+    }, [loadSavedTopics, userId, savedTopicsContext]);
 
     const addSavedTopic = async () => {
+        const actionUserId = user?.id;
         let topicName = customTopic.trim();
         if (topicMode === 'common' && customTopic) {
             topicName = t(`topics.${customTopic}`);
         }
         if (!topicName) return;
-        if (!user?.id) return;
+        if (!actionUserId) return;
 
         let boardName = t('boardNameDefault');
         let boardId: number | undefined;
@@ -116,19 +132,24 @@ export function BoardsAndTopicsSidebar({
         }
 
         try {
-            await addTopicHelper(user.id, {
+            await addTopicHelper(actionUserId, {
                 board: boardName,
                 ...(boardId !== undefined ? { boardId } : {}),
                 topic: topicName,
             });
+            if (useAuthStore.getState().user?.id !== actionUserId) return;
             await loadSavedTopics();
+            if (useAuthStore.getState().user?.id !== actionUserId) return;
             addToast(t('saveTopicSuccess'), 'success');
         } catch (error) {
             // Surface the failure (e.g. the duplicate-topic 409) so the
             // teacher knows the topic was not saved; keep the form intact.
-            addToast(extractError(error, t('saveTopicFailed')), 'error');
+            if (useAuthStore.getState().user?.id === actionUserId) {
+                addToast(extractError(error, t('saveTopicFailed')), 'error');
+            }
             return;
         }
+        if (useAuthStore.getState().user?.id !== actionUserId) return;
         setCustomTopic('');
         setCustomPurpose('');
         setTopicMode('common');
@@ -136,9 +157,11 @@ export function BoardsAndTopicsSidebar({
     };
 
     const removeSavedTopic = async (id: number) => {
-        if (!user?.id) return;
+        const actionUserId = user?.id;
+        if (!actionUserId) return;
         try {
-            await removeTopicHelper(user.id, id);
+            await removeTopicHelper(actionUserId, id);
+            if (useAuthStore.getState().user?.id !== actionUserId) return;
             await loadSavedTopics();
         } catch {
             // Deletion failure leaves the list untouched.
@@ -243,7 +266,7 @@ export function BoardsAndTopicsSidebar({
                         </div>
                     )}
                     <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                        {savedTopics.length === 0 ? (
+                        {visibleSavedTopics.length === 0 ? (
                             <div className="text-sm text-muted-foreground text-center py-4">{t('noSavedTopics')}</div>
                         ) : teacherGroups ? (
                             <>
@@ -299,7 +322,7 @@ export function BoardsAndTopicsSidebar({
                             ))}
                             </>
                         ) : (
-                            savedTopics.map((topic) => (
+                            visibleSavedTopics.map((topic) => (
                                 <div key={topic.id} className="p-3 rounded-lg border border-border bg-background flex items-start gap-2">
                                     <div className="flex-1">
                                         <div className="text-sm font-semibold text-foreground">{topic.topic}</div>
