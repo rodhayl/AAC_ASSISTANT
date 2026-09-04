@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from scripts.audit_arasaac_symbols import audit
+from src import config
 from src.aac_app.models import Symbol
 
 
@@ -12,7 +13,7 @@ def test_audit_accepts_complete_bilingual_catalog(monkeypatch, test_db_session, 
     uploads = tmp_path / "uploads"
     symbol_dir = uploads / "symbols"
     symbol_dir.mkdir(parents=True)
-    monkeypatch.setattr("scripts.audit_arasaac_symbols.config.UPLOADS_DIR", uploads)
+    monkeypatch.setattr(config, "UPLOADS_DIR", uploads)
 
     (symbol_dir / "shared.png").write_bytes(b"png")
     test_db_session.add_all([
@@ -40,7 +41,7 @@ def test_audit_accepts_complete_bilingual_catalog(monkeypatch, test_db_session, 
 
 def test_audit_reports_missing_label_image_and_id_mismatch(monkeypatch, test_db_session, tmp_path):
     uploads = tmp_path / "uploads"
-    monkeypatch.setattr("scripts.audit_arasaac_symbols.config.UPLOADS_DIR", uploads)
+    monkeypatch.setattr(config, "UPLOADS_DIR", uploads)
     test_db_session.add(Symbol(label="hola", language="es", image_path="/uploads/symbols/no.png"))
     test_db_session.commit()
 

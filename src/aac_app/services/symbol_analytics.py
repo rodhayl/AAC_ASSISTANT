@@ -544,14 +544,23 @@ class SymbolAnalytics:
 
             total = sum(counts.values())
             ordered = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+            # Resolve every candidate in one query. The old loop queried the
+            # symbol table once per transition label, turning a user's
+            # history into an N+1 request when many next labels were possible.
+            labels = [next_label.casefold() for next_label, _ in ordered]
+            symbols = (
+                session.query(Symbol)
+                .filter(func.lower(Symbol.label).in_(labels))
+                .order_by(Symbol.id)
+                .all()
+            )
+            symbols_by_label: dict[str, Symbol] = {}
+            for symbol in symbols:
+                symbols_by_label.setdefault(symbol.label.casefold(), symbol)
+
             suggestions: list[dict] = []
             for next_label, count in ordered:
-                symbol = (
-                    session.query(Symbol)
-                    .filter(func.lower(Symbol.label) == next_label.casefold())
-                    .order_by(Symbol.id)
-                    .first()
-                )
+                symbol = symbols_by_label.get(next_label.casefold())
                 if symbol is None:
                     continue
                 suggestions.append(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.metadata
 import re
 import sys
@@ -36,7 +37,15 @@ def missing_development_distributions() -> list[str]:
     return missing
 
 
-def main() -> int:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse command-line options without running the dependency scan."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Check the development dependency group after parsing CLI options."""
+    parse_args(argv)
     missing = missing_development_distributions()
     if missing:
         print("Missing development dependencies: " + ", ".join(missing), file=sys.stderr)

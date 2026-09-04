@@ -93,6 +93,7 @@ def test_run_server_supports_direct_and_module_help_invocation():
         )
         assert result.returncode == 0, result.stderr
         assert "Run the production Uvicorn server" in result.stdout
+        assert "Logging initialized" not in result.stderr
 
 
 def test_server_command_includes_graceful_shutdown_timeout(monkeypatch):

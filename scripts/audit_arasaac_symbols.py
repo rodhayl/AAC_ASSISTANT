@@ -23,14 +23,12 @@ import json
 import sys
 from collections import defaultdict
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src import config  # noqa: E402
-from src.aac_app.db import get_session  # noqa: E402
-from src.aac_app.models import Symbol  # noqa: E402
-from src.aac_app.services.arasaac import ArasaacService  # noqa: E402
-from src.aac_app.services.runtime_translation import normalize_language_code  # noqa: E402
+if TYPE_CHECKING:
+    from src.aac_app.models import Symbol
 
 SUPPORTED_LOCALES = ("es", "en")
 
@@ -71,6 +69,8 @@ def _load_catalog(path: Path) -> dict[str, list[dict]]:
 
 
 async def _fetch_catalogs() -> dict[str, list[dict]]:
+    from src.aac_app.services.arasaac import ArasaacService
+
     service = ArasaacService()
     try:
         return {
@@ -82,6 +82,8 @@ async def _fetch_catalogs() -> dict[str, list[dict]]:
 
 
 def _local_image_exists(image_path: str | None) -> bool:
+    from src import config
+
     if not image_path:
         return False
     if image_path.startswith(("http://", "https://")):
@@ -92,6 +94,10 @@ def _local_image_exists(image_path: str | None) -> bool:
 
 
 def audit(catalogs: dict[str, list[dict]]) -> dict:
+    from src.aac_app.db import get_session
+    from src.aac_app.models import Symbol
+    from src.aac_app.services.runtime_translation import normalize_language_code
+
     catalog_labels = {
         locale: _primary_labels(catalogs[locale]) for locale in SUPPORTED_LOCALES
     }
