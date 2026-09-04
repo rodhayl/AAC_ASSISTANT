@@ -90,9 +90,15 @@ export const useAuthStore = create<AuthState>()(
       };
 
       const clearSession = () => {
+        // Invalidate any in-flight checkAuth publish for the ended session.
+        checkAuthEpoch += 1;
         notifySessionEnd();
         set(emptyAuthState());
       };
+
+      // Monotonic epoch for checkAuth: any newer session change (login,
+      // logout, another checkAuth) invalidates in-flight publishes.
+      let checkAuthEpoch = 0;
 
       return {
         user: null,
@@ -104,6 +110,8 @@ export const useAuthStore = create<AuthState>()(
         sessionExpiresAt: null,
 
       login: async (username: string, password: string) => {
+        // A new session invalidates any in-flight checkAuth fetch.
+        checkAuthEpoch += 1;
         set({ isLoading: true, error: null });
         try {
           // Use OAuth2 token endpoint which returns JWT
@@ -161,6 +169,8 @@ export const useAuthStore = create<AuthState>()(
       },
 
       setupAdmin: async (setupData: AuthSetupData) => {
+        // A new session invalidates any in-flight checkAuth fetch.
+        checkAuthEpoch += 1;
         set({ isLoading: true, error: null });
         try {
           const response = await api.post('/auth/setup', setupData);
@@ -201,6 +211,7 @@ export const useAuthStore = create<AuthState>()(
         // Clear session-scoped feature state synchronously so offline
         // mutations and conflicts cannot leak into the next session, even
         // while the revocation request is still in flight.
+        checkAuthEpoch += 1;
         notifySessionEnd();
         if (token) {
           // Wait for server-side revocation to finish before flipping
@@ -224,14 +235,20 @@ export const useAuthStore = create<AuthState>()(
           clearSession();
           return;
         }
-        
+
+        // Generation guard: a fetch started here must never publish into a
+        // session that changed while the request was in flight (logout, a
+        // new login, or a 401-triggered clear).
+        const requestEpoch = ++checkAuthEpoch;
+        const isCurrentRequest = () => requestEpoch === checkAuthEpoch;
+
         // Decode to check expiration without call
         const payload = decodeJwtPayload(token);
         const now = Date.now() / 1000;
         if (!payload?.exp || payload.exp < now) {
           // The refresh token is the source of truth when access validation fails.
           const refreshed = await refreshAccessToken();
-          if (!refreshed && navigator.onLine !== false) {
+          if (!refreshed && navigator.onLine !== false && isCurrentRequest()) {
             clearSession();
           }
           return;
@@ -241,6 +258,7 @@ export const useAuthStore = create<AuthState>()(
         if (!user && payload.user_id) {
           try {
             const userResponse = await api.get(`/auth/users/${payload.user_id}`);
+            if (!isCurrentRequest()) return;
             const fetchedUser = userResponse.data;
             syncUserPreferences(fetchedUser);
             set({ user: fetchedUser, isAuthenticated: true });
@@ -250,10 +268,12 @@ export const useAuthStore = create<AuthState>()(
             if (apiError.code === 'ERR_OFFLINE' || apiError.message === 'offline') {
               return;
             }
+            if (!isCurrentRequest()) return;
             // If we can't get user details, token might be invalid on server side
             clearSession();
           }
         } else {
+          if (!isCurrentRequest()) return;
           // Sync settings from existing user state
           syncUserPreferences(user);
           set({ isAuthenticated: true });

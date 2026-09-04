@@ -285,4 +285,72 @@ describe('auth session refresh robustness', () => {
       isAuthenticated: true,
     });
   });
+
+  it('does not publish a stale user-details response after the session changes', async () => {
+    // checkAuth starts with a persisted token but no user object, so it must
+    // fetch user details; the fetch is held in flight while a logout (new
+    // epoch) happens, so the late response must not resurrect a session.
+    seedSession(makeJwt(Math.floor(Date.now() / 1000) + 3600));
+    useAuthStore.setState({ user: null });
+
+    let resolveFetch: ((value: { data: typeof user }) => void) | undefined;
+    const getSpy = vi.spyOn(api, 'get').mockImplementation(
+      () => new Promise((resolve) => {
+        resolveFetch = resolve;
+      }) as never,
+    );
+
+    const checkAuthPromise = useAuthStore.getState().checkAuth();
+    expect(getSpy).toHaveBeenCalledTimes(1);
+    expect(resolveFetch).toBeDefined();
+
+    // Session ends while the fetch is in flight.
+    vi.spyOn(api, 'post').mockResolvedValue({ data: { ok: true } } as never);
+    await useAuthStore.getState().logout();
+
+    resolveFetch!({ data: user });
+    await checkAuthPromise;
+
+    expect(useAuthStore.getState()).toMatchObject({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+    });
+    expect(persistedState()).toMatchObject({ user: null, token: null, isAuthenticated: false });
+  });
+
+  it('does not publish a stale user-details response after a newer login wins', async () => {
+    // Same race on the login path: user A's checkAuth must not overwrite
+    // user B's session when it finally resolves.
+    const userA = { ...user, id: 7, username: 'user-a' };
+    const userB = { ...user, id: 8, username: 'user-b' };
+    seedSession(makeJwt(Math.floor(Date.now() / 1000) + 3600, userA.id));
+    useAuthStore.setState({ user: null });
+
+    let resolveStaleFetch: ((value: { data: typeof userA }) => void) | undefined;
+    vi.spyOn(api, 'get').mockImplementation(
+      () => new Promise((resolve) => {
+        resolveStaleFetch = resolve;
+      }) as never,
+    );
+
+    const staleCheck = useAuthStore.getState().checkAuth();
+    expect(resolveStaleFetch).toBeDefined();
+
+    // User B logs in while user A's details fetch is still pending.
+    const tokenB = makeJwt(Math.floor(Date.now() / 1000) + 3600, userB.id);
+    vi.spyOn(api, 'post').mockResolvedValue({
+      data: { access_token: tokenB, refresh_token: 'refresh-b' },
+    } as never);
+    // After login's own fetch resolves with B, the mock is exhausted.
+    vi.spyOn(api, 'get').mockResolvedValue({ data: userB } as never);
+
+    await useAuthStore.getState().login(userB.username, 'password');
+
+    resolveStaleFetch!({ data: userA });
+    await staleCheck;
+
+    expect(useAuthStore.getState().user).toEqual(userB);
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
+  });
 });

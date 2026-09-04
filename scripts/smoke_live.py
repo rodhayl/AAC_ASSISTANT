@@ -19,13 +19,23 @@ What it verifies (the F3 smoke contract):
 - ``GET /api/auth/me`` with the token -> 200 (protected resource)
 
 Usage:
-    uv run python scripts/smoke_live.py
+    uv run python scripts/smoke_live.py [--port PORT] [--keep-tempdir]
+
+Options:
+    --port PORT        Fixed port for the throwaway server. Default: an
+                       ephemeral free port (never the dev port 8086).
+    --keep-tempdir     Keep the throwaway DATA_DIR for debugging instead of
+                       deleting it. The dev database is never touched either
+                       way.
+    -h, --help         Show this message and exit. ``--help`` never starts a
+                       server or touches the filesystem beyond argparse.
 
 Exit code 0 prints ``SMOKE OK``; any failure prints diagnostics and exits 1.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shutil
@@ -106,13 +116,35 @@ def _wait_for(url: str, predicate, timeout: float, what: str) -> str:
     )
 
 
-def main() -> int:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run the AAC Assistant live-server smoke against a throwaway "
+            "SQLite database (the dev database is never used)."
+        ),
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="fixed port for the smoke server (default: ephemeral free port)",
+    )
+    parser.add_argument(
+        "--keep-tempdir",
+        action="store_true",
+        help="keep the throwaway DATA_DIR for debugging (default: delete it)",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
     smoke_dir = tempfile.mkdtemp(prefix="aac_smoke_")
     env = dict(os.environ)
     env["DATA_DIR"] = smoke_dir
     env["DATABASE_NAME"] = PATH_ENV["DATABASE_NAME"]
     env.update(FEATURE_ENV)
-    port = _free_port()
+    port = args.port if args.port is not None else _free_port()
     base_url = f"http://127.0.0.1:{port}"
     log_path = Path(smoke_dir) / "server.log"
     server: subprocess.Popen | None = None
@@ -255,7 +287,10 @@ def main() -> int:
                 server.wait(timeout=10)
         if server is not None:
             log_file = None
-        shutil.rmtree(smoke_dir, ignore_errors=True)
+        if args.keep_tempdir:
+            print(f"tempdir kept for debugging: {smoke_dir}")
+        else:
+            shutil.rmtree(smoke_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
