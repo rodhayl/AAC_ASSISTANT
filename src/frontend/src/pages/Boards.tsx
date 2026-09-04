@@ -6,6 +6,7 @@ import { useBoardStore } from '../store/boardStore';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
 import api from '../lib/api';
+import { walkPages } from '../lib/pagination';
 import { Button } from '../components/ui/button';
 import { IconButton } from '../components/ui/icon-button';
 import {
@@ -60,9 +61,6 @@ export function Boards() {
   const [assignError, setAssignError] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
   const studentsRequestRef = useRef(0);
-  // Hard cap on paginated walks: prevents an infinite request loop if the
-  // endpoint stops shrinking pages.
-  const MAX_WALK_PAGES = 200;
 
   const [deleteBoardId, setDeleteBoardId] = useState<number | null>(null);
   const [selectedBoardIds, setSelectedBoardIds] = useState<Set<number>>(new Set());
@@ -183,39 +181,21 @@ export function Boards() {
     if (!students.length) {
       setStudentsLoading(true);
       try {
-        const loadedStudents: User[] = [];
-        let skip = 0;
-        let pagesFetched = 0;
-        const pageSize = 1000;
-        while (true) {
-          // Guarantee termination even if a backend bug keeps returning full
-          // pages.
-          pagesFetched += 1;
-          if (pagesFetched > MAX_WALK_PAGES) {
-            throw new Error('Pagination did not terminate');
-          }
-          if (
+        const loadedStudents = await walkPages<User>({
+          pageSize: 1000,
+          fetchPage: async (skip) => {
+            const params = {
+              ...(skip > 0 ? { skip } : {}),
+              limit: 1000,
+              user_type: 'student',
+            };
+            const res = await api.get('/auth/users', { params });
+            return res.data as User[];
+          },
+          isCancelled: () =>
             requestId !== studentsRequestRef.current ||
-            studentsContextRef.current !== contextKey
-          ) return;
-          const params = {
-            ...(skip > 0 ? { skip } : {}),
-            limit: pageSize,
-            user_type: 'student',
-          };
-          const res = await api.get('/auth/users', { params });
-          if (
-            requestId !== studentsRequestRef.current ||
-            studentsContextRef.current !== contextKey
-          ) return;
-          const page = res.data as User[];
-          if (!Array.isArray(page)) {
-            throw new Error('Invalid response format: expected array');
-          }
-          loadedStudents.push(...page);
-          if (page.length < pageSize) break;
-          skip += page.length;
-        }
+            studentsContextRef.current !== contextKey,
+        });
         if (
           requestId !== studentsRequestRef.current ||
           studentsContextRef.current !== contextKey

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '../store/authStore'
 import api, { extractError } from '../lib/api'
+import { walkPages } from '../lib/pagination'
 import type { Board, StudentBoardSummary, User, UserPreferences } from '../types'
 import { useTranslation } from 'react-i18next'
 import {
@@ -108,42 +109,23 @@ export function Students() {
   const studentContextRef = useRef(studentContextKey)
   studentContextRef.current = studentContextKey
 
-  // Hard cap on paginated walks: 200 pages x page size is far beyond any
-  // real roster, and prevents an infinite request loop if the endpoint
-  // stops shrinking pages.
-  const MAX_WALK_PAGES = 200
-
   const loadStudents = useCallback(async (rethrow = false) => {
     const requestId = ++studentsLoadRequestRef.current
     setLoading(true)
     setError(null)
     try {
-      const summaries: StudentBoardSummary[] = []
-      let skip = 0
-      let pagesFetched = 0
-      const pageSize = 500
-      while (true) {
-        // Guarantee termination even if a backend bug keeps returning full
-        // pages; silent truncation must stay impossible either way.
-        pagesFetched += 1
-        if (pagesFetched > MAX_WALK_PAGES) {
-          throw new Error('Pagination did not terminate')
-        }
-        if (requestId !== studentsLoadRequestRef.current) return
-        const res = await api.get('/auth/users/student-summaries', {
-          // The endpoint is paginated at 500 rows. Continue until the final
-          // page so large admin rosters are not silently truncated.
-          params: { ...(skip > 0 ? { skip } : {}), limit: pageSize },
-        })
-        const page = res.data as StudentBoardSummary[]
-        if (requestId !== studentsLoadRequestRef.current) return
-        if (!Array.isArray(page)) {
-          throw new Error('Invalid response format: expected array')
-        }
-        summaries.push(...page)
-        if (page.length < pageSize) break
-        skip += page.length
-      }
+      // The endpoint is paginated at 500 rows. Continue until the final
+      // page so large admin rosters are not silently truncated.
+      const summaries = await walkPages<StudentBoardSummary>({
+        pageSize: 500,
+        fetchPage: async (skip) => {
+          const res = await api.get('/auth/users/student-summaries', {
+            params: { ...(skip > 0 ? { skip } : {}), limit: 500 },
+          })
+          return res.data as StudentBoardSummary[]
+        },
+        isCancelled: () => requestId !== studentsLoadRequestRef.current,
+      })
       if (requestId !== studentsLoadRequestRef.current) return
       setStudents(summaries)
       setAssignedBoards(
@@ -208,32 +190,19 @@ export function Students() {
       // Admins may assign any teacher's board, so list everything for them;
       // teachers stay scoped to their own boards. The endpoint is paginated;
       // continue past the first page for large board libraries.
-      const boards: Board[] = []
-      let skip = 0
-      let pagesFetched = 0
-      const pageSize = 1000
-      while (true) {
-        // Same termination guarantee as the roster walk above.
-        pagesFetched += 1
-        if (pagesFetched > MAX_WALK_PAGES) {
-          throw new Error('Pagination did not terminate')
-        }
-        if (requestId !== availableBoardsRequestRef.current) return
-        const params = {
-          ...(skip > 0 ? { skip } : {}),
-          limit: pageSize,
-          ...(user?.user_type === 'admin' ? {} : { user_id: user?.id }),
-        }
-        const res = await api.get('/boards/', { params })
-        if (requestId !== availableBoardsRequestRef.current) return
-        const page = res.data as Board[]
-        if (!Array.isArray(page)) {
-          throw new Error('Invalid response format: expected array')
-        }
-        boards.push(...page)
-        if (page.length < pageSize) break
-        skip += page.length
-      }
+      const boards = await walkPages<Board>({
+        pageSize: 1000,
+        fetchPage: async (skip) => {
+          const params = {
+            ...(skip > 0 ? { skip } : {}),
+            limit: 1000,
+            ...(user?.user_type === 'admin' ? {} : { user_id: user?.id }),
+          }
+          const res = await api.get('/boards/', { params })
+          return res.data as Board[]
+        },
+        isCancelled: () => requestId !== availableBoardsRequestRef.current,
+      })
       if (requestId !== availableBoardsRequestRef.current) return
       setAvailableBoards(boards)
     } catch (e) {

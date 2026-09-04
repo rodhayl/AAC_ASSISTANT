@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '../components/ui/dialog'
 import api, { extractError } from '../lib/api'
+import { walkPages } from '../lib/pagination'
 import type { User } from '../types'
 import { useAuthStore } from '../store/authStore'
 import { useToastStore } from '../store/toastStore'
@@ -119,49 +120,33 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
   const managementContextRef = useRef(managementContextKey)
   managementContextRef.current = managementContextKey
 
-  // Hard cap on paginated walks: prevents an infinite request loop if the
-  // endpoint stops shrinking pages.
-  const MAX_WALK_PAGES = 200
-
   const visibleManagedUsers = managedUsersContextKey === managementContextKey ? managedUsers : []
   const visibleSavedTopics = savedTopicsContextKey === managementContextKey ? savedTopics : []
   const loadUsers = useCallback(async () => {
     const contextKey = managementContextKey
     const requestId = ++managedUsersRequestRef.current
-    const users: User[] = []
-    let skip = 0
-    let pagesFetched = 0
-    const pageSize = 1000
-    while (true) {
-      // Guarantee termination even if a backend bug keeps returning full pages.
-      pagesFetched += 1
-      if (pagesFetched > MAX_WALK_PAGES) {
-        throw new Error('Pagination did not terminate')
-      }
-      if (
+    const users = await walkPages<User>({
+      pageSize: 1000,
+      fetchPage: async (skip) => {
+        if (
+          !mountedRef.current ||
+          requestId !== managedUsersRequestRef.current ||
+          managementContextRef.current !== contextKey
+        ) return []
+        const response = await api.get('/auth/users', {
+          params: {
+            ...(skip > 0 ? { skip } : {}),
+            limit: 1000,
+            user_type: role,
+          },
+        })
+        return response.data as User[]
+      },
+      isCancelled: () =>
         !mountedRef.current ||
         requestId !== managedUsersRequestRef.current ||
-        managementContextRef.current !== contextKey
-      ) return
-      const response = await api.get('/auth/users', {
-        params: {
-          ...(skip > 0 ? { skip } : {}),
-          limit: pageSize,
-          user_type: role,
-        },
-      })
-      if (
-        !mountedRef.current ||
-        requestId !== managedUsersRequestRef.current ||
-        managementContextRef.current !== contextKey
-      ) return
-      if (!Array.isArray(response.data)) {
-        throw new Error('Invalid response format: expected array')
-      }
-      users.push(...(response.data as User[]))
-      if (response.data.length < pageSize) break
-      skip += response.data.length
-    }
+        managementContextRef.current !== contextKey,
+    })
     if (
       !mountedRef.current ||
       requestId !== managedUsersRequestRef.current ||

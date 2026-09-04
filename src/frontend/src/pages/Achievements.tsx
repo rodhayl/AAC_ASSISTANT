@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { Trophy, Star, Lock, CheckCircle, Settings, Plus, Pencil, Trash2, Award, X, Users } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import api, { extractError } from '../lib/api'
+import { walkPages } from '../lib/pagination'
 import type { Achievement, AchievementFull, User } from '../types'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../components/ui/button';
@@ -82,10 +83,6 @@ export function Achievements() {
   const visibleCriteriaTypes = managementContextKey === userContextKey ? criteriaTypes : []
   const isCurrentContext = (contextKey: string) => userContextRef.current === contextKey
 
-  // Hard cap on paginated walks: prevents an infinite request loop if the
-  // endpoint stops shrinking pages.
-  const MAX_WALK_PAGES = 200
-
   const filteredStudents = useMemo(() => {
     const search = studentSearch.trim().toLowerCase()
     if (!search) return visibleStudents
@@ -133,26 +130,17 @@ export function Achievements() {
   }, [t, user?.id, userContextKey])
 
   const loadAllStudents = async (): Promise<User[]> => {
-    const loaded: User[] = []
-    let skip = 0
-    let pagesFetched = 0
-    const pageSize = 500
-    while (true) {
-      // Guarantee termination even if a backend bug keeps returning full pages.
-      pagesFetched += 1
-      if (pagesFetched > MAX_WALK_PAGES) {
-        throw new Error('Pagination did not terminate')
-      }
-      const response = skip === 0
-        ? await api.get('/users/students')
-        : await api.get('/users/students', { params: { skip, limit: pageSize } })
-      if (!Array.isArray(response.data)) {
-        throw new Error('Invalid response format: expected array')
-      }
-      loaded.push(...(response.data as User[]))
-      if (response.data.length < pageSize) return loaded
-      skip += response.data.length
-    }
+    // The endpoint is paginated at 500 rows; walk until the short final page
+    // so large rosters load completely (bounded by walkPages' hard cap).
+    return walkPages<User>({
+      pageSize: 500,
+      fetchPage: async (skip) => {
+        const response = skip === 0
+          ? await api.get('/users/students')
+          : await api.get('/users/students', { params: { skip, limit: 500 } })
+        return response.data as User[]
+      },
+    })
   }
 
   const loadManagementData = useCallback(async () => {

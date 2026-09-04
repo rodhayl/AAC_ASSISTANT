@@ -51,6 +51,42 @@ def test_connection_manager_removes_empty_rooms():
     assert manager.rooms == {}
 
 
+def test_broadcast_removes_failing_socket_and_survives_double_disconnect():
+    """A client that never reads (or whose send fails) is dropped from the
+    room, later clients still receive the fan-out, and a repeated disconnect
+    for the same socket is a harmless no-op (the handler finally-block and
+    the broadcast failure path can both run for one socket)."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    manager = ConnectionManager()
+    board_id = 7
+
+    zombie = MagicMock()
+    zombie.send_json = AsyncMock(side_effect=RuntimeError("backpressure/full"))
+    healthy = MagicMock()
+    healthy.send_json = AsyncMock()
+
+    manager.rooms[board_id] = {zombie, healthy}
+
+    asyncio.run(manager.broadcast(board_id, {"type": "board_change"}))
+
+    healthy.send_json.assert_awaited_once()
+    # The failing socket is gone from the room; the healthy one remains.
+    assert zombie not in manager.rooms[board_id]
+    assert healthy in manager.rooms[board_id]
+
+    # Double disconnect: the handler's finally block runs after the broadcast
+    # already removed the socket; this must not raise or disturb the room.
+    manager.disconnect(board_id, zombie)
+    assert manager.rooms[board_id] == {healthy}
+
+    # A subsequent broadcast reaches only the healthy socket.
+    healthy.send_json.reset_mock()
+    asyncio.run(manager.broadcast(board_id, {"type": "board_change"}))
+    healthy.send_json.assert_awaited_once()
+
+
 def test_collab_ws_block_social_messaging(test_db_session, test_password, collab_client):
     """A student whose policy locks social messaging never sees collab
     broadcasts carrying labels; the payload is dropped at the gate."""
