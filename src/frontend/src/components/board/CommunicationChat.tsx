@@ -34,7 +34,9 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
   const skipInitialSpeech = useLearningStore((state) => state.skipInitialSpeech);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const initAttempted = useRef(false);
+  const sessionContextRef = useRef<string | null>(null);
   const topic = boardName.trim() || t('topics.general');
+  const sessionContext = `${user?.id ?? 'anonymous'}:${boardId ?? 'none'}:${topic}`;
   const defaultLearningModeKey = user?.settings?.default_learning_mode || 'practice';
 
   const resolveAssistantText = useCallback((raw: string) => {
@@ -52,6 +54,16 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // A chat instance can stay mounted while the board or authenticated user
+  // changes. Reset the one-shot guard for the new context; otherwise a failed
+  // attempt on the previous board suppresses the new board's initialization.
+  useEffect(() => {
+    if (sessionContextRef.current !== sessionContext) {
+      sessionContextRef.current = sessionContext;
+      initAttempted.current = false;
+    }
+  }, [sessionContext]);
 
   // Auto-start session if none exists. A failed attempt resets the guard so a
   // later state change (e.g. the user opening the chat again) retries instead

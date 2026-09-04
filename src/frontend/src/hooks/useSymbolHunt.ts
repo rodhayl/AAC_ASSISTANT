@@ -32,6 +32,10 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
     timersRef.current = [];
   }, []);
 
+  const invalidateGeneration = useCallback(() => {
+    gameGenerationRef.current += 1;
+  }, []);
+
   const schedule = useCallback((callback: () => void, delay: number) => {
     const timer = setTimeout(() => {
       timersRef.current = timersRef.current.filter((current) => current !== timer);
@@ -56,8 +60,23 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
   );
 
   useEffect(() => {
-    if (!user?.id) return;
+    const requestGeneration = ++gameGenerationRef.current;
     let cancelled = false;
+    clearTimers();
+    setBoards([]);
+    setSelectedBoard(null);
+    setSymbols([]);
+    setTargetSymbol(null);
+    setFeedback(null);
+    setIncorrectSymbolId(null);
+    setRound(0);
+    setScore(0);
+    setGameState('selecting');
+
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
 
     const fetchBoards = async () => {
       try {
@@ -78,20 +97,23 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
           }
         }
 
-        if (cancelled) return;
+        if (cancelled || requestGeneration !== gameGenerationRef.current) return;
         setBoards(Array.from(new Map(allBoards.map((board) => [board.id, board])).values()));
       } catch (error) {
-        if (!cancelled) console.error('Failed to fetch boards:', error);
+        if (!cancelled && requestGeneration === gameGenerationRef.current) {
+          console.error('Failed to fetch boards:', error);
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && requestGeneration === gameGenerationRef.current) setLoading(false);
       }
     };
 
     void fetchBoards();
     return () => {
       cancelled = true;
+      invalidateGeneration();
     };
-  }, [user?.id, user?.user_type]);
+  }, [clearTimers, invalidateGeneration, user?.id, user?.user_type]);
 
   const nextRound = useCallback((currentSymbols: BoardSymbol[]) => {
     clearTimers();
@@ -203,28 +225,28 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
   }, [t, targetSymbol, user?.settings?.voice_mode_enabled]);
 
   const playAgain = useCallback(() => {
-    ++gameGenerationRef.current;
+    invalidateGeneration();
     clearTimers();
     setGameState('playing');
     setScore(0);
     setRound(1);
     nextRound(symbols);
-  }, [clearTimers, nextRound, symbols]);
+  }, [clearTimers, invalidateGeneration, nextRound, symbols]);
 
   const changeGameState = useCallback((nextState: 'selecting' | 'playing' | 'finished') => {
     if (nextState === 'selecting') {
-      ++gameGenerationRef.current;
+      invalidateGeneration();
       clearTimers();
     }
     setGameState(nextState);
-  }, [clearTimers]);
+  }, [clearTimers, invalidateGeneration]);
 
   useEffect(() => () => {
-    ++gameGenerationRef.current;
+    invalidateGeneration();
     clearTimers();
     // Stop any queued/playing instruction audio when leaving the page.
     tts.cancelAll();
-  }, [clearTimers]);
+  }, [clearTimers, invalidateGeneration]);
 
   return {
     boards,

@@ -63,6 +63,19 @@ export function Learning() {
   const currentLang = i18n.language?.split('-')[0] || 'en';
   const modeTranslationRef = useRef(t);
   modeTranslationRef.current = t;
+  const modesRequestRef = useRef(0);
+  const voicePreferenceRequestRef = useRef(0);
+  const invalidateVoicePreference = useCallback(() => {
+    voicePreferenceRequestRef.current += 1;
+  }, []);
+  const activeUserIdRef = useRef<number | null>(null);
+  const modesContextRef = useRef(`${user?.id ?? 'anonymous'}:${currentLang}`);
+  const previousUserIdRef = useRef<number | null>(user?.id ?? null);
+  activeUserIdRef.current = user?.id ?? null;
+  const modesContext = `${user?.id ?? 'anonymous'}:${currentLang}`;
+  // Update synchronously during render so a response that resolves between a
+  // context-changing render and its passive effects is still rejected.
+  modesContextRef.current = modesContext;
   const symbolLanguage = currentLang === 'es' ? 'es' : 'en';
 
   const [input, setInput] = useState('');
@@ -138,18 +151,22 @@ export function Learning() {
   }, []);
 
   useEffect(() => {
-    if (user?.settings?.voice_mode_enabled !== undefined) {
-      setVoiceEnabled(user.settings.voice_mode_enabled);
-    }
-  }, [user?.settings?.voice_mode_enabled]);
+    setVoiceEnabled(user?.settings?.voice_mode_enabled ?? true);
+  }, [user?.id, user?.settings?.voice_mode_enabled]);
 
   const loadAvailableModes = useCallback(async (preferredModeKey?: string) => {
     if (!user?.id) return;
+    const requestId = ++modesRequestRef.current;
+    const requestContext = modesContext;
     try {
       // System modes (created_by null) keep the seeded English name in the
       // DB; translate by key so the dropdown matches the UI language.
       // Custom teacher modes always show their stored name.
       const response = await api.get<LearningMode[]>('/learning-modes/');
+      if (
+        requestId !== modesRequestRef.current ||
+        modesContextRef.current !== requestContext
+      ) return;
       const modes = response.data.map((mode) => ({
         ...mode,
         name: mode.created_by == null
@@ -171,9 +188,34 @@ export function Learning() {
         return modes[0]?.key || configuredModeKey;
       });
     } catch (fetchError) {
-      console.error('Failed to fetch learning modes', fetchError);
+      if (
+        requestId === modesRequestRef.current &&
+        modesContextRef.current === requestContext
+      ) {
+        console.error('Failed to fetch learning modes', fetchError);
+      }
     }
-  }, [currentLang, defaultLearningModeKey, user?.id]);
+  }, [currentLang, defaultLearningModeKey, modesContext, user?.id]);
+
+  useEffect(() => {
+    modesRequestRef.current += 1;
+    if (previousUserIdRef.current !== user?.id) {
+      previousUserIdRef.current = user?.id ?? null;
+      invalidateVoicePreference();
+      setInput('');
+      setSymbolUtterance([]);
+      setEditingMessageIndex(null);
+      setShowHistory(false);
+      setSessionStartError(null);
+      setProviderNotice(null);
+      setAvailableModes([]);
+    }
+    return () => {
+      // Invalidate a preference response when this page unmounts during
+      // logout, including the same account logging in again later.
+      invalidateVoicePreference();
+    };
+  }, [currentLang, invalidateVoicePreference, user?.id]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -256,11 +298,17 @@ export function Learning() {
     const next = !voiceEnabled;
     setVoiceEnabled(next);
     if (!user) return;
+    const requestId = ++voicePreferenceRequestRef.current;
+    const requestUserId = user.id;
     api
       .put('/auth/preferences', { voice_mode_enabled: next })
       .then((response) => {
+        if (
+          requestId !== voicePreferenceRequestRef.current ||
+          activeUserIdRef.current !== requestUserId
+        ) return;
         useAuthStore.setState((state) => {
-          if (!state.user) return state;
+          if (!state.user || state.user.id !== requestUserId) return state;
           return {
             user: {
               ...state.user,
@@ -270,6 +318,10 @@ export function Learning() {
         });
       })
       .catch(() => {
+        if (
+          requestId !== voicePreferenceRequestRef.current ||
+          activeUserIdRef.current !== requestUserId
+        ) return;
         setVoiceEnabled(!next);
         addToast(t('learning:voiceSaveFailed'), 'error');
       });

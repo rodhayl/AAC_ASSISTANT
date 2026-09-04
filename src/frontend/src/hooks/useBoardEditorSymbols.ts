@@ -5,14 +5,40 @@ import { mergeBoardSymbols, type BoardSymbolOverrides } from '../pages/boardEdit
 
 interface UseBoardEditorSymbolsOptions {
   currentBoard: Board | null;
+  userId?: number | null;
 }
 
-export function useBoardEditorSymbols({ currentBoard }: UseBoardEditorSymbolsOptions) {
-  const [symbolOverridesByBoard, setSymbolOverridesByBoard] = useState<Record<number, BoardSymbolOverrides>>({});
-  const [activeSymbol, setActiveSymbol] = useState<BoardSymbol | null>(null);
-  const [editingSymbol, setEditingSymbol] = useState<BoardSymbol | null>(null);
-  const [hasChanges, setHasChanges] = useState(false);
-  const symbolOverrides = currentBoard ? symbolOverridesByBoard[currentBoard.id] : undefined;
+export function useBoardEditorSymbols({ currentBoard, userId }: UseBoardEditorSymbolsOptions) {
+  const [symbolOverridesByContext, setSymbolOverridesByContext] = useState<Record<string, BoardSymbolOverrides>>({});
+  const [activeSymbolByContext, setActiveSymbolByContext] = useState<Record<string, BoardSymbol | null>>({});
+  const [editingSymbolByContext, setEditingSymbolByContext] = useState<Record<string, BoardSymbol | null>>({});
+  const [hasChangesByContext, setHasChangesByContext] = useState<Record<string, boolean>>({});
+  const contextKey = currentBoard ? `${userId ?? 'anonymous'}:${currentBoard.id}` : null;
+  const activeSymbol = contextKey ? activeSymbolByContext[contextKey] ?? null : null;
+  const editingSymbol = contextKey ? editingSymbolByContext[contextKey] ?? null : null;
+  const hasChanges = contextKey !== null && Boolean(hasChangesByContext[contextKey]);
+  const symbolOverrides = contextKey ? symbolOverridesByContext[contextKey] : undefined;
+
+  const setActiveSymbol = useCallback((symbol: BoardSymbol | null) => {
+    if (!contextKey) return;
+    setActiveSymbolByContext((previous) => ({ ...previous, [contextKey]: symbol }));
+  }, [contextKey]);
+
+  const setEditingSymbol = useCallback((symbol: BoardSymbol | null) => {
+    if (!contextKey) return;
+    setEditingSymbolByContext((previous) => ({ ...previous, [contextKey]: symbol }));
+  }, [contextKey]);
+
+  const setHasChanges = useCallback((value: boolean) => {
+    if (contextKey === null) return;
+    setHasChangesByContext((previous) => {
+      if (value === Boolean(previous[contextKey])) return previous;
+      const next = { ...previous };
+      if (value) next[contextKey] = true;
+      else delete next[contextKey];
+      return next;
+    });
+  }, [contextKey]);
 
   const localSymbols = useMemo(
     () => currentBoard ? mergeBoardSymbols(currentBoard.symbols, symbolOverrides ?? {}) : [],
@@ -20,18 +46,18 @@ export function useBoardEditorSymbols({ currentBoard }: UseBoardEditorSymbolsOpt
   );
 
   const updateSymbolOverride = useCallback((symbolId: number, updates: Partial<BoardSymbol>) => {
-    if (!currentBoard) return;
-    setSymbolOverridesByBoard((previous) => ({
+    if (!contextKey) return;
+    setSymbolOverridesByContext((previous) => ({
       ...previous,
-      [currentBoard.id]: {
-        ...(previous[currentBoard.id] ?? {}),
+      [contextKey]: {
+        ...(previous[contextKey] ?? {}),
         [symbolId]: {
-          ...(previous[currentBoard.id]?.[symbolId] ?? {}),
+          ...(previous[contextKey]?.[symbolId] ?? {}),
           ...updates,
         },
       },
     }));
-  }, [currentBoard]);
+  }, [contextKey]);
 
   const handleRemoteMove = useCallback((symbolId: number, position: BoardPosition) => {
     updateSymbolOverride(symbolId, { position_x: position.x, position_y: position.y });
@@ -39,7 +65,7 @@ export function useBoardEditorSymbols({ currentBoard }: UseBoardEditorSymbolsOpt
 
   const handleDragStart = useCallback((symbol: BoardSymbol) => {
     setActiveSymbol(symbol);
-  }, []);
+  }, [setActiveSymbol]);
 
   const handleDragEnd = useCallback((
     symbolId: number | undefined,
@@ -66,23 +92,24 @@ export function useBoardEditorSymbols({ currentBoard }: UseBoardEditorSymbolsOpt
       sendMove(symbolId, position);
     }
     setActiveSymbol(null);
-  }, [localSymbols, updateSymbolOverride]);
+  }, [localSymbols, setActiveSymbol, setHasChanges, updateSymbolOverride]);
 
   const handleUpdateSymbol = useCallback((updates: Partial<BoardSymbol>) => {
     if (!editingSymbol) return;
     updateSymbolOverride(editingSymbol.id, updates);
     setHasChanges(true);
     setEditingSymbol(null);
-  }, [editingSymbol, updateSymbolOverride]);
+  }, [editingSymbol, setEditingSymbol, setHasChanges, updateSymbolOverride]);
 
   const clearOverrides = useCallback(() => {
-    if (!currentBoard) return;
-    setSymbolOverridesByBoard((previous) => {
+    if (!contextKey) return;
+    setSymbolOverridesByContext((previous) => {
       const next = { ...previous };
-      delete next[currentBoard.id];
+      delete next[contextKey];
       return next;
     });
-  }, [currentBoard]);
+    setHasChanges(false);
+  }, [contextKey, setHasChanges]);
 
   return {
     localSymbols,

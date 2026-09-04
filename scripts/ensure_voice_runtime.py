@@ -8,6 +8,11 @@ the first spoken panel never triggers a network download or a browser fallback.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
+
+# Make direct execution work from the repository root:
+# ``uv run python scripts/ensure_voice_runtime.py``.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.aac_app.providers.local_speech_provider import is_faster_whisper_available
 from src.aac_app.providers.local_tts_provider import (

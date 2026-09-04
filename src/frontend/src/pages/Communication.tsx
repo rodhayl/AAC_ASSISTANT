@@ -82,18 +82,42 @@ export function Communication() {
   } = useTopicPickerPool();
 
   useEffect(() => {
-    if (user?.settings?.voice_mode_enabled !== undefined) {
-      setVoiceEnabled(user.settings.voice_mode_enabled);
-    }
-  }, [user?.settings?.voice_mode_enabled]);
+    setVoiceEnabled(user?.settings?.voice_mode_enabled ?? true);
+  }, [user?.id, user?.settings?.voice_mode_enabled]);
   const [history, setHistory] = useState<number[]>([]);
   const addToast = useToastStore((state) => state.addToast);
   const [isStartingSession, setIsStartingSession] = useState(false);
   const lastClickRef = useRef<{ id: number; time: number } | null>(null);
+  const voicePreferenceRequestRef = useRef(0);
+  const invalidateVoicePreference = useCallback(() => {
+    voicePreferenceRequestRef.current += 1;
+  }, []);
+  const activeUserIdRef = useRef<number | null>(null);
+  const previousUserIdRef = useRef<number | null>(user?.id ?? null);
+  activeUserIdRef.current = user?.id ?? null;
   // Tracks the board id already mirrored into the URL so the effect below
   // does not re-fetch the board when setSearchParams re-renders with the same
   // value (previously every board open fetched twice).
   const syncedBoardIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (previousUserIdRef.current !== (user?.id ?? null)) {
+      previousUserIdRef.current = user?.id ?? null;
+      invalidateVoicePreference();
+      syncedBoardIdRef.current = null;
+      setActiveBoardId(null);
+      setHistory([]);
+      setSentence([]);
+      setBoardlessTopic(null);
+      setIsChatOpen(false);
+    }
+    return () => {
+      // A page can unmount during logout while the preference request is
+      // still pending. Invalidate that request before a later login reuses
+      // this module's auth store.
+      invalidateVoicePreference();
+    };
+  }, [invalidateVoicePreference, user?.id]);
 
   // Communication sessions belong to the active board. Do not reuse a
   // learning session from another board (or from the Learning page), because
@@ -110,6 +134,12 @@ export function Communication() {
     if (!user) return;
 
     setIsStartingSession(true);
+    if (boardId) {
+      // Change the visible board before the session response arrives. The
+      // board/session consistency effect otherwise sees the new session while
+      // the old board is still active and resets the just-created session.
+      setActiveBoardId(boardId);
+    }
 
     try {
       await startSession({
@@ -120,10 +150,6 @@ export function Communication() {
         mode_key: defaultLearningModeKey,
       }, user.id);
       addToast(t('common:sessionStarted'), 'success');
-      // If a board was selected, we might want to switch to it?
-      if (boardId) {
-        setActiveBoardId(boardId);
-      }
     } catch (err) {
       console.error("Failed to start session", err);
       addToast(t('common:sessionStartFailed'), 'error');
@@ -411,11 +437,17 @@ export function Communication() {
     const next = !voiceEnabled;
     setVoiceEnabled(next);
     if (!user) return;
+    const requestId = ++voicePreferenceRequestRef.current;
+    const requestUserId = user.id;
     api
       .put('/auth/preferences', { voice_mode_enabled: next })
       .then((response) => {
+        if (
+          requestId !== voicePreferenceRequestRef.current ||
+          activeUserIdRef.current !== requestUserId
+        ) return;
         useAuthStore.setState((state) => {
-          if (!state.user) return state;
+          if (!state.user || state.user.id !== requestUserId) return state;
           return {
             user: {
               ...state.user,
@@ -425,6 +457,10 @@ export function Communication() {
         });
       })
       .catch(() => {
+        if (
+          requestId !== voicePreferenceRequestRef.current ||
+          activeUserIdRef.current !== requestUserId
+        ) return;
         setVoiceEnabled(!next);
         addToast(t('common:voiceSaveFailed'), 'error');
       });
