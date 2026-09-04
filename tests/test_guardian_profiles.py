@@ -399,6 +399,88 @@ class TestProfileCRUD:
         )
         assert response.status_code == 409
 
+    def test_create_profile_unique_race_returns_409(self, test_password):
+        """A create-vs-create race lost at the DB maps to 409, not 500."""
+        teacher = create_user("teacher_race1", "teacher", test_password)
+        student = create_user(
+            "student_race1", "student", test_password,
+            assigned_teacher_id=teacher["id"],
+        )
+
+        from unittest.mock import patch
+
+        from sqlalchemy.exc import IntegrityError
+
+        from src.aac_app.services.guardian_profile_service import (
+            get_guardian_profile_service,
+        )
+
+        service = get_guardian_profile_service()
+        with patch.object(
+            service,
+            "update_profile",
+            side_effect=IntegrityError(
+                "INSERT INTO guardian_profiles",
+                None,
+                Exception("UNIQUE constraint failed: guardian_profiles.user_id"),
+            ),
+        ):
+            response = client.post(
+                f"/api/guardian-profiles/students/{student['id']}",
+                json={"template_name": "default"},
+                headers=get_auth_header(teacher["id"]),
+            )
+
+        assert response.status_code == 409
+
+    def test_update_profile_unique_race_retries_as_update(self, test_password):
+        """An update that loses a concurrent create retries against the winner."""
+        teacher = create_user("teacher_race2", "teacher", test_password)
+        student = create_user(
+            "student_race2", "student", test_password,
+            assigned_teacher_id=teacher["id"],
+        )
+
+        created = client.post(
+            f"/api/guardian-profiles/students/{student['id']}",
+            json={"template_name": "default", "age": 7},
+            headers=get_auth_header(teacher["id"]),
+        )
+        assert created.status_code == 200
+
+        from unittest.mock import patch
+
+        from sqlalchemy.exc import IntegrityError
+
+        from src.aac_app.services.guardian_profile_service import (
+            get_guardian_profile_service,
+        )
+
+        service = get_guardian_profile_service()
+        real_update = type(service).update_profile
+        attempts = {"count": 0}
+
+        def flaky_update(profile_self, **kwargs):
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise IntegrityError(
+                    "INSERT INTO guardian_profiles",
+                    None,
+                    Exception("UNIQUE constraint failed: guardian_profiles.user_id"),
+                )
+            return real_update(profile_self, **kwargs)
+
+        with patch.object(type(service), "update_profile", flaky_update):
+            response = client.put(
+                f"/api/guardian-profiles/students/{student['id']}",
+                json={"age": 9},
+                headers=get_auth_header(teacher["id"]),
+            )
+
+        assert response.status_code == 200
+        assert attempts["count"] == 2
+        assert response.json()["age"] == 9
+
     def test_get_profile(self, test_password):
         """Should retrieve an existing profile."""
         teacher = create_user("teacher_c3", "teacher", test_password)

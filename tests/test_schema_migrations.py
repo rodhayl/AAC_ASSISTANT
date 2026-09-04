@@ -342,3 +342,86 @@ def test_schema_ensure_adds_targeted_indexes_to_current_schema():
             "ended_at",
         ]
     engine.dispose()
+
+
+def test_schema_ensure_dedup_is_idempotent_across_restarts(tmp_path):
+    """Duplicate-cleanup runs once; every subsequent ensure() is a no-op."""
+    db_path = tmp_path / "legacy.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE board_assignments ("
+                "id INTEGER PRIMARY KEY, board_id INTEGER NOT NULL, "
+                "student_id INTEGER NOT NULL, assigned_by INTEGER, created_at DATETIME)"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE TABLE student_teachers ("
+                "id INTEGER PRIMARY KEY, student_id INTEGER NOT NULL, "
+                "teacher_id INTEGER NOT NULL, created_at DATETIME)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO board_assignments (id, board_id, student_id, assigned_by) VALUES "
+                "(1, 10, 20, 30), (2, 10, 20, 31), (3, 10, 20, 32), (4, 11, 21, 30)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO student_teachers (id, student_id, teacher_id) VALUES "
+                "(1, 20, 30), (2, 20, 30), (3, 21, 31)"
+            )
+        )
+
+    # First upgrade: collapse duplicates and enforce the invariants.
+    schema.ensure(engine)
+
+    # Second upgrade in the same process and a third one through a fresh
+    # engine (the restart path) must both be silent no-ops.
+    schema.ensure(engine)
+    engine.dispose()
+
+    restarted = create_engine(f"sqlite:///{db_path}")
+    schema.ensure(restarted)
+
+    with restarted.connect() as connection:
+        assignments = connection.execute(
+            text(
+                "SELECT id, board_id, student_id, assigned_by "
+                "FROM board_assignments ORDER BY id"
+            )
+        ).fetchall()
+        rosters = connection.execute(
+            text(
+                "SELECT id, student_id, teacher_id "
+                "FROM student_teachers ORDER BY id"
+            )
+        ).fetchall()
+        assignment_indexes = {
+            row[1]
+            for row in connection.execute(
+                text('PRAGMA index_list("board_assignments")')
+            )
+        }
+        roster_indexes = {
+            row[1]
+            for row in connection.execute(
+                text('PRAGMA index_list("student_teachers")')
+            )
+        }
+
+    assert assignments == [(1, 10, 20, 30), (4, 11, 21, 30)]
+    assert rosters == [(1, 20, 30), (3, 21, 31)]
+    assert {
+        "uq_board_assignments_board_student",
+        "ix_board_assignments_student_board",
+    } <= assignment_indexes
+    assert {
+        "uq_student_teachers_student_teacher",
+        "ix_student_teachers_student_teacher",
+        "ix_student_teachers_teacher_student",
+    } <= roster_indexes
+    restarted.dispose()

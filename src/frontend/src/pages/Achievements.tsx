@@ -82,6 +82,10 @@ export function Achievements() {
   const visibleCriteriaTypes = managementContextKey === userContextKey ? criteriaTypes : []
   const isCurrentContext = (contextKey: string) => userContextRef.current === contextKey
 
+  // Hard cap on paginated walks: prevents an infinite request loop if the
+  // endpoint stops shrinking pages.
+  const MAX_WALK_PAGES = 200
+
   const filteredStudents = useMemo(() => {
     const search = studentSearch.trim().toLowerCase()
     if (!search) return visibleStudents
@@ -131,8 +135,14 @@ export function Achievements() {
   const loadAllStudents = async (): Promise<User[]> => {
     const loaded: User[] = []
     let skip = 0
+    let pagesFetched = 0
     const pageSize = 500
     while (true) {
+      // Guarantee termination even if a backend bug keeps returning full pages.
+      pagesFetched += 1
+      if (pagesFetched > MAX_WALK_PAGES) {
+        throw new Error('Pagination did not terminate')
+      }
       const response = skip === 0
         ? await api.get('/users/students')
         : await api.get('/users/students', { params: { skip, limit: pageSize } })
@@ -160,25 +170,32 @@ export function Achievements() {
     const results = await Promise.allSettled(requests)
     if (requestId !== managementRequestRef.current || !isCurrentContext(contextKey)) return
 
+    // Shape failures are treated like request failures (not thrown) so the
+    // `void loadManagementData()` call sites never get an unhandled
+    // rejection and no partial data publishes with a silent error.
+    let shapeFailure = false
     const [achievementsResult, studentsResult, categoriesResult, criteriaTypesResult] = results
     if (achievementsResult.status === 'fulfilled') {
       if (!Array.isArray(achievementsResult.value.data)) {
-        throw new Error('Invalid response format: expected array')
+        shapeFailure = true
+      } else {
+        setAllAchievements(achievementsResult.value.data)
       }
-      setAllAchievements(achievementsResult.value.data)
     }
     if (studentsResult.status === 'fulfilled') setStudents(studentsResult.value.data)
     if (categoriesResult.status === 'fulfilled') {
       if (!Array.isArray(categoriesResult.value.data)) {
-        throw new Error('Invalid response format: expected array')
+        shapeFailure = true
+      } else {
+        setCategories(categoriesResult.value.data)
       }
-      setCategories(categoriesResult.value.data)
     }
     if (criteriaTypesResult.status === 'fulfilled') {
       if (!Array.isArray(criteriaTypesResult.value.data)) {
-        throw new Error('Invalid response format: expected array')
+        shapeFailure = true
+      } else {
+        setCriteriaTypes(criteriaTypesResult.value.data)
       }
-      setCriteriaTypes(criteriaTypesResult.value.data)
     }
     setManagementContextKey(contextKey)
 
@@ -186,6 +203,9 @@ export function Achievements() {
     if (failed?.status === 'rejected') {
       const failedIndex = results.indexOf(failed)
       console.error(`Failed to load ${labels[failedIndex]}`, failed.reason)
+      setError(t('errors.managementLoadFailed'))
+    } else if (shapeFailure) {
+      console.error('Achievement management response had an unexpected shape')
       setError(t('errors.managementLoadFailed'))
     }
   }, [t, userContextKey])

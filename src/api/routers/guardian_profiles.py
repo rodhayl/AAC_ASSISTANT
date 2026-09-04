@@ -15,6 +15,7 @@ The guardian profile system allows teachers/admins to:
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from loguru import logger
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import ContentSafetyEvent, User
@@ -272,18 +273,29 @@ def create_student_profile(
     if profile_data.private_notes:
         changes["private_notes"] = profile_data.private_notes
 
-    profile = guardian_service.update_profile(
-        student_id=student_id,
-        updated_by=current_user.id,
-        changes=changes,
-        change_reason="Initial profile creation",
-        db=db,
-    )
+    try:
+        profile = guardian_service.update_profile(
+            student_id=student_id,
+            updated_by=current_user.id,
+            changes=changes,
+            change_reason="Initial profile creation",
+            db=db,
+        )
 
-    # Commit before responding: the request dependency's teardown commit runs
-    # after the response is sent, and the UI re-fetches the profile list
-    # immediately after this create.
-    db.commit()
+        # Commit before responding: the request dependency's teardown commit runs
+        # after the response is sent, and the UI re-fetches the profile list
+        # immediately after this create.
+        db.commit()
+    except IntegrityError:
+        # Two concurrent creates can both pass the existence check above and
+        # race on the guardian_profiles.user_id unique constraint. The check
+        # is not sufficient under concurrency; let the database invariant
+        # arbitrate and report the same conflict the pre-check produces.
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=get_text(user=current_user, key="errors.guardian.profileExists"),
+        )
 
     logger.info(
         f"Guardian profile created for student {student_id} by {current_user.username}"
@@ -358,17 +370,32 @@ def update_student_profile(
             detail=get_text(user=current_user, key="errors.guardian.noChanges"),
         )
 
-    profile = guardian_service.update_profile(
-        student_id=student_id,
-        updated_by=current_user.id,
-        changes=changes,
-        change_reason=profile_data.change_reason,
-        db=db,
-    )
+    try:
+        profile = guardian_service.update_profile(
+            student_id=student_id,
+            updated_by=current_user.id,
+            changes=changes,
+            change_reason=profile_data.change_reason,
+            db=db,
+        )
 
-    # Commit before responding so the updated profile is durable for the
-    # immediate list/read requests that follow this save.
-    db.commit()
+        # Commit before responding so the updated profile is durable for the
+        # immediate list/read requests that follow this save.
+        db.commit()
+    except IntegrityError:
+        # A concurrent create may win the guardian_profiles.user_id unique
+        # constraint while this update is in flight. Roll back the losing
+        # transaction and retry once: the profile now exists, so the same
+        # changes apply as a plain update.
+        db.rollback()
+        profile = guardian_service.update_profile(
+            student_id=student_id,
+            updated_by=current_user.id,
+            changes=changes,
+            change_reason=profile_data.change_reason,
+            db=db,
+        )
+        db.commit()
 
     logger.info(
         f"Guardian profile updated for student {student_id} by {current_user.username}"

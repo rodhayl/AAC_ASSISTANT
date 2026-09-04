@@ -119,6 +119,10 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
   const managementContextRef = useRef(managementContextKey)
   managementContextRef.current = managementContextKey
 
+  // Hard cap on paginated walks: prevents an infinite request loop if the
+  // endpoint stops shrinking pages.
+  const MAX_WALK_PAGES = 200
+
   const visibleManagedUsers = managedUsersContextKey === managementContextKey ? managedUsers : []
   const visibleSavedTopics = savedTopicsContextKey === managementContextKey ? savedTopics : []
   const loadUsers = useCallback(async () => {
@@ -126,8 +130,14 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
     const requestId = ++managedUsersRequestRef.current
     const users: User[] = []
     let skip = 0
+    let pagesFetched = 0
     const pageSize = 1000
     while (true) {
+      // Guarantee termination even if a backend bug keeps returning full pages.
+      pagesFetched += 1
+      if (pagesFetched > MAX_WALK_PAGES) {
+        throw new Error('Pagination did not terminate')
+      }
       if (
         !mountedRef.current ||
         requestId !== managedUsersRequestRef.current ||

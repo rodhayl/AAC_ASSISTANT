@@ -108,6 +108,11 @@ export function Students() {
   const studentContextRef = useRef(studentContextKey)
   studentContextRef.current = studentContextKey
 
+  // Hard cap on paginated walks: 200 pages x page size is far beyond any
+  // real roster, and prevents an infinite request loop if the endpoint
+  // stops shrinking pages.
+  const MAX_WALK_PAGES = 200
+
   const loadStudents = useCallback(async (rethrow = false) => {
     const requestId = ++studentsLoadRequestRef.current
     setLoading(true)
@@ -115,8 +120,15 @@ export function Students() {
     try {
       const summaries: StudentBoardSummary[] = []
       let skip = 0
+      let pagesFetched = 0
       const pageSize = 500
       while (true) {
+        // Guarantee termination even if a backend bug keeps returning full
+        // pages; silent truncation must stay impossible either way.
+        pagesFetched += 1
+        if (pagesFetched > MAX_WALK_PAGES) {
+          throw new Error('Pagination did not terminate')
+        }
         if (requestId !== studentsLoadRequestRef.current) return
         const res = await api.get('/auth/users/student-summaries', {
           // The endpoint is paginated at 500 rows. Continue until the final
@@ -198,8 +210,14 @@ export function Students() {
       // continue past the first page for large board libraries.
       const boards: Board[] = []
       let skip = 0
+      let pagesFetched = 0
       const pageSize = 1000
       while (true) {
+        // Same termination guarantee as the roster walk above.
+        pagesFetched += 1
+        if (pagesFetched > MAX_WALK_PAGES) {
+          throw new Error('Pagination did not terminate')
+        }
         if (requestId !== availableBoardsRequestRef.current) return
         const params = {
           ...(skip > 0 ? { skip } : {}),

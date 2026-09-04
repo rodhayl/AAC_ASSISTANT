@@ -60,6 +60,9 @@ export function Boards() {
   const [assignError, setAssignError] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
   const studentsRequestRef = useRef(0);
+  // Hard cap on paginated walks: prevents an infinite request loop if the
+  // endpoint stops shrinking pages.
+  const MAX_WALK_PAGES = 200;
 
   const [deleteBoardId, setDeleteBoardId] = useState<number | null>(null);
   const [selectedBoardIds, setSelectedBoardIds] = useState<Set<number>>(new Set());
@@ -182,8 +185,15 @@ export function Boards() {
       try {
         const loadedStudents: User[] = [];
         let skip = 0;
+        let pagesFetched = 0;
         const pageSize = 1000;
         while (true) {
+          // Guarantee termination even if a backend bug keeps returning full
+          // pages.
+          pagesFetched += 1;
+          if (pagesFetched > MAX_WALK_PAGES) {
+            throw new Error('Pagination did not terminate');
+          }
           if (
             requestId !== studentsRequestRef.current ||
             studentsContextRef.current !== contextKey
