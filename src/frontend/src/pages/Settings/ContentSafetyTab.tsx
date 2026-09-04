@@ -119,8 +119,8 @@ export function ContentSafetyTab() {
             : policy.max_response_length,
         locked_fields: linesToArray(textValues.locked_fields),
       };
-      const res = await api.put('/settings/content-safety', filtered);
-      const next = res.data as GlobalPolicy;
+      const res = await api.put<GlobalPolicy>('/settings/content-safety', filtered);
+      const next = res.data;
       setPolicy(next);
       setTextValues({
         forbidden_topics: arrayToLines(next.forbidden_topics),

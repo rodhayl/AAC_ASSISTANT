@@ -189,8 +189,8 @@ export function Boards() {
               limit: 1000,
               user_type: 'student',
             };
-            const res = await api.get('/auth/users', { params });
-            return res.data as User[];
+            const res = await api.get<User[]>('/auth/users', { params });
+            return res.data;
           },
           isCancelled: () =>
             requestId !== studentsRequestRef.current ||

@@ -279,3 +279,45 @@ def test_import_does_not_mark_completion_when_terms_fail(
 
     assert summary == {"imported": 1, "failed": 1, "skipped": 0}
     assert import_mod._already_imported("es") is False
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_count_importable_terms_dry_run_writes_nothing(
+    test_db_session, monkeypatch
+):
+    """The --dry-run helper applies the import's skip rules without writing."""
+    existing = Symbol(label="vaca", category="animals", language="es", image_path=None)
+    test_db_session.add(existing)
+    test_db_session.commit()
+
+    catalog = [
+        {
+            "_id": 2001,
+            "keywords": [{"keyword": "perro"}],
+            "categories": ["animals"],
+        },
+        {
+            "_id": 2002,
+            "keywords": [{"keyword": "VACA"}],  # casefold-matches existing
+            "categories": ["animals"],
+        },
+        {"_id": 2003, "keywords": [], "categories": []},  # no keywords -> skip
+        {"_id": 2004, "keywords": [{"keyword": ""}]},  # blank label -> skip
+    ]
+
+    class FakeService:
+        async def list_all_symbols(self, locale="es"):
+            return catalog
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(import_mod, "get_session", _override_get_session(test_db_session))
+    monkeypatch.setattr(import_mod, "ArasaacService", FakeService)
+
+    before = test_db_session.query(Symbol).count()
+    report = asyncio.run(import_mod.count_importable_arasaac_terms("es"))
+    after = test_db_session.query(Symbol).count()
+
+    assert report == {"importable": 1, "skipped": 3, "catalog": 4}
+    assert before == after, "dry run must not write symbols"

@@ -119,10 +119,10 @@ export function Students() {
       const summaries = await walkPages<StudentBoardSummary>({
         pageSize: 500,
         fetchPage: async (skip) => {
-          const res = await api.get('/auth/users/student-summaries', {
+          const res = await api.get<StudentBoardSummary[]>('/auth/users/student-summaries', {
             params: { ...(skip > 0 ? { skip } : {}), limit: 500 },
           })
-          return res.data as StudentBoardSummary[]
+          return res.data
         },
         isCancelled: () => requestId !== studentsLoadRequestRef.current,
       })
@@ -198,8 +198,8 @@ export function Students() {
             limit: 1000,
             ...(user?.user_type === 'admin' ? {} : { user_id: user?.id }),
           }
-          const res = await api.get('/boards/', { params })
-          return res.data as Board[]
+          const res = await api.get<Board[]>('/boards/', { params })
+          return res.data
         },
         isCancelled: () => requestId !== availableBoardsRequestRef.current,
       })

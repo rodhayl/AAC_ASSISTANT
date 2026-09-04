@@ -64,15 +64,15 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
         setLoading(true);
         // The unfiltered list includes the user's boards and public boards;
         // assigned student boards are added below as a separate scoped request.
-        const response = await api.get('/boards/');
-        let allBoards = response.data as Board[];
+        const response = await api.get<Board[]>('/boards/');
+        let allBoards = response.data;
 
         if (user.user_type === 'student') {
           try {
-            const assignedResponse = await api.get('/boards/assigned', {
+            const assignedResponse = await api.get<Board[]>('/boards/assigned', {
               params: { student_id: user.id },
             });
-            allBoards = [...allBoards, ...(assignedResponse.data as Board[])];
+            allBoards = [...allBoards, ...assignedResponse.data];
           } catch (error) {
             console.warn('Failed to fetch assigned boards', error);
           }
@@ -116,8 +116,8 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
     clearTimers();
     try {
       setLoading(true);
-      const response = await api.get(`/boards/${board.id}`);
-      const fullBoard = response.data as Board;
+      const response = await api.get<Board>(`/boards/${board.id}`);
+      const fullBoard = response.data;
       if (generation !== gameGenerationRef.current) return;
       const uniqueSymbols = getUniquePlayableSymbols(fullBoard.symbols);
       if (uniqueSymbols.length < 2) {

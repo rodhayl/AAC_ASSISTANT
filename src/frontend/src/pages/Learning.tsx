@@ -13,6 +13,7 @@ import { LearningHistoryPanel } from '../components/learning/LearningHistoryPane
 import { LearningHeader } from '../components/learning/LearningHeader';
 import { LearningSymbolPanel } from '../components/learning/LearningSymbolPanel';
 import type { LearningSymbolItem } from '../types';
+import type { LearningMode } from './Settings/types';
 import { SessionSummaryModal } from '../components/learning/SessionSummaryModal';
 import { useVoiceRecorder } from '../components/learning/useVoiceRecorder';
 import { useAssistantMessageSpeech } from '../hooks/useAssistantMessageSpeech';
@@ -148,15 +149,8 @@ export function Learning() {
       // System modes (created_by null) keep the seeded English name in the
       // DB; translate by key so the dropdown matches the UI language.
       // Custom teacher modes always show their stored name.
-      const response = await api.get('/learning-modes/');
-      const modes = (response.data as Array<{
-        id: number;
-        name: string;
-        key: string;
-        description: string;
-        auto_ask_enabled?: boolean;
-        created_by?: number | null;
-      }>).map((mode) => ({
+      const response = await api.get<LearningMode[]>('/learning-modes/');
+      const modes = response.data.map((mode) => ({
         ...mode,
         name: mode.created_by == null
           ? modeTranslationRef.current(`modes.${mode.key}`, mode.name, { lng: currentLang })

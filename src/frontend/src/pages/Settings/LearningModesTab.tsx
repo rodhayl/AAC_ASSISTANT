@@ -99,8 +99,8 @@ export function LearningModesTab({
 
   const fetchLearningModes = useCallback(async () => {
     try {
-      const res = await api.get('/learning-modes/');
-      const modes = res.data as LearningMode[];
+      const res = await api.get<LearningMode[]>('/learning-modes/');
+      const modes = res.data;
       setLearningModes(modes);
       return modes;
     } catch (err) {

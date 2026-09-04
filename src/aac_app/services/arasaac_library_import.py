@@ -223,6 +223,50 @@ async def import_arasaac_library(locale: str = "es") -> dict[str, int]:
         await service.close()
 
 
+async def count_importable_arasaac_terms(locale: str = "es") -> dict[str, int]:
+    """Report how many catalog terms an import would add, without writing.
+
+    Used by the operator script's ``--dry-run``: fetches the catalog and
+    applies the same skip rules as :func:`import_arasaac_library` (missing
+    keywords, duplicate labels, labels already stored for the locale) but
+    touches neither the database nor the image files.
+    """
+    locale = normalize_language_code(locale) or "es"
+    service = ArasaacService()
+    try:
+        pictograms = await service.list_all_symbols(locale)
+        with get_session() as db:
+            existing = {
+                label.casefold()
+                for (label,) in db.query(Symbol.label)
+                .filter(Symbol.language == locale)
+                .all()
+                if label
+            }
+    finally:
+        await service.close()
+
+    seen = set(existing)
+    importable = 0
+    for entry in pictograms:
+        keywords = entry.get("keywords") or []
+        if not keywords:
+            continue
+        label = (keywords[0].get("keyword") or "").strip()
+        if not label:
+            continue
+        key = label.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        importable += 1
+    return {
+        "importable": importable,
+        "skipped": len(pictograms) - importable,
+        "catalog": len(pictograms),
+    }
+
+
 async def import_arasaac_library_if_needed(
     locale: str = "es",
 ) -> dict[str, int] | None:

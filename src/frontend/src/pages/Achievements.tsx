@@ -136,9 +136,9 @@ export function Achievements() {
       pageSize: 500,
       fetchPage: async (skip) => {
         const response = skip === 0
-          ? await api.get('/users/students')
-          : await api.get('/users/students', { params: { skip, limit: 500 } })
-        return response.data as User[]
+          ? await api.get<User[]>('/users/students')
+          : await api.get<User[]>('/users/students', { params: { skip, limit: 500 } })
+        return response.data
       },
     })
   }

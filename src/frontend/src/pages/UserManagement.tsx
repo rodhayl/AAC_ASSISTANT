@@ -133,14 +133,14 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
           requestId !== managedUsersRequestRef.current ||
           managementContextRef.current !== contextKey
         ) return []
-        const response = await api.get('/auth/users', {
+        const response = await api.get<User[]>('/auth/users', {
           params: {
             ...(skip > 0 ? { skip } : {}),
             limit: 1000,
             user_type: role,
           },
         })
-        return response.data as User[]
+        return response.data
       },
       isCancelled: () =>
         !mountedRef.current ||

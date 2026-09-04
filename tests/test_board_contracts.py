@@ -7,11 +7,20 @@ mechanically instead of "verified by eye":
 - the ``/users/assign-student`` idempotency payload is exactly
   ``{message, status}`` with ``status in {"created", "exists"}``;
 - the LM Studio model-listing divergence (compat route returns 200 with an
-  ``error`` key, canonical route raises 503) is intentional and pinned.
+  ``error`` key, canonical route raises 503) is intentional and pinned;
+- symbol image upload errors map to the i18n keys the frontend surfaces
+  (``errors.boards.invalidFileType`` / ``fileTooLarge`` / ``emptyFile``);
+- the SSE notification stream payload matches the frontend
+  ``NotificationItem`` interface exactly (8 keys, ISO timestamps);
+- ``POST /learning/start`` (success) returns exactly the keys the TS
+  ``LearningSessionResponse`` interface declares (incl. ``provider_used``).
 """
+
+import io
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol, User
 from src.aac_app.services.auth_service import get_password_hash
@@ -171,3 +180,181 @@ def test_lmstudio_model_listing_divergence_is_intentional(
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert canonical.status_code == 503
+
+
+def test_symbol_upload_error_details_use_frontend_i18n_keys(
+    test_db_session, admin_user, admin_token, client: TestClient
+):
+    """Upload rejections carry the exact i18n strings the frontend shows.
+
+    The frontend surfaces ``errors.boards.invalidFileType`` /
+    ``fileTooLarge`` / ``emptyFile`` from its locale files; the backend must
+    produce byte-identical details so the UI and API errors agree.
+    """
+    from src.aac_app.services.translation_service import (
+        get_translation_service,
+    )
+
+    translation_service = get_translation_service()
+
+    expected = {
+        key: translation_service.get("en", "common", f"errors.boards.{key}")
+        for key in ("invalidFileType", "fileTooLarge", "emptyFile")
+    }
+    assert all(expected.values()), "i18n keys must exist in en"
+    auth = {"Authorization": f"Bearer {admin_token}"}
+    form = {
+        "label": "contract upload",
+        "category": "general",
+        "language": "en",
+    }
+
+    # Empty file -> emptyFile.
+    response = client.post(
+        "/api/boards/symbols/upload",
+        headers=auth,
+        data=form,
+        files={"file": ("empty.png", b"", "image/png")},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == expected["emptyFile"]
+
+    # Wrong content type (text masquerading as an image) -> invalidFileType.
+    response = client.post(
+        "/api/boards/symbols/upload",
+        headers=auth,
+        data=form,
+        files={"file": ("fake.png", b"definitely not an image", "image/png")},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == expected["invalidFileType"]
+
+    # Declared type text/plain -> invalidFileType (rejected before read).
+    response = client.post(
+        "/api/boards/symbols/upload",
+        headers=auth,
+        data=form,
+        files={"file": ("notes.txt", b"hello", "text/plain")},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == expected["invalidFileType"]
+
+    # Oversized image (>5MB) -> fileTooLarge (413).
+    big = Image.new("RGB", (32, 32), "red")
+    buffer = io.BytesIO()
+    big.save(buffer, format="PNG")
+    response = client.post(
+        "/api/boards/symbols/upload",
+        headers=auth,
+        data=form,
+        files={"file": ("big.png", buffer.getvalue() + b"\0" * (5 * 1024 * 1024 + 1), "image/png")},
+    )
+    assert response.status_code == 413
+    assert response.json()["detail"] == expected["fileTooLarge"]
+
+
+def test_notification_sse_payload_matches_frontend_notification_item(
+    test_db_session, admin_user, regular_user, admin_token, client: TestClient
+):
+    """The SSE event payload has exactly the 8 NotificationItem keys.
+
+    The frontend ``NotificationItem`` interface declares id/title/message/
+    type/priority/is_read/created_at/read_at with ISO-8601 timestamps; the
+    stream must never add, drop, or rename a key.
+    """
+    from datetime import datetime
+
+    from src.aac_app.models import Notification
+    from src.aac_app.services.notification_events import (
+        notification_payload,
+    )
+
+    notification = Notification(
+        user_id=regular_user.id,
+        title="Contract",
+        message="Payload shape",
+        notification_type="info",
+        priority="normal",
+        is_read=False,
+        created_at=datetime(2026, 9, 4, 12, 0, 0),
+        read_at=None,
+    )
+    test_db_session.add(notification)
+    test_db_session.commit()
+    test_db_session.refresh(notification)
+
+    payload = notification_payload(notification)
+    assert set(payload) == {
+        "id",
+        "title",
+        "message",
+        "type",
+        "priority",
+        "is_read",
+        "created_at",
+        "read_at",
+    }
+    # Timestamps must be ISO strings the frontend can new Date() directly.
+    from datetime import datetime as dt
+
+    dt.fromisoformat(payload["created_at"])
+    assert payload["read_at"] is None
+    assert payload["is_read"] is False
+    assert payload["type"] == "info"
+
+
+def test_learning_session_start_contract_matches_ts_response(
+    test_db_session, admin_user, admin_token, client: TestClient
+):
+    """POST /learning/start returns exactly the LearningSessionResponse keys.
+
+    The TS interface declares success/session_id/plan_id/task_id/board_id/
+    welcome_message/topic/difficulty/error, and the learningStore additionally
+    reads ``provider_used`` off the session response for the provider badge.
+    """
+    from unittest.mock import MagicMock
+
+    from src.api.deps import get_learning_service
+
+    mock_service = MagicMock()
+    mock_service.start_learning_session.return_value = {
+        "success": True,
+        "session_id": 42,
+        "plan_id": None,
+        "task_id": None,
+        "board_id": None,
+        "welcome_message": "Welcome!",
+        "topic": "Weather",
+        "difficulty": "adaptive",
+        "provider_used": "groq",
+    }
+    app.dependency_overrides[get_learning_service] = lambda: mock_service
+    try:
+        response = client.post(
+            "/api/learning/start",
+            params={"user_id": admin_user.id},
+            json={"topic": "Weather", "purpose": "practice"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_learning_service, None)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    expected_keys = {
+        "success",
+        "session_id",
+        "plan_id",
+        "task_id",
+        "board_id",
+        "welcome_message",
+        "topic",
+        "difficulty",
+        "provider_used",
+    }
+    assert expected_keys <= set(body), (
+        f"missing keys: {expected_keys - set(body)}"
+    )
+    assert body["success"] is True
+    assert body["session_id"] == 42
+    assert body["provider_used"] == "groq"

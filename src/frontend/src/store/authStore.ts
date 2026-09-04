@@ -248,7 +248,8 @@ export const useAuthStore = create<AuthState>()(
         if (!payload?.exp || payload.exp < now) {
           // The refresh token is the source of truth when access validation fails.
           const refreshed = await refreshAccessToken();
-          if (!refreshed && navigator.onLine !== false && isCurrentRequest()) {
+          if (!isCurrentRequest()) return;
+          if (!refreshed && navigator.onLine !== false) {
             clearSession();
           }
           return;
@@ -263,12 +264,12 @@ export const useAuthStore = create<AuthState>()(
             syncUserPreferences(fetchedUser);
             set({ user: fetchedUser, isAuthenticated: true });
           } catch (error: unknown) {
-            // If offline, don't log out
+            // If offline, don't log out. A stale request must not clear the
+            // newer session either — one guard covers both.
             const apiError = error as { code?: unknown; message?: unknown };
-            if (apiError.code === 'ERR_OFFLINE' || apiError.message === 'offline') {
-              return;
-            }
-            if (!isCurrentRequest()) return;
+            const isOfflineError =
+              apiError.code === 'ERR_OFFLINE' || apiError.message === 'offline';
+            if (isOfflineError || !isCurrentRequest()) return;
             // If we can't get user details, token might be invalid on server side
             clearSession();
           }

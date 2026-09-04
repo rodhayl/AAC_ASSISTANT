@@ -403,7 +403,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
       skipInitialSpeech: false,
     });
     try {
-      const response = await api.post('/learning/start', data, {
+      const response = await api.post<LearningSessionResponse & WithProvider>('/learning/start', data, {
         params: { user_id: userId }
       });
 
@@ -423,9 +423,8 @@ export const useLearningStore = create<LearningState>((set, get) => {
           isLoading: false,
           skipInitialSpeech: false
         });
-        const sessionWithProvider = session as LearningSessionResponse & WithProvider
-        if (sessionWithProvider.provider_used) {
-          const provider = sessionWithProvider.provider_used
+        if (session.provider_used) {
+          const provider = session.provider_used
           setProviderState(set, get, provider)
         }
       } else {
@@ -509,7 +508,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
       messages: [...state.messages, { role: 'user' as const, content: answer }],
     }));
     try {
-      const response = await api.post(`/learning/${sessionId}/answer`, {
+      const response = await api.post<AnswerResponse & WithProvider>(`/learning/${sessionId}/answer`, {
         answer,
         is_voice: false,
       });
@@ -517,7 +516,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
         requestEpoch,
         requestId,
         sessionId,
-        response.data as AnswerResponse & WithProvider,
+        response.data,
         'Failed to submit answer',
         answer,
       );
@@ -535,10 +534,10 @@ export const useLearningStore = create<LearningState>((set, get) => {
     const formData = new FormData();
     formData.append('file', audioBlob, 'recording.wav');
     try {
-      const response = await api.post(`/learning/${sessionId}/answer/voice`, formData, {
+      const response = await api.post<AnswerResponse & WithProvider>(`/learning/${sessionId}/answer/voice`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      const result = response.data as AnswerResponse & WithProvider;
+      const result = response.data;
       finishAnswer(
         requestEpoch,
         requestId,
@@ -566,7 +565,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
       messages: [...state.messages, { role: 'user' as const, content: userContent, symbolImages }],
     }));
     try {
-      const response = await api.post(`/learning/${sessionId}/answer/symbols`, {
+      const response = await api.post<AnswerResponse & WithProvider>(`/learning/${sessionId}/answer/symbols`, {
         symbols,
         enriched_gloss: enriched_gloss || undefined,
         raw_gloss: raw_gloss || undefined,
@@ -576,7 +575,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
         requestEpoch,
         requestId,
         sessionId,
-        response.data as AnswerResponse & WithProvider,
+        response.data,
         'Failed to submit symbol answer',
         userContent,
       );
