@@ -17,6 +17,10 @@ What it verifies (the F3 smoke contract):
 - ``POST /api/boards/{id}/assign`` twice -> ``{"ok": true}`` both times and
   exactly **one** ``board_assignments`` row (idempotency + uniqueness)
 - ``GET /api/auth/me`` with the token -> 200 (protected resource)
+- A second throwaway server is booted in production mode without a persisted
+  Groq model, so ``GET /ready`` reports ``503 degraded``; its body must carry
+  only the fixed per-provider error codes (``llm initialization failed``) and
+  never raw exception internals.
 
 Usage:
     uv run python scripts/smoke_live.py [--port PORT] [--keep-tempdir]
@@ -268,6 +272,114 @@ def main(argv: list[str] | None = None) -> int:
             print("protected GET failed:", status, body)
             return 1
         print("protected GET OK (/api/auth/me 200)")
+
+        # /ready is public (load-balancer probes), so a degraded response must
+        # expose only stable per-provider codes, never raw exception text
+        # (URLs, paths, tokens). Boot a second throwaway server in production
+        # mode against a fresh database with no persisted Groq model, so LLM
+        # warmup fails and /ready reports degraded.
+        degraded_dir = Path(smoke_dir) / "degraded"
+        degraded_dir.mkdir()
+        degraded_env = dict(env)
+        degraded_env.update(
+            {
+                "DATA_DIR": str(degraded_dir),
+                "DATABASE_NAME": PATH_ENV["DATABASE_NAME"],
+                "ENVIRONMENT": "production",
+                # Production rejects the shared development default, so the
+                # throwaway degraded server needs its own strong password.
+                "AAC_BOOTSTRAP_ADMIN_PASSWORD": "Smoke#Prod!2026-Admin",
+                "ALLOWED_ORIGINS": "http://localhost:5173",
+            }
+        )
+        degraded_bootstrap = subprocess.run(
+            [
+                sys.executable,
+                str(PROJECT_ROOT / "scripts" / "ensure_bootstrap_admin.py"),
+            ],
+            cwd=PROJECT_ROOT,
+            env=degraded_env,
+            capture_output=True,
+            text=True,
+        )
+        if degraded_bootstrap.returncode != 0:
+            print(
+                "degraded bootstrap failed:",
+                degraded_bootstrap.stdout,
+                degraded_bootstrap.stderr,
+            )
+            return 1
+
+        degraded_port = _free_port()
+        degraded_base_url = f"http://127.0.0.1:{degraded_port}"
+        degraded_log_file = (degraded_dir / "server.log").open("w", encoding="utf-8")
+        degraded_server = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "src.api.main:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(degraded_port),
+            ],
+            cwd=PROJECT_ROOT,
+            env=degraded_env,
+            stdout=degraded_log_file,
+            stderr=subprocess.STDOUT,
+        )
+        try:
+            degraded_body = _wait_for(
+                f"{degraded_base_url}/ready",
+                lambda status, body: status == 503
+                and '"status":"degraded"' in body.replace(" ", ""),
+                READY_TIMEOUT_SECONDS,
+                "/ready degraded",
+            )
+            payload = json.loads(degraded_body)
+            errors = payload.get("errors") or []
+            stable_codes = {
+                "speech initialization failed",
+                "llm initialization failed",
+                "achievement initialization failed",
+                "vector_store initialization failed",
+                "speech initialization timed out",
+                "llm initialization timed out",
+                "achievement initialization timed out",
+                "vector_store initialization timed out",
+            }
+            if (
+                payload.get("ready") is not False
+                or payload.get("status") != "degraded"
+                or payload.get("providers", {}).get("llm") is not False
+                or not errors
+                or not all(code in stable_codes for code in errors)
+            ):
+                print("degraded /ready contract mismatch:", degraded_body)
+                return 1
+            for marker in (
+                "http://",
+                "RuntimeError",
+                "Traceback",
+                "token=",
+                "/data/",
+            ):
+                if marker in degraded_body:
+                    print(
+                        f"degraded /ready leaked internal marker {marker!r}:",
+                        degraded_body,
+                    )
+                    return 1
+            print("degraded /ready OK (fixed codes, no internal details)")
+        finally:
+            if degraded_server.poll() is None:
+                degraded_server.terminate()
+                try:
+                    degraded_server.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    degraded_server.kill()
+                    degraded_server.wait(timeout=10)
 
         print("SMOKE OK")
         return 0

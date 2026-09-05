@@ -31,6 +31,20 @@ def _frontend_is_built() -> bool:
     """
     return FRONTEND_INDEX.is_file()
 
+
+def _wait_for_degraded(client) -> dict:
+    """Poll /ready until warmup finishes degraded (or fail loudly)."""
+    deadline = time.monotonic() + 10
+    last: dict | None = None
+    while time.monotonic() < deadline:
+        response = client.get("/ready")
+        data = response.json()
+        last = data
+        if response.status_code == 503 and data.get("status") == "degraded":
+            return data
+        time.sleep(0.05)
+    raise AssertionError(f"/ready never reached degraded; last payload: {last}")
+
 # ---------------------------------------------------------------------------
 # Fix A — warmup off the critical path
 # ---------------------------------------------------------------------------
@@ -131,34 +145,78 @@ class TestStartupServesDuringWarmup:
             assert ready.json()["status"] == "database_unavailable"
 
     def test_ready_reports_degraded_when_a_provider_failed(self, monkeypatch):
-        """Warmup completing with a failed provider yields 503 degraded, not healthy."""
-        from src.api.deps.providers import _startup_lock, _startup_state
+        """Warmup completing with a failed provider yields 503 degraded, not healthy.
+
+        The failing provider raises a configuration error whose raw text must
+        never surface on the public /ready endpoint: the degraded body carries
+        the stable ``<name> initialization failed`` code and the full detail
+        stays in the server log.
+        """
+        from src.api.deps import providers as providers_mod
+        from src.api.deps import warmup_providers
         from src.api.main import app
 
-        def degraded_warmup(timeout_seconds: float = 30.0):
-            with _startup_lock:
-                _startup_state["initialized"] = True
-                _startup_state["initializing"] = False
-                _startup_state["providers_ready"] = {
-                    "speech": True,
-                    "llm": False,  # Groq unavailable: the only production LLM
-                    "achievement": True,
-                    "vector_store": True,
-                }
-                _startup_state["errors"] = ["llm: Groq API key missing"]
-                _startup_state["startup_time_ms"] = 2500.0
+        monkeypatch.setattr(providers_mod, "_init_speech_provider_sync", lambda: True)
+        monkeypatch.setattr(providers_mod, "_init_achievement_system_sync", lambda: True)
+        monkeypatch.setattr(providers_mod, "_init_vector_store_sync", lambda: True)
 
-        monkeypatch.setattr("src.api.main.warmup_providers", degraded_warmup)
+        def groq_without_key():
+            raise RuntimeError("Groq API key missing")
+
+        monkeypatch.setattr(providers_mod, "_init_llm_provider_sync", groq_without_key)
+        monkeypatch.setattr("src.api.main.warmup_providers", warmup_providers)
         monkeypatch.setattr("src.api.main.index_all_symbols", lambda *a, **kw: None)
 
         with TestClient(app) as client:
-            ready = client.get("/ready")
-            assert ready.status_code == 503
-            data = ready.json()
+            data = _wait_for_degraded(client)
             assert data["status"] == "degraded"
             assert data["ready"] is False
             assert data["providers"]["llm"] is False
-            assert "Groq API key missing" in data["errors"][0]
+            assert data["providers"]["speech"] is True
+            assert data["errors"] == ["llm initialization failed"]
+            # The raw reason must not be echoed anywhere in the response.
+            assert "Groq API key missing" not in client.get("/ready").text
+
+    def test_ready_degraded_does_not_echo_raw_provider_exception(self, monkeypatch):
+        """A provider failure embedding URLs/tokens never reaches /ready.
+
+        Regression for the raw ``f"{name}: {exc}"`` leak: the degraded body
+        exposes only the fixed per-provider code while the exception stays in
+        the server log.
+        """
+        from src.api.deps import providers as providers_mod
+        from src.api.deps import warmup_providers
+        from src.api.main import app
+
+        dirty = (
+            "connection refused: http://10.0.0.7:11434/api/generate "
+            "(token sk-prod-9f2c41a7)"
+        )
+
+        def unreachable_llm():
+            raise RuntimeError(dirty)
+
+        monkeypatch.setattr(providers_mod, "_init_speech_provider_sync", lambda: True)
+        monkeypatch.setattr(providers_mod, "_init_llm_provider_sync", unreachable_llm)
+        monkeypatch.setattr(providers_mod, "_init_achievement_system_sync", lambda: True)
+        monkeypatch.setattr(providers_mod, "_init_vector_store_sync", lambda: True)
+        monkeypatch.setattr("src.api.main.warmup_providers", warmup_providers)
+        monkeypatch.setattr("src.api.main.index_all_symbols", lambda *a, **kw: None)
+
+        with TestClient(app) as client:
+            data = _wait_for_degraded(client)
+            assert data["providers"]["llm"] is False
+            assert data["errors"] == ["llm initialization failed"]
+            assert set(data["providers"]) == {
+                "speech",
+                "llm",
+                "achievement",
+                "vector_store",
+            }
+            body = client.get("/ready").text
+            assert "10.0.0.7" not in body
+            assert "sk-prod-9f2c41a7" not in body
+            assert "RuntimeError" not in body
 
 
 
@@ -282,6 +340,35 @@ class TestWarmupTimeoutCorrectness:
         reset_providers()
         yield
         reset_providers()
+
+    def test_failed_provider_logs_exception_and_returns_stable_error(self, monkeypatch):
+        """A raising initializer logs the exception but stores only a stable code."""
+        from loguru import logger
+
+        from src.api.deps import providers as providers_mod
+        from src.api.deps import warmup_providers
+
+        dirty = "unreachable: https://ollama.internal:11434/api (auth abcd1234)"
+        captured: list[str] = []
+        sink_id = logger.add(lambda message: captured.append(str(message)), level="ERROR")
+        try:
+            def raising_speech():
+                raise RuntimeError(dirty)
+
+            monkeypatch.setattr(providers_mod, "_init_speech_provider_sync", raising_speech)
+            monkeypatch.setattr(providers_mod, "_init_llm_provider_sync", lambda: True)
+            monkeypatch.setattr(providers_mod, "_init_achievement_system_sync", lambda: True)
+            monkeypatch.setattr(providers_mod, "_init_vector_store_sync", lambda: True)
+
+            state = warmup_providers(timeout_seconds=2)
+        finally:
+            logger.remove(sink_id)
+
+        assert state["providers_ready"]["speech"] is False
+        assert state["errors"] == ["speech initialization failed"]
+        assert dirty not in str(state)
+        # Full detail is retained server-side only.
+        assert any(dirty in message for message in captured)
 
     def test_stuck_worker_does_not_block_past_timeout(self, monkeypatch):
         """A stuck worker cannot hold warmup past the timeout.

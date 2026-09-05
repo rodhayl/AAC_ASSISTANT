@@ -915,10 +915,14 @@ def warmup_providers(timeout_seconds: float = 30.0) -> dict[str, Any]:
                         timed_out=False,
                     )
                     if not success:
-                        errors.append(
-                            f"{name}: {error}" if error is not None
-                            else f"{name} initialization failed"
-                        )
+                        if error is not None:
+                            # Full detail must stay server-side: /ready is
+                            # public and must never receive raw exception text
+                            # (URLs, paths, credentials).
+                            logger.error(
+                                f"Warmup: {name} provider initialization failed: {error}"
+                            )
+                        errors.append(f"{name} initialization failed")
             except FutureTimeoutError:
                 logger.error(f"Warmup: Timeout waiting for {name} provider")
                 with _startup_lock:
@@ -940,7 +944,7 @@ def warmup_providers(timeout_seconds: float = 30.0) -> dict[str, Any]:
                     if generation != _startup_generation:
                         stale_generation = True
                         break
-                    errors.append(f"{name}: {exc}")
+                    errors.append(f"{name} initialization failed")
                     _startup_state["providers_ready"][name] = False
                     _startup_state["provider_metrics"][name] = ProviderMetric(
                         success=False,
