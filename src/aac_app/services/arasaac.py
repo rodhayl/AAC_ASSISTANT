@@ -1,4 +1,5 @@
 
+import re
 from urllib.parse import quote
 
 import httpx
@@ -6,6 +7,27 @@ from loguru import logger
 
 ARASAAC_API_BASE = "https://api.arasaac.org/api"
 ARASAAC_IMAGE_BASE = "https://static.arasaac.org/pictograms"
+
+# ARASAAC language codes are two lowercase letters; pictogram ids are decimal
+# numbers. Every value interpolated into a request URL below is checked
+# against these whitelists first, so a malformed or hostile value can never
+# steer the request to another host, path, or query.
+_LOCALE_RE = re.compile(r"^[a-z]{2}$")
+_ARASAAC_ID_RE = re.compile(r"^[0-9]{1,10}$")
+
+
+def _validated_locale(locale: str | None) -> str:
+    """Return a two-letter ARASAAC language code, defaulting to ``es``."""
+    code = (locale or "es").strip().lower()
+    return code if _LOCALE_RE.fullmatch(code) else "es"
+
+
+def _validated_id_path(value: object) -> str:
+    """Return ``value`` as a whitelisted decimal id for use in a URL path."""
+    text = str(value).strip()
+    if not _ARASAAC_ID_RE.fullmatch(text):
+        raise ValueError(f"Invalid ARASAAC id: {value!r}")
+    return text
 
 
 class ArasaacService:
@@ -20,7 +42,7 @@ class ArasaacService:
         uses its own client with a longer timeout instead of the shared
         short-timeout client used for searches and single downloads.
         """
-        url = f"{ARASAAC_API_BASE}/pictograms/all/{locale}"
+        url = f"{ARASAAC_API_BASE}/pictograms/all/{_validated_locale(locale)}"
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.get(url)
             response.raise_for_status()
@@ -35,7 +57,10 @@ class ArasaacService:
             # and must be percent-encoded: spaces, '/', '?' or '#' in a raw
             # query would otherwise corrupt the URL (extra path segments,
             # query-string parsing, or an early fragment).
-            url = f"{ARASAAC_API_BASE}/pictograms/{locale}/bestsearch/{quote(query, safe='')}"
+            url = (
+                f"{ARASAAC_API_BASE}/pictograms/{_validated_locale(locale)}/"
+                f"bestsearch/{quote(query, safe='')}"
+            )
             response = await self.client.get(url)
             response.raise_for_status()
             data = response.json()
@@ -58,7 +83,10 @@ class ArasaacService:
                         "description": item.get("desc", ""),
                         "keywords": ", ".join(keywords),
                         "categories": item.get("categories", []),
-                        "image_url": f"{ARASAAC_IMAGE_BASE}/{item['_id']}/{item['_id']}_500.png",
+                        "image_url": (
+                            f"{ARASAAC_IMAGE_BASE}/{_validated_id_path(item['_id'])}/"
+                            f"{_validated_id_path(item['_id'])}_500.png"
+                        ),
                     }
                 )
             return results
@@ -75,7 +103,10 @@ class ArasaacService:
         """
         Download a symbol image from ARASAAC.
         """
-        hi_res_url = f"{ARASAAC_IMAGE_BASE}/{arasaac_id}/{arasaac_id}_2500.png"  # Try high res first
+        hi_res_url = (  # Try high res first
+            f"{ARASAAC_IMAGE_BASE}/{_validated_id_path(arasaac_id)}/"
+            f"{_validated_id_path(arasaac_id)}_2500.png"
+        )
         try:
             response = await self.client.get(hi_res_url)
         except Exception as e:
@@ -90,7 +121,10 @@ class ArasaacService:
         """
         Download the 500px pictogram used for card and board display.
         """
-        url = f"{ARASAAC_IMAGE_BASE}/{arasaac_id}/{arasaac_id}_500.png"
+        url = (
+            f"{ARASAAC_IMAGE_BASE}/{_validated_id_path(arasaac_id)}/"
+            f"{_validated_id_path(arasaac_id)}_500.png"
+        )
         try:
             response = await self.client.get(url)
             response.raise_for_status()

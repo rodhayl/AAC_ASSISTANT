@@ -5,6 +5,13 @@ from typing import Any, Protocol
 
 from loguru import logger
 
+# ``lang`` and ``namespace`` become filesystem path components below. Only
+# well-formed language tags (e.g. "en", "es-ES") and plain namespace names
+# (letters, digits, '_', '-', '/', '.') are accepted; everything else is
+# rejected before it can reach a path operation.
+_LOCALE_TAG_RE = re.compile(r"^[A-Za-z]{2}(?:-[A-Za-z0-9]{1,8})?$")
+_NAMESPACE_RE = re.compile(r"^[A-Za-z0-9_.\/-]+$")
+
 
 class UserSettingsLanguage(Protocol):
     """Structural contract for the user-settings language preference."""
@@ -59,12 +66,16 @@ class TranslationService:
             parts = accept_language.split(",")
             if parts:
                 first_lang = parts[0].split(";")[0].strip()
+                # The header is attacker-controlled: only a well-formed
+                # language tag may probe the locale directory.
+                if not _LOCALE_TAG_RE.fullmatch(first_lang):
+                    first_lang = ""
                 # Check if we support it
-                if (self.locales_dir / first_lang).exists():
+                if first_lang and (self.locales_dir / first_lang).exists():
                     return first_lang
                 # Try short code
-                short_lang = first_lang.split("-")[0]
-                if (self.locales_dir / short_lang).exists():
+                short_lang = first_lang.split("-")[0] if first_lang else ""
+                if short_lang and (self.locales_dir / short_lang).exists():
                     return short_lang
 
         # 3. Default
@@ -81,6 +92,10 @@ class TranslationService:
         """
         # Normalize lang (take first 2 chars usually, but directory names are 'en', 'es')
         if not lang:
+            lang = "en"
+        elif not _LOCALE_TAG_RE.fullmatch(lang):
+            # ``lang`` may reach here from caller-supplied strings (e.g. the
+            # Accept-Language header); never turn it into a path component.
             lang = "en"
         else:
             # Handle 'en-US' -> 'en' if directory is just 'en'
@@ -138,8 +153,14 @@ class TranslationService:
         if cache_key in self._cache:
             return self._cache[cache_key]
 
-        # Construct file path
-        file_path = self.locales_dir / lang / f"{namespace}.json"
+        # Defense in depth on top of the caller-side tag checks: lang and
+        # namespace build a filesystem path, so both must be well-formed and
+        # the resolved file must stay inside the locales tree.
+        if not _LOCALE_TAG_RE.fullmatch(lang) or not _NAMESPACE_RE.fullmatch(namespace):
+            return None
+        file_path = (self.locales_dir / lang / f"{namespace}.json").resolve()
+        if not file_path.is_relative_to(self.locales_dir.resolve()):
+            return None
 
         if not file_path.exists():
             return None

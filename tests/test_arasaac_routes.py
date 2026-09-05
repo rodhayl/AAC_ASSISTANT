@@ -50,6 +50,58 @@ def test_arasaac_search_percent_encodes_query_in_url():
     assert captured["url"].endswith("/bestsearch/rosa%231%3Fx%2Fy")
 
 
+def test_arasaac_search_sanitizes_hostile_locale():
+    """A hostile locale must be replaced with a safe code before URL use."""
+    from src.aac_app.services.arasaac import ArasaacService
+
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return []
+
+    class FakeClient:
+        async def get(self, url):
+            captured["url"] = url
+            return FakeResponse()
+
+        async def aclose(self):
+            pass
+
+    service = ArasaacService()
+    service.client = FakeClient()
+    try:
+        # Traversal in the locale must not reach the request URL.
+        asyncio.run(service.search_symbols("pan", "../../../etc/passwd"))
+    finally:
+        asyncio.run(service.close())
+
+    assert captured["url"].startswith(
+        "https://api.arasaac.org/api/pictograms/es/bestsearch/"
+    )
+    assert ".." not in captured["url"]
+
+
+def test_arasaac_locale_and_id_whitelists():
+    """Locale and id helpers only accept safe path segments."""
+    from src.aac_app.services.arasaac import _validated_id_path, _validated_locale
+
+    assert _validated_locale("es") == "es"
+    assert _validated_locale("fr") == "fr"
+    assert _validated_locale("es-ES") == "es"
+    assert _validated_locale("../../../etc") == "es"
+    assert _validated_locale("") == "es"
+    assert _validated_id_path(123) == "123"
+    assert _validated_id_path("456") == "456"
+    with pytest.raises(ValueError):
+        _validated_id_path("../../etc/passwd")
+    with pytest.raises(ValueError):
+        _validated_id_path("12/34")
+
+
 @pytest.mark.usefixtures("setup_test_db")
 def test_arasaac_import_preserves_missing_image_status_and_closes_client(
     test_db_session, monkeypatch

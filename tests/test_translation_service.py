@@ -76,3 +76,26 @@ def test_get_non_string_value_returns_key():
     service = _service()
     # Nested objects are not strings; requesting a section returns the key.
     assert service.get("en", "common", "navbar") == "navbar"
+
+
+def test_resolve_language_rejects_hostile_accept_language():
+    service = _service()
+    # The header is attacker-controlled: traversal attempts must never probe
+    # the filesystem and must fall back to the default locale.
+    assert service.resolve_language(accept_language="../../../etc/passwd") == "en"
+    assert service.resolve_language(accept_language="/etc/passwd") == "en"
+    assert service.resolve_language(accept_language="es ../../..") == "en"
+
+
+def test_get_discards_path_traversal_lang_and_namespace():
+    service = _service()
+    # lang and namespace become filesystem path components; hostile values
+    # must be discarded (English fallback or the key itself), never opened
+    # from outside the locales tree.
+    safe = service.get("en", "common", "actions.save")
+    assert isinstance(safe, str) and safe
+    assert service.get("../../..", "common", "actions.save") == safe
+    assert service.get("es", "../../../etc", "actions.save") == safe
+    # Namespace stays inside the charset but escapes via '..': the resolved
+    # path lands outside the locales dir, so the lookup returns the key.
+    assert service.get("en", "common/../../..", "actions.save") == "actions.save"

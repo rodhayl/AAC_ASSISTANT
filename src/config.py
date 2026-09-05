@@ -277,7 +277,13 @@ def ensure_jwt_secret(env_path: Path | None = None) -> str:
 
     updated_content = "\n".join(updated_lines).rstrip() + "\n"
     if updated_content != original_content:
+        # codeql[py/clear-text-storage-sensitive-data] The dotenv file is the
+        # documented, gitignored secret store (like a container secret file):
+        # the JWT signing key must be readable in clear text at startup. The
+        # file is chmod 0600 and never tracked; do not "encrypt" it, which
+        # would just move the key-management problem one level up.
         path.write_text(updated_content, encoding="utf-8")
+        os.chmod(path, 0o600)
 
     return secret
 

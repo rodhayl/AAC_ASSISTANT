@@ -319,11 +319,21 @@ def test_tts_synthesize_endpoint_requires_auth(admin_token):
 def test_tts_synthesize_endpoint_degrades_when_engine_missing(
     admin_token, monkeypatch
 ):
-    """With auth but the engine unavailable the endpoint returns 503."""
-    from src.aac_app.providers import local_tts_provider as mod
+    """With auth but the engine missing the endpoint returns 503.
 
-    monkeypatch.setattr(mod, "model_files_present", lambda: False)
-    mod.reset_local_tts_provider()
+    Mocked at the router boundary so the result is deterministic in every
+    environment: it must not depend on whether kokoro-onnx happens to be
+    installed here. A missing engine maps to the "install the TTS extra"
+    message (``errors.providers.ttsNotInstalled``), never to the
+    "not available" message, which is reserved for an installed engine that
+    cannot synthesize.
+    """
+    provider = Mock()
+    provider.is_available.return_value = False
+    provider.is_installed.return_value = False
+    monkeypatch.setattr(
+        "src.api.routers.providers.get_local_tts_provider", lambda: provider
+    )
 
     response = client.post(
         "/api/providers/tts/synthesize",
@@ -331,7 +341,7 @@ def test_tts_synthesize_endpoint_degrades_when_engine_missing(
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert response.status_code == 503
-    assert "not available" in response.json()["detail"].lower()
+    assert "Install the TTS extra" in response.json()["detail"]
 
 
 @pytest.mark.usefixtures("setup_test_db")
