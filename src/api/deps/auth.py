@@ -115,6 +115,20 @@ def get_request_text(
     )
 
 
+def safe_exception_reason(exc: Exception) -> str:
+    """A client-safe label for an exception, never its raw message.
+
+    Exception text can embed filesystem paths, provider URLs, or other
+    environment details, so error templates that interpolate a reason (e.g.
+    ``...failed: {error}``) receive only the exception class, plus the module
+    name for import errors. Operators keep the full detail in the logs, which
+    every call site already writes before rendering the message.
+    """
+    if isinstance(exc, ModuleNotFoundError) and exc.name:
+        return f"Missing Python module: {exc.name}"
+    return type(exc).__name__
+
+
 def get_current_user(
     request: Request,
     token: str | None = Depends(oauth2_scheme),

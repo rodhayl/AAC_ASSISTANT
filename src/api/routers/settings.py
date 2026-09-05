@@ -22,6 +22,7 @@ from src.api.deps import (
     get_db,
     get_text,
     invalidate_setting,
+    safe_exception_reason,
 )
 from src.api.deps import providers as provider_deps
 from src.api.routers.auth_helpers import SUPPORTED_UI_LANGUAGES, update_user_settings
@@ -349,7 +350,7 @@ async def get_ollama_models(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=get_text(
                 key="errors.provider.fetchModelsFailed",
-                error=str(e),
+                error=safe_exception_reason(e),
                 accept_language=(
                     current_user.settings.ui_language if current_user.settings else None
                 ),
@@ -401,7 +402,7 @@ async def get_openrouter_models(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=get_text(
                 key="errors.provider.fetchOpenRouterModelsFailed",
-                error=str(e),
+                error=safe_exception_reason(e),
                 accept_language=(
                     current_user.settings.ui_language if current_user.settings else None
                 ),
@@ -453,7 +454,7 @@ async def get_groq_models(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=get_text(
                 key="errors.provider.fetchGroqModelsFailed",
-                error=str(e),
+                error=safe_exception_reason(e),
                 accept_language=(
                     current_user.settings.ui_language if current_user.settings else None
                 ),
@@ -498,7 +499,7 @@ async def get_lmstudio_models(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=get_text(
                 key="errors.provider.fetchModelsFailed",
-                error=str(e),
+                error=safe_exception_reason(e),
                 accept_language=(
                     current_user.settings.ui_language if current_user.settings else None
                 ),

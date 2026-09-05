@@ -37,6 +37,7 @@ from src.api.deps import (
     get_setting_value,
     get_text,
     invalidate_setting,
+    safe_exception_reason,
 )
 from src.api.deps import providers as provider_deps
 
@@ -332,7 +333,8 @@ def warmup_models(
                 results["tts"] = {"warmed": True}
         except Exception as exc:
             logger.warning("TTS warmup failed: {}", exc)
-            results["tts"] = {"warmed": False, "error": str(exc)}
+            # Never echo the raw exception to the client; the log keeps it.
+            results["tts"] = {"warmed": False, "error": "Warmup failed"}
 
     if "speech" in targets:
         try:
@@ -343,7 +345,8 @@ def warmup_models(
                 results["speech"] = {"warmed": True}
         except Exception as exc:
             logger.warning("Speech warmup failed: {}", exc)
-            results["speech"] = {"warmed": False, "error": str(exc)}
+            # Never echo the raw exception to the client; the log keeps it.
+            results["speech"] = {"warmed": False, "error": "Warmup failed"}
 
     if "vector" in targets:
         try:
@@ -358,7 +361,8 @@ def warmup_models(
                 results["vector"] = {"warmed": store.is_ready()}
         except Exception as exc:
             logger.warning("Vector store warmup failed: {}", exc)
-            results["vector"] = {"warmed": False, "error": str(exc)}
+            # Never echo the raw exception to the client; the log keeps it.
+            results["vector"] = {"warmed": False, "error": "Warmup failed"}
 
     return results
 
@@ -422,7 +426,7 @@ def install_tts_dependencies(
             detail=get_text(
                 user=current_user,
                 key="errors.providers.ttsInstallFailedWithError",
-                error=str(exc),
+                error=safe_exception_reason(exc),
             ),
         ) from exc
     finally:
@@ -521,4 +525,6 @@ async def get_lmstudio_models(
         models_list = models_response.get("data", [])
         return {"models": models_list}
     except Exception as e:
-        return {"models": [], "error": str(e)}
+        logger.warning("LM Studio model listing failed: {}", e)
+        # Never echo the raw exception to the client; the log keeps it.
+        return {"models": [], "error": "Failed to fetch LM Studio models"}

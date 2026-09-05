@@ -13,7 +13,7 @@ from src.aac_app.services.arasaac import ArasaacService
 from src.aac_app.services.runtime_translation import normalize_language_code
 from src.aac_app.services.vector_utils import index_symbol
 from src.api import schemas
-from src.api.deps import get_current_active_user, get_db, get_text
+from src.api.deps import get_current_active_user, get_db, get_text, safe_exception_reason
 
 router = APIRouter()
 
@@ -171,7 +171,7 @@ async def import_arasaac_symbol(
         raise HTTPException(
             status_code=500,
             detail=get_text(
-                user=current_user, key="errors.arasaac.importFailed", error=str(e)
+                user=current_user, key="errors.arasaac.importFailed", error=safe_exception_reason(e)
             ),
         )
     finally:
