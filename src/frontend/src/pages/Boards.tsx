@@ -6,12 +6,25 @@ import { useBoardStore } from '../store/boardStore';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
 import api from '../lib/api';
-import { Button } from '../components/ui/Button';
+import { walkPages } from '../lib/pagination';
+import { Button } from '../components/ui/button';
+import { IconButton } from '../components/ui/icon-button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 import type { User } from '../types';
 import { useTranslation } from 'react-i18next';
 import { formatDate } from '../lib/format';
 
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { StatusMessage } from '../components/ui/StatusMessage';
+
+import { FormLabel } from '@/components/ui/FormLabel';
+import { SectionTitle } from '@/components/ui/SectionTitle';
 
 export function Boards() {
   const boards = useBoardStore((state) => state.boards);
@@ -47,6 +60,7 @@ export function Boards() {
   const [assignLoading, setAssignLoading] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
+  const studentsRequestRef = useRef(0);
 
   const [deleteBoardId, setDeleteBoardId] = useState<number | null>(null);
   const [selectedBoardIds, setSelectedBoardIds] = useState<Set<number>>(new Set());
@@ -61,6 +75,25 @@ export function Boards() {
   const lastSearchQueryRef = useRef(searchQuery);
   const userId = user?.id;
   const userType = user?.user_type;
+  const studentsContextKey = `${userId ?? 'anonymous'}:${userType ?? 'anonymous'}`;
+  const studentsContextRef = useRef(studentsContextKey);
+  studentsContextRef.current = studentsContextKey;
+
+  useEffect(() => {
+    // The student roster is account-scoped. Clear it before the next account's
+    // request starts so an old roster cannot remain actionable in the panel.
+    studentsRequestRef.current += 1;
+    setStudents([]);
+    setStudentsLoading(false);
+    setAssignOpenId(null);
+    setAssignLoading(false);
+    setAssignError(null);
+    setSelectedStudentId(null);
+    return () => {
+      studentsRequestRef.current += 1;
+    };
+  }, [studentsContextKey]);
+
   useEffect(() => {
     if (!userId || !userType) {
       lastBoardRequestKeyRef.current = null;
@@ -108,7 +141,9 @@ export function Boards() {
 
   // Preload AI settings
   useEffect(() => {
-    if (!aiSettings) fetchAISettings().catch(() => {});
+    if (!aiSettings) {
+      void fetchAISettings();
+    }
   }, [aiSettings, fetchAISettings]);
 
   const primaryProvider = aiSettings?.provider;
@@ -116,7 +151,9 @@ export function Boards() {
     ? aiSettings?.openrouter_model
     : primaryProvider === 'lmstudio'
       ? aiSettings?.lmstudio_model
-      : aiSettings?.ollama_model;
+      : primaryProvider === 'groq'
+        ? aiSettings?.groq_model
+        : aiSettings?.ollama_model;
   const primaryReady = Boolean(primaryProvider && primaryModel);
   const resolvedProvider = primaryProvider;
   const resolvedModel = primaryModel;
@@ -128,40 +165,92 @@ export function Boards() {
       return;
     }
     if (!primaryReady) {
-      setAiConfigError('AI settings are missing a configured provider/model. Update them in Settings first.');
+      setAiConfigError(t('aiSettingsMissing'));
       return;
     }
     setAiConfigError(null);
-  }, [aiEnabled, primaryReady]);
+  }, [aiEnabled, primaryReady, t]);
 
   const openAssign = async (boardId: number) => {
+    const contextKey = studentsContextKey;
+    if (studentsContextRef.current !== contextKey) return;
+    const requestId = ++studentsRequestRef.current;
     setAssignOpenId(boardId);
     setAssignError(null);
     setSelectedStudentId(null);
     if (!students.length) {
       setStudentsLoading(true);
       try {
-        const res = await api.get('/auth/users');
-        setStudents((res.data as User[]).filter(u => u.user_type === 'student'));
+        const loadedStudents = await walkPages<User>({
+          pageSize: 1000,
+          fetchPage: async (skip) => {
+            const params = {
+              ...(skip > 0 ? { skip } : {}),
+              limit: 1000,
+              user_type: 'student',
+            };
+            const res = await api.get<User[]>('/auth/users', { params });
+            return res.data;
+          },
+          isCancelled: () =>
+            requestId !== studentsRequestRef.current ||
+            studentsContextRef.current !== contextKey,
+        });
+        if (
+          requestId !== studentsRequestRef.current ||
+          studentsContextRef.current !== contextKey
+        ) return;
+        setStudents(loadedStudents);
       } catch {
-        setAssignError(t('loadStudentsError'));
+        if (
+          requestId === studentsRequestRef.current &&
+          studentsContextRef.current === contextKey
+        ) {
+          setAssignError(t('loadStudentsError'));
+        }
       } finally {
-        setStudentsLoading(false);
+        if (
+          requestId === studentsRequestRef.current &&
+          studentsContextRef.current === contextKey
+        ) {
+          setStudentsLoading(false);
+        }
       }
     }
   };
 
+  const closeAssign = () => {
+    studentsRequestRef.current += 1;
+    setAssignOpenId(null);
+    setStudentsLoading(false);
+    setAssignLoading(false);
+    setAssignError(null);
+    setSelectedStudentId(null);
+  };
+
   const submitAssign = async (boardId: number) => {
     if (!selectedStudentId) return;
+    const contextKey = studentsContextKey;
+    const requestId = studentsRequestRef.current;
+    const assignedStudentId = selectedStudentId;
+    const assignedBy = user?.id;
+    const isCurrentRequest = () =>
+      requestId === studentsRequestRef.current &&
+      studentsContextRef.current === contextKey;
     setAssignLoading(true);
     setAssignError(null);
     try {
-      await assignBoardToStudent(boardId, selectedStudentId, user?.id);
-      setAssignOpenId(null);
+      await assignBoardToStudent(boardId, assignedStudentId, assignedBy);
+      if (!isCurrentRequest()) return;
+      closeAssign();
     } catch {
-      setAssignError(t('assignBoardError'));
+      if (isCurrentRequest()) {
+        setAssignError(t('assignBoardError'));
+      }
     } finally {
-      setAssignLoading(false);
+      if (isCurrentRequest()) {
+        setAssignLoading(false);
+      }
     }
   };
 
@@ -196,6 +285,9 @@ export function Boards() {
       setIsLanguageLearning(false);
       setAiConfigError(null);
       setIsCreating(false);
+    } catch {
+      // The store surfaces the failure in the error banner; swallow here so
+      // the onSubmit promise does not reject unhandled.
     } finally {
       setCreatingBoard(false);
     }
@@ -261,7 +353,7 @@ export function Boards() {
       await fetchBoards(effectiveUserId, searchQuery, true, 1);
       setSelectedBoardIds(new Set(failedIds));
       if (failedIds.length > 0) {
-        setBulkDeleteError(t('bulkDeleteFailed', 'Some boards could not be deleted. The failed boards remain selected.'));
+        setBulkDeleteError(t('bulkDeleteFailed'));
       }
     } finally {
       setBulkDeleting(false);
@@ -272,7 +364,7 @@ export function Boards() {
   if (isListLoading && boards.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand" />
       </div>
     );
   }
@@ -283,9 +375,9 @@ export function Boards() {
         isOpen={!!deleteBoardId}
         onClose={() => setDeleteBoardId(null)}
         onConfirm={confirmDeleteBoard}
-        title={t('deleteConfirm')} // Using title as "Are you sure...?" for now, or could be "Delete Board"
+        title={t('deleteBoardTitle')}
         description={t('deleteConfirm')}
-        confirmText={t('delete') || 'Delete'}
+        confirmText={t('delete')}
         cancelText={t('cancel')}
         variant="danger"
       />
@@ -293,20 +385,20 @@ export function Boards() {
         isOpen={bulkDeleteOpen}
         onClose={() => setBulkDeleteOpen(false)}
         onConfirm={confirmBulkDelete}
-        title={t('deleteConfirm')}
-        description={t('deleteConfirm')}
-        confirmText={t('delete') || 'Delete'}
+        title={t('bulkDeleteTitle')}
+        description={t('bulkDeleteConfirm', { count: selectedBoardIds.size })}
+        confirmText={t('delete')}
         cancelText={t('cancel')}
         variant="danger"
       />
       <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t('title')}</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">{t('subtitle')}</p>
+          <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
+          <p className="text-muted-foreground mt-1">{t('subtitle')}</p>
         </div>
         <div className="flex gap-4 w-full md:w-auto">
           <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />              <input
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4 " />              <input
                 id="boards-search"
                 name="boards_search"
                 type="text"
@@ -315,7 +407,7 @@ export function Boards() {
 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
             />
           </div>
           <Button data-testid="force-refresh" variant="ghost" onClick={handleForceRefresh} disabled={isListLoading}>
@@ -329,7 +421,7 @@ export function Boards() {
       </div>
 
       <div className="flex items-center justify-between">
-        <label htmlFor="select-all-boards" className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+        <label htmlFor="select-all-boards" className="flex items-center gap-2 text-sm text-foreground">
           <input
             id="select-all-boards"
             name="select_all_boards"
@@ -337,13 +429,13 @@ export function Boards() {
             aria-label={t('selectAll')}
             checked={boardsToShow.length > 0 && selectedBoardIds.size === boardsToShow.length}
             onChange={(e) => toggleSelectAll(e.target.checked)}
-            className="rounded border-gray-300 dark:border-gray-600"
+            className="rounded border-border"
           />
           {t('selectAll')}
         </label>
         <div className="flex items-center gap-3">
           {selectedBoardIds.size > 0 && (
-            <Button variant="danger" onClick={() => setBulkDeleteOpen(true)} disabled={bulkDeleting}>
+            <Button variant="destructive" onClick={() => setBulkDeleteOpen(true)} disabled={bulkDeleting}>
               {t('deleteSelected')} ({selectedBoardIds.size})
             </Button>
           )}
@@ -356,76 +448,75 @@ export function Boards() {
       </div>
 
       {bulkDeleteError && (
-        <div role="alert" className="bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 p-4 rounded-lg">
+        <StatusMessage variant="error">
           {bulkDeleteError}
-        </div>
+        </StatusMessage>
       )}
 
       {error && (
-        <div
-          role="alert"
-          className="bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 p-4 rounded-lg"
-        >
+        <StatusMessage variant="error">
           <h2 className="font-semibold">{tError('title')}</h2>
           <p className="text-sm mt-1">{tError('subtitle')}</p>
           <p className="text-sm mt-2">{error}</p>
-          <button
+          <Button
             type="button"
+            variant="default"
+            size="sm"
+            className="mt-3"
             onClick={() => void handleForceRefresh()}
-            className="mt-3 px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
             disabled={isListLoading}
           >
             {tError('retry')}
-          </button>
-        </div>
+          </Button>
+        </StatusMessage>
       )}
 
       {isCreating && (
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 mb-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">{t('createTitle')}</h3>
+        <div className="bg-surface p-6 rounded-xl shadow-sm border border-border mb-6">
+          <SectionTitle as="h3" className="mb-4">{t('createTitle')}</SectionTitle>
           <form onSubmit={handleCreateBoard} className="space-y-4">
             <div>
-              <label htmlFor="new-board-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('boardName')}</label>
+              <FormLabel htmlFor="new-board-name">{t('boardName')}</FormLabel>
               <input
                 id="new-board-name"
                 name="new_board_name"
                 type="text"
                 value={newBoardName}
                 onChange={(e) => setNewBoardName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                placeholder="e.g., Daily Activities"
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
+                placeholder={t('placeholderName')}
                 required
               />
             </div>
             <div>
-              <label htmlFor="new-board-description" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('description')}</label>
+              <FormLabel htmlFor="new-board-description">{t('description')}</FormLabel>
               <input
                 id="new-board-description"
                 name="new_board_description"
                 type="text"
                 value={newBoardDescription}
                 onChange={(e) => setNewBoardDescription(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
                 placeholder={t('optionalDescription')}
               />
             </div>
 
-            <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+            <div className="border-t border-border pt-4">
               <div className="flex items-center mb-3">
                 <input
                   type="checkbox"
                   id="isLanguageLearning"
                   checked={isLanguageLearning}
                   onChange={(e) => setIsLanguageLearning(e.target.checked)}
-                  className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                  className="w-4 h-4 text-brand rounded focus:ring-brand"
                 />
-                <label htmlFor="isLanguageLearning" className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {t('languageLearning', 'Language Learning Board')}
+                <label htmlFor="isLanguageLearning" className="ml-2 text-sm font-medium text-foreground">
+                  {t('languageLearning')}
                 </label>
               </div>
               {isLanguageLearning && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 ml-6">
-                  {t('languageLearningDesc', 'Symbols will always be displayed in their original language.')}
+                <p className="text-xs text-muted-foreground mb-3 ml-6">
+                  {t('languageLearningDesc')}
                 </p>
               )}
               <div className="flex items-center mb-3">
@@ -434,9 +525,9 @@ export function Boards() {
                   id="aiEnabledNew"
                   checked={aiEnabled}
                   onChange={(e) => setAiEnabled(e.target.checked)}
-                  className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                  className="w-4 h-4 text-brand rounded focus:ring-brand"
                 />
-                <label htmlFor="aiEnabledNew" className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label htmlFor="aiEnabledNew" className="ml-2 text-sm font-medium text-foreground">
                   {t('enableAI')}
                 </label>
               </div>
@@ -445,8 +536,8 @@ export function Boards() {
                   <label
                     className={`relative block p-3 rounded-lg border transition-colors ${primaryReady ? '' : 'opacity-60'}`}
                   >
-                    <div className="font-semibold text-gray-900 dark:text-gray-100">{t('primaryAI')}</div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400 capitalize">
+                    <div className="font-semibold text-foreground">{t('primaryAI')}</div>
+                    <div className="text-sm text-muted-foreground capitalize">
                       {primaryReady ? `${primaryProvider} - ${primaryModel}` : t('notConfigured')}
                     </div>
                   </label>
@@ -471,11 +562,11 @@ export function Boards() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {boardsToShow.map((board) => (
-          <div key={board.id} className="relative bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
+          <div key={board.id} className="relative bg-surface rounded-xl shadow-sm border border-border hover:shadow-md transition-shadow">
             <div className="p-6">
                 <div className="flex justify-between items-start mb-4">
                   <Link to={`/boards/${board.id}`} className="block mr-4">
-                    <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg">
+                    <div className="p-2 bg-brand/10 rounded-lg">
                       <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 via-blue-500 to-purple-500 flex items-center justify-center shadow-inner">
                         <LayoutGrid className="w-5 h-5 text-white" />
                       </div>
@@ -485,7 +576,7 @@ export function Boards() {
                     {(user?.user_type === 'admin' || board.user_id === user?.id) && (
                       <button
                         onClick={() => handleDeleteBoard(board.id)}
-                        className="p-2 text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                        className="p-2 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
                         aria-label={t('delete')}
                       >
                         <Trash2 className="w-4 h-4" />
@@ -494,36 +585,36 @@ export function Boards() {
                     {user && (
                       <button
                         onClick={() => duplicateBoard(board.id, user.id)}
-                        className="p-2 text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
-                        aria-label="Duplicate board"
+                        className="p-2 text-muted-foreground hover:text-brand hover:bg-brand/20 rounded-lg transition-colors"
+                        aria-label={t('duplicateBoard')}
                       >
                         <Copy className="w-4 h-4" />
                       </button>
                     )}
                     {user && (user.user_type === 'admin' || board.user_id === user.id) && (
-                      <button
+                      <IconButton
+                        label={t('assignToStudent')}
+                        title={t('assignToStudentTitle')}
                         onClick={() => openAssign(board.id)}
-                        className="p-2 text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
-                        title="Assign to Student"
-                        aria-label="Assign to student"
+                        className="p-2 text-muted-foreground hover:text-brand hover:bg-brand/20 rounded-lg transition-colors"
                       >
                         <UserPlus className="w-4 h-4" />
-                      </button>
+                      </IconButton>
                     )}
                   </div>
                 </div>
                 <Link to={`/boards/${board.id}`} className="block">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{board.name}</h3>
-                  <p className="text-gray-500 dark:text-gray-400 text-sm mb-4 line-clamp-2">
+                  <SectionTitle as="h3" className="mb-1">{board.name}</SectionTitle>
+                  <p className="text-muted-foreground text-sm mb-4 line-clamp-2">
                     {board.description || t('noDescriptionProvided')}
                   </p>
                 </Link>
-              <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400 pt-4 border-t border-gray-100 dark:border-gray-700">
+              <div className="flex items-center justify-between text-sm text-muted-foreground pt-4 border-t border-border">
                 <span>{formatDate(board.created_at)}</span>
                 <div className="flex items-center gap-3">
                   <Link
                     to={`/play/${board.id}`}
-                    className="flex items-center text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 font-medium"
+                    className="flex items-center text-green-700 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 font-medium"
                     title={t('enterSpeakMode')}
                   >
                     <Play className="w-4 h-4 mr-1 fill-current" />
@@ -532,7 +623,7 @@ export function Boards() {
                   {(user?.user_type === 'admin' || board.user_id === user?.id) && (
                     <Link
                       to={`/boards/${board.id}`}
-                      className="flex items-center text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium"
+                      className="flex items-center text-brand hover:text-brand font-medium"
                     >
                       <Edit className="w-4 h-4 mr-1" />
                       {t('editBoard')}
@@ -541,27 +632,35 @@ export function Boards() {
                 </div>
               </div>
               {assignOpenId === board.id && (
-                <div className="mt-4 p-4 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-800 rounded-lg">
+                <div className="mt-4 p-4 bg-brand/10 border border-brand/20 rounded-lg">
                   <div className="flex items-center space-x-3">
-                    <select
-                      value={selectedStudentId ?? ''}
-                      onChange={(e) => setSelectedStudentId(parseInt(e.target.value))}
-                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    <Select
+                      value={selectedStudentId == null ? 'none' : String(selectedStudentId)}
+                      onValueChange={(value) => setSelectedStudentId(value === 'none' || value == null ? null : parseInt(value, 10))}
                       disabled={studentsLoading}
+                      items={[
+                        { value: 'none', label: t('selectStudent') },
+                        ...students.map((s) => ({ value: String(s.id), label: s.display_name || s.username })),
+                      ]}
                     >
-                      <option value="">{t('selectStudent')}</option>
-                      {students.map(s => (
-                        <option key={s.id} value={s.id}>{s.display_name || s.username}</option>
-                      ))}
-                    </select>
-                    <Button variant="primary" size="sm" onClick={() => submitAssign(board.id)} loading={assignLoading} disabled={!selectedStudentId}>
+                      <SelectTrigger aria-label={t('selectStudent')} className="flex-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">{t('selectStudent')}</SelectItem>
+                        {students.map(s => (
+                          <SelectItem key={s.id} value={String(s.id)}>{s.display_name || s.username}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button variant="default" size="sm" onClick={() => submitAssign(board.id)} loading={assignLoading} disabled={!selectedStudentId}>
                       {t('assign')}
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setAssignOpenId(null)}>
+                    <Button variant="ghost" size="sm" onClick={closeAssign}>
                       {t('close')}
                     </Button>
                   </div>
-                  {assignError && <div className="text-sm text-red-600 mt-2">{assignError}</div>}
+                  {assignError && <div className="text-sm text-red-600 dark:text-red-400 mt-2">{assignError}</div>}
                 </div>
               )}
             </div>

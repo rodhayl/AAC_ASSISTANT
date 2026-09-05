@@ -45,16 +45,56 @@ test.describe('Board Editor', () => {
     await page.getByRole('button', { name: /cow/i }).first().click();
     await expect(page.locator('.grid').getByText('cow', { exact: true })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Clear Board' }).click();
-    const clearDialog = page.getByRole('dialog', { name: 'Remove all symbols from this board' });
+    // The editor UI is localized to the student's language; match the clear
+    // button and its confirmation dialog across English and Spanish.
+    const clearBoardButton = page.getByRole('button', { name: /clear board|limpiar tablero/i });
+    await clearBoardButton.click();
+    const clearDialog = page.getByRole('alertdialog', { name: /remove all symbols|eliminar todos los símbolos/i });
     await expect(clearDialog).toBeVisible();
-    await clearDialog.getByRole('button', { name: 'Cancel' }).click();
+    await clearDialog.getByRole('button', { name: /cancel|cancelar/i }).click();
     await expect(clearDialog).not.toBeVisible();
     await expect(page.locator('.grid').getByText('cow', { exact: true })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Clear Board' }).click();
-    await page.getByRole('dialog', { name: 'Remove all symbols from this board' })
-      .getByRole('button', { name: 'Clear Board' }).click();
+    await clearBoardButton.click();
+    await page.getByRole('alertdialog', { name: /remove all symbols|eliminar todos los símbolos/i })
+      .getByRole('button', { name: /clear board|limpiar tablero/i }).click();
     await expect(page.locator('.grid').getByText('cow', { exact: true })).not.toBeVisible({ timeout: 10000 });
+  });
+
+  test('repositions a symbol via drag and drop', async ({ page }) => {
+    await page.goto('/boards');
+    await expect(page.locator('.animate-spin')).not.toBeVisible({ timeout: 20000 });
+
+    const boardName = `Drag Test ${Date.now()}`;
+    await page.getByRole('button', { name: /new board|nuevo|create board|crear/i }).first().click({ force: true });
+    await page.getByLabel(/board name|nombre/i).fill(boardName);
+    await page.getByRole('button', { name: /create|crear/i }).click();
+
+    await page.getByPlaceholder(/search|buscar/i).fill(boardName);
+    await expect(page.getByText(boardName, { exact: true })).toBeVisible({ timeout: 30000 });
+    await page.getByText(boardName, { exact: true }).click();
+    await page.waitForURL(/\/boards\/\d+/);
+
+    // Add a symbol into the first empty cell (0,0).
+    await page.getByRole('button', { name: 'Add symbol' }).first().click();
+    await page.locator('#symbol-picker-search').fill('cow');
+    await page.getByRole('button', { name: /cow/i }).first().click();
+    await expect(page.locator('.grid').getByText('cow', { exact: true })).toBeVisible({ timeout: 10000 });
+
+    // Drag the symbol from cell (0,0) onto cell (1,1) and assert it lands there.
+    const symbol = page.locator('.grid').locator('div.group').filter({ hasText: 'cow' }).first();
+    const target = page.getByRole('gridcell', { name: 'Cell 1, 1' });
+    const symbolBox = await symbol.boundingBox();
+    const targetBox = await target.boundingBox();
+    if (!symbolBox || !targetBox) throw new Error('missing bounding boxes for drag');
+    await page.mouse.move(symbolBox.x + symbolBox.width / 2, symbolBox.y + symbolBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 20 });
+    await page.mouse.up();
+    await expect(target.getByText('cow', { exact: true })).toBeVisible({ timeout: 10000 });
+
+    // The original cell is now empty again.
+    const origin = page.getByRole('gridcell', { name: 'Cell 0, 0' });
+    await expect(origin.getByText('cow', { exact: true })).not.toBeVisible({ timeout: 10000 });
   });
 });

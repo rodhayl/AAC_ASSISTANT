@@ -12,6 +12,22 @@ const storeState = vi.hoisted(() => ({
       createdAt: 1,
       type: 'info',
     },
+    {
+      id: 8,
+      title: 'Achievement Unlocked',
+      message: 'First Steps (+10 pts)',
+      read: true,
+      createdAt: 2,
+      type: 'achievement',
+    },
+    {
+      id: 9,
+      title: 'Achievement Unlocked',
+      message: 'Custom Badge (+15 pts)',
+      read: true,
+      createdAt: 3,
+      type: 'achievement',
+    },
   ],
   markAsRead: vi.fn(),
   markAllAsRead: vi.fn(),
@@ -24,12 +40,15 @@ vi.mock('../src/store/notificationsStore', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) =>
+    t: (key: string, defaultValue?: string) =>
       ({
         'notifications.title': 'Notifications',
         'notifications.markAll': 'Mark all as read',
         'notifications.close': 'Close',
-      })[key] || key,
+        'notifications.achievementUnlocked': 'Logro desbloqueado',
+        'systemAchievements.first_steps.name': 'Primeros Pasos',
+        'systemAchievements.first_steps.description': 'Completa tu primera sesión',
+      })[key] || defaultValue || key,
   }),
 }));
 
@@ -49,5 +68,19 @@ describe('NotificationsPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Mark all as read' }));
     expect(storeState.markAllAsRead).toHaveBeenCalledWith();
+  });
+
+  it('localizes achievement notifications while leaving custom names intact', () => {
+    render(<NotificationsPanel onClose={vi.fn()} />);
+
+    // System achievement: both title and embedded name are localized.
+    expect(screen.getAllByText('Logro desbloqueado')).toHaveLength(2);
+    expect(screen.getByText('Primeros Pasos (+10 pts)')).toBeInTheDocument();
+
+    // Custom achievement: localized title, stored name preserved.
+    expect(screen.getByText('Custom Badge (+15 pts)')).toBeInTheDocument();
+
+    // Non-achievement notifications are untouched.
+    expect(screen.getByText('A new board is ready.')).toBeInTheDocument();
   });
 });

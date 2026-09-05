@@ -1,5 +1,6 @@
-import { memo } from 'react';
-import { Play, Delete, Trash2, X, Volume2, MessageSquare } from 'lucide-react';
+import { memo, useEffect, useRef, useState } from 'react';
+import { Play, Delete, Trash2, X, Volume2, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react';
+import { IconButton } from '../ui/icon-button';
 import type { BoardSymbol } from '../../types';
 import { useTranslation } from 'react-i18next';
 import { SymbolImage } from '../common/SymbolImage';
@@ -15,7 +16,6 @@ import {
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useState } from 'react';
 import { getCategoryStyle } from '../../lib/symbolCategoryStyle';
 
 interface SentenceStripProps {
@@ -58,7 +58,8 @@ function SortableSymbol({ symbol, index, onRemove, onSpeakItem }: {
       style={style}
       {...attributes}
       {...listeners}
-      className="flex-shrink-0 flex flex-col items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-1.5 min-w-[4rem] relative group cursor-grab active:cursor-grabbing hover:border-indigo-500 transition-colors"
+      data-testid="sentence-chip"
+      className="flex-shrink-0 flex flex-col items-center bg-surface border border-border rounded-lg p-1.5 min-w-[4rem] relative group cursor-grab active:cursor-grabbing hover:border-brand transition-colors"
       onClick={() => {
         // If we are dragging, don't trigger speak
         if (!isDragging) onSpeakItem?.(symbol.custom_text || symbol.symbol.label);
@@ -82,7 +83,7 @@ function SortableSymbol({ symbol, index, onRemove, onSpeakItem }: {
           className="w-full h-full object-contain"
         />
       </div>
-      <span className="text-xs font-medium text-gray-900 dark:text-gray-100 whitespace-nowrap max-w-[6rem] overflow-hidden text-ellipsis pointer-events-none">
+      <span className="text-xs font-medium text-foreground whitespace-nowrap max-w-[6rem] overflow-hidden text-ellipsis pointer-events-none">
         {symbol.custom_text || symbol.symbol.label}
       </span>
     </div>
@@ -102,6 +103,9 @@ export const SentenceStrip = memo(function SentenceStrip({
 }: SentenceStripProps) {
   const { t } = useTranslation('boards');
   const [activeId, setActiveId] = useState<string | null>(null);
+  const sentenceScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -109,7 +113,7 @@ export const SentenceStrip = memo(function SentenceStrip({
   );
 
   const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
+    setActiveId(String(event.active.id));
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -130,15 +134,79 @@ export const SentenceStrip = memo(function SentenceStrip({
 
   const sentenceText = symbols.map(s => s.custom_text || s.symbol.label).join(' ');
 
+  useEffect(() => {
+    const container = sentenceScrollRef.current;
+    if (!container) return;
+
+    const updateScrollControls = () => {
+      const maxScrollLeft = container.scrollWidth - container.clientWidth;
+      setCanScrollLeft(container.scrollLeft > 1);
+      setCanScrollRight(maxScrollLeft - container.scrollLeft > 1);
+    };
+
+    updateScrollControls();
+    container.addEventListener('scroll', updateScrollControls, { passive: true });
+    window.addEventListener('resize', updateScrollControls);
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(updateScrollControls)
+      : null;
+    resizeObserver?.observe(container);
+
+    return () => {
+      container.removeEventListener('scroll', updateScrollControls);
+      window.removeEventListener('resize', updateScrollControls);
+      resizeObserver?.disconnect();
+    };
+  }, [symbols]);
+
+  const scrollSentence = (direction: 'left' | 'right') => {
+    const container = sentenceScrollRef.current;
+    if (!container) return;
+
+    const distance = Math.max(container.clientWidth * 0.8, 160);
+    container.scrollBy({
+      left: direction === 'left' ? -distance : distance,
+      behavior: 'smooth',
+    });
+  };
+
   return (
-    <div data-testid="sentence-strip" className="glass-panel border-b border-border dark:border-white/5 shadow-sm sticky top-0 z-20">
+    <div data-testid="sentence-strip" className="glass-panel border-b border-border shadow-sm sticky top-0 z-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
         <div className="flex items-center gap-4">
           {/* Sentence Display Area */}
-          <div className="flex-1 min-h-[5rem] bg-gray-50 dark:bg-white/5 rounded-xl border border-border dark:border-white/5 p-2 flex items-center gap-2 overflow-x-auto hide-scrollbar touch-pan-x">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            {(canScrollLeft || canScrollRight) && (
+              <button
+                type="button"
+                onClick={() => scrollSentence('left')}
+                disabled={!canScrollLeft}
+                className="flex min-h-[2.75rem] min-w-[2.75rem] shrink-0 items-center justify-center rounded-full border border-brand/20 bg-surface text-brand transition-colors hover:bg-brand/10 disabled:cursor-not-allowed disabled:opacity-30"
+                aria-label={t('previousSentenceSymbols')}
+                title={t('previousSentenceSymbols')}
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
+
+            <div className="relative min-w-0 flex-1">
+              {canScrollLeft && (
+                <div
+                  data-testid="sentence-left-overflow-indicator"
+                  className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-brand/25 via-brand/10 to-transparent"
+                  aria-hidden="true"
+                />
+              )}
+
+              <div
+                ref={sentenceScrollRef}
+                data-testid="sentence-scroll-container"
+                className="flex min-h-[5rem] min-w-0 items-center gap-2 overflow-x-auto rounded-xl border border-border bg-background p-2 hide-scrollbar touch-pan-x"
+              >
             {symbols.length === 0 ? (
-              <span data-testid="sentence-empty" className="text-gray-600 dark:text-gray-400 px-2 italic select-none">
-                {t('tapSymbolsToSpeak', 'Tap symbols to create a sentence...')}
+              <span data-testid="sentence-empty" className="text-muted-foreground px-2 italic select-none">
+                {t('tapSymbolsToSpeak')}
               </span>
             ) : (
               <DndContext
@@ -165,9 +233,9 @@ export const SentenceStrip = memo(function SentenceStrip({
                 {/* Drag Overlay for visual feedback */}
                 <DragOverlay>
                   {activeId ? (
-                    <div className="flex-shrink-0 flex flex-col items-center bg-white dark:bg-gray-800 border-2 border-indigo-500 rounded-lg p-1.5 min-w-[4rem] shadow-xl opacity-90 scale-105">
+                    <div className="flex-shrink-0 flex flex-col items-center bg-surface border-2 border-brand rounded-lg p-1.5 min-w-[4rem] shadow-xl opacity-90 scale-105">
                       {(() => {
-                        const s = symbols.find((_, i) => `${_.id}-${i}` === activeId);
+                        const s = symbols.find((_, i) => `symbol-${_.id}-${i}` === activeId);
                         if (!s) return null;
                         return (
                           <>
@@ -177,7 +245,7 @@ export const SentenceStrip = memo(function SentenceStrip({
                                 className="w-full h-full object-contain"
                               />
                             </div>
-                            <span className="text-xs font-medium text-gray-900 dark:text-gray-100">
+                            <span className="text-xs font-medium text-foreground">
                               {s.custom_text || s.symbol.label}
                             </span>
                           </>
@@ -188,6 +256,29 @@ export const SentenceStrip = memo(function SentenceStrip({
                 </DragOverlay>
               </DndContext>
             )}
+              </div>
+
+              {canScrollRight && (
+                <div
+                  data-testid="sentence-right-overflow-indicator"
+                  className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-brand/25 via-brand/10 to-transparent"
+                  aria-hidden="true"
+                />
+              )}
+            </div>
+
+            {(canScrollLeft || canScrollRight) && (
+              <button
+                type="button"
+                onClick={() => scrollSentence('right')}
+                disabled={!canScrollRight}
+                className="flex min-h-[2.75rem] min-w-[2.75rem] shrink-0 items-center justify-center rounded-full border border-brand/20 bg-surface text-brand transition-colors hover:bg-brand/10 disabled:cursor-not-allowed disabled:opacity-30"
+                aria-label={t('nextSentenceSymbols')}
+                title={t('nextSentenceSymbols')}
+              >
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
           </div>
 
           {/* Controls */}
@@ -197,8 +288,8 @@ export const SentenceStrip = memo(function SentenceStrip({
                 onClick={onBackspace}
                 disabled={symbols.length === 0}
                 data-testid="sentence-backspace"
-                className="p-3 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                aria-label={t('backspace', 'Backspace')}
+                className="p-3 rounded-xl bg-muted text-foreground hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                aria-label={t('backspace')}
               >
                 <Delete className="w-6 h-6" />
               </button>
@@ -209,7 +300,7 @@ export const SentenceStrip = memo(function SentenceStrip({
               disabled={symbols.length === 0}
               data-testid="sentence-clear"
               className="p-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              aria-label={t('clearSentence', 'Clear sentence')}
+              aria-label={t('clearSentence')}
             >
               <Trash2 className="w-6 h-6" />
             </button>
@@ -221,12 +312,12 @@ export const SentenceStrip = memo(function SentenceStrip({
               className={`
                 p-3 rounded-xl text-white shadow-sm transition-all transform active:scale-95
                 ${isSpeaking
-                  ? 'bg-indigo-400 cursor-wait'
-                  : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-md'
+                  ? 'bg-brand/70 cursor-wait'
+                  : 'bg-brand hover:bg-brand/80 hover:shadow-md'
                 }
-                ${symbols.length === 0 ? 'opacity-50 cursor-not-allowed bg-gray-400 dark:bg-gray-600' : ''}
+                ${symbols.length === 0 ? 'opacity-50 cursor-not-allowed bg-muted-foreground' : ''}
               `}
-              aria-label={t('speakSentence', 'Speak sentence')}
+              aria-label={t('speakSentence')}
             >
               {isSpeaking ? (
                 <Volume2 className="w-6 h-6 animate-pulse" />
@@ -236,22 +327,22 @@ export const SentenceStrip = memo(function SentenceStrip({
             </button>
 
             {onAskAI && (
-              <button
+              <IconButton
+                label={t('askAI')}
                 onClick={onAskAI}
                 disabled={symbols.length === 0}
                 data-testid="sentence-ask-ai"
-                className="p-3 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                title={t('askAI', 'Ask AI')}
+                className="p-3 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors size-11"
               >
                 <MessageSquare className="w-6 h-6" />
-              </button>
+              </IconButton>
             )}
           </div>
         </div>
 
         {/* Text Preview (for accessibility/clarity) */}
         {symbols.length > 0 && (
-          <div data-testid="sentence-preview" className="mt-1 px-1 text-sm text-gray-500 dark:text-gray-400 truncate">
+          <div data-testid="sentence-preview" className="mt-1 px-1 text-sm text-muted-foreground truncate">
             {sentenceText}
           </div>
         )}

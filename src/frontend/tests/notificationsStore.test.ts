@@ -64,3 +64,77 @@ describe('notifications store session isolation', () => {
     expect(useNotificationsStore.getState().items[0].id).toBe(2);
   });
 });
+
+describe('notifications store read-state and load resilience', () => {
+  beforeEach(() => {
+    useNotificationsStore.setState({ items: [], loading: false, loaded: false });
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    window.dispatchEvent(new Event('aac:auth-logout'));
+    vi.restoreAllMocks();
+  });
+
+  const item = (id: string | number, read = false) => ({
+    id,
+    title: `Title ${String(id)}`,
+    message: 'Message',
+    read,
+    createdAt: 0,
+  });
+
+  it('syncs numeric ids to the backend and skips sync for local-only ids', async () => {
+    const put = vi.spyOn(api, 'put').mockResolvedValue({} as never);
+
+    useNotificationsStore.setState({ items: [item(1)] });
+    await useNotificationsStore.getState().markAsRead(1);
+    expect(put).toHaveBeenCalledWith('/notifications/1/read');
+    expect(useNotificationsStore.getState().items[0].read).toBe(true);
+
+    useNotificationsStore.setState({ items: [item('local-1')] });
+    await useNotificationsStore.getState().markAsRead('local-1');
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(useNotificationsStore.getState().items[0].read).toBe(true);
+  });
+
+  it('keeps the local read state when the backend sync fails', async () => {
+    vi.spyOn(api, 'put').mockRejectedValue(new Error('offline'));
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    useNotificationsStore.setState({ items: [item(1)] });
+    await useNotificationsStore.getState().markAsRead(1);
+
+    expect(useNotificationsStore.getState().items[0].read).toBe(true);
+    expect(consoleSpy).toHaveBeenCalled();
+  });
+
+  it('markAllAsRead updates every item and syncs once', async () => {
+    const put = vi.spyOn(api, 'put').mockResolvedValue({} as never);
+    useNotificationsStore.setState({ items: [item(1), item(2, true), item(3)] });
+
+    await useNotificationsStore.getState().markAllAsRead();
+
+    expect(put).toHaveBeenCalledWith('/notifications/read-all');
+    expect(useNotificationsStore.getState().items.every((i) => i.read)).toBe(true);
+  });
+
+  it('unreadCount counts only unread items', () => {
+    useNotificationsStore.setState({ items: [item(1), item(2, true), item(3)] });
+    expect(useNotificationsStore.getState().unreadCount()).toBe(2);
+  });
+
+  it('loadFromBackend failure stops loading without crashing', async () => {
+    const get = vi.spyOn(api, 'get').mockRejectedValue(new Error('network'));
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await useNotificationsStore.getState().loadFromBackend(9);
+
+    expect(get).toHaveBeenCalledWith('/notifications', {
+      params: { user_id: 9, limit: 50 },
+    });
+    expect(useNotificationsStore.getState().loading).toBe(false);
+    expect(useNotificationsStore.getState().loaded).toBe(false);
+    expect(consoleSpy).toHaveBeenCalled();
+  });
+});

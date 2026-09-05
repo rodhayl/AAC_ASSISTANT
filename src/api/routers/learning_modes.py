@@ -3,10 +3,11 @@ from loguru import logger
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import LearningMode, User
+from src.aac_app.models import LearningMode, User, UserSettings
 from src.aac_app.services.guardian_profile_service import get_guardian_profile_service
 from src.aac_app.services.learning.service import LearningCompanionService
 from src.api.deps import (
+    STAFF_USER_TYPES,
     get_current_active_user,
     get_db,
     get_learning_service,
@@ -65,11 +66,27 @@ def preview_learning_mode_system_prompt(
     Teachers/admins can preview against a specific student to see the final
     prompt that student's sessions will use.
     """
-    if current_user.user_type not in ("admin", "teacher"):
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_text(user=current_user, key="errors.learningModes.staffOnly"),
         )
+
+    # A mode key is an addressable reference to a saved prompt. Enforce the
+    # same visibility rule as the mode list before rendering it; otherwise a
+    # teacher could guess another teacher's key and read their private prompt.
+    if payload.mode_key:
+        mode_query = db.query(LearningMode).filter(LearningMode.key == payload.mode_key)
+        if current_user.user_type != "admin":
+            mode_query = mode_query.filter(
+                (LearningMode.created_by.is_(None))
+                | (LearningMode.created_by == current_user.id)
+            )
+        if mode_query.first() is None:
+            raise HTTPException(
+                status_code=404,
+                detail=get_text(user=current_user, key="errors.learningModes.notFound"),
+            )
 
     # Preview against a specific student's guardian profile when selected,
     # otherwise against the current user (default template when no profile).
@@ -92,7 +109,7 @@ def preview_learning_mode_system_prompt(
     temperature = None
     max_tokens = None
     if payload.sample_question and payload.sample_question.strip():
-        user_lang = service._get_user_language(target_user_id, db)
+        user_lang = service.get_user_language(target_user_id, db)
         user_message = service.build_conversation_user_prompt(
             student_message=payload.sample_question.strip(),
             topic=payload.topic or "general conversation",
@@ -144,10 +161,11 @@ def create_learning_mode(
         )
 
     # Check for duplicate key for this user
-    existing = db.query(LearningMode).filter(
-        LearningMode.key == mode.key,
-        (LearningMode.created_by == current_user.id) | (LearningMode.created_by.is_(None))
-    ).first()
+    # Keys are persisted on sessions and later resolved by key alone. Allowing
+    # two teachers to create the same key would make a session pick an
+    # unrelated teacher's prompt nondeterministically, so enforce one namespace
+    # for keys across system and custom modes.
+    existing = db.query(LearningMode).filter(LearningMode.key == mode.key).first()
 
     if existing:
         raise HTTPException(
@@ -245,6 +263,39 @@ def delete_learning_mode(
                 detail=get_text(user=current_user, key="errors.learningModes.deleteForbidden"),
             )
 
+    deleted_key = db_mode.key
     db.delete(db_mode)
+    db.flush()
+
+    # A deleted mode must never remain selected as a user's default. Repair
+    # every affected settings row against that user's visible modes so a later
+    # session start cannot receive an inaccessible key.
+    affected_settings = (
+        db.query(UserSettings)
+        .filter(UserSettings.default_learning_mode == deleted_key)
+        .all()
+    )
+    for settings in affected_settings:
+        fallback = (
+            db.query(LearningMode)
+            .filter(
+                (LearningMode.created_by.is_(None))
+                | (LearningMode.created_by == settings.user_id)
+            )
+            .order_by(LearningMode.id)
+            .first()
+        )
+        settings.default_learning_mode = fallback.key if fallback else None
+
     db.commit()
-    return {"success": True}
+    current_settings = (
+        db.query(UserSettings)
+        .filter(UserSettings.user_id == current_user.id)
+        .first()
+    )
+    return {
+        "success": True,
+        "default_learning_mode": (
+            current_settings.default_learning_mode if current_settings else "practice"
+        ),
+    }

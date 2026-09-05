@@ -3,6 +3,7 @@
     "title": "Caza de Símbolos",
     "selectBoard": "Selecciona un tablero para comenzar",
     "notEnoughSymbols": "Este tablero necesita al menos 2 símbolos para jugar.",
+    "loadError": "No se pudo cargar el tablero. Inténtalo de nuevo.",
     "notEnoughSymbolsTitle": "Necesita más símbolos",
     "minSymbolsRequired": "Se requieren al menos 2 símbolos",
     "playNow": "Jugar Ahora",
@@ -14,6 +15,10 @@
     "playAgain": "Jugar de nuevo",
     "chooseDifferent": "Elegir otro tablero",
     "score": "Puntuación",
-    "round": "Ronda {{current}}/{{total}}"
+    "round": "Ronda {{current}}/{{total}}",
+    "repeat": "Repetir instrucción",
+    "back": "Volver",
+    "noBoards": "Aún no hay tableros disponibles. Pide a tu profesor que cree uno.",
+    "noDescription": "Sin descripción"
   }
 }

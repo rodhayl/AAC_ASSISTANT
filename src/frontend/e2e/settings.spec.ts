@@ -6,7 +6,7 @@ const bootstrapPassword = process.env.AAC_BOOTSTRAP_ADMIN_PASSWORD || 'Admin123'
 // preference, so these tests assert real persistence (PUT body + reload)
 // instead of relying on translated label text or fixed sleeps.
 const savePrefs = (page: Page) =>
-  page.getByRole('button', { name: /Save Preferences|Guardar preferencias/i });
+  page.getByRole('button', { name: /Save Appearance Settings|Guardar ajustes de apariencia/i });
 
 async function gotoSettings(page: Page) {
   await page.goto('/settings');
@@ -26,8 +26,11 @@ async function toggleAndPersist(
   const putResponse = page.waitForResponse(
     (r) => r.url().includes('/api/auth/preferences') && r.request().method() === 'PUT',
   );
-  if (target) await toggle.check({ force: true });
-  else await toggle.uncheck({ force: true });
+  // React-controlled checkbox: force-clicking the visually hidden input can
+  // miss React's onChange, so dispatch the native click directly.
+  await toggle.evaluate((el) => (el as HTMLInputElement).click());
+  if (target) await expect(toggle).toBeChecked();
+  else await expect(toggle).not.toBeChecked();
   await savePrefs(page).click();
 
   const putBody = (await (await putResponse).json()) as Record<string, unknown>;

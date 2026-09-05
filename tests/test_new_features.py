@@ -8,13 +8,14 @@ from src.aac_app.models import (
     Achievement,
     BoardAssignment,
     CommunicationBoard,
+    StudentTeacher,
     Symbol,
     User,
     UserAchievement,
 )
 from src.api.main import app
 from src.api.routers.export_import import compute_checksum
-from tests.test_utils_auth import create_test_headers
+from tests.auth_helpers import create_test_headers
 
 
 @pytest.fixture
@@ -590,6 +591,68 @@ def test_replaying_same_import_is_idempotent(client):
     assert len(history.json()["sessions"]) == 1
 
 
+def test_replaying_legacy_board_import_with_omitted_placement_defaults_is_idempotent(
+    client, test_db_session
+):
+    registration = client.post(
+        "/api/auth/register",
+        json={
+            "username": "legacy_replay_importer",
+            "password": "LegacyReplay123",
+            "display_name": "Legacy Replay Importer",
+            "user_type": "student",
+        },
+    )
+    assert registration.status_code == 200
+    user_id = registration.json()["id"]
+    headers = create_test_headers(user_id, "legacy_replay_importer", "student")
+
+    symbol = Symbol(label="legacy symbol", category="general")
+    test_db_session.add(symbol)
+    test_db_session.commit()
+    test_db_session.refresh(symbol)
+
+    base = {
+        "meta": {
+            "exported_at": "2024-01-01T00:00:00Z",
+            "username": "legacy_replay_importer",
+        },
+        "boards": [
+            {
+                "name": "Legacy Replay Board",
+                "symbols": [{"symbol_id": symbol.id}],
+            }
+        ],
+        "assignedBoards": [],
+        "achievements": [],
+        "totalPoints": 0,
+        "learningHistory": [],
+    }
+    payload = {
+        **base,
+        "meta": {
+            **base["meta"],
+            "checksum_sha256": compute_checksum(base),
+            "schema_version": "2",
+        },
+    }
+
+    first = client.post("/api/data/import", json=payload, headers=headers)
+    assert first.status_code == 200, first.text
+    second = client.post("/api/data/import", json=payload, headers=headers)
+    assert second.status_code == 200, second.text
+
+    boards = client.get(
+        "/api/boards/", params={"user_id": user_id}, headers=headers
+    )
+    assert boards.status_code == 200
+    matching = [
+        board for board in boards.json() if board["name"] == "Legacy Replay Board"
+    ]
+    assert len(matching) == 1
+    assert matching[0]["symbols"][0]["is_visible"] is True
+
+
 def test_replaying_assigned_board_import_is_idempotent(client, test_db_session):
     registration = client.post(
         "/api/auth/register",
@@ -1033,3 +1096,159 @@ def test_students_update_delete(client, admin_user):
     # Delete student
     de = client.delete(f"/api/auth/users/{stu['id']}", headers=headers)
     assert de.status_code == 200
+
+
+def test_export_import_round_trip_preserves_content_and_replay_is_idempotent(
+    client, test_db_session
+):
+    """Round-trip a real /api/data/export payload into a clean account state.
+
+    Verifies that boards, symbol placements (including is_visible=False), and
+    assigned-board links survive export -> wipe -> import, and that re-import
+    of the same payload does not duplicate anything.
+    """
+    teacher = User(
+        username="roundtrip_teacher",
+        password_hash="x",
+        display_name="Roundtrip Teacher",
+        user_type="teacher",
+    )
+    student = User(
+        username="roundtrip_student",
+        password_hash="x",
+        display_name="Roundtrip Student",
+        user_type="student",
+    )
+    test_db_session.add_all([teacher, student])
+    test_db_session.commit()
+    test_db_session.add(StudentTeacher(student_id=student.id, teacher_id=teacher.id))
+    test_db_session.commit()
+
+    symbol_visible = Symbol(label="roundtrip_cat", category="animals")
+    symbol_hidden = Symbol(label="roundtrip_dog", category="animals")
+    test_db_session.add_all([symbol_visible, symbol_hidden])
+    test_db_session.commit()
+    test_db_session.refresh(symbol_visible)
+    test_db_session.refresh(symbol_hidden)
+
+    headers = create_test_headers(teacher.id, "roundtrip_teacher", "teacher")
+
+    # Own board with two placements, one of them hidden.
+    own = client.post(
+        "/api/boards/",
+        json={"name": "Roundtrip Board", "category": "animals"},
+        params={"user_id": teacher.id},
+        headers=headers,
+    )
+    assert own.status_code == 200, own.text
+    own_board_id = own.json()["id"]
+    for placement in (
+        {
+            "symbol_id": symbol_visible.id,
+            "position_x": 0,
+            "position_y": 0,
+            "size": 1,
+            "is_visible": True,
+            "custom_text": "Cat",
+        },
+        {
+            "symbol_id": symbol_hidden.id,
+            "position_x": 1,
+            "position_y": 0,
+            "size": 1,
+            "is_visible": False,
+            "custom_text": "Dog",
+        },
+    ):
+        added = client.post(
+            f"/api/boards/{own_board_id}/symbols",
+            json=placement,
+            headers=headers,
+        )
+        assert added.status_code == 200, added.text
+
+    # Assign the board to the student so the student's export carries an
+    # assignedBoards entry.
+    assigned = client.post(
+        f"/api/boards/{own_board_id}/assign",
+        json={"student_id": student.id},
+        headers=headers,
+    )
+    assert assigned.status_code == 200, assigned.text
+    assert assigned.json() == {"ok": True}
+
+    student_headers = create_test_headers(student.id, "roundtrip_student", "student")
+
+    export = client.get(
+        "/api/data/export",
+        params={"username": "roundtrip_student"},
+        headers=student_headers,
+    )
+    assert export.status_code == 200, export.text
+    payload = export.json()
+    assert payload["boards"] == []
+    assert len(payload["assignedBoards"]) == 1
+    assigned_export = payload["assignedBoards"][0]
+    assert assigned_export["name"] == "Roundtrip Board"
+    assert len(assigned_export["symbols"]) == 2
+    placements_by_text = {
+        placement["custom_text"]: placement
+        for placement in assigned_export["symbols"]
+    }
+    assert placements_by_text["Cat"]["is_visible"] is True
+    assert placements_by_text["Dog"]["is_visible"] is False
+    # Export IDs must not be trusted by import: the placement points at the
+    # teacher's board ID, but the student account has no such board yet.
+    assert placements_by_text["Cat"]["symbol_id"] == symbol_visible.id
+
+    # Wipe the student's imported state so the import starts clean.
+    test_db_session.query(BoardAssignment).filter(
+        BoardAssignment.student_id == student.id
+    ).delete()
+    test_db_session.query(CommunicationBoard).filter(
+        CommunicationBoard.user_id == student.id
+    ).delete()
+    test_db_session.commit()
+
+    first = client.post("/api/data/import", json=payload, headers=student_headers)
+    assert first.status_code == 200, first.text
+
+    boards_after = client.get(
+        "/api/boards/", params={"user_id": student.id}, headers=student_headers
+    )
+    assert boards_after.status_code == 200
+    imported = [b for b in boards_after.json() if b["name"] == "Roundtrip Board"]
+    assert len(imported) == 1
+    imported_placements = sorted(
+        imported[0]["symbols"], key=lambda s: (s["position_x"], s["position_y"])
+    )
+    assert [p["custom_text"] for p in imported_placements] == ["Cat", "Dog"]
+    assert [p["is_visible"] for p in imported_placements] == [True, False]
+    assert imported[0]["symbols"][0]["symbol"]["id"] == symbol_visible.id
+
+    # The import must restore the student's assignment too.
+    assignments = (
+        test_db_session.query(BoardAssignment)
+        .filter(BoardAssignment.student_id == student.id)
+        .all()
+    )
+    assert len(assignments) == 1
+    assert assignments[0].board_id == imported[0]["id"]
+
+    # Re-importing the same payload must not duplicate boards, placements,
+    # or assignments.
+    replay = client.post("/api/data/import", json=payload, headers=student_headers)
+    assert replay.status_code == 200, replay.text
+    boards_after_replay = client.get(
+        "/api/boards/", params={"user_id": student.id}, headers=student_headers
+    )
+    assert boards_after_replay.status_code == 200
+    replayed = [b for b in boards_after_replay.json() if b["name"] == "Roundtrip Board"]
+    assert len(replayed) == 1
+    assert len(replayed[0]["symbols"]) == 2
+    assignments_after_replay = (
+        test_db_session.query(BoardAssignment)
+        .filter(BoardAssignment.student_id == student.id)
+        .all()
+    )
+    assert len(assignments_after_replay) == 1

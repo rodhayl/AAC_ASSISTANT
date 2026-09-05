@@ -25,10 +25,25 @@ vi.mock('../src/store/offlineStore', () => ({
 
 vi.mock('../src/lib/api', () => ({
   default: { request },
+  apiOffline: { isOffline: () => false, resumeQueue: vi.fn() },
 }));
 
 vi.mock('../src/lib/format', () => ({
   formatTime: () => 'just now',
+}));
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) =>
+      ({
+        'offline.title': 'Offline Conflicts',
+        'offline.clearAll': 'Clear all conflicts',
+        'offline.retries': 'Retries',
+        'offline.retry': 'Retry',
+        'offline.dismiss': 'Dismiss',
+        'offline.conflictsHint': 'Hint',
+      })[key] || key,
+  }),
 }));
 
 describe('OfflineConflictsPanel', () => {
@@ -40,7 +55,7 @@ describe('OfflineConflictsPanel', () => {
   it('retries a conflict and removes it after success', async () => {
     render(<OfflineConflictsPanel />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Retry request' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
 
     expect(storeState.incrementRetry).toHaveBeenCalledWith('conflict-1');
     await waitFor(() => {
@@ -52,7 +67,7 @@ describe('OfflineConflictsPanel', () => {
   it('supports dismissing one conflict and clearing all conflicts', () => {
     render(<OfflineConflictsPanel />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss conflict' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     expect(storeState.removeConflict).toHaveBeenCalledWith('conflict-1');
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear all conflicts' }));

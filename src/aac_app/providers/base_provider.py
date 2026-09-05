@@ -9,6 +9,16 @@ from abc import ABC, abstractmethod
 from loguru import logger
 
 
+class ProviderRateLimitError(Exception):
+    """Raised when a provider rejects a request with HTTP 429.
+
+    Distinct from other failures because the limit is transient (a
+    per-minute quota) rather than a broken configuration: callers can
+    retry sooner and back off gently instead of waiting out a long
+    generic failure cooldown.
+    """
+
+
 class BaseLLMProvider(ABC):
     """Abstract base class for LLM providers"""
 
@@ -106,3 +116,7 @@ class BaseLLMProvider(ABC):
                 if self.client is not None:
                     self._pending_close_task = loop.create_task(self.client.aclose())
                     self._pending_close_task.add_done_callback(self._consume_close_task)
+
+    async def close(self) -> None:
+        """Backward-compatible async close alias."""
+        await self.close_async()

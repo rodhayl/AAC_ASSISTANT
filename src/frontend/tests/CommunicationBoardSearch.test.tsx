@@ -56,6 +56,7 @@ vi.mock('../src/store/learningStore', () => {
   const state = {
     submitSymbolAnswer: vi.fn(),
     startSession: vi.fn(),
+    resetSession: vi.fn(),
     currentSession: null,
     isLoading: false,
   };
@@ -79,6 +80,7 @@ vi.mock('../src/lib/api', () => ({
 vi.mock('../src/lib/tts', () => ({
   tts: {
     onStatusChange: vi.fn(() => () => {}),
+    getStatus: vi.fn(() => 'idle'),
     enqueue: vi.fn(),
     cancelAll: vi.fn(),
   },
@@ -86,7 +88,21 @@ vi.mock('../src/lib/tts', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback ?? key,
+    t: (key: string, arg2?: string | Record<string, unknown>) => {
+      if (typeof arg2 === 'string') return arg2;
+      const values: Record<string, string> = {
+        'common:communication': 'Communication',
+        'common:selectBoardToStart': 'Select a board to start communicating',
+        'common:searchBoards': 'Search boards...',
+        'common:noBoardsMatchSearch': 'No boards match your search',
+        'common:noBoardsFound': 'No boards found',
+        'common:createBoardFirst': 'Create a board in the Boards section first.',
+        'common:askTeacherForBoards': 'Ask your teacher to assign you a board.',
+        'common:openBoard': 'Open Board',
+        'common:symbols': 'symbols',
+      };
+      return values[key] ?? key;
+    },
   }),
 }));
 
@@ -129,6 +145,10 @@ vi.mock('../src/components/board/PartnerOverlay', () => ({
 }));
 vi.mock('../src/components/learning/BoardsAndTopicsSidebar', () => ({
   BoardsAndTopicsSidebar: () => null,
+}));
+
+vi.mock('../src/hooks/useTopicPickerPool', () => ({
+  useTopicPickerPool: () => ({ pickerTopics: [], pickerRecent: [] }),
 }));
 
 import { Communication } from '../src/pages/Communication';

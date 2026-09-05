@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 
 from src import config
+from src.aac_app import schema
 from src.aac_app.db import create_engine_instance
 from src.aac_app.models import Base
 from src.aac_app.seed import init_database
@@ -25,17 +26,17 @@ def reset_database(user=Depends(get_current_admin_user)):
         )
         raise HTTPException(
             status_code=403,
-            detail="Database reset is disabled. Set ALLOW_DB_RESET=true in .env to enable.",
+            detail=get_text(user=user, key="errors.admin.databaseResetDisabled"),
         )
 
     # Additional production environment check
-    if config.ENVIRONMENT == "production":
+    if config.ENVIRONMENT.strip().casefold() == "production":
         logger.error(
             f"CRITICAL: Database reset attempted in PRODUCTION by user {user.username}"
         )
         raise HTTPException(
             status_code=403,
-            detail="Database reset is blocked in production environments.",
+            detail=get_text(user=user, key="errors.admin.databaseResetProduction"),
         )
 
     try:
@@ -43,15 +44,15 @@ def reset_database(user=Depends(get_current_admin_user)):
         engine = create_engine_instance()
         logger.warning("Dropping all tables for database reset...")
         Base.metadata.drop_all(engine)
-        logger.info("Creating tables...")
-        Base.metadata.create_all(engine)
+        logger.info("Creating and upgrading tables...")
+        schema.ensure(engine)
         logger.info("Seeding database initial data...")
         init_database(ensure_schema=False)
         logger.info(f"Database reset completed successfully by {user.username}")
         return {"ok": True}
     except Exception as e:
-        logger.error(f"Failed to reset database: {e}")
-        error_msg = get_text(
-            user=user, key="errors.admin.databaseResetFailed", error=str(e)
-        )
-        raise HTTPException(status_code=500, detail=error_msg) from e
+        logger.exception("Failed to reset database")
+        raise HTTPException(
+            status_code=500,
+            detail=get_text(user=user, key="errors.admin.databaseResetFailed"),
+        ) from e

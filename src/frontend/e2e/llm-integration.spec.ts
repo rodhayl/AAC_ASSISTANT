@@ -419,12 +419,14 @@ test.describe('LLM Integration (Mocked)', () => {
         });
     });
 
-    // Mock Start Session (needed for Ask AI)
+    // Mock Start Session (needed for Ask AI). Include board_id so the
+    // Communication page's board-mismatch effect doesn't resetSession()
+    // and drop the in-flight answer.
     await page.route(/\/api\/learning\/start/, async route => {
          await route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify({ id: 123, session_id: 123, success: true })
+            body: JSON.stringify({ id: 123, session_id: 123, success: true, board_id: 1 })
         });
     });
 
@@ -446,7 +448,11 @@ test.describe('LLM Integration (Mocked)', () => {
     await expect(strip).toContainText("Hi", { timeout: 5000 });
 
     // Click Ask AI
-    const askAiBtn = page.getByRole('button', { name: /ask ai|preguntar ia|magic/i }).first();
+    // The app restores the authenticated user's saved ui_language, so the button label may be
+    // English ("Ask AI") or Spanish ("Preguntar a la IA"). Match both locales (and the "IA" chip).
+    const askAiBtn = page.locator('[data-testid="sentence-ask-ai"]').or(
+      page.getByRole('button', { name: /ask ai|preguntar a?l?a? ?ia|magic/i }),
+    ).first();
     await expect(askAiBtn).toBeEnabled();
     await askAiBtn.click();
     

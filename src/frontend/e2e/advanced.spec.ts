@@ -46,11 +46,46 @@ test.describe('Advanced Scenarios', () => {
 
   test('should view notifications', async ({ page }) => {
     await page.goto('/');
-    // Click bell icon
-    await page.getByLabel(/notifications|notificaciones/i).click();
+    // Click bell icon. The bell button is the only aria-label match that is a
+    // button — sonner's Toaster also renders a live region labeled
+    // "Notifications alt+T", which made the bare getByLabel ambiguous.
+    await page.getByRole('button', { name: /notifications|notificaciones/i }).click();
 
     // Verify panel
     await expect(page.getByRole('button', { name: /mark all|marcar/i })).toBeVisible();
+  });
+
+  test('receives a notification via SSE without reload', async ({ page, playwright }) => {
+    // Open the panel; the Navbar's SSE stream subscribes on mount.
+    await page.goto('/');
+    await page.getByRole('button', { name: /notifications|notificaciones/i }).click();
+    await expect(page.getByRole('button', { name: /mark all|marcar/i })).toBeVisible();
+
+    // The admin's own token lives in localStorage (zustand persist), not a
+    // cookie, so page.request cannot authenticate. Extract it to call the
+    // admin-only notification endpoint.
+    const token = await page.evaluate(() => {
+      const raw = localStorage.getItem('auth-storage');
+      if (!raw) return null;
+      try { return JSON.parse(raw).state.token as string | null; } catch { return null; }
+    });
+    expect(token).toBeTruthy();
+    const adminId = JSON.parse(Buffer.from(token!.split('.')[1], 'base64').toString()).user_id as number;
+
+    // Create a notification for the admin themself.
+    const title = `SSE ${Date.now()}`;
+    const apiContext = await playwright.request.newContext({
+      baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:8086',
+    });
+    const res = await apiContext.post('/api/notifications', {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { user_id: adminId, title, message: 'SSE push works', notification_type: 'info', priority: 'normal' },
+    });
+    expect(res.ok()).toBeTruthy();
+    await apiContext.dispose();
+
+    // The stream pushes it into the open panel without a reload.
+    await expect(page.getByText(title)).toBeVisible({ timeout: 15000 });
   });
 
   test('should redirect legacy speak mode to the communication board', async ({ page }) => {
@@ -60,7 +95,10 @@ test.describe('Advanced Scenarios', () => {
 
   test('should handle 404', async ({ page }) => {
     await page.goto('/non-existent-page');
-    await expect(page.getByText(/page not found/i)).toBeVisible();
+    // The 404 copy is localized (en: "Page Not Found", es: "Página no encontrada").
+    await expect(
+      page.getByText(/page not found|p.*gina no encontrada|no encontrado/i),
+    ).toBeVisible();
   });
 
   test('should handle offline conflicts', async ({ page }) => {
@@ -74,7 +112,7 @@ test.describe('Advanced Scenarios', () => {
       const editLink = page.getByRole('link', { name: /edit board|editar/i }).first();
       await expect(editLink).toBeVisible();
       await editLink.click();
-      const settingsButton = page.getByLabel(/settings|ajustes/i).first();
+      const settingsButton = page.getByLabel(/board settings|configuración del tablero/i).first();
       await expect(settingsButton).toBeVisible();
 
       // 2. Mock the conflict response before replaying the offline mutation.
@@ -108,7 +146,10 @@ test.describe('Advanced Scenarios', () => {
       await page.evaluate(() => window.dispatchEvent(new Event('online')));
       // 5. The conflict panel must expose the failed mutation.
       await expect(page.getByRole('heading', { name: /offline conflicts|conflictos/i })).toBeVisible({ timeout: 10000 });
-      await expect(page.getByRole('button', { name: /retry request|reintentar/i })).toBeVisible();
+      // The localized action is "Retry" in English and "Reintentar" in
+      // Spanish. The panel heading above proves that a real conflict was
+      // recorded; this assertion checks the actionable retry control.
+      await expect(page.getByRole('button', { name: /retry|reintentar/i })).toBeVisible();
     } finally {
       try {
         await page.context().setOffline(false);

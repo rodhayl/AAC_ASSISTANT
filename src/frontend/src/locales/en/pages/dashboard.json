@@ -29,6 +29,7 @@
   },
   "activity": {
     "recent": "Recent Activity",
-    "none": "No recent activity"
+    "none": "No recent activity",
+    "practiced": "Practiced \"{{topic}}\""
   }
 }

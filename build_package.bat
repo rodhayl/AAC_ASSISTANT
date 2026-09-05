@@ -49,8 +49,8 @@ exit /b 1
 
 :iscc_validated
 
-echo [1/5] Syncing Python dependencies (including the voice extra)...
-call uv sync --extra voice
+echo [1/5] Syncing Python dependencies (voice and TTS extras)...
+call uv sync --extra voice --extra tts
 if errorlevel 1 (
     echo ERROR: uv sync failed.
     exit /b 1
@@ -63,7 +63,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [3/5] Building the frontend...
+echo [3/5] Installing frontend dependencies and building...
+if not exist "src\frontend\node_modules" (
+    call npm --prefix src\frontend ci --prefer-offline --no-audit --no-fund
+    if errorlevel 1 (
+        echo ERROR: npm ci failed.
+        exit /b 1
+    )
+)
 call npm --prefix src\frontend run build
 if errorlevel 1 (
     echo ERROR: Frontend build failed.

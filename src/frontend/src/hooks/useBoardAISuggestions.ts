@@ -12,7 +12,6 @@ interface UseBoardAISuggestionsOptions {
   resolvedProvider?: string;
   resolvedModel?: string;
   fetchBoard: (id: number, forceRefresh?: boolean) => Promise<void>;
-  deleteBoardSymbol: (boardId: number, symbolId: number, signal?: AbortSignal) => Promise<void>;
   setHasChanges: (hasChanges: boolean) => void;
 }
 
@@ -22,7 +21,6 @@ export function useBoardAISuggestions({
   resolvedProvider,
   resolvedModel,
   fetchBoard,
-  deleteBoardSymbol,
   setHasChanges,
 }: UseBoardAISuggestionsOptions) {
   const { t } = useTranslation('boards');
@@ -134,15 +132,10 @@ export function useBoardAISuggestions({
     try {
       const api = (await import('../lib/api')).default;
       if (!isCurrentApply()) return;
-      if (position) {
-        const existing = currentBoard.symbols?.find(
-          (symbol) => symbol.position_x === position.x && symbol.position_y === position.y,
-        );
-        if (existing) {
-          await deleteBoardSymbol(boardId, existing.id, controller.signal);
-          if (!isCurrentApply()) return;
-        }
-      }
+      // The backend replaces the occupying placement atomically when an
+      // explicit position is given, so no delete-first round trip is needed
+      // here — that two-step approach could lose the existing symbol if the
+      // apply request failed in between.
       await api.post(`/boards/${boardId}/ai/suggestions/apply`, {
         item,
         position_x: position?.x,
@@ -163,7 +156,7 @@ export function useBoardAISuggestions({
         setApplyId(null);
       }
     }
-  }, [cancelActiveApply, currentBoard, deleteBoardSymbol, fetchBoard, localSymbols, setHasChanges, t]);
+  }, [cancelActiveApply, currentBoard, fetchBoard, localSymbols, setHasChanges, t]);
 
   const applyAllSuggestions = useCallback(async () => {
     if (!currentBoard || !aiSuggestions.length) return;
@@ -203,7 +196,7 @@ export function useBoardAISuggestions({
           successCount += 1;
         } catch (error: unknown) {
           if (!isCurrentApply()) return;
-          failures.push(`${item.label}: ${extractError(error, 'unknown error')}`);
+          failures.push(`${item.label}: ${extractError(error, t('unknownError'))}`);
         }
       }
       if (!isCurrentApply()) return;
@@ -235,7 +228,6 @@ export function useBoardAISuggestions({
     applyId,
     refinePrompt,
     applyAllLoading,
-    setAiError,
     setRefinePrompt,
     loadAISuggestions,
     handleRefine,

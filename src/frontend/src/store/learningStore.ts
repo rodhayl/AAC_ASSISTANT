@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import api, { extractError } from '../lib/api';
+import i18n from '../i18n/index';
+import { tts } from '../lib/tts';
 import { useAuthStore } from './authStore';
 import type {
   LearningSessionStart,
@@ -8,13 +10,16 @@ import type {
   AnswerResponse
 } from '../types';
 
+export type LLMProviderId = 'ollama' | 'openrouter' | 'lmstudio' | 'groq';
+
 interface WithProvider {
-  provider_used?: 'ollama' | 'openrouter' | 'lmstudio';
+  provider_used?: LLMProviderId;
 }
 
 export interface SessionHistoryItem {
   id: number;
   topic: string;
+  board_id?: number;
   purpose: string;
   status: string;
   created_at: string;
@@ -35,9 +40,15 @@ export interface LearningProgress {
 
 // Correct-answer reveal state for the question card: which choice was picked
 // and whether it was right (null = no verdict, e.g. a voice answer).
+// answerRevealed mirrors the backend flag: true once the tutor revealed the
+// full answer after enough failed attempts, which ends the retry loop.
+// wrongChoices accumulates every failed pick on the current question so each
+// of them stays marked and disabled while the student keeps retrying.
 export interface RevealedAnswer {
   choice: string;
   isCorrect: boolean | null;
+  answerRevealed?: boolean;
+  wrongChoices?: string[];
 }
 
 // Returned by the end-session endpoint and shown in the summary modal.
@@ -71,10 +82,14 @@ interface LearningState {
     content: string;
     symbolImages?: Array<{ label: string; image_path?: string; category?: string }>;
   }>;
-  providerInUse?: 'ollama' | 'openrouter' | 'lmstudio';
-  providerHistory: Array<{ provider: 'ollama' | 'openrouter' | 'lmstudio'; at: number }>;
+  providerInUse?: LLMProviderId;
+  providerHistory: Array<{ provider: LLMProviderId; at: number }>;
   sessionHistory: SessionHistoryItem[];
   isLoadingHistory: boolean;
+  // True when the messages already present at session activation are loaded
+  // history that must not be spoken again (loadSession). New sessions speak
+  // their welcome, so they keep this false.
+  skipInitialSpeech: boolean;
 
    // Admin-only toggle: whether to show full reasoning / <think> content
    showAdminReasoning: boolean;
@@ -98,6 +113,10 @@ interface LearningState {
   clearError: () => void;
   clearSessionSummary: () => void;
   resetSession: () => void;
+}
+
+function tLearning(key: string): string {
+  return i18n.isInitialized ? i18n.t(key) : key;
 }
 
 // Strip model reasoning from text - lightweight fallback for legacy data
@@ -136,7 +155,7 @@ function buildAssistantReply(
     '';
 
   if (includeReasoning) {
-    const base = primaryRaw || 'Answer received';
+    const base = primaryRaw || tLearning('learning:answerReceived');
     if (payload.full_thinking) {
       return `${base}\n\n[debug] ${payload.full_thinking}`.trim();
     }
@@ -144,7 +163,7 @@ function buildAssistantReply(
   }
 
   const cleaned = stripReasoning(primaryRaw);
-  return cleaned || 'Answer received';
+  return cleaned || tLearning('learning:answerReceived');
 }
 
 function formatAssistantContent(content: string | undefined, includeReasoning: boolean): string {
@@ -268,16 +287,32 @@ export const useLearningStore = create<LearningState>((set, get) => {
   ): void => {
     if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
     if (!result.success) {
-      set({ error: result.error || failureMessage, isLoading: false });
+      // The optimistic user message was already rendered. Keep the answer
+      // flow recoverable: unblock the composer, but do not schedule a next
+      // question or expose a stale reveal state.
+      set({ error: result.error || failureMessage, isLoading: false, revealedAnswer: null });
       return;
     }
 
     const isAdmin = useAuthStore.getState().user?.user_type === 'admin';
     const showReasoning = Boolean(isAdmin && get().showAdminReasoning);
     const reply = buildAssistantReply(result, showReasoning);
+    // Accumulate failed picks within the current question so every wrong
+    // choice stays marked and disabled; the list resets with each new
+    // question (askQuestion clears revealedAnswer).
+    const previousWrong = get().revealedAnswer?.wrongChoices ?? [];
+    const wrongChoices =
+      result.is_correct === false && !previousWrong.includes(choice)
+        ? [...previousWrong, choice]
+        : previousWrong;
     set((state) => ({
       lastAnswer: result,
-      revealedAnswer: { choice, isCorrect: result.is_correct ?? null },
+      revealedAnswer: {
+        choice,
+        isCorrect: result.is_correct ?? null,
+        answerRevealed: result.answer_revealed === true,
+        wrongChoices,
+      },
       progressStats: mergeProgress(state.progressStats, result),
       messages: [
         ...state.messages,
@@ -289,7 +324,12 @@ export const useLearningStore = create<LearningState>((set, get) => {
       isLoading: false,
     }));
 
-    scheduleAutoAsk(get, requestEpoch, sessionId);
+    // Keep the current question open after a wrong answer while the tutor is
+    // still giving progressive hints; auto-advance only on a correct answer
+    // or once the backend revealed the full answer after enough failures.
+    if (result.is_correct === true || result.answer_revealed === true) {
+      scheduleAutoAsk(get, requestEpoch, sessionId);
+    }
     const { user } = useAuthStore.getState();
     if (user && requestEpoch === sessionEpoch && get().currentSession?.session_id === sessionId) {
       void triggerAchievementCheck(user.id);
@@ -311,6 +351,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
   providerHistory: [],
   sessionHistory: [],
   isLoadingHistory: false,
+  skipInitialSpeech: false,
   autoAskEnabled: true,
   setAutoAskEnabled: (enabled: boolean) => set({ autoAskEnabled: enabled }),
   difficultyOverride: 'adaptive',
@@ -322,6 +363,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
   clearSessionSummary: () => set({ lastSessionSummary: null }),
 
   resetSession: () => {
+    tts.cancelAll();
     sessionEpoch += 1;
     questionRequestId += 1;
     answerRequestId += 1;
@@ -342,11 +384,13 @@ export const useLearningStore = create<LearningState>((set, get) => {
       providerHistory: [],
       sessionHistory: [],
       isLoadingHistory: false,
+      skipInitialSpeech: false,
     });
   },
 
   startSession: async (data, userId) => {
     const requestEpoch = ++sessionEpoch;
+    tts.cancelAll();
     cancelPendingAutoAsk();
     cancelAchievementCheck();
     set({
@@ -356,9 +400,10 @@ export const useLearningStore = create<LearningState>((set, get) => {
       revealedAnswer: null,
       progressStats: null,
       lastSessionSummary: null,
+      skipInitialSpeech: false,
     });
     try {
-      const response = await api.post('/learning/start', data, {
+      const response = await api.post<LearningSessionResponse & WithProvider>('/learning/start', data, {
         params: { user_id: userId }
       });
 
@@ -375,11 +420,11 @@ export const useLearningStore = create<LearningState>((set, get) => {
         set({
           currentSession: session,
           messages,
-          isLoading: false
+          isLoading: false,
+          skipInitialSpeech: false
         });
-        const sessionWithProvider = session as LearningSessionResponse & WithProvider
-        if (sessionWithProvider.provider_used) {
-          const provider = sessionWithProvider.provider_used
+        if (session.provider_used) {
+          const provider = session.provider_used
           setProviderState(set, get, provider)
         }
       } else {
@@ -426,7 +471,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
             ...(get().progressStats ?? {}),
             difficulty: question.difficulty ?? get().progressStats?.difficulty,
           },
-          messages: [...prev, { role: 'assistant' as const, content: formatAssistantContent(question.question_text || 'Question ready', showReasoning) }],
+          messages: [...prev, { role: 'assistant' as const, content: formatAssistantContent(question.question_text || tLearning('learning:questionReady'), showReasoning) }],
           isLoading: false
         });
         const questionWithProvider = question as QuestionResponse & WithProvider
@@ -435,14 +480,14 @@ export const useLearningStore = create<LearningState>((set, get) => {
           setProviderState(set, get, provider)
         }
       } else {
-        set({ error: question.error || 'Failed to get question', isLoading: false });
+        set({ error: question.error || 'Failed to get question', isLoading: false, currentQuestion: null, revealedAnswer: null });
       }
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, questionRequestId, sessionId, get)) return;
       const detail = (() => {
         return extractError(error, 'Failed to get question');
       })();
-      set({ error: detail, isLoading: false });
+      set({ error: detail, isLoading: false, currentQuestion: null, revealedAnswer: null });
     }
   },
 
@@ -463,7 +508,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
       messages: [...state.messages, { role: 'user' as const, content: answer }],
     }));
     try {
-      const response = await api.post(`/learning/${sessionId}/answer`, {
+      const response = await api.post<AnswerResponse & WithProvider>(`/learning/${sessionId}/answer`, {
         answer,
         is_voice: false,
       });
@@ -471,13 +516,13 @@ export const useLearningStore = create<LearningState>((set, get) => {
         requestEpoch,
         requestId,
         sessionId,
-        response.data as AnswerResponse & WithProvider,
+        response.data,
         'Failed to submit answer',
         answer,
       );
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-      set({ error: extractError(error, 'Failed to submit answer'), isLoading: false });
+      set({ error: extractError(error, tLearning('learning:errors.submitAnswerFailed')), isLoading: false, revealedAnswer: null });
     }
   },
 
@@ -489,10 +534,10 @@ export const useLearningStore = create<LearningState>((set, get) => {
     const formData = new FormData();
     formData.append('file', audioBlob, 'recording.wav');
     try {
-      const response = await api.post(`/learning/${sessionId}/answer/voice`, formData, {
+      const response = await api.post<AnswerResponse & WithProvider>(`/learning/${sessionId}/answer/voice`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      const result = response.data as AnswerResponse & WithProvider;
+      const result = response.data;
       finishAnswer(
         requestEpoch,
         requestId,
@@ -500,11 +545,11 @@ export const useLearningStore = create<LearningState>((set, get) => {
         result,
         'Failed to submit voice answer',
         result.transcription || '[voice]',
-        `[voice] ${result.transcription || 'Audio message'}`,
+        `[voice] ${result.transcription || tLearning('learning:audioMessage')}`,
       );
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-      set({ error: extractError(error, 'Failed to submit voice answer'), isLoading: false });
+      set({ error: extractError(error, tLearning('learning:errors.submitVoiceAnswerFailed')), isLoading: false, revealedAnswer: null });
     }
   },
 
@@ -520,7 +565,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
       messages: [...state.messages, { role: 'user' as const, content: userContent, symbolImages }],
     }));
     try {
-      const response = await api.post(`/learning/${sessionId}/answer/symbols`, {
+      const response = await api.post<AnswerResponse & WithProvider>(`/learning/${sessionId}/answer/symbols`, {
         symbols,
         enriched_gloss: enriched_gloss || undefined,
         raw_gloss: raw_gloss || undefined,
@@ -530,18 +575,19 @@ export const useLearningStore = create<LearningState>((set, get) => {
         requestEpoch,
         requestId,
         sessionId,
-        response.data as AnswerResponse & WithProvider,
+        response.data,
         'Failed to submit symbol answer',
         userContent,
       );
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
-      set({ error: extractError(error, 'Failed to submit symbol answer'), isLoading: false });
+      set({ error: extractError(error, tLearning('learning:errors.submitSymbolAnswerFailed')), isLoading: false, revealedAnswer: null });
     }
   },
 
   endSession: async (sessionId) => {
     if (get().currentSession?.session_id !== sessionId) return;
+    tts.cancelAll();
     const requestEpoch = ++sessionEpoch;
     cancelPendingAutoAsk();
     cancelAchievementCheck();
@@ -556,6 +602,11 @@ export const useLearningStore = create<LearningState>((set, get) => {
         lastAnswer: null,
         revealedAnswer: null,
         progressStats: null,
+        // The completed conversation belongs in history, not in the fresh
+        // composer state. Clearing it also prevents the speech hook from
+        // replaying old assistant messages when the session key becomes null.
+        messages: [],
+        skipInitialSpeech: false,
         lastSessionSummary: summary ?? null,
         isLoading: false,
       });
@@ -591,6 +642,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
 
   loadSession: async (sessionId) => {
     const requestEpoch = ++sessionEpoch;
+    tts.cancelAll();
     cancelPendingAutoAsk();
     cancelAchievementCheck();
     set({
@@ -599,6 +651,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
       revealedAnswer: null,
       progressStats: null,
       lastSessionSummary: null,
+      skipInitialSpeech: false,
     });
     try {
       const response = await api.get(`/learning/${sessionId}/progress`);
@@ -635,10 +688,14 @@ export const useLearningStore = create<LearningState>((set, get) => {
         currentSession: {
           session_id: sessionData.id,
           success: true,
+          board_id: sessionData.board_id,
           welcome_message: messages[0]?.content || ''
         },
         messages,
-        isLoading: false
+        isLoading: false,
+        // Loaded history was already spoken when it happened; replaying it
+        // would read the whole past conversation aloud.
+        skipInitialSpeech: true
       });
     } catch (error: unknown) {
       if (!isCurrentContextRequest(requestEpoch)) return;

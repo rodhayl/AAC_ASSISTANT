@@ -20,13 +20,36 @@
   "close": "Close",
   "createTitle": "Create New Student",
   "resetPasswordTitle": "Reset Password for {{name}}",
+  "save": "Save",
+  "guardianProfile": "Guardian Profile",
+  "preferencesTitle": "Preferences for",
+  "preferences": {
+    "title": "Preferences",
+    "voiceMode": "Voice Mode",
+    "voiceModeHelp": "Enable/disable voice features"
+  },
+  "tabs": {
+    "general": "General",
+    "persona": "Persona",
+    "safety": "Safety"
+  },
+  "success": {
+    "saved": "Profile saved successfully",
+    "created": "Student created",
+    "updated": "Student updated",
+    "deleted": "Student deleted",
+    "passwordReset": "Password reset",
+    "boardAssigned": "Board assigned",
+    "boardUnassigned": "Board unassigned"
+  },
   "labels": {
     "username": "Username *",
     "displayName": "Display Name *",
     "email": "Email (optional)",
     "password": "Password *",
     "passwordHint": "At least 8 characters with uppercase, lowercase, and number",
-    "newPassword": "New Password"
+    "newPassword": "New Password",
+    "confirmPassword": "Confirm Password"
   },
   "cancel": "Cancel",
   "createBtn": "Create Student",
@@ -38,18 +61,25 @@
   "placeholders": {
     "username": "e.g., student123",
     "displayName": "e.g., Alex Smith",
-    "email": "e.g., alex@example.com"
+    "email": "e.g., alex@example.com",
+    "companionName": "e.g., Buddy, Robo",
+    "role": "e.g., Teacher, Friend, Assistant"
   },
   "errors": {
     "loadFailed": "Failed to load students",
+    "loadBoardsFailed": "Failed to load boards",
     "assignFailed": "Failed to assign board",
     "unassignFailed": "Failed to unassign board",
     "updateFailed": "Failed to update",
     "createFailed": "Failed to create student",
     "deleteFailed": "Failed to delete",
-    "resetPasswordFailed": "Failed to reset password"
+    "resetPasswordFailed": "Failed to reset password",
+    "passwordsDoNotMatch": "Passwords do not match",
+    "saveFailed": "Failed to save profile",
+    "profileLoadFailed": "Failed to load profile data"
   },
   "actions": {
+    "resetSelfTitle": "Use Change Password in Settings",
     "unassignAria": "Unassign {{board}}",
     "unassignTitle": "Unassign board",
     "assignAria": "Assign board to {{student}}",
@@ -76,5 +106,25 @@
   "strict": "Strict",
   "standard": "Standard",
   "relaxed": "Relaxed",
-  "ai": "AI"
+  "ai": "AI",
+  "forbiddenTopics": "Forbidden topics",
+  "forbiddenTopicsHelp": "One term per line. Blocked when spoken about and in responses.",
+  "triggerWords": "Trigger words",
+  "triggerWordsHelp": "Terms that block content for this student.",
+  "featureGates": "Blocked features for this student",
+  "featureGatesHelp": "Leave unchecked to follow the admin global policy.",
+  "blockChat": "Block learning chat",
+  "blockBoardAI": "Block AI board generation",
+  "blockCustomTopics": "Block custom topics",
+  "blockAutogen": "Block auto-generated pictograms",
+  "blockSocial": "Block social messaging",
+  "sentinel": "Moderation sentinel",
+  "sentinelHelp": "AI re-check on chat responses (strict level).",
+  "maxResponseLength": "Max response length (words)",
+  "maxResponseLengthHelp": "Empty = no limit.",
+  "triStateOn": "Blocked",
+  "triStateDefault": "Admin default",
+  "triStateOff": "Allowed",
+  "createSafety": "Safety configuration (optional)",
+  "createSafetyHelp": "Set age, filter level and blocks now. Leave empty to apply automatic defaults."
 }

@@ -1,10 +1,12 @@
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models import BoardAssignment, StudentTeacher, User
+from src.aac_app.models import BoardAssignment, CommunicationBoard, StudentTeacher, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.api.main import app
-from tests.test_utils_auth import create_test_headers
+from tests.auth_helpers import create_test_headers
 
 client = TestClient(app)
 
@@ -111,6 +113,35 @@ def test_board_assignment_flow(teacher_and_student, test_db_session):
     print("ASSIGNED AFTER UNASSIGN status:", res5.status_code, "body:", res5.text)
     assert res5.status_code == 200
     assert len(res5.json()) == 0
+
+
+def test_concurrent_assignment_requests_are_idempotent(
+    teacher_and_student, test_db_session
+):
+    teacher, student = teacher_and_student
+    teacher_headers = create_test_headers(teacher.id, teacher.username, teacher.user_type)
+    board = CommunicationBoard(user_id=teacher.id, name="Concurrent assignment board")
+    test_db_session.add(board)
+    test_db_session.commit()
+    test_db_session.refresh(board)
+
+    def assign():
+        return client.post(
+            f"/api/boards/{board.id}/assign",
+            json={"student_id": student.id},
+            headers=teacher_headers,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(lambda _: assign(), range(2)))
+
+    assert [response.status_code for response in responses] == [200, 200]
+    assert (
+        test_db_session.query(BoardAssignment)
+        .filter_by(board_id=board.id, student_id=student.id)
+        .count()
+        == 1
+    )
 
 
 def test_student_board_owner_cannot_manage_assignments(teacher_and_student, test_db_session):
@@ -267,9 +298,6 @@ def test_teacher_cannot_access_or_modify_unassigned_student(teacher_and_student,
     )
     test_db_session.add(other_student)
     test_db_session.flush()
-    test_db_session.add(
-        StudentTeacher(student_id=assigned_student.id, teacher_id=teacher.id)
-    )
     test_db_session.commit()
 
     teacher_headers = create_test_headers(teacher.id, teacher.username, teacher.user_type)

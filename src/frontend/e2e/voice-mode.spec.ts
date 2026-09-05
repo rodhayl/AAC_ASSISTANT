@@ -5,14 +5,18 @@ import { test, expect } from '@playwright/test';
 async function toggleAndSave(page: import('@playwright/test').Page) {
   await page.goto('/settings');
 
-  // The checkbox id is stable regardless of the active UI language.
+  // The checkbox id is stable regardless of the active UI language, but it is
+  // Base UI Switch's hidden mirror input (aria-hidden, clipped to 1px) — it
+  // cannot be driven directly. The interactive control is the visible
+  // [role="switch"] button; assert state through the mirror input.
   const toggle = page.locator('#pref-voice-mode-enabled');
-  await expect(toggle).toBeVisible();
+  await expect(toggle).toBeAttached();
+  const sw = page.getByRole('switch', { name: /voice mode|modo de voz/i });
+  await expect(sw).toBeVisible();
 
   const initial = await toggle.isChecked();
   const target = !initial;
-  if (target) await toggle.check({ force: true });
-  else await toggle.uncheck({ force: true });
+  await sw.click();
   // Wait for React to commit the controlled input before saving, otherwise
   // the save handler can read the previous value from its stale closure.
   if (target) await expect(toggle).toBeChecked();
@@ -22,7 +26,7 @@ async function toggleAndSave(page: import('@playwright/test').Page) {
   const putResponse = page.waitForResponse(
     (r) => r.url().includes('/api/auth/preferences') && r.request().method() === 'PUT',
   );
-  await page.getByRole('button', { name: /Save Preferences|Guardar preferencias/i }).click();
+  await page.getByRole('button', { name: /Save Voice Settings|Guardar ajustes de voz/i }).click();
   const putBody = await (await putResponse).json();
   expect(putBody.voice_mode_enabled).toBe(target);
 

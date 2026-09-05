@@ -17,6 +17,29 @@ from sqlalchemy.orm import relationship
 from .base import Base
 
 
+class SavedTopic(Base):
+    """A topic a teacher/admin saved for their students.
+
+    Stored server-side so students see their teacher's topics on any device
+    (previously kept in per-device localStorage).
+    """
+
+    __tablename__ = "saved_topics"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    board = Column(String(100), nullable=False, default="")
+    board_id = Column(Integer, nullable=True)
+    topic = Column(String(200), nullable=False)
+    created_by = Column(String(100), nullable=False)
+    # Stable creator identity; nullable for rows created before this field.
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    user = relationship("User", foreign_keys=[user_id])
+    creator = relationship("User", foreign_keys=[created_by_user_id])
+
+
 class LearningSession(Base):
     """AI tutoring session."""
 
@@ -26,6 +49,13 @@ class LearningSession(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     topic_name = Column(String(100), nullable=False)
     purpose = Column(Text)
+    # Keep the board context with the session so Smartbar suggestions remain
+    # scoped after a session is loaded from history or the page is revisited.
+    board_id = Column(
+        Integer,
+        ForeignKey("communication_boards.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     # Learning mode key (e.g. "practice", "regression_mode"); the mode's
     # prompt_instruction is appended to the LLM system prompt for this session.
     mode_key = Column(String(50), nullable=True)

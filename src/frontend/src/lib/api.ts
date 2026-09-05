@@ -15,6 +15,7 @@ import { useOfflineStore } from '../store/offlineStore';
 type ApiError = {
   message?: unknown;
   response?: {
+    status?: number;
     data?: {
       detail?: unknown;
       error?: unknown;
@@ -77,34 +78,34 @@ const OFFLINE_EXCLUDED_ENDPOINTS = new Set([
   '/auth/logout',
 ]);
 
+function pathnameOf(url: string): string | null {
+  try {
+    return new URL(url, 'http://localhost').pathname.replace(/^\/api(?=\/)/, '');
+  } catch {
+    return null;
+  }
+}
+
 export function isAuthFlowEndpoint(url?: string): boolean {
   if (!url) return false;
-
-  try {
-    const pathname = new URL(url, 'http://localhost').pathname
-      .replace(/^\/api(?=\/)/, '');
-    return AUTH_FLOW_ENDPOINTS.has(pathname);
-  } catch {
-    return false;
-  }
+  const pathname = pathnameOf(url);
+  return pathname !== null && AUTH_FLOW_ENDPOINTS.has(pathname);
 }
 
 function isOfflineExcludedEndpoint(url?: string): boolean {
   if (!url) return false;
-
-  try {
-    const pathname = new URL(url, 'http://localhost').pathname
-      .replace(/^\/api(?=\/)/, '');
-    return OFFLINE_EXCLUDED_ENDPOINTS.has(pathname);
-  } catch {
-    return false;
-  }
+  const pathname = pathnameOf(url);
+  return pathname !== null && OFFLINE_EXCLUDED_ENDPOINTS.has(pathname);
 }
 
 let offline = typeof navigator !== 'undefined' ? !navigator.onLine : false;
 const MAX_OFFLINE_QUEUE_SIZE = 100;
 const OFFLINE_REPLAY: unique symbol = Symbol('offline-replay');
 type OfflineReplayConfig = AxiosRequestConfig & { [OFFLINE_REPLAY]?: true };
+// Marks a request retried after a silent token refresh so a second 401 cannot
+// loop: one refresh-and-retry per request, then fall back to logout.
+const RETRIED_AFTER_REFRESH: unique symbol = Symbol('retried-after-refresh');
+type RefreshRetryConfig = AxiosRequestConfig & { [RETRIED_AFTER_REFRESH]?: true };
 type QueuedRequest = { config: AxiosRequestConfig; userId: number };
 function readQueuedRequests(): QueuedRequest[] {
   return readOfflineQueue().map((item) => ({
@@ -117,6 +118,24 @@ const queue: QueuedRequest[] = readQueuedRequests();
 const replayControllers = new Set<AbortController>();
 let replayGeneration = 0;
 let activeFlush: Promise<void> | null = null;
+
+function accessTokenIsExpired(token: string | null): boolean {
+  // The server remains the authority for signature validation. This local
+  // check only decides whether a 401 may use the refresh-token flow; an
+  // unexpired token that the server rejected (for example, a forged token)
+  // must log out instead of being silently replaced.
+  if (!token) return true;
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return false;
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    const decoded = JSON.parse(atob(padded));
+    return typeof decoded.exp === 'number' && decoded.exp * 1000 <= Date.now();
+  } catch {
+    return false;
+  }
+}
 
 function persistQueue(): void {
   const durableEntries: Array<{
@@ -220,6 +239,14 @@ async function flushQueue() {
         useOfflineStore.getState().addConflict(item.config, String(errorMsg), item.userId);
         queue.shift();
         persistQueue();
+        // A server-side rejection (an HTTP status) is final for this item:
+        // surface it as a conflict and keep replaying the rest of the queue.
+        // A 401 means every remaining mutation shares the auth problem, so
+        // stop there (the refresh/logout flow re-triggers a fresh flush).
+        // Network-level failures mean the connection dropped again, so stop
+        // and let the next flush trigger (online event, auth-ready) retry.
+        const status = replayError.response?.status;
+        if (typeof status === 'number' && status !== 401) continue;
         return;
       }
       return;
@@ -235,7 +262,18 @@ function restorePersistedQueue(): void {
 }
 
 function requestQueueFlush(): Promise<void> {
-  if (activeFlush) return activeFlush;
+  if (activeFlush) {
+    // An initial auth-ready flush can observe an empty queue while an offline
+    // mutation is added immediately afterwards. Do not let the online event
+    // return that already-completed flush and leave the new item stuck.
+    if (queue.length === 0 || replayControllers.size > 0 || !getAuthState().user?.id) {
+      return activeFlush;
+    }
+    const pendingFlush = activeFlush;
+    return pendingFlush.then(async () => {
+      if (queue.length > 0 && getAuthState().user?.id) await requestQueueFlush();
+    });
+  }
   const flush = flushQueue().finally(() => {
     if (activeFlush === flush) activeFlush = null;
   });
@@ -296,8 +334,9 @@ api.interceptors.request.use((config) => {
       : headers?.Authorization !== undefined || headers?.authorization !== undefined;
   if (token && !explicitAuthorization) {
     const bearer = token;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    config.headers = { ...config.headers, Authorization: `Bearer ${bearer}` } as any;
+    const requestHeaders = AxiosHeaders.from(config.headers ?? {});
+    requestHeaders.set('Authorization', `Bearer ${bearer}`);
+    config.headers = requestHeaders;
   }
   // Send the UI language to the backend so unauthenticated requests (login,
   // setup, register) and any error that precedes user-preference resolution
@@ -348,10 +387,9 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     if (error.config && !error.config.headers) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      error.config.headers = {} as any;
+      error.config.headers = new AxiosHeaders();
     }
 
     const status = error?.response?.status;
@@ -360,13 +398,41 @@ api.interceptors.response.use(
     // out here would clear the queued mutation before that conflict can be
     // recorded, causing silent loss when an access token expired offline.
     if (status === 401 && !isAuthFlowEndpoint(error.config?.url) && !isOfflineReplay) {
+      const alreadyRetried = Boolean(error.config?.[RETRIED_AFTER_REFRESH]);
+      const { logout, refreshAccessToken } = getAuthState();
+      if (!alreadyRetried && refreshAccessToken && accessTokenIsExpired(getAuthState().token ?? null)) {
+        try {
+          // The refresh token outlives the access token (7 days vs 2 hours);
+          // silently extending the session keeps long-running users logged in
+          // instead of bouncing them to the login screen mid-use.
+          const refreshed = await refreshAccessToken();
+          if (refreshed) {
+            // Retry the original request once with the fresh token. The
+            // request interceptor only attaches a stored token when no
+            // Authorization header is present, so strip the expired one
+            // from the retried config before re-issuing.
+            const retryConfig: RefreshRetryConfig = {
+              ...error.config,
+              [RETRIED_AFTER_REFRESH]: true,
+            };
+            if (retryConfig.headers) {
+              delete retryConfig.headers.Authorization;
+              delete retryConfig.headers.authorization;
+            }
+            return api.request(retryConfig);
+          }
+        } catch {
+          // Fall through to the logout path when refresh fails.
+        }
+      }
       try {
-        const { logout } = getAuthState();
         logout?.();
         if (typeof window !== 'undefined') {
           window.location.href = '/login';
         }
-      } catch { /* ignore logout errors during redirect */ }
+      } catch {
+        // Logout and redirect are best-effort during an invalid session.
+      }
     }
     return Promise.reject(error);
   }

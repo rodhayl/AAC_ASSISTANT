@@ -1,7 +1,15 @@
-import { useId, useRef } from 'react';
 import { X } from 'lucide-react';
-import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
-import { Button } from './Button';
+import { useTranslation } from 'react-i18next';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './alert-dialog';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -26,55 +34,44 @@ export function ConfirmDialog({
   variant = 'primary',
   isLoading = false,
 }: ConfirmDialogProps) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  const titleId = useId();
-  useModalFocusTrap(dialogRef, isOpen, onClose);
-
-  if (!isOpen) return null;
+  const { t } = useTranslation('common');
 
   return (
-    <div
-      ref={dialogRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-    >
-      <div className="w-full max-w-md rounded-xl glass-card p-6 shadow-xl animate-in zoom-in-95 duration-200" data-mobile-dialog="true">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 id={titleId} className="text-xl font-bold text-primary">{title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="modal-close rounded-lg p-2 text-secondary hover:bg-surface-hover transition-colors"
-            aria-label="Close dialog"
-            disabled={isLoading}
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+    <AlertDialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <AlertDialogContent className="max-w-md" data-mobile-dialog="true">
+        <AlertDialogHeader>
+          <div className="mb-4 flex items-center justify-between">
+            <AlertDialogTitle className="text-xl font-bold text-foreground">{title}</AlertDialogTitle>
+            <AlertDialogCancel
+              className="modal-close rounded-lg p-2 text-muted-foreground hover:bg-surface-hover transition-colors"
+              aria-label={t('close')}
+              disabled={isLoading}
+            >
+              <X className="h-5 w-5" />
+            </AlertDialogCancel>
+          </div>
+        </AlertDialogHeader>
 
-        <p className="text-secondary mb-8">
+        <AlertDialogDescription className="text-muted-foreground mb-8">
           {description}
-        </p>
+        </AlertDialogDescription>
 
-        <div className="flex justify-end gap-3">
-          <Button
+        <AlertDialogFooter>
+          <AlertDialogCancel
             variant="ghost"
-            onClick={onClose}
             disabled={isLoading}
           >
             {cancelText}
-          </Button>
-          <Button
-            variant={variant}
+          </AlertDialogCancel>
+          <AlertDialogAction
+            variant={variant === 'danger' ? 'danger' : 'default'}
             onClick={onConfirm}
             loading={isLoading}
           >
             {confirmText}
-          </Button>
-        </div>
-      </div>
-    </div>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

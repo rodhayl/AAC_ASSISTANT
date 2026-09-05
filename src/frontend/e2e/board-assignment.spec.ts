@@ -13,12 +13,13 @@ test.describe('Board Assignment', () => {
     const row = page.locator('tbody tr', { hasText: 'student1' }).first();
     await expect(row).toBeVisible();
 
-    // The seeded "General Communication" board is assigned by default.
-    await expect(row.getByText(/general communication/i)).toBeVisible();
+    // The seeded "Comunicación General" board is assigned by default.
+    const boardName = /general communication|comunicación general/i;
+    await expect(row.getByText(boardName)).toBeVisible();
 
     // Unassign it via the chip's close button.
     await row
-      .getByRole('button', { name: /unassign general communication|desasignar general communication/i })
+      .getByRole('button', { name: /unassign (general communication|comunicación general)|desasignar (general communication|comunicación general)/i })
       .click();
     await expect(row.getByText(/no boards assigned|sin tableros asignados/i)).toBeVisible();
 
@@ -28,10 +29,10 @@ test.describe('Board Assignment', () => {
       .click();
     const dialog = page.locator('div[role="dialog"]');
     await expect(dialog).toBeVisible();
-    await dialog.getByRole('button', { name: /general communication/i }).click();
+    await dialog.getByRole('button', { name: boardName }).click();
 
     // The board chip reappears and the modal closes.
     await expect(dialog).not.toBeVisible();
-    await expect(row.getByText(/general communication/i)).toBeVisible();
+    await expect(row.getByText(boardName)).toBeVisible();
   });
 });

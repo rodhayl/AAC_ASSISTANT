@@ -1,12 +1,26 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Search, ArrowUp, ArrowDown, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useToastStore } from '../../store/toastStore';
 import api, { extractError } from '../../lib/api';
 import { SymbolImage } from '../common/SymbolImage';
+import { Button } from '../ui/button';
+import { IconButton } from '../ui/icon-button';
 import type { Symbol } from '../../types';
 import { getCategoryStyle } from '../../lib/symbolCategoryStyle';
 import { isValidImageFile } from '../../lib/download';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from '../ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../ui/select';
 
 interface SymbolPickerProps {
   isOpen: boolean;
@@ -32,6 +46,7 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
   const [reorderMode, setReorderMode] = useState(false);
   const [reorderedSymbols, setReorderedSymbols] = useState<Symbol[]>([]);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const symbolRequestIdRef = useRef(0);
 
   useEffect(() => {
     if (!isOpen && (previewUrl || uploadFile)) {
@@ -56,6 +71,7 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
   }, [isOpen]);
 
   const fetchSymbols = useCallback(async () => {
+    const requestId = ++symbolRequestIdRef.current;
     setIsLoading(true);
     try {
       const params: Record<string, string> = {};
@@ -67,21 +83,31 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
       }
 
       const response = await api.get('/boards/symbols', { params });
+      if (requestId !== symbolRequestIdRef.current) return;
       setSymbols(response.data);
     } catch (error) {
-      console.error('Failed to fetch symbols:', error);
+      if (requestId === symbolRequestIdRef.current) {
+        console.error('Failed to fetch symbols:', error);
+      }
     } finally {
-      setIsLoading(false);
+      if (requestId === symbolRequestIdRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [selectedCategory, searchTerm]);
 
   useEffect(() => {
     if (isOpen) {
       const timeoutId = setTimeout(() => {
-        fetchSymbols();
+        void fetchSymbols();
       }, 300);
-      return () => clearTimeout(timeoutId);
+      return () => {
+        clearTimeout(timeoutId);
+        symbolRequestIdRef.current += 1;
+      };
     }
+    symbolRequestIdRef.current += 1;
+    return undefined;
   }, [isOpen, fetchSymbols]);
 
   const toggleReorderMode = useCallback(() => {
@@ -165,10 +191,15 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
     if (valid.length === 0) return
     setIsUploading(true)
     try {
+      // A batch of files must not all inherit the single-upload label field:
+      // each file gets its own name-based label (extension stripped), while a
+      // lone file still honors an explicitly typed label.
+      const labelForFile = (file: File) =>
+        (file.name || '').replace(/\.[^.]+$/, '') || 'symbol';
       for (const f of valid) {
         const fd = new FormData()
         fd.append('file', f)
-        fd.append('label', uploadLabel || f.name)
+        fd.append('label', valid.length === 1 ? (uploadLabel || labelForFile(f)) : labelForFile(f))
         fd.append('category', uploadCategory)
         await api.post('/boards/symbols/upload', fd)
       }
@@ -187,20 +218,18 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center z-50" role="presentation">
-      <div
-        className="bg-white dark:bg-gray-900/90 backdrop-blur-xl border border-border dark:border-white/10 rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="symbol-picker-title"
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        className="max-w-4xl max-h-[80vh] flex flex-col p-0"
       >
-        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+        <div className="p-6 border-b border-border">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h2 id="symbol-picker-title" className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+              <DialogTitle className="text-2xl font-bold text-foreground">
                 {reorderMode ? t('symbolPicker.reorderTitle') : t('symbolPicker.title')}
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              </DialogTitle>
+              <p className="text-sm text-muted-foreground mt-1">
                 {reorderMode
                   ? t('symbolPicker.reorderInstructions')
                   : t('symbolPicker.position', { x: position.x, y: position.y })
@@ -209,22 +238,22 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
             </div>
             <div className="flex items-center gap-2">
               {reorderMode && (
-                <button
+                <Button
+                  variant="success"
                   onClick={saveOrder}
-                  disabled={isSavingOrder}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 flex items-center gap-2"
+                  loading={isSavingOrder}
                   title={t('symbolPicker.saveOrder')}
                 >
-                  <Save className="w-4 h-4" />
+                  <Save />
                   {isSavingOrder ? t('symbolPicker.saving') : t('symbolPicker.saveOrder')}
-                </button>
+                </Button>
               )}
               <button
                 onClick={toggleReorderMode}
                 disabled={selectedCategory === 'core'}
                 className={`px-4 py-2 rounded-lg flex items-center gap-2 ${reorderMode
-                    ? 'bg-gray-600 text-white hover:bg-gray-700'
-                    : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                    ? 'bg-muted-foreground text-white hover:bg-surface-hover'
+                    : 'bg-brand text-white hover:bg-brand/80'
                   } ${selectedCategory === 'core' ? 'opacity-50 cursor-not-allowed' : ''}`}
                 title={selectedCategory === 'core' ? t('symbolPicker.reorderDisabledCore') : (reorderMode ? t('symbolPicker.cancelReorder') : t('symbolPicker.reorder'))}
               >
@@ -232,7 +261,7 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
               </button>
               <button
                 onClick={onClose}
-                className="p-2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                className="p-2 text-muted-foreground hover:text-foreground hover:bg-surface-hover rounded-lg transition-colors"
                 aria-label={t('symbolPicker.cancel')}
               >
                 <X className="w-6 h-6" />
@@ -241,7 +270,7 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
           </div>
 
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-5 h-5" />
             <input
               id="symbol-picker-search"
               name="symbol_picker_search"
@@ -250,7 +279,7 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder={t('symbolPicker.searchPlaceholder')}
               aria-label={t('symbolPicker.searchPlaceholder')}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-transparent bg-surface text-foreground"
             />
           </div>
 
@@ -260,11 +289,11 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
                 key={category}
                 onClick={() => setSelectedCategory(category)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${selectedCategory === category
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    ? 'bg-brand text-white'
+                    : 'bg-muted text-foreground hover:bg-surface-hover'
                   }`}
               >
-                {t(`categories.${category}`, category.replace('_', ' ').toUpperCase())}
+                {t(`categories.${category}`)}
               </button>
             ))}
           </div>
@@ -317,31 +346,41 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
                   setUploadFile(null)
                 }
               }}
-              className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="border border-border rounded-lg px-3 py-2 bg-surface text-foreground"
             />
             <input
               type="text"
               value={uploadLabel}
               onChange={(e) => setUploadLabel(e.target.value)}
               placeholder={t('symbolPicker.label')}
-              className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="border border-border rounded-lg px-3 py-2 bg-surface text-foreground"
             />
-            <select
+            <Select
               value={uploadCategory}
-              onChange={(e) => setUploadCategory(e.target.value)}
-              className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              onValueChange={(value) => setUploadCategory(value ?? uploadCategory)}
+              items={[
+                ...categories.filter(c => c !== 'all').map((c) => ({ value: c, label: c })),
+                ...(!categories.includes(uploadCategory)
+                  ? [{ value: uploadCategory, label: uploadCategory }]
+                  : []),
+              ]}
             >
-              {categories.filter(c => c !== 'all').map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-              {!categories.includes(uploadCategory) && (
-                <option value={uploadCategory}>{uploadCategory}</option>
-              )}
-            </select>
+              <SelectTrigger aria-label={t('category')} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.filter(c => c !== 'all').map(c => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+                {!categories.includes(uploadCategory) && (
+                  <SelectItem value={uploadCategory}>{uploadCategory}</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
             {previewUrl && previewUrl.startsWith('data:image/') && (
               <div className="md:col-span-3 mt-2 flex items-center gap-3">
-                <img src={previewUrl} alt="Preview" className="w-16 h-16 object-cover rounded" />
-                <span className="text-xs text-gray-500 dark:text-gray-400">{t('symbolPicker.preview')}</span>
+                <img src={previewUrl} alt={t('symbolPicker.preview')} className="w-16 h-16 object-cover rounded" />
+                <span className="text-xs text-muted-foreground">{t('symbolPicker.preview')}</span>
               </div>
             )}
             {uploadError && (
@@ -351,8 +390,8 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
               onClick={handleUpload}
               disabled={!uploadFile || !uploadLabel || !!uploadError || isUploading}
               className={`md:col-span-3 mt-2 px-4 py-2 rounded-lg ${!uploadFile || !uploadLabel || !!uploadError || isUploading
-                  ? 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400'
-                  : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                  ? 'bg-muted text-foreground hover:bg-surface-hover'
+                  : 'bg-brand text-white hover:bg-brand/80'
                 }`}
             >
               {isUploading ? t('symbolPicker.uploading') : t('symbolPicker.uploadNew')}
@@ -363,15 +402,15 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
         <div className="flex-1 overflow-y-auto p-6">
           {isLoading ? (
             <div className="flex items-center justify-center h-64">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand"></div>
             </div>
           ) : symbols.length === 0 ? (
-            <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+            <div className="text-center py-12 text-muted-foreground">
               <p>{t('symbolPicker.noSymbolsFound')}</p>
               {searchTerm && (
                 <button
                   onClick={() => setSearchTerm('')}
-                  className="mt-2 text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                  className="mt-2 text-brand hover:text-brand"
                 >
                   {t('symbolPicker.clearSearch')}
                 </button>
@@ -380,7 +419,7 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
           ) : (
             <div
               className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"
-              style={{ minHeight: '360px' }} // ~3 rows at lg
+              /* ~3 rows at lg */
             >
               {(reorderMode ? reorderedSymbols : symbols).map((symbol, index) => (
                 (() => {
@@ -388,33 +427,33 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
                   return (
                     <div
                       key={symbol.id}
-                      className={`relative group p-4 border-2 ${categoryStyle.border} rounded-xl ${categoryStyle.hoverBorder} hover:shadow-md transition-all duration-200 flex flex-col items-center bg-white dark:bg-gray-800`}
+                      className={`relative group p-4 border-2 ${categoryStyle.border} rounded-xl ${categoryStyle.hoverBorder} hover:shadow-md transition-all duration-200 flex flex-col items-center bg-surface`}
                     >
                       <div className={`absolute top-2 left-2 w-2.5 h-2.5 rounded-full ${categoryStyle.dot} opacity-80`} aria-hidden="true" />
                       {reorderMode && (
                         <div className="absolute top-2 right-2 flex flex-col gap-1">
-                          <button
+                          <IconButton
+                            label={t('symbolPicker.moveUp')}
                             onClick={() => moveSymbol(index, 'up')}
                             disabled={index === 0}
-                            className={`p-1 rounded bg-white dark:bg-gray-700 shadow-sm border border-gray-200 dark:border-gray-600 ${index === 0
-                                ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
-                                : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30'
+                            className={`p-1 rounded bg-surface shadow-sm border border-border ${index === 0
+                                ? 'text-muted-foreground cursor-not-allowed'
+                                : 'text-brand hover:bg-brand/20'
                               }`}
-                            title={t('symbolPicker.moveUp')}
                           >
                             <ArrowUp className="w-4 h-4" />
-                          </button>
-                          <button
+                          </IconButton>
+                          <IconButton
+                            label={t('symbolPicker.moveDown')}
                             onClick={() => moveSymbol(index, 'down')}
                             disabled={index === (reorderMode ? reorderedSymbols : symbols).length - 1}
-                            className={`p-1 rounded bg-white dark:bg-gray-700 shadow-sm border border-gray-200 dark:border-gray-600 ${index === (reorderMode ? reorderedSymbols : symbols).length - 1
-                                ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
-                                : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30'
+                            className={`p-1 rounded bg-surface shadow-sm border border-border ${index === (reorderMode ? reorderedSymbols : symbols).length - 1
+                                ? 'text-muted-foreground cursor-not-allowed'
+                                : 'text-brand hover:bg-brand/20'
                               }`}
-                            title={t('symbolPicker.moveDown')}
                           >
                             <ArrowDown className="w-4 h-4" />
-                          </button>
+                          </IconButton>
                         </div>
                       )}
                       <button
@@ -429,10 +468,10 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
                             className="w-12 h-12 object-contain"
                           />
                         </div>
-                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100 text-center line-clamp-2">
+                        <span className="text-sm font-medium text-foreground text-center line-clamp-2">
                           {symbol.label}
                         </span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        <span className="text-xs text-muted-foreground mt-1">
                           {symbol.category}
                         </span>
                       </button>
@@ -444,18 +483,18 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
           )}
         </div>
 
-        <div className="p-4 border-t border-border dark:border-white/5 bg-gray-50 dark:bg-white/5 rounded-b-xl">
-          <div className="flex justify-between items-center text-sm text-gray-600 dark:text-gray-400">
+        <div className="p-4 border-t border-border bg-background rounded-b-xl">
+          <div className="flex justify-between items-center text-sm text-muted-foreground">
             <span>{t('symbolPicker.symbolsAvailable', { count: symbols.length })}</span>
             <button
               onClick={onClose}
-              className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="px-4 py-2 text-foreground hover:bg-surface-hover rounded-lg transition-colors"
             >
               {t('symbolPicker.cancel')}
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

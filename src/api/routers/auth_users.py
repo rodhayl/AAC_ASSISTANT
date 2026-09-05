@@ -10,6 +10,7 @@ from src.aac_app.models import (
     BoardSymbol,
     CollaborationSession,
     CommunicationBoard,
+    FailedLoginAttempt,
     GuardianProfile,
     GuardianProfileHistory,
     LearningMode,
@@ -17,6 +18,7 @@ from src.aac_app.models import (
     LearningSession,
     LearningTask,
     Notification,
+    SavedTopic,
     StudentTeacher,
     SymbolUsageLog,
     User,
@@ -30,13 +32,16 @@ from src.aac_app.services.credential_service import mark_credentials_changed
 from src.aac_app.services.lockout_service import lockout_service
 from src.api import schemas
 from src.api.deps import (
+    STAFF_USER_TYPES,
     authorize_user_access,
     get_current_active_user,
     get_current_admin_user,
     get_db,
+    get_request_text,
     get_text,
 )
 from src.api.routers.auth_helpers import (
+    apply_student_safety_at_creation,
     conditional_limiter,
     ensure_username_email_available,
     validate_email_format,
@@ -48,7 +53,7 @@ router = APIRouter()
 @router.post("/admin/create-user", response_model=schemas.UserResponse)
 def admin_create_user(
     request: Request,
-    user: schemas.UserCreate,
+    user: schemas.StaffStudentCreate,
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
@@ -98,7 +103,7 @@ def admin_create_user(
         )
 
     # Validate user_type
-    valid_types = ['student', 'teacher', 'admin']
+    valid_types = ("student", "teacher", "admin")
     if user.user_type not in valid_types:
         raise HTTPException(
             status_code=400,
@@ -154,6 +159,11 @@ def admin_create_user(
         ip_address=client_ip
     )
 
+    # Optional one-step safety configuration for students (age, filter level,
+    # forbidden topics/words, feature gates). Admins may set admin-locked
+    # fields; the payload is ignored for non-student roles.
+    apply_student_safety_at_creation(db, new_user, user.safety, current_user)
+
     # Commit before responding: FastAPI resumes this yield dependency's
     # teardown after the response is sent, so a follow-up request could
     # otherwise read the new user before the create transaction commits.
@@ -195,7 +205,10 @@ def get_users(
 
     allowed_types = {"student", "teacher", "admin"}
     if user_type is not None and user_type not in allowed_types:
-        raise HTTPException(status_code=400, detail="Invalid user_type filter")
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(user=current_user, key="errors.auth.invalidUserTypeFilter"),
+        )
 
     # Teachers can only view their assigned students
     if current_user.user_type == "teacher":
@@ -228,7 +241,7 @@ def get_student_summaries(
     db: Session = Depends(get_db),
 ):
     """Return visible students and assigned boards without per-student requests."""
-    if current_user.user_type not in {"admin", "teacher"}:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_text(
@@ -442,42 +455,81 @@ def update_user(
     # affect role checks and uniqueness before mutating the row. This keeps the
     # endpoint consistent with admin_create_user and update_profile, which
     # already reject invalid roles and duplicate emails.
-    valid_types = ['student', 'teacher', 'admin']
-    if 'user_type' in payload and payload.get('user_type') not in valid_types:
+    valid_types = ("student", "teacher", "admin")
+    if "user_type" in payload and payload.get("user_type") not in valid_types:
         raise HTTPException(
             status_code=400,
-            detail=get_text(
+            detail=get_request_text(
+                request,
+                "errors.auth.invalidUserType",
                 user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.auth.invalidUserType",
                 types=", ".join(valid_types),
             ),
         )
 
-    new_email = payload.get('email')
-    if new_email is not None and new_email != user.email:
-        validate_email_format(
-            new_email,
-            user=current_user,
-            accept_language=request.headers.get("accept-language"),
+    # Never allow demoting or deactivating the last active administrator:
+    # doing so would leave the application without any admin account and
+    # force it back into first-run setup with no way to manage users.
+    if user.user_type == "admin":
+        would_leave_admin = (
+            ("user_type" in payload and payload.get("user_type") != "admin")
+            or ("is_active" in payload and payload.get("is_active") is False)
         )
-        if db.query(User).filter(User.email == new_email, User.id != user.id).first():
+        if would_leave_admin:
+            other_active_admins = (
+                db.query(User)
+                .filter(
+                    User.user_type == "admin",
+                    User.is_active.is_(True),
+                    User.id != user_id,
+                )
+                .count()
+            )
+            if other_active_admins == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=get_request_text(request, "errors.auth.lastAdminRequired", user=current_user),
+                )
+
+    # Mirror the profile-update contract: a blank display name is rejected so
+    # admins cannot accidentally leave a user with an invisible name.
+    if 'display_name' in payload:
+        display_name = (payload.get('display_name') or '').strip()
+        if not display_name:
             raise HTTPException(
                 status_code=400,
-                detail=get_text(
-                    user=current_user,
-                    accept_language=request.headers.get("accept-language"),
-                    key="errors.auth.emailTaken",
-                ),
+            detail=get_request_text(request, "errors.auth.displayNameRequired", user=current_user),
             )
 
+    new_email = payload.get('email')
+    if new_email is not None and new_email != user.email:
+        # An empty string from the editor means "clear the optional email".
+        # Normalize it to None so the row stores NULL like an account created
+        # without an email, matching update_profile's clear semantics.
+        if isinstance(new_email, str):
+            new_email = new_email.strip() or None
+        if new_email is not None:
+            validate_email_format(
+                new_email,
+                user=current_user,
+                accept_language=request.headers.get("accept-language"),
+            )
+            if db.query(User).filter(User.email == new_email, User.id != user.id).first():
+                raise HTTPException(
+                    status_code=400,
+                    detail=get_request_text(request, "errors.auth.emailTaken", user=current_user),
+                )
+
     if 'is_active' in payload and not isinstance(payload['is_active'], bool):
-        raise HTTPException(status_code=400, detail="is_active must be a boolean")
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(user=current_user, key="errors.auth.activeMustBeBoolean"),
+        )
 
     # Allowed fields
     for key in ["display_name", "user_type", "email", "is_active"]:
         if key in payload:
-            setattr(user, key, payload[key])
+            setattr(user, key, new_email if key == "email" else payload[key])
     db.add(user)
     db.flush()
     db.commit()
@@ -495,11 +547,7 @@ def delete_user(
     if current_user.id == user_id:
         raise HTTPException(
             status_code=400,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.auth.cannotDeleteOwnAccount",
-            ),
+            detail=get_request_text(request, "errors.auth.cannotDeleteOwnAccount", user=current_user),
         )
 
     user = db.query(User).filter(User.id == user_id).first()
@@ -508,6 +556,25 @@ def delete_user(
             status_code=404,
             detail=get_text(user=current_user, key="errors.userNotFound"),
         )
+
+    # Deleting the last active administrator would strand the application in
+    # first-run setup with no account able to manage users or re-create an
+    # admin. Reject the operation instead of allowing a dead-end state.
+    if user.user_type == "admin" and user.is_active:
+        other_active_admins = (
+            db.query(User)
+            .filter(
+                User.user_type == "admin",
+                User.is_active.is_(True),
+                User.id != user_id,
+            )
+            .count()
+        )
+        if other_active_admins == 0:
+            raise HTTPException(
+                status_code=400,
+                detail=get_request_text(request, "errors.auth.lastAdminRequired", user=current_user),
+            )
 
     # Delete dependent rows explicitly instead of relying on ORM relationship
     # synchronization. Several legacy relationships have non-null foreign
@@ -622,6 +689,17 @@ def delete_user(
     db.execute(delete(UserProgress).where(UserProgress.user_id == user_id))
     db.execute(delete(Notification).where(Notification.user_id == user_id))
     db.execute(delete(UserSettings).where(UserSettings.user_id == user_id))
+    # A teacher's saved topics belong to their account; deleting the account
+    # must not orphan them (they would linger in the admin scope=all view and
+    # dangle their creator FK). Clear the nullable creator reference first so
+    # topics another author saved through this user are never attributed to a
+    # deleted account.
+    db.execute(
+        update(SavedTopic)
+        .where(SavedTopic.created_by_user_id == user_id)
+        .values(created_by_user_id=None)
+    )
+    db.execute(delete(SavedTopic).where(SavedTopic.user_id == user_id))
 
     # These records can remain useful after their author is removed, so clear
     # nullable attribution or target fields rather than deleting shared data.
@@ -648,6 +726,15 @@ def delete_user(
     db.execute(
         delete(CollaborationSession).where(
             CollaborationSession.host_user_id == user_id
+        )
+    )
+
+    # Remove lockout rows before deleting the account. Otherwise a later
+    # account with the same username could inherit stale failed-login attempts
+    # from this deleted account.
+    db.execute(
+        delete(FailedLoginAttempt).where(
+            FailedLoginAttempt.username == user.username
         )
     )
 
@@ -704,7 +791,14 @@ def admin_unlock_account(
     )
 
     logger.info(f"Admin '{current_user.username}' unlocked account for '{username}'")
-    return {"ok": True, "message": f"Account '{username}' unlocked successfully"}
+    return {
+        "ok": True,
+        "message": get_text(
+            user=current_user,
+            key="errors.auth.accountUnlocked",
+            username=username,
+        ),
+    }
 
 @router.put("/profile", response_model=schemas.UserResponse)
 def update_profile(
@@ -714,15 +808,29 @@ def update_profile(
 ):
     """Update current user's profile (display name, email)"""
     if profile.display_name is not None:
-        current_user.display_name = profile.display_name
-    if profile.email is not None:
-        # Check email uniqueness
-        existing = db.query(User).filter(User.email == profile.email, User.id != current_user.id).first()
-        if existing:
+        display_name = profile.display_name.strip()
+        if not display_name:
             raise HTTPException(
                 status_code=400,
-                detail=get_text(user=current_user, key="errors.auth.emailInUse"),
+                detail=get_text(user=current_user, key="errors.auth.displayNameRequired"),
             )
+        current_user.display_name = display_name
+
+    # Pydantic keeps explicit null in model_fields_set. That distinction is
+    # required here: null means "clear my optional email", while an omitted
+    # field means "leave the existing email unchanged".
+    if "email" in profile.model_fields_set:
+        if profile.email is not None:
+            existing = (
+                db.query(User)
+                .filter(User.email == profile.email, User.id != current_user.id)
+                .first()
+            )
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=get_text(user=current_user, key="errors.auth.emailInUse"),
+                )
         current_user.email = profile.email
 
     db.flush()

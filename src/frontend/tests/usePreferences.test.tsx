@@ -1,6 +1,8 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { usePreferences } from '../src/pages/Settings/usePreferences';
+import { useAuthStore } from '../src/store/authStore';
+import { useThemeStore } from '../src/store/themeStore';
 
 const { get, put } = vi.hoisted(() => ({
   get: vi.fn(),
@@ -15,7 +17,16 @@ vi.mock('../src/lib/api', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, defaultValue?: string) => defaultValue || key,
+    t: (key: string, defaultValue?: string) => {
+      // Mirrors the production locale: settings.errors.saveFailed resolves to
+      // real text (it used to render the raw key in the settings namespace).
+      const table: Record<string, string> = {
+        'errors.saveFailed': 'Failed to save preferences',
+        'preferences.saved': 'Saved',
+        'learningModes.defaultModeSaved': 'Default learning mode saved',
+      };
+      return table[key] ?? defaultValue ?? key;
+    },
     i18n: { language: 'en-US' },
   }),
   initReactI18next: {
@@ -51,7 +62,9 @@ describe('usePreferences', () => {
     await act(async () => {
       resolveGet({
         data: {
+          tts_provider: 'kokoro',
           tts_voice: 'default',
+          tts_local_voice: 'default',
           ui_language: 'es-ES',
           notifications_enabled: true,
           voice_mode_enabled: true,
@@ -69,7 +82,9 @@ describe('usePreferences', () => {
   it('applies the fetched preferences when the user has not edited', async () => {
     get.mockResolvedValue({
       data: {
+        tts_provider: 'kokoro',
         tts_voice: 'es-voice',
+        tts_local_voice: 'ef_dora',
         ui_language: 'en-US',
         notifications_enabled: false,
         voice_mode_enabled: false,
@@ -77,6 +92,7 @@ describe('usePreferences', () => {
         dwell_time: 300,
         ignore_repeats: 100,
         high_contrast: true,
+        default_learning_mode: 'roleplay',
       },
     });
 
@@ -89,5 +105,195 @@ describe('usePreferences', () => {
     expect(result.current.preferences.voice_mode_enabled).toBe(false);
     expect(result.current.preferences.ui_language).toBe('en-US');
     expect(result.current.preferences.dark_mode).toBe(true);
+    expect(result.current.preferences.high_contrast).toBe(true);
+    expect(result.current.preferences.default_learning_mode).toBe('roleplay');
+    // The server-side appearance must be pushed into the theme store so the
+    // document classes follow the logged-in user's persisted settings.
+    expect(useThemeStore.getState().darkMode).toBe(true);
+    expect(useThemeStore.getState().highContrast).toBe(true);
+  });
+
+  it('surfaces a translated error when saving preferences fails', async () => {
+    useAuthStore.setState({
+      user: {
+        id: 1,
+        username: 'student1',
+        display_name: 'Student',
+        user_type: 'student',
+        settings: {},
+      },
+    });
+    useThemeStore.getState().setDarkMode(false);
+    useThemeStore.getState().setHighContrast(false);
+    get.mockResolvedValue({ data: {} });
+    put.mockRejectedValue(new Error('network down'));
+
+    const { result } = renderHook(() => usePreferences());
+
+    await act(async () => {
+      await result.current.handleSavePreferences();
+    });
+
+    // The error must be the translated message, never the raw key.
+    expect(result.current.prefsSaveError).toBe('Failed to save preferences');
+  });
+
+  it('pushes the saved appearance flags into the theme store', async () => {
+    get.mockResolvedValue({ data: {} });
+    put.mockResolvedValue({ data: { dark_mode: true, high_contrast: true } });
+    useAuthStore.setState({
+      user: {
+        id: 1,
+        username: 'student1',
+        display_name: 'Student',
+        user_type: 'student',
+        settings: {},
+      },
+    });
+
+    const { result } = renderHook(() => usePreferences());
+
+    // Toggle both appearance preferences as the user would in the UI.
+    act(() => {
+      result.current.setPreferences((prev) => ({ ...prev, dark_mode: true, high_contrast: true }));
+    });
+
+    await act(async () => {
+      await result.current.handleSavePreferences();
+    });
+
+    expect(useThemeStore.getState().darkMode).toBe(true);
+    expect(useThemeStore.getState().highContrast).toBe(true);
+    expect(put).toHaveBeenCalledWith(
+      '/auth/preferences',
+      expect.objectContaining({ dark_mode: true, high_contrast: true }),
+    );
+  });
+
+  it('discards a preferences response that resolves after the user switched accounts', async () => {
+    // The first (slow) GET belongs to user A; the hook must ignore its result
+    // once the authenticated user changes to B so stale settings never leak
+    // into the new account's form.
+    const pendingGets: Array<{
+      resolve: (value: { data: Record<string, unknown> }) => void;
+    }> = [];
+    get.mockImplementation(
+      () =>
+        new Promise<{ data: Record<string, unknown> }>((resolve) => {
+          pendingGets.push({ resolve });
+        }),
+    );
+
+    const makeUser = (id: number, username: string, ttsVoice: string) => ({
+      id,
+      username,
+      display_name: username,
+      user_type: 'student',
+      settings: {
+        tts_provider: 'kokoro',
+        tts_voice: ttsVoice,
+        tts_local_voice: 'default',
+        ui_language: 'es-ES',
+        notifications_enabled: true,
+        voice_mode_enabled: true,
+        dark_mode: false,
+        dwell_time: 0,
+        ignore_repeats: 0,
+        high_contrast: false,
+      },
+    });
+    useAuthStore.setState({ user: makeUser(1, 'student_a', 'a-voice') });
+
+    const { result, rerender } = renderHook(() => usePreferences());
+    expect(pendingGets).toHaveLength(1);
+
+    // Switch accounts before the first GET response arrives.
+    act(() => {
+      useAuthStore.setState({ user: makeUser(2, 'student_b', 'b-voice') });
+    });
+    rerender();
+
+    // The stale response for user A arrives late and must be ignored.
+    await act(async () => {
+      pendingGets[0].resolve({
+        data: {
+          tts_provider: 'kokoro',
+          tts_voice: 'stale-voice',
+          tts_local_voice: 'default',
+          ui_language: 'en-US',
+          notifications_enabled: true,
+          voice_mode_enabled: true,
+          dark_mode: false,
+          dwell_time: 0,
+          ignore_repeats: 0,
+          high_contrast: false,
+        },
+      });
+      await Promise.resolve();
+    });
+
+    // The form still reflects user B's defaults, not the stale account's data.
+    expect(result.current.preferences.tts_voice).toBe('b-voice');
+    expect(result.current.preferences.ui_language).toBe('es-ES');
+  });
+
+  it('persists the default learning mode and announces the updated value', async () => {
+    useAuthStore.setState({
+      user: {
+        id: 1,
+        username: 'teacher1',
+        display_name: 'Teacher',
+        user_type: 'teacher',
+        settings: { default_learning_mode: 'practice' },
+      },
+    });
+    get.mockResolvedValue({ data: {} });
+    put.mockResolvedValue({ data: { default_learning_mode: 'roleplay' } });
+    const modeChanged = vi.fn();
+    window.addEventListener('aac:learning-modes-changed', modeChanged);
+
+    const { result } = renderHook(() => usePreferences());
+    await act(async () => {
+      await result.current.saveDefaultLearningMode('roleplay');
+    });
+
+    expect(put).toHaveBeenCalledWith('/auth/preferences', {
+      default_learning_mode: 'roleplay',
+    });
+    expect(result.current.preferences.default_learning_mode).toBe('roleplay');
+    expect(modeChanged).toHaveBeenCalledTimes(1);
+    expect(modeChanged.mock.calls[0][0]).toMatchObject({
+      type: 'aac:learning-modes-changed',
+      detail: { defaultModeKey: 'roleplay' },
+    });
+    window.removeEventListener('aac:learning-modes-changed', modeChanged);
+  });
+
+  it('normalizes a legacy short ui_language so it matches the select options', async () => {
+    // The navbar LanguageSwitcher used to persist "en"; the appearance select
+    // only offers es-ES / en-US. A stored short code must be normalized so the
+    // select shows the correct language instead of silently falling back.
+    get.mockResolvedValue({
+      data: {
+        tts_provider: 'kokoro',
+        tts_voice: 'default',
+        tts_local_voice: 'default',
+        ui_language: 'en',
+        notifications_enabled: true,
+        voice_mode_enabled: true,
+        dark_mode: false,
+        dwell_time: 0,
+        ignore_repeats: 0,
+        high_contrast: false,
+      },
+    });
+
+    const { result } = renderHook(() => usePreferences());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.preferences.ui_language).toBe('en-US');
   });
 });

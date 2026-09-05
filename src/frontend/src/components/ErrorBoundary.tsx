@@ -2,6 +2,7 @@ import React from 'react'
 import { useNavigate } from 'react-router'
 import { withTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
+import { Button } from './ui/button'
 
 interface InnerBoundaryProps {
   navigate: (to: string) => void;
@@ -23,13 +24,13 @@ class InnerBoundary extends React.Component<InnerBoundaryProps, { hasError: bool
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center p-6 bg-gray-50 dark:bg-gray-900">
-          <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 text-center">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">{this.props.t('title')}</h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">{this.props.t('subtitle')}</p>
+        <div className="min-h-screen flex items-center justify-center p-6 bg-background">
+          <div className="max-w-md w-full bg-surface rounded-xl shadow-lg p-6 text-center border border-border">
+            <h2 className="text-xl font-semibold text-foreground mb-2">{this.props.t('title')}</h2>
+            <p className="text-sm text-muted-foreground mb-4">{this.props.t('subtitle')}</p>
             <div className="flex justify-center gap-3">
-              <button onClick={() => this.setState({ hasError: false })} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">{this.props.t('retry')}</button>
-              <button onClick={() => this.props.navigate('/')} className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">{this.props.t('dashboard')}</button>
+              <Button onClick={() => this.setState({ hasError: false })}>{this.props.t('retry')}</Button>
+              <Button variant="ghost" onClick={() => this.props.navigate('/')}>{this.props.t('dashboard')}</Button>
             </div>
           </div>
         </div>

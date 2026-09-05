@@ -8,7 +8,6 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -16,6 +15,10 @@ from slowapi.errors import RateLimitExceeded
 from src import config
 from src.aac_app import schema
 from src.aac_app.seed import init_database
+from src.aac_app.services.arasaac_library_import import import_arasaac_library_if_needed
+from src.aac_app.services.ngram_builder import run_periodic_ngram_rebuild
+from src.aac_app.services.prediction_service import prediction_service
+from src.aac_app.services.runtime_translation import normalize_language_code
 from src.aac_app.services.symbol_image_backfill import backfill_missing_symbol_images
 from src.aac_app.services.vector_utils import index_all_symbols
 from src.api.deps import (
@@ -37,6 +40,7 @@ from src.api.routers import (
     board_assignments,
     boards,
     collab,
+    content_safety,
     export_import,
     guardian_profiles,
     learning,
@@ -48,7 +52,23 @@ from src.api.routers import (
     users,
 )
 from src.api.routers import config as config_router
-from src.api.spa import SPAStaticFiles, resolve_frontend_directory
+from src.api.spa import ImmutableStaticFiles, SPAStaticFiles, resolve_frontend_directory
+
+
+def _background_task_runnable(app: FastAPI, task_label: str) -> bool:
+    """Shared prelude for optional startup background tasks.
+
+    Returns False (after logging why) when the database failed to initialize
+    or the process runs under pytest, so each background coroutine does not
+    repeat the same two guards with slightly different messages.
+    """
+    if not app.state.database_ready:
+        logger.warning(f"Skipping {task_label} because database initialization failed")
+        return False
+    if os.environ.get("TESTING") == "1":
+        logger.info(f"Skipping {task_label} during tests")
+        return False
+    return True
 
 
 @asynccontextmanager
@@ -125,13 +145,7 @@ async def lifespan(app: FastAPI):
 
     async def backfill_symbol_images_in_background() -> None:
         try:
-            if not app.state.database_ready:
-                logger.warning(
-                    "Skipping symbol image backfill because database initialization failed"
-                )
-                return
-            if os.environ.get("TESTING") == "1":
-                logger.info("Skipping symbol image backfill during tests")
+            if not _background_task_runnable(app, "symbol image backfill"):
                 return
             if not config.get_bool("AAC_ENABLE_SYMBOL_IMAGE_BACKFILL", False):
                 logger.info("Symbol image backfill disabled by configuration")
@@ -151,6 +165,83 @@ async def lifespan(app: FastAPI):
     image_backfill_task = asyncio.create_task(
         backfill_symbol_images_in_background(),
         name="symbol-image-backfill",
+    )
+
+    async def import_arasaac_library_in_background() -> None:
+        try:
+            if not _background_task_runnable(app, "ARASAAC library import"):
+                return
+            if not config.get_bool("AAC_ENABLE_ARASAAC_LIBRARY_IMPORT", False):
+                logger.info("ARASAAC library import disabled by configuration")
+                return
+            configured_locales = [
+                normalize_language_code(locale)
+                for locale in str(
+                    config.get("AAC_ARASAAC_LIBRARY_LOCALES", "es,en")
+                ).split(",")
+            ]
+            locales = list(dict.fromkeys(locale for locale in configured_locales if locale)) or ["es", "en"]
+            for locale in locales:
+                await import_arasaac_library_if_needed(locale=locale)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"ARASAAC library import failed: {e}")
+
+    arasaac_import_task = asyncio.create_task(
+        import_arasaac_library_in_background(),
+        name="arasaac-library-import",
+    )
+
+    async def rebuild_ngrams_in_background() -> None:
+        try:
+            if not _background_task_runnable(app, "n-gram rebuild"):
+                return
+            if not config.get_bool("AAC_ENABLE_NGRAM_REBUILD", False):
+                logger.info("N-gram rebuild disabled by configuration")
+                return
+            locales = tuple(
+                locale.strip()
+                for locale in str(
+                    config.get("AAC_ARASAAC_LIBRARY_LOCALES", "es")
+                ).split(",")
+                if locale.strip()
+            ) or ("es",)
+            interval = config.get_int(
+                "AAC_NGRAM_REBUILD_INTERVAL_SECONDS", 3600
+            )
+            await run_periodic_ngram_rebuild(
+                locales, interval_seconds=interval
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"N-gram rebuild failed: {e}")
+
+    ngram_rebuild_task = asyncio.create_task(
+        rebuild_ngrams_in_background(),
+        name="ngram-model-rebuild",
+    )
+
+    # Preload the prediction symbol catalog in the background so the first
+    # Smartbar suggestion does not pay the one-time catalog scan. It is a
+    # cheap read of the symbols table (no model, no network), so it is safe
+    # to run eagerly; n-gram JSON files are left lazy on purpose (see
+    # PredictionService.warmup).
+    async def warmup_prediction_in_background() -> None:
+        try:
+            if not _background_task_runnable(app, "prediction warmup"):
+                return
+            await asyncio.to_thread(prediction_service.warmup)
+            logger.info("Prediction warmup complete")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Prediction warmup failed: {e}")
+
+    prediction_warmup_task = asyncio.create_task(
+        warmup_prediction_in_background(),
+        name="prediction-warmup",
     )
 
     startup_time_ms = (time.perf_counter() - startup_started) * 1000
@@ -179,7 +270,14 @@ async def lifespan(app: FastAPI):
         handoff_buffer = min(2.0, graceful_timeout * 0.25)
         shutdown_budget = graceful_timeout - handoff_buffer
         shutdown_deadline = asyncio.get_running_loop().time() + shutdown_budget
-        startup_tasks = (warmup_task, index_task, image_backfill_task)
+        startup_tasks = (
+            warmup_task,
+            index_task,
+            image_backfill_task,
+            arasaac_import_task,
+            ngram_rebuild_task,
+            prediction_warmup_task,
+        )
         pending_tasks = [task for task in startup_tasks if not task.done()]
         for task in pending_tasks:
             task.cancel()
@@ -373,6 +471,7 @@ app.include_router(
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(guardian_profiles.router)  # Guardian profiles for Learning Companion
 app.include_router(settings.router)
+app.include_router(content_safety.router)
 app.include_router(collab.router)
 app.include_router(providers.router)
 app.include_router(admin.router)
@@ -387,7 +486,10 @@ from src.config import BUNDLE_DIR, IS_FROZEN, PROJECT_ROOT
 
 UPLOADS_DIR = config.UPLOADS_DIR
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
+# Uploads are content-addressed by UUID filename (see _save_symbol_image and
+# the ARASAAC backfill), so immutable caching is safe and avoids re-fetching
+# the pictogram library on every board render.
+app.mount("/uploads", ImmutableStaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 FRONTEND_PATH = resolve_frontend_directory(
     project_root=PROJECT_ROOT,

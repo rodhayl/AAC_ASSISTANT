@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import os
 import re
+import threading
 from contextlib import suppress
 from pathlib import PurePosixPath
 from uuid import uuid4
@@ -13,6 +16,24 @@ from src.aac_app.db import get_session
 from src.aac_app.models import Symbol
 from src.aac_app.services.arasaac import ArasaacService
 from src.aac_app.services.runtime_translation import normalize_language_code
+
+# Query tokenization helpers for ARASAAC search: dev-artifact words that must
+# never become search queries, and the separators precompiled once instead of
+# per symbol during a backfill run.
+_QUERY_STOPWORDS = frozenset(
+    {
+        "frontend",
+        "comm",
+        "communication",
+        "symbol",
+        "disposable",
+        "export",
+        "roundtrip",
+        "general",
+    }
+)
+_QUERY_SPLIT_PATTERN = re.compile(r"[,;/]")
+_QUERY_SEPARATOR_PATTERN = re.compile(r"[_-]+")
 
 
 def _missing_image_clause():
@@ -100,16 +121,6 @@ def _best_arasaac_match(label: str, results: list[dict]) -> dict | None:
 def _search_queries(symbol: Symbol) -> list[str]:
     seen: set[str] = set()
     queries: list[str] = []
-    stopwords = {
-        "frontend",
-        "comm",
-        "communication",
-        "symbol",
-        "disposable",
-        "export",
-        "roundtrip",
-        "general",
-    }
 
     def add(candidate: str | None) -> None:
         normalized = _normalize_text(candidate)
@@ -123,11 +134,11 @@ def _search_queries(symbol: Symbol) -> list[str]:
     for field in (symbol.keywords, symbol.description, symbol.category):
         if not field:
             continue
-        for phrase in re.split(r"[,;/]", field):
-            cleaned = re.sub(r"[_-]+", " ", phrase).strip()
+        for phrase in _QUERY_SPLIT_PATTERN.split(field):
+            cleaned = _QUERY_SEPARATOR_PATTERN.sub(" ", phrase).strip()
             add(cleaned)
             for token in cleaned.split():
-                if len(token) < 2 or token.casefold() in stopwords:
+                if len(token) < 2 or token.casefold() in _QUERY_STOPWORDS:
                     continue
                 if not any(char.isalpha() for char in token):
                     continue
@@ -169,7 +180,10 @@ def _remove_stored_image_if_unreferenced(db, symbol_id: int, image_path: str) ->
         (config.UPLOADS_DIR / relative_path).unlink()
 
 
-async def backfill_missing_symbol_images(limit: int = 100) -> dict[str, int]:
+async def backfill_missing_symbol_images(
+    limit: int = 100,
+    symbol_ids: list[int] | None = None,
+) -> dict[str, int]:
     summary = {
         "processed": 0,
         "updated": 0,
@@ -185,7 +199,7 @@ async def backfill_missing_symbol_images(limit: int = 100) -> dict[str, int]:
     # keeping the columns needed by the worker avoids that N+1 pattern while
     # preserving short per-symbol write transactions.
     with get_session() as db:
-        symbols = (
+        query = (
             db.query(
                 Symbol.id,
                 Symbol.label,
@@ -196,7 +210,11 @@ async def backfill_missing_symbol_images(limit: int = 100) -> dict[str, int]:
                 Symbol.description,
             )
             .filter(_missing_image_clause())
-            .order_by(Symbol.is_builtin.desc(), Symbol.id.asc())
+        )
+        if symbol_ids:
+            query = query.filter(Symbol.id.in_(symbol_ids))
+        symbols = (
+            query.order_by(Symbol.is_builtin.desc(), Symbol.id.asc())
             .limit(limit)
             .all()
         )
@@ -275,3 +293,52 @@ async def backfill_missing_symbol_images(limit: int = 100) -> dict[str, int]:
         **summary,
     )
     return summary
+
+
+_scheduled_tasks: set[asyncio.Task] = set()
+
+
+def schedule_symbol_image_download(symbol_ids: list[int] | None = None) -> None:
+    """Schedule an ARASAAC image download for newly created symbols.
+
+    Auto-download is the same opt-in maintenance work as the startup backfill:
+    it is skipped during tests and unless ``AAC_ENABLE_SYMBOL_IMAGE_BACKFILL``
+    is enabled, so normal requests never trigger unexpected network work. When
+    enabled, the bounded download runs in the background so symbol creation is
+    never blocked by an external image service.
+    """
+    if os.environ.get("TESTING") == "1":
+        return
+    if not config.get_bool("AAC_ENABLE_SYMBOL_IMAGE_BACKFILL", False):
+        return
+    ids = [int(sid) for sid in (symbol_ids or []) if sid]
+    if not ids:
+        return
+
+    async def _run() -> None:
+        try:
+            await backfill_missing_symbol_images(symbol_ids=ids)
+        except Exception as exc:  # pragma: no cover - defensive logging only
+            logger.warning("Scheduled symbol image download failed: {}", exc)
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # Sync FastAPI handlers run on a threadpool without a running loop, so
+        # run the download on a short-lived daemon thread instead of blocking.
+        def _run_in_thread() -> None:
+            try:
+                asyncio.run(_run())
+            except Exception as exc:  # pragma: no cover - defensive logging only
+                logger.warning("Threaded symbol image download failed: {}", exc)
+
+        threading.Thread(
+            target=_run_in_thread,
+            name="symbol-image-download",
+            daemon=True,
+        ).start()
+        return
+
+    task = asyncio.create_task(_run(), name="symbol-image-download")
+    _scheduled_tasks.add(task)
+    task.add_done_callback(_scheduled_tasks.discard)

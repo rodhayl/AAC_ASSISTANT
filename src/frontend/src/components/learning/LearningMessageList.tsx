@@ -1,7 +1,12 @@
-import { Bot, Edit, Grid as GridIcon } from 'lucide-react';
+import { useState } from 'react';
+import { Bot, Edit, Flag, Grid as GridIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SymbolMessageEditor } from '../SymbolMessageEditor';
-import { assetUrl } from '../../lib/utils';
+import { SymbolImage } from '../common/SymbolImage';
+import { IconButton } from '../ui/icon-button';
+import { useToastStore } from '../../store/toastStore';
+import api, { extractError } from '../../lib/api';
+import { cn } from '../../lib/utils';
 
 export interface LearningMessage {
   role: 'user' | 'assistant';
@@ -17,6 +22,7 @@ export interface LearningMessage {
 interface LearningMessageListProps {
   messages: LearningMessage[];
   editingMessageIndex: number | null;
+  sessionId?: number | null;
   onEditMessage: (index: number) => void;
   onUpdateSymbols: (symbols: Array<{
     id: number;
@@ -30,11 +36,26 @@ interface LearningMessageListProps {
 export function LearningMessageList({
   messages,
   editingMessageIndex,
+  sessionId,
   onEditMessage,
   onUpdateSymbols,
   onCancelEdit,
 }: LearningMessageListProps) {
   const { t } = useTranslation('learning');
+  const addToast = useToastStore((state) => state.addToast);
+  // Set of message indexes already reported, so a child can't spam reports.
+  const [reported, setReported] = useState<Set<number>>(new Set());
+
+  const reportMessage = async (index: number) => {
+    if (!sessionId || reported.has(index)) return;
+    try {
+      await api.post(`/learning/${sessionId}/report`);
+      setReported((prev) => new Set(prev).add(index));
+      addToast(t('reportSent'), 'success');
+    } catch (err: unknown) {
+      addToast(extractError(err, t('reportFailed')), 'error');
+    }
+  };
 
   return (
     <>
@@ -72,30 +93,43 @@ export function LearningMessageList({
         return (
           <div
             key={index}
-            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} group relative`}
+            className={cn('group relative flex', message.role === 'user' ? 'justify-end' : 'justify-start')}
           >
             <div
-              className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+              className={cn(
+                'max-w-[80%] rounded-2xl px-4 py-3',
                 message.role === 'user'
-                  ? 'bg-indigo-600 text-white rounded-br-none'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-bl-none'
-              }`}
+                  ? 'rounded-br-none bg-brand text-white'
+                  : 'rounded-bl-none bg-muted text-foreground',
+              )}
             >
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center opacity-75 text-xs">
                   {message.role === 'assistant' && <Bot className="w-3 h-3 mr-1" />}
                   {isSymbolMessage && <GridIcon className="w-3 h-3 mr-1" />}
-                  <span className="capitalize">{message.role}</span>
+                  <span>{message.role === 'user' ? t('messageRole.user') : t('messageRole.assistant')}</span>
                 </div>
                 {message.role === 'user' && isSymbolMessage && (
-                  <button
+                  <IconButton
+                    label={t('editSymbols')}
+                    aria-label={t('editSymbolMessage')}
                     onClick={() => onEditMessage(index)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-white/20 rounded"
-                    title={t('editSymbols', 'Edit symbols')}
-                    aria-label="Edit symbol message"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-surface/20 rounded"
                   >
                     <Edit className="w-3 h-3" />
-                  </button>
+                  </IconButton>
+                )}
+                {message.role === 'assistant' && sessionId && (
+                  <IconButton
+                    label={reported.has(index) ? t('reported') : t('report')}
+                    aria-label={reported.has(index) ? t('reported') : t('report')}
+                    title={t('reportTitle')}
+                    disabled={reported.has(index)}
+                    onClick={() => { void reportMessage(index); }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-surface/20 rounded"
+                  >
+                    <Flag className="w-3 h-3" />
+                  </IconButton>
                 )}
               </div>
 
@@ -104,12 +138,12 @@ export function LearningMessageList({
                   {symbolData.map((symbol, symbolIndex) => (
                     <div
                       key={symbolIndex}
-                      className="w-8 h-8 rounded bg-white/10 overflow-hidden border border-white/20"
+                      className="w-8 h-8 rounded bg-surface/10 overflow-hidden border border-white/20"
                       title={symbol.label}
                     >
                       {symbol.image_path ? (
-                        <img
-                          src={assetUrl(symbol.image_path)}
+                        <SymbolImage
+                          imagePath={symbol.image_path}
                           alt={symbol.label}
                           className="w-full h-full object-contain"
                         />

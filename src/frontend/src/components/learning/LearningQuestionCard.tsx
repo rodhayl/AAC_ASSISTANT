@@ -25,6 +25,11 @@ export function LearningQuestionCard({
 
   const isAnswered = revealed !== null;
   const revealedIsCorrect = revealed?.isCorrect ?? null;
+  // A wrong pick is only "final" once the tutor revealed the full answer;
+  // before that the student keeps retrying with progressive hints and the
+  // correct choice must stay hidden.
+  const isFinal =
+    revealedIsCorrect !== false || revealed?.answerRevealed === true;
   const correctIndex = question.correct_answer_index;
   const correctLabel =
     correctIndex !== undefined && correctIndex >= 0 && correctIndex < choices.length
@@ -33,12 +38,14 @@ export function LearningQuestionCard({
 
   const caption = isAnswered
     ? revealedIsCorrect === true
-      ? t('correctAnswer', 'Correct!')
+      ? t('correctAnswer')
       : revealedIsCorrect === false
-        ? t('notQuite', 'Not quite — the correct answer is "{{answer}}"', {
-            answer: correctLabel ?? revealed?.choice ?? '',
-          })
-        : t('answerReceived', 'Answer received')
+        ? isFinal
+          ? t('notQuite', {
+              answer: correctLabel ?? revealed?.choice ?? '',
+            })
+          : t('tryAgain')
+        : t('answerReceived')
     : null;
 
   return (
@@ -50,13 +57,13 @@ export function LearningQuestionCard({
               ? 'border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20'
               : revealedIsCorrect === false
                 ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20'
-                : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'
+                : 'border-border bg-muted/50'
             : 'border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20'
         }`}
       >
         <div className="flex items-center justify-between mb-2">
           <div className="text-xs font-medium text-purple-700 dark:text-purple-300">
-            {t('chooseAnswer', 'Choose an answer')}
+            {t('chooseAnswer')}
           </div>
           {caption && (
             <div
@@ -66,7 +73,7 @@ export function LearningQuestionCard({
                   ? 'text-green-700 dark:text-green-400'
                   : revealedIsCorrect === false
                     ? 'text-red-700 dark:text-red-400'
-                    : 'text-gray-600 dark:text-gray-300'
+                    : 'text-muted-foreground'
               }`}
             >
               {revealedIsCorrect === true ? (
@@ -81,28 +88,39 @@ export function LearningQuestionCard({
         <div className="flex flex-wrap gap-2">
           {choices.map((choice, index) => {
             const isCorrectChoice = correctIndex === index;
-            const isPicked = revealed?.choice === choice;
+            // Every failed pick on this question stays marked and disabled.
+            const wrongPicks =
+              revealed?.wrongChoices ??
+              (revealed?.isCorrect === false ? [revealed.choice] : []);
+            const isWrongPick = wrongPicks.includes(choice);
             let buttonClass =
               'px-3 py-1.5 rounded-lg border text-sm transition-colors ';
             if (!isAnswered) {
               buttonClass +=
-                'bg-white dark:bg-gray-800 border-purple-300 dark:border-purple-700 text-gray-800 dark:text-gray-100 hover:bg-purple-100 dark:hover:bg-purple-900/40 hover:border-purple-400';
+                'bg-surface border-brand/50 text-foreground hover:bg-brand/10 hover:border-brand';
+            } else if (!isFinal) {
+              // Hint state: only the failed picks are marked and disabled;
+              // the rest stay available for another attempt and the correct
+              // choice is NOT revealed.
+              buttonClass += isWrongPick
+                ? 'bg-red-600 dark:bg-red-500 text-white border-red-600 dark:border-red-500'
+                : 'bg-surface border-brand/50 text-foreground hover:bg-brand/10 hover:border-brand';
             } else if (isCorrectChoice) {
               buttonClass +=
-                'bg-green-600 dark:bg-green-500 text-white border-green-600 dark:border-green-500 font-medium';
-            } else if (isPicked) {
+                'bg-green-700 text-white border-green-700 dark:border-green-700 font-medium';
+            } else if (isWrongPick) {
               buttonClass +=
                 'bg-red-600 dark:bg-red-500 text-white border-red-600 dark:border-red-500';
             } else {
               buttonClass +=
-                'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 opacity-60';
+                'bg-surface border-border text-muted-foreground opacity-60';
             }
             return (
               <button
                 key={`${index}-${choice}`}
                 type="button"
                 onClick={() => onAnswer(choice)}
-                disabled={disabled || isAnswered}
+                disabled={disabled || (isAnswered && (isFinal || isWrongPick))}
                 aria-label={choice}
                 data-correct={isCorrectChoice ? 'true' : undefined}
                 className={buttonClass}

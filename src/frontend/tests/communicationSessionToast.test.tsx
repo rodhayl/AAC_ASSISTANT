@@ -70,7 +70,15 @@ vi.mock('react-router', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback || key,
+    t: (key: string, arg2?: string | Record<string, unknown>) => {
+      if (typeof arg2 === 'string') return arg2;
+      const values: Record<string, string> = {
+        'common:sessionStarted': 'Session started',
+        'common:sessionStartFailed': 'Failed to start session',
+        'common:communication': 'Communication',
+      };
+      return values[key] ?? key;
+    },
     i18n: { language: 'en' },
   }),
   initReactI18next: { type: '3rdParty', init: () => {} },

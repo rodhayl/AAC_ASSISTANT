@@ -21,7 +21,7 @@ test.describe('Dashboard - Student', () => {
 
   test('should show statistics cards', async ({ page }) => {
     // Wait for cards to load
-    await expect(page.locator('.bg-white').first()).toBeVisible();
+    await expect(page.locator('.bg-surface').first()).toBeVisible();
     // Check for any text resembling stats (English or Spanish)
     await expect(page.locator('body')).toContainText(/streak|racha/i);
     await expect(page.locator('body')).toContainText(/achievements|logros/i);

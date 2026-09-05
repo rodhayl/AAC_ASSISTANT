@@ -37,9 +37,7 @@ class TemplateManager:
     def _load_templates(self) -> None:
         """Load all YAML templates from the templates directory."""
         if not self.template_dir.exists():
-            logger.warning(f"Template directory not found: {self.template_dir}")
-            self._cache = {"default": self._get_hardcoded_default()}
-            return
+            raise RuntimeError(f"Template directory not found: {self.template_dir}")
 
         for yaml_file in self.template_dir.glob("*.yaml"):
             try:
@@ -52,40 +50,10 @@ class TemplateManager:
             except Exception as e:
                 logger.error(f"Failed to load template {yaml_file}: {e}")
 
-        # Ensure default template exists
         if "default" not in self._cache:
-            logger.warning("No default template found, using hardcoded default")
-            self._cache["default"] = self._get_hardcoded_default()
+            raise RuntimeError("Required default companion template is missing")
 
         logger.info(f"TemplateManager initialized with {len(self._cache)} templates")
-
-    def _get_hardcoded_default(self) -> dict:
-        """Fallback default template if YAML files are missing."""
-        return {
-            "name": "Default Companion",
-            "description": "Balanced, friendly learning companion",
-            "version": "1.0",
-            "communication_style": {
-                "tone": "encouraging",
-                "complexity": "moderate",
-                "sentence_length": "medium",
-                "use_emojis": False,
-                "avoid_idioms": False,
-                "avoid_sarcasm": True,
-            },
-            "safety": {
-                "content_filter_level": "standard",
-                "forbidden_topics": [],
-                "trigger_words": [],
-                "max_response_length": 150,
-            },
-            "companion": {
-                "name": None,
-                "role": "learning companion",
-                "personality": ["friendly", "patient", "encouraging"],
-            },
-            "custom_instructions": "Be warm, patient, and encouraging.",
-        }
 
     def list_templates(self) -> list[dict[str, str]]:
         """
@@ -116,12 +84,14 @@ class TemplateManager:
             name: Template name (without .yaml extension)
 
         Returns:
-            Template dict, or default if not found
+            A copy of the requested template.
+
+        Raises:
+            KeyError: If the requested production template does not exist.
         """
         template = self._cache.get(name)
         if template is None:
-            logger.warning(f"Template '{name}' not found, using default")
-            template = self._cache.get("default", self._get_hardcoded_default())
+            raise KeyError(f"Unknown companion template: {name}")
         return copy.deepcopy(template)
 
     def template_exists(self, name: str) -> bool:
@@ -224,8 +194,14 @@ class TemplateManager:
                 and isinstance(result[key], list)
                 and isinstance(value, list)
             ):
-                # For lists, extend rather than replace
-                result[key] = list(set(result[key] + value))
+                # Preserve configured order while removing duplicate scalar
+                # entries. A set-based merge made prompts nondeterministic and
+                # failed for valid list values that were not hashable.
+                merged = []
+                for item in [*result[key], *value]:
+                    if item not in merged:
+                        merged.append(copy.deepcopy(item))
+                result[key] = merged
             else:
                 result[key] = value
         return result
@@ -328,17 +304,6 @@ class TemplateManager:
         if safety.get("max_response_length"):
             max_len = safety["max_response_length"]
             prompt_parts.append(f"Keep responses under {max_len} words.")
-
-        # Medical context awareness (generalized, not specific conditions)
-        medical = profile.get("medical_context", {})
-        if medical.get("sensitivities"):
-            prompt_parts.append(
-                f"Be sensitive to: {', '.join(medical['sensitivities'])}."
-            )
-        if medical.get("accessibility_needs"):
-            prompt_parts.append(
-                f"Accessibility considerations: {', '.join(medical['accessibility_needs'])}."
-            )
 
         # Core AAC principles (always included)
         prompt_parts.append(

@@ -25,7 +25,7 @@ installer, and API. This release marks the first public, packaged release.
 ### Known issues and external services
 
 - Core AAC communication, symbols, boards, speech, and learning operate fully offline.
-- Optional LLM-dependent learning questions require an operator-configured local service (Ollama / LM Studio) or an optional OpenRouter API key.
+- Optional LLM-dependent learning questions require an operator-configured local service (Ollama / LM Studio) or an optional cloud provider (OpenRouter / Groq) API key.
 - Optional ARASAAC symbol backfill (`AAC_ENABLE_SYMBOL_IMAGE_BACKFILL=true`) makes external HTTP lookups to the ARASAAC public API when explicitly enabled (disabled by default).
 - See [Accessibility Guide](ACCESSIBILITY.md) for known accessibility limitations.
 

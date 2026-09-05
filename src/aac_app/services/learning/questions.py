@@ -1,4 +1,4 @@
-"""Question generation and deterministic fallback questions."""
+"""Strict LLM-backed question generation."""
 
 import json
 import re
@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 
 from ...models import LearningSession
 from ...services.learning.history import append_history_entry
-from ...services.translation_service import TranslationService
+from .common import difficulty_for_score
+
+# Matches fenced code blocks (``` or ```json) wrapping provider output.
+_CODE_BLOCK_PATTERN = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 
 
 def extract_json_object(text: str | None) -> dict | None:
@@ -23,7 +26,7 @@ def extract_json_object(text: str | None) -> dict | None:
         return None
 
     candidates = [text.strip()]
-    fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+    fenced = _CODE_BLOCK_PATTERN.search(text)
     if fenced:
         candidates.append(fenced.group(1).strip())
 
@@ -78,6 +81,85 @@ def extract_json_object(text: str | None) -> dict | None:
         search_from = block_end + 1
 
 
+def _is_valid_question_data(value: object) -> bool:
+    """Validate the small question contract before it reaches persistence."""
+    if not isinstance(value, dict):
+        return False
+    question = value.get("question")
+    choices = value.get("choices")
+    correct = value.get("correct")
+    return (
+        isinstance(question, str)
+        and bool(question.strip())
+        and isinstance(choices, list)
+        and len(choices) == 3
+        and all(isinstance(choice, str) and bool(choice.strip()) for choice in choices)
+        and len({choice.strip().casefold() for choice in choices}) == len(choices)
+        and type(correct) is int
+        and 0 <= correct < len(choices)
+    )
+
+
+def _question_coverage(session: LearningSession) -> tuple[list[str], list[str]]:
+    """Question texts already asked and target terms already practiced.
+
+    Reads the session's conversation history; entries that do not match the
+    full question contract (e.g. the welcome message) are skipped.
+    """
+    asked: list[str] = []
+    practiced: list[str] = []
+    for entry in session.conversation_history or []:
+        if entry.get("type") != "question":
+            continue
+        data = entry.get("data")
+        if not isinstance(data, dict) or not {"question", "choices", "correct"} <= set(data):
+            continue
+        question = data["question"]
+        if isinstance(question, str) and question.strip():
+            asked.append(question.strip()[:80])
+        correct = data["correct"]
+        choices = data["choices"]
+        if type(correct) is int and 0 <= correct < len(choices):
+            term = choices[correct]
+            if isinstance(term, str) and term.strip():
+                practiced.append(term.strip()[:40])
+    return asked, practiced
+
+
+def _terms_practiced_in_recent_sessions(
+    session: LearningSession, db: Session | None, limit: int = 5
+) -> list[str]:
+    """Target terms already asked in the student's recent sessions on this topic.
+
+    Lets the tutor prioritize unstudied vocabulary instead of reopening every
+    session with the same terms. Best-effort: a lookup failure must not block
+    question generation.
+    """
+    if db is None:
+        return []
+    try:
+        past_sessions = (
+            db.query(LearningSession)
+            .filter(
+                LearningSession.user_id == session.user_id,
+                LearningSession.topic_name == session.topic_name,
+                LearningSession.id != session.id,
+            )
+            .order_by(LearningSession.started_at.desc())
+            .limit(limit)
+            .all()
+        )
+    except Exception as exc:
+        logger.warning(f"Recent-session coverage lookup failed: {exc}")
+        return []
+    terms: list[str] = []
+    for past in past_sessions:
+        _, practiced = _question_coverage(past)
+        terms.extend(practiced)
+    # Deduplicate preserving order and cap the prompt footprint.
+    return list(dict.fromkeys(terms))[:15]
+
+
 class QuestionGenerationMixin:
     async def ask_question(
         self, session_id: int, difficulty: str = None, db: Session | None = None
@@ -95,30 +177,63 @@ class QuestionGenerationMixin:
 
                 # Adjust difficulty based on comprehension
                 if difficulty is None:
-                    if session.comprehension_score < 0.4:
-                        difficulty = "basic"
-                    elif session.comprehension_score < 0.7:
-                        difficulty = "intermediate"
-                    else:
-                        difficulty = "advanced"
+                    difficulty = difficulty_for_score(session.comprehension_score)
 
                 # Get conversation history (last 3 exchanges)
                 recent_history = (
                     session.conversation_history[-3:] if session.conversation_history else []
                 )
 
-                required_fields = ("question", "choices", "correct")
-
-                # Generate the question (LLM with a strict-JSON retry, then a
-                # translated fallback) and validate its shape.
+                # Generate and validate the question using the configured LLM.
+                # Invalid provider output is an explicit failure; never invent
+                # a deterministic question in production.
                 question_data, response = await self._generate_question_data(
                     session, difficulty, recent_history, db
                 )
 
-                # Validate question data
-                if not all(field in question_data for field in required_fields):
+                # Validate the complete question contract, not only key presence.
+                # An out-of-range correct index would be persisted and crash when
+                # the student submits an answer.
+                if not _is_valid_question_data(question_data):
                     logger.error(f"Invalid question data structure: {question_data}")
                     return {"success": False, "error": "Invalid question format"}
+
+                # Layer-1 output gate: a generated question (text + choices)
+                # that trips the student's deterministic filter is dropped and
+                # replaced with a neutral retry-safe question rather than
+                # persisted. Logged as an audit event for teacher review.
+                from ...services import content_safety as _cs
+
+                q_policy = _cs.resolve_policy_for_user(session.user_id, db)
+                q_verdict = _cs.check_text(
+                    q_policy,
+                    " ".join([question_data["question"], *question_data["choices"]]),
+                )
+                if q_verdict.blocked:
+                    _cs.log_event(
+                        user_id=session.user_id,
+                        surface="chat",
+                        direction="output",
+                        verdict="redirected",
+                        matched=list(q_verdict.matched_terms),
+                        detail=question_data["question"][:300],
+                        db=db,
+                    )
+                    # Language-neutral safe fallback: never persist a blocked
+                    # question, always return a benign one.
+                    user_lang = self._get_user_language(session.user_id, db)
+                    if user_lang.startswith("es"):
+                        question_data = {
+                            "question": "¿Qué palabra usamos para saludar?",
+                            "choices": ["Hola", "Nube", "Azul"],
+                            "correct": 0,
+                        }
+                    else:
+                        question_data = {
+                            "question": "Which word do we use to say hello?",
+                            "choices": ["Hello", "Cloud", "Blue"],
+                            "correct": 0,
+                        }
 
                 # Store question in session
                 session.conversation_history = append_history_entry(
@@ -163,19 +278,28 @@ class QuestionGenerationMixin:
         recent_history: list,
         db: Session | None,
     ) -> tuple[dict | None, str]:
-        """Produce adaptive question data: LLM, strict-JSON retry, fallback.
+        """Produce adaptive question data from the configured LLM.
 
         Returns ``(question_data, response)`` where ``response`` is the last
-        raw LLM reply (empty when generation never reached the model) so the
-        caller can log diagnostics. ``question_data`` is ``None`` only when
-        generation itself raised before assigning a value.
+        raw LLM reply. Invalid output or provider failures raise explicitly;
+        this method never fabricates a question.
         """
-        required_fields = ("question", "choices", "correct")
         response = ""
         try:
+            asked_in_session, _practiced_here = _question_coverage(session)
+            past_terms = _terms_practiced_in_recent_sessions(session, db)
+            coverage = (
+                "Questions already asked in this session: "
+                f"{json.dumps(asked_in_session[-12:], ensure_ascii=False)}\n"
+                "    Terms the student already practiced in recent sessions on this topic: "
+                f"{json.dumps(past_terms, ensure_ascii=False)}"
+            )
             prompt = f"""Generate a {difficulty} level question about {session.topic_name}.
 
     Previous conversation: {json.dumps(recent_history)}
+
+    Coverage so far:
+    {coverage}
 
     Requirements:
     - Appropriate for AAC users with communication difficulties
@@ -183,7 +307,10 @@ class QuestionGenerationMixin:
     - Include exactly 3 answer choices
     - Make it engaging and encouraging
     - The "correct" field is the 0-based index of the right answer in "choices"
+    - Never include the correct answer, or an obvious synonym of it, in the question text; the student must recall or produce it
+    - Distractors must be plausible, topic-related alternatives of the same kind as the correct answer, not generic filler
     - Do NOT repeat a question or choice set you already used earlier in this conversation
+    - Vary the situations and opening themes; prioritize vocabulary and situations the student has NOT practiced yet (see the coverage lists) so every term of the topic gets practiced over time
 
     RESPOND ONLY WITH VALID JSON. No greetings, no explanations, no markdown.
     Use exactly this format (shown for a different topic):
@@ -202,12 +329,14 @@ class QuestionGenerationMixin:
             response = await self.llm.generate(
                 prompt=prompt,
                 system=system_prompt,
-                temperature=0.8,
-                max_tokens=200,
+                temperature=self.default_temperature,
+                max_tokens=self.default_max_tokens,
             )
 
             # Parse JSON response (tolerating markdown fences / prose)
             question_data = extract_json_object(response)
+            if question_data is not None and not _is_valid_question_data(question_data):
+                question_data = None
             if question_data is None:
                 # Corrective retry: the model ignored the JSON contract.
                 logger.warning(
@@ -221,6 +350,7 @@ class QuestionGenerationMixin:
     You must reply only with valid JSON. Do not add any text, greetings,
     explanations, or markdown before or after the JSON object.
     Format: {{"question": "...", "choices": ["A", "B", "C"], "correct": 0}}
+    Never include the correct answer, or an obvious synonym of it, in the question text.
     Do NOT repeat a question or choice set you already used earlier in this conversation.
 
     Generate the {difficulty} level question about {session.topic_name} again.
@@ -229,53 +359,21 @@ class QuestionGenerationMixin:
                 retry_response = await self.llm.generate(
                     prompt=retry_prompt,
                     system=system_prompt,
-                    temperature=0.2,
-                    max_tokens=200,
+                    temperature=min(self.default_temperature, 0.2),
+                    max_tokens=self.default_max_tokens,
                 )
                 retry_data = extract_json_object(retry_response)
-                if retry_data is not None and all(
-                    field in retry_data for field in required_fields
-                ):
+                if retry_data is not None and _is_valid_question_data(retry_data):
                     question_data = retry_data
                     response = retry_response
                     logger.info(
                         f"Question JSON recovered after strict-JSON retry "
                         f"(session {session.id})"
                     )
-        except Exception:
-            question_data = None
+        except Exception as exc:
+            raise RuntimeError("LLM question generation failed") from exc
 
         if question_data is None:
-            if response:
-                logger.error(f"Failed to parse question JSON: {response}")
-            else:
-                logger.error(
-                    "LLM question generation failed; using fallback question"
-                )
-            # Fallback to translated question
-            user_lang = self._get_user_language(session.user_id, db)
-            translation_service = TranslationService()
-
-            question_text = translation_service.get(
-                user_lang,
-                "pages/learning",
-                "fallbackQuestion.question",
-                topic=session.topic_name,
-            )
-            choice1 = translation_service.get(
-                user_lang, "pages/learning", "fallbackQuestion.choice1"
-            )
-            choice2 = translation_service.get(
-                user_lang, "pages/learning", "fallbackQuestion.choice2"
-            )
-            choice3 = translation_service.get(
-                user_lang, "pages/learning", "fallbackQuestion.choice3"
-            )
-
-            question_data = {
-                "question": question_text,
-                "choices": [choice1, choice2, choice3],
-                "correct": 0,
-            }
+            raise ValueError("LLM returned invalid question JSON after retry")
 
         return question_data, response

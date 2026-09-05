@@ -18,7 +18,7 @@
 - Modify: `src/config.py`
 - Modify: `src/api/main.py`
 - Modify: `src/aac_app/services/template_manager.py`
-- Test: `tests/test_packaging_runtime.py`
+- Test: `tests/test_packaging_improvements.py` (frozen-runtime cases)
 
 Add tests for installed-versus-portable runtime roots, bundled n-gram/template lookup, and frozen frontend resolution. Implement `_MEIPASS`-aware bundled paths and `%APPDATA%\AACAssistant` for installed locations without changing development paths.
 

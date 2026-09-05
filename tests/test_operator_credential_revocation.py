@@ -175,7 +175,9 @@ def test_migrate_passwords_marks_credentials_changed_for_sha256_users(
     factory, get_session = op_db
     sha_user = _make_user(factory, "legacy_sha", LEGACY_SHA256_HASH)
     bcrypt_user = _make_user(factory, "modern_bcrypt", "$2b$12$abcdefghijklmnopqrstuv")
-    monkeypatch.setattr("scripts.migrate_passwords.get_session", get_session)
+    # The migration imports the DB accessor lazily inside the function (so
+    # ``--help`` stays inert), so the patch target is the source module.
+    monkeypatch.setattr("src.aac_app.db.get_session", get_session)
 
     import scripts.migrate_passwords as migrate_passwords
 

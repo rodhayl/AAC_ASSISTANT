@@ -1,10 +1,10 @@
 """Optional local neural text-to-speech backed by kokoro-onnx.
 
 Kokoro-82M is a small (~325 MB) StyleTTS2-based model that synthesizes
-natural multi-language speech faster than real-time on CPU. It is an
-optional dependency: when ``kokoro-onnx`` or the model files are missing,
-:class:`LocalTTSProvider` reports itself unavailable and callers fall back
-to the browser's SpeechSynthesis API.
+natural multi-language speech faster than real-time on CPU. The source
+launcher installs ``kokoro-onnx`` and prepares the model files before the
+server starts. If either is unavailable, :class:`LocalTTSProvider` reports
+itself unavailable and the selected Kokoro provider refuses to speak.
 
 Model files (Apache-2.0) are cached under ``data/models/kokoro``:
     - kokoro-v1.0.onnx     (~325 MB)
@@ -17,6 +17,8 @@ Spanish voices included in the v1.0 voice pack: ``ef_dora`` (female),
 from __future__ import annotations
 
 import io
+import os
+import tempfile
 import threading
 import wave
 from pathlib import Path
@@ -35,6 +37,69 @@ KOKORO_VOICES_URL = (
 )
 KOKORO_MODEL_FILENAME = "kokoro-v1.0.onnx"
 KOKORO_VOICES_FILENAME = "voices-v1.0.bin"
+
+# Pause phonemes prepended at speed > 1 so the model's initial-generation
+# corruption lands on silence instead of the first word. Only used on the
+# legacy fallback path; the primary speed path is atempo (see synthesize()).
+_ONSET_GUARD_PHONEMES = ":" * 5
+
+_av_available: bool | None = None
+
+
+def _atempo_available() -> bool:
+    """PyAV (a faster-whisper dependency) provides ffmpeg's atempo filter."""
+    global _av_available
+    if _av_available is None:
+        try:
+            import av  # noqa: F401
+
+            _av_available = True
+        except ImportError:
+            _av_available = False
+    return _av_available
+
+
+def _apply_atempo(samples, sample_rate: int, speed: float):
+    """Time-stretch float mono samples without shifting pitch.
+
+    Kokoro's own speed parameter also scales the BOS/EOS boundary tokens,
+    and the vocoder voices that resized boundary window as a phantom leading
+    vowel ("e"/"a") — blatant on isolated words (hexgrad/kokoro#344). The
+    documented workaround is to synthesize at speed 1.0 and stretch the
+    result afterwards; ffmpeg's atempo preserves formants and never touches
+    the onset.
+    """
+    import av
+    import numpy as np
+
+    pcm16 = (np.clip(samples, -1.0, 1.0) * 32767).astype(np.int16)
+    frame = av.AudioFrame.from_ndarray(pcm16.reshape(1, -1), format="s16", layout="mono")
+    frame.sample_rate = int(sample_rate)
+    graph = av.filter.Graph()
+    source = graph.add(
+        "abuffer",
+        args=(
+            f"time_base=1/{int(sample_rate)}:sample_rate={int(sample_rate)}"
+            ":sample_fmt=s16:channel_layout=mono"
+        ),
+    )
+    tempo = graph.add("atempo", f"{speed:.4f}")
+    sink = graph.add("abuffersink")
+    source.link_to(tempo)
+    tempo.link_to(sink)
+    graph.configure()
+    graph.push(frame)
+    graph.push(None)  # flush so the tail is not left in the filter
+    chunks = []
+    while True:
+        try:
+            out = sink.pull()
+        except (BlockingIOError, EOFError, av.error.FFmpegError):
+            break
+        chunks.append(np.frombuffer(out.to_ndarray().tobytes(), dtype=np.int16))
+    if not chunks:
+        return samples
+    return np.concatenate(chunks).astype(np.float32) / 32768
 
 # Language code -> (default female voice, default male voice)
 DEFAULT_VOICES: dict[str, tuple[str, str]] = {
@@ -118,7 +183,8 @@ def _pack_voice_names() -> list[str] | None:
 
         with np.load(kokoro_voices_path(), allow_pickle=True) as data:
             return sorted(data.files)
-    except Exception:  # pragma: no cover - environment dependent
+    except Exception as exc:  # pragma: no cover - environment dependent
+        logger.debug("Failed to load Kokoro voice catalog: {}", exc)
         return None
 
 
@@ -208,6 +274,7 @@ def _module_available() -> bool:
         except Exception as exc:  # pragma: no cover - environment dependent
             _import_error = str(exc)
             _available = False
+            logger.debug("Kokoro import unavailable: {}", exc)
     return _available
 
 
@@ -218,18 +285,30 @@ def kokoro_import_error() -> str | None:
 
 
 def kokoro_model_dir() -> Path:
-    """Return the directory where Kokoro model files are cached."""
+    """Return the writable directory where Kokoro model files are downloaded."""
     return config.get_data_path("models/kokoro")
+
+
+def _kokoro_model_dir_read() -> Path:
+    """Return the best model directory: bundled first, then writable fallback.
+
+    Packaged releases ship the model under the read-only ``models/kokoro``
+    bundle directory so the application works fully offline.
+    """
+    bundled = config.get_bundled_models_dir()
+    if bundled is not None and (bundled / "kokoro" / KOKORO_MODEL_FILENAME).is_file():
+        return bundled / "kokoro"
+    return kokoro_model_dir()
 
 
 def kokoro_model_path() -> Path:
     """Return the expected path of the ONNX model file."""
-    return kokoro_model_dir() / KOKORO_MODEL_FILENAME
+    return _kokoro_model_dir_read() / KOKORO_MODEL_FILENAME
 
 
 def kokoro_voices_path() -> Path:
     """Return the expected path of the voices file."""
-    return kokoro_model_dir() / KOKORO_VOICES_FILENAME
+    return _kokoro_model_dir_read() / KOKORO_VOICES_FILENAME
 
 
 def model_files_present() -> bool:
@@ -266,18 +345,35 @@ def download_kokoro_model() -> bool:
             logger.info("Kokoro model file already present: {}", dest.name)
             continue
         logger.info("Downloading Kokoro model file {} -> {}", url.split("/")[-1], dest)
+        temporary_path: Path | None = None
         try:
-            with urllib.request.urlopen(url, timeout=600) as response, open(
-                dest, "wb"
+            # Keep an existing valid file usable if a network response fails
+            # halfway through. The temporary file lives beside the target so
+            # os.replace is atomic on the same filesystem.
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=directory,
+                prefix=f".{dest.name}.",
+                suffix=".tmp",
+                delete=False,
             ) as out:
-                while True:
-                    chunk = response.read(1024 * 512)
-                    if not chunk:
-                        break
-                    out.write(chunk)
+                temporary_path = Path(out.name)
+                with urllib.request.urlopen(url, timeout=600) as response:
+                    while True:
+                        chunk = response.read(1024 * 512)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                out.flush()
+                os.fsync(out.fileno())
+            os.replace(temporary_path, dest)
+            temporary_path = None
         except Exception as exc:
             logger.error("Failed to download {}: {}", url, exc)
             return False
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
 
     if model_files_present():
         logger.success("Kokoro model files are ready in {}", directory)
@@ -304,6 +400,10 @@ class LocalTTSProvider:
         """Return whether the kokoro-onnx package is installed (model may be absent)."""
         return _module_available()
 
+    def is_ready(self) -> bool:
+        """Return whether the Kokoro model is loaded in memory (post-warmup)."""
+        return self._kokoro is not None
+
     def _ensure_loaded(self):
         if self._kokoro is not None:
             return self._kokoro
@@ -320,6 +420,16 @@ class LocalTTSProvider:
             logger.info("LocalTTSProvider loaded Kokoro model")
         return self._kokoro
 
+    def warmup(self) -> bool:
+        """Load the Kokoro model now so the first synthesis is fast.
+
+        The model is normally loaded lazily on the first ``synthesize`` call;
+        warming it moves that one-time cost off the critical path so a page's
+        first utterance does not wait for the ~325 MB ONNX model to be read.
+        Safe to call repeatedly: the load is guarded by a lock and runs once.
+        """
+        return self._ensure_loaded() is not None
+
     def synthesize(
         self,
         text: str,
@@ -330,8 +440,9 @@ class LocalTTSProvider:
         """
         Synthesize ``text`` into a 16-bit mono WAV and return its bytes.
 
-        Returns ``None`` when the provider is unavailable so callers can
-        fall back to another TTS engine without error handling.
+        Returns ``None`` when the provider is unavailable so callers can report
+        the selected provider failure without producing speech through another
+        engine.
         """
         if not text or not text.strip():
             return None
@@ -348,22 +459,45 @@ class LocalTTSProvider:
         else:
             voice_info = _voice_info_from_name(resolved_voice)
             if voice_info is None or resolved_voice not in _known_voice_names():
-                # Unknown voice (e.g. a browser voiceURI leaking through the
-                # settings): fall back to the language default instead of failing.
-                female, _male = DEFAULT_VOICES.get(base_lang, DEFAULT_VOICES["es"])
-                resolved_voice = female
+                raise ValueError(f"Unknown Kokoro voice: {resolved_voice}")
             else:
                 # A specific voice drives the spoken language so the Settings
                 # picker works regardless of the current UI language.
                 espeak_lang = _espeak_lang_code(voice_info["language"])
 
         try:
+            # Kokoro quirks worked around here:
+            # 1. The model's speed parameter corrupts the clip boundaries
+            #    (hexgrad/kokoro#344): the duration scaling also resizes the
+            #    BOS/EOS tokens and the vocoder voices that window as a
+            #    phantom leading vowel ("e"/"a"), blatant on isolated words.
+            #    The documented workaround is to synthesize at speed 1.0 and
+            #    stretch afterwards with the pitch-preserving atempo filter.
+            #    Only without PyAV do we pass speed != 1 to the model, where
+            #    a short run of pause tokens (":" is Kokoro's pause phoneme)
+            #    absorbs most of the onset corruption.
+            # 2. kokoro-onnx's default trimmer uses a peak-relative threshold
+            #    that can cut soft word onsets, so trimming is disabled; the
+            #    untrimmed edge padding is only ~150-200 ms of silence.
+            phonemes = kokoro.tokenizer.phonemize(text, espeak_lang)
+            stretch = speed != 1.0 and _atempo_available()
+            model_speed = 1.0 if stretch else speed
+            if model_speed > 1.0:
+                phonemes = _ONSET_GUARD_PHONEMES + phonemes
             samples, sample_rate = kokoro.create(
-                text,
+                phonemes,
                 voice=resolved_voice,
-                speed=speed,
+                speed=model_speed,
                 lang=espeak_lang,
+                is_phonemes=True,
+                trim=False,
             )
+            if stretch:
+                try:
+                    samples = _apply_atempo(samples, sample_rate, speed)
+                except Exception as exc:
+                    # Clean audio at normal tempo beats no audio.
+                    logger.warning("atempo stretch failed, keeping 1.0x audio: {}", exc)
             return _samples_to_wav(samples, sample_rate)
         except Exception as exc:
             logger.warning("Kokoro synthesis failed: {}", exc)

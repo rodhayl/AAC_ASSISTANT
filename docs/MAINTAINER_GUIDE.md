@@ -27,10 +27,37 @@ Before merging any pull request into `main`:
    ```bash
    npm --prefix src/frontend run test:e2e
    ```
-   Ensures zero regressions against real FastAPI and SPA backend instances, including automated Axe Core accessibility scans (`e2e/axe-accessibility.spec.ts`).
+   Ensures zero regressions against real FastAPI and SPA backend instances, including automated Axe Core accessibility scans (`e2e/axe-accessibility.spec.ts`) and the appearance/contrast suites (`e2e/appearance.spec.ts`, `e2e/contrast-audit.spec.ts`, `e2e/contrast-interactive.spec.ts`). The contrast specs render every route and interactive overlay in all four modes (light, dark, high-contrast, high-contrast-dark) and fail on any painted text below WCAG AA (4.5:1).
+
+   The server under `PLAYWRIGHT_BASE_URL` (default `http://127.0.0.1:8086`) must be started with sample seeding enabled **and** deterministic seed passwords that match `e2e/auth.setup.ts`, otherwise the seeded demo users receive random passwords and the auth setup fails. See `docs/test_scenarios/execute_all_scenarios.md` for the full startup recipe (`AAC_SEED_SAMPLE_DATA=true` plus `AAC_SEED_ADMIN1_PASSWORD`, `AAC_SEED_STUDENT1_PASSWORD`, and `AAC_SEED_TEACHER1_PASSWORD`), which mirrors the `e2e-production` CI job.
 
 3. **CI Gate Completion:**
    Confirm all required GitHub Actions jobs (`backend`, `frontend`, `packaging-windows`, `e2e-production`, `secret-scan`, `dependency-review`, `codeql`) pass 100% green on the pull request.
+
+---
+
+## 1b. Test Suite Structure
+
+Tests are organized by concern, not by phase. Backend tests live in `tests/`
+(with shared fixtures in `tests/conftest.py` and helpers in
+`tests/auth_helpers.py`); frontend unit tests live in `src/frontend/tests/`;
+browser E2E specs live in `src/frontend/e2e/`.
+
+- **Backend API tests** (`tests/test_*_routes.py`, `tests/test_api_*`, ...)
+  exercise endpoints through `TestClient` against an isolated temporary
+  SQLite database.
+- **Backend unit tests** cover services and helpers directly
+  (`tests/test_auth_pwdlib.py`, `tests/test_translation_service.py`, ...).
+- **Domain consolidation:** overlapping suites are merged per domain rather
+  than duplicated (e.g. the legacy helper module `test_utils_auth.py` was
+  renamed to `tests/auth_helpers.py`, and the frozen-runtime cases were
+  folded into `tests/test_packaging_improvements.py`).
+- **Coverage gates:** backend `pytest --cov` reports line/branch coverage
+  (~80% lines); frontend Vitest enforces a regression guard in
+  `src/frontend/vitest.config.ts` on the application-only baseline
+  (lines/statements ≥ 50%, functions ≥ 45%, branches ≥ 45%).
+- **E2E** (`src/frontend/e2e/`) runs against a real FastAPI + SPA backend
+  with sample seeding and deterministic seed passwords (see `auth.setup.ts`).
 
 ---
 

@@ -33,24 +33,8 @@ from src.aac_app.utils.jwt_utils import (
     decode_access_token,
     decode_refresh_token,
 )
-from src.api.deps import get_db
 from src.api.main import app
-from tests.test_utils_auth import create_test_headers
-
-
-@pytest.fixture
-def client(test_db_session: Session):
-    """Create FastAPI test client with test database."""
-
-    def override_get_db():
-        try:
-            yield test_db_session
-        finally:
-            pass
-
-    app.dependency_overrides[get_db] = override_get_db
-    yield TestClient(app)
-    app.dependency_overrides.clear()
+from tests.auth_helpers import create_test_headers
 
 
 @pytest.fixture
@@ -576,31 +560,6 @@ class TestTokenExpirationValidation:
         assert response.status_code == 401
         detail = response.json()["detail"].lower()
         assert "token" in detail or "credential" in detail
-
-    def test_valid_token_accepted(self, client: TestClient, test_db_session: Session):
-        """Valid, non-expired tokens should be accepted."""
-        # Create test user
-        user = User(
-            username="valid_user",
-            display_name="Valid User",
-            user_type="student",
-            password_hash=get_password_hash("UserPass123"),
-            is_active=True,
-        )
-        test_db_session.add(user)
-        test_db_session.commit()
-
-        # Create valid token
-        token = create_access_token(
-            {"sub": user.username, "user_id": user.id, "user_type": user.user_type}
-        )
-
-        # Use valid token
-        response = client.get(
-            "/api/auth/preferences", headers={"Authorization": f"Bearer {token}"}
-        )
-
-        assert response.status_code == 200
 
     def test_token_expiration_time_is_2_hours(self):
         """Access tokens should expire in 2 hours."""

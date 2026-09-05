@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
 import { OfflineConflictsPanel } from './OfflineConflictsPanel';
 import { useTranslation } from 'react-i18next';
+import { StatusMessage } from './ui/StatusMessage';
 
 export function Layout() {
   const location = useLocation();
@@ -26,14 +27,14 @@ export function Layout() {
       <a href="#main-content" className="skip-to-main">
         {t('skip')}
       </a>
-      <div className="flex min-h-dvh bg-transparent transition-colors duration-200">
+      <div className="flex min-h-dvh bg-background transition-colors duration-200">
         <NavigationShell key={location.pathname}>
           {isOffline && (
-            <div className="px-4 md:px-6 py-2 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border-b border-amber-200 dark:border-amber-800 text-sm" role="status" aria-live="polite">
+            <StatusMessage variant="warning" className="rounded-none border-x-0 border-t-0 px-4 md:px-6 py-2" role="status" aria-live="polite">
               {t('offline')}
-            </div>
+            </StatusMessage>
           )}
-          <main id="main-content" className="flex-1 overflow-auto bg-transparent relative" role="main" aria-label={t('main')}>
+          <main id="main-content" className="flex-1 overflow-auto bg-background relative" role="main" aria-label={t('main')}>
             <Outlet />
           </main>
         </NavigationShell>
@@ -57,7 +58,7 @@ function NavigationShell({ children }: { children: ReactNode }) {
       {isSidebarOpen && (
         <button
           type="button"
-          aria-label={t('closeSidebar', { defaultValue: 'Close sidebar' })}
+          aria-label={t('closeSidebar')}
           onClick={() => setIsSidebarOpen(false)}
           className="fixed inset-0 z-30 bg-black/40 backdrop-blur-[1px] md:hidden"
         />

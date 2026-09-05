@@ -108,6 +108,11 @@ class GuardianProfileService:
                 )
                 session.add(profile)
                 session.flush()
+            elif not profile.is_active:
+                # Updating a previously soft-deleted profile is the explicit
+                # restore path used by the create/update APIs. Without this,
+                # the API returned success while the profile remained hidden.
+                profile.is_active = True
 
             # Track changes for audit
             for field, new_value in changes.items():
@@ -334,6 +339,30 @@ class GuardianProfileService:
             Complete system prompt string
         """
         profile = self.resolve_effective_profile(student_id, db)
+        # Layer 0 prompt guardrails: the prompt must reflect the *resolved*
+        # policy (admin global defaults + teacher per-student overrides), not
+        # just the raw profile JSON. Merge the effective forbidden topics,
+        # trigger words and level into the profile's safety section so a
+        # student without a guardian profile still inherits the admin terms.
+        try:
+            from .content_safety import resolve_policy_for_user
+
+            policy = resolve_policy_for_user(student_id, db=db)
+            safety = dict(profile.get("safety") or {})
+            topics = set(safety.get("forbidden_topics") or [])
+            topics.update(policy.forbidden_topics)
+            words = set(safety.get("trigger_words") or [])
+            words.update(policy.trigger_words)
+            safety["forbidden_topics"] = sorted(topics)
+            safety["trigger_words"] = sorted(words)
+            safety["content_filter_level"] = policy.level
+            if policy.max_response_length is not None:
+                safety["max_response_length"] = policy.max_response_length
+            profile["safety"] = safety
+        except Exception as exc:
+            logger.warning(
+                "Could not merge resolved policy into system prompt: {}", exc
+            )
         return self.template_manager.build_system_prompt(profile)
 
     def list_students_with_profiles(
@@ -367,23 +396,19 @@ class GuardianProfileService:
             )
 
             if teacher_id:
-                has_assignments = (
-                    session.query(StudentTeacher.id)
-                    .filter(StudentTeacher.teacher_id == teacher_id)
-                    .first()
-                    is not None
-                )
-                if has_assignments:
-                    # Use EXISTS instead of a join so duplicate legacy
-                    # assignment rows cannot duplicate students in the roster.
-                    query = query.filter(
-                        exists().where(
-                            and_(
-                                StudentTeacher.teacher_id == teacher_id,
-                                StudentTeacher.student_id == User.id,
-                            )
+                # Always apply the roster filter. The old conditional skipped
+                # it when a teacher had zero assignments, exposing every active
+                # student to that teacher.
+                # Use EXISTS instead of a join so duplicate legacy assignment
+                # rows cannot duplicate students in the roster.
+                query = query.filter(
+                    exists().where(
+                        and_(
+                            StudentTeacher.teacher_id == teacher_id,
+                            StudentTeacher.student_id == User.id,
                         )
                     )
+                )
 
             query = query.order_by(User.id)
             result = []

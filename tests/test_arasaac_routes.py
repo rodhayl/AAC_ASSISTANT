@@ -4,8 +4,102 @@ import pytest
 from fastapi import HTTPException
 
 from src import config
-from src.aac_app.models import Symbol, User
+from src.aac_app.models import Symbol, User, UserSettings
 from src.api.routers import arasaac
+
+
+def test_arasaac_search_percent_encodes_query_in_url():
+    """Queries with spaces or special characters must not corrupt the URL path."""
+    from src.aac_app.services.arasaac import ArasaacService
+
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return [
+                {"_id": 1, "keywords": [{"keyword": "pan"}], "desc": "bread"}
+            ]
+
+    class FakeClient:
+        async def get(self, url):
+            captured["url"] = url
+            return FakeResponse()
+
+        async def aclose(self):
+            pass
+
+    service = ArasaacService()
+    service.client = FakeClient()
+    try:
+        results = asyncio.run(service.search_symbols("pan de leche", "es"))
+    finally:
+        asyncio.run(service.close())
+
+    assert (
+        captured["url"]
+        == "https://api.arasaac.org/api/pictograms/es/bestsearch/pan%20de%20leche"
+    )
+    assert results and results[0]["label"] == "pan"
+
+    # Path-breaking characters are encoded too, never parsed as separators.
+    captured.clear()
+    asyncio.run(service.search_symbols("rosa#1?x/y", "es"))
+    assert captured["url"].endswith("/bestsearch/rosa%231%3Fx%2Fy")
+
+
+def test_arasaac_search_sanitizes_hostile_locale():
+    """A hostile locale must be replaced with a safe code before URL use."""
+    from src.aac_app.services.arasaac import ArasaacService
+
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return []
+
+    class FakeClient:
+        async def get(self, url):
+            captured["url"] = url
+            return FakeResponse()
+
+        async def aclose(self):
+            pass
+
+    service = ArasaacService()
+    service.client = FakeClient()
+    try:
+        # Traversal in the locale must not reach the request URL.
+        asyncio.run(service.search_symbols("pan", "../../../etc/passwd"))
+    finally:
+        asyncio.run(service.close())
+
+    assert captured["url"].startswith(
+        "https://api.arasaac.org/api/pictograms/es/bestsearch/"
+    )
+    assert ".." not in captured["url"]
+
+
+def test_arasaac_locale_and_id_whitelists():
+    """Locale and id helpers only accept safe path segments."""
+    from src.aac_app.services.arasaac import _validated_id_path, _validated_locale
+
+    assert _validated_locale("es") == "es"
+    assert _validated_locale("fr") == "fr"
+    assert _validated_locale("es-ES") == "es"
+    assert _validated_locale("../../../etc") == "es"
+    assert _validated_locale("") == "es"
+    assert _validated_id_path(123) == "123"
+    assert _validated_id_path("456") == "456"
+    with pytest.raises(ValueError):
+        _validated_id_path("../../etc/passwd")
+    with pytest.raises(ValueError):
+        _validated_id_path("12/34")
 
 
 @pytest.mark.usefixtures("setup_test_db")
@@ -52,6 +146,55 @@ def test_arasaac_import_preserves_missing_image_status_and_closes_client(
     assert closed is True
 
 
+def test_arasaac_import_links_to_existing_symbol_by_casefolded_label(
+    test_db_session, monkeypatch
+):
+    """Importing an already-known term must not create a duplicate row."""
+    user = User(
+        username="arasaac_dedupe_user",
+        display_name="ARASAAC Dedupe User",
+        user_type="student",
+        password_hash="unused",
+        is_active=True,
+    )
+    test_db_session.add(user)
+    test_db_session.commit()
+    test_db_session.refresh(user)
+
+    existing = Symbol(label="house", category="ARASAAC", language="es")
+    test_db_session.add(existing)
+    test_db_session.commit()
+    test_db_session.refresh(existing)
+
+    downloaded = False
+
+    class FakeArasaacService:
+        async def download_symbol_image(self, arasaac_id: int) -> bytes:
+            nonlocal downloaded
+            downloaded = True
+            return b"image-bytes"
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(arasaac, "ArasaacService", FakeArasaacService)
+
+    payload = arasaac.ImportArasaacRequest(
+        arasaac_id=999, label="House", category="ARASAAC"
+    )
+    result = asyncio.run(
+        arasaac.import_arasaac_symbol(
+            payload,
+            db=test_db_session,
+            current_user=user,
+        )
+    )
+
+    assert result.id == existing.id
+    assert test_db_session.query(Symbol).filter(Symbol.label == "house").count() == 1
+    assert downloaded is False
+
+
 def test_arasaac_import_keeps_file_when_optional_indexing_fails(
     test_db_session, monkeypatch, tmp_path
 ):
@@ -91,3 +234,46 @@ def test_arasaac_import_keeps_file_when_optional_indexing_fails(
     assert result.label == "cleanup"
     assert list((tmp_path / "symbols").glob("*.png")) != []
     assert test_db_session.query(Symbol).filter(Symbol.label == "cleanup").count() == 1
+
+
+def test_arasaac_import_normalizes_ui_language_to_base_code(
+    test_db_session, monkeypatch, tmp_path
+):
+    """A regional UI locale (e.g. es-ES) must be stored as its base code so
+    the symbol search's exact language filter (es/en) can find it."""
+    user = User(
+        username="arasaac_lang_user",
+        display_name="ARASAAC Lang User",
+        user_type="student",
+        password_hash="unused",
+        is_active=True,
+    )
+    test_db_session.add(user)
+    test_db_session.commit()
+    test_db_session.refresh(user)
+    test_db_session.add(UserSettings(user_id=user.id, ui_language="es-ES"))
+    test_db_session.commit()
+
+    class FakeArasaacService:
+        async def download_symbol_image(self, arasaac_id: int) -> bytes:
+            return b"image-bytes"
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(arasaac, "ArasaacService", FakeArasaacService)
+    monkeypatch.setattr(arasaac, "index_symbol", lambda _symbol: None)
+    monkeypatch.setattr(config, "UPLOADS_DIR", tmp_path)
+
+    payload = arasaac.ImportArasaacRequest(
+        arasaac_id=789, label="lenguaje", category="ARASAAC"
+    )
+    result = asyncio.run(
+        arasaac.import_arasaac_symbol(
+            payload,
+            db=test_db_session,
+            current_user=user,
+        )
+    )
+
+    assert result.language == "es"

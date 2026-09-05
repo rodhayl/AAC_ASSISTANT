@@ -149,9 +149,9 @@ class LocalVectorStore:
         if self._closed:
             raise RuntimeError("LocalVectorStore is closed")
         if self.engine is None:
-            from src.aac_app.db import ensure_tables
+            from src.aac_app.db import create_engine_instance
 
-            self.engine = ensure_tables()
+            self.engine = create_engine_instance()
         self._install_connection_listener(self.engine)
         return self.engine
 
@@ -474,7 +474,8 @@ class LocalVectorStore:
                     }
                     for row in rows
                 ]
-        except Exception:
+        except Exception as exc:
+            logger.error("Could not load vector-store metadata: {}", exc)
             self.metadata = []
 
     def search(self, query: str, k: int = 5) -> list[dict[str, Any]]:

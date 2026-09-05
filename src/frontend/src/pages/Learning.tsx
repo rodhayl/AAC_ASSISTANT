@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLearningStore, stripReasoning } from '../store/learningStore';
+import { useLearningStore } from '../store/learningStore';
 import { useAuthStore } from '../store/authStore';
 import { useBoardStore } from '../store/boardStore';
-import { loadTopicsForUser, saveTopicsForUser, type SavedTopic } from '../lib/learningTopics';
 import api from '../lib/api';
 import { glossSymbolUtterance } from '../lib/gloss';
 import { tts } from '../lib/tts';
@@ -14,9 +13,15 @@ import { LearningHistoryPanel } from '../components/learning/LearningHistoryPane
 import { LearningHeader } from '../components/learning/LearningHeader';
 import { LearningSymbolPanel } from '../components/learning/LearningSymbolPanel';
 import type { LearningSymbolItem } from '../types';
+import type { LearningMode } from './Settings/types';
 import { SessionSummaryModal } from '../components/learning/SessionSummaryModal';
 import { useVoiceRecorder } from '../components/learning/useVoiceRecorder';
-import { dedupeLearningSymbols } from '../lib/symbols';
+import { useAssistantMessageSpeech } from '../hooks/useAssistantMessageSpeech';
+import { useTopicPickerPool } from '../hooks/useTopicPickerPool';
+import {
+  TopicPicker,
+  type PickerTopic,
+} from '../components/learning/TopicPicker';
 
 type SymbolItem = LearningSymbolItem;
 
@@ -50,21 +55,37 @@ export function Learning() {
   const difficultyOverride = useLearningStore((state) => state.difficultyOverride);
   const setDifficultyOverride = useLearningStore((state) => state.setDifficultyOverride);
   const user = useAuthStore((state) => state.user);
+  const defaultLearningModeKey = user?.settings?.default_learning_mode || 'practice';
   const addToast = useToastStore((state) => state.addToast);
   const fetchBoards = useBoardStore((state) => state.fetchBoards);
+  const fetchAssignedBoards = useBoardStore((state) => state.fetchAssignedBoards);
   const { t, i18n } = useTranslation('learning');
   const currentLang = i18n.language?.split('-')[0] || 'en';
+  const modeTranslationRef = useRef(t);
+  modeTranslationRef.current = t;
+  const modesRequestRef = useRef(0);
+  const voicePreferenceRequestRef = useRef(0);
+  const invalidateVoicePreference = useCallback(() => {
+    voicePreferenceRequestRef.current += 1;
+  }, []);
+  const activeUserIdRef = useRef<number | null>(null);
+  const modesContextRef = useRef(`${user?.id ?? 'anonymous'}:${currentLang}`);
+  const previousUserIdRef = useRef<number | null>(user?.id ?? null);
+  activeUserIdRef.current = user?.id ?? null;
+  const modesContext = `${user?.id ?? 'anonymous'}:${currentLang}`;
+  // Update synchronously during render so a response that resolves between a
+  // context-changing render and its passive effects is still rejected.
+  modesContextRef.current = modesContext;
+  const symbolLanguage = currentLang === 'es' ? 'es' : 'en';
 
   const [input, setInput] = useState('');
   const [voiceEnabled, setVoiceEnabled] = useState(user?.settings?.voice_mode_enabled ?? true);
   const [showHistory, setShowHistory] = useState(false);
-  const [selectedModeKey, setSelectedModeKey] = useState('practice');
+  const [selectedModeKey, setSelectedModeKey] = useState(defaultLearningModeKey);
   const [availableModes, setAvailableModes] = useState<Array<{ id: number; name: string; key: string; description: string; auto_ask_enabled?: boolean }>>([]);
-  const [savedTopics, setSavedTopics] = useState<SavedTopic[]>([]);
   const [symbolView, setSymbolView] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState('');
-  const [symbolItems, setSymbolItems] = useState<SymbolItem[]>([]);
-  const [symbolLoading, setSymbolLoading] = useState(false);
+  const symbolViewWasOpenRef = useRef(false);
   const [symbolUtterance, setSymbolUtterance] = useState<SymbolItem[]>([]);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -72,7 +93,16 @@ export function Learning() {
   const [isStartingSession, setIsStartingSession] = useState(false);
   const [sessionStartError, setSessionStartError] = useState<string | null>(null);
   const [providerNotice, setProviderNotice] = useState<string | null>(null);
-  const lastSpokenMessageRef = useRef<string | null>(null);
+  const skipInitialSpeech = useLearningStore((state) => state.skipInitialSpeech);
+
+  const {
+    pickerTopics,
+    pickerRecent,
+    fetchSymbols,
+    symbolItems,
+    symbolLang,
+    symbolLoading,
+  } = useTopicPickerPool();
   const lastProviderHistoryLengthRef = useRef(0);
   const sessionStartErrorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -97,6 +127,8 @@ export function Learning() {
     addToast,
     microphoneAccessMessage: t('errors.microphoneAccess'),
     sessionDifficulty,
+    sessionTopic: t('topics.audioConversation'),
+    modeKey: selectedModeKey,
   });
 
   useEffect(() => {
@@ -119,28 +151,101 @@ export function Learning() {
   }, []);
 
   useEffect(() => {
-    if (user?.settings?.voice_mode_enabled !== undefined) {
-      setVoiceEnabled(user.settings.voice_mode_enabled);
+    setVoiceEnabled(user?.settings?.voice_mode_enabled ?? true);
+  }, [user?.id, user?.settings?.voice_mode_enabled]);
+
+  const loadAvailableModes = useCallback(async (preferredModeKey?: string) => {
+    if (!user?.id) return;
+    const requestId = ++modesRequestRef.current;
+    const requestContext = modesContext;
+    try {
+      // System modes (created_by null) keep the seeded English name in the
+      // DB; translate by key so the dropdown matches the UI language.
+      // Custom teacher modes always show their stored name.
+      const response = await api.get<LearningMode[]>('/learning-modes/');
+      if (
+        requestId !== modesRequestRef.current ||
+        modesContextRef.current !== requestContext
+      ) return;
+      const modes = response.data.map((mode) => ({
+        ...mode,
+        name: mode.created_by == null
+          ? modeTranslationRef.current(`modes.${mode.key}`, mode.name, { lng: currentLang })
+          : mode.name,
+      }));
+      setAvailableModes(modes);
+      setSelectedModeKey((currentModeKey) => {
+        const configuredModeKey = defaultLearningModeKey;
+        if (preferredModeKey && modes.some((mode) => mode.key === preferredModeKey)) {
+          return preferredModeKey;
+        }
+        if (modes.some((mode) => mode.key === currentModeKey)) {
+          return currentModeKey;
+        }
+        if (modes.some((mode) => mode.key === configuredModeKey)) {
+          return configuredModeKey;
+        }
+        return modes[0]?.key || configuredModeKey;
+      });
+    } catch (fetchError) {
+      if (
+        requestId === modesRequestRef.current &&
+        modesContextRef.current === requestContext
+      ) {
+        console.error('Failed to fetch learning modes', fetchError);
+      }
     }
-  }, [user?.settings?.voice_mode_enabled]);
+  }, [currentLang, defaultLearningModeKey, modesContext, user?.id]);
+
+  useEffect(() => {
+    modesRequestRef.current += 1;
+    if (previousUserIdRef.current !== user?.id) {
+      previousUserIdRef.current = user?.id ?? null;
+      invalidateVoicePreference();
+      setInput('');
+      setSymbolUtterance([]);
+      setEditingMessageIndex(null);
+      setShowHistory(false);
+      setSessionStartError(null);
+      setProviderNotice(null);
+      setAvailableModes([]);
+    }
+    return () => {
+      // Invalidate a preference response when this page unmounts during
+      // logout, including the same account logging in again later.
+      invalidateVoicePreference();
+    };
+  }, [currentLang, invalidateVoicePreference, user?.id]);
 
   useEffect(() => {
     if (!user?.id) return;
-    setSavedTopics(loadTopicsForUser(user.id));
-  }, [user?.id]);
+    if (user.user_type === 'student') {
+      void fetchAssignedBoards(user.id, true);
+    } else {
+      void fetchBoards(user.user_type === 'admin' ? undefined : user.id);
+    }
+    void loadAvailableModes();
+  }, [fetchAssignedBoards, fetchBoards, loadAvailableModes, user?.id, user?.user_type]);
 
+  // A preference response can arrive after the page first renders. Once it
+  // does, use it as the next session's default without overriding a temporary
+  // choice made in the dropdown until the account setting actually changes.
   useEffect(() => {
-    if (!user?.id) return;
-    saveTopicsForUser(user.id, savedTopics);
-  }, [savedTopics, user?.id]);
+    setSelectedModeKey(defaultLearningModeKey);
+  }, [defaultLearningModeKey, user?.id]);
 
+  // Settings and other same-page surfaces announce mode catalog/default
+  // changes. Refresh only this selector; the rest of the page stays mounted.
   useEffect(() => {
-    if (!user?.id) return;
-    fetchBoards(user.id);
-    api.get('/learning-modes/')
-      .then((response) => setAvailableModes(response.data))
-      .catch((fetchError) => console.error('Failed to fetch learning modes', fetchError));
-  }, [fetchBoards, user?.id]);
+    const handleLearningModesChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ defaultModeKey?: string }>).detail;
+      const preferredModeKey = detail?.defaultModeKey;
+      if (preferredModeKey) setSelectedModeKey(preferredModeKey);
+      void loadAvailableModes(preferredModeKey);
+    };
+    window.addEventListener('aac:learning-modes-changed', handleLearningModesChanged);
+    return () => window.removeEventListener('aac:learning-modes-changed', handleLearningModesChanged);
+  }, [loadAvailableModes]);
 
   useEffect(() => {
     if (user?.id) {
@@ -168,7 +273,9 @@ export function Learning() {
     try {
       await startSession({ topic, purpose, difficulty: sessionDifficulty, board_id: boardId, mode_key: selectedModeKey }, user.id);
       await fetchSessionHistory(user.id);
-      // Auto-request the first adaptive question now that the session is active
+      // Auto-request the first adaptive question now that the session is
+      // active. The welcome and the question are both spoken by
+      // useAssistantMessageSpeech from the messages array, in order.
       void askNextQuestion();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : t('errors.unknownError');
@@ -186,9 +293,53 @@ export function Learning() {
     }
   }, [fetchSessionHistory, showHistory, user?.id]);
 
+  // Toggle the voice input and persist it so it survives a reload.
+  const handleToggleVoice = useCallback(() => {
+    const next = !voiceEnabled;
+    setVoiceEnabled(next);
+    if (!user) return;
+    const requestId = ++voicePreferenceRequestRef.current;
+    const requestUserId = user.id;
+    api
+      .put('/auth/preferences', { voice_mode_enabled: next })
+      .then((response) => {
+        if (
+          requestId !== voicePreferenceRequestRef.current ||
+          activeUserIdRef.current !== requestUserId
+        ) return;
+        useAuthStore.setState((state) => {
+          if (!state.user || state.user.id !== requestUserId) return state;
+          return {
+            user: {
+              ...state.user,
+              settings: response.data,
+            },
+          };
+        });
+      })
+      .catch(() => {
+        if (
+          requestId !== voicePreferenceRequestRef.current ||
+          activeUserIdRef.current !== requestUserId
+        ) return;
+        setVoiceEnabled(!next);
+        addToast(t('learning:voiceSaveFailed'), 'error');
+      });
+  }, [addToast, t, user, voiceEnabled]);
+
   const handleNewConversation = useCallback(async () => {
+    // The topic is an API value, not presentation text. Keep the canonical
+    // backend key stable while the UI remains free to translate its label.
     await startActivity('general conversation', 'practice');
     setShowHistory(false);
+  }, [startActivity]);
+
+  const handlePickTopic = useCallback((topic: PickerTopic) => {
+    void startActivity(topic.topic, topic.purpose ?? 'practice', topic.boardId);
+  }, [startActivity]);
+
+  const handleContinueRecent = useCallback((topic: string, purpose?: string) => {
+    void startActivity(topic, purpose || 'practice');
   }, [startActivity]);
   // Submit an answer; the store auto-requests the next adaptive question.
   const answerAndContinue = useCallback(async (answer: string) => {
@@ -229,7 +380,9 @@ export function Learning() {
   };
 
   const sendSymbolUtterance = async () => {
-    if (symbolUtterance.length === 0 || isLoading || !user) return;
+    // The send button is disabled whenever the utterance is empty, loading is
+    // in progress, or a session is starting, so no guard is needed for those.
+    if (!user) return;
     let sessionId = currentSession?.session_id;
 
     if (!sessionId) {
@@ -237,7 +390,7 @@ export function Learning() {
       setSessionStartError(null);
       try {
         await startSession({
-          topic: 'symbol conversation',
+          topic: t('topics.symbolConversation'),
           purpose: 'aac symbols',
           difficulty: sessionDifficulty,
           mode_key: selectedModeKey,
@@ -271,33 +424,30 @@ export function Learning() {
     }
   };
 
-  const fetchSymbols = useCallback(async () => {
-    setSymbolLoading(true);
-    try {
-      const response = await api.get('/boards/symbols', {
-        params: { limit: 1000, language: currentLang },
-      });
-      setSymbolItems(dedupeLearningSymbols(response.data || []));
-    } catch {
-      setSymbolItems([]);
-    } finally {
-      setSymbolLoading(false);
-    }
-  }, [currentLang]);
-
+  // The hook prefetches the symbol library on mount and on language change.
+  // This effect is a safety net: if the library is still missing when the
+  // symbol view opens (prefetch in flight or failed), fetch it once — gated
+  // on the open transition so it cannot retry-loop while the view stays open.
   useEffect(() => {
-    if (!symbolView) return;
-    fetchSymbols();
+    if (!symbolView) {
+      symbolViewWasOpenRef.current = false;
+      return;
+    }
+    const justOpened = !symbolViewWasOpenRef.current;
+    symbolViewWasOpenRef.current = true;
     setIsBoardsOpen(false);
-  }, [fetchSymbols, symbolView]);
+    if (justOpened && !symbolLoading && symbolLang !== symbolLanguage) {
+      void fetchSymbols();
+    }
+  }, [fetchSymbols, symbolLoading, symbolLang, symbolLanguage, symbolView]);
 
   const filteredSymbols = useMemo(() => {
     let items = symbolItems;
     if (symbolSearch) {
-      const query = symbolSearch.toLowerCase();
+      const query = symbolSearch.toLocaleLowerCase(symbolLanguage);
       items = items.filter((symbol) =>
-        symbol.label.toLowerCase().includes(query) ||
-        (symbol.keywords && symbol.keywords.toLowerCase().includes(query)),
+        symbol.label.toLocaleLowerCase(symbolLanguage).includes(query) ||
+        (symbol.keywords && symbol.keywords.toLocaleLowerCase(symbolLanguage).includes(query)),
       );
     }
 
@@ -307,30 +457,37 @@ export function Learning() {
         : items.filter((symbol) => symbol.category === selectedCategory);
     }
     return items;
-  }, [selectedCategory, symbolItems, symbolSearch]);
+  }, [selectedCategory, symbolItems, symbolSearch, symbolLanguage]);
 
   const coreWords = useMemo(() => {
     const coreWordsByLanguage: Record<string, string[]> = {
       en: ['I', 'you', 'want', 'go', 'stop', 'help', 'yes', 'no', 'more', 'finished', 'like', 'eat', 'drink'],
       es: ['yo', 'tú', 'quiero', 'ir', 'parar', 'ayuda', 'sí', 'no', 'más', 'terminado', 'me gusta', 'comer', 'beber'],
     };
-    const priorityWords = coreWordsByLanguage[currentLang] || coreWordsByLanguage.en;
+    const priorityWords = coreWordsByLanguage[symbolLanguage] || coreWordsByLanguage.en;
+    // Case/accent-insensitive index so labels like "Yo" or "Me gusta" still
+    // match the priority list and keep the panel populated for any casing.
+    const priorityIndex = new Map(
+      priorityWords.map((word, index) => [word.trim().toLocaleLowerCase(symbolLanguage), index]),
+    );
     const byLabel = new Map<string, SymbolItem>();
 
     symbolItems
-      .filter((symbol) => priorityWords.includes(symbol.label))
+      .filter((symbol) => priorityIndex.has(symbol.label.trim().toLocaleLowerCase(symbolLanguage)))
       .forEach((symbol) => {
-        const key = symbol.label.trim().toLowerCase();
+        const key = symbol.label.trim().toLocaleLowerCase(symbolLanguage);
         const existing = byLabel.get(key);
         if (!existing || (!existing.image_path && symbol.image_path)) {
           byLabel.set(key, symbol);
         }
       });
 
-    return Array.from(byLabel.values()).sort((a, b) =>
-      priorityWords.indexOf(a.label) - priorityWords.indexOf(b.label),
+    return Array.from(byLabel.values()).sort(
+      (a, b) =>
+        (priorityIndex.get(a.label.trim().toLocaleLowerCase(symbolLanguage)) ?? 0) -
+        (priorityIndex.get(b.label.trim().toLocaleLowerCase(symbolLanguage)) ?? 0),
     );
-  }, [currentLang, symbolItems]);
+  }, [symbolLanguage, symbolItems]);
 
   useEffect(() => {
     const currentLength = providerHistory.length;
@@ -341,25 +498,24 @@ export function Learning() {
     const providerName =
       last.provider === 'openrouter'
         ? 'OpenRouter'
-        : last.provider === 'lmstudio'
-          ? 'LM Studio'
-          : 'Ollama';
-    setProviderNotice(`Switched to ${providerName}`);
+        : last.provider === 'groq'
+          ? 'Groq'
+          : last.provider === 'lmstudio'
+            ? 'LM Studio'
+            : 'Ollama';
+    setProviderNotice(t('providerSwitched', { provider: providerName }));
     const timeoutId = setTimeout(() => setProviderNotice(null), 3000);
     return () => clearTimeout(timeoutId);
-  }, [providerHistory]);
+  }, [providerHistory, t]);
 
-  useEffect(() => {
-    if (!voiceEnabled || messages.length === 0) return;
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage.role !== 'assistant' || lastMessage.content === lastSpokenMessageRef.current) return;
-
-    lastSpokenMessageRef.current = lastMessage.content;
-    const textToSpeak = stripReasoning(lastMessage.content);
-    if (textToSpeak) {
-      tts.enqueue(textToSpeak, { rate: 0.9 });
-    }
-  }, [messages, voiceEnabled]);
+  // All assistant messages (welcome, questions, feedback) are spoken through
+  // this one mechanism; no caller enqueues chat messages directly.
+  useAssistantMessageSpeech({
+    messages,
+    sessionKey: currentSession?.session_id ?? null,
+    enabled: voiceEnabled,
+    skipExistingOnSessionChange: skipInitialSpeech,
+  });
 
   const updateSymbolMessage = async (symbols: Array<{
     id: number;
@@ -388,7 +544,7 @@ export function Learning() {
         providerInUse={providerInUse}
         providerNotice={providerNotice}
         voiceEnabled={voiceEnabled}
-        onToggleVoice={() => setVoiceEnabled((enabled) => !enabled)}
+        onToggleVoice={handleToggleVoice}
         onNewQuestion={handleNewQuestion}
         canAskQuestion={Boolean(currentSession) && !isLoading && !symbolView}
       />
@@ -419,7 +575,15 @@ export function Learning() {
           isAdmin={isAdmin}
           showAdminReasoning={showAdminReasoning}
           onShowAdminReasoningChange={setShowAdminReasoning}
-          onStartSession={() => { void handleNewConversation(); }}
+          topicPicker={
+            <TopicPicker
+              topics={pickerTopics}
+              recent={pickerRecent}
+              isStartingSession={isStartingSession}
+              onSelect={handlePickTopic}
+              onContinueRecent={handleContinueRecent}
+            />
+          }
           editingMessageIndex={editingMessageIndex}
           onEditMessage={setEditingMessageIndex}
           onUpdateSymbols={updateSymbolMessage}
@@ -461,7 +625,7 @@ export function Learning() {
               if (text) {
                 tts.enqueue(text, {
                   rate: 0.9,
-                  lang: currentLang === 'es' ? 'es-ES' : 'en-US',
+                  lang: symbolLanguage === 'es' ? 'es-ES' : 'en-US',
                 });
               }
             }}

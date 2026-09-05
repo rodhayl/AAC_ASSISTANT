@@ -76,9 +76,6 @@ ENV_FILE_NAME = ".env"
 LEGACY_ENV_FILE_NAME = "env.properties"
 ENV_FILE = RUNTIME_ROOT / ENV_FILE_NAME
 LEGACY_ENV_FILE = RUNTIME_ROOT / LEGACY_ENV_FILE_NAME
-# Backwards-compatible alias used by existing diagnostics and scripts.
-CONFIG_FILE = ENV_FILE
-
 DEFAULT_ALLOWED_ORIGINS = (
     "http://localhost:5176,http://localhost:3000,http://localhost:5173,"
     "http://127.0.0.1:5173,http://127.0.0.1:5176"
@@ -123,12 +120,36 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = ""
 
     OLLAMA_BASE_URL: str = "http://localhost:11434"
+    LMSTUDIO_BASE_URL: str = "http://localhost:1234/v1"
+    AI_MAX_TOKENS: int = 1024
+    AI_TEMPERATURE: float = 0.5
+    # Daily cap on auto-generated pictograms: LLM cost guard for the Smartbar
+    # background generation. -1 (default) = unlimited, 0 disables
+    # auto-generation entirely, any positive integer caps the day's output.
+    AUTOGEN_DAILY_CAP: int = -1
+    # Gentle pacing between queued pictogram generations (seconds): spacing
+    # LLM calls out avoids tripping the provider's per-minute quota (Groq 429s)
+    # when a topic has many missing words at once.
+    AUTOGEN_PACING_SECONDS: float = 1.5
+    # Cooldown after a 429 rate-limit failure before the word is retried.
+    # Much shorter than the generic failure cooldown because the quota is
+    # transient, not a broken configuration.
+    AUTOGEN_RATE_LIMIT_COOLDOWN_SECONDS: int = 30
+    # Daily cap on strict-level LLM moderation sentinel calls (chat output
+    # re-checks). -1 = unlimited, 0 = sentinel disabled, positive = daily cap.
+    SENTINEL_DAILY_CAP: int = -1
+    # Pacing between sentinel LLM calls (seconds) to avoid provider quotas.
+    SENTINEL_PACING_SECONDS: float = 1.5
     OPENROUTER_API_KEY: str = ""
+    GROQ_API_KEY: str = ""
 
     APP_NAME: str = "AAC Assistant"
     APP_VERSION: str = "2.0.0"
     ENVIRONMENT: str = "development"
     DEFAULT_LOCALE: str = "es"
+    # Localized UI values accepted by the preferences API. Short codes remain
+    # supported for legacy installations and are normalized by the frontend.
+    SUPPORTED_UI_LANGUAGES: str = "es-ES,en-US,es,en"
 
     ALLOWED_ORIGINS: str = DEFAULT_ALLOWED_ORIGINS
     ALLOW_DB_RESET: bool = False
@@ -141,6 +162,20 @@ class Settings(BaseSettings):
     # does not perform avoidable network and database work.
     AAC_ENABLE_SYMBOL_IMAGE_BACKFILL: bool = False
     AAC_SYMBOL_IMAGE_BACKFILL_LIMIT: int = 100
+    # One-time bulk import of the full ARASAAC library at startup. Opt-in for
+    # the same reason: it downloads every distinct pictogram on first run.
+    AAC_ENABLE_ARASAAC_LIBRARY_IMPORT: bool = False
+    # Comma-separated locale list to import. Pictograms are locale-independent,
+    # so each locale materializes its translated labels reusing the same images.
+    AAC_ARASAAC_LIBRARY_LOCALES: str = "es,en"
+    # Rebuild the n-gram prediction models from real symbol usage logs at
+    # startup. Opt-in: it scans the usage-log table and rewrites the writable
+    # data/ngrams models (the bundled files are never modified).
+    AAC_ENABLE_NGRAM_REBUILD: bool = False
+    # Seconds between periodic n-gram rebuilds while the server runs, so the
+    # model keeps learning from new usage without a restart. 0 disables the
+    # periodic refresh (startup-only rebuild when the flag above is enabled).
+    AAC_NGRAM_REBUILD_INTERVAL_SECONDS: int = 3600
 
     # Optional deterministic passwords are intentionally unset by default.
     AAC_SEED_DEFAULT_PASSWORD: str | None = None
@@ -242,7 +277,14 @@ def ensure_jwt_secret(env_path: Path | None = None) -> str:
 
     updated_content = "\n".join(updated_lines).rstrip() + "\n"
     if updated_content != original_content:
+        # Note (py/clear-text-storage-sensitive-data): the dotenv file is the
+        # documented, gitignored secret store (like a container secret file):
+        # the JWT signing key must be readable in clear text at startup. The
+        # file is chmod 0600 and never tracked; do not "encrypt" it, which
+        # would move key management one level up. CodeQL inline suppression
+        # is not honored by the default GitHub Actions analysis.
         path.write_text(updated_content, encoding="utf-8")
+        os.chmod(path, 0o600)
 
     return secret
 
@@ -251,7 +293,7 @@ def _dotenv_value(path: Path, key: str) -> str | None:
     """Return the last non-empty assignment for ``key`` in a dotenv file."""
     if not path.exists():
         return None
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in reversed(path.read_text(encoding="utf-8").splitlines()):
         if _env_key(line) == key:
             value = line.partition("=")[2].strip()
             if value:

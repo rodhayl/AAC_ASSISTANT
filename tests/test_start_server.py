@@ -1,4 +1,5 @@
 import asyncio
+import os
 import signal
 import subprocess
 import sys
@@ -92,6 +93,7 @@ def test_run_server_supports_direct_and_module_help_invocation():
         )
         assert result.returncode == 0, result.stderr
         assert "Run the production Uvicorn server" in result.stdout
+        assert "Logging initialized" not in result.stderr
 
 
 def test_server_command_includes_graceful_shutdown_timeout(monkeypatch):
@@ -104,3 +106,41 @@ def test_server_command_includes_graceful_shutdown_timeout(monkeypatch):
     assert "--timeout-graceful-shutdown" in command
     timeout_index = command.index("--timeout-graceful-shutdown")
     assert command[timeout_index + 1] == "12"
+
+
+def test_frontend_dependencies_are_missing_without_node_modules(tmp_path):
+    frontend = tmp_path / "src" / "frontend"
+    frontend.mkdir(parents=True)
+    (frontend / "package.json").write_text("{}", encoding="utf-8")
+    (frontend / "package-lock.json").write_text("{}", encoding="utf-8")
+
+    assert start_server._frontend_dependencies_need_install(frontend) is True
+
+
+def test_frontend_dependencies_detects_hash_mismatch(tmp_path):
+    frontend = tmp_path / "src" / "frontend"
+    node_modules = frontend / "node_modules"
+    node_modules.mkdir(parents=True)
+    lockfile = frontend / "package-lock.json"
+    lockfile.write_text('{"dependencies": {"react": "^18"}}', encoding="utf-8")
+
+    import hashlib
+    hash_a = hashlib.sha256(lockfile.read_bytes()).hexdigest()
+    hash_stamp = node_modules / ".package-lock-hash"
+    hash_stamp.write_text(hash_a)
+
+    # Hash matches → no reinstall needed
+    assert start_server._frontend_dependencies_need_install(frontend) is False
+
+    # Update lockfile → hash no longer matches → reinstall needed
+    lockfile.write_text('{"dependencies": {"react": "^19"}}', encoding="utf-8")
+    assert start_server._frontend_dependencies_need_install(frontend) is True
+
+    # Write new hash → match again
+    hash_b = hashlib.sha256(lockfile.read_bytes()).hexdigest()
+    hash_stamp.write_text(hash_b)
+    assert start_server._frontend_dependencies_need_install(frontend) is False
+
+    # Touching mtime should NOT trigger reinstall (the old bug)
+    os.utime(lockfile, None)
+    assert start_server._frontend_dependencies_need_install(frontend) is False

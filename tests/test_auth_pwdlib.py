@@ -95,3 +95,28 @@ def test_admin_unlock_allows_locked_user_to_login(
         data={"username": "locked_user", "password": _fake_test_password()},
     )
     assert response.status_code == 200
+
+
+class TestPasswordStrengthValidation:
+    """Unit coverage for password strength rules (real policy cases)."""
+
+    def test_password_strength_error_key_reports_missing_requirements(self):
+        from src.aac_app.services.auth_service import password_strength_error_key
+
+        assert password_strength_error_key("") == "errors.passwordRequired"
+        assert password_strength_error_key("   ") == "errors.passwordRequired"
+        assert password_strength_error_key("short1A") == "errors.passwordLength"
+        assert password_strength_error_key("lowercase1") == "errors.passwordUppercase"
+        assert password_strength_error_key("UPPERCASE1") == "errors.passwordLowercase"
+        assert password_strength_error_key("NoDigitsHere") == "errors.passwordNumber"
+        assert password_strength_error_key("ValidPass1") is None
+
+    def test_get_password_hash_rejects_empty(self):
+        from src.aac_app.services.auth_service import get_password_hash
+
+        with pytest.raises(ValueError):
+            get_password_hash("")
+
+    def test_verify_password_handles_garbage_hash(self):
+        """Verifying against an unrecognized hash format returns False, not an error."""
+        assert not verify_password(_fake_test_password(), "not-a-real-hash")

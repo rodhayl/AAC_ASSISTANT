@@ -4,7 +4,7 @@ A date-stamped snapshot of only verifiable facts. Figures below marked
 "measured" were read directly from the repository or the GitHub public API on
 the stated date. Nothing here is invented or estimated from memory.
 
-Snapshot date: **2026-08-15**
+Snapshot date: **2026-08-17**
 
 ## Repository
 
@@ -28,14 +28,14 @@ Snapshot date: **2026-08-15**
 
 | Metric | Value |
 | ------ | ----- |
-| Backend tests (pytest) | 671 passed, 0 skipped (reproduced 2026-08-15; voice tests exercised with `faster-whisper` 1.2.1) |
-| Backend test coverage (Coverage.py) | 81.72% statements (7,372/9,021), 65.73% branches (1,793/2,728), 78.01% combined total |
-| Frontend unit/component tests (Vitest) | 231 passed (49 files, reproduced 2026-08-15) |
-| Frontend test coverage (Vitest v8) | 70.67% statements, 60.55% branches, 64.72% functions, 73.10% lines (reproduced 2026-08-15) |
-| End-to-end tests (Playwright, real backend) | 126 passed (reproduced 2026-08-15 against a production build with seeded temporary SQLite data) |
+| Backend tests (pytest) | 759 passed, 0 skipped (reproduced 2026-08-17; overlapping suites consolidated and dead helpers renamed; voice tests exercised with `faster-whisper` 1.2.1) |
+| Backend test coverage (Coverage.py) | 85.35% statements (7,686/9,005), 71.47% branches (1,951/2,730), 82.12% combined total |
+| Frontend unit/component tests (Vitest) | 369 passed (58 files, reproduced 2026-08-18; 3 Smartbar suites consolidated into 1; 52 new real-case tests added for the six core pages) |
+| Frontend test coverage (Vitest v8, application code only) | 63.04% statements, 54.69% branches, 58.78% functions, 65.94% lines (measured 2026-08-17; only increased since) — regression-gated in `src/frontend/vitest.config.ts` (lines ≥ 62%, statements ≥ 60%, functions ≥ 55%, branches ≥ 51%). The six core pages are now at 100% statements/lines: `Dashboard`, `Achievements`, `Symbols`, `Students`, `Register`, `NotFound` (88% branches aggregate) |
+| End-to-end tests (Playwright, real backend) | 132 passed (reproduced 2026-08-17 against a production build with seeded temporary SQLite data) |
 | Automated accessibility scans (Axe Core) | 5 automated Axe analyses across 5 critical routes (/setup, /login, /communication, /learning, /settings) with 0 serious or critical violations |
 | Python lint (`ruff`) | clean |
-| Frontend lint / typecheck / build | clean; JS bundle 345.1 kB ≤ 450 kB budget, CSS 98.0 kB ≤ 150 kB budget |
+| Frontend lint / typecheck / build | clean; largest JS chunk 357.0 kB ≤ 450 kB budget, largest CSS chunk 100.9 kB ≤ 150 kB budget |
 
 > Test counts and coverage percentages are reproduced directly from machine-readable test outputs (`coverage.json`, Vitest summary, Playwright reporter).
 

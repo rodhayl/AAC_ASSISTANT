@@ -11,7 +11,7 @@ export function LanguageSwitcher() {
   const selectId = 'language-switcher'
 
   return (
-    <label htmlFor={selectId} className="flex items-center gap-2 text-sm text-secondary min-w-0">
+    <label htmlFor={selectId} className="flex items-center gap-2 text-sm text-muted-foreground min-w-0">
       <span className="hidden lg:inline">{t('language.switcher.label')}</span>
       <select
         id={selectId}
@@ -28,11 +28,11 @@ export function LanguageSwitcher() {
             /* ignore */
           }
         }}
-        className="w-[8.25rem] sm:w-auto max-w-full bg-surface border border-border rounded-md px-2 py-1 text-primary"
+        className="w-[8.25rem] sm:w-auto max-w-full bg-surface border border-border rounded-md px-2 py-1 text-foreground"
         aria-label={t('language.switcher.label')}
       >
         <option value="es-ES">{t('language.switcher.es')} (España)</option>
-        <option value="en">{t('language.switcher.en')}</option>
+        <option value="en-US">{t('language.switcher.en')}</option>
       </select>
     </label>
   )

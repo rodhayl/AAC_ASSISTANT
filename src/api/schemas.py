@@ -1,11 +1,16 @@
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+PreferenceLanguage = Annotated[str, Field(min_length=2, max_length=10)]
+
 
 class UserPreferencesResponse(BaseModel):
+    tts_provider: str = "kokoro"
     tts_voice: str = "default"
+    tts_local_voice: str = "default"
+    tts_local_speed: float = 1.0
     tts_language: str | None = None
     ui_language: str | None = None
     notifications_enabled: bool = True
@@ -14,20 +19,40 @@ class UserPreferencesResponse(BaseModel):
     dwell_time: int = 0
     ignore_repeats: int = 0
     high_contrast: bool = False
+    hover_speak_enabled: bool = False
+    hover_speak_delay_ms: int = 1000
+    default_learning_mode: str = "practice"
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class UserPreferencesUpdate(BaseModel):
-    tts_voice: str | None = None
-    tts_language: str | None = None
-    ui_language: str | None = None
+    tts_provider: Literal["browser", "kokoro"] | None = None
+    tts_voice: str | None = Field(None, max_length=200)
+    tts_local_voice: str | None = Field(None, max_length=40)
+    # Same bounds as the Kokoro synthesis endpoint (providers.py).
+    tts_local_speed: float | None = Field(None, ge=0.5, le=2.0)
+    tts_language: PreferenceLanguage | None = None
+    ui_language: PreferenceLanguage | None = None
     notifications_enabled: bool | None = None
     voice_mode_enabled: bool | None = None
     dark_mode: bool | None = None
-    dwell_time: int | None = None
-    ignore_repeats: int | None = None
+    # Negative values are rejected with a localized 400 by
+    # validate_preference_updates; only the upper bound is enforced here so
+    # legacy clients keep receiving the translated error.
+    dwell_time: int | None = Field(None, le=2000)
+    ignore_repeats: int | None = Field(None, le=2000)
     high_contrast: bool | None = None
+    hover_speak_enabled: bool | None = None
+    default_learning_mode: str | None = Field(
+        None,
+        min_length=1,
+        max_length=50,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
+    # Hover-to-speak delay: sub-200ms values fire on accidental fly-bys,
+    # anything above 5s is indistinguishable from a disabled feature.
+    hover_speak_delay_ms: int | None = Field(None, le=5000)
 
 
 # --- User Schemas ---
@@ -44,14 +69,22 @@ class UserCreate(UserBase):
     created_by_teacher_id: int | None = None  # Auto-assign student to this teacher
 
 
-class UserUpdate(BaseModel):
-    display_name: str | None = None
-    email: EmailStr | None = None
-    settings: UserPreferencesUpdate | None = None
+class StaffStudentCreate(UserCreate):
+    """Staff (teacher/admin) student-creation payload.
+
+    Adds an optional per-student safety configuration applied atomically at
+    creation. Public registration intentionally keeps the plain UserCreate
+    contract so a self-registering student can never attach safety data to
+    their own account.
+    """
+
+    # String annotation: StudentSafetyCreate is defined later in this module
+    # (it reuses SafetyConstraintsSchema); pydantic resolves it at build time.
+    safety: "StudentSafetyCreate | None" = None
 
 
 class UserProfileUpdate(BaseModel):
-    display_name: str | None = None
+    display_name: str | None = Field(None, max_length=100)
     email: EmailStr | None = None
 
 
@@ -124,7 +157,7 @@ class BoardSummaryResponse(BaseModel):
     ai_enabled: bool = False
     ai_provider: str | None = None
     ai_model: str | None = None
-    locale: str = "en"
+    locale: str = Field("en", min_length=2, max_length=10)
     is_language_learning: bool = False
     symbols: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -170,6 +203,28 @@ class LearningModeResponse(LearningModeBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+class SavedTopicCreate(BaseModel):
+    """Payload for saving a topic from the teacher/admin sidebar."""
+
+    board: str = Field("", max_length=100)
+    board_id: int | None = None
+    topic: str = Field(..., min_length=1, max_length=200)
+
+class SavedTopicResponse(BaseModel):
+    """A saved topic as exposed to teachers/admins (owners) and students."""
+
+    id: int
+    user_id: int
+    board: str
+    board_id: int | None = None
+    topic: str
+    created_by: str
+    created_by_user_id: int | None = None
+    created_by_name: str | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
 class LearningModePreviewRequest(BaseModel):
     """Preview the exact LLM system prompt a learning mode would produce."""
 
@@ -205,13 +260,13 @@ class LearningModePreviewResponse(BaseModel):
 
 # --- Board Schemas ---
 class SymbolBase(BaseModel):
-    label: str
-    description: str | None = None
-    category: str = "general"
-    image_path: str | None = None
-    audio_path: str | None = None
-    keywords: str | None = None
-    language: str = "en"
+    label: str = Field(..., min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=10_000)
+    category: str = Field("general", min_length=1, max_length=50)
+    image_path: str | None = Field(None, max_length=500)
+    audio_path: str | None = Field(None, max_length=500)
+    keywords: str | None = Field(None, max_length=10_000)
+    language: str = Field("en", min_length=2, max_length=10)
 
 
 class SymbolCreate(SymbolBase):
@@ -228,13 +283,13 @@ class SymbolResponse(SymbolBase):
 
 
 class SymbolUpdate(BaseModel):
-    label: str | None = None
-    description: str | None = None
-    category: str | None = None
-    image_path: str | None = None
-    audio_path: str | None = None
-    keywords: str | None = None
-    language: str | None = None
+    label: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=10_000)
+    category: str | None = Field(None, min_length=1, max_length=50)
+    image_path: str | None = Field(None, max_length=500)
+    audio_path: str | None = Field(None, max_length=500)
+    keywords: str | None = Field(None, max_length=10_000)
+    language: str | None = Field(None, min_length=2, max_length=10)
 
 
 class SymbolReorderUpdate(BaseModel):
@@ -250,8 +305,8 @@ class BoardSymbolBase(BaseModel):
     position_y: int = Field(0, ge=0)
     size: int = Field(1, ge=1, le=100)
     is_visible: bool = True
-    custom_text: str | None = None
-    color: str | None = None
+    custom_text: str | None = Field(None, max_length=100)
+    color: str | None = Field(None, max_length=20)
     linked_board_id: int | None = Field(None, ge=1)
 
 
@@ -265,9 +320,17 @@ class BoardSymbolUpdate(BaseModel):
     position_y: int | None = Field(None, ge=0)
     size: int | None = Field(None, ge=1, le=100)
     is_visible: bool | None = None
-    custom_text: str | None = None
-    color: str | None = None
+    custom_text: str | None = Field(None, max_length=100)
+    color: str | None = Field(None, max_length=20)
     linked_board_id: int | None = Field(None, ge=1)
+
+
+class BoardSymbolBatchUpdate(BoardSymbolUpdate):
+    """Validated placement update used by the board editor batch endpoint."""
+
+    # Older board-editor clients may include placeholder entries without an
+    # association ID; the endpoint intentionally ignores those entries.
+    id: int | None = Field(None, ge=1, description="Board-symbol placement ID")
 
 
 class BoardSymbolResponse(BoardSymbolBase):
@@ -280,7 +343,7 @@ class BoardSymbolResponse(BoardSymbolBase):
 class BoardBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: str | None = Field(None, max_length=10_000)
-    category: str = Field("general", max_length=50)
+    category: str = Field("general", min_length=1, max_length=50)
     is_public: bool = False
     is_template: bool = False
     grid_rows: int | None = Field(4, ge=1, le=100)
@@ -288,7 +351,7 @@ class BoardBase(BaseModel):
     ai_enabled: bool = False
     ai_provider: str | None = None
     ai_model: str | None = None
-    locale: str = "en"
+    locale: str = Field("en", min_length=2, max_length=10)
     is_language_learning: bool = False
 
 
@@ -307,7 +370,7 @@ class BoardUpdate(BaseModel):
     ai_enabled: bool | None = None
     ai_provider: str | None = None
     ai_model: str | None = None
-    locale: str | None = None
+    locale: str | None = Field(None, min_length=2, max_length=10)
     is_language_learning: bool | None = None
 
 
@@ -364,11 +427,11 @@ class StudentAssignRequest(BaseModel):
 
 # --- Learning Schemas ---
 class LearningSessionStart(BaseModel):
-    topic: str
-    purpose: str | None = None
-    difficulty: str = "basic"
-    board_id: int | None = None
-    mode_key: str | None = None
+    topic: str = Field(..., min_length=1, max_length=100)
+    purpose: str | None = Field(None, max_length=10_000)
+    difficulty: str = Field("basic", min_length=1, max_length=20)
+    board_id: int | None = Field(None, ge=1)
+    mode_key: str | None = Field(None, min_length=1, max_length=50)
 
 
 class LearningSessionResponse(BaseModel):
@@ -401,25 +464,29 @@ class QuestionResponse(BaseModel):
 
 
 class AnswerSubmit(BaseModel):
-    answer: str
+    # Bound text before it is copied into an LLM prompt and JSON history.
+    answer: str = Field(..., min_length=1, max_length=10_000)
     is_voice: bool = False
 
 
 class SymbolItem(BaseModel):
-    id: int | None = None
-    label: str
-    category: str | None = None
-    image_path: str | None = None
-    position: int | None = None  # Order in utterance (0-indexed)
-    weight: float | None = 1.0  # Confidence/emphasis (for future use)
+    id: int | None = Field(None, ge=1)
+    label: str = Field(..., min_length=1, max_length=100)
+    category: str | None = Field(None, max_length=50)
+    image_path: str | None = Field(None, max_length=500)
+    position: int | None = Field(None, ge=0)  # Order in utterance (0-indexed)
+    weight: float | None = Field(1.0, ge=0.0, le=1.0)  # Confidence/emphasis
 
 
 class SymbolAnswerSubmit(BaseModel):
-    symbols: list[SymbolItem]
-    text: str | None = None  # Deprecated: use enriched_gloss
-    raw_gloss: str | None = None  # Simple concatenation of labels
-    enriched_gloss: str | None = None  # Template-enhanced gloss
-    context_hint: str | None = None  # Optional user-provided context
+    # Empty symbol lists are allowed through validation so the endpoint can
+    # answer with a translated 400 (errors.noSymbolsProvided) instead of an
+    # opaque Pydantic 422 validation array.
+    symbols: list[SymbolItem] = Field(..., max_length=100)
+    text: str | None = Field(None, max_length=10_000)  # Deprecated: use enriched_gloss
+    raw_gloss: str | None = Field(None, max_length=10_000)  # Simple concatenation of labels
+    enriched_gloss: str | None = Field(None, max_length=10_000)  # Template-enhanced gloss
+    context_hint: str | None = Field(None, max_length=10_000)  # Optional user-provided context
 
 
 class AnswerResponse(BaseModel):
@@ -427,6 +494,9 @@ class AnswerResponse(BaseModel):
     is_correct: bool | None = None
     transcription: str | None = None
     feedback_message: str | None = None
+    # True once the tutor has revealed the full correct answer after enough
+    # failed attempts; the UI may then auto-advance to the next question.
+    answer_revealed: bool | None = None
     confidence: float | None = None
     comprehension_score: float | None = None
     next_action: str | None = None
@@ -452,28 +522,46 @@ class AchievementResponse(AchievementBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+AchievementCriteriaType = Literal[
+    "sessions_completed",
+    "correct_answers",
+    "comprehension_score",
+    "vocabulary_size",
+    "topics_completed",
+    "consecutive_days",
+    "voice_usage",
+]
+
+
 class AchievementCreate(BaseModel):
     """Create a custom achievement"""
-    name: str
-    description: str
-    category: str = "custom"
-    points: int = 10
-    icon: str = "🏆"
-    target_user_id: int | None = None  # If set, only this user sees it
-    criteria_type: str | None = None
-    criteria_value: float | None = None
+
+    name: str = Field(..., min_length=1, max_length=100)
+    # Description is optional: the editor allows leaving it blank, so an empty
+    # string must not be rejected by validation (it is stored as-is).
+    description: str = Field("", max_length=10_000)
+    category: str = Field("custom", min_length=1, max_length=50)
+    points: int = Field(10, ge=0)
+    icon: str = Field("🏆", min_length=1, max_length=50)
+    target_user_id: int | None = Field(None, ge=1)  # If set, only this user sees it
+    criteria_type: AchievementCriteriaType | None = None
+    criteria_value: float | None = Field(None, ge=0)
 
 
 class AchievementUpdate(BaseModel):
     """Update an achievement"""
-    name: str | None = None
-    description: str | None = None
-    category: str | None = None
-    points: int | None = None
-    icon: str | None = None
+
+    name: str | None = Field(None, min_length=1, max_length=100)
+    # Description is optional; an empty string is a valid value (editor allows
+    # clearing it). Only the length limit applies.
+    description: str | None = Field(None, max_length=10_000)
+    category: str | None = Field(None, min_length=1, max_length=50)
+    points: int | None = Field(None, ge=0)
+    icon: str | None = Field(None, min_length=1, max_length=50)
     is_active: bool | None = None
-    criteria_type: str | None = None
-    criteria_value: float | None = None
+    target_user_id: int | None = Field(None, ge=1)
+    criteria_type: AchievementCriteriaType | None = None
+    criteria_value: float | None = Field(None, ge=0)
 
 
 class AchievementFullResponse(BaseModel):
@@ -509,8 +597,8 @@ class LeaderboardEntry(BaseModel):
 
 # --- Analytics Schemas ---
 class SymbolUsageItem(BaseModel):
-    id: int
-    label: str
+    id: int = Field(..., ge=1)
+    label: str = Field(..., min_length=1, max_length=100)
     category: str | None = None
 
 
@@ -528,6 +616,7 @@ class NextSymbolRequest(BaseModel):
     intent: str = "general"
     offset: int = Field(0, ge=0, le=100_000)
     board_id: int | None = None
+    topic: str | None = None
 
 
 # --- Guardian Profile Schemas (Learning Companion Personality) ---
@@ -557,12 +646,26 @@ class CommunicationStyleSchema(BaseModel):
 
 
 class SafetyConstraintsSchema(BaseModel):
-    """Safety configuration for content filtering"""
+    """Safety configuration for content filtering (Layer 1 + 2)."""
 
     content_filter_level: str | None = None  # strict, standard, relaxed
     forbidden_topics: list[str] | None = None
     trigger_words: list[str] | None = None
     max_response_length: int | None = None
+    # Per-student feature gates. ``None`` = follow the admin global setting.
+    block_ai_chat: bool | None = None
+    block_board_ai: bool | None = None
+    block_custom_topics: bool | None = None
+    block_autogen_pictograms: bool | None = None
+    block_social_messaging: bool | None = None
+    # Strict-level LLM moderation sentinel on chat output.
+    sentinel_moderation: bool | None = None
+
+
+class StudentSafetyCreate(SafetyConstraintsSchema):
+    """Per-student safety configuration supplied at account creation."""
+
+    age: int | None = Field(None, ge=1, le=100, description="Student age (1-100)")
 
 
 class CompanionPersonaSchema(BaseModel):
@@ -609,10 +712,10 @@ class GuardianProfileResponse(BaseModel):
     template_name: str
     age: int | None = None
     gender: str | None = None
-    medical_context: dict | None = None
-    communication_style: dict | None = None
-    safety_constraints: dict | None = None
-    companion_persona: dict | None = None
+    medical_context: MedicalContextSchema | None = None
+    communication_style: CommunicationStyleSchema | None = None
+    safety_constraints: SafetyConstraintsSchema | None = None
+    companion_persona: CompanionPersonaSchema | None = None
     custom_instructions: str | None = None
     private_notes: str | None = None
     is_active: bool = True
@@ -620,6 +723,34 @@ class GuardianProfileResponse(BaseModel):
     updated_by: int | None = None
     created_at: str | None = None
     updated_at: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ContentSafetyPolicySchema(BaseModel):
+    """Admin-configurable global content policy (server-wide default)."""
+
+    level: str = "standard"
+    forbidden_topics: list[str] = []
+    trigger_words: list[str] = []
+    feature_locks: dict[str, bool] = {}
+    sentinel_moderation: bool = False
+    max_response_length: int | None = None
+    # Fields teachers may not override per student.
+    locked_fields: list[str] = []
+
+
+class ContentSafetyEventSchema(BaseModel):
+    """One logged content-safety verdict."""
+
+    id: int
+    user_id: int | None = None
+    surface: str
+    direction: str
+    verdict: str
+    matched: list[str] = []
+    detail: str | None = None
+    created_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

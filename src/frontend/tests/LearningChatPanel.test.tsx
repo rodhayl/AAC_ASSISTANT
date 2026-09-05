@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n, { ensureLocale } from '../src/i18n/index';
 import { LearningChatPanel } from '../src/components/learning/LearningChatPanel';
@@ -30,7 +30,7 @@ const baseProps = {
   isAdmin: false,
   showAdminReasoning: false,
   onShowAdminReasoningChange: vi.fn(),
-  onStartSession: vi.fn(),
+  topicPicker: null,
   editingMessageIndex: null,
   onEditMessage: vi.fn(),
   onUpdateSymbols: vi.fn(),
@@ -61,6 +61,16 @@ describe('LearningChatPanel End Session confirmation', () => {
     expect(conversation).toHaveAttribute('tabindex', '0');
     conversation.focus();
     expect(conversation).toHaveFocus();
+  });
+
+  it('scrolls the conversation to the newest content', async () => {
+    const { rerender } = render(<LearningChatPanel {...baseProps} />);
+    const conversation = screen.getByRole('log', { name: /Conversation history/i });
+    const scrollTop = vi.spyOn(conversation, 'scrollTop', 'set');
+
+    rerender(<LearningChatPanel {...baseProps} messages={[{ role: 'assistant', content: 'New message' }]} />);
+
+    await waitFor(() => expect(scrollTop).toHaveBeenCalledWith(conversation.scrollHeight));
   });
 
   it('opens an inline confirmation popover instead of calling immediately', () => {

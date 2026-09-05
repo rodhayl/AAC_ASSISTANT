@@ -6,7 +6,11 @@ path, see the root [`README.md`](../README.md).
 
 ## 1. Prerequisites and commands
 
-Use Python 3.13 or 3.14, [uv](https://docs.astral.sh/uv/), Node.js 22.22+, and npm 10+.
+Use Python 3.13 or 3.14, Node.js 22.22+, and npm 10+. `start.sh` and
+`start.bat` bootstrap [uv](https://docs.astral.sh/uv/) automatically on a
+source checkout when it is missing; the first run needs network access.
+When the development dependency group is absent, the launchers ask whether to
+install it and otherwise keep the production environment minimal.
 The root scripts are the supported Windows entry points:
 
 ```bat
@@ -57,8 +61,8 @@ ALLOW_DB_RESET=false
 AAC_SEED_SAMPLE_DATA=false
 AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=true
 AAC_BOOTSTRAP_ADMIN_USERNAME=admin1
-# Production requires an explicit strong password. In development / packaged runtime,
-# if unset, no default account is created and the operator completes setup via /setup.
+# For local development only, use Admin123 and change it immediately after first login.
+# Production requires an explicit unique strong password.
 AAC_BOOTSTRAP_ADMIN_PASSWORD=REPLACE_WITH_A_UNIQUE_PASSWORD
 DATA_DIR=data
 LOGS_DIR=logs
@@ -115,12 +119,15 @@ supplied for isolated tests, but normal deployments use SQLite at
   session lifecycle, question generation, response handling, summaries, and
   shared prompt helpers into small modules, with
   `LearningCompanionService` as the public service facade.
-- `src/aac_app/providers/` contains optional HTTP AI providers and the lazy
-  faster-whisper speech provider. The browser handles speech synthesis and
-  microphone capture; server-side audio devices are not required. The optional
-  Kokoro neural TTS extra is available on Python 3.13; Python 3.14 uses the
-  browser TTS fallback because the current Kokoro release declares Python
-  `<3.14` support.
+- `src/aac_app/providers/` contains optional HTTP AI providers (Ollama, LM
+  Studio, OpenRouter, and Groq) and the lazy faster-whisper speech provider.
+  OpenRouter and Groq are OpenAI-compatible cloud APIs; their optional API
+  keys can be configured in Settings → AI Provider or set via
+  `OPENROUTER_API_KEY` / `GROQ_API_KEY`. The source launcher prepares the Kokoro neural
+  TTS runtime before starting; the browser remains an explicit alternative in
+  Settings → Voice. Kokoro currently requires Python 3.13 because its release
+  declares Python `<3.14` support; `start.sh` selects Python 3.13 automatically
+  when preparing and launching the source checkout.
 - Semantic search uses fastembed embeddings and sqlite-vec in the SQLite
   database. Runtime model caches belong under `data/models/` and are never
   committed. Release builds stage the bundled fastembed and faster-whisper
@@ -151,6 +158,34 @@ Learning-session question flow (`src/frontend/src/components/learning/` and
   button that opens the session summary modal (score, questions answered,
   correct answers, and the LLM-generated summary from
   `POST /api/learning/{id}/end`).
+
+Saved learning topics (`/api/learning/topics/saved`, models in
+`src/aac_app/models/learning.py`):
+
+- Topics live in the backend (`saved_topics` table) so a student sees their
+  teachers' topics on any device. Teachers and admins create topics; students
+  consume them read-only.
+- **Ownership and attribution.** Each row stores a stable
+  `created_by_user_id` (backfilled from the legacy `user_id` column by the
+  additive schema upgrade in `src/aac_app/schema.py`) plus a legacy
+  `created_by` name snapshot. The API resolves a current `created_by_name`
+  from the user row, so renamed teachers display correctly everywhere; the
+  topic picker and sidebar group topics by the stable ID (two teachers with
+  the same display name stay separate). Deleting a teacher account removes
+  their saved topics.
+- **Duplicates.** Creating a topic identical (after folding case, accents,
+  and whitespace) to one the same teacher already saved for the same board
+  returns HTTP 409; the sidebar surfaces this with an error toast.
+- **Board references.** `board_id` is validated against an existing,
+  accessible board at creation time but is intentionally not a foreign key:
+  a topic whose board is later deleted still starts, just without board
+  context (the frontend drops the dangling ID instead of persisting it).
+- **Legacy migration.** Topics that predate server-side storage lived in
+  localStorage (`learning-topics-<userId>`). On their first teacher/admin
+  login the frontend migrates them one topic at a time, removing each item
+  from localStorage immediately after confirmation, so an interrupted or
+  retried migration never duplicates or loses data (HTTP 409 counts as
+  already migrated).
 
 ## 4. API overview
 

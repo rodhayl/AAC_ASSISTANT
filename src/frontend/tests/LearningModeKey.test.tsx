@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Learning } from '../src/pages/Learning'
 
@@ -10,7 +10,10 @@ const authStoreMock = vi.hoisted(() => {
     id: 1,
     username: 'admin1',
     user_type: 'admin',
-    settings: { voice_mode_enabled: true },
+    settings: {
+      voice_mode_enabled: true,
+      default_learning_mode: undefined as string | undefined,
+    },
   }
   const state = { user, token: 'test-token' };
   const hook = ((selector?: (value: typeof state) => unknown) =>
@@ -22,14 +25,14 @@ const authStoreMock = vi.hoisted(() => {
     }
   }
   hook.getState = () => ({ user, token: 'test-token', logout: () => {} })
-  return hook
+  return { hook, user }
 })
 
 vi.mock('../src/lib/api', () => ({
   default: { get: getApi, post: postApi },
 }))
 
-vi.mock('../src/store/authStore', () => ({ useAuthStore: authStoreMock }))
+vi.mock('../src/store/authStore', () => ({ useAuthStore: authStoreMock.hook }))
 
 // The real learningStore is used on purpose: its startSession action performs
 // the POST to /learning/start, so asserting on postApi proves the selected
@@ -51,30 +54,41 @@ vi.mock('../src/store/toastStore', () => {
 // The page only enqueues speech for assistant messages; keep the TTS module
 // out of this test so the real i18n/speechSynthesis chain is not required.
 vi.mock('../src/lib/tts', () => ({
-  tts: { enqueue: vi.fn() },
+  tts: { enqueue: vi.fn(), cancelAll: vi.fn() },
 }))
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, defaultValue?: string | { defaultValue?: string }, options?: Record<string, string>) => {
-      if (typeof defaultValue === 'string') {
-        let text = defaultValue
-        for (const [name, value] of Object.entries(options || {})) {
-          text = text.replace(`{{${name}}}`, value)
-        }
-        return text
+    t: (key: string, arg2?: string | Record<string, unknown>, arg3?: Record<string, string>) => {
+      const options = typeof arg2 === 'object' ? arg2 : arg3;
+      const defaults: Record<string, string> = {
+        modeLabel: 'Mode',
+        difficultyLabel: 'Difficulty',
+        difficultyHelp: 'Difficulty selection',
+        'difficulty.adaptive': 'Adaptive',
+        'difficulty.basic': 'Basic',
+        'difficulty.intermediate': 'Intermediate',
+        'difficulty.advanced': 'Advanced',
+      };
+      let text = typeof arg2 === 'string' ? arg2 : defaults[key] ?? key;
+      for (const [name, value] of Object.entries(options || {})) {
+        text = text.replace(`{{${name}}}`, String(value));
       }
-      return defaultValue?.defaultValue ?? key
+      return text;
     },
     i18n: { language: 'en' },
   }),
-}))
+  initReactI18next: {
+    type: '3rdParty',
+    init: () => {},
+  },
+}));
 
+// The chat panel renders the real TopicPicker in its empty state; clicking a
+// topic card is the page's start-session affordance now.
 vi.mock('../src/components/learning/LearningChatPanel', () => ({
-  LearningChatPanel: ({ onStartSession }: { onStartSession: () => void }) => (
-    <button data-testid="start-session" onClick={() => onStartSession()}>
-      Start
-    </button>
+  LearningChatPanel: ({ topicPicker }: { topicPicker: React.ReactNode }) => (
+    <div data-testid="chat-panel">{topicPicker}</div>
   ),
 }))
 
@@ -124,6 +138,56 @@ describe('Learning mode dropdown', () => {
       data: { success: true, session_id: 99, welcome_message: 'Welcome' },
     })
     localStorage.clear()
+    authStoreMock.user.settings.default_learning_mode = undefined
+  })
+
+  it('uses the persisted default mode in the dropdown and session payload', async () => {
+    authStoreMock.user.settings.default_learning_mode = 'andalusian'
+    render(<Learning />)
+
+    const select = await screen.findByRole('combobox', { name: 'Mode:' })
+    expect(select).toHaveValue('andalusian')
+    fireEvent.click(screen.getByTestId('topic-card-general'))
+
+    await waitFor(() => {
+      expect(postApi).toHaveBeenCalledWith(
+        '/learning/start',
+        expect.objectContaining({ mode_key: 'andalusian' }),
+        expect.anything(),
+      )
+    })
+  })
+
+  it('refreshes the mode catalog and default after a mode-change event', async () => {
+    const refreshedMode = {
+      id: 3,
+      name: 'Roleplay',
+      key: 'roleplay',
+      description: 'Scenario practice',
+    }
+    let modeFetches = 0
+    getApi.mockImplementation((url: string) => {
+      if (url.includes('/learning-modes/')) {
+        modeFetches += 1
+        return Promise.resolve({ data: modeFetches === 1 ? modes : [...modes, refreshedMode] })
+      }
+      return Promise.resolve({ data: { sessions: [] } })
+    })
+
+    render(<Learning />)
+    const select = await screen.findByRole('combobox', { name: 'Mode:' })
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('aac:learning-modes-changed', {
+        detail: { defaultModeKey: 'roleplay' },
+      }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Roleplay' })).toBeInTheDocument()
+      expect(select).toHaveValue('roleplay')
+    })
+    expect(modeFetches).toBe(2)
   })
 
   it('sends the mode key selected in the dropdown to the session start endpoint', async () => {
@@ -133,7 +197,7 @@ describe('Learning mode dropdown', () => {
     await screen.findByRole('option', { name: 'Andaluz' })
     fireEvent.change(select, { target: { value: 'andalusian' } })
 
-    fireEvent.click(screen.getByTestId('start-session'))
+    fireEvent.click(screen.getByTestId('topic-card-general'))
 
     await waitFor(() => {
       expect(postApi).toHaveBeenCalledWith(
@@ -148,7 +212,7 @@ describe('Learning mode dropdown', () => {
     render(<Learning />)
 
     await screen.findByRole('combobox', { name: 'Mode:' })
-    fireEvent.click(screen.getByTestId('start-session'))
+    fireEvent.click(screen.getByTestId('topic-card-general'))
 
     await waitFor(() => {
       expect(postApi).toHaveBeenCalledWith(
@@ -163,13 +227,14 @@ describe('Learning mode dropdown', () => {
     render(<Learning />)
 
     await screen.findByRole('combobox', { name: 'Mode:' })
-    fireEvent.click(screen.getByTestId('start-session'))
+    fireEvent.click(screen.getByTestId('topic-card-general'))
 
     await waitFor(() => {
       expect(postApi).toHaveBeenCalledWith(
         '/learning/start',
         expect.objectContaining({
           mode_key: 'practice',
+          // Topic is an API contract and remains stable across UI locales.
           topic: 'general conversation',
           purpose: 'practice',
         }),
@@ -185,7 +250,7 @@ describe('Learning mode dropdown', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Difficulty:' }), {
       target: { value: 'advanced' },
     })
-    fireEvent.click(screen.getByTestId('start-session'))
+    fireEvent.click(screen.getByTestId('topic-card-general'))
 
     await waitFor(() => {
       expect(postApi).toHaveBeenCalledWith(

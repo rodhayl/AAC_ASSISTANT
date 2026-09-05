@@ -1,18 +1,26 @@
 
 import contextlib
 import os
+import re
+import unicodedata
+from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import User
+from src.aac_app.models import LearningMode, SavedTopic, StudentTeacher, User, UserSettings
 from src.aac_app.services.learning.service import LearningCompanionService
 from src.api import schemas
 from src.api.deps import (
+    STAFF_USER_TYPES,
+    get_board_or_404,
     get_current_active_user,
     get_db,
     get_learning_service,
     get_learning_session_or_404,
+    require_board_view_access,
+    verify_student_access,
 )
 from src.api.deps import (
     get_text as get_shared_text,
@@ -22,9 +30,102 @@ from src.api.file_uploads import DEFAULT_MAX_AUDIO_BYTES, save_audio_upload
 router = APIRouter()
 
 
+def _normalize_topic_text(name: str) -> str:
+    """Fold case, accents, and whitespace so duplicates match across variants.
+
+    Mirrors the topic normalization in
+    ``src.aac_app.services.learning.session`` so a topic saved as
+    "Astrofísica" correctly conflicts with " astrofisica ".
+    """
+    text = unicodedata.normalize("NFD", name or "").lower()
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _creator_name(db: Session, topic: SavedTopic) -> str:
+    """Resolve the current display name for the topic's stable creator."""
+    if topic.created_by_user_id is None:
+        return topic.created_by
+    creator = db.get(User, topic.created_by_user_id)
+    return (creator.display_name or creator.username) if creator else topic.created_by
+
+
+def _attach_creator_names(db: Session, topics: list[SavedTopic]) -> None:
+    """Attach ``created_by_name`` to each topic using one query for all creators.
+
+    The list endpoints previously issued one ``db.get(User)`` per topic; with
+    many topics that is an N+1. Topics sharing a creator resolve in a single
+    batch, and deleted creators fall back to the legacy name snapshot.
+    """
+    creator_ids = {
+        topic.created_by_user_id
+        for topic in topics
+        if topic.created_by_user_id is not None
+    }
+    names: dict[int, str] = {}
+    if creator_ids:
+        creators = db.query(User).filter(User.id.in_(creator_ids)).all()
+        names = {
+            creator.id: (creator.display_name or creator.username)
+            for creator in creators
+        }
+    for topic in topics:
+        resolved = names.get(topic.created_by_user_id) if topic.created_by_user_id is not None else None
+        topic.created_by_name = resolved or topic.created_by
+
+
 def get_text(user: User, key: str, **kwargs) -> str:
     """Translate a learning-namespace message for the current user."""
     return get_shared_text(user, key, namespace="pages/learning", **kwargs)
+
+
+def _visible_learning_mode(
+    db: Session,
+    user_id: int,
+    mode_key: str,
+    *,
+    include_all: bool = False,
+) -> LearningMode | None:
+    """Return a mode visible to the user who owns a learning session."""
+    query = db.query(LearningMode).filter(LearningMode.key == mode_key)
+    if not include_all:
+        query = query.filter(
+            (LearningMode.created_by.is_(None))
+            | (LearningMode.created_by == user_id)
+        )
+    return query.order_by(LearningMode.id).first()
+
+
+def _resolve_default_learning_mode(db: Session, user_id: int) -> str | None:
+    """Resolve the persisted default, falling back to an available mode."""
+    settings = (
+        db.query(UserSettings)
+        .filter(UserSettings.user_id == user_id)
+        .first()
+    )
+    preferred = getattr(settings, "default_learning_mode", None) or "practice"
+    if _visible_learning_mode(db, user_id, preferred) is not None:
+        return preferred
+
+    fallback = _visible_learning_mode(db, user_id, "practice")
+    if fallback is None:
+        fallback = (
+            db.query(LearningMode)
+            .filter(
+                (LearningMode.created_by.is_(None))
+                | (LearningMode.created_by == user_id)
+            )
+            .order_by(LearningMode.id)
+            .first()
+        )
+    if fallback is None:
+        return None
+
+    # Repair a stale preference when a mode was removed outside the normal
+    # settings flow, so subsequent sessions and preference reads converge.
+    if settings is not None and settings.default_learning_mode != fallback.key:
+        settings.default_learning_mode = fallback.key
+    return fallback.key
 
 
 @router.post("/start", response_model=schemas.LearningSessionResponse)
@@ -41,15 +142,74 @@ def start_session(
             status_code=403, detail=get_text(current_user, "errors.unauthorizedUser")
         )
 
+    if session_data.board_id is not None:
+        board = get_board_or_404(db, session_data.board_id, current_user)
+        require_board_view_access(board, current_user, db)
+
+    effective_mode_key = session_data.mode_key
+    if effective_mode_key is None:
+        effective_mode_key = _resolve_default_learning_mode(db, user_id)
+    elif _visible_learning_mode(
+        db,
+        user_id,
+        effective_mode_key,
+        include_all=current_user.user_type == "admin",
+    ) is None:
+        raise HTTPException(
+            status_code=404,
+            # The learningModes keys live in the shared common namespace.
+            detail=get_shared_text(
+                current_user, "errors.learningModes.notFound"
+            ),
+        )
+
     result = service.start_learning_session(
         user_id=user_id,
         topic=session_data.topic,
         purpose=session_data.purpose,
         difficulty=session_data.difficulty,
         board_id=session_data.board_id,
-        mode_key=session_data.mode_key,
+        mode_key=effective_mode_key,
         db=db,
     )
+
+    if not result["success"]:
+        if result.get("safety_blocked"):
+            raise HTTPException(
+                status_code=403,
+                detail=get_text(current_user, "errors.safety.blockedTopic"),
+            )
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("error", get_text(current_user, "errors.unknownError")),
+        )
+
+    return result
+
+
+@router.get("/topics")
+def get_learning_topics(
+    user_id: int,
+    service: LearningCompanionService = Depends(get_learning_service),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Return the topic pool + coverage for the student-facing topic picker.
+
+    Students read their own pool; teachers can read their roster students';
+    admins can read anyone's. The pool itself is static data (no LLM cost):
+    the nine canonical topics with practice coverage plus recently used
+    custom topics.
+    """
+    if user_id != current_user.id and current_user.user_type != "admin":
+        if current_user.user_type == "teacher":
+            verify_student_access(user_id, current_user, db)
+        else:
+            raise HTTPException(
+                status_code=403, detail=get_text(current_user, "errors.unauthorized")
+            )
+
+    result = service.get_topic_pool(user_id, db=db)
 
     if not result["success"]:
         raise HTTPException(
@@ -58,6 +218,209 @@ def start_session(
         )
 
     return result
+
+
+@router.get("/topics/saved", response_model=list[schemas.SavedTopicResponse])
+def list_saved_topics(
+    scope: str = Query("own"),
+    limit: int | None = Query(None, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    search: str = Query("", max_length=200),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+    response: Response = None,
+):
+    """Return the saved topics visible to the current user.
+
+    Teachers/admins see their own topics by default; students see the
+    topics their roster teachers saved (so they follow the student to any
+    device). Admins may pass ``scope=all`` to list every teacher's topics
+    (used by the admin topic-management view).
+
+    ``limit``/``offset`` paginate large collections; when ``limit`` is
+    omitted the full list is returned so existing clients keep working.
+    ``search`` filters case-insensitively by topic, board, or creator name.
+    """
+    if scope == "all":
+        if current_user.user_type != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail=get_text(current_user, "errors.unauthorized"),
+            )
+        filters: list[Any] = []
+    elif current_user.user_type in STAFF_USER_TYPES:
+        filters = [SavedTopic.user_id == current_user.id]
+    else:
+        teacher_ids = [
+            row.teacher_id
+            for row in db.query(StudentTeacher).filter(
+                StudentTeacher.student_id == current_user.id
+            )
+        ]
+        if not teacher_ids:
+            return []
+        filters = [SavedTopic.user_id.in_(teacher_ids)]
+
+    search_text = search.strip()
+    if search_text:
+        # Creator matching uses the refreshed display name: resolve the
+        # matching users first, then keep their topics alongside topic/board
+        # matches. Escaping % and _ keeps a query of "100%" literal.
+        escaped = (
+            search_text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        pattern = f"%{escaped}%"
+        matching_creator_ids = [
+            row.id
+            for row in db.query(User.id).filter(
+                (User.display_name.ilike(pattern, escape="\\"))
+                | (User.username.ilike(pattern, escape="\\"))
+            )
+        ]
+        search_filters = [
+            SavedTopic.topic.ilike(pattern, escape="\\"),
+            SavedTopic.board.ilike(pattern, escape="\\"),
+        ]
+        if matching_creator_ids:
+            search_filters.append(SavedTopic.created_by_user_id.in_(matching_creator_ids))
+        # Legacy rows without a stable creator ID can still match by snapshot.
+        search_filters.append(SavedTopic.created_by.ilike(pattern, escape="\\"))
+        filters.append(or_(*search_filters))
+
+    if limit is not None:
+        # Paginated callers (admin topic management) also need the unpaginated
+        # total to render page controls; expose it as a header so the response
+        # body stays a plain list for existing clients.
+        response.headers["X-Total-Count"] = str(
+            db.query(SavedTopic).filter(*filters).count()
+        )
+
+    query = (
+        db.query(SavedTopic)
+        .filter(*filters)
+        .order_by(SavedTopic.created_at.desc(), SavedTopic.id.desc())
+    )
+    if offset:
+        query = query.offset(offset)
+    if limit is not None:
+        query = query.limit(limit)
+    topics = query.all()
+    _attach_creator_names(db, topics)
+    return topics
+
+
+@router.post(
+    "/topics/saved",
+    response_model=schemas.SavedTopicResponse,
+    status_code=201,
+)
+def create_saved_topic(
+    payload: schemas.SavedTopicCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Save a topic (teacher/admin only; students consume, never create)."""
+    if current_user.user_type not in STAFF_USER_TYPES:
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(current_user, "errors.unauthorized"),
+        )
+
+    if payload.board_id is not None:
+        board = get_board_or_404(db, payload.board_id, current_user)
+        require_board_view_access(board, current_user, db)
+
+    board_name = payload.board.strip()[:100]
+    topic_name = payload.topic.strip()[:200]
+    if not topic_name:
+        raise HTTPException(
+            status_code=422,
+            detail=get_text(current_user, "errors.topicNotFound"),
+        )
+    # Duplicate detection compares folded text so "Astrofísica", " astrofisica ",
+    # and "ASTROFISICA" all resolve to the same topic.
+    duplicate_candidates = (
+        db.query(SavedTopic)
+        .filter(SavedTopic.user_id == current_user.id, SavedTopic.board == board_name)
+        .all()
+    )
+    normalized_topic = _normalize_topic_text(topic_name)
+    duplicate_exists = any(
+        _normalize_topic_text(existing.topic) == normalized_topic
+        for existing in duplicate_candidates
+    )
+    if duplicate_exists:
+        raise HTTPException(
+            status_code=409,
+            detail=get_text(current_user, "errors.topicAlreadySaved"),
+        )
+
+    topic = SavedTopic(
+        user_id=current_user.id,
+        board=board_name,
+        board_id=payload.board_id,
+        topic=topic_name,
+        created_by=current_user.display_name or current_user.username,
+        created_by_user_id=current_user.id,
+    )
+    db.add(topic)
+    db.commit()
+    db.refresh(topic)
+    topic.created_by_name = _creator_name(db, topic)
+    return topic
+
+
+@router.delete("/topics/saved/{topic_id}", status_code=204)
+def delete_saved_topic(
+    topic_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a saved topic (owner, or admin for any topic)."""
+    topic = db.query(SavedTopic).filter(SavedTopic.id == topic_id).first()
+    if topic is None:
+        raise HTTPException(status_code=404, detail=get_text(current_user, "errors.topicNotFound"))
+    if topic.user_id != current_user.id and current_user.user_type != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(current_user, "errors.unauthorized"),
+        )
+    db.delete(topic)
+    db.commit()
+    return None
+
+
+@router.post("/{session_id}/report")
+def report_message(
+    session_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Student flags an AI response as inappropriate.
+
+    Records a surface="chat" audit event with verdict "reported" so
+    teachers/admins can review it in the safety log. Always succeeds (the
+    child's report must never fail loudly); the event is best-effort.
+    """
+    from src.aac_app.services.content_safety import log_event
+
+    session = get_learning_session_or_404(
+        db,
+        session_id,
+        current_user,
+        message=lambda key: get_text(current_user, key),
+        require_active=False,
+    )
+    log_event(
+        user_id=session.user_id,
+        surface="chat",
+        direction="output",
+        verdict="reported",
+        matched=[],
+        detail=f"Student reported an AI message in session {session_id}",
+        db=db,
+    )
+    return {"success": True}
 
 
 @router.post("/{session_id}/ask", response_model=schemas.QuestionResponse)
@@ -74,6 +437,7 @@ async def ask_question(
         session_id,
         current_user,
         message=lambda key: get_text(current_user, key),
+        require_active=True,
     )
 
     result = await service.ask_question(
@@ -103,6 +467,7 @@ async def submit_answer(
         session_id,
         current_user,
         message=lambda key: get_text(current_user, key),
+        require_active=True,
     )
 
     result = await service.process_response(
@@ -135,6 +500,7 @@ async def submit_voice_answer(
         session_id,
         current_user,
         message=lambda key: get_text(current_user, key),
+        require_active=True,
     )
 
     temp_path = None
@@ -154,7 +520,7 @@ async def submit_voice_answer(
             ),
             empty_detail=get_shared_text(
                 user=current_user,
-                key="errors.boards.invalidAudioType",
+                key="errors.boards.emptyAudioFile",
                 namespace="common",
             ),
         )
@@ -193,6 +559,7 @@ async def submit_symbol_answer(
         session_id,
         current_user,
         message=lambda key: get_text(current_user, key),
+        require_active=True,
     )
 
     if not payload.symbols or len(payload.symbols) == 0:
@@ -241,6 +608,7 @@ async def end_session(
         session_id,
         current_user,
         message=lambda key: get_text(current_user, key),
+        require_active=True,
     )
 
     result = await service.end_learning_session(session_id, db=db)
@@ -268,6 +636,7 @@ def get_progress(
         session_id,
         current_user,
         message=lambda key: get_text(current_user, key),
+        allow_teacher=True,
     )
 
     result = service.get_session_progress(session_id, db=db)
@@ -291,9 +660,12 @@ def get_history(
 ):
     """Get user learning history"""
     if user_id != current_user.id and current_user.user_type != "admin":
-        raise HTTPException(
-            status_code=403, detail=get_text(current_user, "errors.unauthorized")
-        )
+        if current_user.user_type == "teacher":
+            verify_student_access(user_id, current_user, db)
+        else:
+            raise HTTPException(
+                status_code=403, detail=get_text(current_user, "errors.unauthorized")
+            )
 
     result = service.get_user_history(user_id, limit, db=db)
 

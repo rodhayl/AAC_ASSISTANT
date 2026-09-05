@@ -1,3 +1,5 @@
+export const ARASAAC_CATEGORY = 'ARASAAC' as const;
+
 export const DEFAULT_SYMBOL_CATEGORIES = [
   'general',
   'action',
@@ -11,7 +13,7 @@ export const DEFAULT_SYMBOL_CATEGORIES = [
   'time',
   'adjective',
   'core',
-  'ARASAAC',
+  ARASAAC_CATEGORY,
 ] as const;
 
 export const LEARNING_SYMBOL_CATEGORY_IDS = [
@@ -23,5 +25,5 @@ export const LEARNING_SYMBOL_CATEGORY_IDS = [
   'object',
   'place',
   'social',
-  'ARASAAC',
+  ARASAAC_CATEGORY,
 ] as const;

@@ -3,6 +3,10 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './e2e',
   globalSetup: './e2e/global-setup.ts',
+  // groq-verify.spec.ts is a manual browser-verification spec that needs a
+  // real Groq API key (E2E_GROQ_API_KEY) and the local admin account; keep it
+  // out of the standard CI suite. Run it with playwright.verify.config.ts.
+  testIgnore: /groq-verify\.spec\.ts/,
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI,

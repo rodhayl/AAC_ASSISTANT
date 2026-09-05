@@ -18,10 +18,11 @@ from src.aac_app.services.lockout_service import lockout_service
 from src.aac_app.utils.jwt_utils import (
     create_access_token,
     create_refresh_token,
+    decode_access_token,
     decode_refresh_token,
 )
 from src.api import schemas
-from src.api.deps import get_current_active_user, get_db, get_text
+from src.api.deps import get_db, get_request_text, get_text, oauth2_scheme
 from src.api.routers.auth_helpers import (
     conditional_limiter,
     ensure_username_email_available,
@@ -65,48 +66,42 @@ def initial_admin_setup(
 ):
     """Create the initial administrator account on first run."""
     client_ip = request.client.host if request.client else "unknown"
+    accept_language = request.headers.get("accept-language")
     if not _is_loopback_client(client_ip):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Initial administrator setup is only permitted from local loopback (127.0.0.1 / ::1).",
+            detail=get_request_text(request, "errors.setup.localOnly"),
         )
 
     existing_admin = db.query(User).filter(User.user_type == "admin").first()
     if existing_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Initial administrator setup has already been completed.",
+            detail=get_request_text(request, "errors.setup.alreadyCompleted"),
         )
 
     if payload.password != payload.confirm_password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=get_text(
-                accept_language=request.headers.get("accept-language"),
-                key="errors.auth.passwordsDoNotMatch",
-            ),
+            detail=get_request_text(request, "errors.auth.passwordsDoNotMatch"),
         )
 
     if payload.password.strip().lower() == config.DEFAULT_BOOTSTRAP_ADMIN_PASSWORD.lower():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The development default password is not permitted for administrator setup.",
+            detail=get_request_text(request, "errors.setup.defaultPasswordForbidden"),
         )
 
-    validate_password_strength(
-        payload.password, accept_language=request.headers.get("accept-language")
-    )
+    validate_password_strength(payload.password, accept_language=accept_language)
 
     username = payload.username.strip() or "admin1"
     display_name = payload.display_name.strip() or "Administrator"
 
     if payload.email:
-        validate_email_format(
-            payload.email, accept_language=request.headers.get("accept-language")
-        )
+        validate_email_format(payload.email, accept_language=accept_language)
 
     ensure_username_email_available(
-        db, username, payload.email, accept_language=request.headers.get("accept-language")
+        db, username, payload.email, accept_language=accept_language
     )
 
     admin = User(
@@ -150,7 +145,7 @@ def initial_admin_setup(
 
     logger.info("Initial administrator setup completed for username '{}'", admin.username)
     return schemas.SetupResponse(
-        message="Administrator account created successfully",
+        message=get_request_text(request, "errors.setup.adminCreated"),
         user=schemas.UserResponse.model_validate(admin),
         access_token=access_token,
         token_type="bearer",
@@ -192,9 +187,9 @@ def login_for_access_token(
 
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=get_text(
-                accept_language=request.headers.get("accept-language"),
-                key="errors.accountLocked",
+            detail=get_request_text(
+                request,
+                "errors.accountLocked",
                 time=locked_until.strftime("%Y-%m-%d %H:%M:%S UTC"),
             ),
         )
@@ -213,10 +208,7 @@ def login_for_access_token(
 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=get_text(
-                accept_language=request.headers.get("accept-language"),
-                key="errors.incorrectCredentials",
-            ),
+            detail=get_request_text(request, "errors.incorrectCredentials"),
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -232,20 +224,14 @@ def login_for_access_token(
 
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=get_text(
-                accept_language=request.headers.get("accept-language"),
-                key="errors.auth.accountInactive",
-            ),
+            detail=get_request_text(request, "errors.auth.accountInactive"),
         )
 
     if not user.password_hash:
         logger.error(f"Token request failed: User '{form_data.username}' has no password hash")
         raise HTTPException(
             status_code=500,
-            detail=get_text(
-                accept_language=request.headers.get("accept-language"),
-                key="errors.accountConfigurationError",
-            ),
+            detail=get_request_text(request, "errors.accountConfigurationError"),
         )
 
     password_valid, updated_password_hash = verify_password_and_update(
@@ -272,19 +258,16 @@ def login_for_access_token(
         if is_locked:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=get_text(
-                    accept_language=request.headers.get("accept-language"),
-                    key="errors.accountLocked",
+                detail=get_request_text(
+                    request,
+                    "errors.accountLocked",
                     time=locked_until.strftime("%Y-%m-%d %H:%M:%S UTC"),
                 ),
             )
 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=get_text(
-                accept_language=request.headers.get("accept-language"),
-                key="errors.incorrectCredentials",
-            ),
+            detail=get_request_text(request, "errors.incorrectCredentials"),
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -309,6 +292,14 @@ def login_for_access_token(
         user_type=user.user_type,
         ip_address=client_ip
     )
+    # Commit the lockout reset and audit entry before issuing the token.
+    # The request session holds SQLite's single write lock from its first
+    # write until commit; deferring this to the get_db teardown kept the
+    # transaction open across token generation and could deadlock against
+    # long-running background writers (e.g. the ARASAAC library import) that
+    # block holding a read snapshot while waiting for the write lock. The
+    # failure path above already commits inline for the same reason.
+    db.commit()
 
     # Create JWT token with user information
     access_token = create_access_token(
@@ -338,13 +329,26 @@ def login_for_access_token(
 
 @router.post("/logout")
 def logout(
-    current_user: User = Depends(get_current_active_user),
+    token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Revoke every token issued for the current account."""
-    mark_credentials_changed(current_user)
-    db.add(current_user)
-    db.commit()
+    """Revoke every token issued for the current account.
+
+    Best-effort: the access token is decoded without enforcing expiration so
+    an expired token still identifies its account and revokes the refresh
+    tokens. A missing or undecodable token is accepted (the client clears its
+    local session regardless), so logout never fails just because the access
+    token aged out while the user was still logged in.
+    """
+    if token:
+        payload = decode_access_token(token, verify_exp=False)
+        user_id = payload.get("user_id") if payload else None
+        if user_id:
+            current_user = db.query(User).filter(User.id == user_id).first()
+            if current_user:
+                mark_credentials_changed(current_user)
+                db.add(current_user)
+                db.commit()
     return {"ok": True}
 
 
@@ -417,10 +421,7 @@ def refresh_access_token(
         logger.warning("Refresh token security state mismatch for user {}", user_id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=get_text(
-                accept_language=request.headers.get("accept-language"),
-                key="errors.invalidRefreshToken",
-            ),
+            detail=get_request_text(request, "errors.invalidRefreshToken"),
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -429,10 +430,7 @@ def refresh_access_token(
         logger.warning(f"Refresh attempt for inactive user '{user.username}'")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=get_text(
-                accept_language=request.headers.get("accept-language"),
-                key="errors.auth.accountInactive",
-            ),
+            detail=get_request_text(request, "errors.auth.accountInactive"),
         )
 
     # Issue new access token
@@ -463,17 +461,14 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
     Rate limited to 5 registrations per hour per IP to prevent spam.
     """
     # Validate password strength using shared validation function
-    validate_password_strength(
-        user.password, accept_language=request.headers.get("accept-language")
-    )
+    accept_language = request.headers.get("accept-language")
+    validate_password_strength(user.password, accept_language=accept_language)
 
     # Validate email format if provided
-    validate_email_format(
-        user.email, accept_language=request.headers.get("accept-language")
-    )
+    validate_email_format(user.email, accept_language=accept_language)
 
     ensure_username_email_available(
-        db, user.username, user.email, accept_language=request.headers.get("accept-language")
+        db, user.username, user.email, accept_language=accept_language
     )
 
     # SECURITY: Force user_type to 'student' for public registration

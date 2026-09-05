@@ -1,7 +1,43 @@
 {
+  "close": "Cerrar",
+  "sessionStarted": "Sesión iniciada",
+  "sessionStartFailed": "No se pudo iniciar la sesión",
+  "assignmentAlreadyExists": "El estudiante ya está asignado",
+  "studentAssigned": "Estudiante asignado correctamente",
+  "assignmentRemoved": "Asignación eliminada correctamente",
+  "passwordResetSuccessfully": "Contraseña restablecida correctamente",
+  "sendToChatFailed": "No se pudo enviar la frase al asistente",
+  "attentionPhrase": "Disculpa",
+  "voiceSaveFailed": "No se pudo guardar la preferencia de voz",
+  "communication": "Comunicación",
+  "selectBoardToStart": "Selecciona un tablero para empezar a comunicarte",
+  "searchBoards": "Buscar tableros...",
+  "noBoardsMatchSearch": "Ningún tablero coincide con la búsqueda",
+  "noBoardsFound": "No se encontraron tableros",
+  "askTeacherForBoards": "Pide a tu profesor que te asigne un tablero.",
+  "createBoardFirst": "Crea primero un tablero en la sección Tableros.",
+  "boardTooEmpty": "El tablero necesita al menos un 50 % de símbolos para usarse",
+  "addOneMoreSymbol": "Añade 1 símbolo más para desbloquearlo",
+  "addMoreSymbolsToUnlock": "Añade {{count}} símbolos más para desbloquearlo",
+  "openBoard": "Abrir tablero",
+  "boardLocked": "Tablero bloqueado",
+  "symbol": "símbolo",
+  "symbols": "símbolos",
+  "loadMore": "Cargar más",
+  "boardLoadFailed": "No se pudo cargar este tablero",
+  "retry": "Reintentar",
+  "backToBoards": "Volver a los tableros",
   "navbar": {
     "welcome": "¡Bienvenido de nuevo, {{name}}!",
-    "apiDocs": "Documentación API"
+    "apiDocs": "Documentación API",
+    "toggleMenu": "Alternar menú",
+    "guest": "Invitado",
+    "visitor": "Visitante",
+    "roles": {
+      "admin": "Administrador",
+      "teacher": "Profesor",
+      "student": "Estudiante"
+    }
   },
   "notifications": {
     "title": "Notificaciones",
@@ -9,7 +45,8 @@
     "empty": "Sin notificaciones",
     "close": "Cerrar",
     "defaultTitle": "Notificación",
-    "defaultMessage": "Sin contenido de mensaje"
+    "defaultMessage": "Sin contenido de mensaje",
+    "achievementUnlocked": "Logro desbloqueado"
   },
   "language": {
     "switcher": {
@@ -22,9 +59,14 @@
     "unauthorized": "No autorizado",
     "forbidden": "Acceso denegado",
     "notFound": "Recurso no encontrado",
+    "notFoundTitle": "Página no encontrada",
+    "notFoundMessage": "La página que buscas no existe o ha sido movida.",
     "unknown": "Error desconocido",
     "validation": "Error de validación",
     "credentialsInvalid": "No se pudieron validar las credenciales",
+    "loginFailed": "No se pudo iniciar sesión",
+    "setupFailed": "No se pudo completar la configuración inicial",
+    "registrationFailed": "No se pudo completar el registro",
     "inactiveAccount": "La cuenta de usuario está inactiva. Por favor contacte a un administrador.",
     "insufficientPrivileges": "El usuario no tiene suficientes privilegios",
     "passwordRequired": "Se requiere contraseña",
@@ -36,20 +78,27 @@
     "incorrectCredentials": "Nombre de usuario o contraseña incorrectos",
     "accountConfigurationError": "Error de configuración de cuenta",
     "invalidRefreshToken": "Token de actualización inválido o expirado",
-    "invalidTokenType": "Tipo de token inválido. Se esperaba token de actualización.",
     "invalidTokenClaims": "Reclamaciones de token inválidas",
     "userNotFound": "Usuario no encontrado",
     "provider": {
-      "invalid": "El proveedor debe ser 'ollama' o 'openrouter'",
+      "invalid": "El proveedor debe ser 'ollama', 'openrouter', 'lmstudio' o 'groq'",
       "unavailable": "El servicio de Ollama no está disponible. Asegúrate de que Ollama se esté ejecutando.",
       "fetchModelsFailed": "Error al obtener modelos de Ollama: {{error}}",
       "openRouterKeyMissing": "Clave API de OpenRouter no configurada. Configúrala en ajustes primero.",
-      "fetchOpenRouterModelsFailed": "Error al obtener modelos de OpenRouter: {{error}}"
+      "fetchOpenRouterModelsFailed": "Error al obtener modelos de OpenRouter: {{error}}",
+      "groqKeyMissing": "Clave API de Groq no configurada. Configúrala en ajustes primero.",
+      "fetchGroqModelsFailed": "Error al obtener modelos de Groq: {{error}}"
     },
     "settings": {
       "maxTokensPositive": "max_tokens debe ser un entero positivo",
       "temperatureRange": "temperature debe ser un número entre 0.0 y 1.5",
-      "unsupportedLanguage": "Idioma no soportado"
+      "unsupportedLanguage": "Idioma no soportado",
+      "aiValuesMustBeText": "Los valores de configuración de IA deben ser texto.",
+      "settingTooLong": "{{setting}} supera la longitud máxima de {{maximum}} caracteres.",
+      "settingUrlInvalid": "{{setting}} debe ser una URL HTTP o HTTPS válida.",
+      "updated": "Ajustes actualizados correctamente",
+      "uiLanguageUpdated": "Idioma de la interfaz actualizado",
+      "autogenCapRange": "autogen_daily_cap debe ser un entero entre -1 y 500"
     },
     "notifications": {
       "invalidToken": "Token inválido",
@@ -72,7 +121,8 @@
       "noChanges": "No se proporcionaron cambios",
       "onlyAdminsDelete": "Solo los administradores pueden eliminar perfiles de tutor",
       "noProfile": "No existe perfil para este estudiante",
-      "studentNotAssigned": "Este estudiante no está asignado a este profesor"
+      "studentNotAssigned": "Este estudiante no está asignado a este profesor",
+      "profileDeleted": "Perfil eliminado"
     },
     "auth": {
       "emailInvalid": "Formato de correo electrónico inválido",
@@ -88,8 +138,13 @@
       "currentPasswordIncorrect": "Contraseña actual incorrecta",
       "cannotChangeOtherUserPassword": "No se puede cambiar la contraseña de otro usuario a través de este punto final",
       "emailInUse": "El correo electrónico ya está en uso",
+      "displayNameRequired": "El nombre para mostrar es obligatorio",
       "invalidUserType": "Tipo de usuario inválido. Debe ser uno de: {{types}}",
-      "cannotDeleteOwnAccount": "No puedes eliminar tu propia cuenta"
+      "cannotDeleteOwnAccount": "No puedes eliminar tu propia cuenta",
+      "lastAdminRequired": "Debe quedar al menos un administrador activo. Crea otro administrador antes de eliminar este.",
+      "invalidUserTypeFilter": "El filtro de tipo de usuario no es válido",
+      "activeMustBeBoolean": "is_active debe ser un valor booleano",
+      "accountUnlocked": "La cuenta '{{username}}' se desbloqueó correctamente"
     },
     "export": {
       "unauthorizedExport": "No autorizado para exportar datos de este usuario",
@@ -105,14 +160,16 @@
     "boards": {
       "invalidFileType": "Tipo de archivo inválido; solo se permiten imágenes",
       "fileTooLarge": "Archivo demasiado grande; máx 5MB",
+      "emptyFile": "Archivo vacío; elige un archivo con contenido",
       "invalidAudioType": "Archivo de audio inválido; usa WAV, WebM, OGG, MP3 o MP4",
       "audioFileTooLarge": "Archivo de audio demasiado grande; máx 10MB",
+      "emptyAudioFile": "Archivo de audio vacío; graba algo primero",
       "symbolNotFound": "Símbolo no encontrado",
       "symbolInUse": "El símbolo está en uso en tableros; elimine o use force=true",
       "unauthorizedAssignments": "No autorizado para ver estas asignaciones",
       "cannotCreateBoardForOther": "No se puede crear tablero para otro usuario",
       "aiProviderRequired": "Se requieren proveedor y modelo de IA cuando la IA está habilitada",
-      "aiProviderInvalid": "El proveedor de IA debe ser 'ollama' u 'openrouter'",
+      "aiProviderInvalid": "El proveedor de IA debe ser 'ollama', 'openrouter', 'lmstudio' o 'groq'",
       "boardNotFound": "Tablero no encontrado",
       "invalidPosition": "La posición del símbolo ({{x}}, {{y}}) está fuera de la cuadrícula {{cols}}x{{rows}}",
       "gridTooSmall": "La cuadrícula {{cols}}x{{rows}} es demasiado pequeña para los símbolos existentes",
@@ -131,32 +188,31 @@
       "unauthorizedAssign": "No autorizado para asignar este tablero",
       "unauthorizedUnassign": "No autorizado para desasignar este tablero",
       "suggestionsFailed": "Error al generar sugerencias: {{error}}",
-      "reorderFailed": "Error al reordenar símbolos: {{error}}"
+      "reorderFailed": "Error al reordenar símbolos: {{error}}",
+      "invalidSymbolLabel": "Etiqueta de símbolo no válida: {{label}}"
     },
     "analytics": {
       "logSymbolFailed": "Error al registrar uso de símbolo",
       "frequentSequencesFailed": "Error al recuperar secuencias frecuentes: {{error}}",
       "suggestionsFailed": "Error al generar sugerencias: {{error}}",
       "preferencesFailed": "Error al recuperar preferencias de categoría: {{error}}",
-      "statsFailed": "Error al recuperar estadísticas de uso: {{error}}",
-      "logFailed": "Error al registrar uso de símbolo: {{error}}"
+      "statsFailed": "Error al recuperar estadísticas de uso: {{error}}"
     },
     "achievements": {
+      "notFound": "Logro no encontrado",
       "unauthorizedView": "No autorizado para ver estos logros",
-      "unauthorizedCheck": "No autorizado para verificar estos logros",
-      "unauthorizedViewPoints": "No autorizado para ver puntos",
       "viewCategories": "Solo profesores y administradores pueden ver categorías",
       "viewCriteriaTypes": "Solo profesores y administradores pueden ver tipos de criterio",
       "manage": "Solo profesores y administradores pueden gestionar logros",
       "create": "Solo profesores y administradores pueden crear logros",
       "update": "Solo profesores y administradores pueden actualizar logros",
-      "updateSystem": "Solo los administradores pueden actualizar logros del sistema",
       "delete": "Solo profesores y administradores pueden eliminar logros",
       "award": "Solo profesores y administradores pueden otorgar logros",
       "updateOwnOnly": "Solo puedes actualizar los logros que creaste",
       "deleteOwnOnly": "Solo puedes eliminar los logros que creaste",
       "alreadyAwarded": "El usuario ya tiene este logro",
-      "cannotDeleteSystem": "Los logros del sistema no se pueden eliminar"
+      "cannotDeleteSystem": "Los logros del sistema no se pueden eliminar",
+      "criteriaIncomplete": "Los logros automáticos requieren un tipo de criterio y un valor objetivo"
     },
     "learningModes": {
       "staffOnly": "Solo los administradores y profesores pueden gestionar modos de aprendizaje",
@@ -165,10 +221,13 @@
       "systemEditAdminOnly": "Solo los administradores pueden editar modos de aprendizaje del sistema",
       "editForbidden": "No tienes autorización para editar este modo de aprendizaje",
       "systemDeleteAdminOnly": "Solo los administradores pueden eliminar modos de aprendizaje del sistema",
-      "deleteForbidden": "No tienes autorización para eliminar este modo de aprendizaje"
+      "deleteForbidden": "No tienes autorización para eliminar este modo de aprendizaje",
+      "defaultNotFound": "El modo de aprendizaje por defecto ya no existe"
     },
     "admin": {
-      "databaseResetFailed": "Error al restablecer la base de datos: {{error}}"
+      "databaseResetFailed": "Error al restablecer la base de datos: {{error}}",
+      "databaseResetDisabled": "El restablecimiento de la base de datos está desactivado. Define ALLOW_DB_RESET=true en .env para activarlo.",
+      "databaseResetProduction": "El restablecimiento de la base de datos está bloqueado en entornos de producción."
     },
     "collab": {
       "policyViolation": "Violación de política de conexión",
@@ -179,6 +238,7 @@
       "assignOnlySelf": "Los profesores solo pueden asignar estudiantes a sí mismos",
       "unassignOnlySelf": "Los profesores solo pueden desasignar estudiantes de sí mismos",
       "resetOnlyStudents": "Los profesores solo pueden restablecer contraseñas de estudiantes",
+      "cannotResetOwnPassword": "Usa Cambiar contraseña para restablecer tu propia contraseña",
       "notAssignedToTeacher": "El estudiante no está asignado a este profesor",
       "studentIdRequired": "Se requiere user_id o student_id",
       "teacherNotFound": "Profesor no encontrado",
@@ -187,7 +247,45 @@
     },
     "preferences": {
       "unauthorizedView": "No autorizado para acceder a las preferencias",
-      "mustBeNonNegative": "{{field}} debe ser >= 0"
+      "mustBeNonNegative": "{{field}} debe ser >= 0",
+      "unsupportedTtsProvider": "Proveedor de texto a voz no compatible"
+    },
+    "providers": {
+      "unsupportedSttModel": "Modelo de faster-whisper no compatible.",
+      "voiceInstallWindowsOnly": "La instalación automática de voz solo está disponible en Windows.",
+      "voiceInstallUnavailable": "La instalación automática de voz no está disponible.",
+      "voiceInstallFrozen": "La aplicación de Windows empaquetada no puede modificar las dependencias de Python durante la ejecución.",
+      "voiceInstallSourceOnly": "La instalación automática de voz requiere una copia del código fuente.",
+      "ttsNotInstalled": "El TTS neuronal local no está instalado. Instala la dependencia TTS para habilitarlo.",
+      "ttsModelMissing": "El modelo Kokoro aún no se ha descargado.",
+      "ttsUnavailable": "El TTS neuronal local no está disponible.",
+      "ttsSynthesisFailed": "No se pudo sintetizar el audio con TTS neuronal local.",
+      "ttsInstallUnavailable": "La instalación automática de TTS no está disponible.",
+      "ttsInstallInProgress": "Ya hay una instalación de TTS en curso.",
+      "ttsInstallFailed": "La instalación automática de TTS falló. Consulta los registros del servidor.",
+      "ttsInstallFailedWithError": "La instalación automática de TTS falló: {{error}}",
+      "ttsInstalled": "TTS neuronal local instalado correctamente.",
+      "voiceAlreadyInstalled": "Las dependencias de voz ya están instaladas.",
+      "voiceInstallInProgress": "Ya hay una instalación de dependencias de voz en curso.",
+      "uvUnavailable": "uv no está disponible en PATH para la instalación automática.",
+      "voiceInstallFailed": "La instalación automática de voz falló. Consulta los registros del servidor.",
+      "voiceInstalled": "Dependencias de voz instaladas correctamente.",
+      "lmstudioUnavailable": "LM Studio no está disponible"
+    },
+    "setup": {
+      "localOnly": "La configuración inicial del administrador solo está permitida desde la dirección local (127.0.0.1 / ::1).",
+      "alreadyCompleted": "La configuración inicial del administrador ya se ha completado.",
+      "defaultPasswordForbidden": "No se permite usar la contraseña predeterminada de desarrollo para configurar el administrador.",
+      "adminCreated": "Cuenta de administrador creada correctamente"
+    },
+    "safety": {
+      "blockedTopic": "Ese tema no está disponible ahora. ¡Elijamos otro!",
+      "blockedBoardPrompt": "Esta petición no se puede procesar. Prueba a describir otro tablero.",
+      "boardAiDisabled": "La creación de tableros con IA está desactivada para esta cuenta.",
+      "suggestionBlocked": "Esta sugerencia no se puede añadir.",
+      "symbolBlocked": "Esa etiqueta no se puede usar.",
+      "invalidLevel": "Nivel de filtro de contenido no válido. Usa estricto, estándar o relajado.",
+      "fieldLocked": "Estos campos están bloqueados por el administrador y no se pueden cambiar: {{fields}}"
     }
   },
   "symbolEditor": {
@@ -196,9 +294,18 @@
     "preview": "Vista previa:",
     "emptyMessage": "Mensaje vacío",
     "saveResend": "Guardar y reenviar",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "removeSymbol": "Quitar {{label}}",
+    "removeSymbolTitle": "Quitar símbolo",
+    "saveResendTitle": "Guardar y reenviar mensaje",
+    "cancelTitle": "Cancelar edición"
   },
   "offline": {
-    "conflictsHint": "Estas solicitudes fallaron al volver a estar en línea. Puedes reintentarlas o descartarlas."
+    "conflictsHint": "Estas solicitudes fallaron al volver a estar en línea. Puedes reintentarlas o descartarlas.",
+    "title": "Conflictos sin conexión ({{count}})",
+    "clearAll": "Limpiar todos los conflictos",
+    "retries": "Reintentos: {{count}}",
+    "retry": "Reintentar",
+    "dismiss": "Descartar"
   }
 }

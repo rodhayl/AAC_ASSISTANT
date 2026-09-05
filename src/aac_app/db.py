@@ -24,8 +24,6 @@ from src.aac_app.models import Base
 _engine_instance: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
 _engine_url: str | None = None
-_tables_initialized_url: str | None = None
-_tables_initialized_engine_id: int | None = None
 _resource_lock = RLock()
 
 
@@ -119,29 +117,6 @@ def create_tables(engine: Engine | None = None) -> None:
     logger.info("Creating database tables...")
     Base.metadata.create_all(engine)
     logger.info("Database tables created successfully")
-
-
-def ensure_tables() -> Engine:
-    """Create missing tables once for callers outside application lifespan."""
-    global _tables_initialized_engine_id, _tables_initialized_url
-
-    engine = create_engine_instance()
-    key = (str(engine.url), id(engine))
-    initialized_key = (_tables_initialized_url, _tables_initialized_engine_id)
-    if initialized_key != key:
-        with _resource_lock:
-            initialized_key = (_tables_initialized_url, _tables_initialized_engine_id)
-            if initialized_key != key:
-                create_tables(engine)
-                _tables_initialized_url, _tables_initialized_engine_id = key
-    return engine
-
-
-def mark_tables_initialized(engine: Engine) -> None:
-    """Record that an engine has already passed the table-creation step."""
-    global _tables_initialized_engine_id, _tables_initialized_url
-    _tables_initialized_url = str(engine.url)
-    _tables_initialized_engine_id = id(engine)
 
 
 @contextmanager

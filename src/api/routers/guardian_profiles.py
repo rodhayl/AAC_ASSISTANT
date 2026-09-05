@@ -15,13 +15,16 @@ The guardian profile system allows teachers/admins to:
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from loguru import logger
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import User
+from src.aac_app.models import ContentSafetyEvent, User
+from src.aac_app.services import content_safety as safety_service
 from src.aac_app.services.guardian_profile_service import get_guardian_profile_service
 from src.aac_app.services.template_manager import get_template_manager
 from src.api import schemas
 from src.api.deps import (
+    STAFF_USER_TYPES,
     get_current_active_user,
     get_db,
     get_text,
@@ -35,7 +38,7 @@ def get_current_teacher_or_admin(
     current_user: User = Depends(get_current_active_user),
 ) -> User:
     """Dependency that requires teacher or admin role."""
-    if current_user.user_type not in ("teacher", "admin"):
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=get_text(
@@ -43,6 +46,31 @@ def get_current_teacher_or_admin(
             ),
         )
     return current_user
+
+
+def enforce_locked_safety_fields(
+    safety: dict, current_user: User
+) -> dict:
+    """Reject teacher overrides of admin-locked safety fields.
+
+    Admins define the locks and pin the org floor, so they may always set
+    any per-student field — including at account creation; the lock only
+    constrains teachers.
+    """
+    if current_user.user_type == "admin":
+        return safety
+    locked = set(safety_service.locked_fields())
+    submitted = {k for k in safety if k in locked}
+    if submitted:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=get_text(
+                user=current_user,
+                key="errors.safety.fieldLocked",
+                fields=", ".join(sorted(submitted)),
+            ),
+        )
+    return safety
 
 
 # --- Template Endpoints ---
@@ -102,6 +130,16 @@ def preview_template(
     the final prompt.
     """
     guardian_service = get_guardian_profile_service()
+    template_manager = get_template_manager()
+    if not template_manager.template_exists(template_name):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=get_text(
+                user=current_user,
+                key="errors.guardian.templateNotFound",
+                name=template_name,
+            ),
+        )
 
     prompt = guardian_service.preview_system_prompt(
         template_name=template_name, overrides=overrides
@@ -222,8 +260,9 @@ def create_student_profile(
             exclude_none=True
         )
     if profile_data.safety_constraints:
-        changes["safety_constraints"] = profile_data.safety_constraints.model_dump(
-            exclude_none=True
+        changes["safety_constraints"] = enforce_locked_safety_fields(
+            profile_data.safety_constraints.model_dump(exclude_none=True),
+            current_user,
         )
     if profile_data.companion_persona:
         changes["companion_persona"] = profile_data.companion_persona.model_dump(
@@ -234,18 +273,29 @@ def create_student_profile(
     if profile_data.private_notes:
         changes["private_notes"] = profile_data.private_notes
 
-    profile = guardian_service.update_profile(
-        student_id=student_id,
-        updated_by=current_user.id,
-        changes=changes,
-        change_reason="Initial profile creation",
-        db=db,
-    )
+    try:
+        profile = guardian_service.update_profile(
+            student_id=student_id,
+            updated_by=current_user.id,
+            changes=changes,
+            change_reason="Initial profile creation",
+            db=db,
+        )
 
-    # Commit before responding: the request dependency's teardown commit runs
-    # after the response is sent, and the UI re-fetches the profile list
-    # immediately after this create.
-    db.commit()
+        # Commit before responding: the request dependency's teardown commit runs
+        # after the response is sent, and the UI re-fetches the profile list
+        # immediately after this create.
+        db.commit()
+    except IntegrityError:
+        # Two concurrent creates can both pass the existence check above and
+        # race on the guardian_profiles.user_id unique constraint. The check
+        # is not sufficient under concurrency; let the database invariant
+        # arbitrate and report the same conflict the pre-check produces.
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=get_text(user=current_user, key="errors.guardian.profileExists"),
+        )
 
     logger.info(
         f"Guardian profile created for student {student_id} by {current_user.username}"
@@ -301,8 +351,9 @@ def update_student_profile(
             exclude_none=True
         )
     if profile_data.safety_constraints is not None:
-        changes["safety_constraints"] = profile_data.safety_constraints.model_dump(
-            exclude_none=True
+        changes["safety_constraints"] = enforce_locked_safety_fields(
+            profile_data.safety_constraints.model_dump(exclude_none=True),
+            current_user,
         )
     if profile_data.companion_persona is not None:
         changes["companion_persona"] = profile_data.companion_persona.model_dump(
@@ -319,22 +370,58 @@ def update_student_profile(
             detail=get_text(user=current_user, key="errors.guardian.noChanges"),
         )
 
-    profile = guardian_service.update_profile(
-        student_id=student_id,
-        updated_by=current_user.id,
-        changes=changes,
-        change_reason=profile_data.change_reason,
-        db=db,
-    )
+    try:
+        profile = guardian_service.update_profile(
+            student_id=student_id,
+            updated_by=current_user.id,
+            changes=changes,
+            change_reason=profile_data.change_reason,
+            db=db,
+        )
 
-    # Commit before responding so the updated profile is durable for the
-    # immediate list/read requests that follow this save.
-    db.commit()
+        # Commit before responding so the updated profile is durable for the
+        # immediate list/read requests that follow this save.
+        db.commit()
+    except IntegrityError:
+        # A concurrent create may win the guardian_profiles.user_id unique
+        # constraint while this update is in flight. Roll back the losing
+        # transaction and retry once: the profile now exists, so the same
+        # changes apply as a plain update.
+        db.rollback()
+        profile = guardian_service.update_profile(
+            student_id=student_id,
+            updated_by=current_user.id,
+            changes=changes,
+            change_reason=profile_data.change_reason,
+            db=db,
+        )
+        db.commit()
 
     logger.info(
         f"Guardian profile updated for student {student_id} by {current_user.username}"
     )
     return profile
+
+
+@router.get(
+    "/students/{student_id}/safety-events",
+    response_model=list[schemas.ContentSafetyEventSchema],
+)
+def list_student_safety_events(
+    student_id: int,
+    limit: int = Query(50, ge=1, le=500),
+    current_user: User = Depends(get_current_teacher_or_admin),
+    db: Session = Depends(get_db),
+):
+    """Recent content-safety verdicts for one roster student."""
+    verify_student_access(student_id, current_user, db)
+    return (
+        db.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.user_id == student_id)
+        .order_by(ContentSafetyEvent.id.desc())
+        .limit(limit)
+        .all()
+    )
 
 
 @router.delete("/students/{student_id}")
@@ -375,7 +462,10 @@ def delete_student_profile(
     logger.info(
         f"Guardian profile deleted for student {student_id} by {current_user.username}"
     )
-    return {"success": True, "message": "Profile deleted"}
+    return {
+        "success": True,
+        "message": get_text(user=current_user, key="errors.guardian.profileDeleted"),
+    }
 
 
 # --- History and Preview Endpoints ---

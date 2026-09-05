@@ -13,7 +13,7 @@ from starlette.routing import Mount
 
 from scripts.start_server import is_port_available
 from src.api.main import app
-from src.api.spa import SPAStaticFiles
+from src.api.spa import ImmutableStaticFiles, SPAStaticFiles
 
 client = TestClient(app)
 
@@ -54,6 +54,38 @@ def test_root_mount_uses_html_static_files_and_serves_deep_links() -> None:
     assert client.get("/login").status_code == 200
     assert client.get("/boards").text == index_html
     assert "<!doctype html>" in index_html.lower()
+
+
+def test_uploads_mount_uses_immutable_static_files() -> None:
+    """The /uploads mount serves UUID-addressed files as immutable."""
+    uploads_mount = next(
+        (
+            route
+            for route in app.routes
+            if isinstance(route, Mount) and route.path == "/uploads"
+        ),
+        None,
+    )
+    assert uploads_mount is not None
+    assert isinstance(uploads_mount.app, StaticFiles)
+    assert isinstance(uploads_mount.app, ImmutableStaticFiles)
+
+
+def test_immutable_static_files_sets_cache_control(tmp_path) -> None:
+    """Served uploads carry a long-lived immutable Cache-Control header."""
+    image = tmp_path / "symbols" / "ab12cd34ef56.png"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"fake-png-bytes")
+
+    static = ImmutableStaticFiles(directory=tmp_path)
+    response = static.file_response(
+        image,
+        image.stat(),
+        {"type": "http", "method": "GET", "path": "/symbols/ab12cd34ef56.png", "headers": [], "query_string": b"", "app": None, "root_path": "", "http_version": "1.1", "scheme": "http", "client": None, "server": None, "state": {}},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
 
 
 def test_unknown_api_route_returns_json_not_spa_html() -> None:

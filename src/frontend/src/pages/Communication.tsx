@@ -11,7 +11,7 @@ import { CommunicationChat } from '../components/board/CommunicationChat';
 import { SymbolSearchModal } from '../components/board/SymbolSearchModal';
 import { PartnerOverlay } from '../components/board/PartnerOverlay';
 import type { BoardSymbol } from '../types';
-import { getBoardCapacity } from '../lib/boardGrid';
+import { getBoardPlayabilityStatus } from './boardEditorUtils';
 import { tts } from '../lib/tts';
 import api from '../lib/api';
 import { glossSymbolUtterance } from '../lib/gloss';
@@ -23,16 +23,21 @@ import {
   Minimize2,
   Maximize2,
   PlusCircle,
+  Sparkles,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/authStore';
+import { Button } from '../components/ui/button';
 import { useToastStore } from '../store/toastStore';
 import { BoardsAndTopicsSidebar } from '../components/learning/BoardsAndTopicsSidebar';
+import { TopicPicker, type PickerTopic } from '../components/learning/TopicPicker';
+import { useTopicPickerPool } from '../hooks/useTopicPickerPool';
+import { cn } from '../lib/utils';
 
 const EMPTY_BOARD_SYMBOLS: BoardSymbol[] = [];
 
 export function Communication() {
-  const { t } = useTranslation('boards');
+  const { t } = useTranslation(['boards', 'learning', 'common']);
   const [searchParams, setSearchParams] = useSearchParams();
   const boards = useBoardStore((state) => state.boards);
   const currentBoard = useBoardStore((state) => state.currentBoard);
@@ -41,14 +46,17 @@ export function Communication() {
   const fetchAssignedBoards = useBoardStore((state) => state.fetchAssignedBoards);
   const isListLoading = useBoardStore((state) => state.isListLoading);
   const isBoardLoading = useBoardStore((state) => state.isBoardLoading);
+  const boardError = useBoardStore((state) => state.error);
   const assignedBoards = useBoardStore((state) => state.assignedBoards);
   const hasMore = useBoardStore((state) => state.hasMore);
   const page = useBoardStore((state) => state.page);
   const user = useAuthStore((state) => state.user);
   const submitSymbolAnswer = useLearningStore((state) => state.submitSymbolAnswer);
   const startSession = useLearningStore((state) => state.startSession);
+  const resetSession = useLearningStore((state) => state.resetSession);
   const currentSession = useLearningStore((state) => state.currentSession);
   const isChatLoading = useLearningStore((state) => state.isLoading);
+  const defaultLearningModeKey = user?.settings?.default_learning_mode || 'practice';
 
   const [activeBoardId, setActiveBoardId] = useState<number | null>(() => {
     const id = searchParams.get('boardId');
@@ -64,70 +72,91 @@ export function Communication() {
   const [isPartnerOpen, setIsPartnerOpen] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(user?.settings?.voice_mode_enabled ?? true);
   const [isBoardsOpen, setIsBoardsOpen] = useState(false);
+  // Board-less topic conversation started from the picker in the board
+  // selection view: set when a topic card is tapped, cleared on exit.
+  const [boardlessTopic, setBoardlessTopic] = useState<string | null>(null);
+
+  const {
+    pickerTopics,
+    pickerRecent,
+  } = useTopicPickerPool();
+
+  useEffect(() => {
+    setVoiceEnabled(user?.settings?.voice_mode_enabled ?? true);
+  }, [user?.id, user?.settings?.voice_mode_enabled]);
   const [history, setHistory] = useState<number[]>([]);
   const addToast = useToastStore((state) => state.addToast);
   const [isStartingSession, setIsStartingSession] = useState(false);
   const lastClickRef = useRef<{ id: number; time: number } | null>(null);
+  const voicePreferenceRequestRef = useRef(0);
+  const invalidateVoicePreference = useCallback(() => {
+    voicePreferenceRequestRef.current += 1;
+  }, []);
+  const activeUserIdRef = useRef<number | null>(null);
+  const previousUserIdRef = useRef<number | null>(user?.id ?? null);
+  activeUserIdRef.current = user?.id ?? null;
+  // Tracks the board id already mirrored into the URL so the effect below
+  // does not re-fetch the board when setSearchParams re-renders with the same
+  // value (previously every board open fetched twice).
+  const syncedBoardIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (previousUserIdRef.current !== (user?.id ?? null)) {
+      previousUserIdRef.current = user?.id ?? null;
+      invalidateVoicePreference();
+      syncedBoardIdRef.current = null;
+      setActiveBoardId(null);
+      setHistory([]);
+      setSentence([]);
+      setBoardlessTopic(null);
+      setIsChatOpen(false);
+    }
+    return () => {
+      // A page can unmount during logout while the preference request is
+      // still pending. Invalidate that request before a later login reuses
+      // this module's auth store.
+      invalidateVoicePreference();
+    };
+  }, [invalidateVoicePreference, user?.id]);
+
+  // Communication sessions belong to the active board. Do not reuse a
+  // learning session from another board (or from the Learning page), because
+  // its welcome message would keep the old topic.
+  useEffect(() => {
+    if (!currentBoard || currentBoard.id !== activeBoardId) return;
+    if (!currentSession) return;
+    if (currentSession.board_id === currentBoard.id) return;
+    resetSession();
+  }, [activeBoardId, currentBoard, currentSession, resetSession]);
 
   // Helper to start activity from sidebar
-  const handleStartActivity = async (topic: string, purpose: string, boardId?: number) => {
+  const handleStartActivity = useCallback(async (topic: string, purpose: string, boardId?: number) => {
     if (!user) return;
 
     setIsStartingSession(true);
+    if (boardId) {
+      // Change the visible board before the session response arrives. The
+      // board/session consistency effect otherwise sees the new session while
+      // the old board is still active and resets the just-created session.
+      setActiveBoardId(boardId);
+    }
 
     try {
       await startSession({
         topic,
         purpose,
         difficulty: 'basic',
-        board_id: boardId
+        board_id: boardId,
+        mode_key: defaultLearningModeKey,
       }, user.id);
-      addToast(t('sessionStarted', 'Session started'), 'success');
-      // If a board was selected, we might want to switch to it? 
-      // Current behavior: The sidebar allows selecting a board for the SESSION context.
-      // If we want to VISUALLY switch to that board, we should:
-      if (boardId) {
-        setActiveBoardId(boardId);
-      }
+      addToast(t('common:sessionStarted'), 'success');
     } catch (err) {
       console.error("Failed to start session", err);
-      addToast(t('sessionStartFailed', 'Failed to start session'), 'error');
+      addToast(t('common:sessionStartFailed'), 'error');
     } finally {
       setIsStartingSession(false);
     }
-  };
-
-  // Helper to check if board has enough symbols (at least 50% capacity)
-  type BoardPlayableInfo = {
-    grid_rows?: number;
-    grid_cols?: number;
-    playable_symbols_count?: number;
-    symbols?: Array<{
-      is_visible: boolean;
-      custom_text?: string;
-      symbol?: { label?: string };
-    }>;
-  };
-
-  const isBoardPlayable = useCallback((board: BoardPlayableInfo) => {
-    const capacity = getBoardCapacity(board);
-
-    // Use playable_symbols_count if available (from backend), otherwise count symbols array
-    let symbolCount = 0;
-    if (typeof board.playable_symbols_count === 'number') {
-      symbolCount = board.playable_symbols_count;
-    } else if (board.symbols) {
-      symbolCount = board.symbols.filter(s =>
-        s.is_visible && (s.custom_text || s.symbol?.label)
-      ).length;
-    }
-
-    // Avoid division by zero
-    if (capacity === 0) return false;
-
-    const fillRate = symbolCount / capacity;
-    return fillRate >= 0.5;
-  }, []);
+  }, [addToast, defaultLearningModeKey, startSession, t, user]);
 
   // Fetch available boards on mount
   useEffect(() => {
@@ -155,23 +184,30 @@ export function Communication() {
 
   // Load active board details when selected
   useEffect(() => {
-    if (activeBoardId) {
-      if (!isNaN(activeBoardId)) {
+    if (activeBoardId && !isNaN(activeBoardId)) {
+      if (syncedBoardIdRef.current !== activeBoardId) {
+        syncedBoardIdRef.current = activeBoardId;
         fetchBoard(activeBoardId);
         setSearchParams({ boardId: activeBoardId.toString() });
       }
     } else {
       if (searchParams.has('boardId')) {
+        syncedBoardIdRef.current = null;
         setSearchParams({});
       }
     }
   }, [activeBoardId, fetchBoard, setSearchParams, searchParams]);
 
-  // TTS Status listener
+  // TTS Status listener. The TTS queue is a module singleton that may already
+  // be speaking when this page mounts (e.g. a symbol was tapped just before
+  // navigating away and back). Initialize the local state from the queue's
+  // current status and reset it together with the queue when a session closes
+  // so `isSpeaking` can never be left stuck on `true`.
   useEffect(() => {
     const updateStatus = (status: 'idle' | 'speaking') => {
       setIsSpeaking(status === 'speaking');
     };
+    setIsSpeaking(tts.getStatus() === 'speaking');
     const unsubscribe = tts.onStatusChange(updateStatus);
     return () => unsubscribe();
   }, []);
@@ -279,16 +315,20 @@ export function Communication() {
     // Start session if none exists
     if (!activeSession && user) {
       try {
+        const boardTopic = currentBoard?.name?.trim() || t('topics.general');
         await startSession({
-          topic: "general conversation",
+          topic: boardTopic,
           difficulty: "basic",
-          purpose: "communication board"
+          purpose: "communication board",
+          board_id: currentBoard?.id,
+          mode_key: defaultLearningModeKey,
         }, user.id);
 
         // Get the newly created session
         activeSession = useLearningStore.getState().currentSession;
       } catch (e) {
         console.error("Failed to start session for chat", e);
+        addToast(t('common:sessionStartFailed'), 'error');
         return;
       }
     }
@@ -305,15 +345,59 @@ export function Communication() {
     const enriched_gloss = glossSymbolUtterance(symbolsForChat);
     const raw_gloss = symbolsForChat.map(s => s.label).join(' ');
 
+    // Clear the strip immediately so the same phrase cannot be re-sent
+    // accidentally while the request is in flight, but restore it (with an
+    // error toast) when the send fails so the phrase is never lost.
+    const phrase = sentence;
+    setSentence([]);
     submitSymbolAnswer(activeSession.session_id, symbolsForChat, enriched_gloss, raw_gloss)
-      .catch(err => console.error('Failed to send to chat:', err));
-  }, [sentence, currentSession, isChatLoading, submitSymbolAnswer, isChatOpen, user, startSession]);
+      .catch(err => {
+        console.error('Failed to send to chat:', err);
+        addToast(t('common:sendToChatFailed'), 'error');
+        setSentence(phrase);
+      });
+  }, [sentence, currentSession, currentBoard, defaultLearningModeKey, isChatLoading, submitSymbolAnswer, isChatOpen, user, startSession, addToast, t]);
+
+  // Topic context for the Smartbar. The board is the primary context in the
+  // Communication surface, so the board name wins (a student on the
+  // "Animales" board gets animal vocabulary even if an unrelated learning
+  // session is still open). When no board is active, fall back to the active
+  // session topic so the surface keeps the AI topic words and auto-generated
+  // pictograms from the learning flow. No board/session -> no topic (plain
+  // catalog suggestions, no LLM spend).
+  const smartbarTopic = useMemo(() => {
+    const boardName = currentBoard?.name?.trim();
+    if (boardName) return boardName;
+    return currentSession?.topic || null;
+  }, [currentSession, currentBoard]);
 
   const handleHome = useCallback(() => {
     setActiveBoardId(null);
     setHistory([]);
     setSearchParams({});
   }, [setSearchParams]);
+
+  // Topic cards start a board-less session; the surface switches to the
+  // board-less conversation view once the session is active.
+  const handlePickTopic = useCallback((topic: PickerTopic) => {
+    setBoardlessTopic(topic.topic);
+    void handleStartActivity(topic.topic, topic.purpose ?? 'practice', topic.boardId);
+  }, [handleStartActivity]);
+
+  const handleContinueRecent = useCallback((topic: string, purpose?: string) => {
+    setBoardlessTopic(topic);
+    void handleStartActivity(topic, purpose || 'practice');
+  }, [handleStartActivity]);
+
+  // Leaving the board-less conversation returns to the board list and clears
+  // the topic session so its vocabulary does not linger.
+  const handleBoardlessHome = useCallback(() => {
+    resetSession();
+    setBoardlessTopic(null);
+    handleHome();
+  }, [handleHome, resetSession]);
+
+  const boardlessConversation = !activeBoardId && boardlessTopic !== null && Boolean(currentSession);
 
   const handleBack = useCallback(() => {
     if (history.length > 0) {
@@ -340,13 +424,47 @@ export function Communication() {
   );
 
   const handleAttention = useCallback(() => {
-    speakText(t('attentionPhrase', 'Excuse me!'));
+    speakText(t('common:attentionPhrase'));
   }, [speakText, t]);
 
   const handleSpeakText = useCallback(
     (text: string) => speakText(text),
     [speakText],
   );
+
+  // Toggle the chat voice and persist the choice so it survives a reload.
+  const handleVoiceToggle = useCallback(() => {
+    const next = !voiceEnabled;
+    setVoiceEnabled(next);
+    if (!user) return;
+    const requestId = ++voicePreferenceRequestRef.current;
+    const requestUserId = user.id;
+    api
+      .put('/auth/preferences', { voice_mode_enabled: next })
+      .then((response) => {
+        if (
+          requestId !== voicePreferenceRequestRef.current ||
+          activeUserIdRef.current !== requestUserId
+        ) return;
+        useAuthStore.setState((state) => {
+          if (!state.user || state.user.id !== requestUserId) return state;
+          return {
+            user: {
+              ...state.user,
+              settings: response.data,
+            },
+          };
+        });
+      })
+      .catch(() => {
+        if (
+          requestId !== voicePreferenceRequestRef.current ||
+          activeUserIdRef.current !== requestUserId
+        ) return;
+        setVoiceEnabled(!next);
+        addToast(t('common:voiceSaveFailed'), 'error');
+      });
+  }, [addToast, t, user, voiceEnabled]);
 
   const handleReorder = useCallback((fromIndex: number, toIndex: number) => {
     setSentence(prev => {
@@ -378,8 +496,15 @@ export function Communication() {
   }, [voiceEnabled]);
 
   const availableBoards = useMemo(() => {
-    return boards.length > 0 ? boards : assignedBoards;
-  }, [boards, assignedBoards]);
+    // Students can have personal boards as well as assigned boards. Showing
+    // only one collection made assigned boards disappear whenever the student
+    // owned at least one board.
+    return Array.from(
+      new Map(
+        [...boards, ...assignedBoards].map((board) => [board.id, board]),
+      ).values(),
+    );
+  }, [assignedBoards, boards]);
 
   const filteredBoards = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -392,6 +517,137 @@ export function Communication() {
   }, [availableBoards, searchQuery]);
   const hasActiveSearch = searchQuery.trim().length > 0;
 
+  // RENDER: Board-less topic conversation (started from the picker in the
+  // board selection view). No grid — the Smartbar provides the AI topic
+  // vocabulary and the sentence strip + chat build the message.
+  if (boardlessConversation) {
+    const topicLabel = currentSession?.topic || boardlessTopic || '';
+    return (
+      <div className="flex h-full w-full bg-background overflow-hidden relative">
+        <div className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col">
+          {/* Header */}
+          <header className="glass-panel border-b border-border px-4 py-2 flex items-center justify-between shrink-0 z-10 h-14">
+            <div className="flex items-center gap-2 min-w-0">
+              <button
+                onClick={handleBoardlessHome}
+                className="p-2 hover:bg-surface-hover rounded-lg text-muted-foreground transition-colors shrink-0"
+                title={t('common:backToBoards')}
+                aria-label={t('common:backToBoards')}
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <h1 className="text-lg font-bold text-foreground truncate">
+                {topicLabel}
+              </h1>
+            </div>
+
+            <button
+              onClick={toggleFullscreen}
+              className="p-2 hover:bg-surface-hover rounded-lg text-muted-foreground transition-colors"
+              title={isFullscreen ? t('exitFullscreen') : t('enterFullscreen')}
+            >
+              {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+            </button>
+          </header>
+
+          {/* Sentence Strip */}
+          <div className="shrink-0 z-20">
+            <SentenceStrip
+              symbols={sentence}
+              onRemove={handleRemoveSentenceItem}
+              onClear={handleClearSentence}
+              onBackspace={handleBackspaceSentence}
+              onSpeak={handleSpeakSentence}
+              onSpeakItem={handleSpeakText}
+              onReorder={handleReorder}
+              onAskAI={handleSendToChat}
+              isSpeaking={isSpeaking}
+            />
+          </div>
+
+          {/* Smartbar (AI topic vocabulary) */}
+          <Smartbar
+            currentSentence={sentence}
+            onSelectSymbol={handleSelectSymbol}
+            boardId={null}
+            topic={currentSession?.topic ?? boardlessTopic}
+          />
+
+          {/* Placeholder where the grid would be */}
+          <main className="flex-1 overflow-y-auto p-6 flex items-center justify-center">
+            <div className="text-center max-w-md text-muted-foreground">
+              <Sparkles className="w-10 h-10 mx-auto mb-3 text-brand" />
+              <p className="text-sm">
+                {t('boards:boardlessTopicHint', { topic: topicLabel })}
+              </p>
+            </div>
+          </main>
+
+          {/* Toolbar */}
+          <div className="shrink-0 z-30 glass-panel border-t border-border w-full">
+            <CommunicationToolbar
+              onHome={handleBoardlessHome}
+              onBack={handleBoardlessHome}
+              onToggleKeyboard={() => setIsKeyboardOpen(prev => !prev)}
+              onToggleChat={() => setIsChatOpen(prev => !prev)}
+              onSearch={() => setIsSearchOpen(true)}
+              onContext={() => setIsBoardsOpen(prev => !prev)}
+              onPartnerMic={() => setIsPartnerOpen(true)}
+              onQuickResponse={handleQuickResponse}
+              onAttention={handleAttention}
+              isKeyboardOpen={isKeyboardOpen}
+              isChatOpen={isChatOpen}
+              canGoBack={false}
+            />
+          </div>
+        </div>
+
+        {/* Boards & Topics Sidebar */}
+        <BoardsAndTopicsSidebar
+          isOpen={isBoardsOpen}
+          onToggle={() => setIsBoardsOpen(!isBoardsOpen)}
+          onStartActivity={handleStartActivity}
+          isStartingSession={isStartingSession}
+          className="h-full border-l border-border"
+        />
+
+        {/* Chat Panel */}
+        <div
+          className={`
+            fixed inset-y-0 right-0 z-40 w-full sm:w-96 lg:w-[35%] glass-panel shadow-2xl transform transition-transform duration-300 ease-in-out
+            lg:relative lg:translate-x-0 lg:shadow-none lg:border-l lg:border-border/20
+            ${isChatOpen ? 'translate-x-0' : 'translate-x-full lg:hidden'}
+          `}
+        >
+          <CommunicationChat
+            voiceEnabled={voiceEnabled}
+            onVoiceToggle={handleVoiceToggle}
+            boardId={null}
+            boardName={topicLabel}
+          />
+        </div>
+
+        {/* Modals and Overlays */}
+        <KeyboardOverlay
+          isOpen={isKeyboardOpen}
+          onClose={() => setIsKeyboardOpen(false)}
+          onSpeak={handleSpeakText}
+        />
+
+        <PartnerOverlay
+          isOpen={isPartnerOpen}
+          onClose={() => setIsPartnerOpen(false)}
+        />
+
+        <SymbolSearchModal
+          isOpen={isSearchOpen}
+          onClose={() => setIsSearchOpen(false)}
+          onSelectSymbol={handleSelectSymbol}
+        />
+      </div>
+    );
+  }
+
   // RENDER: Board Selection View
   if (!activeBoardId) {
     return (
@@ -399,64 +655,64 @@ export function Communication() {
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-8">
             <div>
-              <h1 className="text-2xl font-bold text-primary">
-                {t('communication', 'Communication')}
+              <h1 className="text-2xl font-bold text-foreground">
+                {t('common:communication')}
               </h1>
-              <p className="text-gray-500 dark:text-gray-400 mt-1">
-                {t('selectBoardToStart', 'Select a board to start communicating')}
+              <p className="text-muted-foreground mt-1">
+                {t('common:selectBoardToStart')}
               </p>
             </div>
 
             <div className="relative w-full md:w-64">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <input
                 id="board-search"
                 name="board_search"
                 type="text"
-                placeholder={t('searchBoards', 'Search boards...')}
+                placeholder={t('common:searchBoards')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
               />
             </div>
           </div>
 
           {isListLoading && availableBoards.length === 0 && !hasActiveSearch ? (
             <div className="flex items-center justify-center h-64">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand" />
             </div>
           ) : hasActiveSearch && filteredBoards.length === 0 ? (
-            <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-              <LayoutGrid className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
-                {t('noBoardsMatchSearch', 'No boards match your search')}
+            <div className="text-center py-12 bg-surface rounded-xl border border-border">
+              <LayoutGrid className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-foreground">
+                {t('common:noBoardsMatchSearch')}
               </h3>
             </div>
           ) : !hasActiveSearch && availableBoards.length === 0 ? (
-            <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-              <LayoutGrid className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
-                {t('noBoardsFound', 'No boards found')}
+            <div className="text-center py-12 bg-surface rounded-xl border border-border">
+              <LayoutGrid className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-foreground">
+                {t('common:noBoardsFound')}
               </h3>
-              <p className="text-gray-500 dark:text-gray-400 mt-2">
+              <p className="text-muted-foreground mt-2">
                 {user?.user_type === 'student'
-                  ? t('askTeacherForBoards', 'Ask your teacher to assign you a board.')
-                  : t('createBoardFirst', 'Create a board in the Boards section first.')}
+                  ? t('common:askTeacherForBoards')
+                  : t('common:createBoardFirst')}
               </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {filteredBoards.map((board) => {
-                const playable = isBoardPlayable(board);
-                // Calculate symbol count for display
+                const status = getBoardPlayabilityStatus(
+                  board,
+                  board.symbols ?? EMPTY_BOARD_SYMBOLS,
+                  board.playable_symbols_count,
+                );
+                const playable = status.playable;
                 const symbolCount = typeof board.playable_symbols_count === 'number'
                   ? board.playable_symbols_count
-                  : (board.symbols?.filter(s => s.is_visible).length || 0);
-
-                const capacity = getBoardCapacity(board);
-                const threshold = Math.ceil(capacity * 0.5);
-                const progress = Math.round((symbolCount / threshold) * 100);
-                const needed = Math.max(0, threshold - symbolCount);
+                  : status.count;
+                const { progress, needed } = status;
 
                 return (
                   <button
@@ -465,11 +721,11 @@ export function Communication() {
                     disabled={!playable}
                     className={`group relative glass-card rounded-xl text-left p-6 flex flex-col h-full ${playable
                       ? 'hover:shadow-lg dark:hover:shadow-neon hover:border-brand/50 cursor-pointer'
-                      : 'opacity-80 cursor-not-allowed bg-gray-50/50 dark:bg-surface/20'
+                      : 'opacity-80 cursor-not-allowed bg-background/50'
                       }`}
                   >
                     {!playable && (
-                      <div className="absolute top-4 right-4 text-amber-600 dark:text-amber-400 z-10 flex flex-col items-end gap-1" title={t('boardTooEmpty', 'Board needs at least 50% symbols to be used')}>
+                      <div className="absolute top-4 right-4 text-amber-700 dark:text-amber-400 z-10 flex flex-col items-end gap-1" title={t('common:boardTooEmpty')}>
                         <Lock className="w-5 h-5 drop-shadow-sm" />
                         <span className="text-xs font-bold bg-amber-100 dark:bg-amber-900/60 px-2 py-0.5 rounded shadow-sm border border-amber-200 dark:border-amber-800/50">
                           {progress}%
@@ -477,46 +733,46 @@ export function Communication() {
                       </div>
                     )}
 
-                    <div className={`mb-4 p-3 rounded-xl w-fit transition-transform duration-300 ${playable ? 'bg-indigo-50 dark:bg-indigo-900/30 group-hover:scale-110' : 'bg-gray-100 dark:bg-gray-700'}`}>
-                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center shadow-inner ${playable ? 'bg-gradient-to-br from-indigo-500 via-blue-500 to-purple-500' : 'bg-gray-400'}`}>
+                    <div className={`mb-4 p-3 rounded-xl w-fit transition-transform duration-300 ${playable ? 'bg-brand/10 group-hover:scale-110' : 'bg-muted'}`}>
+                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center shadow-inner ${playable ? 'bg-gradient-to-br from-indigo-500 via-blue-500 to-purple-500' : 'bg-muted-foreground'}`}>
                         <LayoutGrid className="w-6 h-6 text-white" />
                       </div>
                     </div>
 
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                    <h3 className="text-lg font-bold text-foreground mb-2 group-hover:text-brand transition-colors">
                       {board.name}
                     </h3>
 
                     {board.description && (
-                      <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mb-4 flex-1">
+                      <p className="text-sm text-muted-foreground line-clamp-2 mb-4 flex-1">
                         {board.description}
                       </p>
                     )}
 
                     {!playable && (
                       <div className="mt-auto mb-4">
-                        <p className="text-xs text-amber-600 dark:text-amber-500 font-bold mb-2 flex items-center gap-1">
+                        <p className="text-xs text-amber-700 dark:text-amber-400 font-bold mb-2 flex items-center gap-1">
                           <PlusCircle className="w-3 h-3" />
                           {needed === 1
-                            ? t('addOneMoreSymbol', 'Add 1 more symbol to unlock')
-                            : t('addMoreSymbolsToUnlock', 'Add {{count}} more symbols to unlock', { count: needed })}
+                            ? t('common:addOneMoreSymbol')
+                            : t('common:addMoreSymbolsToUnlock', { count: needed })}
                         </p>
-                        <div className="h-1.5 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden shadow-inner">
+                        <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden shadow-inner">
                           <div
-                            className="h-full bg-gradient-to-r from-amber-400 to-amber-600 transition-all duration-700 ease-out shadow-[0_0_8px_rgba(245,158,11,0.5)]"
+                            className="h-full bg-gradient-to-r from-amber-400 to-amber-600 transition-all duration-700 ease-out shadow-sm"
                             style={{ width: `${Math.min(100, progress)}%` }}
                           />
                         </div>
                       </div>
                     )}
 
-                    <div className="mt-auto pt-4 border-t border-gray-100 dark:border-gray-700 w-full flex justify-between items-center">
-                      <span className={`text-sm font-medium flex items-center ${playable ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>
-                        {playable ? t('openBoard', 'Open Board') : t('boardLocked', 'Board Locked')}
+                    <div className="mt-auto pt-4 border-t border-border w-full flex justify-between items-center">
+                      <span className={`text-sm font-medium flex items-center ${playable ? 'text-brand' : 'text-muted-foreground'}`}>
+                        {playable ? t('common:openBoard') : t('common:boardLocked')}
                         {playable && <ArrowLeft className="w-4 h-4 ml-1 rotate-180" />}
                       </span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-                        {symbolCount} {symbolCount === 1 ? t('symbol', 'symbol') : t('symbols', 'symbols')}
+                      <span className="text-xs text-muted-foreground font-medium">
+                        {symbolCount} {symbolCount === 1 ? t('common:symbol') : t('common:symbols')}
                       </span>
                     </div>
                   </button>
@@ -528,17 +784,38 @@ export function Communication() {
                 <div className="col-span-full flex justify-center py-6">
                   <button
                     onClick={loadMore}
-                    className="px-6 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    className="px-6 py-2 bg-surface border border-border rounded-lg shadow-sm text-sm font-medium text-foreground hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand"
                   >
-                    {t('loadMore', 'Load More')}
+                    {t('common:loadMore')}
                   </button>
                 </div>
               )}
               {isListLoading && (
                 <div className="col-span-full flex justify-center py-6">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand"></div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Board-less alternative: the same topic cards as Learning, so a
+              student can start a topic conversation without a board. */}
+          {!hasActiveSearch && (
+            <div className="mt-12 border-t border-border pt-8">
+              <h2 className="text-lg font-semibold text-foreground">
+                {t('boards:practiceTopicSection')}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t('boards:practiceTopicSectionHelp')}
+              </p>
+              <TopicPicker
+                topics={pickerTopics}
+                recent={pickerRecent}
+                isStartingSession={isStartingSession}
+                onSelect={handlePickTopic}
+                onContinueRecent={handleContinueRecent}
+                showTitle={false}
+              />
             </div>
           )}
         </div>
@@ -548,9 +825,36 @@ export function Communication() {
 
   // RENDER: Active Board View (Communication Mode)
   if (isBoardLoading || !currentBoard) {
+    // A failed board fetch must not leave the user staring at an endless
+    // spinner: offer a retry and a way back to the board list.
+    if (!isBoardLoading && !currentBoard && activeBoardId && boardError) {
+      return (
+        <div className="flex items-center justify-center h-screen bg-background p-4">
+          <div className="max-w-md w-full text-center bg-surface rounded-xl border border-red-200 dark:border-red-900/60 p-8 shadow-lg">
+            <div className="text-red-600 dark:text-red-400 text-lg font-bold mb-2">
+              {t('common:boardLoadFailed')}
+            </div>
+            <p className="text-sm text-muted-foreground mb-6 break-words">{boardError}</p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Button
+                onClick={() => fetchBoard(activeBoardId, true)}
+              >
+                {t('common:retry')}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleHome}
+              >
+                {t('common:backToBoards')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      <div className="flex items-center justify-center h-screen bg-background">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand"></div>
       </div>
     );
   }
@@ -559,19 +863,19 @@ export function Communication() {
   const cols = currentBoard.grid_cols ?? 5;
 
   return (
-    <div className="flex h-full w-full bg-transparent overflow-hidden relative">
+    <div className="flex h-full w-full bg-background overflow-hidden relative">
       {/* Left Panel: Board & Sentence Strip */}
-      <div className={`flex flex-col flex-1 h-full min-h-0 transition-all duration-300 ${isChatOpen ? 'lg:mr-0' : ''} relative`}>
+      <div className={cn('relative flex h-full min-h-0 min-w-0 flex-1 flex-col transition-all duration-300', isChatOpen && 'lg:mr-0')}>
         {/* Header */}
-        <header className="glass-panel border-b border-border dark:border-white/5 px-4 py-2 flex items-center justify-between shrink-0 z-10 h-14">
-          <h1 className="text-lg font-bold text-primary truncate">
+        <header className="glass-panel border-b border-border px-4 py-2 flex items-center justify-between shrink-0 z-10 h-14">
+          <h1 className="text-lg font-bold text-foreground truncate">
             {currentBoard.name}
           </h1>
 
           <div className="flex items-center gap-2">
             <button
               onClick={toggleFullscreen}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
+              className="p-2 hover:bg-surface-hover rounded-lg text-muted-foreground transition-colors"
               title={isFullscreen ? t('exitFullscreen') : t('enterFullscreen')}
             >
               {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
@@ -599,6 +903,7 @@ export function Communication() {
           currentSentence={sentence}
           onSelectSymbol={handleSelectSymbol}
           boardId={currentBoard?.id}
+          topic={smartbarTopic}
         />
 
         {/* Grid Area */}
@@ -612,7 +917,7 @@ export function Communication() {
         </main>
 
         {/* Communication Toolbar (Bottom) */}
-        <div className="shrink-0 z-30 glass-panel border-t border-border dark:border-white/5 w-full">
+        <div className="shrink-0 z-30 glass-panel border-t border-border w-full">
           <CommunicationToolbar
             onHome={handleHome}
             onBack={handleBack}
@@ -636,20 +941,22 @@ export function Communication() {
         onToggle={() => setIsBoardsOpen(!isBoardsOpen)}
         onStartActivity={handleStartActivity}
         isStartingSession={isStartingSession}
-        className="h-full border-l border-gray-200 dark:border-gray-700"
+        className="h-full border-l border-border"
       />
 
       {/* Right Panel: Chat Interface */}
       <div
         className={`
           fixed inset-y-0 right-0 z-40 w-full sm:w-96 lg:w-[35%] glass-panel shadow-2xl transform transition-transform duration-300 ease-in-out
-          lg:relative lg:translate-x-0 lg:shadow-none lg:border-l lg:border-border dark:border-white/5
+          lg:relative lg:translate-x-0 lg:shadow-none lg:border-l lg:border-border/20
           ${isChatOpen ? 'translate-x-0' : 'translate-x-full lg:hidden'}
         `}
       >
         <CommunicationChat
           voiceEnabled={voiceEnabled}
-          onVoiceToggle={() => setVoiceEnabled(prev => !prev)}
+          onVoiceToggle={handleVoiceToggle}
+          boardId={currentBoard.id}
+          boardName={currentBoard.name}
         />
       </div>
 

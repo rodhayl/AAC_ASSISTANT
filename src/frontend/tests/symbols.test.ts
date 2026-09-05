@@ -20,7 +20,7 @@ const boardSymbol = (id: number, label: string, overrides: Record<string, unknow
 });
 
 describe('symbol deduplication helpers', () => {
-  it('keeps the first learning symbol unless a duplicate adds an image', () => {
+  it('keeps one learning symbol per label, preferring the variant with an image', () => {
     const result = dedupeLearningSymbols([
       { id: 1, label: ' Water ', category: 'drink' },
       { id: 2, label: 'water', category: 'drink', image_path: '/water.png' },
@@ -30,7 +30,6 @@ describe('symbol deduplication helpers', () => {
 
     expect(result).toEqual([
       { id: 2, label: 'water', category: 'drink', image_path: '/water.png' },
-      { id: 3, label: 'water', category: 'food' },
     ]);
   });
 

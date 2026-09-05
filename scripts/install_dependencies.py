@@ -13,12 +13,10 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src import config  # noqa: E402
-from src.aac_app.utils.runtime import npm_command  # noqa: E402
-
-
 def ensure_configuration(project_root: Path) -> tuple[Path, str]:
     """Create the canonical dotenv file and repair its JWT secret in place."""
+    from src import config
+
     env_path = config.ensure_env_file(project_root)
     return env_path, config.ensure_jwt_secret(env_path)
 
@@ -35,7 +33,11 @@ def frontend_build_commands(
     ]
 
 
-_npm_command = npm_command
+def _npm_command() -> str | None:
+    """Resolve npm only when the installer is actually running."""
+    from src.aac_app.utils.runtime import npm_command
+
+    return npm_command()
 
 
 def sync_python(project_root: Path, include_voice: bool) -> None:
@@ -86,6 +88,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     """Run the complete unattended installation flow."""
     args = parse_args(argv)
+    from src import config
+
     project_root = config.PROJECT_ROOT
     try:
         print(f"Installing AAC Assistant from {project_root}")

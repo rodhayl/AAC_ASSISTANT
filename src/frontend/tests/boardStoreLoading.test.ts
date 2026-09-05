@@ -142,10 +142,9 @@ describe('board store loading state', () => {
     });
   });
 
-  it('invalidates the assigned-board cache after assignment mutations', async () => {
+  it('invalidates the assigned-board cache after assignment', async () => {
     vi.mocked(api.get).mockResolvedValue({ data: [{ id: 1 }] } as never);
     vi.mocked(api.post).mockResolvedValue({ data: { ok: true } } as never);
-    vi.mocked(api.delete).mockResolvedValue({ data: { ok: true } } as never);
 
     await useBoardStore.getState().fetchAssignedBoards(10);
     expect(useBoardStore.getState().assignedBoardsLastFetchTime).not.toBeNull();
@@ -154,11 +153,37 @@ describe('board store loading state', () => {
     expect(useBoardStore.getState().assignedBoardsLastFetchTime).toBeNull();
     await useBoardStore.getState().fetchAssignedBoards(10);
 
-    await useBoardStore.getState().unassignBoardFromStudent(2, 10);
-    expect(useBoardStore.getState().assignedBoardsLastFetchTime).toBeNull();
-    await useBoardStore.getState().fetchAssignedBoards(10);
+    expect(api.get).toHaveBeenCalledTimes(2);
+  });
 
-    expect(api.get).toHaveBeenCalledTimes(3);
+  it('ignores a stale board mutation after an auth-context reset', async () => {
+    const mutation = deferred<{ data: { id: number; name: string } }>();
+    const oldBoard = { id: 1, user_id: 7, name: 'Old board' };
+    const freshBoard = { id: 1, user_id: 8, name: 'Fresh board' };
+    vi.mocked(api.put).mockReturnValue(mutation.promise as never);
+
+    useBoardStore.setState({
+      boards: [oldBoard],
+      currentBoard: oldBoard,
+    });
+    const updatePromise = useBoardStore.getState().updateBoard(1, { name: 'Stale update' });
+    expect(useBoardStore.getState().isLoading).toBe(true);
+
+    useBoardStore.getState().reset();
+    useBoardStore.setState({
+      boards: [freshBoard],
+      currentBoard: freshBoard,
+    });
+
+    mutation.resolve({ data: { id: 1, name: 'Stale server response' } });
+    await updatePromise;
+
+    expect(useBoardStore.getState()).toMatchObject({
+      boards: [freshBoard],
+      currentBoard: freshBoard,
+      isLoading: false,
+      error: null,
+    });
   });
 
   it('ignores a stale board response after navigation changes the requested board', async () => {

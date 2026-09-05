@@ -21,7 +21,11 @@ vi.mock('../src/store/authStore', () => {
 
 vi.mock('../src/store/boardStore', () => {
   const fetchBoards = vi.fn();
-  const state = { fetchBoards, boards: [] };
+  const state = {
+    fetchBoards,
+    boards: [],
+    assignedBoards: [],
+  };
   const useBoardStore = (selector?: (value: typeof state) => unknown) =>
     selector ? selector(state) : state;
   return { useBoardStore };

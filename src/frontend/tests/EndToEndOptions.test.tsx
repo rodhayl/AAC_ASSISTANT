@@ -32,7 +32,18 @@ vi.mock('react-i18next', () => ({
             return text;
         }
         if (arg2 && typeof arg2 === 'object' && 'defaultValue' in arg2) return arg2.defaultValue;
-        return key;
+        const values: Record<string, string> = {
+          'symbolHunt.title': 'Symbol Hunt',
+          'symbolHunt.selectBoard': 'Select a board to play',
+          'symbolHunt.playNow': 'Play Now',
+          'symbolHunt.find': 'Find {{label}}',
+        };
+        let text = values[key] || key;
+        const options = (arg2 && typeof arg2 === 'object' ? arg2 : arg3) || {};
+        Object.keys(options).forEach((k) => {
+          text = text.replace(`{{${k}}}`, String(options[k]));
+        });
+        return text;
     },
     i18n: {
       changeLanguage: () => new Promise<void>((resolve) => resolve()),
@@ -56,6 +67,8 @@ const mockTTSState = {
   setSelectedVoice: vi.fn(),
   localVoice: 'default',
   setLocalVoice: vi.fn(),
+  setLocalSpeed: vi.fn(),
+  setTTSProvider: vi.fn(),
 };
 vi.mock('../src/store/ttsStore', () => ({
   useTTSStore: Object.assign(() => mockTTSState, { getState: () => mockTTSState }),
@@ -64,7 +77,9 @@ vi.mock('../src/store/ttsStore', () => ({
 // Mock Theme
 const mockThemeState = {
   darkMode: false,
+  highContrast: false,
   setDarkMode: vi.fn(),
+  setHighContrast: vi.fn(),
 };
 vi.mock('../src/store/themeStore', () => ({
   useThemeStore: Object.assign(() => mockThemeState, { getState: () => mockThemeState }),
@@ -163,7 +178,7 @@ describe('End-to-End Options Tests', () => {
     }
 
     // Save preferences
-    const saveBtn = screen.getByText('preferences.savePrefs');
+    const saveBtn = screen.getByText('preferences.saveAppearance');
     fireEvent.click(saveBtn);
 
     await waitFor(() => {
@@ -175,8 +190,15 @@ describe('End-to-End Options Tests', () => {
 
   // --- Option 5: Gamification ---
   it('Option 5: Gamification - Plays Symbol Hunt game', async () => {
+    const mockSymbols = [
+      { id: 1, symbol_id: 101, custom_text: 'Dog', is_visible: true, position_x: 0, position_y: 0, symbol: { id: 101, label: 'Dog', image_path: '/dog.png' } },
+      { id: 2, symbol_id: 102, custom_text: 'Cat', is_visible: true, position_x: 1, position_y: 0, symbol: { id: 102, label: 'Cat', image_path: '/cat.png' } }
+    ];
+
+    // The list endpoint returns serialized boards including their symbols;
+    // the hunt hook needs them to decide playability by unique labels.
     const mockBoards = [
-      { id: 1, name: 'Game Board', description: 'Fun', playable_symbols_count: 2 }
+      { id: 1, name: 'Game Board', description: 'Fun', playable_symbols_count: 2, symbols: mockSymbols }
     ];
     
     const mockFullBoard = {
@@ -184,10 +206,7 @@ describe('End-to-End Options Tests', () => {
       name: 'Game Board',
       grid_rows: 2,
       grid_cols: 2,
-      symbols: [
-        { id: 1, symbol_id: 101, custom_text: 'Dog', is_visible: true, position_x: 0, position_y: 0, symbol: { id: 101, label: 'Dog', image_path: '/dog.png' } },
-        { id: 2, symbol_id: 102, custom_text: 'Cat', is_visible: true, position_x: 1, position_y: 0, symbol: { id: 102, label: 'Cat', image_path: '/cat.png' } }
-      ]
+      symbols: mockSymbols
     };
 
     (api.get as unknown as Mock).mockImplementation((url: string) => {

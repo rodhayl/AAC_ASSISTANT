@@ -25,10 +25,28 @@ from src.api.routers.board_helpers import serialize_export_board
 router = APIRouter()
 
 
+def _normalize_checksum_number(value: Any) -> Any:
+    """Return a JSON value with whole-number floats collapsed to integers.
+
+    JavaScript and Python disagree about ``0.0`` vs ``0``: a browser's
+    ``JSON.parse``/``JSON.stringify`` round-trip collapses ``0.0`` to ``0``,
+    while Python preserves the float. Normalizing whole-number floats here keeps
+    the signed checksum stable across a browser download/re-upload, so an export
+    can always be re-imported through the UI.
+    """
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, dict):
+        return {key: _normalize_checksum_number(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize_checksum_number(item) for item in value]
+    return value
+
+
 def _canonical_export_bytes(payload: dict[str, Any]) -> bytes:
     """Serialize export data deterministically before signing or verifying."""
     return json.dumps(
-        payload,
+        _normalize_checksum_number(payload),
         separators=(",", ":"),
         sort_keys=True,
         ensure_ascii=False,
@@ -163,14 +181,22 @@ def _validate_import_payload(
             if nested is not None and not optional_text(nested.get("audio_path"), 500):
                 raise HTTPException(status_code=400, detail=invalid_detail)
             symbol_id = _export_symbol_id(symbol)
-            if type(symbol_id) is not int or symbol_id < 1:
+            if symbol_id is None or type(symbol_id) is not int or symbol_id < 1:
+                # A mismatched top-level/nested ID must not be silently
+                # discarded and then restored using whichever value happens to
+                # be present in the payload.
                 raise HTTPException(status_code=400, detail=invalid_detail)
-            for key in ("position_x", "position_y", "size"):
+            for key in ("position_x", "position_y"):
                 value = symbol.get(key)
                 if value is not None and (
                     isinstance(value, bool) or not isinstance(value, int) or value < 0
                 ):
                     raise HTTPException(status_code=400, detail=invalid_detail)
+            size = symbol.get("size")
+            if size is not None and (
+                isinstance(size, bool) or not isinstance(size, int) or not 1 <= size <= 100
+            ):
+                raise HTTPException(status_code=400, detail=invalid_detail)
             if not optional_text(symbol.get("custom_text"), 100):
                 raise HTTPException(status_code=400, detail=invalid_detail)
             if not optional_text(symbol.get("color"), 20):
@@ -203,7 +229,9 @@ def _validate_import_payload(
             if not optional_text(achievement.get(key), maximum):
                 raise HTTPException(status_code=400, detail=invalid_detail)
         points = achievement.get("points")
-        if points is not None and (isinstance(points, bool) or not isinstance(points, int)):
+        if points is not None and (
+            isinstance(points, bool) or not isinstance(points, int) or points < 0
+        ):
             raise HTTPException(status_code=400, detail=invalid_detail)
 
     for record in history:
@@ -220,6 +248,10 @@ def _validate_import_payload(
             if value is not None and (
                 isinstance(value, bool) or not isinstance(value, (int, float))
             ):
+                raise HTTPException(status_code=400, detail=invalid_detail)
+            if value is not None and value < 0:
+                raise HTTPException(status_code=400, detail=invalid_detail)
+            if key == "comprehension_score" and value is not None and not 0 <= value <= 1:
                 raise HTTPException(status_code=400, detail=invalid_detail)
             if key != "comprehension_score" and value is not None and type(value) is not int:
                 raise HTTPException(status_code=400, detail=invalid_detail)
@@ -242,7 +274,8 @@ def _validate_import_symbol_references(
         for board in [*(payload.get("boards") or []), *(payload.get("assignedBoards") or [])]
         for symbol in (board.get("symbols") or [])
     }
-    symbol_ids.discard(None)
+    if None in symbol_ids:
+        raise HTTPException(status_code=400, detail=invalid_detail)
     if not symbol_ids:
         return
     existing_ids = {
@@ -276,8 +309,13 @@ def _board_content_matches(
                 symbol.get("position_x") or 0,
                 symbol.get("position_y") or 0,
                 symbol.get("size") or 1,
-                bool(symbol.get("is_visible")),
+                (
+                    True
+                    if symbol.get("is_visible") is None
+                    else bool(symbol["is_visible"])
+                ),
                 symbol.get("custom_text"),
+                symbol.get("color"),
             )
             for symbol in board_data.get("symbols") or []
         ],
@@ -292,6 +330,7 @@ def _board_content_matches(
                 symbol.size or 1,
                 bool(symbol.is_visible),
                 symbol.custom_text,
+                symbol.color,
             )
             for symbol in board.symbols or []
         ],
@@ -363,7 +402,13 @@ def _create_imported_board(
                 position_x=symbol_data.get("position_x") or 0,
                 position_y=symbol_data.get("position_y") or 0,
                 size=symbol_data.get("size") or 1,
-                is_visible=bool(symbol_data.get("is_visible")),
+                # Match the ORM default when importing older exports that
+                # omitted this optional placement field.
+                is_visible=(
+                    True
+                    if symbol_data.get("is_visible") is None
+                    else bool(symbol_data["is_visible"])
+                ),
                 custom_text=symbol_data.get("custom_text"),
                 color=symbol_data.get("color"),
                 # linked_board_id is intentionally NOT restored: export IDs are

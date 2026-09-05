@@ -13,9 +13,10 @@ from src.api.deps import (
     get_db,
     get_text,
     require_board_owner_or_admin,
+    require_board_view_access,
     validate_grid_resize,
 )
-from src.api.routers.board_helpers import serialize_board
+from src.api.routers.board_helpers import SUPPORTED_AI_PROVIDERS, serialize_board
 
 router = APIRouter()
 
@@ -109,28 +110,10 @@ def get_board(
             detail=get_text(user=current_user, key="errors.boards.boardNotFound"),
         )
 
-    # Permission check
-    if (
-        current_user.user_type != "admin"
-        and board.user_id != current_user.id
-        and not board.is_public
-    ):
-        # Check if assigned?
-        assignment = (
-            db.query(BoardAssignment)
-            .filter(
-                BoardAssignment.board_id == board_id,
-                BoardAssignment.student_id == current_user.id,
-            )
-            .first()
-        )
-        if not assignment:
-            raise HTTPException(
-                status_code=403,
-                detail=get_text(
-                    user=current_user, key="errors.boards.unauthorizedViewBoard"
-                ),
-            )
+    # Keep board detail access consistent with board-scoped analytics,
+    # learning, and collaboration: rostered teachers may view their students'
+    # private boards, while students still require an explicit assignment.
+    require_board_view_access(board, current_user, db)
 
     target_lang = None
     if not skip_translation:
@@ -168,6 +151,37 @@ def update_board(
             update_data.get("grid_cols", db_board.grid_cols or 5),
             current_user,
         )
+
+    # Mirror create_board's AI validation so an update cannot persist an
+    # unsupported provider (e.g. the global primary set to lmstudio) that
+    # _resolve_provider_for_board would silently treat as ollama. The check
+    # runs even when AI is being disabled: an invalid value must be rejected,
+    # not silently overwritten with None.
+    merged_ai_enabled = update_data.get("ai_enabled", db_board.ai_enabled)
+    merged_ai_provider = update_data.get("ai_provider", db_board.ai_provider)
+    merged_ai_model = update_data.get("ai_model", db_board.ai_model)
+    if merged_ai_provider is not None and merged_ai_provider not in SUPPORTED_AI_PROVIDERS:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=current_user, key="errors.boards.aiProviderInvalid"
+            ),
+        )
+
+    if merged_ai_enabled and (not merged_ai_provider or not merged_ai_model):
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=current_user, key="errors.boards.aiProviderRequired"
+            ),
+        )
+    if not merged_ai_enabled:
+        # Disabling AI must also remove stale provider/model selections. Keeping
+        # them makes a later re-enable silently revive an old configuration and
+        # leaves the persisted board state inconsistent with the UI.
+        update_data["ai_provider"] = None
+        update_data["ai_model"] = None
+
     for key, value in update_data.items():
         setattr(db_board, key, value)
 
@@ -186,10 +200,8 @@ def delete_board(
     db_board = get_board_or_404(db, board_id, current_user)
     require_board_owner_or_admin(db_board, current_user)
 
-    # Delete associated symbols (cascade should handle this but let's be safe if needed,
-    # but currently BoardSymbol is the link. Cascade delete on DB level usually handles it if configured)
-    # SQLAlchemy relationship cascade="all, delete" might be needed on model.
-    # Let's assume manual cleanup of association table if not.
+    # Remove association rows explicitly before deleting the board. This keeps
+    # the endpoint safe on databases where ORM cascade settings differ.
     db.query(BoardSymbol).filter(BoardSymbol.board_id == board_id).delete()
     db.query(BoardAssignment).filter(BoardAssignment.board_id == board_id).delete()
     # Other boards may link to this board through a symbol; clear those

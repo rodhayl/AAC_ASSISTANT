@@ -29,24 +29,7 @@ from src.aac_app.utils.jwt_utils import (
     JWT_SECRET_KEY,
     create_access_token,
 )
-from src.api.deps import get_db
-from src.api.main import app
-from tests.test_utils_auth import create_test_headers
-
-
-@pytest.fixture
-def client(test_db_session: Session):
-    """Create FastAPI test client with test database."""
-
-    def override_get_db():
-        try:
-            yield test_db_session
-        finally:
-            pass
-
-    app.dependency_overrides[get_db] = override_get_db
-    yield TestClient(app)
-    app.dependency_overrides.clear()
+from tests.auth_helpers import create_test_headers
 
 
 @pytest.fixture

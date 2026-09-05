@@ -19,12 +19,10 @@
     "notDefault": "Cannot use development default credentials"
   },
   "submit": "Create Administrator Account",
-  "submitting": "Creating account...",
   "loginLink": "Already have an account? Sign in",
   "errors": {
     "passwordMismatch": "Passwords do not match",
     "passwordTooShort": "Password must be at least 8 characters",
-    "setupFailed": "Initial setup failed: ",
-    "setupCompleted": "Setup is already completed. Please sign in."
+    "statusCheckFailed": "Could not verify setup status. You can still continue, but the server may already be configured."
   }
 }

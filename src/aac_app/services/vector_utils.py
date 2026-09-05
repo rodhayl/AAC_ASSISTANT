@@ -46,24 +46,24 @@ def _index_all_symbols(force: bool = False):
         # Keeping ORM rows and vectors out of one giant list matters on low-RAM
         # desktop deployments with a large symbol catalog.
         def symbol_rows(db):
-            query = db.query(
-                Symbol.id,
-                Symbol.label,
-                Symbol.description,
-                Symbol.keywords,
-                Symbol.category,
+            return (
+                db.query(
+                    Symbol.id,
+                    Symbol.label,
+                    Symbol.description,
+                    Symbol.keywords,
+                    Symbol.category,
+                )
+                .order_by(Symbol.id)
+                .yield_per(_INDEX_BATCH_SIZE)
             )
-            if hasattr(query, "order_by"):
-                query = query.order_by(Symbol.id)
-            return query.yield_per(_INDEX_BATCH_SIZE)
 
         selected_ids: set[int] | None = None
         expected_texts: dict[int, str] | None = None
         if force or not supports_repair:
             # Preserve the empty-catalog fast path without materializing rows.
             with get_session() as db:
-                query = symbol_rows(db)
-                first_row = query.first() if hasattr(query, "first") else next(iter(query), None)
+                first_row = symbol_rows(db).first()
             if first_row is None:
                 vs.mark_indexed()
                 logger.info("No symbols found to index; skipping model load")
@@ -95,34 +95,22 @@ def _index_all_symbols(force: bool = False):
         vs.load_index_if_available()
         logger.info("Indexing all symbols into vector store...")
 
-        def read_batch(last_id: int, fallback_offset: int) -> tuple[list[tuple], bool]:
+        def read_batch(last_id: int) -> list[tuple]:
+            # Keyset pagination keeps each batch bounded and avoids
+            # rescanning all preceding rows as the catalog grows.
             with get_session() as db:
                 query = symbol_rows(db)
-                if hasattr(query, "filter") and hasattr(query, "limit"):
-                    # Keyset pagination keeps each batch bounded and avoids
-                    # rescanning all preceding rows as the catalog grows.
-                    if last_id >= 0:
-                        query = query.filter(Symbol.id > last_id)
-                    return list(query.limit(_INDEX_BATCH_SIZE)), True
-                if hasattr(query, "offset"):
-                    # Keep older/simple test doubles compatible without
-                    # affecting the SQLAlchemy production path above.
-                    return list(query.offset(fallback_offset).limit(_INDEX_BATCH_SIZE)), False
-                # A one-shot iterable is enough for minimal test doubles and
-                # must not be replayed indefinitely.
-                return (list(query), False) if fallback_offset == 0 else ([], False)
+                if last_id >= 0:
+                    query = query.filter(Symbol.id > last_id)
+                return list(query.limit(_INDEX_BATCH_SIZE))
 
         indexed_count = 0
         last_id = -1
-        fallback_offset = 0
         while True:
-            rows, used_keyset = read_batch(last_id, fallback_offset)
+            rows = read_batch(last_id)
             if not rows:
                 break
-            if used_keyset:
-                last_id = rows[-1][0]
-            else:
-                fallback_offset += len(rows)
+            last_id = rows[-1][0]
 
             texts: list[str] = []
             metadatas: list[dict] = []

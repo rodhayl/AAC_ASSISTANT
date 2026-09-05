@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Edit, Check, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { assetUrl } from '../lib/utils';
+import { SymbolImage } from './common/SymbolImage';
 import { glossSymbolUtterance } from '../lib/gloss';
 import { getCategoryStyle } from '../lib/symbolCategoryStyle';
+import { Button } from './ui/button';
 
 interface SymbolItem {
   id: number;
@@ -39,15 +40,15 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
   };
 
   return (
-    <div className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3 my-2">
-      <div className="flex items-center gap-2 mb-2 text-sm text-gray-600 dark:text-gray-400">
+    <div className="bg-background border border-border rounded-lg p-3 my-2">
+      <div className="flex items-center gap-2 mb-2 text-sm text-muted-foreground">
         <Edit className="w-4 h-4" />
-        <span>{t('symbolEditor.title', 'Editing symbol message')}</span>
+        <span>{t('symbolEditor.title')}</span>
       </div>
 
       {editedSymbols.length === 0 ? (
-        <div className="text-sm text-gray-500 dark:text-gray-400 italic mb-3 p-2">
-          {t('symbolEditor.emptyHint', 'No symbols remaining. Add symbols or cancel to restore original.')}
+        <div className="text-sm text-muted-foreground italic mb-3 p-2">
+          {t('symbolEditor.emptyHint')}
         </div>
       ) : (
         <>
@@ -60,8 +61,8 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
                 } ${getCategoryStyle(sym.category).badgeText} ${getCategoryStyle(sym.category).border}`}
               >
                 {sym.image_path && (
-                  <img
-                    src={assetUrl(sym.image_path)}
+                  <SymbolImage
+                    imagePath={sym.image_path}
                     alt={sym.label}
                     className="w-5 h-5 object-contain"
                   />
@@ -69,9 +70,9 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
                 <span>{sym.label}</span>
                 <button
                   onClick={() => removeSymbol(idx)}
-                  className="ml-1 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors"
-                  aria-label={`Remove ${sym.label}`}
-                  title="Remove symbol"
+                  className="ml-1 text-destructive hover:text-destructive/80 transition-colors"
+                  aria-label={t('symbolEditor.removeSymbol', { label: sym.label })}
+                  title={t('symbolEditor.removeSymbolTitle')}
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -79,29 +80,24 @@ export function SymbolMessageEditor({ message, onUpdate, onCancel }: SymbolMessa
             ))}
           </div>
 
-          <div className="text-sm text-gray-700 dark:text-gray-300 mb-3 p-2 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
-            <span className="text-xs text-gray-500 dark:text-gray-400 mr-2">{t('symbolEditor.preview', 'Preview:')}</span>
-            {glossSymbols() || <span className="italic text-gray-400">{t('symbolEditor.emptyMessage', 'Empty message')}</span>}
+          <div className="text-sm text-foreground mb-3 p-2 bg-surface rounded border border-border">
+            <span className="text-xs text-muted-foreground mr-2">{t('symbolEditor.preview')}</span>
+            {glossSymbols() || <span className="italic text-muted-foreground">{t('symbolEditor.emptyMessage')}</span>}
           </div>
         </>
       )}
 
       <div className="flex gap-2">
-        <button
-          onClick={handleSave}
-          disabled={editedSymbols.length === 0}
-          className="px-3 py-1.5 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
-          title="Save and resend message"
-        >
+        <Button onClick={handleSave} disabled={editedSymbols.length === 0} className="flex items-center gap-1 transition-colors" title={t('symbolEditor.saveResendTitle')} >
           <Check className="w-4 h-4" />
-          {t('symbolEditor.saveResend', 'Save & Resend')}
-        </button>
+          {t('symbolEditor.saveResend')}
+        </Button>
         <button
           onClick={onCancel}
-          className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-          title="Cancel editing"
+          className="px-3 py-1.5 bg-muted text-foreground rounded text-sm hover:bg-surface-hover transition-colors"
+          title={t('symbolEditor.cancelTitle')}
         >
-          {t('symbolEditor.cancel', 'Cancel')}
+          {t('symbolEditor.cancel')}
         </button>
       </div>
     </div>

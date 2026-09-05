@@ -2,10 +2,19 @@ import { useState } from 'react';
 import { Shield } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
+import { useToastStore } from '../../store/toastStore';
 import api, { extractError } from '../../lib/api';
+import { Button } from '../../components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '../../components/ui/dialog';
 
 export function SecurityTab() {
   const user = useAuthStore(state => state.user);
+  const addToast = useToastStore(state => state.addToast);
   const { t } = useTranslation('settings');
   const [changeOpen, setChangeOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -13,6 +22,11 @@ export function SecurityTab() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changeError, setChangeError] = useState<string | null>(null);
   const [changeLoading, setChangeLoading] = useState(false);
+
+  const closeChangeDialog = () => {
+    setChangeOpen(false);
+    setChangeError(null);
+  };
 
   const handleChangePassword = async () => {
     if (!user) return;
@@ -29,8 +43,9 @@ export function SecurityTab() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      addToast(t('security.changeSuccess'), 'success');
     } catch (err: unknown) {
-      setChangeError(extractError(err, 'Failed to change password'));
+      setChangeError(extractError(err, t('security.changeFailed')));
     } finally {
       setChangeLoading(false);
     }
@@ -41,10 +56,10 @@ export function SecurityTab() {
       <section
         id="settings-security"
         aria-labelledby="settings-security-heading"
-        className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+        className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden"
       >
-        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-          <h3 id="settings-security-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+        <div className="p-6 border-b border-border">
+          <h3 id="settings-security-heading" className="text-lg font-semibold text-foreground">
             {t('security.title')}
           </h3>
         </div>
@@ -54,7 +69,7 @@ export function SecurityTab() {
               setChangeOpen(true);
               setChangeError(null);
             }}
-            className="flex items-center text-indigo-600 hover:text-indigo-700 font-medium"
+            className="flex items-center text-brand hover:text-brand text-brand hover:text-brand font-medium"
           >
             <Shield className="w-5 h-5 mr-2" />
             {t('security.change')}
@@ -63,17 +78,14 @@ export function SecurityTab() {
       </section>
 
       {changeOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center z-50" role="presentation">
-          <div
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md p-6"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="change-password-title"
-          >
-            <h3 id="change-password-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-              {t('security.change')}
-            </h3>
-            {changeError && <div className="mb-3 text-sm text-red-600">{changeError}</div>}
+        <Dialog open onOpenChange={(open) => { if (!open) closeChangeDialog(); }}>
+          <DialogContent showCloseButton={false} className="max-w-md p-6">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-semibold text-foreground">
+                {t('security.change')}
+              </DialogTitle>
+            </DialogHeader>
+            {changeError && <div className="mb-3 text-sm text-red-600 dark:text-red-400">{changeError}</div>}
             <div className="space-y-3">
               <input
                 id="current-password"
@@ -82,7 +94,7 @@ export function SecurityTab() {
                 value={currentPassword}
                 onChange={(event) => setCurrentPassword(event.target.value)}
                 placeholder={t('security.current')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                className="w-full px-3 py-2 border border-border rounded-lg"
                 aria-label={t('security.current')}
                 autoComplete="current-password"
               />
@@ -93,7 +105,7 @@ export function SecurityTab() {
                 value={newPassword}
                 onChange={(event) => setNewPassword(event.target.value)}
                 placeholder={t('security.new')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                className="w-full px-3 py-2 border border-border rounded-lg"
                 aria-label={t('security.new')}
                 autoComplete="new-password"
               />
@@ -104,28 +116,24 @@ export function SecurityTab() {
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
                 placeholder={t('security.confirm')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                className="w-full px-3 py-2 border border-border rounded-lg"
                 aria-label={t('security.confirm')}
                 autoComplete="new-password"
               />
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
-                onClick={() => setChangeOpen(false)}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+                onClick={closeChangeDialog}
+                className="px-4 py-2 text-foreground hover:bg-muted rounded-lg"
               >
                 {t('profile.cancel')}
               </button>
-              <button
-                onClick={handleChangePassword}
-                disabled={changeLoading || !currentPassword || !newPassword || !confirmPassword}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-              >
+              <Button onClick={handleChangePassword} disabled={changeLoading || !currentPassword || !newPassword || !confirmPassword}  >
                 {changeLoading ? t('security.saving') : t('security.save')}
-              </button>
+              </Button>
             </div>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
     </>
   );

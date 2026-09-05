@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import api, { extractError } from '../lib/api';
+import i18n from '../i18n/index';
 
 interface DashboardStats {
-  boardCount: number;
   learningStreak: number;
   achievementCount: number;
   totalPoints: number;
@@ -10,7 +10,7 @@ interface DashboardStats {
 
 interface ActivityItem {
   type: string;
-  description: string;
+  topic: string;
   timestamp: string;
 }
 
@@ -28,13 +28,20 @@ interface DashboardState {
   fetchDashboardData: (userId: number) => Promise<void>;
 }
 
-export const useDashboardStore = create<DashboardState>((set) => ({
+const DASHBOARD_INITIAL_STATE = {
   stats: null,
   recentActivity: [],
   isLoading: false,
   error: null,
+} satisfies Pick<DashboardState, 'stats' | 'recentActivity' | 'isLoading' | 'error'>;
+
+let dashboardRequestId = 0;
+
+export const useDashboardStore = create<DashboardState>((set) => ({
+  ...DASHBOARD_INITIAL_STATE,
 
   fetchDashboardData: async (userId: number) => {
+    const requestId = ++dashboardRequestId;
     set({ isLoading: true, error: null });
     try {
       // Fetch multiple endpoints in parallel
@@ -50,34 +57,54 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       const totalPoints = pointsRes.data;
       const learningHistoryData = learningHistoryRes.data;
 
+      // Only count unlocked achievements: the user endpoint also returns locked
+      // ones (with progress) so the dashboard's "badges earned" card must not
+      // count trophies the student has not earned yet.
+      const earnedAchievements = achievements.filter(
+        (a: { earned_at: string | null }) => a.earned_at != null,
+      );
+
       // Extract sessions array from response (API returns { sessions: [...] })
       const learningHistory: LearningHistoryItem[] = learningHistoryData.sessions || learningHistoryData || [];
 
       // Calculate streak from learning history
       const learningStreak = calculateStreak(learningHistory);
 
-      // Map learning history to activity items
+      // Map learning history to activity items. The topic is kept raw so the
+      // page can localize the activity label in the active UI language.
       const recentActivity: ActivityItem[] = learningHistory.map((session) => ({
         type: 'learning',
-        description: `Practiced "${session.topic}"`,
+        topic: session.topic,
         timestamp: session.created_at
       }));
 
+      if (requestId !== dashboardRequestId) return;
       set({
         stats: {
-          boardCount: 0, // Will be populated from board store
           learningStreak,
-          achievementCount: achievements.length,
+          achievementCount: earnedAchievements.length,
           totalPoints
         },
         recentActivity,
         isLoading: false
       });
     } catch (error: unknown) {
-      set({ error: extractError(error, 'Failed to load dashboard data'), isLoading: false });
+      if (requestId !== dashboardRequestId) return;
+      set({ error: extractError(error, i18n.t('dashboard:errors.loadFailed')), isLoading: false });
     }
   }
 }));
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('aac:auth-logout', () => {
+    dashboardRequestId += 1;
+    useDashboardStore.setState(DASHBOARD_INITIAL_STATE);
+  });
+  window.addEventListener('aac:auth-context-changed', () => {
+    dashboardRequestId += 1;
+    useDashboardStore.setState(DASHBOARD_INITIAL_STATE);
+  });
+}
 
 function calculateStreak(sessions: LearningHistoryItem[]): number {
   if (sessions.length === 0) return 0;

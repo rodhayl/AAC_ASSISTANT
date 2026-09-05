@@ -14,7 +14,7 @@ class SymbolUsageLog(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     session_id = Column(Integer, ForeignKey("learning_sessions.id"), nullable=True)
-    symbol_id = Column(Integer, ForeignKey("symbols.id"), nullable=True)
+    symbol_id = Column(Integer, ForeignKey("symbols.id", ondelete="SET NULL"), nullable=True)
     symbol_label = Column(String(50), nullable=False)
     symbol_category = Column(String(50), nullable=True)
     position_in_utterance = Column(Integer, nullable=False)

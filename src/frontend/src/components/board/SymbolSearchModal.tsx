@@ -4,6 +4,19 @@ import { useTranslation } from 'react-i18next';
 import api from '../../lib/api';
 import { SymbolCard } from './SymbolCard';
 import type { BoardSymbol, Symbol } from '../../types';
+import { Button } from '../ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from '../ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../ui/select';
 
 interface SymbolSearchModalProps {
   isOpen: boolean;
@@ -26,9 +39,9 @@ const CATEGORIES = [
 ];
 
 const LANGUAGES = [
-  { code: 'es', label: 'Español' },
-  { code: 'en', label: 'English' },
-  { code: 'all', label: 'All' }
+  { code: 'es' },
+  { code: 'en' },
+  { code: 'all' },
 ];
 
 
@@ -69,9 +82,18 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
     setSelectedLanguage(currentLang);
   }, [isOpen, i18n.language]);
 
-  const handleSearch = async (e?: React.FormEvent, queryOverride?: string) => {
+  const handleSearch = async (
+    e?: React.FormEvent,
+    queryOverride?: string,
+    filters?: { category?: string; language?: string },
+  ) => {
     e?.preventDefault();
     const searchQuery = queryOverride ?? query;
+    // Filter changes arrive with the new value explicitly: setState has not
+    // re-rendered yet when the debounced callback fires, so reading the state
+    // closure would search with the stale filter.
+    const searchCategory = filters?.category ?? category;
+    const searchLanguage = filters?.language ?? selectedLanguage;
     const generation = ++searchGeneration.current;
     if (searchTimer.current) {
       clearTimeout(searchTimer.current);
@@ -80,7 +102,7 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
     searchController.current?.abort();
 
     // Allow empty query if category is selected
-    if (!searchQuery.trim() && !category) {
+    if (!searchQuery.trim() && !searchCategory) {
       setResults([]);
       setIsLoading(false);
       return;
@@ -96,12 +118,12 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
         search: searchQuery // Pass search query to backend
       };
 
-      if (selectedLanguage && selectedLanguage !== 'all') {
-        params.language = selectedLanguage;
+      if (searchLanguage && searchLanguage !== 'all') {
+        params.language = searchLanguage;
       }
 
-      if (category && category !== 'all') {
-        params.category = category;
+      if (searchCategory && searchCategory !== 'all') {
+        params.category = searchCategory;
       }
 
       const res = await api.get('/boards/symbols', { params, signal: controller.signal });
@@ -125,21 +147,24 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" role="presentation">
-      <div className="bg-white dark:bg-gray-900/90 backdrop-blur-xl border border-border dark:border-white/10 rounded-xl shadow-xl w-full max-w-2xl h-[85vh] flex flex-col overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="symbol-search-title">
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        className="max-w-2xl h-[85vh] flex flex-col overflow-hidden p-0"
+      >
+        <div className="flex items-center justify-between p-4 border-b border-border">
           <div className="flex items-center gap-2">
-            <Search className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-            <h2 id="symbol-search-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              {t('symbolSearch', 'Find Symbols')}
-            </h2>
+            <Search className="w-5 h-5 text-brand" />
+            <DialogTitle className="text-lg font-semibold text-foreground">
+              {t('symbolSearch')}
+            </DialogTitle>
           </div>
-          <button onClick={onClose} aria-label={t('close', 'Close')} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+          <button onClick={onClose} aria-label={t('close')} className="text-muted-foreground hover:text-foreground">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-4 border-b border-border dark:border-white/5 bg-gray-50 dark:bg-white/5 space-y-3">
+        <div className="p-4 border-b border-border bg-background space-y-3">
           <form onSubmit={handleSearch} className="flex gap-2">
             <input
               type="text"
@@ -164,63 +189,101 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
                   void handleSearch(undefined, nextQuery);
                 }, 200);
               }}
-              placeholder={t('symbolSearchPlaceholder', 'Search for a symbol...')}
-              className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              placeholder={t('symbolSearchPlaceholder')}
+              className="flex-1 px-4 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
               autoFocus
             />
-            <button
-              type="submit"
-              disabled={isLoading || (!query.trim() && !category)}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : t('search', 'Search')}
-            </button>
+            <Button type="submit" disabled={isLoading || (!query.trim() && !category)}  >
+              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : t('search')}
+            </Button>
           </form>
 
           <div className="flex gap-3">
             <div className="flex-1 relative">
-              <Filter className="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400" />
-              <select
-                value={category}
-                onChange={(e) => {
-                  setCategory(e.target.value);
-                  // Optional: auto-trigger search on filter change
-                  // setTimeout(() => handleSearch(), 0);
+              <Filter className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none z-10" />
+              <Select
+                value={category === '' ? 'all' : category}
+                onValueChange={(next) => {
+                  // Base UI Select cannot commit an empty-string item value,
+                  // so the "all" option uses a sentinel that maps back to the
+                  // empty filter state the API layer expects.
+                  const mapped = next === 'all' || next == null ? '' : next;
+                  setCategory(mapped);
+                  if (searchTimer.current) {
+                    clearTimeout(searchTimer.current);
+                    searchTimer.current = null;
+                  }
+                  searchTimer.current = setTimeout(() => {
+                    searchTimer.current = null;
+                    void handleSearch(undefined, query, { category: mapped });
+                  }, 200);
                 }}
-                className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 appearance-none"
+                items={[
+                  { value: 'all', label: t('allCategories') },
+                  ...CATEGORIES.map((cat) => ({
+                    value: cat,
+                    label: t(`categories.${cat}`, cat.charAt(0).toUpperCase() + cat.slice(1)),
+                  })),
+                ]}
               >
-                <option value="">{t('allCategories', 'All Categories')}</option>
-                {CATEGORIES.map(cat => (
-                  <option key={cat} value={cat}>
-                    {t(`categories.${cat}`, cat.charAt(0).toUpperCase() + cat.slice(1))}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger aria-label={t('allCategories')} className="w-full pl-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t('allCategories')}</SelectItem>
+                  {CATEGORIES.map(cat => (
+                    <SelectItem key={cat} value={cat}>
+                      {t(`categories.${cat}`, cat.charAt(0).toUpperCase() + cat.slice(1))}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex-1 relative">
-              <Globe className="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400" />
-              <select
+              <Globe className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none z-10" />
+              <Select
                 value={selectedLanguage}
-                onChange={(e) => {
-                  setSelectedLanguage(e.target.value);
+                onValueChange={(next) => {
+                  const language = next ?? 'all';
+                  setSelectedLanguage(language);
+                  if (searchTimer.current) {
+                    clearTimeout(searchTimer.current);
+                    searchTimer.current = null;
+                  }
+                  searchTimer.current = setTimeout(() => {
+                    searchTimer.current = null;
+                    void handleSearch(undefined, query, { language });
+                  }, 200);
                 }}
-                className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 appearance-none"
+                items={LANGUAGES.map((lang) => ({
+                  value: lang.code,
+                  label: lang.code === 'all'
+                    ? t('allLanguages')
+                    : t(`languages.${lang.code}`, lang.code.toUpperCase()),
+                }))}
               >
-                {LANGUAGES.map(lang => (
-                  <option key={lang.code} value={lang.code}>
-                    {lang.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger aria-label={t('allLanguages')} className="w-full pl-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LANGUAGES.map(lang => (
+                    <SelectItem key={lang.code} value={lang.code}>
+                      {lang.code === 'all'
+                        ? t('allLanguages')
+                        : t(`languages.${lang.code}`, lang.code.toUpperCase())}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 bg-gray-100 dark:bg-gray-900/50">
+        <div className="flex-1 overflow-y-auto p-4 bg-muted  rounded-b-xl">
           {results.length === 0 && !isLoading && query && (
-            <div className="text-center text-gray-500 dark:text-gray-400 mt-10">
-              {t('noResults', 'No symbols found.')}
+            <div className="text-center text-muted-foreground mt-10">
+              {t('noResults')}
             </div>
           )}
 
@@ -256,7 +319,7 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
             })}
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

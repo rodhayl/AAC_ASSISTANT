@@ -55,8 +55,14 @@ results-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
 
 # DB files
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
+*.sqlite-shm
+*.sqlite-wal
 *.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
 
 # Environment variables and local secrets
 .env
@@ -74,6 +80,7 @@ bundled_models/
 !AAC_Assistant.spec
 run.pid
 *.log
+nohup.out
 *.exe
 sbom*.json
 checksums*.txt
@@ -90,6 +97,9 @@ _input_*.txt
 
 # Throwaway browser diagnostics
 src/frontend/pw-diag*.mjs
+
+# Visual verification screenshots (one-off dark-mode checks)
+src/frontend/screenshots-dark/
 
 # IDE
 .vscode/

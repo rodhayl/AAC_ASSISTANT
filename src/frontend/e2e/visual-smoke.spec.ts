@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { auditContrast } from './contrast-audit';
 
 const routes = [
   { name: 'dashboard', path: '/' },
@@ -47,6 +48,7 @@ async function ensureAuthenticated(page: Page) {
   await page.waitForURL('/', { timeout: 15000 });
 }
 
+
 for (const viewport of viewports) {
   test.describe(`visual smoke ${viewport.name}`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
@@ -65,6 +67,9 @@ for (const viewport of viewports) {
           await page.waitForTimeout(300);
 
           await expect(page.locator('#root')).toBeVisible();
+          // The whole point of the modes is legibility: audit the real painted
+          // text contrast in the browser for every route x mode combination.
+          await auditContrast(page, `${route.name}/${mode}`);
           const screenshot = await page.screenshot({ fullPage: true });
           await testInfo.attach(`${viewport.name}-${route.name}-${mode}.png`, {
             body: screenshot,

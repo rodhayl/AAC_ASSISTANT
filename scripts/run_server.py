@@ -10,30 +10,35 @@ from pathlib import Path
 # ``uv run python scripts/run_server.py``.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import uvicorn
 
-from src import config  # noqa: E402
-from src.api.main import app
-from src.api.server import ShutdownAwareServer
-
-
-def main() -> None:
-    """Run one production server process."""
+def main(argv: list[str] | None = None) -> None:
+    """Parse options before importing the application and run one server process."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", default=config.BACKEND_HOST)
-    parser.add_argument("--port", type=int, default=config.BACKEND_PORT)
-    parser.add_argument(
-        "--timeout-graceful-shutdown",
-        type=int,
-        default=config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
-    )
-    args = parser.parse_args()
+    parser.add_argument("--host")
+    parser.add_argument("--port", type=int)
+    parser.add_argument("--timeout-graceful-shutdown", type=int)
+    args = parser.parse_args(argv)
+
+    # Keep --help informational: importing src.api.main configures logging,
+    # creates runtime directories, and imports the complete router graph.
+    # Resolve those application resources only after argparse accepts a normal
+    # server invocation.
+    import uvicorn
+
+    from src import config
+    from src.api.main import app
+    from src.api.server import ShutdownAwareServer
+
     server = ShutdownAwareServer(
         uvicorn.Config(
             app,
-            host=args.host,
-            port=args.port,
-            timeout_graceful_shutdown=args.timeout_graceful_shutdown,
+            host=(args.host if args.host is not None else config.BACKEND_HOST),
+            port=(args.port if args.port is not None else config.BACKEND_PORT),
+            timeout_graceful_shutdown=(
+                args.timeout_graceful_shutdown
+                if args.timeout_graceful_shutdown is not None
+                else config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS
+            ),
         ),
         app=app,
     )

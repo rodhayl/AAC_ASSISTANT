@@ -37,10 +37,16 @@ export function isPersistableJson(value: unknown, seen = new WeakSet<object>()):
   }
   if (seen.has(value)) return false
   seen.add(value)
-  if (Array.isArray(value)) return value.every((item) => isPersistableJson(item, seen))
-  const prototype = Object.getPrototypeOf(value)
-  if (prototype !== Object.prototype && prototype !== null) return false
-  return Object.values(value).every((item) => isPersistableJson(item, seen))
+  try {
+    if (Array.isArray(value)) return value.every((item) => isPersistableJson(item, seen))
+    const prototype = Object.getPrototypeOf(value)
+    if (prototype !== Object.prototype && prototype !== null) return false
+    // Remove the object after descending so repeated references are valid JSON
+    // while an actual cycle is still rejected along the active recursion path.
+    return Object.values(value).every((item) => isPersistableJson(item, seen))
+  } finally {
+    seen.delete(value)
+  }
 }
 
 function sanitizeHeaders(headers: AxiosRequestConfig['headers']): Record<string, string> {

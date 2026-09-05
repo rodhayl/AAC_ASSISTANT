@@ -44,6 +44,7 @@ function makeOptions() {
     currentSession: { session_id: 42 } as LearningSessionResponse,
     isLoading: false,
     sessionDifficulty: 'adaptive',
+    sessionTopic: 'Audio Conversation',
     startSession: vi.fn().mockResolvedValue(undefined),
     submitVoiceAnswer: vi.fn().mockResolvedValue(undefined),
     addToast: vi.fn(),
@@ -59,6 +60,33 @@ describe('useVoiceRecorder lifecycle', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('passes the selected default mode when voice starts a new session', async () => {
+    const stream = makeStream();
+    const options = {
+      ...makeOptions(),
+      currentSession: null,
+      userId: 7,
+      modeKey: 'roleplay',
+    };
+    vi.stubGlobal('navigator', {
+      mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+    });
+    const { result } = renderHook(() => useVoiceRecorder(options));
+
+    await act(async () => {
+      await result.current.startRecording();
+    });
+
+    expect(options.startSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        topic: 'Audio Conversation',
+        purpose: 'voice',
+        mode_key: 'roleplay',
+      }),
+      7,
+    );
   });
 
   it('does not resurrect a discarded recording when stop is delivered late', async () => {

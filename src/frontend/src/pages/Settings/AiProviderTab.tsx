@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, Cloud, Cpu } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
@@ -9,6 +9,7 @@ import { useAutoHide } from '../../hooks/useAutoHide';
 import api, { extractError } from '../../lib/api';
 import type { AiOverride, ProviderHealth } from './types';
 import { AiProviderFields } from './AiProviderFields';
+import { StatusMessage } from '../../components/ui/StatusMessage';
 
 export function AiProviderTab() {
   const user = useAuthStore(state => state.user);
@@ -17,6 +18,7 @@ export function AiProviderTab() {
   const ollamaModels = useSettingsStore((state) => state.ollamaModels)
   const openRouterModels = useSettingsStore((state) => state.openRouterModels)
   const lmStudioModels = useSettingsStore((state) => state.lmStudioModels)
+  const groqModels = useSettingsStore((state) => state.groqModels)
   const loading = useSettingsStore((state) => state.loading)
   const error = useSettingsStore((state) => state.error)
   const fetchAISettings = useSettingsStore((state) => state.fetchAISettings)
@@ -24,12 +26,14 @@ export function AiProviderTab() {
   const fetchOllamaModels = useSettingsStore((state) => state.fetchOllamaModels)
   const fetchOpenRouterModels = useSettingsStore((state) => state.fetchOpenRouterModels)
   const fetchLmStudioModels = useSettingsStore((state) => state.fetchLmStudioModels)
+  const fetchGroqModels = useSettingsStore((state) => state.fetchGroqModels)
   const isAdmin = user?.user_type === 'admin';
   const [aiOverride, setAiOverride] = useState<AiOverride>({});
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [modelSearchOpen, setModelSearchOpen] = useState(false);
   const [modelSearchQuery, setModelSearchQuery] = useState('');
   const [health, setHealth] = useState<ProviderHealth | null>(null);
+  const lastSavedSettingsRef = useRef('');
   const [readOnlyState, setReadOnlyState] = useState<{
     requestKey: string;
     settings: AISettings | null;
@@ -72,7 +76,7 @@ export function AiProviderTab() {
             requestKey: readOnlyRequestKey,
             settings: null,
             loading: false,
-            error: extractError(requestError, 'Failed to load AI settings'),
+            error: extractError(requestError, t('ai.loadFailed')),
           });
         }
       });
@@ -80,24 +84,29 @@ export function AiProviderTab() {
       active = false;
       controller.abort();
     };
-  }, [userId, userRole, isAdmin, fetchAISettings, readOnlyRequestKey]);
+  }, [userId, userRole, isAdmin, fetchAISettings, readOnlyRequestKey, t]);
 
   const currentAiProvider = aiOverride.provider ?? aiSettings?.provider ?? 'ollama';
   const currentOllamaModel = aiOverride.ollama_model ?? aiSettings?.ollama_model ?? '';
   const currentOpenRouterModel = aiOverride.openrouter_model ?? aiSettings?.openrouter_model ?? '';
   const currentLmStudioModel = aiOverride.lmstudio_model ?? aiSettings?.lmstudio_model ?? '';
+  const currentGroqModel = aiOverride.groq_model ?? aiSettings?.groq_model ?? '';
   const currentSelectedModel =
     currentAiProvider === 'ollama'
       ? currentOllamaModel
       : currentAiProvider === 'lmstudio'
         ? currentLmStudioModel
-        : currentOpenRouterModel;
+        : currentAiProvider === 'groq'
+          ? currentGroqModel
+          : currentOpenRouterModel;
   const currentOpenRouterApiKey = aiOverride.openrouter_api_key ?? aiSettings?.openrouter_api_key ?? '';
+  const currentGroqApiKey = aiOverride.groq_api_key ?? aiSettings?.groq_api_key ?? '';
   const currentOllamaBaseUrl = aiOverride.ollama_base_url ?? aiSettings?.ollama_base_url ?? config.OLLAMA_BASE_URL;
   const currentLmStudioBaseUrl =
-    aiOverride.lmstudio_base_url ?? aiSettings?.lmstudio_base_url ?? 'http://localhost:1234/v1';
-  const currentMaxTokens = aiOverride.max_tokens ?? aiSettings?.max_tokens ?? 1024;
-  const currentTemperature = aiOverride.temperature ?? aiSettings?.temperature ?? 0.5;
+    aiOverride.lmstudio_base_url ?? aiSettings?.lmstudio_base_url ?? config.LMSTUDIO_BASE_URL;
+  const currentMaxTokens = aiOverride.max_tokens ?? aiSettings?.max_tokens ?? config.AI_MAX_TOKENS;
+  const currentTemperature = aiOverride.temperature ?? aiSettings?.temperature ?? config.AI_TEMPERATURE;
+  const currentAutogenDailyCap = aiOverride.autogen_daily_cap ?? aiSettings?.autogen_daily_cap ?? config.AUTOGEN_DAILY_CAP;
   const readOnlyForCurrentUser =
     !isAdmin && readOnlyState?.requestKey === readOnlyRequestKey;
   const visibleAiSettings = isAdmin
@@ -113,32 +122,41 @@ export function AiProviderTab() {
       ? health?.ollama
       : currentAiProvider === 'openrouter'
         ? health?.openrouter
-        : health?.lmstudio;
+        : currentAiProvider === 'groq'
+          ? health?.groq
+          : health?.lmstudio;
   const selectedProviderLabel =
     currentAiProvider === 'ollama'
       ? t('ai.ollama')
       : currentAiProvider === 'openrouter'
         ? t('ai.openrouter')
-        : 'LM Studio';
+        : currentAiProvider === 'groq'
+          ? t('ai.groq')
+          : t('ai.lmstudio');
 
   const selectedProviderStatusMessage = (() => {
     if (!selectedHealth) return null;
     if (selectedHealth.available) {
-      return t('ai.providerReady', `${selectedProviderLabel} is available and responding.`);
+      return t('ai.providerReady', {
+        provider: selectedProviderLabel,
+      });
     }
     if (currentAiProvider === 'openrouter') {
       if (selectedHealth.reason === 'api_key_missing' || !currentOpenRouterApiKey.trim()) {
-        return t('ai.openrouterApiKeyMissing', 'OpenRouter API key is missing.');
+        return t('ai.openrouterApiKeyMissing');
       }
-      return t(
-        'ai.openrouterUnavailable',
-        'OpenRouter is configured but did not respond. Check the API key, account, or network.'
-      );
+      return t('ai.openrouterUnavailable');
     }
     if (currentAiProvider === 'lmstudio') {
-      return t('ai.lmstudioUnavailable', 'LM Studio is not reachable at the configured base URL.');
+      return t('ai.lmstudioUnavailable');
     }
-    return t('ai.ollamaUnavailable', 'Ollama is not reachable at the configured base URL.');
+    if (currentAiProvider === 'groq') {
+      if (selectedHealth.reason === 'api_key_missing' || !currentGroqApiKey.trim()) {
+        return t('ai.groqApiKeyMissing');
+      }
+      return t('ai.groqUnavailable');
+    }
+    return t('ai.ollamaUnavailable');
   })();
 
   useEffect(() => {
@@ -149,6 +167,8 @@ export function AiProviderTab() {
       fetchOpenRouterModels();
     } else if (currentAiProvider === 'lmstudio' && lmStudioModels.length === 0) {
       fetchLmStudioModels();
+    } else if (currentAiProvider === 'groq' && groqModels.length === 0) {
+      fetchGroqModels(currentGroqApiKey);
     }
   }, [
     isAdmin,
@@ -156,9 +176,12 @@ export function AiProviderTab() {
     ollamaModels.length,
     openRouterModels.length,
     lmStudioModels.length,
+    groqModels.length,
+    currentGroqApiKey,
     fetchOllamaModels,
     fetchOpenRouterModels,
     fetchLmStudioModels,
+    fetchGroqModels,
   ]);
 
   const handleFetchModels = async () => {
@@ -166,7 +189,9 @@ export function AiProviderTab() {
       if (currentAiProvider === 'ollama') {
         await fetchOllamaModels();
       } else if (currentAiProvider === 'openrouter') {
-        await fetchOpenRouterModels();
+        await fetchOpenRouterModels(currentOpenRouterApiKey);
+      } else if (currentAiProvider === 'groq') {
+        await fetchGroqModels(currentGroqApiKey);
       } else {
         await fetchLmStudioModels();
       }
@@ -175,24 +200,50 @@ export function AiProviderTab() {
     }
   };
 
-  const handleSaveAllSettings = async () => {
+  const buildSettingsPayload = useCallback((overrides: AiOverride) => ({
+    provider: overrides.provider ?? aiSettings?.provider ?? 'ollama',
+    ollama_model: overrides.ollama_model ?? aiSettings?.ollama_model ?? '',
+    openrouter_model: overrides.openrouter_model ?? aiSettings?.openrouter_model ?? '',
+    lmstudio_model: overrides.lmstudio_model ?? aiSettings?.lmstudio_model ?? '',
+    groq_model: overrides.groq_model ?? aiSettings?.groq_model ?? '',
+    openrouter_api_key: overrides.openrouter_api_key ?? aiSettings?.openrouter_api_key ?? '',
+    groq_api_key: overrides.groq_api_key ?? aiSettings?.groq_api_key ?? '',
+    ollama_base_url: overrides.ollama_base_url ?? aiSettings?.ollama_base_url ?? config.OLLAMA_BASE_URL,
+    lmstudio_base_url: overrides.lmstudio_base_url ?? aiSettings?.lmstudio_base_url ?? config.LMSTUDIO_BASE_URL,
+    max_tokens: overrides.max_tokens ?? aiSettings?.max_tokens ?? config.AI_MAX_TOKENS,
+    temperature: overrides.temperature ?? aiSettings?.temperature ?? config.AI_TEMPERATURE,
+    autogen_daily_cap: overrides.autogen_daily_cap ?? aiSettings?.autogen_daily_cap ?? config.AUTOGEN_DAILY_CAP,
+  }), [aiSettings]);
+
+  const persistSettings = useCallback(async (overrides: AiOverride) => {
+    const payload = buildSettingsPayload(overrides);
+    const signature = JSON.stringify(payload);
+    lastSavedSettingsRef.current = signature;
     try {
-      await updateAISettings({
-        provider: currentAiProvider,
-        ollama_model: currentOllamaModel,
-        openrouter_model: currentOpenRouterModel,
-        lmstudio_model: currentLmStudioModel,
-        openrouter_api_key: currentOpenRouterApiKey,
-        ollama_base_url: currentOllamaBaseUrl,
-        lmstudio_base_url: currentLmStudioBaseUrl,
-        max_tokens: currentMaxTokens,
-        temperature: currentTemperature,
-      });
+      await updateAISettings(payload);
       setSaveSuccess(true);
     } catch (err) {
+      if (lastSavedSettingsRef.current === signature) {
+        lastSavedSettingsRef.current = '';
+      }
       console.error('Failed to save settings:', err);
     }
-  };
+  }, [buildSettingsPayload, updateAISettings]);
+
+  useEffect(() => {
+    if (!isAdmin || Object.keys(aiOverride).length === 0) return;
+
+    const payload = buildSettingsPayload(aiOverride);
+    const signature = JSON.stringify(payload);
+    if (signature === lastSavedSettingsRef.current) return;
+
+    // Persist every AI change after a short pause, including model selection,
+    // so controls cannot remain as unsaved local state.
+    const timer = setTimeout(() => {
+      void persistSettings(aiOverride);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [aiOverride, buildSettingsPayload, isAdmin, persistSettings]);
 
   const checkHealth = async () => {
     try {
@@ -208,19 +259,19 @@ export function AiProviderTab() {
       <section
         id="settings-ai"
         aria-labelledby="settings-ai-heading"
-        className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+        className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden"
       >
-        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-          <h3 id="settings-ai-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            {t('ai.readOnlyTitle', 'AI Configuration')}
+        <div className="p-6 border-b border-border">
+          <h3 id="settings-ai-heading" className="text-lg font-semibold text-foreground">
+            {t('ai.readOnlyTitle')}
           </h3>
-          <p className="text-sm text-gray-500 mt-1">{t('ai.viewOnly', 'Current AI settings (View only - contact admin to change)')}</p>
+          <p className="text-sm text-muted-foreground mt-1">{t('ai.viewOnly')}</p>
         </div>
         {readOnlyLoading && (
-          <div className="p-6 text-sm text-gray-500">{t('ai.loading', 'Loading AI settings...')}</div>
+          <div className="p-6 text-sm text-muted-foreground">{t('ai.loading')}</div>
         )}
         {readOnlyError && (
-          <div className="p-6 text-sm text-red-600" role="alert">
+          <div className="p-6 text-sm text-red-600 dark:text-red-400" role="alert">
             {readOnlyError}
           </div>
         )}
@@ -228,24 +279,25 @@ export function AiProviderTab() {
           <div className="p-6 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <p className="block text-sm font-medium text-gray-700 mb-1">{t('ai.primaryProvider', 'Primary Provider')}</p>
-                <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg capitalize flex items-center">
+                <p className="block text-sm font-medium text-foreground mb-1">{t('ai.primaryProvider')}</p>                    <div className="px-3 py-2 bg-muted border border-border rounded-lg capitalize flex items-center">
                   {visibleAiSettings.provider === 'ollama' ? (
-                    <Cpu className="w-4 h-4 mr-2 text-indigo-600" />
+                    <Cpu className="w-4 h-4 mr-2 text-brand" />
                   ) : (
-                    <Cloud className="w-4 h-4 mr-2 text-indigo-600" />
+                    <Cloud className="w-4 h-4 mr-2 text-brand" />
                   )}
                   {visibleAiSettings.provider}
                 </div>
               </div>
               <div>
-                <p className="block text-sm font-medium text-gray-700 mb-1">{t('ai.primaryModel', 'Primary Model')}</p>
-                <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
+                <p className="block text-sm font-medium text-foreground mb-1">{t('ai.primaryModel')}</p>
+                <div className="px-3 py-2 bg-muted border border-border rounded-lg">
                   {(visibleAiSettings.provider === 'ollama'
                     ? visibleAiSettings.ollama_model
                     : visibleAiSettings.provider === 'lmstudio'
                       ? visibleAiSettings.lmstudio_model
-                      : visibleAiSettings.openrouter_model) || 'Not configured'}
+                      : visibleAiSettings.provider === 'groq'
+                        ? visibleAiSettings.groq_model
+                        : visibleAiSettings.openrouter_model) || t('ai.notConfigured')}
                 </div>
               </div>
             </div>
@@ -259,70 +311,88 @@ export function AiProviderTab() {
     <section
       id="settings-ai"
       aria-labelledby="settings-ai-heading"
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+      className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden"
     >
-      <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+      <div className="p-6 border-b border-border">
         <div className="flex items-center justify-between">
           <div>
-            <h3 id="settings-ai-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <h3 id="settings-ai-heading" className="text-lg font-semibold text-foreground">
               {t('ai.title')}
             </h3>
-            <p className="text-sm text-gray-500 mt-1">{t('ai.subtitle')}</p>
+            <p className="text-sm text-muted-foreground mt-1">{t('ai.subtitle')}</p>
           </div>
-          {saveSuccess && <div className="text-green-600 text-sm font-medium">{t('ai.saveOk')}</div>}
+          {saveSuccess && <div className="text-green-600 dark:text-green-400 text-sm font-medium">{t('ai.saveOk')}</div>}
         </div>
       </div>
 
       <div className="p-6 space-y-6">
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center">
+          <StatusMessage variant="error" className="flex items-center">
             <AlertCircle className="w-5 h-5 mr-2" />
             {error}
-          </div>
+          </StatusMessage>
         )}
         <div>
-          <p className="block text-sm font-medium text-gray-700 mb-3">{t('ai.primary')}</p>
+          <p className="block text-sm font-medium text-foreground mb-3">{t('ai.primary')}</p>
           <div className="grid grid-cols-2 gap-4">
             <button
+              type="button"
               onClick={() => setAiOverride((prev) => ({ ...prev, provider: 'ollama' }))}
               className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${
                 currentAiProvider === 'ollama'
-                  ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/30'
-                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
+                  ? 'border-brand bg-brand/10'
+                  : 'border-border'
               }`}
             >
-              <Cpu className="w-6 h-6 text-indigo-600" />
+              <Cpu className="w-6 h-6 text-brand" />
               <div className="text-left">
-                <div className="font-medium text-gray-900 dark:text-gray-100">{t('ai.ollama')}</div>
-                <div className="text-xs text-gray-600 dark:text-gray-400">{t('ai.ollamaDesc')}</div>
+                <div className="font-medium text-foreground">{t('ai.ollama')}</div>
+                <div className="text-xs text-muted-foreground">{t('ai.ollamaDesc')}</div>
               </div>
             </button>
             <button
+              type="button"
               onClick={() => setAiOverride((prev) => ({ ...prev, provider: 'openrouter' }))}
               className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${
                 currentAiProvider === 'openrouter'
-                  ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/30'
-                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
+                  ? 'border-brand bg-brand/10'
+                  : 'border-border'
               }`}
             >
-              <Cloud className="w-6 h-6 text-indigo-600" />
+              <Cloud className="w-6 h-6 text-brand" />
               <div className="text-left">
-                <div className="font-medium text-gray-900 dark:text-gray-100">{t('ai.openrouter')}</div>
-                <div className="text-xs text-gray-600 dark:text-gray-400">{t('ai.openrouterDesc')}</div>
+                <div className="font-medium text-foreground">{t('ai.openrouter')}</div>
+                <div className="text-xs text-muted-foreground">{t('ai.openrouterDesc')}</div>
               </div>
             </button>
             <button
+              type="button"
               onClick={() => setAiOverride((prev) => ({ ...prev, provider: 'lmstudio' }))}
               className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${
                 currentAiProvider === 'lmstudio'
-                  ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/30'
-                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
+                  ? 'border-brand bg-brand/10'
+                  : 'border-border'
               }`}
             >
-              <Cpu className="w-6 h-6 text-indigo-600" />
+              <Cpu className="w-6 h-6 text-brand" />
               <div className="text-left">
-                <div className="font-medium text-gray-900 dark:text-gray-100">{t('ai.lmstudio', 'LM Studio')}</div>
-                <div className="text-xs text-gray-600 dark:text-gray-400">{t('ai.localOpenAIAPI', 'Local OpenAI-API')}</div>
+                <div className="font-medium text-foreground">{t('ai.lmstudio')}</div>
+                <div className="text-xs text-muted-foreground">{t('ai.localOpenAIAPI')}</div>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAiOverride((prev) => ({ ...prev, provider: 'groq' }))}
+              className={`p-4 border-2 rounded-lg flex items-center space-x-3 transition-colors ${
+                currentAiProvider === 'groq'
+                  ? 'border-brand bg-brand/10'
+                  : 'border-border'
+              }`}
+            >
+              <Cloud className="w-6 h-6 text-brand" />
+              <div className="text-left">
+                <div className="font-medium text-foreground">{t('ai.groq')}</div>
+                <div className="text-xs text-muted-foreground">{t('ai.groqDesc')}</div>
               </div>
             </button>
           </div>
@@ -331,15 +401,19 @@ export function AiProviderTab() {
         <AiProviderFields
           provider={currentAiProvider}
           lmStudioModel={currentLmStudioModel}
+          groqModel={currentGroqModel}
           selectedModel={currentSelectedModel}
           openRouterApiKey={currentOpenRouterApiKey}
+          groqApiKey={currentGroqApiKey}
           ollamaBaseUrl={currentOllamaBaseUrl}
           lmStudioBaseUrl={currentLmStudioBaseUrl}
           maxTokens={currentMaxTokens}
           temperature={currentTemperature}
+          autogenDailyCap={currentAutogenDailyCap}
           ollamaModels={ollamaModels}
           openRouterModels={openRouterModels}
           lmStudioModels={lmStudioModels}
+          groqModels={groqModels}
           loading={loading}
           setAiOverride={setAiOverride}
           modelSearchOpen={modelSearchOpen}
@@ -348,24 +422,17 @@ export function AiProviderTab() {
           setModelSearchQuery={setModelSearchQuery}
           onFetchModels={handleFetchModels}
         />
-
-        <div className="flex items-center gap-2 pt-4 border-t border-gray-200">
-          <button onClick={checkHealth} className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg">
+        <div className="flex items-center gap-2 pt-4 border-t border-border">
+          <button type="button" onClick={checkHealth} className="px-3 py-2 text-sm text-foreground hover:bg-surface-hover rounded-lg">
             {t('ai.health')}
           </button>
         </div>
         {selectedHealth && (
-          <div
-            className={`rounded-lg border px-4 py-3 text-sm ${
-              selectedHealth.available
-                ? 'border-green-200 bg-green-50 text-green-800'
-                : 'border-red-200 bg-red-50 text-red-800'
-            }`}
-          >
+          <StatusMessage variant={selectedHealth.available ? 'success' : 'error'}>
             <div className="font-medium">
               {selectedProviderLabel}:{' '}
-              <span className={selectedHealth.available ? 'text-green-700' : 'text-red-700'}>
-                {selectedHealth.available ? t('ai.statusUp', 'ok') : t('ai.statusDown', 'down')}
+              <span className={selectedHealth.available ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}>
+                {selectedHealth.available ? t('ai.statusUp') : t('ai.statusDown')}
               </span>
             </div>
             {selectedProviderStatusMessage && (
@@ -373,17 +440,13 @@ export function AiProviderTab() {
                 {selectedProviderStatusMessage}
               </div>
             )}
-          </div>
+          </StatusMessage>
         )}
 
-        <div className="flex justify-end pt-6 border-t border-gray-200">
-          <button
-            onClick={handleSaveAllSettings}
-            disabled={loading}
-            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-          >
-            {loading ? 'Saving...' : 'Save AI Settings'}
-          </button>
+        <div className="flex justify-end pt-6 border-t border-border">
+          <p className="text-sm text-muted-foreground">
+            {t('ai.autoSave')}
+          </p>
         </div>
       </div>
     </section>

@@ -2,16 +2,18 @@
 Tests for Learning Modes integration and regression testing for session conflicts.
 """
 
+from unittest.mock import MagicMock
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import LearningMode, User
+from src.aac_app.models import LearningMode, User, UserSettings
 from src.aac_app.services.auth_service import get_password_hash
 from src.aac_app.services.guardian_profile_service import get_guardian_profile_service
-from src.aac_app.services.learning_companion_service import LearningCompanionService
-from src.api.deps import get_llm_provider, get_speech_provider
+from src.aac_app.services.learning.service import LearningCompanionService
+from src.api.deps import get_learning_service, get_llm_provider, get_speech_provider
 from src.api.main import app
 
 
@@ -35,7 +37,7 @@ def override_providers(
     from contextlib import contextmanager
 
     from src.aac_app import db
-    from src.aac_app.services import achievement_system, learning_companion_service
+    from src.aac_app.services import achievement_system
 
     # Override providers
     app.dependency_overrides[get_llm_provider] = lambda: mock_llm_provider
@@ -64,12 +66,94 @@ def override_providers(
             session.close()
 
     monkeypatch.setattr(db, "get_session", mock_get_session)
-    monkeypatch.setattr(learning_companion_service, "get_session", mock_get_session)
     monkeypatch.setattr(achievement_system, "get_session", mock_get_session)
 
     yield
     app.dependency_overrides.pop(get_llm_provider, None)
     app.dependency_overrides.pop(get_speech_provider, None)
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_default_learning_mode_is_used_when_session_omits_mode(
+    admin_user, admin_token, test_db_session: Session, client
+):
+    """A session without an explicit mode uses the user's saved default."""
+    mode = LearningMode(
+        name="Saved Default",
+        key="saved_default",
+        description="Saved default mode",
+        prompt_instruction="Use the saved default.",
+        is_custom=True,
+        created_by=admin_user.id,
+    )
+    settings = UserSettings(
+        user_id=admin_user.id,
+        default_learning_mode=mode.key,
+    )
+    test_db_session.add_all([mode, settings])
+    test_db_session.commit()
+
+    mock_learning_service = MagicMock()
+    mock_learning_service.start_learning_session.return_value = {
+        "success": True,
+        "session_id": 123,
+    }
+    app.dependency_overrides[get_learning_service] = lambda: mock_learning_service
+    try:
+        response = client.post(
+            "/api/learning/start",
+            params={"user_id": admin_user.id},
+            json={"topic": "Weather", "purpose": "practice"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_learning_service, None)
+
+    assert response.status_code == 200, response.text
+    mock_learning_service.start_learning_session.assert_called_once()
+    assert mock_learning_service.start_learning_session.call_args.kwargs["mode_key"] == mode.key
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_deleting_default_learning_mode_repairs_the_saved_preference(
+    admin_user, admin_token, test_db_session: Session, client
+):
+    """Deleting a selected mode immediately switches the default to a visible mode."""
+    fallback = LearningMode(
+        name="Practice",
+        key="practice",
+        prompt_instruction="Ask practice questions.",
+        is_custom=False,
+        created_by=None,
+    )
+    selected = LearningMode(
+        name="Selected",
+        key="selected_for_delete",
+        prompt_instruction="Use this mode.",
+        is_custom=True,
+        created_by=admin_user.id,
+    )
+    settings = UserSettings(
+        user_id=admin_user.id,
+        default_learning_mode=selected.key,
+    )
+    test_db_session.add_all([fallback, selected, settings])
+    test_db_session.commit()
+    test_db_session.refresh(selected)
+
+    response = client.delete(
+        f"/api/learning-modes/{selected.id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["default_learning_mode"] == fallback.key
+    saved_settings = (
+        test_db_session.query(UserSettings)
+        .filter(UserSettings.user_id == admin_user.id)
+        .one()
+    )
+    assert saved_settings.default_learning_mode == fallback.key
 
 
 @pytest.mark.usefixtures("setup_test_db")
@@ -138,6 +222,51 @@ def test_learning_mode_list_uses_one_query_and_scopes_custom_modes(
     assert [mode["id"] for mode in modes] == sorted(mode["id"] for mode in modes)
     own = next(mode for mode in modes if mode["name"] == "Own Mode")
     assert own["auto_ask_enabled"] is False
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_learning_mode_preview_does_not_leak_other_teachers_prompt(
+    admin_user, test_db_session: Session, client
+):
+    """A teacher cannot preview a saved mode owned by another teacher."""
+    from src.aac_app.utils.jwt_utils import create_access_token
+
+    owner = User(
+        username="private_mode_owner",
+        password_hash=get_password_hash("OwnerPass123"),
+        display_name="Private Mode Owner",
+        user_type="teacher",
+        is_active=True,
+    )
+    viewer = User(
+        username="private_mode_viewer",
+        password_hash=get_password_hash("ViewerPass123"),
+        display_name="Private Mode Viewer",
+        user_type="teacher",
+        is_active=True,
+    )
+    test_db_session.add_all([owner, viewer])
+    test_db_session.flush()
+    mode = LearningMode(
+        name="Private Mode",
+        key="private_mode_key",
+        prompt_instruction="Do not expose this teacher's private instruction.",
+        created_by=owner.id,
+        is_custom=True,
+    )
+    test_db_session.add(mode)
+    test_db_session.commit()
+
+    token = create_access_token(
+        data={"sub": viewer.username, "user_id": viewer.id, "user_type": viewer.user_type}
+    )
+    response = client.post(
+        "/api/learning-modes/preview",
+        json={"mode_key": mode.key, "prompt_instruction": mode.prompt_instruction},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 404
 
 
 @pytest.mark.usefixtures("setup_test_db")
@@ -232,7 +361,7 @@ def test_learning_chat_with_custom_mode_regression(
     admin_user, admin_token, test_db_session: Session, client
 ):
     """
-    Regression test for variable shadowing bug in learning_companion_service.
+    Regression test for variable shadowing in the learning service.
 
     The bug caused a session conflict when a LearningMode lookup (inner session)
     occurred within the process_response (outer session) block.
@@ -499,7 +628,7 @@ def test_preview_system_prompt_with_sample_question(
     expected_message = service.build_conversation_user_prompt(
         student_message=question,
         topic="general conversation",
-        lang=service._get_user_language(admin_user.id, db=test_db_session),
+        lang=service.get_user_language(admin_user.id, db=test_db_session),
     )
     assert data["user_message"] == expected_message
 
@@ -511,3 +640,164 @@ def test_preview_system_prompt_with_sample_question(
     ).json()
     assert plain["user_message"] is None
     assert plain["messages"] is None
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_student_cannot_create_learning_mode(regular_user, user_token, client):
+    """Non-staff users cannot create custom learning modes (403)."""
+    response = client.post(
+        "/api/learning-modes/",
+        json={
+            "name": "Sneaky Mode",
+            "key": "sneaky",
+            "prompt_instruction": "Do nothing.",
+        },
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert response.status_code == 403
+
+
+def test_update_learning_mode_full_field_roundtrip(
+    admin_user, admin_token, test_db_session: Session, client
+):
+    """Updating every editable field at once persists all values."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post(
+        "/api/learning-modes/",
+        json={
+            "name": "Before",
+            "key": "full_update_mode",
+            "description": "old description",
+            "prompt_instruction": "old instruction",
+            "auto_ask_enabled": True,
+        },
+        headers=headers,
+    )
+    assert created.status_code == 200
+    mode_id = created.json()["id"]
+
+    updated = client.put(
+        f"/api/learning-modes/{mode_id}",
+        json={
+            "name": "After",
+            "description": "new description",
+            "prompt_instruction": "new instruction",
+            "auto_ask_enabled": False,
+        },
+        headers=headers,
+    )
+    assert updated.status_code == 200
+    data = updated.json()
+    assert data["name"] == "After"
+    assert data["description"] == "new description"
+    assert data["prompt_instruction"] == "new instruction"
+    assert data["auto_ask_enabled"] is False
+
+
+def test_update_learning_mode_returns_404_for_missing(
+    admin_user, admin_token, client
+):
+    response = client.put(
+        "/api/learning-modes/999999",
+        json={"name": "Ghost"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 404
+
+
+def test_teacher_cannot_edit_system_mode(
+    test_db_session: Session, admin_user, admin_token, client
+):
+    """System modes (created_by=None) are editable only by admins."""
+    system_mode = LearningMode(
+        name="System Mode",
+        key="system_edit_protected",
+        prompt_instruction="System instructions.",
+        created_by=None,
+        is_custom=False,
+    )
+    test_db_session.add(system_mode)
+    test_db_session.commit()
+    test_db_session.refresh(system_mode)
+
+    teacher = User(
+        username="edit_blocked_teacher",
+        display_name="Edit Blocked Teacher",
+        user_type="teacher",
+        password_hash=get_password_hash("TeacherPass123"),
+        is_active=True,
+    )
+    test_db_session.add(teacher)
+    test_db_session.commit()
+
+    from src.aac_app.utils.jwt_utils import create_access_token
+
+    teacher_token = create_access_token(
+        data={
+            "sub": teacher.username,
+            "user_id": teacher.id,
+            "user_type": teacher.user_type,
+        }
+    )
+    response = client.put(
+        f"/api/learning-modes/{system_mode.id}",
+        json={"name": "Hijacked"},
+        headers={"Authorization": f"Bearer {teacher_token}"},
+    )
+    assert response.status_code == 403
+
+
+def test_delete_learning_mode_permissions_and_404(
+    admin_user, admin_token, test_db_session: Session, client
+):
+    """Non-admin cannot delete a system mode; missing modes return 404."""
+    system_mode = LearningMode(
+        name="System Protected",
+        key="system_delete_protected",
+        prompt_instruction="Keep me.",
+        created_by=None,
+        is_custom=False,
+    )
+    test_db_session.add(system_mode)
+    test_db_session.commit()
+    test_db_session.refresh(system_mode)
+
+    teacher = User(
+        username="delete_blocked_teacher",
+        display_name="Delete Blocked Teacher",
+        user_type="teacher",
+        password_hash=get_password_hash("TeacherPass123"),
+        is_active=True,
+    )
+    test_db_session.add(teacher)
+    test_db_session.commit()
+
+    from src.aac_app.utils.jwt_utils import create_access_token
+
+    teacher_token = create_access_token(
+        data={
+            "sub": teacher.username,
+            "user_id": teacher.id,
+            "user_type": teacher.user_type,
+        }
+    )
+    headers = {"Authorization": f"Bearer {teacher_token}"}
+
+    # Teacher cannot delete a system mode.
+    forbidden = client.delete(f"/api/learning-modes/{system_mode.id}", headers=headers)
+    assert forbidden.status_code == 403
+
+    # Missing mode -> 404 for any authenticated user.
+    missing = client.delete(
+        "/api/learning-modes/999999",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert missing.status_code == 404
+
+    # Admin can delete the system mode.
+    deleted = client.delete(
+        f"/api/learning-modes/{system_mode.id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert deleted.status_code == 200
+    assert deleted.json()["success"] is True

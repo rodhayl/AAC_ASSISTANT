@@ -9,6 +9,32 @@ apart.
 
 from __future__ import annotations
 
+# Labels that match these substrings are internal dev artifacts, not real
+# symbols. Reject them so they never reach the database or suggestions.
+BAD_LABEL_SUBSTRINGS: tuple[str, ...] = (
+    "frontend-",
+    "comm-",
+    "node_modules",
+    "dist/",
+    "build/",
+    "src-",
+)
+
+
+def label_looks_bad(label: str) -> bool:
+    """True when a label is clearly an internal path/id, not a real symbol."""
+    lower = (label or "").strip().lower()
+    if not lower:
+        return True
+    if len(lower) > 50:
+        return True
+    if any(p in lower for p in BAD_LABEL_SUBSTRINGS):
+        return True
+    if "/" in lower or "\\" in lower:
+        return True
+    # More than 3 hyphens is almost certainly a path/id, not a word.
+    return lower.count("-") > 3
+
 EN_PRONOUNS: tuple[str, ...] = (
     "I",
     "you",
@@ -147,44 +173,143 @@ ES_STANDARD_FUNCTION_WORDS: tuple[str, ...] = (
     "una",
 )
 
-# Category keywords (substring-matched, lowercased) used to split fallback
-# suggestions into nouns and other words, and by the analytics noun filter.
-NOUN_CATEGORY_KEYWORDS: tuple[str, ...] = (
-    "food",
-    "drink",
-    "toy",
-    "animal",
-    "place",
-    "object",
-    "noun",
+# ARASAAC's pictogram catalog uses a small closed set of grammatical categories
+# for function words; every other category is nominal (people, animals, food,
+# objects, places, ...). Matching nouns by keyword (``noun``, ``food``,
+# ``object``, ...) misses the hundreds of ARASAAC noun categories, so the noun
+# classification is inverted: enumerate the closed classes and treat every
+# other category as a noun.
+
+VERB_CATEGORIES: frozenset[str] = frozenset({"verb", "usual verbs"})
+
+ADVERB_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "adverb",
+        "adverb of degree",
+        "adverb of manner",
+        "adverb of place",
+        "adverb of time",
+    }
 )
 
-# Category keywords used by the analytics ``places`` intent filter.
-PLACE_CATEGORY_KEYWORDS: tuple[str, ...] = (
-    "place",
-    "places",
-    "location",
-    "room",
-    "home",
-    "school",
-    "city",
-    "country",
-    "nature",
-    "transport",
-    "vehicle",
+ADJECTIVE_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "adjective",
+        "qualifying adjective",
+        "comparative adjective",
+        "demonstrative adjective",
+        "indefinite adjective",
+        "ordinal adjective",
+        "possessive adjective",
+    }
 )
 
-# Additional noun categories matched only by the analytics noun filter.
-ANALYTICS_EXTRA_NOUN_CATEGORIES: tuple[str, ...] = (
-    "person",
-    "body",
-    "clothing",
-    "vehicle",
-    "home",
-    "school",
-    "nature",
-    "generated",
+PRONOUN_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "pronoun",
+        "personal pronoun",
+        "indefinite pronoun",
+        "interrogative pronoun",
+    }
 )
+
+ARTICLE_CATEGORIES: frozenset[str] = frozenset(
+    {"article", "preposition", "conjunction"}
+)
+
+SYMBOL_CATEGORIES: frozenset[str] = frozenset(
+    {"number", "letter", "alphabet", "orthographic sign", "interjection"}
+)
+
+NON_NOUN_CATEGORIES: frozenset[str] = (
+    VERB_CATEGORIES
+    | ADVERB_CATEGORIES
+    | ADJECTIVE_CATEGORIES
+    | PRONOUN_CATEGORIES
+    | ARTICLE_CATEGORIES
+    | SYMBOL_CATEGORIES
+)
+
+PLACE_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "place",
+        "building",
+        "building facility",
+        "building room",
+        "commercial building",
+        "cultural building",
+        "educational building",
+        "educational institution",
+        "educational space",
+        "industrial building",
+        "public building",
+        "religious building",
+        "residential building",
+        "service building",
+        "facility",
+        "entertainment facility",
+        "recreational facility",
+        "sports facility",
+        "catering establishment",
+        "hospital room",
+        "medical center",
+        "playground",
+        "room",
+        "city",
+        "country",
+        "continent",
+        "region",
+        "province",
+        "spain province",
+        "spain region",
+        "urban area",
+        "rural area",
+        "mountain",
+        "river",
+        "sea and oceans",
+        "planet",
+        "landform",
+        "natural habitat",
+        "home",
+        "route",
+        "street furniture",
+        "traffic signal",
+        "beach",
+        "worksite",
+        "workplace",
+        "swimming pool",
+    }
+)
+
+
+def _category_key(category: str | None) -> str | None:
+    return category.strip().casefold() if category else None
+
+
+def category_is_verb(category: str | None) -> bool:
+    """Return True when an ARASAAC category denotes a verb."""
+    return _category_key(category) in VERB_CATEGORIES
+
+
+def category_is_pronoun(category: str | None) -> bool:
+    """Return True when an ARASAAC category denotes a pronoun."""
+    return _category_key(category) in PRONOUN_CATEGORIES
+
+
+def category_is_article(category: str | None) -> bool:
+    """Return True when an ARASAAC category is an article/preposition/conjunction."""
+    return _category_key(category) in ARTICLE_CATEGORIES
+
+
+def category_is_noun(category: str | None) -> bool:
+    """Return True for nominal ARASAAC categories (anything not closed-class)."""
+    key = _category_key(category)
+    return key is not None and key not in NON_NOUN_CATEGORIES
+
+
+def category_is_place(category: str | None) -> bool:
+    """Return True for ARASAAC categories denoting locations."""
+    return _category_key(category) in PLACE_CATEGORIES
 
 
 def standard_library_labels(lang_code: str) -> list[str]:

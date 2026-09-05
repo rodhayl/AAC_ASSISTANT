@@ -4,13 +4,46 @@
       "want": 1.0,
       "need": 0.9,
       "am": 0.8,
-      "like": 0.7
+      "like": 0.75,
+      "have": 0.7,
+      "go": 0.65,
+      "feel": 0.6
     },
     "you": {
       "are": 1.0,
       "can": 0.9,
       "want": 0.8,
-      "have": 0.7
+      "have": 0.7,
+      "need": 0.6,
+      "like": 0.55
+    },
+    "he": {
+      "is": 1.0,
+      "wants": 0.9,
+      "has": 0.8,
+      "can": 0.7,
+      "likes": 0.6
+    },
+    "she": {
+      "is": 1.0,
+      "wants": 0.9,
+      "has": 0.8,
+      "can": 0.7,
+      "likes": 0.6
+    },
+    "we": {
+      "are": 1.0,
+      "can": 0.9,
+      "want": 0.8,
+      "need": 0.7,
+      "have": 0.6
+    },
+    "they": {
+      "are": 1.0,
+      "can": 0.9,
+      "want": 0.8,
+      "have": 0.7,
+      "need": 0.6
     },
     "the": {
       "cookie": 1.0,
@@ -18,19 +51,139 @@
       "horse": 0.9,
       "milk": 0.85,
       "house": 0.8,
-      "time": 0.7
+      "time": 0.7,
+      "bathroom": 0.6,
+      "water": 0.55
     },
     "want": {
       "cookie": 1.0,
       "to": 0.8,
       "milk": 0.7,
-      "more": 0.6
+      "more": 0.6,
+      "water": 0.5,
+      "eat": 0.45,
+      "play": 0.4
     },
     "need": {
       "help": 1.0,
       "water": 0.9,
       "to": 0.8,
-      "go": 0.7
+      "go": 0.7,
+      "more": 0.6,
+      "a": 0.5
+    },
+    "like": {
+      "to": 1.0,
+      "it": 0.9,
+      "more": 0.7,
+      "you": 0.6,
+      "play": 0.5
+    },
+    "go": {
+      "to": 1.0,
+      "home": 0.9,
+      "out": 0.8,
+      "now": 0.6,
+      "in": 0.5
+    },
+    "eat": {
+      "more": 1.0,
+      "food": 0.9,
+      "now": 0.7,
+      "apple": 0.5
+    },
+    "drink": {
+      "water": 1.0,
+      "milk": 0.9,
+      "more": 0.7,
+      "now": 0.5
+    },
+    "play": {
+      "more": 1.0,
+      "now": 0.8,
+      "with": 0.6,
+      "game": 0.5
+    },
+    "see": {
+      "you": 1.0,
+      "it": 0.8,
+      "more": 0.6
+    },
+    "have": {
+      "to": 1.0,
+      "more": 0.7,
+      "it": 0.6,
+      "a": 0.5
+    },
+    "help": {
+      "me": 1.0,
+      "please": 0.9,
+      "now": 0.6,
+      "more": 0.5
+    },
+    "stop": {
+      "now": 1.0,
+      "please": 0.9,
+      "that": 0.6
+    },
+    "more": {
+      "please": 1.0,
+      "water": 0.9,
+      "milk": 0.8,
+      "food": 0.7,
+      "play": 0.6
+    },
+    "please": {
+      "help": 1.0,
+      "more": 0.9,
+      "stop": 0.8,
+      "yes": 0.5
+    },
+    "no": {
+      "more": 1.0,
+      "please": 0.8,
+      "stop": 0.7
+    },
+    "yes": {
+      "please": 1.0,
+      "more": 0.8,
+      "no": 0.5
+    },
+    "am": {
+      "hungry": 1.0,
+      "thirsty": 0.9,
+      "tired": 0.8,
+      "happy": 0.7,
+      "sad": 0.6
+    },
+    "is": {
+      "good": 1.0,
+      "bad": 0.9,
+      "big": 0.8,
+      "small": 0.7
+    },
+    "can": {
+      "you": 1.0,
+      "i": 0.9,
+      "we": 0.7,
+      "have": 0.6,
+      "go": 0.5
+    },
+    "to": {
+      "the": 1.0,
+      "go": 0.9,
+      "eat": 0.8,
+      "play": 0.7,
+      "home": 0.6
+    },
+    "in": {
+      "the": 1.0,
+      "my": 0.8,
+      "home": 0.6
+    },
+    "on": {
+      "the": 1.0,
+      "my": 0.8
     },
     "happy": {
       "today": 1.0,

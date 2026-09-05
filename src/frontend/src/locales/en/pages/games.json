@@ -3,6 +3,7 @@
     "title": "Symbol Hunt",
     "selectBoard": "Select a board to start playing",
     "notEnoughSymbols": "This board needs at least 2 symbols to play.",
+    "loadError": "Failed to load the board. Please try again.",
     "notEnoughSymbolsTitle": "Needs more symbols",
     "minSymbolsRequired": "At least 2 symbols required",
     "playNow": "Play Now",
@@ -14,6 +15,10 @@
     "playAgain": "Play Again",
     "chooseDifferent": "Choose Different Board",
     "score": "Score",
-    "round": "Round {{current}}/{{total}}"
+    "round": "Round {{current}}/{{total}}",
+    "repeat": "Repeat Instruction",
+    "back": "Back",
+    "noBoards": "No boards available yet. Ask your teacher to create one.",
+    "noDescription": "No description"
   }
 }

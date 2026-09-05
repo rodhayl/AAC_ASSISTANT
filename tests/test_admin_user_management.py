@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from src.aac_app.models import StudentTeacher
+from src.aac_app.models import User
 from src.api.main import app
 
 client = TestClient(app)
@@ -65,6 +65,56 @@ def test_admin_manage_teachers(setup_test_db, admin_token, test_db_session):
     assert response.status_code == 404
 
 
+def test_deleting_teacher_removes_their_saved_topics(
+    setup_test_db, admin_token, test_db_session
+):
+    """Account deletion must not orphan saved topics or their creator FK."""
+    from src.aac_app.models import SavedTopic
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    create = client.post(
+        "/api/auth/admin/create-user",
+        json={
+            "username": "topic_owner_teacher",
+            "password": "TeacherPass123",
+            "confirm_password": "TeacherPass123",
+            "display_name": "Topic Owner",
+            "user_type": "teacher",
+        },
+        headers=headers,
+    )
+    assert create.status_code == 200
+    teacher_id = create.json()["id"]
+
+    topic = SavedTopic(
+        user_id=teacher_id,
+        board="Board",
+        topic="Topic",
+        created_by="Topic Owner",
+        created_by_user_id=teacher_id,
+    )
+    test_db_session.add(topic)
+    test_db_session.commit()
+    test_db_session.refresh(topic)
+
+    response = client.delete(f"/api/auth/users/{teacher_id}", headers=headers)
+    assert response.status_code == 200
+
+    remaining = (
+        test_db_session.query(SavedTopic)
+        .filter(SavedTopic.id == topic.id)
+        .first()
+    )
+    assert remaining is None
+    # No dangling creator references either.
+    dangling = (
+        test_db_session.query(SavedTopic)
+        .filter(SavedTopic.created_by_user_id == teacher_id)
+        .count()
+    )
+    assert dangling == 0
+
+
 def test_update_user_validates_role_email_and_active_flag(setup_test_db, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
 
@@ -111,6 +161,16 @@ def test_update_user_validates_role_email_and_active_flag(setup_test_db, admin_t
     )
     assert duplicate_email.status_code == 400
 
+    # An empty email clears the stored value (stored as NULL, like an account
+    # created without one), instead of silently keeping the old address.
+    clear_email = client.put(
+        f"/api/auth/users/{second['id']}",
+        json={"email": ""},
+        headers=headers,
+    )
+    assert clear_email.status_code == 200
+    assert clear_email.json()["email"] is None
+
     # is_active must be a real boolean, not a truthy string.
     invalid_active = client.put(
         f"/api/auth/users/{first['id']}",
@@ -127,6 +187,16 @@ def test_update_user_validates_role_email_and_active_flag(setup_test_db, admin_t
     )
     assert valid_role.status_code == 200
     assert valid_role.json()["user_type"] == "teacher"
+
+    # A blank display name must be rejected, matching the profile contract,
+    # instead of persisting an invisible name.
+    blank_name = client.put(
+        f"/api/auth/users/{second['id']}",
+        json={"display_name": "   "},
+        headers=headers,
+    )
+    assert blank_name.status_code == 400
+    assert blank_name.json()["detail"] != "errors.auth.displayNameRequired"
 
 
 def test_students_endpoint_paginates(setup_test_db, admin_token):
@@ -197,7 +267,7 @@ def test_auth_user_pagination_is_deterministically_ordered(setup_test_db, admin_
     assert set(created_ids).issubset(first_ids + second_ids)
 
 
-def test_teacher_user_pagination_deduplicates_legacy_assignments(
+def test_teacher_user_pagination_is_idempotent_for_repeated_assignments(
     setup_test_db, admin_token, test_db_session
 ):
     headers = {"Authorization": f"Bearer {admin_token}"}
@@ -228,16 +298,27 @@ def test_teacher_user_pagination_deduplicates_legacy_assignments(
     assert student_response.status_code == 200, student_response.text
     student = student_response.json()
 
-    test_db_session.add_all(
-        [
-            StudentTeacher(student_id=student["id"], teacher_id=teacher["id"]),
-            StudentTeacher(student_id=student["id"], teacher_id=teacher["id"]),
-        ]
+    # Assignment creation is idempotent even when two callers submit the
+    # same relationship. Legacy duplicate-row cleanup is covered by the schema
+    # migration test; the live endpoint must return one roster member.
+    from tests.auth_helpers import create_test_headers
+
+    teacher_headers = create_test_headers(teacher["id"], teacher["username"], "teacher")
+    assignment_payload = {"student_id": student["id"], "teacher_id": teacher["id"]}
+    first_assignment = client.post(
+        "/api/users/assign-student",
+        json=assignment_payload,
+        headers=teacher_headers,
     )
-    test_db_session.commit()
+    second_assignment = client.post(
+        "/api/users/assign-student",
+        json=assignment_payload,
+        headers=teacher_headers,
+    )
+    assert first_assignment.status_code in {200, 201}
+    assert second_assignment.status_code == 200
 
     # The request must be authenticated as the teacher, not the admin.
-    from tests.test_utils_auth import create_test_headers
 
     teacher_page = client.get(
         "/api/auth/users",
@@ -247,6 +328,64 @@ def test_teacher_user_pagination_deduplicates_legacy_assignments(
     assert teacher_page.status_code == 200, teacher_page.text
     matching = [item for item in teacher_page.json() if item["id"] == student["id"]]
     assert len(matching) == 1
+
+
+def _create_admin_via_api(headers, username):
+    response = client.post(
+        "/api/auth/admin/create-user",
+        json={
+            "username": username,
+            "password": "AdminPass123",
+            "confirm_password": "AdminPass123",
+            "display_name": username,
+            "user_type": "admin",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_last_active_admin_cannot_deactivate_or_demote_self(
+    setup_test_db, admin_token, test_db_session
+):
+    """Self-deactivation/demotion of the only active admin would strand the
+    app in setup: reject it. Self-deletion is already blocked separately, so
+    the update path is the real last-admin escape hatch."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    admin_id = test_db_session.query(User.id).filter(User.username == "admin_test").scalar()
+    assert admin_id is not None
+
+    deactivate = client.put(
+        f"/api/auth/users/{admin_id}",
+        json={"is_active": False},
+        headers=headers,
+    )
+    assert deactivate.status_code == 400
+    assert deactivate.json()["detail"] != "errors.auth.lastAdminRequired"
+
+    demote = client.put(
+        f"/api/auth/users/{admin_id}",
+        json={"user_type": "teacher"},
+        headers=headers,
+    )
+    assert demote.status_code == 400
+    assert demote.json()["detail"] != "errors.auth.lastAdminRequired"
+
+    # The admin is still active and an admin.
+    still = test_db_session.query(User).filter(User.id == admin_id).first()
+    assert still.user_type == "admin"
+    assert still.is_active is True
+
+    # Once a second active admin exists, self-deactivation is allowed.
+    _create_admin_via_api(headers, "second_admin_self_deactivate")
+    deactivate_ok = client.put(
+        f"/api/auth/users/{admin_id}",
+        json={"is_active": False},
+        headers=headers,
+    )
+    assert deactivate_ok.status_code == 200
+    assert deactivate_ok.json()["is_active"] is False
 
 
 def test_teacher_isolation(setup_test_db, admin_token):

@@ -51,6 +51,20 @@ def test_release_version_defaults_are_aligned(monkeypatch):
     assert frontend_package["version"] == "0.0.0"
     assert version == Settings(_env_file=None).APP_VERSION
 
+    # CI pins the release version in APP_VERSION env vars, installer artifact
+    # names, and packaged-version assertions; every pinned copy must match
+    # the canonical pyproject version (IP addresses excluded).
+    ci_workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    ci_versions = {
+        match.group(1)
+        for line in ci_workflow.splitlines()
+        if "127.0.0.1" not in line
+        for match in [re.search(r"\b(\d+\.\d+\.\d+)\b", line)]
+        if match is not None
+    }
+    assert ci_versions, "expected pinned release versions in the CI workflow"
+    assert ci_versions == {version}
+
 
 def test_production_bootstrap_password_uses_shared_strength_policy():
     weak_password = "weak-password"

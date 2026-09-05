@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import type { Board, BoardSymbol } from '../types';
+import type { Board, BoardCreateData, BoardSymbol } from '../types';
 import api, { apiOffline, extractError } from '../lib/api';
+import i18n from '../i18n/index';
 import { useNotificationsStore } from './notificationsStore';
 
 interface BoardState {
@@ -28,40 +29,42 @@ interface BoardState {
   fetchBoards: (userId?: number, name?: string, forceRefresh?: boolean, page?: number) => Promise<void>;
   fetchAssignedBoards: (studentId: number, forceRefresh?: boolean) => Promise<void>;
   fetchBoard: (id: number, forceRefresh?: boolean) => Promise<void>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  createBoard: (boardData: any, userId: number) => Promise<void>;
+  createBoard: (boardData: BoardCreateData, userId: number) => Promise<void>;
   updateBoard: (id: number, boardData: Partial<Board>) => Promise<void>;
   deleteBoard: (id: number, skipRefresh?: boolean) => Promise<void>;
   duplicateBoard: (id: number, userId: number) => Promise<void>;
   addSymbolToBoard: (boardId: number, symbolId: number, position: { x: number, y: number }) => Promise<BoardSymbol>;
-  updateBoardSymbol: (boardId: number, symbolId: number, updates: Record<string, unknown>) => Promise<void>;
   deleteBoardSymbol: (boardId: number, symbolId: number, signal?: AbortSignal) => Promise<void>;
   batchUpdateSymbols: (boardId: number, updates: Array<Record<string, unknown>>) => Promise<void>;
   assignBoardToStudent: (boardId: number, studentId: number, assignedBy?: number) => Promise<void>;
-  unassignBoardFromStudent: (boardId: number, studentId: number) => Promise<void>;
+  reset: () => void;
 }
 
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-const PAGE_SIZE = 100;
-
-let boardRequestSequence = 0;
+const PAGE_SIZE = 100;let boardRequestSequence = 0;
 let boardsRequestSequence = 0;
 let assignedBoardsRequestSequence = 0;
 let listRequestCount = 0;
 let mutationRequestCount = 0;
+let mutationContext = 0;
 
 export const useBoardStore = create<BoardState>((set, get) => {
   const beginMutation = () => {
+    const context = mutationContext;
     mutationRequestCount += 1;
     set({ isLoading: true, error: null });
+    return context;
   };
 
-  const finishMutation = (errorMessage?: string) => {
+  const finishMutation = (context: number, errorMessage?: string) => {
+    if (context !== mutationContext) return;
     mutationRequestCount = Math.max(0, mutationRequestCount - 1);
     set(errorMessage
       ? { error: errorMessage, isLoading: mutationRequestCount > 0 }
       : { isLoading: mutationRequestCount > 0 });
   };
+
+  const isCurrentMutation = (context: number) => context === mutationContext;
 
   return {
   boards: [],
@@ -100,19 +103,12 @@ export const useBoardStore = create<BoardState>((set, get) => {
         if (userId) params.user_id = userId;
         if (name) params.name = name;
         
-        let limit = PAGE_SIZE;
-        if (forceRefresh && page === 1 && boards.length > PAGE_SIZE) {
-            // If we have more than one page loaded, try to fetch enough to cover what we have
-            // Round up to nearest PAGE_SIZE
-            limit = Math.ceil(boards.length / PAGE_SIZE) * PAGE_SIZE;
-        }
-
-        params.skip = (page - 1) * limit;
-
-        if (page > 1) {
-            params.skip = (page - 1) * PAGE_SIZE;
-            limit = PAGE_SIZE; // Enforce standard page size for subsequent pages
-        }
+        // Keep every request on the same fixed page boundary. A refresh must
+        // replace page one rather than requesting a larger first page; otherwise
+        // a later page request starts at offset 100 and repeatedly re-fetches
+        // items already present in state.
+        const limit = PAGE_SIZE;
+        params.skip = (page - 1) * PAGE_SIZE;
         
         params.limit = limit;
         
@@ -122,6 +118,11 @@ export const useBoardStore = create<BoardState>((set, get) => {
         const hasMore = newBoards.length === limit;
 
         if (requestId !== boardsRequestSequence) return;
+        // This is the newest list request, so any other in-flight list request
+        // is stale and its result will be discarded. Clear the loading flag
+        // now: waiting for the stale request to settle would leave the flag
+        // stuck when that request finishes last (it is correctly barred from
+        // touching the indicator by the requestId check).
         set((state) => {
             const updatedBoards = isPagination ? [...state.boards, ...newBoards] : newBoards;
             
@@ -132,7 +133,7 @@ export const useBoardStore = create<BoardState>((set, get) => {
 
             return {
               boards: uniqueBoards,
-              isListLoading: listRequestCount > 1,
+              isListLoading: false,
               isFiltered: !!name,
               hasMore,
               page,
@@ -142,13 +143,21 @@ export const useBoardStore = create<BoardState>((set, get) => {
             };
         });
       } catch (error: unknown) {
-      if (requestId === boardsRequestSequence) {
-        set({ error: extractError(error, 'Failed to fetch boards'), isListLoading: listRequestCount > 1 });
+        if (requestId === boardsRequestSequence) {
+          set({
+            error: extractError(error, 'Failed to fetch boards'),
+            isListLoading: false,
+          });
+        }
+      } finally {
+        listRequestCount = Math.max(0, listRequestCount - 1);
+        // Safety net: a request from a previous auth context must not clear a
+        // newer request's indicator, so only the newest request may reset it.
+        if (requestId === boardsRequestSequence && listRequestCount === 0) {
+          set({ isListLoading: false });
+        }
       }
-    } finally {
-      listRequestCount = Math.max(0, listRequestCount - 1);
-      if (listRequestCount === 0) set({ isListLoading: false });
-    }
+
   },
 
   fetchBoard: async (id, forceRefresh = false) => {
@@ -173,105 +182,147 @@ export const useBoardStore = create<BoardState>((set, get) => {
         isBoardLoading: false,
       });
     } catch (error: unknown) {
-      console.error('Fetch board error:', error);
       if (requestId === boardRequestSequence) {
-        set({ error: extractError(error, 'Failed to fetch board'), isBoardLoading: false });
+        set({ error: extractError(error, i18n.t('boards:boardLoadFailed')), isBoardLoading: false });
       }
     }
   },
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  createBoard: async (boardData: any, userId) => {
-    beginMutation();
+  createBoard: async (boardData: BoardCreateData, userId) => {
+    const context = beginMutation();
     try {
       await api.post('/boards/', boardData, {
         params: { user_id: userId } // In real app, userId comes from token
       });
+      if (!isCurrentMutation(context)) return;
       const { currentUserId, currentSearchQuery } = get();
       await get().fetchBoards(currentUserId, currentSearchQuery, true, 1);
-      finishMutation();
+      finishMutation(context);
     } catch (error: unknown) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if (typeof error === 'object' && error && (error as any).message === 'offline') {
-        // Offline handling logic if needed
-      }
-      finishMutation(extractError(error, 'Failed to create board'));
+      finishMutation(context, extractError(error, 'Failed to create board'));
       throw error;
     }
   },
 
   updateBoard: async (id, boardData) => {
-    beginMutation();
+    const context = beginMutation();
     try {
       const response = await api.put(`/boards/${id}`, boardData);
+      if (!isCurrentMutation(context)) return;
       set((state) => ({
         boards: state.boards.map(b => b.id === id ? response.data : b),
         currentBoard: state.currentBoard?.id === id ? response.data : state.currentBoard,
       }));
-      finishMutation();
+      finishMutation(context);
     } catch (error: unknown) {
-      finishMutation(extractError(error, 'Failed to update board'));
+      finishMutation(context, extractError(error, 'Failed to update board'));
       throw error;
     }
   },
 
   deleteBoard: async (id, skipRefresh = false) => {
-    beginMutation();
+    const context = beginMutation();
     try {
       await api.delete(`/boards/${id}`);
+      if (!isCurrentMutation(context)) return;
       
       if (skipRefresh) {
         set((state) => ({
           boards: state.boards.filter(b => b.id !== id),
           currentBoard: state.currentBoard?.id === id ? null : state.currentBoard,
         }));
-        finishMutation();
+        finishMutation(context);
       } else {
         const { currentUserId, currentSearchQuery } = get();
         // Always refresh page 1 to handle pagination gaps correctly
         await get().fetchBoards(currentUserId, currentSearchQuery, true, 1);
-        finishMutation();
+        if (!isCurrentMutation(context)) return;
+        finishMutation(context);
       }
     } catch (error: unknown) {
-      finishMutation(extractError(error, 'Failed to delete board'));
+      finishMutation(context, extractError(error, 'Failed to delete board'));
       throw error;
     }
   },
 
   duplicateBoard: async (id, userId) => {
-    beginMutation();
+    const context = beginMutation();
     try {
-      const offline = apiOffline.isOffline()
-      let base: Board
-      if (offline) {
-        const found = get().boards.find(b => b.id === id) || get().currentBoard
-        if (!found || found.id !== id) throw new Error('Source board unavailable offline')
-        base = found
-      } else {
-        base = (await api.get(`/boards/${id}`)).data
+      if (apiOffline.isOffline()) {
+        throw new Error(
+          i18n.t('boards:offlineDuplicateUnsupported'),
+        );
       }
+      const base: Board = (await api.get(`/boards/${id}`)).data;
+      if (!isCurrentMutation(context)) return;
+      // Preserve grid, locale and the language-learning flag so a duplicate is
+      // a faithful copy. AI content generation is intentionally NOT triggered
+      // on duplicate: the board is created with AI disabled, its symbols are
+      // copied manually, and AI settings are restored via the update endpoint.
       const createRes = await api.post('/boards/', {
-        name: `${base.name} (Copy)`,
+        name: `${base.name}${i18n.t('boards:copySuffix')}`,
         description: base.description,
         category: base.category,
         is_public: base.is_public,
-        is_template: base.is_template
+        is_template: base.is_template,
+        grid_rows: base.grid_rows ?? 4,
+        grid_cols: base.grid_cols ?? 5,
+        locale: base.locale ?? 'en',
+        is_language_learning: base.is_language_learning ?? false,
+        ai_enabled: false
       }, { params: { user_id: userId } });
+      if (!isCurrentMutation(context)) return;
       const newBoard = createRes.data;
+      // A copied symbol keeps its folder link only when the new owner can
+      // actually view the target board. Resolving every link before the first
+      // symbol POST prevents a mid-way 403 from orphaning a partial copy, and
+      // avoids copying broken links (private boards of the original owner,
+      // boards deleted since the source board was built).
+      const effectiveLinkedIds = new Map<number, number | null>();
       for (const s of base.symbols || []) {
+        if (!isCurrentMutation(context)) return;
+        if (s.linked_board_id == null) {
+          effectiveLinkedIds.set(s.id, null);
+          continue;
+        }
+        try {
+          await api.get(`/boards/${s.linked_board_id}`, {
+            params: { skip_translation: true },
+          });
+          if (!isCurrentMutation(context)) return;
+          effectiveLinkedIds.set(s.id, s.linked_board_id);
+        } catch {
+          if (!isCurrentMutation(context)) return;
+          effectiveLinkedIds.set(s.id, null);
+        }
+      }
+      for (const s of base.symbols || []) {
+        if (!isCurrentMutation(context)) return;
         await api.post(`/boards/${newBoard.id}/symbols`, {
           symbol_id: s.symbol?.id ?? s.symbol_id,
           position_x: s.position_x,
           position_y: s.position_y,
           size: s.size,
           is_visible: s.is_visible,
-          custom_text: s.custom_text
+          custom_text: s.custom_text,
+          color: s.color ?? null,
+          linked_board_id: effectiveLinkedIds.get(s.id) ?? null
         });
       }
+      if (base.ai_enabled) {
+        if (!isCurrentMutation(context)) return;
+        await api.put(`/boards/${newBoard.id}`, {
+          ai_enabled: true,
+          ai_provider: base.ai_provider,
+          ai_model: base.ai_model
+        });
+      }
+      if (!isCurrentMutation(context)) return;
       await get().fetchBoards(userId, get().currentSearchQuery, true, 1);
-      finishMutation();
+      if (!isCurrentMutation(context)) return;
+      finishMutation(context);
     } catch (e: unknown) {
-      finishMutation(extractError(e, 'Failed to duplicate board'));
+      finishMutation(context, extractError(e, 'Failed to duplicate board'));
       throw e;
     }
   },
@@ -294,25 +345,35 @@ export const useBoardStore = create<BoardState>((set, get) => {
     try {
       const response = await api.get('/boards/assigned', { params: { student_id: studentId } });
       if (requestId === assignedBoardsRequestSequence) {
+        // Newest request wins; stale in-flight ones are ignored, so clear the
+        // loading flag instead of counting them (see fetchBoards).
         set({
           assignedBoards: response.data,
-          isListLoading: listRequestCount > 1,
+          isListLoading: false,
           assignedBoardsLastFetchTime: now,
           assignedBoardsStudentId: studentId,
         });
       }
     } catch (error: unknown) {
       if (requestId === assignedBoardsRequestSequence) {
-        set({ error: extractError(error, 'Failed to fetch assigned boards'), isListLoading: listRequestCount > 1 });
+        set({
+          error: extractError(error, 'Failed to fetch assigned boards'),
+          isListLoading: false,
+        });
       }
     } finally {
       listRequestCount = Math.max(0, listRequestCount - 1);
-      if (listRequestCount === 0) set({ isListLoading: false });
+      // A request from a previous auth context may finish after a new request
+      // starts. It must not clear the new user's loading indicator.
+      if (requestId === assignedBoardsRequestSequence && listRequestCount === 0) {
+        set({ isListLoading: false });
+      }
     }
+
   },
 
   addSymbolToBoard: async (boardId, symbolId, position) => {
-    beginMutation();
+    const context = beginMutation();
     try {
       const response = await api.post(`/boards/${boardId}/symbols`, {
         symbol_id: symbolId,
@@ -321,6 +382,7 @@ export const useBoardStore = create<BoardState>((set, get) => {
         size: 1,
         is_visible: true
       });
+      if (!isCurrentMutation(context)) return response.data;
       
       // Update current board if it's the one being modified
       const currentBoard = get().currentBoard;
@@ -332,40 +394,19 @@ export const useBoardStore = create<BoardState>((set, get) => {
           }
         });
       }
-      finishMutation();
+      finishMutation(context);
       return response.data;
     } catch (error: unknown) {
-      finishMutation(extractError(error, 'Failed to add symbol'));
-      throw error;
-    }
-  },
-
-  updateBoardSymbol: async (boardId, symbolId, updates) => {
-    beginMutation();
-    try {
-      const response = await api.put(`/boards/${boardId}/symbols/${symbolId}`, updates);
-      
-      // Update current board symbols
-      const currentBoard = get().currentBoard;
-      if (currentBoard && currentBoard.id === boardId) {
-        set({
-          currentBoard: {
-            ...currentBoard,
-            symbols: currentBoard.symbols.map(s => s.id === symbolId ? response.data : s)
-          }
-        });
-      }
-      finishMutation();
-    } catch (error: unknown) {
-      finishMutation(extractError(error, 'Failed to update symbol'));
+      finishMutation(context, extractError(error, 'Failed to add symbol'));
       throw error;
     }
   },
 
   deleteBoardSymbol: async (boardId, symbolId, signal) => {
-    beginMutation();
+    const context = beginMutation();
     try {
       await api.delete(`/boards/${boardId}/symbols/${symbolId}`, { signal });
+      if (!isCurrentMutation(context)) return;
       
       // Update current board symbols
       const currentBoard = get().currentBoard;
@@ -377,64 +418,83 @@ export const useBoardStore = create<BoardState>((set, get) => {
           }
         });
       }
-      finishMutation();
+      finishMutation(context);
     } catch (error: unknown) {
-      finishMutation(extractError(error, 'Failed to delete symbol'));
+      finishMutation(context, extractError(error, 'Failed to delete symbol'));
       throw error;
     }
   },
 
   batchUpdateSymbols: async (boardId, updates) => {
-    beginMutation();
+    const context = beginMutation();
     try {
       await api.put(`/boards/${boardId}/symbols/batch`, updates);
+      if (!isCurrentMutation(context)) return;
       
       // Refresh the board to get updated symbols
       await get().fetchBoard(boardId, true);
-      finishMutation();
+      if (!isCurrentMutation(context)) return;
+      finishMutation(context);
     } catch (error: unknown) {
-      finishMutation(extractError(error, 'Failed to batch update symbols'));
+      finishMutation(context, extractError(error, 'Failed to batch update symbols'));
       throw error;
     }
   },
 
+  reset: () => {
+    boardRequestSequence += 1;
+    boardsRequestSequence += 1;
+    assignedBoardsRequestSequence += 1;
+    mutationContext += 1;
+    mutationRequestCount = 0;
+    set({
+      boards: [],
+      assignedBoards: [],
+      currentBoard: null,
+      isLoading: false,
+      isListLoading: false,
+      isBoardLoading: false,
+      error: null,
+      lastFetchTime: null,
+      assignedBoardsLastFetchTime: null,
+      assignedBoardsStudentId: undefined,
+      isFiltered: false,
+      hasMore: true,
+      page: 1,
+      currentUserId: undefined,
+      currentSearchQuery: '',
+    });
+  },
+
   assignBoardToStudent: async (boardId, studentId, assignedBy) => {
-    beginMutation();
+    const context = beginMutation();
     try {
       await api.post(`/boards/${boardId}/assign`, {
         student_id: studentId,
         assigned_by: assignedBy
       });
+      if (!isCurrentMutation(context)) return;
       set((state) => ({
         assignedBoardsLastFetchTime:
           state.assignedBoardsStudentId === studentId ? null : state.assignedBoardsLastFetchTime,
       }));
-      try {
-        useNotificationsStore.getState().add({ title: 'Board assigned', message: `Board ${boardId} assigned to student ${studentId}` })
-      } catch { /* notification optional */ }
-      finishMutation();
+      useNotificationsStore.getState().add({
+        title: i18n.t('boards:boardAssigned'),
+        message: i18n.t('boards:boardAssignedTo', { boardId, studentId }),
+      })
+      finishMutation(context);
     } catch (e: unknown) {
-      finishMutation(extractError(e, 'Failed to assign board'));
-      throw e;
-    }
-  }
-  ,
-  unassignBoardFromStudent: async (boardId, studentId) => {
-    beginMutation();
-    try {
-      await api.delete(`/boards/${boardId}/assign/${studentId}`);
-      set((state) => ({
-        assignedBoardsLastFetchTime:
-          state.assignedBoardsStudentId === studentId ? null : state.assignedBoardsLastFetchTime,
-      }));
-      try {
-        useNotificationsStore.getState().add({ title: 'Board unassigned', message: `Board ${boardId} unassigned from student ${studentId}` })
-      } catch { /* notification optional */ }
-      finishMutation();
-    } catch (e: unknown) {
-      finishMutation(extractError(e, 'Failed to unassign board'));
+      finishMutation(context, extractError(e, 'Failed to assign board'));
       throw e;
     }
   }
   };
 });
+
+if (typeof window !== 'undefined') {
+  const resetForAuthContextChange = () => {
+    useBoardStore.getState().reset();
+  };
+  window.addEventListener('aac:auth-logout', resetForAuthContextChange);
+  window.addEventListener('aac:auth-context-changed', resetForAuthContextChange);
+}

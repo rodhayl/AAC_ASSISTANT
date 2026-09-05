@@ -1,20 +1,70 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '../store/authStore'
 import api, { extractError } from '../lib/api'
-import type { Board, StudentBoardSummary, User } from '../types'
+import { walkPages } from '../lib/pagination'
+import type { Board, StudentBoardSummary, User, UserPreferences } from '../types'
 import { useTranslation } from 'react-i18next'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
+import { StatusMessage } from '../components/ui/StatusMessage'
 import { Toggle } from '../components/ui/Toggle'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { ResetPasswordModal } from '../components/common/ResetPasswordModal'
 import { GuardianProfileModal } from '../components/students/GuardianProfileModal'
-import { Sparkles, Volume2 } from 'lucide-react'
+import { ChevronDown, Sparkles, Volume2 } from 'lucide-react'
 import { LoadingState } from '../components/ui/LoadingState'
+import { useToastStore } from '../store/toastStore'
+import { FormLabel } from '@/components/ui/FormLabel'
+import { Button } from '../components/ui/button';
+
+type TriState = 'default' | 'true' | 'false'
+
+interface CreateSafetyState {
+  age: string
+  filterLevel: 'default' | 'strict' | 'standard' | 'relaxed'
+  forbiddenTopics: string
+  triggerWords: string
+  block_ai_chat: TriState
+  block_board_ai: TriState
+  block_custom_topics: TriState
+  block_autogen_pictograms: TriState
+  block_social_messaging: TriState
+  sentinel_moderation: TriState
+}
+
+const DEFAULT_SAFETY: CreateSafetyState = {
+  age: '',
+  filterLevel: 'default',
+  forbiddenTopics: '',
+  triggerWords: '',
+  block_ai_chat: 'default',
+  block_board_ai: 'default',
+  block_custom_topics: 'default',
+  block_autogen_pictograms: 'default',
+  block_social_messaging: 'default',
+  sentinel_moderation: 'default',
+}
+
+// Mirrors the guardian-profile modal's feature-gate list and label keys.
+const FEATURE_LOCK_FIELDS = [
+  ['block_ai_chat', 'blockChat'],
+  ['block_board_ai', 'blockBoardAI'],
+  ['block_custom_topics', 'blockCustomTopics'],
+  ['block_autogen_pictograms', 'blockAutogen'],
+  ['block_social_messaging', 'blockSocial'],
+] as const
 
 
 export function Students() {
   const user = useAuthStore((state) => state.user)
+  const addToast = useToastStore((state) => state.addToast)
   const { t } = useTranslation(['students', 'settings'])
-  const [students, setStudents] = useState<User[]>([])
+  const [students, setStudents] = useState<StudentBoardSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editId, setEditId] = useState<number | null>(null)
@@ -31,6 +81,8 @@ export function Students() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [createLoading, setCreateLoading] = useState(false)
+  const [showSafetySection, setShowSafetySection] = useState(false)
+  const [newSafety, setNewSafety] = useState<CreateSafetyState>(DEFAULT_SAFETY)
 
   const [assignModalOpen, setAssignModalOpen] = useState(false)
   const [selectedStudent, setSelectedStudent] = useState<User | null>(null)
@@ -46,18 +98,35 @@ export function Students() {
 
   const [preferencesModalOpen, setPreferencesModalOpen] = useState(false)
   const [preferencesStudent, setPreferencesStudent] = useState<User | null>(null)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [studentPreferences, setStudentPreferences] = useState<any>({ voice_mode_enabled: true })
+  const [studentPreferences, setStudentPreferences] = useState<Pick<UserPreferences, 'voice_mode_enabled'>>({ voice_mode_enabled: true })
   const [preferencesLoading, setPreferencesLoading] = useState(false)
+  const studentsLoadRequestRef = useRef(0)
+  const availableBoardsRequestRef = useRef(0)
+  const preferencesRequestRef = useRef(0)
+  const assignMutationRequestRef = useRef(0)
+  const studentMutationRequestRef = useRef(0)
+  const studentContextKey = `${user?.id ?? 'anonymous'}:${user?.user_type ?? 'anonymous'}`
+  const studentContextRef = useRef(studentContextKey)
+  studentContextRef.current = studentContextKey
 
   const loadStudents = useCallback(async (rethrow = false) => {
+    const requestId = ++studentsLoadRequestRef.current
     setLoading(true)
     setError(null)
     try {
-      const res = await api.get('/auth/users/student-summaries', {
-        params: { limit: 100 },
+      // The endpoint is paginated at 500 rows. Continue until the final
+      // page so large admin rosters are not silently truncated.
+      const summaries = await walkPages<StudentBoardSummary>({
+        pageSize: 500,
+        fetchPage: async (skip) => {
+          const res = await api.get<StudentBoardSummary[]>('/auth/users/student-summaries', {
+            params: { ...(skip > 0 ? { skip } : {}), limit: 500 },
+          })
+          return res.data
+        },
+        isCancelled: () => requestId !== studentsLoadRequestRef.current,
       })
-      const summaries = res.data as StudentBoardSummary[]
+      if (requestId !== studentsLoadRequestRef.current) return
       setStudents(summaries)
       setAssignedBoards(
         Object.fromEntries(
@@ -65,125 +134,286 @@ export function Students() {
         ),
       )
     } catch (e: unknown) {
+      if (requestId !== studentsLoadRequestRef.current) return
       setError(extractError(e, t('errors.loadFailed')))
       if (rethrow) throw e
     } finally {
-      setLoading(false)
+      if (requestId === studentsLoadRequestRef.current) {
+        setLoading(false)
+      }
     }
   }, [t])
 
   useEffect(() => {
-    void loadStudents()
-  }, [loadStudents, user])
+    // Clear all account-scoped UI before loading the next roster. Without this
+    // reset, the previous account's students and assignment chips remain
+    // visible during the new request and can be acted on with the new token.
+    studentsLoadRequestRef.current += 1
+    availableBoardsRequestRef.current += 1
+    preferencesRequestRef.current += 1
+    assignMutationRequestRef.current += 1
+    studentMutationRequestRef.current += 1
+    setStudents([])
+    setAssignedBoards({})
+    setAvailableBoards([])
+    setAssignModalOpen(false)
+    setSelectedStudent(null)
+    setPreferencesModalOpen(false)
+    setPreferencesStudent(null)
+    setPreferencesLoading(false)
+    setEditId(null)
+    setDeleteState({ isOpen: false, student: null })
+    setResetPasswordModalOpen(false)
+    setResetPasswordStudent(null)
+    setResetPasswordValue('')
+    setGuardianModalOpen(false)
+    setSelectedGuardianStudent(null)
+    setCreateModalOpen(false)
+    setCreateLoading(false)
+    setError(null)
 
-  const loadAvailableBoards = async () => {
+    void loadStudents()
+    return () => {
+      // Invalidate every request tied to the previous authenticated context;
+      // late modal/list responses must not update a new session or an
+      // unmounted page.
+      studentsLoadRequestRef.current += 1
+      availableBoardsRequestRef.current += 1
+      preferencesRequestRef.current += 1
+      assignMutationRequestRef.current += 1
+      studentMutationRequestRef.current += 1
+    }
+  }, [loadStudents, studentContextKey])
+
+  const loadAvailableBoards = async (requestId: number) => {
     try {
-      const res = await api.get('/boards/', { params: { user_id: user?.id } })
-      setAvailableBoards(res.data)
+      // Admins may assign any teacher's board, so list everything for them;
+      // teachers stay scoped to their own boards. The endpoint is paginated;
+      // continue past the first page for large board libraries.
+      const boards = await walkPages<Board>({
+        pageSize: 1000,
+        fetchPage: async (skip) => {
+          const params = {
+            ...(skip > 0 ? { skip } : {}),
+            limit: 1000,
+            ...(user?.user_type === 'admin' ? {} : { user_id: user?.id }),
+          }
+          const res = await api.get<Board[]>('/boards/', { params })
+          return res.data
+        },
+        isCancelled: () => requestId !== availableBoardsRequestRef.current,
+      })
+      if (requestId !== availableBoardsRequestRef.current) return
+      setAvailableBoards(boards)
     } catch (e) {
+      if (requestId !== availableBoardsRequestRef.current) return
+      setError(extractError(e, t('errors.loadBoardsFailed')))
       console.error('Failed to load boards:', e)
     }
   }
 
   const handleDeleteStudent = async () => {
-    const s = deleteState.student
-    if (!s) return
+    // Only rendered inside the confirm dialog, which requires a student.
+    const s = deleteState.student!
+    const contextKey = studentContextKey
+    const requestId = ++studentMutationRequestRef.current
+    const isCurrentRequest = () =>
+      requestId === studentMutationRequestRef.current &&
+      studentContextRef.current === contextKey
 
     try {
       await api.delete(`/auth/users/${s.id}`)
+      if (!isCurrentRequest()) return
       setStudents(prev => prev.filter(x => x.id !== s.id))
       setDeleteState({ isOpen: false, student: null })
+      addToast(t('success.deleted'), 'success')
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.deleteFailed')))
-      setDeleteState({ isOpen: false, student: null })
+      if (isCurrentRequest()) {
+        setError(extractError(e, t('errors.deleteFailed')))
+        setDeleteState({ isOpen: false, student: null })
+      }
     }
   }
 
   const handleAssignBoard = async (boardId: number) => {
-    if (!selectedStudent) return
+    // Only rendered inside the assign modal, which requires a selected student.
+    const studentId = selectedStudent!.id
+    const contextId = availableBoardsRequestRef.current
+    const requestId = ++assignMutationRequestRef.current
     setAssignLoading(true)
     try {
-      await api.post(`/boards/${boardId}/assign`, { student_id: selectedStudent.id })
+      await api.post(`/boards/${boardId}/assign`, { student_id: studentId })
+      if (
+        contextId !== availableBoardsRequestRef.current ||
+        requestId !== assignMutationRequestRef.current
+      ) {
+        return
+      }
       const board = availableBoards.find((candidate) => candidate.id === boardId)
       if (board) {
         setAssignedBoards((prev) => {
-          const current = prev[selectedStudent.id] || []
-          if (current.some((assigned) => assigned.id === board.id)) return prev
+          const current = prev[studentId] || []
+          if (current.some((assignedBoard) => assignedBoard.id === board.id)) {
+            return prev
+          }
           return {
             ...prev,
-            [selectedStudent.id]: [...current, board],
+            [studentId]: [...current, board],
           }
         })
-      } else {
-        // The available-board list may have changed while the modal was open.
-        // Refresh the authoritative summary before closing the modal.
-        await loadStudents(true)
       }
-      setAssignModalOpen(false)
+      closeAssignModal()
+      addToast(t('success.boardAssigned'), 'success')
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.assignFailed')))
+      if (
+        contextId === availableBoardsRequestRef.current &&
+        requestId === assignMutationRequestRef.current
+      ) {
+        setError(extractError(e, t('errors.assignFailed')))
+      }
     } finally {
-      setAssignLoading(false)
+      if (
+        contextId === availableBoardsRequestRef.current &&
+        requestId === assignMutationRequestRef.current
+      ) {
+        setAssignLoading(false)
+      }
     }
   }
 
   const handleUnassignBoard = async (studentId: number, boardId: number) => {
+    const contextKey = studentContextKey
+    const requestId = ++studentMutationRequestRef.current
+    const isCurrentRequest = () =>
+      requestId === studentMutationRequestRef.current &&
+      studentContextRef.current === contextKey
     try {
       await api.delete(`/boards/${boardId}/assign/${studentId}`)
+      if (!isCurrentRequest()) return
       setAssignedBoards((prev) => ({
         ...prev,
         [studentId]: (prev[studentId] || []).filter((board) => board.id !== boardId),
       }))
+      addToast(t('success.boardUnassigned'), 'success')
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.unassignFailed')))
+      if (isCurrentRequest()) {
+        setError(extractError(e, t('errors.unassignFailed')))
+      }
     }
   }
 
   const openAssignModal = async (student: User) => {
+    const requestId = ++availableBoardsRequestRef.current
+    assignMutationRequestRef.current += 1
     setSelectedStudent(student)
-    await loadAvailableBoards()
-    setAssignModalOpen(true)
+    await loadAvailableBoards(requestId)
+    if (requestId === availableBoardsRequestRef.current) {
+      setAssignModalOpen(true)
+    }
+  }
+
+  const closeAssignModal = () => {
+    availableBoardsRequestRef.current += 1
+    assignMutationRequestRef.current += 1
+    setAssignLoading(false)
+    setAssignModalOpen(false)
+    setSelectedStudent(null)
   }
 
   const openPreferencesModal = async (student: User) => {
+    const requestId = ++preferencesRequestRef.current
     setPreferencesStudent(student)
     setPreferencesLoading(true)
     setPreferencesModalOpen(true)
     try {
       const res = await api.get(`/auth/users/${student.id}/preferences`)
-      setStudentPreferences(res.data)
+      if (requestId !== preferencesRequestRef.current) return
+      setStudentPreferences({ voice_mode_enabled: res.data.voice_mode_enabled ?? true })
     } catch (e) {
+      if (requestId !== preferencesRequestRef.current) return
       console.error(e)
       setStudentPreferences({ voice_mode_enabled: true })
+      addToast(t('errors.profileLoadFailed'), 'error')
     } finally {
-      setPreferencesLoading(false)
+      if (requestId === preferencesRequestRef.current) {
+        setPreferencesLoading(false)
+      }
     }
   }
 
+  const closePreferencesModal = () => {
+    preferencesRequestRef.current += 1
+    setPreferencesLoading(false)
+    setPreferencesModalOpen(false)
+    setPreferencesStudent(null)
+  }
+
   const saveStudentPreferences = async () => {
-    if (!preferencesStudent) return
+    // Only rendered inside the preferences modal, which requires a student.
+    const requestId = preferencesRequestRef.current
     setPreferencesLoading(true)
     try {
-      await api.put(`/auth/users/${preferencesStudent.id}/preferences`, studentPreferences)
-      setPreferencesModalOpen(false)
+      await api.put(`/auth/users/${preferencesStudent!.id}/preferences`, studentPreferences)
+      if (requestId !== preferencesRequestRef.current) return
+      closePreferencesModal()
       setPreferencesStudent(null)
+      addToast(t('success.saved'), 'success')
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.updateFailed')))
+      if (requestId === preferencesRequestRef.current) {
+        setError(extractError(e, t('errors.updateFailed')))
+      }
     } finally {
-      setPreferencesLoading(false)
+      if (requestId === preferencesRequestRef.current) {
+        setPreferencesLoading(false)
+      }
     }
   }
 
   const handleCreateStudent = async (e: React.FormEvent) => {
     e.preventDefault()
+    const contextKey = studentContextKey
+    const requestId = ++studentMutationRequestRef.current
+    const isCurrentRequest = () =>
+      requestId === studentMutationRequestRef.current &&
+      studentContextRef.current === contextKey
     setCreateLoading(true)
     setError(null)
 
     if (user?.user_type === 'admin' && newPassword !== confirmPassword) {
-      setError(t('errors.passwordsDoNotMatch', { defaultValue: 'Passwords do not match' }))
+      setError(t('errors.passwordsDoNotMatch'))
       setCreateLoading(false)
       return
     }
+
+    // Only send safety configuration when the teacher/admin actually set
+    // something: a plain create keeps the automatic age-based floor and the
+    // admin global policy, with no guardian profile row.
+    const triStateToBool = (value: TriState) => value === 'true' ? true : value === 'false' ? false : undefined
+    const safety = showSafetySection && (
+      newSafety.age !== '' ||
+      newSafety.filterLevel !== 'default' ||
+      newSafety.forbiddenTopics.trim() !== '' ||
+      newSafety.triggerWords.trim() !== '' ||
+      newSafety.block_ai_chat !== 'default' ||
+      newSafety.block_board_ai !== 'default' ||
+      newSafety.block_custom_topics !== 'default' ||
+      newSafety.block_autogen_pictograms !== 'default' ||
+      newSafety.block_social_messaging !== 'default' ||
+      newSafety.sentinel_moderation !== 'default'
+    )
+      ? {
+          ...(newSafety.age ? { age: Number(newSafety.age) } : {}),
+          ...(newSafety.filterLevel !== 'default' ? { content_filter_level: newSafety.filterLevel } : {}),
+          forbidden_topics: newSafety.forbiddenTopics.split('\n').map((s) => s.trim()).filter(Boolean),
+          trigger_words: newSafety.triggerWords.split('\n').map((s) => s.trim()).filter(Boolean),
+          block_ai_chat: triStateToBool(newSafety.block_ai_chat),
+          block_board_ai: triStateToBool(newSafety.block_board_ai),
+          block_custom_topics: triStateToBool(newSafety.block_custom_topics),
+          block_autogen_pictograms: triStateToBool(newSafety.block_autogen_pictograms),
+          block_social_messaging: triStateToBool(newSafety.block_social_messaging),
+          sentinel_moderation: triStateToBool(newSafety.sentinel_moderation),
+        }
+      : undefined
 
     try {
       if (user?.user_type === 'admin') {
@@ -193,7 +423,8 @@ export function Students() {
           confirm_password: confirmPassword,
           display_name: newDisplayName,
           email: newEmail || undefined,
-          user_type: 'student'
+          user_type: 'student',
+          ...(safety ? { safety } : {}),
         })
       } else {
         // This staff route creates the student and atomically adds the
@@ -206,42 +437,61 @@ export function Students() {
           display_name: newDisplayName,
           email: newEmail || undefined,
           user_type: 'student',
+          ...(safety ? { safety } : {}),
         })
       }
 
       await loadStudents(true)
+      if (!isCurrentRequest()) return
 
       setNewUsername('')
       setNewDisplayName('')
       setNewEmail('')
       setNewPassword('')
       setConfirmPassword('')
+      setNewSafety(DEFAULT_SAFETY)
+      setShowSafetySection(false)
       setCreateModalOpen(false)
+      addToast(t('success.created'), 'success')
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.createFailed')))
+      if (isCurrentRequest()) {
+        setError(extractError(e, t('errors.createFailed')))
+      }
     } finally {
-      setCreateLoading(false)
+      if (isCurrentRequest()) {
+        setCreateLoading(false)
+      }
     }
   }
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!resetPasswordStudent) return
+    // Only rendered inside the reset-password modal, which requires a student.
+    const contextKey = studentContextKey
+    const requestId = ++studentMutationRequestRef.current
+    const isCurrentRequest = () =>
+      requestId === studentMutationRequestRef.current &&
+      studentContextRef.current === contextKey
     setResetPasswordLoading(true)
     setError(null)
     try {
       await api.post('/users/reset-password', {
-        user_id: resetPasswordStudent.id,
+        user_id: resetPasswordStudent!.id,
         new_password: resetPasswordValue
       })
+      if (!isCurrentRequest()) return
       setResetPasswordModalOpen(false)
       setResetPasswordValue('')
       setResetPasswordStudent(null)
-      // Optional: show success message
+      addToast(t('success.passwordReset'), 'success')
     } catch (e: unknown) {
-      setError(extractError(e, t('errors.resetPasswordFailed', { defaultValue: 'Failed to reset password' })))
+      if (isCurrentRequest()) {
+        setError(extractError(e, t('errors.resetPasswordFailed')))
+      }
     } finally {
-      setResetPasswordLoading(false)
+      if (isCurrentRequest()) {
+        setResetPasswordLoading(false)
+      }
     }
   }
 
@@ -249,86 +499,87 @@ export function Students() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400 tracking-tight">{t('title')}</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 font-medium">{t('subtitle')}</p>
+          <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-foreground to-muted-foreground tracking-tight">{t('title')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground font-medium">{t('subtitle')}</p>
         </div>
-        <button
+        <Button
           onClick={() => { setCreateModalOpen(true); setError(null); }}
-          className="inline-flex items-center px-5 py-2.5 rounded-xl bg-brand text-white shadow-lg shadow-brand/25 hover:shadow-brand/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 font-medium"
+          className="shadow-lg shadow-brand/25 hover:shadow-brand/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 font-medium"
         >
           <span className="mr-2">+</span>
           {t('create')}
-        </button>
+        </Button>
       </div>
 
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-4 rounded-lg">{error}</div>
+        <StatusMessage variant="error">{error}</StatusMessage>
       )}
 
       {loading ? (
-        <LoadingState label={t('loading', { defaultValue: 'Loading students' })} />
+        <LoadingState label={t('loading')} />
       ) : (
         <div className="glass-panel rounded-xl overflow-hidden">
-          <table className="min-w-full divide-y divide-border dark:divide-white/5">
-            <thead className="bg-gray-50/50 dark:bg-white/5 border-b border-border/50 dark:border-white/5">
+          <table className="min-w-full divide-y divide-border">
+            <thead className="bg-background/50 border-b border-border/50">
               <tr>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('table.name')}</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('table.username')}</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('table.assigned')}</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('table.actions')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('table.name')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('table.username')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('table.assigned')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('table.actions')}</th>
               </tr >
             </thead >
-            <tbody className="divide-y divide-border dark:divide-white/5 bg-transparent">
+            <tbody className="divide-y divide-border bg-transparent">
               {students.map(s => (
                 <tr key={s.id}>
-                  <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">{s.display_name}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{s.username}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                  <td className="px-6 py-4 text-sm text-foreground">{s.display_name}</td>
+                  <td className="px-6 py-4 text-sm text-muted-foreground">{s.username}</td>
+                  <td className="px-6 py-4 text-sm text-muted-foreground">
                     <div className="flex flex-wrap gap-2">
                       {(assignedBoards[s.id] || []).map(board => (
-                        <span key={board.id} className="inline-flex items-center px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 text-xs">
+                        <span key={board.id} className="inline-flex items-center px-2 py-1 rounded-md bg-brand/10 text-brand text-xs">
                           {board.name}
                           <button
                             onClick={() => handleUnassignBoard(s.id, board.id)}
-                            className="ml-1 text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                            className="ml-1 text-brand hover:text-brand"
                             aria-label={t('actions.unassignAria', { board: board.name })}
                             title={t('actions.unassignTitle')}
                           >×</button>
                         </span>
                       ))}
                       {(assignedBoards[s.id] || []).length === 0 && (
-                        <span className="text-gray-400 dark:text-gray-500 text-xs">{t('noneAssigned')}</span>
+                        <span className="text-muted-foreground text-xs">{t('noneAssigned')}</span>
                       )}
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                  <td className="px-6 py-4 text-sm text-muted-foreground">
                     <div className="flex gap-2">
                       <button
                         onClick={() => openAssignModal(s)}
-                        className="px-3 py-1 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded"
+                        className="px-3 py-1 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded"
                         aria-label={t('actions.assignAria', { student: s.username })}
                         title={t('actions.assignTitle')}
                       >{t('assign')}</button>
                       <button
                         onClick={() => { setSelectedGuardianStudent(s); setGuardianModalOpen(true); }}
                         className="px-3 py-1 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded flex items-center gap-1"
-                        title={t('guardianProfile', { defaultValue: 'Guardian Profile' })}
-                        aria-label={t('guardianProfile', { defaultValue: 'Guardian Profile' })}
+                        title={t('guardianProfile')}
+                        aria-label={t('guardianProfile')}
                       >
                         <Sparkles className="w-4 h-4" />
-                        <span className="hidden sm:inline">{t('ai', 'AI')}</span>
+                        <span className="hidden sm:inline">{t('ai')}</span>
                       </button>
                       <button
                         onClick={() => openPreferencesModal(s)}
-                        className="px-3 py-1 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center gap-1"
-                        title={t('preferences', { defaultValue: 'Preferences' })}
+                        className="px-3 py-1 text-muted-foreground hover:bg-surface-hover rounded flex items-center gap-1"
+                        title={t('preferences.title')}
+                        aria-label={t('preferences.title')}
                       >
                         <Volume2 className="w-4 h-4" />
                       </button>
                       {user?.user_type === 'admin' && (
                         <button
                           onClick={() => { setEditId(s.id); setEditDisplayName(s.display_name); setEditUserType(s.user_type); setError(null); }}
-                          className="px-3 py-1 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded"
+                          className="px-3 py-1 text-brand hover:bg-brand/20 rounded"
                           aria-label={t('actions.editAria', { student: s.username })}
                           title={t('actions.editTitle')}
                         >{t('edit')}</button>
@@ -340,14 +591,14 @@ export function Students() {
                           setResetPasswordValue('');
                           setError(null);
                         }}
-                        className="px-3 py-1 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded"
-                        aria-label={t('actions.resetPasswordAria', { student: s.username, defaultValue: `Reset password for ${s.username}` })}
-                        title={t('actions.resetPasswordTitle', { defaultValue: 'Reset Password' })}
-                      >{t('actions.resetPassword', { defaultValue: 'Reset Pwd' })}</button>
+                        className="px-3 py-1 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded"
+                        aria-label={t('actions.resetPasswordAria', { student: s.username })}
+                        title={t('actions.resetPasswordTitle')}
+                      >{t('actions.resetPassword')}</button>
                       {user?.user_type === 'admin' && (
                         <button
                           onClick={() => setDeleteState({ isOpen: true, student: s })}
-                          className="px-3 py-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
+                          className="px-3 py-1 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
                           aria-label={t('actions.deleteAria', { student: s.username })}
                           title={t('actions.deleteTitle')}
                         >{t('delete')}</button>
@@ -360,73 +611,71 @@ export function Students() {
           </table >
           {
             students.length === 0 && (
-              <div className="p-6 text-center text-gray-500 dark:text-gray-400">{t('noStudents')}</div>
+              <div className="p-6 text-center text-muted-foreground">{t('noStudents')}</div>
             )
           }
           {
             editId != null && (
-              <div
-                className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="edit-student-title"
-              >
-                <div className="glass-card w-full max-w-md p-6">
-                  <h3 id="edit-student-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">{t('edit')}</h3>
-                  {error && (
-                    <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm mb-4">
-                      {error}
-                    </div>
-                  )}
+              <Dialog open onOpenChange={(open) => { if (!open) setEditId(null) }}>
+                <DialogContent showCloseButton={false} className="max-w-md p-6">
+                  <DialogHeader>
+                    <DialogTitle className="text-lg font-semibold text-foreground">{t('edit')}</DialogTitle>
+                  </DialogHeader>
+                  {error && <StatusMessage variant="error" className="mb-4">{error}</StatusMessage>}
                   <div className="space-y-3">
-                    <label htmlFor="edit-student-display-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <FormLabel htmlFor="edit-student-display-name">
                       {t('labels.displayName')}
-                    </label>
-                    <input id="edit-student-display-name" type="text" value={editDisplayName} onChange={(e) => setEditDisplayName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
-                    <label htmlFor="edit-student-role" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                      {t('role', { defaultValue: 'Role' })}
-                    </label>
-                    <select id="edit-student-role" value={editUserType} onChange={(e) => setEditUserType(e.target.value as 'student' | 'teacher' | 'admin')} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
-                      <option value="student">{t('roles.student')}</option>
-                      <option value="teacher">{t('roles.teacher')}</option>
-                      <option value="admin">{t('roles.admin')}</option>
-                    </select>
+                    </FormLabel>
+                    <input id="edit-student-display-name" type="text" value={editDisplayName} onChange={(e) => setEditDisplayName(e.target.value)} required className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground" />
+                    <FormLabel>
+                      {t('role')}
+                    </FormLabel>
+                    <Select value={editUserType} onValueChange={(next) => { if (next != null) setEditUserType(next as 'student' | 'teacher' | 'admin'); }}>
+                      <SelectTrigger aria-label={t('role')} name="edit_student_role" className="w-full text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="student">{t('roles.student')}</SelectItem>
+                        <SelectItem value="teacher">{t('roles.teacher')}</SelectItem>
+                        <SelectItem value="admin">{t('roles.admin')}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="mt-4 flex justify-end gap-2">
-                    <button onClick={() => setEditId(null)} className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">{t('cancel')}</button>
-                    <button
+                    <Button onClick={() => setEditId(null)} variant="ghost">{t('cancel')}</Button>
+                    <Button
                       onClick={async () => {
                         try {
                           const res = await api.put(`/auth/users/${editId}`, { display_name: editDisplayName, user_type: editUserType })
-                          setStudents(prev => prev.map(x => x.id === editId ? res.data : x))
+                          // The PUT response is a bare User without the
+                          // assigned_boards payload from the summaries endpoint;
+                          // preserve the existing row's board chips.
+                          setStudents(prev => prev.map(x => x.id === editId ? { ...res.data, assigned_boards: x.assigned_boards ?? [] } : x))
                           setEditId(null)
+                          addToast(t('success.updated'), 'success')
                         } catch (e: unknown) {
                           setError(extractError(e, t('errors.updateFailed')))
                         }
                       }}
-                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-                    >{t('profile.save', { ns: 'settings' })}</button>
+                    >{t('profile.save', { ns: 'settings' })}</Button>
                   </div>
-                </div>
-              </div>
+                </DialogContent>
+              </Dialog>
             )
           }
 
           {
             assignModalOpen && selectedStudent && (
-              <div
-                className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="assign-student-title"
-              >
-                <div className="glass-card w-full max-w-md p-6">
-                  <h3 id="assign-student-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                    {t('assignTitle', { name: selectedStudent.display_name })}
-                  </h3>
+              <Dialog open onOpenChange={(open) => { if (!open) closeAssignModal() }}>
+                <DialogContent showCloseButton={false} className="max-w-md p-6">
+                  <DialogHeader>
+                    <DialogTitle className="text-lg font-semibold text-foreground">
+                      {t('assignTitle', { name: selectedStudent.display_name })}
+                    </DialogTitle>
+                  </DialogHeader>
                   <div className="space-y-2 max-h-96 overflow-y-auto">
                     {availableBoards.length === 0 ? (
-                      <p className="text-gray-500 dark:text-gray-400 text-sm">{t('noBoardsAvail')}</p>
+                      <p className="text-muted-foreground text-sm">{t('noBoardsAvail')}</p>
                     ) : (
                       availableBoards.map(board => {
                         const isAssigned = (assignedBoards[selectedStudent.id] || []).some(b => b.id === board.id)
@@ -436,16 +685,16 @@ export function Students() {
                             onClick={() => handleAssignBoard(board.id)}
                             disabled={isAssigned || assignLoading}
                             className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${isAssigned
-                              ? 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed border-gray-200 dark:border-gray-600'
-                              : 'hover:bg-indigo-50 dark:hover:bg-indigo-900/30 border-gray-200 dark:border-gray-600 hover:border-indigo-300 dark:hover:border-indigo-700'
+                              ? 'bg-muted text-muted-foreground cursor-not-allowed border-border'
+                              : 'hover:bg-brand/20 border-border hover:border-brand'
                               }`}
                           >
-                            <div className="font-medium text-gray-900 dark:text-gray-100">{board.name}</div>
+                            <div className="font-medium text-foreground">{board.name}</div>
                             {board.description && (
-                              <div className="text-sm text-gray-500 dark:text-gray-400">{board.description}</div>
+                              <div className="text-sm text-muted-foreground">{board.description}</div>
                             )}
                             {isAssigned && (
-                              <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">{t('alreadyAssigned')}</div>
+                              <div className="text-xs text-muted-foreground mt-1">{t('alreadyAssigned')}</div>
                             )}
                           </button>
                         )
@@ -454,73 +703,84 @@ export function Students() {
                   </div>
                   <div className="mt-4 flex justify-end">
                     <button
-                      onClick={() => setAssignModalOpen(false)}
-                      className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                      onClick={closeAssignModal}
+                      className="px-4 py-2 text-foreground hover:bg-surface-hover rounded-lg"
                     >{t('close')}</button>
                   </div>
-                </div>
-              </div>
+                </DialogContent>
+              </Dialog>
             )
           }
 
           {
             createModalOpen && (
-              <div
-                className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="create-student-title"
+              <Dialog
+                open
+                onOpenChange={(open) => {
+                  if (!open) {
+                    setCreateModalOpen(false)
+                    setNewUsername('')
+                    setNewDisplayName('')
+                    setNewEmail('')
+                    setNewPassword('')
+                    setConfirmPassword('')
+                    setNewSafety(DEFAULT_SAFETY)
+                    setShowSafetySection(false)
+                    setError(null)
+                  }
+                }}
               >
-                <div className="glass-card w-full max-w-md p-6">
-                  <h3 id="create-student-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                    {t('createTitle')}
-                  </h3>
-                  {error && (
-                    <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm mb-4">
-                      {error}
-                    </div>
-                  )}
+                {/* The safety section can grow the form taller than the
+                    viewport; the modal scrolls internally so the submit
+                    button stays reachable on small screens. */}
+                <DialogContent showCloseButton={false} className="max-w-md p-6 max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle className="text-lg font-semibold text-foreground">
+                      {t('createTitle')}
+                    </DialogTitle>
+                  </DialogHeader>
+                  {error && <StatusMessage variant="error" className="mb-4">{error}</StatusMessage>}
                   <form onSubmit={handleCreateStudent} className="space-y-4">
                     <div>
-                      <label htmlFor="create-student-username" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.username')}</label>
+                      <FormLabel htmlFor="create-student-username">{t('labels.username')}</FormLabel>
                       <input
                         id="create-student-username"
                         type="text"
                         value={newUsername}
                         onChange={(e) => setNewUsername(e.target.value)}
                         required
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                        placeholder="student123"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
+                        placeholder={t('placeholders.username')}
                       />
                     </div>
 
                     <div>
-                      <label htmlFor="create-student-display-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.displayName')}</label>
+                      <FormLabel htmlFor="create-student-display-name">{t('labels.displayName')}</FormLabel>
                       <input
                         id="create-student-display-name"
                         type="text"
                         value={newDisplayName}
                         onChange={(e) => setNewDisplayName(e.target.value)}
                         required
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                        placeholder="Alex Smith"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
+                        placeholder={t('placeholders.displayName')}
                       />
                     </div>
 
                     <div>
-                      <label htmlFor="create-student-email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.email')}</label>
+                      <FormLabel htmlFor="create-student-email">{t('labels.email')}</FormLabel>
                       <input
                         id="create-student-email"
                         type="email"
                         value={newEmail}
                         onChange={(e) => setNewEmail(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                        placeholder="alex@example.com"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
+                        placeholder={t('placeholders.email')}
                       />
                     </div>
 
                     <div>
-                      <label htmlFor="create-student-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.password')}</label>
+                      <FormLabel htmlFor="create-student-password">{t('labels.password')}</FormLabel>
                       <input
                         id="create-student-password"
                         type="password"
@@ -528,14 +788,14 @@ export function Students() {
                         onChange={(e) => setNewPassword(e.target.value)}
                         required
                         minLength={8}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
                         placeholder={t('labels.passwordHint')}
                       />
                     </div>
 
                     {user?.user_type === 'admin' && (
                       <div>
-                        <label htmlFor="create-student-confirm-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('labels.confirmPassword', { defaultValue: 'Confirm Password' })}</label>
+                        <FormLabel htmlFor="create-student-confirm-password">{t('labels.confirmPassword')}</FormLabel>
                         <input
                           id="create-student-confirm-password"
                           type="password"
@@ -543,10 +803,107 @@ export function Students() {
                           onChange={(e) => setConfirmPassword(e.target.value)}
                           required
                           minLength={8}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
                         />
                       </div>
                     )}
+
+                    <div className="rounded-lg border border-border p-3">
+                      <button
+                        type="button"
+                        onClick={() => setShowSafetySection((visible) => !visible)}
+                        aria-expanded={showSafetySection}
+                        className="flex w-full items-center justify-between text-sm font-semibold text-foreground"
+                      >
+                        <span>{t('createSafety')}</span>
+                        <ChevronDown className={`w-4 h-4 transition-transform ${showSafetySection ? 'rotate-180' : ''}`} />
+                      </button>
+                      {showSafetySection && (
+                        <div className="mt-3 space-y-3 border-t border-border pt-3" data-testid="create-safety-section">
+                          <p className="text-xs text-muted-foreground">{t('createSafetyHelp')}</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <FormLabel htmlFor="create-student-age">{t('age')}</FormLabel>
+                              <input
+                                id="create-student-age"
+                                type="number"
+                                min={1}
+                                max={100}
+                                value={newSafety.age}
+                                onChange={(e) => setNewSafety({ ...newSafety, age: e.target.value })}
+                                className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground"
+                              />
+                            </div>
+                            <div>
+                              <FormLabel htmlFor="create-student-filter-level">{t('contentFilterLevel')}</FormLabel>
+                              <select
+                                id="create-student-filter-level"
+                                value={newSafety.filterLevel}
+                                onChange={(e) => setNewSafety({ ...newSafety, filterLevel: e.target.value as CreateSafetyState['filterLevel'] })}
+                                className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground"
+                              >
+                                <option value="default">{t('triStateDefault')}</option>
+                                <option value="strict">{t('strict')}</option>
+                                <option value="standard">{t('standard')}</option>
+                                <option value="relaxed">{t('relaxed')}</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div>
+                            <FormLabel htmlFor="create-student-forbidden-topics">{t('forbiddenTopics')}</FormLabel>
+                            <textarea
+                              id="create-student-forbidden-topics"
+                              rows={2}
+                              value={newSafety.forbiddenTopics}
+                              onChange={(e) => setNewSafety({ ...newSafety, forbiddenTopics: e.target.value })}
+                              placeholder="astronomía"
+                              className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground font-mono text-sm"
+                            />
+                          </div>
+                          <div>
+                            <FormLabel htmlFor="create-student-trigger-words">{t('triggerWords')}</FormLabel>
+                            <textarea
+                              id="create-student-trigger-words"
+                              rows={2}
+                              value={newSafety.triggerWords}
+                              onChange={(e) => setNewSafety({ ...newSafety, triggerWords: e.target.value })}
+                              placeholder="guerra"
+                              className="w-full px-3 py-2 border border-border rounded-lg bg-surface text-foreground font-mono text-sm"
+                            />
+                          </div>
+                          <div>
+                            <span className="block text-sm font-medium text-foreground">{t('featureGates')}</span>
+                            <p className="text-xs text-muted-foreground mt-0.5">{t('featureGatesHelp')}</p>
+                          </div>
+                          {FEATURE_LOCK_FIELDS.map(([key, labelKey]) => (
+                            <div key={key} className="flex items-center justify-between gap-2 text-sm">
+                              <span className="text-foreground">{t(labelKey)}</span>
+                              <select
+                                value={newSafety[key]}
+                                onChange={(e) => setNewSafety({ ...newSafety, [key]: e.target.value as TriState })}
+                                className="w-36 px-3 py-2 border border-border rounded-lg bg-surface text-foreground text-sm"
+                              >
+                                <option value="default">{t('triStateDefault')}</option>
+                                <option value="true">{t('triStateOn')}</option>
+                                <option value="false">{t('triStateOff')}</option>
+                              </select>
+                            </div>
+                          ))}
+                          <div className="flex items-center justify-between gap-2 text-sm">
+                            <span className="text-foreground">{t('sentinel')}</span>
+                            <select
+                              value={newSafety.sentinel_moderation}
+                              onChange={(e) => setNewSafety({ ...newSafety, sentinel_moderation: e.target.value as TriState })}
+                              className="w-36 px-3 py-2 border border-border rounded-lg bg-surface text-foreground text-sm"
+                            >
+                              <option value="default">{t('triStateDefault')}</option>
+                              <option value="true">{t('triStateOn')}</option>
+                              <option value="false">{t('triStateOff')}</option>
+                            </select>
+                          </div>
+                        </div>
+                      )}
+                    </div>
 
                     <div className="flex justify-end gap-3 mt-6">
                       <button
@@ -558,24 +915,22 @@ export function Students() {
                           setNewEmail('')
                           setNewPassword('')
                           setConfirmPassword('')
+                          setNewSafety(DEFAULT_SAFETY)
+                          setShowSafetySection(false)
                           setError(null)
                         }}
-                        className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                        className="px-4 py-2 text-foreground hover:bg-surface-hover rounded-lg"
                         disabled={createLoading}
                       >
                         {t('cancel')}
                       </button>
-                      <button
-                        type="submit"
-                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-                        disabled={createLoading}
-                      >
+                      <Button type="submit" disabled={createLoading}>
                         {createLoading ? t('security.saving', { ns: 'settings' }) : t('createBtn')}
-                      </button>
+                      </Button>
                     </div>
                   </form>
-                </div>
-              </div>
+                </DialogContent>
+              </Dialog>
             )
           }
         </div >
@@ -603,56 +958,50 @@ export function Students() {
 
       {
         preferencesModalOpen && preferencesStudent && (
-          <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="student-preferences-title"
-          >
-            <div className="glass-card w-full max-w-md p-6">
-              <h3 id="student-preferences-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                {t('preferencesTitle', { defaultValue: 'Preferences for' })} {preferencesStudent.display_name}
-              </h3>
+          <Dialog open onOpenChange={(open) => { if (!open) closePreferencesModal() }}>
+            <DialogContent showCloseButton={false} className="max-w-md p-6">
+              <DialogHeader>
+                <DialogTitle className="text-lg font-semibold text-foreground">
+                  {t('preferencesTitle')} {preferencesStudent.display_name}
+                </DialogTitle>
+              </DialogHeader>
 
               {preferencesLoading ? (
-                <LoadingState size="sm" label={t('loading', { defaultValue: 'Loading preferences' })} className="h-auto p-4" />
+                <LoadingState size="sm" label={t('loading')} className="h-auto p-4" />
               ) : (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                  <div className="flex items-center justify-between p-3 bg-background/50 rounded-lg">
                     <div className="flex items-center space-x-3">
-                      <div className="p-2 bg-purple-50 rounded-lg">
-                        <Volume2 className="w-5 h-5 text-purple-600" />
+                      <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                        <Volume2 className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                       </div>
                       <div>
-                        <p className="font-medium text-gray-900 dark:text-gray-100">{t('preferences.voiceMode', { defaultValue: 'Voice Mode' })}</p>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">{t('preferences.voiceModeHelp', { defaultValue: 'Enable/disable voice features' })}</p>
+                        <p className="font-medium text-foreground">{t('preferences.voiceMode')}</p>
+                        <p className="text-sm text-muted-foreground">{t('preferences.voiceModeHelp')}</p>
                       </div>
                     </div>
                     <Toggle
                       checked={studentPreferences.voice_mode_enabled}
-                      label={t('preferences.voiceMode', { defaultValue: 'Voice Mode' })}
+                      label={t('preferences.voiceMode')}
                       onChange={(checked) => setStudentPreferences({ ...studentPreferences, voice_mode_enabled: checked })}
                     />
                   </div>
 
                   <div className="flex justify-end gap-3 mt-6">
                     <button
-                      onClick={() => setPreferencesModalOpen(false)}
-                      className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                      onClick={closePreferencesModal}
+                      className="px-4 py-2 text-foreground hover:bg-surface-hover rounded-lg"
                     >
                       {t('cancel')}
                     </button>
-                    <button
-                      onClick={saveStudentPreferences}
-                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-                    >
+                    <Button onClick={saveStudentPreferences}>
                       {t('save')}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
-            </div>
-          </div>
+            </DialogContent>
+          </Dialog>
         )
       }
 

@@ -1,6 +1,16 @@
 """Communication boards, placements, and assignments."""
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -43,7 +53,7 @@ class BoardSymbol(Base):
 
     id = Column(Integer, primary_key=True)
     board_id = Column(Integer, ForeignKey("communication_boards.id"), nullable=False)
-    symbol_id = Column(Integer, ForeignKey("symbols.id"), nullable=False)
+    symbol_id = Column(Integer, ForeignKey("symbols.id", ondelete="CASCADE"), nullable=False)
     position_x = Column(Integer, default=0)
     position_y = Column(Integer, default=0)
     size = Column(Integer, default=1)
@@ -66,6 +76,13 @@ class BoardAssignment(Base):
     """Board assigned to a student."""
 
     __tablename__ = "board_assignments"
+    __table_args__ = (
+        UniqueConstraint(
+            "board_id",
+            "student_id",
+            name="uq_board_assignments_board_student",
+        ),
+    )
 
     id = Column(Integer, primary_key=True)
     board_id = Column(Integer, ForeignKey("communication_boards.id"), nullable=False)

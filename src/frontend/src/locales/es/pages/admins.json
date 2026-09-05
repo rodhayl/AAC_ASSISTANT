@@ -36,20 +36,27 @@
     "displayName": "ej., Administrador",
     "email": "ej., admin@ejemplo.com"
   },
+  "success": {
+    "created": "Administrador creado",
+    "updated": "Administrador actualizado",
+    "deleted": "Administrador eliminado",
+    "passwordReset": "Contraseña restablecida"
+  },
   "errors": {
     "loadFailed": "Error al cargar administradores",
     "updateFailed": "Error al actualizar",
     "createFailed": "Error al crear administrador",
     "deleteFailed": "Error al eliminar",
-    "deleteSelf": "No puedes eliminar tu propia cuenta",
     "resetPasswordFailed": "Error al restablecer contraseña",
     "passwordsDoNotMatch": "Las contraseñas no coinciden"
   },
   "actions": {
+    "resetSelfTitle": "Usa Cambiar contraseña en Ajustes",
     "editAria": "Editar {{name}}",
     "editTitle": "Editar administrador",
     "deleteAria": "Eliminar {{name}}",
     "deleteTitle": "Eliminar administrador",
+    "deleteSelfTitle": "No puedes eliminar tu propia cuenta",
     "resetPassword": "Reset",
     "resetPasswordAria": "Restablecer contraseña para {{name}}",
     "resetPasswordTitle": "Restablecer Contraseña"

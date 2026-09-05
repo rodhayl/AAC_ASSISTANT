@@ -9,7 +9,13 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
-from src.aac_app.models import Symbol, SymbolUsageLog, UserSettings
+from src.aac_app.models import (
+    BoardSymbol,
+    CommunicationBoard,
+    Symbol,
+    SymbolUsageLog,
+    UserSettings,
+)
 from src.api.deps import get_current_active_user
 from src.api.main import app
 
@@ -314,6 +320,142 @@ class TestAnalyticsAPI:
         labels = [item["label"] for item in response.json()]
         assert "yo" in labels
         assert "I" not in labels
+
+    def test_intent_filters_use_arasaac_category_taxonomy(
+        self, test_db_session, regular_user
+    ):
+        """Quick-word intents map ARASAAC categories, not English substrings."""
+        test_db_session.add_all(
+            [
+                Symbol(id=201, label="apple", category="fruit", language="en", is_builtin=True),
+                Symbol(id=202, label="I", category="personal pronoun", language="en", is_builtin=True),
+                Symbol(id=203, label="run", category="verb", language="en", is_builtin=True),
+                Symbol(id=204, label="quickly", category="adverb", language="en", is_builtin=True),
+            ]
+        )
+        test_db_session.commit()
+
+        nouns = client.post(
+            "/api/analytics/next-symbol", json={"intent": "nouns", "limit": 20}
+        )
+        assert nouns.status_code == 200
+        noun_labels = {item["label"] for item in nouns.json()}
+        assert "apple" in noun_labels
+        assert "I" not in noun_labels  # pronoun must not match the nouns intent
+        assert "run" not in noun_labels
+        assert "quickly" not in noun_labels
+
+        verbs = client.post(
+            "/api/analytics/next-symbol", json={"intent": "verbs", "limit": 20}
+        )
+        assert verbs.status_code == 200
+        verb_labels = {item["label"] for item in verbs.json()}
+        assert "run" in verb_labels
+        assert "quickly" not in verb_labels  # adverb is not a verb
+
+    def test_board_scoped_intent_does_not_fall_back_to_global_symbols(
+        self, test_db_session, regular_user
+    ):
+        """A quick-word filter must keep its board boundary when no local match exists."""
+        board = CommunicationBoard(
+            user_id=regular_user.id,
+            name="Animals board",
+            is_public=True,
+        )
+        board_noun = Symbol(
+            label="dog",
+            category="animal",
+            language="en",
+            is_builtin=True,
+        )
+        global_verb = Symbol(
+            label="run",
+            category="verb",
+            language="en",
+            is_builtin=True,
+        )
+        test_db_session.add_all([board, board_noun, global_verb])
+        test_db_session.flush()
+        test_db_session.add(
+            BoardSymbol(
+                board_id=board.id,
+                symbol_id=board_noun.id,
+                position_x=0,
+                position_y=0,
+                is_visible=True,
+            )
+        )
+        test_db_session.commit()
+
+        response = client.post(
+            "/api/analytics/next-symbol",
+            json={"board_id": board.id, "intent": "verbs", "limit": 5},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_intent_suggestions_paginate_after_language_rank(
+        self, test_db_session, regular_user
+    ):
+        """Quick-word pages continue after the previous page, without repeats."""
+        test_db_session.add_all(
+            [
+                Symbol(
+                    id=301,
+                    label="apple",
+                    category="fruit",
+                    language="en",
+                    is_builtin=True,
+                ),
+                Symbol(
+                    id=302,
+                    label="banana",
+                    category="fruit",
+                    language="en",
+                    is_builtin=True,
+                ),
+                Symbol(
+                    id=303,
+                    label="cherry",
+                    category="fruit",
+                    language="en",
+                    is_builtin=True,
+                ),
+                Symbol(
+                    id=304,
+                    label="date",
+                    category="fruit",
+                    language="en",
+                    is_builtin=True,
+                ),
+                Symbol(
+                    id=305,
+                    label="elderberry",
+                    category="fruit",
+                    language="en",
+                    is_builtin=True,
+                ),
+            ]
+        )
+        test_db_session.commit()
+
+        first = client.post(
+            "/api/analytics/next-symbol",
+            json={"intent": "nouns", "limit": 2, "offset": 0},
+        )
+        second = client.post(
+            "/api/analytics/next-symbol",
+            json={"intent": "nouns", "limit": 2, "offset": 2},
+        )
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        first_labels = [item["label"] for item in first.json()]
+        second_labels = [item["label"] for item in second.json()]
+        assert len(first_labels) == 2
+        assert len(second_labels) == 2
+        assert not set(first_labels) & set(second_labels)
 
     def test_get_category_preferences(self, sample_usage_logs):
         """Test retrieving category preferences."""

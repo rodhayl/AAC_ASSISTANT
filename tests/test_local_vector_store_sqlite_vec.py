@@ -51,6 +51,45 @@ def dispose_store(store: LocalVectorStore) -> None:
     store.engine.dispose()
 
 
+def test_refresh_metadata_cache_logs_load_failure(tmp_path, monkeypatch, caplog):
+    store = make_store(tmp_path, {"one": [1.0, 0.0, 0.0]})
+    store._schema_ready = True
+
+    class FailingConnection:
+        def __enter__(self):
+            raise RuntimeError("metadata database unavailable")
+
+        def __exit__(self, *_args):
+            return False
+
+    class FailingEngine:
+        dialect = type("Dialect", (), {"name": "sqlite"})()
+
+        def connect(self):
+            return FailingConnection()
+
+        def begin(self):
+            return FailingConnection()
+
+    monkeypatch.setattr(store, "_get_engine", lambda: FailingEngine())
+    monkeypatch.setattr(store, "_ensure_schema", lambda: True)
+    store.metadata = [{"id": 1}]
+
+    captured: list[str] = []
+    from loguru import logger
+
+    sink_id = logger.add(lambda message: captured.append(str(message)), level="ERROR")
+    try:
+        store._refresh_metadata_cache()
+    finally:
+        logger.remove(sink_id)
+        dispose_store(store)
+
+    assert store.metadata == []
+    assert any("Could not load vector-store metadata" in message for message in captured)
+    assert any("metadata database unavailable" in message for message in captured)
+
+
 def test_sqlite_vec_add_search_update_and_delete(tmp_path):
     vectors = {
         "cow farm animal": [1.0, 0.0, 0.0],

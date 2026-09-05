@@ -10,7 +10,9 @@ const settingsState = vi.hoisted(() => ({
     ollama_model: 'qwen:7b-q4_0',
     openrouter_model: '',
     lmstudio_model: '',
+    groq_model: '',
     openrouter_api_key: '',
+    groq_api_key: '',
     ollama_base_url: 'http://localhost:11434',
     lmstudio_base_url: 'http://localhost:1234/v1',
     max_tokens: 1024,
@@ -20,6 +22,7 @@ const settingsState = vi.hoisted(() => ({
   ollamaModels: [],
   openRouterModels: [],
   lmStudioModels: [],
+  groqModels: [],
   loading: false,
   error: null as string | null,
   fetchAISettings: vi.fn(),
@@ -27,6 +30,7 @@ const settingsState = vi.hoisted(() => ({
   fetchOllamaModels: vi.fn(),
   fetchOpenRouterModels: vi.fn(),
   fetchLmStudioModels: vi.fn(),
+  fetchGroqModels: vi.fn(),
 }));
 
 vi.mock('../src/lib/api', () => ({
@@ -55,31 +59,45 @@ vi.mock('../src/pages/Settings/AiProviderFields', () => ({
 vi.mock('../src/config', () => ({
   config: {
     OLLAMA_BASE_URL: 'http://localhost:11434',
+    AI_MAX_TOKENS: 1024,
+    AI_TEMPERATURE: 0.5,
+    AUTOGEN_DAILY_CAP: -1,
   },
 }));
 
+const tMock = vi.hoisted(() => {
+  const table: Record<string, string> = {
+    'ai.title': 'AI Provider Configuration',
+    'ai.subtitle': 'Configure AI model',
+    'ai.primary': 'Primary AI Provider',
+    'ai.ollama': 'Ollama',
+    'ai.ollamaDesc': 'Local LLM',
+    'ai.openrouter': 'OpenRouter',
+    'ai.openrouterDesc': 'Cloud API',
+    'ai.health': 'Check Provider Health',
+    'ai.lmstudio': 'LM Studio',
+    'ai.localOpenAIAPI': 'Local OpenAI-API',
+    'ai.groq': 'Groq',
+    'ai.groqDesc': 'Cloud API',
+    'ai.statusDown': 'down',
+    'ai.lmstudioUnavailable': 'LM Studio is not reachable at the configured base URL.',
+    'ai.openrouterApiKeyMissing': 'OpenRouter API key is missing.',
+  };
+  return (key: string, defaultValue?: string | { defaultValue?: string }, options?: Record<string, string>) => {
+    if (typeof defaultValue === 'string') {
+      let text = defaultValue;
+      for (const [name, value] of Object.entries(options || {})) {
+        text = text.replace(`{{${name}}}`, value);
+      }
+      return text;
+    }
+    return table[key] || key;
+  };
+});
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, defaultValue?: string | { defaultValue?: string }, options?: Record<string, string>) => {
-      const table: Record<string, string> = {
-        'ai.title': 'AI Provider Configuration',
-        'ai.subtitle': 'Configure AI model',
-        'ai.primary': 'Primary AI Provider',
-        'ai.ollama': 'Ollama',
-        'ai.ollamaDesc': 'Local LLM',
-        'ai.openrouter': 'OpenRouter',
-        'ai.openrouterDesc': 'Cloud API',
-        'ai.health': 'Check Provider Health',
-      };
-      if (typeof defaultValue === 'string') {
-        let text = defaultValue;
-        for (const [name, value] of Object.entries(options || {})) {
-          text = text.replace(`{{${name}}}`, value);
-        }
-        return text;
-      }
-      return table[key] || key;
-    },
+    t: tMock,
   }),
 }));
 
@@ -110,6 +128,24 @@ describe('AiProviderTab', () => {
     expect(screen.getByText((content, element) => element?.textContent === 'LM Studio: down')).toBeInTheDocument();
   });
 
+  it('persists provider changes without requiring a second save action', async () => {
+    render(<AiProviderTab />);
+
+    fireEvent.click(screen.getByText('OpenRouter'));
+
+    await waitFor(() => {
+      expect(settingsState.updateAISettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'openrouter',
+          ollama_model: 'qwen:7b-q4_0',
+          max_tokens: 1024,
+          temperature: 0.5,
+          autogen_daily_cap: -1,
+        }),
+      );
+    });
+  });
+
   it('shows OpenRouter API key guidance when OpenRouter is selected without a key', async () => {
     get.mockResolvedValueOnce({
       data: {
@@ -138,10 +174,12 @@ describe('AiProviderTab', () => {
         ollama_model: 'student-visible-model',
         openrouter_model: '',
         lmstudio_model: '',
+        groq_model: '',
         ollama_base_url: 'http://localhost:11434',
         lmstudio_base_url: 'http://localhost:1234/v1',
         max_tokens: 512,
         temperature: 0.4,
+        autogen_daily_cap: 8,
         can_edit: false,
       },
     });

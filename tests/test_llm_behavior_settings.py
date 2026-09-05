@@ -14,10 +14,10 @@ from fastapi.testclient import TestClient
 
 from src.aac_app.models import LearningSession, User
 from src.aac_app.services.auth_service import get_password_hash
-from src.aac_app.services.learning_companion_service import LearningCompanionService
+from src.aac_app.services.learning.service import LearningCompanionService
 from src.api import deps
 from src.api.main import app
-from tests.test_utils_auth import create_test_headers
+from tests.auth_helpers import create_test_headers
 
 client = TestClient(app)
 
@@ -62,6 +62,8 @@ def test_primary_behavior_settings_exposed_and_persisted(admin_username):
     data = resp.json()
     assert data["max_tokens"] == 1024
     assert pytest.approx(data["temperature"], rel=1e-6) == 0.5
+    # Default is unlimited (-1) since pictograms are short/cheap.
+    assert data["autogen_daily_cap"] == -1  # config.AUTOGEN_DAILY_CAP
 
     # Update behavior
     update = client.put(
@@ -72,6 +74,7 @@ def test_primary_behavior_settings_exposed_and_persisted(admin_username):
             "ollama_model": "llama3.2:latest",
             "max_tokens": 2048,
             "temperature": 0.6,
+            "autogen_daily_cap": 3,
         },
     )
     assert update.status_code == 200
@@ -84,6 +87,41 @@ def test_primary_behavior_settings_exposed_and_persisted(admin_username):
     data = verify.json()
     assert data["max_tokens"] == 2048
     assert pytest.approx(data["temperature"], rel=1e-6) == 0.6
+    assert data["autogen_daily_cap"] == 3
+
+
+def test_autogen_daily_cap_rejects_out_of_range(admin_username):
+    """The cost cap is bounded: below -1 and absurd values are rejected."""
+    user_id, username, user_type = admin_username
+    headers = create_test_headers(user_id, username, user_type)
+
+    # -1 is valid (unlimited); anything below it or above 500 is not.
+    for bad_value in [-2, 501, "many", 1.5]:
+        update = client.put(
+            "/api/settings/ai",
+            headers=headers,
+            json={
+                "provider": "ollama",
+                "ollama_model": "llama3.2:latest",
+                "autogen_daily_cap": bad_value,
+            },
+        )
+        assert update.status_code == 400, f"cap={bad_value!r} should be rejected"
+
+    # -1 (unlimited) and 0 (disabled) are both allowed and persist.
+    for allowed in (-1, 0):
+        update = client.put(
+            "/api/settings/ai",
+            headers=headers,
+            json={
+                "provider": "ollama",
+                "ollama_model": "llama3.2:latest",
+                "autogen_daily_cap": allowed,
+            },
+        )
+        assert update.status_code == 200
+        verify = client.get("/api/settings/ai", headers=headers).json()
+        assert verify["autogen_daily_cap"] == allowed
 
 
 

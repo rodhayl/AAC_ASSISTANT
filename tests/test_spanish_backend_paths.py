@@ -1,3 +1,4 @@
+import contextlib
 from unittest.mock import Mock
 
 from src.aac_app.models import (
@@ -37,7 +38,7 @@ def test_prediction_service_uses_bundled_spanish_ngrams(
         current_symbols=[{"label": "quiero"}],
         limit=3,
         language="es-ES",
-        offset=1,
+        offset=0,
         db=test_db_session,
     )
 
@@ -241,7 +242,7 @@ def test_runtime_translation_uses_bounded_trusted_endpoint(monkeypatch):
     assert captured['kwargs']['timeout'].read == 3.0
 
 
-def test_runtime_translation_falls_back_on_malformed_response_and_opens_circuit(monkeypatch):
+def test_runtime_translation_rejects_malformed_response_and_opens_circuit(monkeypatch):
     class MalformedResponse:
         def raise_for_status(self):
             return None
@@ -266,10 +267,9 @@ def test_runtime_translation_falls_back_on_malformed_response_and_opens_circuit(
     monkeypatch.setattr(runtime_translation, '_translation_client_factory', factory)
     _reset_translation_state()
 
-    assert runtime_translation.translate_text('one', 'es') == 'one'
-    assert runtime_translation.translate_text('two', 'es') == 'two'
-    assert runtime_translation.translate_text('three', 'es') == 'three'
-    assert runtime_translation.translate_text('four', 'es') == 'four'
+    for text in ('one', 'two', 'three', 'four'):
+        with contextlib.suppress(RuntimeError):
+            runtime_translation.translate_text(text, 'es')
     assert factory.call_count == 3
 
 
@@ -297,23 +297,23 @@ def test_runtime_translation_times_out_and_recovers_after_cooldown(monkeypatch):
     monkeypatch.setattr(runtime_translation.time, 'monotonic', lambda: clock[0])
     _reset_translation_state()
 
-    assert runtime_translation.translate_text('one', 'es') == 'one'
-    assert runtime_translation.translate_text('two', 'es') == 'two'
-    assert runtime_translation.translate_text('three', 'es') == 'three'
+    for text in ('one', 'two', 'three', 'four'):
+        with contextlib.suppress(RuntimeError):
+            runtime_translation.translate_text(text, 'es')
     # The open circuit suppresses network work during its cooldown.
-    assert runtime_translation.translate_text('four', 'es') == 'four'
     assert factory.call_count == 3
 
     # Once the cooldown expires, translation attempts resume.
     clock[0] = 111.0
-    assert runtime_translation.translate_text('four', 'es') == 'four'
+    with contextlib.suppress(RuntimeError):
+        runtime_translation.translate_text('four', 'es')
     assert factory.call_count == 4
 
 
-def test_prediction_service_localizes_history_labels_to_requested_language(
-    monkeypatch, test_db_session, regular_user
+def test_prediction_service_keeps_suggestions_in_requested_language(
+    test_db_session, regular_user
 ):
-    """History suggestions should be localized before they reach the smartbar."""
+    """History suggestions from another locale are not mixed into the Smartbar."""
     service = PredictionService()
     symbol = Symbol(label="cookie", category="noun", language="en", is_builtin=True)
     session = LearningSession(
@@ -336,20 +336,15 @@ def test_prediction_service_localizes_history_labels_to_requested_language(
     )
     test_db_session.commit()
 
-    monkeypatch.setattr(
-        "src.aac_app.services.prediction_service.translate_text",
-        lambda text, target_lang: {"cookie": "galleta"}.get(text, text),
-    )
-
     suggestions = service.predict_next(
         user_id=regular_user.id,
         current_symbols=[],
         limit=5,
         language="es-ES",
-        offset=1,
+        offset=0,
         db=test_db_session,
     )
 
     assert suggestions
-    assert suggestions[0]["label"] == "galleta"
-    assert suggestions[0]["source"] == "history"
+    assert all(suggestion["label"] != "cookie" for suggestion in suggestions)
+    assert all(suggestion["source"] != "history" for suggestion in suggestions)

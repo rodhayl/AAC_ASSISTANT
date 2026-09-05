@@ -22,6 +22,7 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
   const [score, setScore] = useState(0);
   const [targetSymbol, setTargetSymbol] = useState<BoardSymbol | null>(null);
   const [feedback, setFeedback] = useState<'correct' | 'incorrect' | null>(null);
+  const [incorrectSymbolId, setIncorrectSymbolId] = useState<number | null>(null);
   const [symbols, setSymbols] = useState<BoardSymbol[]>([]);
   const gameGenerationRef = useRef(0);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -29,6 +30,10 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
   const clearTimers = useCallback(() => {
     timersRef.current.forEach((timer) => clearTimeout(timer));
     timersRef.current = [];
+  }, []);
+
+  const invalidateGeneration = useCallback(() => {
+    gameGenerationRef.current += 1;
   }, []);
 
   const schedule = useCallback((callback: () => void, delay: number) => {
@@ -39,52 +44,76 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
     timersRef.current.push(timer);
   }, []);
 
+  // A round needs at least two *unique* playable symbols: `startGame` fails
+  // with an error when `getUniquePlayableSymbols` returns fewer than two, so
+  // a board whose playable cells are all duplicate labels (e.g. two "apple"
+  // placements) must not be offered as playable in the list. Derive the
+  // count from the loaded symbols instead of trusting `playable_symbols_count`
+  // (which counts placements, not unique labels).
   const playableBoards = useMemo(
-    () => boards.filter((board) => (board.playable_symbols_count ?? 0) >= 2),
+    () => boards.filter((board) => getUniquePlayableSymbols(board.symbols ?? []).length >= 2),
     [boards],
   );
   const unplayableBoards = useMemo(
-    () => boards.filter((board) => (board.playable_symbols_count ?? 0) < 2),
+    () => boards.filter((board) => getUniquePlayableSymbols(board.symbols ?? []).length < 2),
     [boards],
   );
 
   useEffect(() => {
-    if (!user?.id) return;
+    const requestGeneration = ++gameGenerationRef.current;
     let cancelled = false;
+    clearTimers();
+    setBoards([]);
+    setSelectedBoard(null);
+    setSymbols([]);
+    setTargetSymbol(null);
+    setFeedback(null);
+    setIncorrectSymbolId(null);
+    setRound(0);
+    setScore(0);
+    setGameState('selecting');
+
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
 
     const fetchBoards = async () => {
       try {
         setLoading(true);
         // The unfiltered list includes the user's boards and public boards;
         // assigned student boards are added below as a separate scoped request.
-        const response = await api.get('/boards/');
-        let allBoards = response.data as Board[];
+        const response = await api.get<Board[]>('/boards/');
+        let allBoards = response.data;
 
         if (user.user_type === 'student') {
           try {
-            const assignedResponse = await api.get('/boards/assigned', {
+            const assignedResponse = await api.get<Board[]>('/boards/assigned', {
               params: { student_id: user.id },
             });
-            allBoards = [...allBoards, ...(assignedResponse.data as Board[])];
+            allBoards = [...allBoards, ...assignedResponse.data];
           } catch (error) {
             console.warn('Failed to fetch assigned boards', error);
           }
         }
 
-        if (cancelled) return;
+        if (cancelled || requestGeneration !== gameGenerationRef.current) return;
         setBoards(Array.from(new Map(allBoards.map((board) => [board.id, board])).values()));
       } catch (error) {
-        if (!cancelled) console.error('Failed to fetch boards:', error);
+        if (!cancelled && requestGeneration === gameGenerationRef.current) {
+          console.error('Failed to fetch boards:', error);
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && requestGeneration === gameGenerationRef.current) setLoading(false);
       }
     };
 
     void fetchBoards();
     return () => {
       cancelled = true;
+      invalidateGeneration();
     };
-  }, [user?.id, user?.user_type]);
+  }, [clearTimers, invalidateGeneration, user?.id, user?.user_type]);
 
   const nextRound = useCallback((currentSymbols: BoardSymbol[]) => {
     clearTimers();
@@ -93,11 +122,12 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
     if (!target) return;
     setTargetSymbol(target);
     setFeedback(null);
+    setIncorrectSymbolId(null);
     const label = target.custom_text || target.symbol.label;
     if (user?.settings?.voice_mode_enabled !== false) {
       schedule(() => {
         if (generation === gameGenerationRef.current) {
-          tts.enqueue(t('symbolHunt.find', 'Find {{label}}', { label }));
+          tts.enqueue(t('symbolHunt.find', { label }));
         }
       }, 500);
     }
@@ -108,15 +138,13 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
     clearTimers();
     try {
       setLoading(true);
-      const response = await api.get(`/boards/${board.id}`, {
-        params: { skip_translation: true },
-      });
-      const fullBoard = response.data as Board;
+      const response = await api.get<Board>(`/boards/${board.id}`);
+      const fullBoard = response.data;
       if (generation !== gameGenerationRef.current) return;
       const uniqueSymbols = getUniquePlayableSymbols(fullBoard.symbols);
       if (uniqueSymbols.length < 2) {
         addToast(
-          t('symbolHunt.notEnoughSymbols', 'This board needs at least 2 unique symbols to play.'),
+          t('symbolHunt.notEnoughSymbols'),
           'error',
         );
         return;
@@ -131,6 +159,10 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
     } catch (error) {
       if (generation === gameGenerationRef.current) {
         console.error('Failed to start game:', error);
+        addToast(
+          t('symbolHunt.loadError'),
+          'error',
+        );
       }
     } finally {
       if (generation === gameGenerationRef.current) setLoading(false);
@@ -144,17 +176,22 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
 
     if (clickedLabel !== targetLabel) {
       setFeedback('incorrect');
+      setIncorrectSymbolId(symbol.id);
       if (user?.settings?.voice_mode_enabled !== false) {
-        tts.enqueue(t('symbolHunt.tryAgain', 'Try again'));
+        tts.enqueue(t('symbolHunt.tryAgain'));
       }
       const generation = gameGenerationRef.current;
       schedule(() => {
-        if (generation === gameGenerationRef.current) setFeedback(null);
+        if (generation === gameGenerationRef.current) {
+          setFeedback(null);
+          setIncorrectSymbolId(null);
+        }
       }, 1000);
       return;
     }
 
     setFeedback('correct');
+    setIncorrectSymbolId(null);
     setScore((currentScore) => currentScore + 1);
     Promise.resolve(api.post('/analytics/usage', {
       symbols: [{
@@ -166,7 +203,7 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
     })).catch((error) => console.error('Failed to log symbol usage:', error));
 
     if (user?.settings?.voice_mode_enabled !== false) {
-      tts.enqueue(t('symbolHunt.correct', 'Correct!'));
+      tts.enqueue(t('symbolHunt.correct'));
     }
 
     const generation = gameGenerationRef.current;
@@ -184,30 +221,32 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
   const repeatInstruction = useCallback(() => {
     if (!targetSymbol || user?.settings?.voice_mode_enabled === false) return;
     const label = targetSymbol.custom_text || targetSymbol.symbol.label;
-    tts.enqueue(t('symbolHunt.find', 'Find {{label}}', { label }));
+    tts.enqueue(t('symbolHunt.find', { label }));
   }, [t, targetSymbol, user?.settings?.voice_mode_enabled]);
 
   const playAgain = useCallback(() => {
-    ++gameGenerationRef.current;
+    invalidateGeneration();
     clearTimers();
     setGameState('playing');
     setScore(0);
     setRound(1);
     nextRound(symbols);
-  }, [clearTimers, nextRound, symbols]);
+  }, [clearTimers, invalidateGeneration, nextRound, symbols]);
 
   const changeGameState = useCallback((nextState: 'selecting' | 'playing' | 'finished') => {
     if (nextState === 'selecting') {
-      ++gameGenerationRef.current;
+      invalidateGeneration();
       clearTimers();
     }
     setGameState(nextState);
-  }, [clearTimers]);
+  }, [clearTimers, invalidateGeneration]);
 
   useEffect(() => () => {
-    ++gameGenerationRef.current;
+    invalidateGeneration();
     clearTimers();
-  }, [clearTimers]);
+    // Stop any queued/playing instruction audio when leaving the page.
+    tts.cancelAll();
+  }, [clearTimers, invalidateGeneration]);
 
   return {
     boards,
@@ -221,6 +260,7 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
     score,
     targetSymbol,
     feedback,
+    incorrectSymbolId,
     symbols,
     startGame,
     handleSymbolClick,

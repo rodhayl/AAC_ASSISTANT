@@ -5,12 +5,21 @@ interface EnqueueOptions {
   rate?: number
   pitch?: number
   lang?: string
+  /**
+   * Replacement group: enqueueing with a group cancels any still-queued or
+   * currently speaking utterance of the SAME group. Hover-to-speak previews
+   * use this so only the symbol under the pointer is spoken; utterances
+   * without a group (real messages) are never displaced.
+   */
+  group?: string
 }
 
 const NO_START_WATCHDOG_MS = 1_500
 const SPEAKING_WATCHDOG_MS = 15_000
-// Allow extra time for the first local synthesis (model warm-up + network).
-const LOCAL_START_WINDOW_MS = 12_000
+// Allow local synthesis enough time for a cold model load plus generation.
+const LOCAL_START_WINDOW_MS = 60_000
+const SILENT_AUDIO_DATA_URI =
+  'data:audio/wav;base64,UklGRsQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
 
 // Voices load asynchronously in Chrome/Edge; cache them and refresh on the
 // voiceschanged event so speech never uses an empty voice list on first use.
@@ -107,16 +116,99 @@ async function refreshLocalTTSCapability() {
   if (typeof store.setLocalTTSAvailable === 'function') {
     store.setLocalTTSAvailable(available)
   }
-  if (typeof store.setUseLocalTTS === 'function') {
-    store.setUseLocalTTS(available)
-  }
   capabilityChecked = true
 }
 
-/** Probe the backend once (cached) and enable local TTS when available. */
-export function initLocalTTS() {
-  if (capabilityChecked) return
-  void refreshLocalTTSCapability()
+// ---------------------------------------------------------------------------
+// Lazy background warm-up
+// ---------------------------------------------------------------------------
+// The first utterance pays two one-time costs: the voice-status capability
+// round-trip and, with local neural TTS, the backend Kokoro model load. The
+// first voice answer additionally pays the faster-whisper model load. Warm
+// every lazy backend model in one batched request when the authenticated app
+// shell mounts so the first spoken message in a conversation (and the first
+// microphone answer) starts immediately.
+let warmupStarted = false
+
+function setWarmupStatus(kind: 'tts' | 'speech' | 'vector', status: WarmupStatus) {
+  const store = useTTSStore.getState()
+  const setter = kind === 'tts'
+    ? store.setTTSWarmupStatus
+    : kind === 'speech'
+      ? store.setSpeechWarmupStatus
+      : store.setVectorWarmupStatus
+  // Defensive: some tests/exports may provide a partial store mock.
+  if (typeof setter === 'function') setter(status)
+}
+
+export function warmup() {
+  // Prepare browser voices early: Chrome/Edge populate getVoices() asynchron-
+  // ously, so starting the listener now avoids an empty voice list on first
+  // use of the browser speech path too.
+  ensureVoicesListener()
+  if (warmupStarted) return
+  warmupStarted = true
+  void (async () => {
+    // Browser-only speech users skip the Kokoro model load (a ~325MB
+    // resident model they would never use), but faster-whisper still
+    // pre-loads: the microphone path is independent of the TTS provider.
+    // The fastembed semantic index pre-loads for everyone because the
+    // symbol search does not depend on the TTS provider setting.
+    let targets = useTTSStore.getState().ttsProvider === 'kokoro'
+      ? ['tts', 'speech', 'vector']
+      : ['speech', 'vector']
+    try {
+      if (targets.includes('tts')) {
+        if (!capabilityChecked) {
+          await refreshLocalTTSCapability()
+        }
+        if (!useTTSStore.getState().localTTSAvailable) {
+          // The TTS engine is unavailable: drop the target instead of
+          // returning, so the batch still pre-loads the other lazy models
+          // (the standalone speech warm-up used to run regardless).
+          setWarmupStatus('tts', 'unavailable')
+          targets = targets.filter((target) => target !== 'tts')
+        } else {
+          setWarmupStatus('tts', 'warming')
+        }
+      }
+      setWarmupStatus('speech', 'warming')
+      setWarmupStatus('vector', 'warming')
+      // One batched request pre-loads every lazy backend model; each target
+      // reports independently so an unavailable target never hides another.
+      // The request completes once each model is resident (or unavailable),
+      // so it doubles as the pre-load status signal; nothing blocks on it
+      // from the caller's side.
+      const res = await fetch(`${config.API_BASE_URL}/providers/warmup`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${useAuthStore.getState().token || ''}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ targets }),
+      })
+      let data: Record<string, { warmed?: boolean }> = {}
+      try {
+        data = (await res.json()) as Record<string, { warmed?: boolean }>
+      } catch { /* non-JSON body */ }
+      if (res.ok) {
+        if (targets.includes('tts')) {
+          setWarmupStatus('tts', data.tts?.warmed ? 'ready' : 'unavailable')
+        }
+        setWarmupStatus('speech', data.speech?.warmed ? 'ready' : 'unavailable')
+        setWarmupStatus('vector', data.vector?.warmed ? 'ready' : 'unavailable')
+      } else {
+        if (targets.includes('tts')) setWarmupStatus('tts', 'unavailable')
+        setWarmupStatus('speech', 'unavailable')
+        setWarmupStatus('vector', 'unavailable')
+      }
+    } catch {
+      // Best-effort: the first enqueue re-checks capability as usual.
+      if (targets.includes('tts')) setWarmupStatus('tts', 'unavailable')
+      setWarmupStatus('speech', 'unavailable')
+      setWarmupStatus('vector', 'unavailable')
+    }
+  })()
 }
 
 class TTSQueue {
@@ -126,6 +218,8 @@ class TTSQueue {
   private lastSpokenAt: Map<string | number, number>
   private debounceMs: number
   private activeUtteranceId: number | null
+  private activeIsLocal: boolean
+  private activeGroup: string | null
   private nextUtteranceId: number
   private speakingRequestedAt: number | null
   private speakingStartedAt: number | null
@@ -133,8 +227,10 @@ class TTSQueue {
   private speakingWatchdog: ReturnType<typeof setTimeout> | null
   private localAudio: HTMLAudioElement | null
   private localAudioUrl: string | null
+  private localAudioElement: HTMLAudioElement | null
   private localStartWatchdog: ReturnType<typeof setTimeout> | null
   private localSynthesisCleanup: (() => void) | null
+  private unlockedAudio: HTMLAudioElement | null
 
   constructor() {
     this.queue = []
@@ -143,6 +239,8 @@ class TTSQueue {
     this.lastSpokenAt = new Map()
     this.debounceMs = 250
     this.activeUtteranceId = null
+    this.activeIsLocal = false
+    this.activeGroup = null
     this.nextUtteranceId = 0
     this.speakingRequestedAt = null
     this.speakingStartedAt = null
@@ -150,11 +248,27 @@ class TTSQueue {
     this.speakingWatchdog = null
     this.localAudio = null
     this.localAudioUrl = null
+    this.localAudioElement = null
     this.localStartWatchdog = null
     this.localSynthesisCleanup = null
+    this.unlockedAudio = null
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel()
     }
+  }
+
+  unlock() {
+    if (this.unlockedAudio || typeof window === 'undefined' || typeof window.Audio === 'undefined') return
+
+    const audio = new window.Audio(SILENT_AUDIO_DATA_URI)
+    audio.muted = true
+    audio.volume = 0
+    this.unlockedAudio = audio
+    void audio.play().catch(() => {
+      if (this.unlockedAudio === audio) {
+        this.unlockedAudio = null
+      }
+    })
   }
 
   onStatusChange(cb: (s: Status) => void) {
@@ -177,6 +291,8 @@ class TTSQueue {
     this.queue = []
     this.clearWatchdogs()
     this.activeUtteranceId = null
+    this.activeIsLocal = false
+    this.activeGroup = null
     this.speakingRequestedAt = null
     this.speakingStartedAt = null
     this.clearLocalSynthesisAttempt()
@@ -189,6 +305,18 @@ class TTSQueue {
     this.setStatus('idle')
   }
 
+  /**
+   * Drop queued utterances of a replacement group and stop the active one
+   * when it belongs to the group. Other utterances (real messages) keep
+   * their place and are never interrupted.
+   */
+  private cancelGroup(group: string) {
+    this.queue = this.queue.filter((item) => item.opts.group !== group)
+    if (this.activeUtteranceId !== null && this.activeGroup === group) {
+      this.finishCurrentUtterance(true)
+    }
+  }
+
   enqueue(text: string, opts: EnqueueOptions = {}) {
     const now = Date.now()
     const k = opts.key ?? text
@@ -196,16 +324,17 @@ class TTSQueue {
     if (now - last < this.debounceMs) return
     this.lastSpokenAt.set(k, now)
 
-    // Probe the backend for local neural TTS on first use (lazy, non-blocking).
-    initLocalTTS()
-
+    if (opts.group) this.cancelGroup(opts.group)
     this.queue.push({ text, opts })
     this.processNext()
   }
 
   private processNext() {
     if (this.activeUtteranceId !== null) {
-      if (this.status !== 'speaking' || !this.isWatchdogExpired()) return
+      // Local Kokoro utterances run their own watchdogs (cold-synthesis
+      // window, playback-duration watchdog). The browser no-start watchdog
+      // must never kill a slow-but-healthy synthesis when new items arrive.
+      if (this.activeIsLocal || this.status !== 'speaking' || !this.isWatchdogExpired()) return
       this.finishCurrentUtterance(true)
     }
 
@@ -221,6 +350,7 @@ class TTSQueue {
 
     const utteranceId = ++this.nextUtteranceId
     this.activeUtteranceId = utteranceId
+    this.activeGroup = item.opts.group ?? null
     this.speakingRequestedAt = Date.now()
     this.speakingStartedAt = null
 
@@ -228,19 +358,45 @@ class TTSQueue {
     // no-start watchdog takes over from here.
     this.setStatus('speaking')
 
-    if (useTTSStore.getState().useLocalTTS && useTTSStore.getState().localTTSAvailable) {
-      void this.speakLocalWithFallback(item, utteranceId)
+    const { ttsProvider, localTTSAvailable } = useTTSStore.getState()
+    this.activeIsLocal = ttsProvider === 'kokoro'
+    if (ttsProvider === 'kokoro' && !capabilityChecked) {
+      void this.waitForLocalTTS(item, utteranceId)
+    } else if (ttsProvider === 'kokoro' && localTTSAvailable) {
+      void this.speakLocal(item, utteranceId)
+    } else if (ttsProvider === 'kokoro') {
+      // A previous capability check cached an unavailable result, but the
+      // engine may have become available since (model download completed,
+      // server restart, etc.). Re-check once per process so a transient
+      // startup issue does not permanently disable local neural TTS.
+      capabilityChecked = false
+      void this.waitForLocalTTS(item, utteranceId)
     } else {
       this.scheduleNoStartWatchdog(utteranceId)
       this.speakViaBrowser(item, utteranceId)
     }
   }
 
+  private async waitForLocalTTS(
+    item: { text: string; opts: EnqueueOptions },
+    utteranceId: number,
+  ) {
+    await refreshLocalTTSCapability()
+    if (!this.isActiveUtterance(utteranceId)) return
+    if (useTTSStore.getState().localTTSAvailable) {
+      void this.speakLocal(item, utteranceId)
+      return
+    }
+    console.error('Kokoro TTS is selected but unavailable; no speech was produced.')
+    this.finishCurrentUtterance(false)
+    Promise.resolve().then(() => this.processNext())
+  }
+
   /**
-   * Try the local neural TTS engine; if it cannot synthesize within the
-   * start window, fall back to the browser's SpeechSynthesis voices.
+   * Use the selected local neural TTS engine without silently switching
+   * providers. The user can select browser speech explicitly in Settings.
    */
-  private async speakLocalWithFallback(
+  private async speakLocal(
     item: { text: string; opts: EnqueueOptions },
     utteranceId: number,
   ) {
@@ -248,8 +404,14 @@ class TTSQueue {
     // abandoned) any late fetch/audio result must be ignored to avoid
     // speaking twice or restarting an in-flight utterance.
     let localAbandoned = false
+    // True when the LOCAL_START_WINDOW_MS watchdog aborted the request: that
+    // is a real synthesis failure, unlike an intentional cancel below.
+    let synthesisTimedOut = false
     let synthesisController: AbortController | null = null
     let synthesisTimeout: ReturnType<typeof setTimeout> | null = null
+    // Mirrors the in-flight controller so the catch (outside the try scope)
+    // can tell an intentional cancel from a real failure.
+    let activeController: AbortController | null = null
 
     const clearSynthesisRequest = () => {
       if (synthesisTimeout !== null) {
@@ -264,21 +426,24 @@ class TTSQueue {
     }
     this.localSynthesisCleanup = clearSynthesisRequest
 
-    const fallback = () => {
+    const stopWithoutFallback = () => {
       if (localAbandoned || !this.isActiveUtterance(utteranceId)) return
       localAbandoned = true
       this.clearLocalStartWatchdog(localStartWatchdog)
       clearSynthesisRequest()
       this.stopLocalAudio()
+      this.localAudioElement = null
       this.clearNoStartWatchdog()
-      this.speakViaBrowser(item, utteranceId)
+      console.error('Kokoro TTS could not synthesize the utterance.')
+      this.finishCurrentUtterance(false)
+      Promise.resolve().then(() => this.processNext())
     }
 
     const localStartWatchdog = setTimeout(() => {
       if (this.localStartWatchdog === localStartWatchdog) {
         this.localStartWatchdog = null
       }
-      fallback()
+      stopWithoutFallback()
     }, LOCAL_START_WINDOW_MS)
     this.localStartWatchdog = localStartWatchdog
 
@@ -288,12 +453,16 @@ class TTSQueue {
       // The local engine uses its own voice selection (specific Kokoro voice
       // names); `selectedVoice` remains the browser voice used by
       // speakViaBrowser so the two paths never interfere.
-      const voicePref = useTTSStore.getState().localVoice
+      const { localVoice: voicePref, localSpeed } = useTTSStore.getState()
       const token = useAuthStore.getState().token || ''
 
       const controller = new AbortController()
+      activeController = controller
       synthesisController = controller
-      synthesisTimeout = setTimeout(() => controller.abort(), LOCAL_START_WINDOW_MS)
+      synthesisTimeout = setTimeout(() => {
+        synthesisTimedOut = true
+        controller.abort()
+      }, LOCAL_START_WINDOW_MS)
       const res = await fetch(`${config.API_BASE_URL}/providers/tts/synthesize`, {
         method: 'POST',
         headers: {
@@ -304,14 +473,26 @@ class TTSQueue {
           text: item.text,
           lang: baseLang,
           voice: voicePref || 'default',
-          speed: item.opts.rate || 1.0,
+          // The user's base speed (Settings) is scaled by the per-message
+          // rate modifier and clamped to the range the backend accepts.
+          speed: clampLocalSpeed(localSpeed * (item.opts.rate || 1.0)),
         }),
         signal: controller.signal,
       })
-      clearSynthesisRequest()
+      // The headers have arrived, but the WAV body is still unread. Do not
+      // abort the controller here: aborting it cancels res.blob() and turns a
+      // successful 200 response into AbortError before playback can start.
+      if (synthesisTimeout !== null) {
+        clearTimeout(synthesisTimeout)
+        synthesisTimeout = null
+      }
+      synthesisController = null
+      if (this.localSynthesisCleanup === clearSynthesisRequest) {
+        this.localSynthesisCleanup = null
+      }
       if (localAbandoned) return
       if (!res.ok) {
-        fallback()
+        stopWithoutFallback()
         return
       }
 
@@ -319,7 +500,15 @@ class TTSQueue {
       if (localAbandoned || !this.isActiveUtterance(utteranceId)) return
 
       const url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
+      const audio = this.localAudioElement ?? this.unlockedAudio ?? new window.Audio()
+      if (this.unlockedAudio === audio) {
+        audio.pause()
+        this.unlockedAudio = null
+      }
+      this.localAudioElement = audio
+      audio.muted = false
+      audio.volume = 1
+      audio.src = url
       this.localAudio = audio
       this.localAudioUrl = url
 
@@ -343,9 +532,9 @@ class TTSQueue {
         if (localAbandoned || !this.isActiveUtterance(utteranceId)) return
         // A successful synthesis can still fail at the device/playback layer
         // (missing output device, autoplay policy, invalid decoder, etc.).
-        // Preserve communication by using the same browser fallback as an
-        // HTTP/synthesis failure instead of silently dropping the utterance.
-        fallback()
+        // Keep the selected provider explicit: stop and report the failure
+        // instead of silently switching to browser speech.
+        stopWithoutFallback()
       }
 
       await audio.play()
@@ -361,10 +550,17 @@ class TTSQueue {
       this.clearNoStartWatchdog()
       const durationMs = Number.isFinite(audio.duration) ? audio.duration * 1000 : 0
       this.scheduleSpeakingWatchdog(utteranceId, Math.max(SPEAKING_WATCHDOG_MS, durationMs + 3_000))
-    } catch {
+    } catch (error) {
       this.clearLocalStartWatchdog(localStartWatchdog)
       clearSynthesisRequest()
-      if (!localAbandoned) fallback()
+      // Cancelling the previous utterance when a newer one is enqueued (or
+      // the queue is cleared) rejects the in-flight request with AbortError;
+      // that is intentional, not a failure. Report only real failures: the
+      // start timeout, network errors, or playback errors.
+      if (!localAbandoned && (!activeController?.signal.aborted || synthesisTimedOut)) {
+        console.error('Kokoro TTS playback/synthesis error', error)
+        stopWithoutFallback()
+      }
     }
   }
 
@@ -527,6 +723,8 @@ class TTSQueue {
   private finishCurrentUtterance(cancelSpeech: boolean) {
     this.clearWatchdogs()
     this.activeUtteranceId = null
+    this.activeIsLocal = false
+    this.activeGroup = null
     this.speakingRequestedAt = null
     this.speakingStartedAt = null
     this.clearLocalSynthesisAttempt()
@@ -541,7 +739,13 @@ class TTSQueue {
 }
 
 export const tts = new TTSQueue()
-import { useTTSStore } from '../store/ttsStore'
+
+if (typeof document !== 'undefined') {
+  const unlockAudio = () => tts.unlock()
+  document.addEventListener('pointerdown', unlockAudio, { capture: true, passive: true })
+  document.addEventListener('keydown', unlockAudio, { capture: true })
+}
+import { clampLocalSpeed, useTTSStore, type WarmupStatus } from '../store/ttsStore'
 import { useAuthStore } from '../store/authStore'
 import i18n from '../i18n/index'
 import { config } from '../config'

@@ -130,6 +130,37 @@ class TestStartupServesDuringWarmup:
             assert ready.status_code == 503
             assert ready.json()["status"] == "database_unavailable"
 
+    def test_ready_reports_degraded_when_a_provider_failed(self, monkeypatch):
+        """Warmup completing with a failed provider yields 503 degraded, not healthy."""
+        from src.api.deps.providers import _startup_lock, _startup_state
+        from src.api.main import app
+
+        def degraded_warmup(timeout_seconds: float = 30.0):
+            with _startup_lock:
+                _startup_state["initialized"] = True
+                _startup_state["initializing"] = False
+                _startup_state["providers_ready"] = {
+                    "speech": True,
+                    "llm": False,  # Groq unavailable: the only production LLM
+                    "achievement": True,
+                    "vector_store": True,
+                }
+                _startup_state["errors"] = ["llm: Groq API key missing"]
+                _startup_state["startup_time_ms"] = 2500.0
+
+        monkeypatch.setattr("src.api.main.warmup_providers", degraded_warmup)
+        monkeypatch.setattr("src.api.main.index_all_symbols", lambda *a, **kw: None)
+
+        with TestClient(app) as client:
+            ready = client.get("/ready")
+            assert ready.status_code == 503
+            data = ready.json()
+            assert data["status"] == "degraded"
+            assert data["ready"] is False
+            assert data["providers"]["llm"] is False
+            assert "Groq API key missing" in data["errors"][0]
+
+
 
 # ---------------------------------------------------------------------------
 # Fix B — warmup_providers timeout and shutdown correctness
@@ -367,10 +398,12 @@ class TestIndexAllSymbolsEmptyLibrary:
 
         @contextmanager
         def mock_get_session():
+            # Mirror the real SQLAlchemy Query API: every clause returns the
+            # query itself so production needs no test-double fallbacks.
             mock_db = Mock()
             query = mock_db.query.return_value
             query.order_by.return_value = query
-            query.yield_per.return_value = []
+            query.yield_per.return_value = query
             query.first.return_value = None
             yield mock_db
 

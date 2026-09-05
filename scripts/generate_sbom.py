@@ -70,6 +70,12 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _app_version() -> str:
+    """Read the canonical release version from pyproject (single source)."""
+    pyproject = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    return str(pyproject["project"]["version"])
+
+
 def _bom(dependencies: list[dict[str, str]]) -> dict:
     return {
         "bomFormat": "CycloneDX",
@@ -79,7 +85,7 @@ def _bom(dependencies: list[dict[str, str]]) -> dict:
             "component": {
                 "type": "application",
                 "name": "aac-assistant",
-                "version": "2.0.0",
+                "version": _app_version(),
             }
         },
         "components": [_component(*item.values()) for item in dependencies],

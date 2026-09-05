@@ -9,7 +9,10 @@ vi.mock('../src/lib/api', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (_key: string, fallback: string) => fallback,
+    t: (key: string, arg2?: string | Record<string, unknown>, arg3?: Record<string, unknown>) =>
+      (globalThis as typeof globalThis & {
+        __aacTestTranslation?: (namespace: string, key: string, arg2?: string | Record<string, unknown>, arg3?: Record<string, unknown>) => string;
+      }).__aacTestTranslation?.('boards', key, arg2, arg3) ?? key,
     i18n: { language: 'en-US' },
   }),
 }));
@@ -90,6 +93,57 @@ describe('SymbolSearchModal request lifecycle', () => {
     expect(api.get).toHaveBeenCalledTimes(1);
     expect(api.get).toHaveBeenCalledWith('/boards/symbols', expect.objectContaining({
       params: expect.objectContaining({ search: 'cat' }),
+    }));
+  });
+
+  it('re-runs the search when the category filter changes', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: [] });
+    renderModal();
+    const input = screen.getByPlaceholderText('Search for a symbol...');
+    fireEvent.change(input, { target: { value: 'cat' } });
+    await act(() => vi.advanceTimersByTimeAsync(200));
+    await act(async () => { await Promise.resolve(); });
+    expect(api.get).toHaveBeenCalledTimes(1);
+
+    // Picking a category must trigger a new search with the new filter,
+    // not leave stale results on screen (regression: the change only set
+    // state and never re-queried). The Base UI select opens on pointer down
+    // (userEvent's full pointer sequence hangs in jsdom, so drive it with
+    // fireEvent directly).
+    const categoryTrigger = screen.getByRole('combobox', { name: 'All Categories' });
+    fireEvent.pointerDown(categoryTrigger, { button: 0, ctrlKey: false });
+    fireEvent.click(categoryTrigger);
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    const animalsOption = screen.getByRole('option', { name: 'Animals' });
+    fireEvent.pointerDown(animalsOption, { button: 0, ctrlKey: false });
+    fireEvent.click(animalsOption);
+    await act(() => vi.advanceTimersByTimeAsync(200));
+    await act(async () => { await Promise.resolve(); });
+    expect(api.get).toHaveBeenCalledTimes(2);
+    expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', expect.objectContaining({
+      params: expect.objectContaining({ search: 'cat', category: 'animals' }),
+    }));
+  });
+
+  it('re-runs the search when the language filter changes', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: [] });
+    renderModal();
+    const input = screen.getByPlaceholderText('Search for a symbol...');
+    fireEvent.change(input, { target: { value: 'cat' } });
+    await act(() => vi.advanceTimersByTimeAsync(200));
+    await act(async () => { await Promise.resolve(); });
+
+    const languageTrigger = screen.getByRole('combobox', { name: 'All' });
+    fireEvent.pointerDown(languageTrigger, { button: 0, ctrlKey: false });
+    fireEvent.click(languageTrigger);
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    const spanishOption = screen.getByRole('option', { name: 'Spanish' });
+    fireEvent.pointerDown(spanishOption, { button: 0, ctrlKey: false });
+    fireEvent.click(spanishOption);
+    await act(() => vi.advanceTimersByTimeAsync(200));
+    await act(async () => { await Promise.resolve(); });
+    expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', expect.objectContaining({
+      params: expect.objectContaining({ search: 'cat', language: 'es' }),
     }));
   });
 });

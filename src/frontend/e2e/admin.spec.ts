@@ -65,7 +65,7 @@ test.describe.serial('Admin Management', () => {
     await row.getByRole('button', { name: /delete|eliminar/i }).click();
     
     // Confirm delete
-    await expect(page.locator('div[role="dialog"]')).toBeVisible();
+    await expect(page.locator('div[role="alertdialog"]')).toBeVisible();
     await page.getByRole('button', { name: /delete|eliminar/i }).last().click(); // Confirm
     
     await expect(page.getByText(teacherName)).not.toBeVisible();
@@ -88,7 +88,7 @@ test.describe.serial('Admin Management', () => {
     await expect(dialog.getByLabel(/display name|nombre/i)).toBeVisible();
     await dialog.getByLabel(/username|usuario/i).fill(username);
     await dialog.getByLabel(/display name|nombre/i).fill('E2E Admin Student');
-    await dialog.getByLabel(/^password/i).fill('AdminCreated123!');
+    await dialog.getByLabel(/^password|^contraseña/i).fill('AdminCreated123!');
     await dialog.getByLabel(/confirm password|confirmar contraseña/i).fill('AdminCreated123!');
     await dialog.getByRole('button', { name: /create student|crear estudiante/i }).click();
     await expect(dialog).not.toBeVisible({ timeout: 30000 });
@@ -149,9 +149,9 @@ test.describe.serial('Admin Management', () => {
         }
     }
 
-    // GuardianProfileModal is a fixed overlay without a dialog role after the
-    // frontend page split. Scope assertions to that overlay instead.
-    const modal = page.locator('div.fixed.inset-0').filter({ hasText: /guardian profile|perfil/i });
+    // GuardianProfileModal renders as a Base UI dialog (role="dialog")
+    // portaled to body; scope assertions to it.
+    const modal = page.getByRole('dialog');
     await expect(modal).toBeVisible();
     await expect(modal.getByText(/guardian profile|perfil/i)).toBeVisible();
     
@@ -164,7 +164,9 @@ test.describe.serial('Admin Management', () => {
 
   test('should manage symbols', async ({ page }) => {
     await page.goto('/symbols');
-    await expect(page.getByText(/upload|subir/i)).toBeVisible();
+    // The upload control is a file input; scope to it so ARASAAC symbol
+    // descriptions containing "subir" don't cause a strict-mode clash.
+    await expect(page.locator('input[type="file"]').first()).toBeVisible();
     
     // Verify grid is visible
     await expect(page.locator('.grid').last()).toBeVisible();

@@ -3,8 +3,10 @@ import { Mic, Send, Square, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Smartbar } from '../board/Smartbar';
 import type { BoardSymbol } from '../../types';
+import { Button } from '../ui/button';
+import { IconButton } from '../ui/icon-button';
 
-const inputToSymbols = (text: string): BoardSymbol[] => {
+const inputToSymbols = (text: string, language: string): BoardSymbol[] => {
   if (!text.trim()) return [];
 
   return text.trim().split(/\s+/).map((word, index) => ({
@@ -18,7 +20,7 @@ const inputToSymbols = (text: string): BoardSymbol[] => {
       id: 0,
       label: word,
       category: 'unknown',
-      language: 'en',
+      language,
       is_builtin: false,
       created_at: '',
     },
@@ -35,6 +37,7 @@ interface LearningInputRowProps {
   isLoading: boolean;
   isStartingSession: boolean;
   boardId?: number | null;
+  topic?: string | null;
   startRecording: () => Promise<void>;
   stopRecording: () => void;
   sendRecording: () => Promise<void>;
@@ -51,18 +54,21 @@ export function LearningInputRow({
   isLoading,
   isStartingSession,
   boardId,
+  topic,
   startRecording,
   stopRecording,
   sendRecording,
   discardRecording,
 }: LearningInputRowProps) {
-  const { t } = useTranslation('learning');
+  const { t, i18n } = useTranslation('learning');
+  const currentLanguage = i18n.language?.split('-')[0] || 'en';
 
   return (
-    <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+    <div className="p-4 border-t border-border bg-background">
       <div className="mb-3">
         <Smartbar
-          currentSentence={inputToSymbols(input)}
+          currentSentence={inputToSymbols(input, currentLanguage)}
+          topic={topic}
           onSelectSymbol={(symbol) => {
             const label = symbol.custom_text || symbol.symbol.label;
             onInputChange(
@@ -81,74 +87,73 @@ export function LearningInputRow({
           value={input}
           onChange={(event) => onInputChange(event.target.value)}
           placeholder={t('typeAnswer')}
-          className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+          className="flex-1 p-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand bg-surface text-foreground"
           disabled={isLoading || isRecording || isStartingSession}
         />
 
         {voiceEnabled && (
           <>
             {isRecording ? (
-              <button
-                type="button"
-                onClick={stopRecording}
-                className="p-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors animate-pulse"
+              <IconButton
+                label={t('stopRecordingLabel')}
                 title={t('stopReview')}
-                aria-label="Stop recording"
+                onClick={stopRecording}
+                variant="default"
+                className="p-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors animate-pulse size-auto"
               >
                 <Square className="w-5 h-5" />
-              </button>
+              </IconButton>
             ) : hasRecording ? (
               <>
-                <button
-                  type="button"
-                  onClick={sendRecording}
-                  className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                <IconButton
+                  label={t('sendRecordingLabel')}
                   title={t('sendRecording')}
-                  aria-label="Send recording"
+                  onClick={sendRecording}
+                  variant="accent"
+                  size="icon"
                   disabled={isLoading}
                 >
-                  <Send className="w-5 h-5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={discardRecording}
-                  className="p-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  <Send />
+                </IconButton>
+                <IconButton
+                  label={t('discardRecordingLabel')}
                   title={t('discardRecording')}
-                  aria-label="Discard recording"
+                  onClick={discardRecording}
                   disabled={isLoading}
+                  className="p-2 bg-muted text-muted-foreground rounded-lg hover:bg-surface-hover transition-colors size-auto"
                 >
                   <Trash2 className="w-5 h-5" />
-                </button>
+                </IconButton>
                 {isLoading && (
-                  <div className="flex items-center ml-2 text-xs text-gray-500 dark:text-gray-400">
-                    <div className="w-2 h-2 mr-2 rounded-full bg-indigo-500 animate-pulse" />
+                  <div className="flex items-center ml-2 text-xs text-muted-foreground">
+                    <div className="w-2 h-2 mr-2 rounded-full bg-brand/100 animate-pulse" />
                     <span>{t('transcribing')}</span>
                   </div>
                 )}
               </>
             ) : (
-              <button
-                type="button"
-                onClick={startRecording}
-                className="p-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              <IconButton
+                label={t('startRecordingLabel')}
                 title={t('startRecording')}
-                aria-label="Start recording"
+                onClick={startRecording}
                 disabled={isLoading || isStartingSession}
+                className="p-2 bg-muted text-muted-foreground rounded-lg hover:bg-surface-hover transition-colors size-auto"
               >
                 <Mic className="w-5 h-5" />
-              </button>
+              </IconButton>
             )}
           </>
         )}
 
-        <button
+        <Button
           type="submit"
-          disabled={isLoading || (!input.trim() && !isRecording) || isStartingSession}
-          className="p-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
+          variant="accent"
+          size="icon"
+          disabled={isLoading || isRecording || (!input.trim() && !isRecording) || isStartingSession}
           aria-label={t('sendMessage')}
         >
-          <Send className="w-5 h-5" />
-        </button>
+          <Send />
+        </Button>
       </form>
     </div>
   );

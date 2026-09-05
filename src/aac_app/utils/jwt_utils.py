@@ -15,23 +15,26 @@ from src import config
 
 # JWT Configuration
 # Load from .env via the shared configuration module (environment variables take precedence)
-JWT_SECRET_KEY = config.get("JWT_SECRET_KEY", "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION")
+_INSECURE_DEFAULT_SECRET = "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION"
+JWT_SECRET_KEY = config.get("JWT_SECRET_KEY", _INSECURE_DEFAULT_SECRET)
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 120  # 2 hours
 REFRESH_TOKEN_EXPIRE_DAYS = 7  # 7 days
 
 # Enforce secure secret in production
-if config.get("ENVIRONMENT", "development") == "production":  # noqa: SIM102
-    if JWT_SECRET_KEY == "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION":
-        raise ValueError(
-            "CRITICAL SECURITY ERROR: JWT_SECRET_KEY must be set to a secure value in production. "
-            "Generate one with: python -c 'import secrets; print(secrets.token_hex(32))'"
-        )
+if (
+    config.get("ENVIRONMENT", "development") == "production"
+    and JWT_SECRET_KEY == _INSECURE_DEFAULT_SECRET
+):
+    raise ValueError(
+        "CRITICAL SECURITY ERROR: JWT_SECRET_KEY must be set to a secure value in production. "
+        "Generate one with: python -c 'import secrets; print(secrets.token_hex(32))'"
+    )
 
 
 def _require_secure_secret() -> None:
     """Refuse to mint tokens with the placeholder secret in production."""
-    if JWT_SECRET_KEY != "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION":
+    if JWT_SECRET_KEY != _INSECURE_DEFAULT_SECRET:
         return
     logger.critical(
         "JWT_SECRET_KEY is using default insecure value! Set JWT_SECRET_KEY environment variable."
@@ -90,9 +93,15 @@ def create_access_token(
 
 
 def _decode_token(
-    token: str, *, expected_type: str | None
+    token: str, *, expected_type: str | None, verify_exp: bool = True
 ) -> dict[str, Any] | None:
-    """Decode a signed token and optionally enforce its token type."""
+    """Decode a signed token and optionally enforce its token type.
+
+    ``verify_exp=False`` still verifies the signature, issuer, type, and
+    required claims; it only ignores an expired ``exp``. Callers use this
+    exclusively for best-effort flows such as logout, where an expired access
+    token must still identify its account so the refresh token can be revoked.
+    """
     try:
         payload = jwt.decode(
             token,
@@ -100,7 +109,7 @@ def _decode_token(
             algorithms=[JWT_ALGORITHM],
             options={
                 "verify_signature": True,
-                "verify_exp": True,
+                "verify_exp": verify_exp,
                 "verify_iat": True,
                 "require": ["exp", "iat", "sub"],
             },
@@ -137,9 +146,15 @@ def _decode_token(
         return None
 
 
-def decode_access_token(token: str) -> dict[str, Any] | None:
-    """Decode and validate an access token, rejecting other token types."""
-    return _decode_token(token, expected_type="access")
+def decode_access_token(
+    token: str, *, verify_exp: bool = True
+) -> dict[str, Any] | None:
+    """Decode and validate an access token, rejecting other token types.
+
+    Pass ``verify_exp=False`` for best-effort flows (e.g. logout) that must
+    still identify the account of an expired token.
+    """
+    return _decode_token(token, expected_type="access", verify_exp=verify_exp)
 
 
 def decode_refresh_token(token: str) -> dict[str, Any] | None:
@@ -167,21 +182,8 @@ def create_refresh_token(data: dict[str, Any]) -> str:
     return encoded_jwt
 
 
-def generate_secret_key() -> str:
-    """
-    Generate a secure random secret key for JWT signing.
-    This should be run once and the result stored securely in environment variables.
-
-    Returns:
-        A secure random 256-bit (32-byte) key encoded as hex string
-    """
-    import secrets
-
-    return secrets.token_hex(32)
-
-
 # Warning on module import if using insecure default
-if JWT_SECRET_KEY == "INSECURE_DEFAULT_CHANGE_IN_PRODUCTION":
+if JWT_SECRET_KEY == _INSECURE_DEFAULT_SECRET:
     logger.warning(
         "=" * 80 + "\n"
         "WARNING: Using default JWT_SECRET_KEY! This is INSECURE.\n"

@@ -2,9 +2,10 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import api, { extractError } from '../lib/api';
 import { registerAuthStateReader } from '../lib/authState';
-import type { User } from '../types';
+import type { AuthSetupData, RegistrationData, User } from '../types';
 import { useLocaleStore } from './localeStore';
 import { useThemeStore } from './themeStore';
+import i18n from '../i18n/index';
 
 interface AuthState {
   user: User | null;
@@ -16,13 +17,8 @@ interface AuthState {
   sessionExpiresAt: number | null;
   
   login: (username: string, password: string) => Promise<void>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  setupAdmin: (setupData: any) => Promise<void>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  register: (userData: any) => Promise<void>;
-  updateProfile: (data: Partial<User>) => Promise<void>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  updatePreferences: (preferences: any) => Promise<void>;
+  setupAdmin: (setupData: AuthSetupData) => Promise<void>;
+  register: (userData: RegistrationData) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
   refreshAccessToken: () => Promise<boolean>;
@@ -66,27 +62,43 @@ function syncUserPreferences(user: User | null | undefined) {
   if (user?.settings?.dark_mode !== undefined) {
     useThemeStore.getState().setDarkMode(user.settings.dark_mode);
   }
+
+  if (user?.settings?.high_contrast !== undefined) {
+    useThemeStore.getState().setHighContrast(user.settings.high_contrast);
+  }
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => {
-      const clearSession = () => {
+      const emptyAuthState = () => ({
+        user: null,
+        token: null,
+        refreshToken: null,
+        isAuthenticated: false,
+        sessionExpiresAt: null,
+        error: null,
+      });
+
+      const notifySessionEnd = () => {
         // Notify feature stores without importing them here. This avoids a
         // circular auth -> API -> learning-store dependency while ensuring
         // explicit logout and API-triggered 401 logout share cleanup.
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new Event('aac:auth-logout'));
         }
-        set({
-          user: null,
-          token: null,
-          refreshToken: null,
-          isAuthenticated: false,
-          sessionExpiresAt: null,
-          error: null,
-        });
       };
+
+      const clearSession = () => {
+        // Invalidate any in-flight checkAuth publish for the ended session.
+        checkAuthEpoch += 1;
+        notifySessionEnd();
+        set(emptyAuthState());
+      };
+
+      // Monotonic epoch for checkAuth: any newer session change (login,
+      // logout, another checkAuth) invalidates in-flight publishes.
+      let checkAuthEpoch = 0;
 
       return {
         user: null,
@@ -98,6 +110,8 @@ export const useAuthStore = create<AuthState>()(
         sessionExpiresAt: null,
 
       login: async (username: string, password: string) => {
+        // A new session invalidates any in-flight checkAuth fetch.
+        checkAuthEpoch += 1;
         set({ isLoading: true, error: null });
         try {
           // Use OAuth2 token endpoint which returns JWT
@@ -149,13 +163,14 @@ export const useAuthStore = create<AuthState>()(
             error: null,
           });
         } catch (e: unknown) {
-          set({ error: extractError(e, 'Login failed'), isLoading: false });
+          set({ error: extractError(e, i18n.t('common:errors.loginFailed')), isLoading: false });
           throw e;
         }
       },
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setupAdmin: async (setupData: any) => {
+      setupAdmin: async (setupData: AuthSetupData) => {
+        // A new session invalidates any in-flight checkAuth fetch.
+        checkAuthEpoch += 1;
         set({ isLoading: true, error: null });
         try {
           const response = await api.post('/auth/setup', setupData);
@@ -175,65 +190,43 @@ export const useAuthStore = create<AuthState>()(
             error: null,
           });
         } catch (e: unknown) {
-          set({ error: extractError(e, 'Initial setup failed'), isLoading: false });
+          set({ error: extractError(e, i18n.t('common:errors.setupFailed')), isLoading: false });
           throw e;
         }
       },
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      register: async (userData: any) => {
+      register: async (userData: RegistrationData) => {
         set({ isLoading: true, error: null });
         try {
           await api.post('/auth/register', userData);
           set({ isLoading: false });
         } catch (error: unknown) {
-          set({ error: extractError(error, 'Registration failed'), isLoading: false });
+          set({ error: extractError(error, i18n.t('common:errors.registrationFailed')), isLoading: false });
           throw error;
         }
       },
 
-      updateProfile: async (data) => {
-        set({ isLoading: true, error: null });
-        try {
-          const response = await api.put('/users/me', data);
-          set({ user: response.data, isLoading: false });
-        } catch (error: unknown) {
-          set({ error: 'Failed to update profile', isLoading: false });
-          throw error;
-        }
-      },
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      updatePreferences: async (preferences: any) => {
-        set({ isLoading: true, error: null });
-        try {
-          await api.put('/auth/preferences', preferences);
-          // Refresh user data to get updated preferences
-          const response = await api.get('/users/me');
-          const user = response.data;
-          syncUserPreferences(user);
-
-          set({ user, isLoading: false });
-        } catch (error: unknown) {
-          set({ error: 'Failed to update preferences', isLoading: false });
-          throw error;
-        }
-      },
-
-      logout: () => {
+      logout: async () => {
         const token = get().token;
-        const revokeRequest = token
-          ? api.post('/auth/logout', null, {
+        // Clear session-scoped feature state synchronously so offline
+        // mutations and conflicts cannot leak into the next session, even
+        // while the revocation request is still in flight.
+        checkAuthEpoch += 1;
+        notifySessionEnd();
+        if (token) {
+          // Wait for server-side revocation to finish before flipping
+          // isAuthenticated, so a token captured before logout is rejected by
+          // the time the UI reaches the login screen. Revocation is
+          // best-effort: a failure still clears the local session.
+          try {
+            await api.post('/auth/logout', null, {
               headers: { Authorization: `Bearer ${token}` },
-            }).catch(() => undefined)
-          : Promise.resolve();
-
-        // Clear local state immediately so the UI cannot keep using the
-        // session while the server revocation request completes. The caller
-        // may await the returned promise before navigating away.
-        clearSession();
-        localStorage.removeItem('token');
-        return revokeRequest.then(() => undefined);
+            });
+          } catch {
+            // Ignore revocation errors; local session is still cleared below.
+          }
+        }
+        set(emptyAuthState());
       },
 
       checkAuth: async () => {
@@ -242,13 +235,20 @@ export const useAuthStore = create<AuthState>()(
           clearSession();
           return;
         }
-        
+
+        // Generation guard: a fetch started here must never publish into a
+        // session that changed while the request was in flight (logout, a
+        // new login, or a 401-triggered clear).
+        const requestEpoch = ++checkAuthEpoch;
+        const isCurrentRequest = () => requestEpoch === checkAuthEpoch;
+
         // Decode to check expiration without call
         const payload = decodeJwtPayload(token);
         const now = Date.now() / 1000;
         if (!payload?.exp || payload.exp < now) {
           // The refresh token is the source of truth when access validation fails.
           const refreshed = await refreshAccessToken();
+          if (!isCurrentRequest()) return;
           if (!refreshed && navigator.onLine !== false) {
             clearSession();
           }
@@ -259,19 +259,22 @@ export const useAuthStore = create<AuthState>()(
         if (!user && payload.user_id) {
           try {
             const userResponse = await api.get(`/auth/users/${payload.user_id}`);
+            if (!isCurrentRequest()) return;
             const fetchedUser = userResponse.data;
             syncUserPreferences(fetchedUser);
             set({ user: fetchedUser, isAuthenticated: true });
           } catch (error: unknown) {
-            // If offline, don't log out
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            if ((error as any)?.code === 'ERR_OFFLINE' || (error as any)?.message === 'offline') {
-              return;
-            }
+            // If offline, don't log out. A stale request must not clear the
+            // newer session either — one guard covers both.
+            const apiError = error as { code?: unknown; message?: unknown };
+            const isOfflineError =
+              apiError.code === 'ERR_OFFLINE' || apiError.message === 'offline';
+            if (isOfflineError || !isCurrentRequest()) return;
             // If we can't get user details, token might be invalid on server side
             clearSession();
           }
         } else {
+          if (!isCurrentRequest()) return;
           // Sync settings from existing user state
           syncUserPreferences(user);
           set({ isAuthenticated: true });
@@ -301,8 +304,8 @@ export const useAuthStore = create<AuthState>()(
           return false;
         } catch (error: unknown) {
           // If offline, don't clear session, just return false (failed to refresh)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          if ((error as any)?.code === 'ERR_OFFLINE' || (error as any)?.message === 'offline') {
+          const apiError = error as { code?: unknown; message?: unknown };
+          if (apiError.code === 'ERR_OFFLINE' || apiError.message === 'offline') {
             return false;
           }
           // Refresh failed

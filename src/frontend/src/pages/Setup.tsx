@@ -4,7 +4,10 @@ import { useAuthStore } from '../store/authStore';
 import { User, Lock, Mail, Shield, Check, X, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import api from '../lib/api';
+import { Button } from '../components/ui/button';
+import { StatusMessage } from '../components/ui/StatusMessage';
 
+import { FormLabel } from '@/components/ui/FormLabel';
 export function Setup() {
   const [username, setUsername] = useState('admin1');
   const [displayName, setDisplayName] = useState('Administrator');
@@ -12,6 +15,7 @@ export function Setup() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(true);
 
   const setupAdmin = useAuthStore(state => state.setupAdmin);
@@ -32,12 +36,15 @@ export function Setup() {
         }
       })
       .catch(() => {
-        if (isMounted) setCheckingStatus(false);
+        if (isMounted) {
+          setStatusError(t('errors.statusCheckFailed'));
+          setCheckingStatus(false);
+        }
       });
     return () => {
       isMounted = false;
     };
-  }, [navigate]);
+  }, [navigate, t]);
 
   const hasMinLength = password.length >= 8;
   const hasUpper = /[A-Z]/.test(password);
@@ -76,44 +83,50 @@ export function Setup() {
 
   if (checkingStatus) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-600 dark:text-indigo-400" />
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Loader2 className="w-8 h-8 animate-spin text-brand" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4 transition-colors duration-200">
-      <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 transition-colors duration-200">
+      <div className="max-w-md w-full bg-surface rounded-xl shadow-lg p-8">
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 mb-3">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-brand/10 text-brand mb-3">
             <Shield className="w-6 h-6" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1">{t('title')}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
+          <h1 className="text-2xl font-bold text-foreground mb-1">{t('title')}</h1>
+          <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
         </div>
 
         {(error || localError) && (
-          <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-3 rounded-lg mb-6 text-sm">
+          <StatusMessage variant="error" className="mb-6">
             {localError || error}
-          </div>
+          </StatusMessage>
+        )}
+
+        {statusError && (
+          <StatusMessage variant="warning" className="mb-6">
+            {statusError}
+          </StatusMessage>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="setup-username" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <FormLabel htmlFor="setup-username">
               {t('username')}
-            </label>
+            </FormLabel>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+                <User className="h-5 w-5 text-muted-foreground" />
               </div>
               <input
                 id="setup-username"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+                className="block w-full pl-10 pr-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground text-sm"
                 placeholder={t('placeholderUser')}
                 required
                 autoComplete="username"
@@ -122,34 +135,34 @@ export function Setup() {
           </div>
 
           <div>
-            <label htmlFor="setup-displayname" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <FormLabel htmlFor="setup-displayname">
               {t('displayName')}
-            </label>
+            </FormLabel>
             <input
               id="setup-displayname"
               type="text"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+              className="block w-full px-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground text-sm"
               placeholder={t('placeholderDisplay')}
               required
             />
           </div>
 
           <div>
-            <label htmlFor="setup-email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <FormLabel htmlFor="setup-email">
               {t('email')}
-            </label>
+            </FormLabel>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Mail className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+                <Mail className="h-5 w-5 text-muted-foreground" />
               </div>
               <input
                 id="setup-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+                className="block w-full pl-10 pr-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground text-sm"
                 placeholder={t('placeholderEmail')}
                 autoComplete="email"
               />
@@ -157,19 +170,19 @@ export function Setup() {
           </div>
 
           <div>
-            <label htmlFor="setup-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <FormLabel htmlFor="setup-password">
               {t('password')}
-            </label>
+            </FormLabel>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+                <Lock className="h-5 w-5 text-muted-foreground" />
               </div>
               <input
                 id="setup-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+                className="block w-full pl-10 pr-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground text-sm"
                 placeholder={t('placeholderPass')}
                 required
                 autoComplete="new-password"
@@ -178,19 +191,19 @@ export function Setup() {
           </div>
 
           <div>
-            <label htmlFor="setup-confirm-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <FormLabel htmlFor="setup-confirm-password">
               {t('confirmPassword')}
-            </label>
+            </FormLabel>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+                <Lock className="h-5 w-5 text-muted-foreground" />
               </div>
               <input
                 id="setup-confirm-password"
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+                className="block w-full pl-10 pr-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground text-sm"
                 placeholder={t('placeholderConfirm')}
                 required
                 autoComplete="new-password"
@@ -198,18 +211,18 @@ export function Setup() {
             </div>
           </div>
 
-          <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg space-y-1 text-xs text-gray-600 dark:text-gray-300">
-            <p className="font-semibold text-gray-700 dark:text-gray-200 mb-1">{t('requirements.title')}</p>
+          <div className="p-3 bg-background/50 rounded-lg space-y-1 text-xs text-muted-foreground">
+            <p className="font-semibold text-foreground mb-1">{t('requirements.title')}</p>
             <div className="flex items-center gap-1.5">
-              {hasMinLength ? <Check className="w-3.5 h-3.5 text-green-500" /> : <X className="w-3.5 h-3.5 text-gray-400" />}
+              {hasMinLength ? <Check className="w-3.5 h-3.5 text-green-500" /> : <X className="w-3.5 h-3.5 text-muted-foreground" />}
               <span>{t('requirements.minChars')}</span>
             </div>
             <div className="flex items-center gap-1.5">
-              {hasUpper && hasLower ? <Check className="w-3.5 h-3.5 text-green-500" /> : <X className="w-3.5 h-3.5 text-gray-400" />}
+              {hasUpper && hasLower ? <Check className="w-3.5 h-3.5 text-green-500" /> : <X className="w-3.5 h-3.5 text-muted-foreground" />}
               <span>{t('requirements.upperLower')}</span>
             </div>
             <div className="flex items-center gap-1.5">
-              {hasNumber ? <Check className="w-3.5 h-3.5 text-green-500" /> : <X className="w-3.5 h-3.5 text-gray-400" />}
+              {hasNumber ? <Check className="w-3.5 h-3.5 text-green-500" /> : <X className="w-3.5 h-3.5 text-muted-foreground" />}
               <span>{t('requirements.number')}</span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -217,27 +230,28 @@ export function Setup() {
               <span>{t('requirements.notDefault')}</span>
             </div>
             {confirmPassword.length > 0 && (
-              <div className="flex items-center gap-1.5 pt-1 border-t border-gray-200 dark:border-gray-600">
+              <div className="flex items-center gap-1.5 pt-1 border-t border-border">
                 {passwordsMatch ? <Check className="w-3.5 h-3.5 text-green-500" /> : <X className="w-3.5 h-3.5 text-red-500" />}
                 <span>{passwordsMatch ? t('confirmPassword') + ' ✓' : t('errors.passwordMismatch')}</span>
               </div>
             )}
           </div>
 
-          <button
+          <Button
             type="submit"
-            disabled={isLoading || !hasMinLength || !hasUpper || !hasLower || !hasNumber || !notDefault || !passwordsMatch}
-            className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            loading={isLoading}
+            disabled={!hasMinLength || !hasUpper || !hasLower || !hasNumber || !notDefault || !passwordsMatch}
+            className="w-full shadow-sm"
           >
             {isLoading ? (
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
               t('submit')
             )}
-          </button>
+          </Button>
 
           <div className="text-center pt-2">
-            <a href="/login" className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
+            <a href="/login" className="text-xs text-brand hover:underline">
               {t('loginLink')}
             </a>
           </div>

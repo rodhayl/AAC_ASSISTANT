@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { post, get } = vi.hoisted(() => ({
+const { post, get, cancelAll } = vi.hoisted(() => ({
   post: vi.fn(),
   get: vi.fn(),
+  cancelAll: vi.fn(),
+}));
+
+vi.mock('../src/lib/tts', () => ({
+  tts: { cancelAll },
 }));
 
 vi.mock('../src/lib/api', () => ({
@@ -13,7 +18,7 @@ vi.mock('../src/lib/api', () => ({
   },
 }));
 
-import { useLearningStore, NEXT_QUESTION_REVEAL_DELAY_MS } from '../src/store/learningStore';
+import { useLearningStore, NEXT_QUESTION_REVEAL_DELAY_MS, stripReasoning } from '../src/store/learningStore';
 import { useAuthStore } from '../src/store/authStore';
 import type { User } from '../src/types';
 
@@ -49,10 +54,13 @@ describe('learningStore adaptive question flow', () => {
 
   it('resetSession cancels pending auto-ask work and clears active learning state', async () => {
     useLearningStore.setState({ currentSession: { session_id: 7, success: true } });
-    post.mockResolvedValue({ data: { success: true, feedback_message: 'Answer received' } });
+    post.mockResolvedValue({
+      data: { success: true, feedback_message: 'Answer received', is_correct: true },
+    });
 
     await useLearningStore.getState().submitAnswer(7, 'Answer');
     useLearningStore.getState().resetSession();
+    expect(cancelAll).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(NEXT_QUESTION_REVEAL_DELAY_MS);
 
     const state = useLearningStore.getState();
@@ -246,7 +254,12 @@ describe('learningStore adaptive question flow', () => {
 
     await useLearningStore.getState().submitAnswer(7, 'Cat');
 
-    expect(useLearningStore.getState().revealedAnswer).toEqual({ choice: 'Cat', isCorrect: null });
+    expect(useLearningStore.getState().revealedAnswer).toEqual({
+      choice: 'Cat',
+      isCorrect: null,
+      answerRevealed: false,
+      wrongChoices: [],
+    });
     expect(post).toHaveBeenCalledWith(
       '/achievements/user/42/check',
       undefined,
@@ -327,7 +340,7 @@ describe('learningStore adaptive question flow', () => {
     useLearningStore.setState({ currentSession: { session_id: 7, success: true } });
     post
       .mockResolvedValueOnce({
-        data: { success: true, transcription: 'Hola', feedback_message: 'Escuchado' },
+        data: { success: true, transcription: 'Hola', feedback_message: 'Escuchado', is_correct: true },
       })
       .mockResolvedValueOnce({
         data: {
@@ -351,7 +364,82 @@ describe('learningStore adaptive question flow', () => {
     );
   });
 
-  it('submitAnswer keeps the question revealed with the correct/wrong highlight', async () => {
+  it('a wrong answer keeps the same question open while hints are pending', async () => {
+    useLearningStore.setState({
+      currentSession: { session_id: 7, success: true },
+      currentQuestion: {
+        success: true,
+        question_text: 'What animal says miau?',
+        choices: ['Cat', 'Dog', 'Cow'],
+        correct_answer_index: 0,
+      },
+      messages: [{ role: 'assistant', content: 'What animal says miau?' }],
+    });
+    post.mockResolvedValue({
+      data: {
+        success: true,
+        feedback_message: 'Not quite, think of a pet',
+        is_correct: false,
+        answer_revealed: false,
+      },
+    });
+
+    await useLearningStore.getState().submitAnswer(7, 'Dog');
+
+    const state = useLearningStore.getState();
+    // The pending question stays visible so the highlight can be shown.
+    expect(state.currentQuestion?.question_text).toBe('What animal says miau?');
+    expect(state.revealedAnswer).toEqual({
+      choice: 'Dog',
+      isCorrect: false,
+      answerRevealed: false,
+      wrongChoices: ['Dog'],
+    });
+
+    // No auto-advance: the student retries the same question after a hint.
+    await vi.advanceTimersByTimeAsync(NEXT_QUESTION_REVEAL_DELAY_MS);
+    expect(useLearningStore.getState().currentQuestion?.question_text).toBe('What animal says miau?');
+    expect(post.mock.calls.some(([url]) => url === '/learning/7/ask')).toBe(false);
+  });
+
+  it('accumulates wrong picks so every failed choice stays disabled', async () => {
+    useLearningStore.setState({
+      currentSession: { session_id: 7, success: true },
+      currentQuestion: {
+        success: true,
+        question_text: 'What animal says miau?',
+        choices: ['Cat', 'Dog', 'Cow'],
+        correct_answer_index: 0,
+      },
+      messages: [],
+    });
+    post.mockResolvedValue({
+      data: {
+        success: true,
+        feedback_message: 'Hint',
+        is_correct: false,
+        answer_revealed: false,
+      },
+    });
+
+    await useLearningStore.getState().submitAnswer(7, 'Dog');
+    // The retry is allowed because the store clears isLoading; submit the
+    // second wrong pick.
+    await useLearningStore.getState().submitAnswer(7, 'Cow');
+
+    expect(useLearningStore.getState().revealedAnswer).toEqual({
+      choice: 'Cow',
+      isCorrect: false,
+      answerRevealed: false,
+      wrongChoices: ['Dog', 'Cow'],
+    });
+
+    // Repeating an already-failed pick does not duplicate it.
+    await useLearningStore.getState().submitAnswer(7, 'Dog');
+    expect(useLearningStore.getState().revealedAnswer?.wrongChoices).toEqual(['Dog', 'Cow']);
+  });
+
+  it('a wrong answer auto-advances once the backend revealed the answer', async () => {
     useLearningStore.setState({
       currentSession: { session_id: 7, success: true },
       currentQuestion: {
@@ -364,7 +452,12 @@ describe('learningStore adaptive question flow', () => {
     });
     post
       .mockResolvedValueOnce({
-        data: { success: true, feedback_message: 'Not quite', is_correct: false },
+        data: {
+          success: true,
+          feedback_message: "It was 'Cat'",
+          is_correct: false,
+          answer_revealed: true,
+        },
       })
       .mockResolvedValueOnce({
         data: {
@@ -376,14 +469,8 @@ describe('learningStore adaptive question flow', () => {
       });
 
     await useLearningStore.getState().submitAnswer(7, 'Dog');
-
-    const state = useLearningStore.getState();
-    // The pending question stays visible so the highlight can be shown.
-    expect(state.currentQuestion?.question_text).toBe('What animal says miau?');
-    expect(state.revealedAnswer).toEqual({ choice: 'Dog', isCorrect: false });
-
-    // After the reveal delay the next adaptive question replaces it.
     await vi.advanceTimersByTimeAsync(NEXT_QUESTION_REVEAL_DELAY_MS);
+
     expect(useLearningStore.getState().currentQuestion?.question_text).toBe('Next question');
     expect(useLearningStore.getState().revealedAnswer).toBeNull();
   });
@@ -436,8 +523,14 @@ describe('learningStore adaptive question flow', () => {
     expect(state.progressStats?.difficulty).toBe('advanced');
   });
 
-  it('endSession captures the summary returned by the backend', async () => {
-    useLearningStore.setState({ currentSession: { session_id: 7, success: true } });
+  it('endSession clears the conversation while capturing the summary', async () => {
+    useLearningStore.setState({
+      currentSession: { session_id: 7, success: true },
+      messages: [
+        { role: 'assistant', content: 'Welcome' },
+        { role: 'user', content: 'Answer' },
+      ],
+    });
     post.mockResolvedValue({
       data: {
         success: true,
@@ -453,6 +546,9 @@ describe('learningStore adaptive question flow', () => {
 
     const state = useLearningStore.getState();
     expect(state.currentSession).toBeNull();
+    expect(state.messages).toEqual([]);
+    expect(state.skipInitialSpeech).toBe(false);
+    expect(post.mock.calls.some(([url]) => url === '/learning/start')).toBe(false);
     expect(state.lastSessionSummary?.summary).toBe('Great work!');
     expect(state.lastSessionSummary?.comprehension_score).toBe(0.75);
 
@@ -596,5 +692,175 @@ describe('learningStore adaptive question flow', () => {
     expect(state.currentQuestion).toBeNull();
     expect(state.error).toBe('Invalid question format');
     expect(state.isLoading).toBe(false);
+  });
+});
+
+describe('learningStore resilience and history reconstruction', () => {
+  it('stripReasoning removes think blocks and extracts the marked answer', () => {
+    const withThinkBlock =
+      'Let me think.\n<think>hidden chain of thought</think>\nThe answer is 4.';
+    const result = stripReasoning(withThinkBlock);
+    expect(result).not.toContain('hidden chain of thought');
+    expect(result).toContain('answer is 4');
+  });
+
+  it('stripReasoning removes fenced reasoning blocks and answer markers', () => {
+    const fenced = '```reasoning\nsome analysis\n```\nFinal answer: yes';
+    expect(stripReasoning(fenced)).toBe('yes');
+    expect(stripReasoning('<think>x</think>')).toBe('');
+  });
+
+  it('admins with reasoning enabled receive the full thinking trace', async () => {
+    const admin: User = {
+      id: 99,
+      username: 'admin',
+      display_name: 'Admin',
+      user_type: 'admin',
+      is_active: true,
+      created_at: '2026-01-01T00:00:00Z',
+    };
+    useAuthStore.setState({ user: admin });
+    useLearningStore.setState({
+      currentSession: { session_id: 7, success: true },
+      showAdminReasoning: true,
+    });
+    post
+      .mockResolvedValueOnce({
+        data: { success: true, assistant_reply: 'Clean reply', full_thinking: 'model reasoning' },
+      })
+      .mockResolvedValueOnce({
+        data: { success: true, question_text: 'Next', choices: ['A', 'B'] },
+      });
+
+    await useLearningStore.getState().submitAnswer(7, 'Cat');
+
+    const contents = useLearningStore.getState().messages.map((message) => message.content);
+    expect(contents[contents.length - 1]).toContain('Clean reply');
+    expect(contents[contents.length - 1]).toContain('[debug] model reasoning');
+  });
+
+  it('startSession surfaces a non-Error rejection via extractError', async () => {
+    post.mockRejectedValue({ response: { data: { detail: 'provider unavailable' } } });
+
+    await expect(
+      useLearningStore.getState().startSession({ topic: 'T', purpose: 'practice' }, 1),
+    ).rejects.toThrow();
+    expect(cancelAll).toHaveBeenCalledTimes(1);
+
+    const state = useLearningStore.getState();
+    expect(state.error).toBe('provider unavailable');
+    expect(state.isLoading).toBe(false);
+  });
+
+  it('submitAnswer rejection sets an error when the request is current', async () => {
+    useLearningStore.setState({ currentSession: { session_id: 7, success: true } });
+    post.mockRejectedValue({ response: { data: { message: 'server down' } } });
+
+    await useLearningStore.getState().submitAnswer(7, 'Cat');
+
+    const state = useLearningStore.getState();
+    expect(state.error).toBe('server down');
+    expect(state.isLoading).toBe(false);
+  });
+
+  it('submitVoiceAnswer falls back to a placeholder when transcription is missing', async () => {
+    // The store localizes its fallback via the real i18n instance; pin the
+    // language so the expected text is deterministic. English is a lazy
+    // chunk, so load it explicitly before switching.
+    const { default: i18n, ensureLocale } = await import('../src/i18n/index');
+    await ensureLocale('en');
+    await i18n.changeLanguage('en');
+
+    useLearningStore.setState({ currentSession: { session_id: 7, success: true } });
+    post.mockResolvedValue({ data: { success: true, feedback_message: 'Heard' } });
+
+    await useLearningStore.getState().submitVoiceAnswer(7, new Blob(['audio']));
+
+    const contents = useLearningStore.getState().messages.map((message) => message.content);
+    expect(contents).toContain('[voice] Audio message');
+    expect(useLearningStore.getState().revealedAnswer?.choice).toBe('[voice]');
+  });
+
+  it('endSession refreshes achievements and history for the active user', async () => {
+    const student: User = {
+      id: 42,
+      username: 'student42',
+      display_name: 'Student 42',
+      user_type: 'student',
+      is_active: true,
+      created_at: '2026-01-01T00:00:00Z',
+    };
+    useAuthStore.setState({ user: student });
+    useLearningStore.setState({ currentSession: { session_id: 7, success: true } });
+    post.mockImplementation((url: string) => {
+      if (url === '/learning/7/end') {
+        return Promise.resolve({ data: { success: true, summary: 'Great work!' } });
+      }
+      if (url === '/achievements/user/42/check') {
+        return Promise.resolve({ data: { success: true } });
+      }
+      return Promise.resolve({ data: { success: true } });
+    });
+    get.mockResolvedValue({ data: { sessions: [] } });
+
+    await useLearningStore.getState().endSession(7);
+
+    expect(post).toHaveBeenCalledWith(
+      '/achievements/user/42/check',
+      undefined,
+      expect.anything(),
+    );
+    expect(get).toHaveBeenCalledWith('/learning/history/42', { params: { limit: 50 } });
+  });
+
+  it('fetchSessionHistory failure clears the loading flag', async () => {
+    get.mockRejectedValue(new Error('boom'));
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await useLearningStore.getState().fetchSessionHistory(1);
+
+    expect(useLearningStore.getState().isLoadingHistory).toBe(false);
+    expect(consoleSpy).toHaveBeenCalled();
+  });
+
+  it('loadSession reconstructs question, text, symbol and feedback messages', async () => {
+    get.mockResolvedValue({
+      data: {
+        id: 9,
+        conversation_history: [
+          { type: 'question', data: { question: 'What color is the sky?' } },
+          { type: 'response', student_answer: 'Blue', feedback: 'Correct!', mode: 'text' },
+          {
+            type: 'response',
+            student_answer: 'sky blue',
+            symbols: [{ label: 'sky' }, { label: 'blue' }],
+            mode: 'symbol',
+          },
+        ],
+      },
+    });
+
+    await useLearningStore.getState().loadSession(9);
+
+    expect(cancelAll).toHaveBeenCalled();
+    const contents = useLearningStore.getState().messages.map((message) => message.content);
+    expect(contents).toContain('What color is the sky?');
+    expect(contents).toContain('Blue');
+    expect(contents).toContain('Correct!');
+    expect(contents.some((content) => content.startsWith('🧩 sky blue'))).toBe(true);
+    expect(contents.some((content) => content.includes('[Symbols: sky, blue]'))).toBe(true);
+    expect(useLearningStore.getState().currentSession?.session_id).toBe(9);
+  });
+
+  it('loadSession failure sets an error', async () => {
+    get.mockRejectedValue({ message: 'not found' });
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await useLearningStore.getState().loadSession(9);
+
+    const state = useLearningStore.getState();
+    expect(state.error).toBe('not found');
+    expect(state.isLoading).toBe(false);
+    expect(consoleSpy).toHaveBeenCalled();
   });
 });

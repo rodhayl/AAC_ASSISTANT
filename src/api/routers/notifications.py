@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from src.aac_app.db import create_session_factory, ensure_tables
+from src.aac_app.db import create_session_factory
 from src.aac_app.models import Notification, User
 from src.aac_app.services.notification_events import (
     publish_notification,
@@ -42,7 +42,6 @@ async def notifications_stream(
     # Authenticate with a short-lived session. The response stream is
     # intentionally unbounded, so it must not retain a request-scoped DB
     # session or connection for the lifetime of an SSE client.
-    ensure_tables()
     db = create_session_factory()()
     try:
         user = validate_active_token(token, db)

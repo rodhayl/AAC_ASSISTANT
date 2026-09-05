@@ -5,12 +5,17 @@ import type { LearningSessionResponse } from '../../types';
 interface UseVoiceRecorderOptions {
   currentSession: LearningSessionResponse | null;
   userId?: number;
+  sessionBoardId?: number;
+  modeKey?: string;
   isLoading: boolean;
   sessionDifficulty: string;
+  sessionTopic: string;
   startSession: (data: {
     topic: string;
     purpose: string;
     difficulty: string;
+    board_id?: number;
+    mode_key?: string;
   }, userId: number) => Promise<void>;
   submitVoiceAnswer: (sessionId: number, audioBlob: Blob) => Promise<void>;
   addToast: (message: string, type?: ToastType) => void;
@@ -36,8 +41,11 @@ interface UseVoiceRecorderResult {
 export function useVoiceRecorder({
   currentSession,
   userId,
+  sessionBoardId,
+  modeKey,
   isLoading,
   sessionDifficulty,
+  sessionTopic,
   startSession,
   submitVoiceAnswer,
   addToast,
@@ -80,20 +88,8 @@ export function useVoiceRecorder({
     recordingSessionIdRef.current = currentSession?.session_id ?? null;
     recordingUserIdRef.current = userId ?? null;
     try {
-      if (!currentSession && userId) {
-        await startSession({
-          topic: 'audio conversation',
-          purpose: 'voice',
-          difficulty: sessionDifficulty,
-        }, userId);
-      }
-      if (
-        !mountedRef.current ||
-        recordingGenerationRef.current !== generation ||
-        activeUserIdRef.current !== (userId ?? null) ||
-        (currentSession && activeSessionIdRef.current !== currentSession.session_id)
-      ) return;
-
+      // Request the microphone before creating a server session. A permission
+      // denial must not leave an empty active learning session behind.
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (
         !mountedRef.current ||
@@ -105,6 +101,33 @@ export function useVoiceRecorder({
         return;
       }
       streamRef.current = stream;
+
+      if (!currentSession && userId) {
+        try {
+          await startSession({
+            topic: sessionTopic,
+            purpose: 'voice',
+            difficulty: sessionDifficulty,
+            board_id: sessionBoardId,
+            mode_key: modeKey,
+          }, userId);
+        } catch (error) {
+          stopStream(stream);
+          streamRef.current = null;
+          throw error;
+        }
+      }
+      if (
+        !mountedRef.current ||
+        recordingGenerationRef.current !== generation ||
+        activeUserIdRef.current !== (userId ?? null) ||
+        (currentSession && activeSessionIdRef.current !== currentSession.session_id)
+      ) {
+        stopStream(stream);
+        streamRef.current = null;
+        return;
+      }
+
       const mediaRecorder = new MediaRecorder(stream);
       recordingMimeTypeRef.current = mediaRecorder.mimeType || 'audio/wav';
       mediaRecorderRef.current = mediaRecorder;
@@ -159,6 +182,9 @@ export function useVoiceRecorder({
     releaseStream,
     stopStream,
     sessionDifficulty,
+    sessionTopic,
+    sessionBoardId,
+    modeKey,
     startSession,
     userId,
   ]);

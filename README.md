@@ -58,15 +58,14 @@ One-time onboarding flow restricted to local loopback (`127.0.0.1`) requiring op
 - Communication boards with a symbol library and sentence strip.
 - Symbol search and board editing (drag-and-drop, custom uploads).
 - Learning sessions with adaptive questions and achievements.
-- Local speech-to-text (faster-whisper) bundled in the Windows installer;
-  browser-based text-to-speech works everywhere. Optional local neural TTS
-  (Kokoro) is supported on Python 3.13; Python 3.14 uses the browser fallback
-  because the current Kokoro release does not support Python 3.14.
+- Local speech-to-text (faster-whisper) and local neural text-to-speech (Kokoro)
+  are prepared by the source launcher; browser-based text-to-speech remains an
+  explicit user-selectable alternative.
 - Role-based accounts (student / teacher / admin) with per-endpoint
   authorization.
-- Optional LLM learning questions via local services (Ollama, LM Studio) or an
-  operator-configured OpenRouter key. The core AAC experience never depends on
-  any cloud service.
+- Optional LLM learning questions via local services (Ollama, LM Studio) or a
+  cloud provider (OpenRouter or Groq) configured by the operator. The core AAC
+  experience never depends on any cloud service.
 
 ## Local-first and privacy
 
@@ -93,7 +92,7 @@ snapshot.
 
 - Windows 10+ (for the packaged build) or Linux/macOS (source only)
 - Python 3.13 or 3.14
-- [uv](https://docs.astral.sh/uv/)
+- [uv](https://docs.astral.sh/uv/) (the source launchers bootstrap it automatically)
 - Node.js 22.22+ and npm 10+ (to build or run the frontend)
 
 The packaged Windows application requires neither Python nor Node.js.
@@ -130,12 +129,30 @@ Then run:
 start.bat
 ```
 
+`start.bat` also bootstraps `uv` when needed and synchronizes the Python and
+voice dependencies before launching, so `install_dependencies.bat` is an
+optional explicit preparation step rather than a requirement for first run. If
+development dependencies are not already present, it asks whether to install
+them; declining keeps the production environment minimal.
+
 and open `http://127.0.0.1:8086/`.
 
 ### Source checkout (Linux / macOS)
 
+`start.sh` bootstraps `uv` when it is missing, creates/updates `.venv`, installs
+the core and voice dependencies, and then starts the production server. It uses
+the official uv installer, so the first run requires network access plus `curl`
+or `wget`. If development dependencies are not already present, it asks whether
+to install them; non-interactive starts skip them.
+
 ```bash
-uv sync --group dev
+./start.sh
+```
+
+For a manual development setup:
+
+```bash
+uv sync --group dev --extra voice --extra tts
 npm --prefix src/frontend ci
 npm --prefix src/frontend run build
 uv run python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8086
@@ -145,11 +162,25 @@ and open `http://127.0.0.1:8086/`.
 
 ### First-run administrator setup
 
-On first run, when no administrator account exists, opening the web interface at
-`http://127.0.0.1:8086/` automatically redirects to the initial setup screen (`/setup`)
-where you choose your administrator username and a strong password. Initial setup
-is strictly restricted to local loopback (`127.0.0.1` / `::1`) to prevent remote
-takeover on fresh installations.
+For the standard local `start.sh` setup, the first administrator is:
+
+```text
+Username: admin1
+Password: Admin123
+```
+
+This is a development/bootstrap credential only. Log in immediately and change
+the password from the account settings before using the application with real
+data or exposing it beyond the local machine. The password is enabled by setting
+`AAC_BOOTSTRAP_ADMIN_PASSWORD=Admin123` in the local `.env` file; choose a unique
+strong password instead for any shared or production deployment.
+
+If no bootstrap password is configured, opening the web interface at
+`start.sh` installs/verifies the voice dependencies and prepares the Kokoro model before
+starting the server. If no bootstrap password is configured, opening the web interface at
+`http://127.0.0.1:8086/` automatically redirects to the initial setup screen
+(`/setup`), where you choose the administrator username and password. Initial
+setup is strictly restricted to local loopback (`127.0.0.1` / `::1`).
 
 Alternatively, operators can configure `AAC_BOOTSTRAP_ADMIN_PASSWORD` in `.env` or the
 process environment before starting the server. In production (`ENVIRONMENT=production`),
@@ -208,7 +239,9 @@ Process environment variables take precedence over the file. Key settings:
 | `AAC_SEED_SAMPLE_DATA` | `false` | Seeds demo users/boards (keep false in production). |
 | `AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN` | `true` | Enables interactive setup (/setup) or automatic bootstrap when no admin exists. |
 | `AAC_BOOTSTRAP_ADMIN_USERNAME` | `admin1` | Username for the first-run admin. |
-| `AAC_BOOTSTRAP_ADMIN_PASSWORD` | unset | Unset by default; operators set a strong password via `/setup` (loopback only). Production requires an explicit password. |
+| `AAC_BOOTSTRAP_ADMIN_PASSWORD` | `Admin123` (local example) | Bootstrap password for the local first run; change it immediately after login. Use a unique strong password in shared or production deployments. |
+| `OPENROUTER_API_KEY` | *(empty)* | Optional OpenRouter API key; enables the OpenRouter cloud provider as a fallback when no key is stored in the settings UI. |
+| `GROQ_API_KEY` | *(empty)* | Optional Groq API key; enables the Groq cloud provider as a fallback when no key is stored in the settings UI. |
 
 See `docs/01_PROJECT_GUIDE.md` for the full reference.
 
@@ -220,7 +253,8 @@ flowchart LR
     API --> SQLite[("SQLite")]
     API --> Uploads[("uploads/")]
     API -.->|optional, local| Ollama["Ollama / LM Studio"]
-    API -.->|optional, configured| OpenRouter["OpenRouter / ARASAAC"]
+    API -.->|optional, configured| OpenRouter["OpenRouter / Groq"]
+    API -.->|optional, configured| ARASAAC["ARASAAC"]
 ```
 
 One FastAPI process serves the API and the built SPA. Domain logic lives in

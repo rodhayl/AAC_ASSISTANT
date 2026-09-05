@@ -3,11 +3,15 @@ Symbol Analytics Service
 Tracks and analyzes symbol usage patterns for personalization and insights.
 """
 
+from collections import Counter
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from threading import RLock
+from weakref import WeakKeyDictionary
 
 from loguru import logger
-from sqlalchemy import and_, desc, func, or_
+from sqlalchemy import and_, desc, event, func, or_
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
@@ -41,6 +45,31 @@ def _record_sequence(
         }
     sequences[seq_key]["count"] += 1
     sequences[seq_key]["last_used"] = timestamp
+
+
+# Cached per-user prefix->next-label transition indexes.  The index is keyed by
+# the owning database engine (weakly) so tests and short-lived engines do not
+# leak memory, and usage writes invalidate it so predictions reflect the
+# latest history without rescanning the whole table per request.
+_history_transition_lock = RLock()
+_history_transition_cache: WeakKeyDictionary[
+    Engine, dict[int, dict[tuple[str, ...], Counter[str]]]
+] = WeakKeyDictionary()
+
+
+def clear_history_transition_cache() -> None:
+    """Invalidate every cached transition index after a symbol usage write."""
+    with _history_transition_lock:
+        _history_transition_cache.clear()
+
+
+def _invalidate_history_transitions(*_args) -> None:
+    clear_history_transition_cache()
+
+
+event.listen(SymbolUsageLog, "after_insert", _invalidate_history_transitions)
+event.listen(SymbolUsageLog, "after_update", _invalidate_history_transitions)
+event.listen(SymbolUsageLog, "after_delete", _invalidate_history_transitions)
 
 
 class SymbolAnalytics:
@@ -205,13 +234,22 @@ class SymbolAnalytics:
             current_sequence = []
             current_session = None
             current_timestamp = None
+            last_position: int | None = None
 
             for log in logs:
-                # Start new sequence if different session or time gap > 5 minutes
-                if current_session != log.session_id or (
-                    current_timestamp
+                # A repeated/decreasing position starts a new utterance even
+                # when clients reuse a session ID for several sentences.
+                position_reset = (
+                    last_position is not None
+                    and log.position_in_utterance is not None
+                    and log.position_in_utterance <= last_position
+                )
+                time_gap = (
+                    current_timestamp is not None
+                    and log.timestamp is not None
                     and (log.timestamp - current_timestamp).total_seconds() > 300
-                ):
+                )
+                if current_session != log.session_id or position_reset or time_gap:
                     if len(current_sequence) >= 2:
                         _record_sequence(
                             sequences,
@@ -232,6 +270,7 @@ class SymbolAnalytics:
                 )
                 current_session = log.session_id
                 current_timestamp = log.timestamp
+                last_position = log.position_in_utterance
 
             # Add final sequence
             if len(current_sequence) >= 2:
@@ -361,7 +400,7 @@ class SymbolAnalytics:
             intent_counts = (
                 db.query(
                     SymbolUsageLog.semantic_intent,
-                    func.count(func.distinct(SymbolUsageLog.session_id)).label(
+                    func.count(SymbolUsageLog.id).label(
                         "utterance_count"
                     ),
                 )
@@ -403,6 +442,143 @@ class SymbolAnalytics:
                 "intent_distribution": intents,
             }
 
+    def get_history_transitions(
+        self,
+        user_id: int,
+        db: Session | None = None,
+    ) -> dict[tuple[str, ...], Counter[str]]:
+        """Return observed ``prefix -> next label`` counts for one user.
+
+        The index is built once per user and cached per database engine; symbol
+        usage writes invalidate it so predictions observe the latest history
+        without rescanning the full table on every request.
+        """
+        with self._session_scope(db) as session:
+            engine = session.get_bind()
+            with _history_transition_lock:
+                per_user = _history_transition_cache.get(engine)
+                if per_user is not None:
+                    cached = per_user.get(user_id)
+                    if cached is not None:
+                        return cached
+
+            index = self._build_history_transitions(session, user_id)
+
+            with _history_transition_lock:
+                _history_transition_cache.setdefault(engine, {}).setdefault(
+                    user_id, index
+                )
+            return index
+
+    def _build_history_transitions(
+        self, session: Session, user_id: int
+    ) -> dict[tuple[str, ...], Counter[str]]:
+        """Stream a user's ordered history and index prefix-to-next transitions."""
+        logs_query = (
+            session.query(SymbolUsageLog)
+            .filter(SymbolUsageLog.user_id == user_id)
+            .order_by(
+                SymbolUsageLog.session_id,
+                SymbolUsageLog.timestamp,
+                SymbolUsageLog.position_in_utterance,
+            )
+        )
+        logs = logs_query.yield_per(1000)
+
+        transitions: dict[tuple[str, ...], Counter[str]] = {}
+        current_sequence: list[str] = []
+        current_session = None
+        current_timestamp: datetime | None = None
+        last_position: int | None = None
+
+        def record_sequence(sequence: list[str]) -> None:
+            for i in range(len(sequence) - 1):
+                prefix = tuple(sequence[: i + 1])
+                next_label = sequence[i + 1]
+                if not next_label or not all(prefix):
+                    continue
+                transitions.setdefault(prefix, Counter())[next_label] += 1
+
+        for log in logs:
+            # Start a new utterance on a session, a position reset, or a
+            # >5-minute time boundary. Position resets matter because a client
+            # can keep one learning session open across multiple utterances.
+            position_reset = (
+                last_position is not None
+                and log.position_in_utterance is not None
+                and log.position_in_utterance <= last_position
+            )
+            time_gap = (
+                current_timestamp is not None
+                and log.timestamp is not None
+                and (log.timestamp - current_timestamp).total_seconds() > 300
+            )
+            if current_session != log.session_id or position_reset or time_gap:
+                if len(current_sequence) >= 2:
+                    record_sequence(current_sequence)
+                current_sequence = []
+
+            current_sequence.append((log.symbol_label or "").strip())
+            current_session = log.session_id
+            current_timestamp = log.timestamp
+            last_position = log.position_in_utterance
+
+        if len(current_sequence) >= 2:
+            record_sequence(current_sequence)
+
+        return transitions
+
+    def _sequence_suggestions(
+        self,
+        session: Session,
+        user_id: int,
+        labels: list[str],
+        limit: int,
+    ) -> list[dict] | None:
+        """Resolve next symbols from the longest matching utterance suffix."""
+        transitions = self.get_history_transitions(user_id, db=session)
+        for start in range(len(labels)):
+            counts = transitions.get(tuple(labels[start:]))
+            if not counts:
+                continue
+
+            total = sum(counts.values())
+            ordered = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+            # Resolve every candidate in one query. The old loop queried the
+            # symbol table once per transition label, turning a user's
+            # history into an N+1 request when many next labels were possible.
+            labels = [next_label.casefold() for next_label, _ in ordered]
+            symbols = (
+                session.query(Symbol)
+                .filter(func.lower(Symbol.label).in_(labels))
+                .order_by(Symbol.id)
+                .all()
+            )
+            symbols_by_label: dict[str, Symbol] = {}
+            for symbol in symbols:
+                symbols_by_label.setdefault(symbol.label.casefold(), symbol)
+
+            suggestions: list[dict] = []
+            for next_label, count in ordered:
+                symbol = symbols_by_label.get(next_label.casefold())
+                if symbol is None:
+                    continue
+                suggestions.append(
+                    {
+                        "symbol_id": symbol.id,
+                        "label": next_label,
+                        "category": symbol.category,
+                        "image_path": symbol.image_path,
+                        "language": symbol.language,
+                        "confidence": round(count / total, 2) if total else 0.5,
+                    }
+                )
+                if len(suggestions) >= limit:
+                    break
+            if suggestions:
+                return suggestions
+        return None
+
     def suggest_next_symbol(
         self,
         user_id: int,
@@ -424,11 +600,16 @@ class SymbolAnalytics:
         if not symbols:
             # Return most frequently used symbols
             with self._session_scope(db) as db:
+                # Read the label from the live Symbol row, not the denormalized
+                # usage-log label: the log keeps whatever label the symbol had
+                # when it was used, so a renamed symbol (or a stale test
+                # label) would otherwise surface outdated text with the
+                # current image.
                 most_used = (
                     db.query(
                         SymbolUsageLog.symbol_id,
-                        SymbolUsageLog.symbol_label,
-                        SymbolUsageLog.symbol_category,
+                        Symbol.label,
+                        Symbol.category,
                         Symbol.image_path,
                         Symbol.language,
                         func.count(SymbolUsageLog.id).label("count"),
@@ -440,8 +621,8 @@ class SymbolAnalytics:
                     )
                     .group_by(
                         SymbolUsageLog.symbol_id,
-                        SymbolUsageLog.symbol_label,
-                        SymbolUsageLog.symbol_category,
+                        Symbol.label,
+                        Symbol.category,
                         Symbol.image_path,
                         Symbol.language,
                     )
@@ -466,6 +647,16 @@ class SymbolAnalytics:
         current_labels = [s.get("label") for s in symbols]
 
         with self._session_scope(db) as db:
+            # Prefer the longest matching suffix of the current utterance so
+            # multi-word predictions ("I want") rank next words seen after the
+            # full sequence before falling back to the last word alone.
+            if len(current_labels) >= 2:
+                sequence_hits = self._sequence_suggestions(
+                    db, user_id, current_labels, limit
+                )
+                if sequence_hits:
+                    return sequence_hits
+
             # Find transitions in one self-join instead of querying once per
             # matching log. The explicit NULL branch preserves the historical
             # Python behavior where two missing session IDs match each other.
@@ -491,16 +682,22 @@ class SymbolAnalytics:
                 .correlate(current_log)
                 .scalar_subquery()
             )
+            # Read the label from the live Symbol row, not the denormalized
+            # usage-log label: the log keeps whatever label the symbol had
+            # when it was used, so a renamed symbol (or a stale test label)
+            # would otherwise surface outdated text with the current image.
+            # The Symbol join is 1:1 on the PK, so counts are unaffected.
             transition_counts = (
                 db.query(
                     next_log.symbol_id,
-                    next_log.symbol_label,
-                    next_log.symbol_category,
+                    Symbol.label,
+                    Symbol.category,
                     func.count(current_log.id).label("count"),
                     func.min(current_log.id).label("first_current_id"),
                 )
                 .select_from(current_log)
                 .join(next_log, next_log.id == first_next_id)
+                .join(Symbol, Symbol.id == next_log.symbol_id)
                 .filter(
                     current_log.user_id == user_id,
                     current_log.symbol_label == last_label,
@@ -509,8 +706,8 @@ class SymbolAnalytics:
                 )
                 .group_by(
                     next_log.symbol_id,
-                    next_log.symbol_label,
-                    next_log.symbol_category,
+                    Symbol.label,
+                    Symbol.category,
                 )
                 # The old Python accumulator was stable for ties because it
                 # encountered current logs in database order. Use the first

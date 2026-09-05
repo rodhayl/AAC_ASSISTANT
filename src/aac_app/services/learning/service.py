@@ -4,8 +4,11 @@
 from loguru import logger
 from sqlalchemy.orm import Session
 
+from src import config
+
 from ...db import session_scope
 from ...models import UserSettings
+from ...providers.groq_provider import GroqProvider
 from ...providers.lmstudio_provider import LMStudioProvider
 from ...providers.local_speech_provider import LocalSpeechProvider
 from ...providers.ollama_provider import OllamaProvider
@@ -29,29 +32,41 @@ class LearningCompanionService(
 ):
     def __init__(
         self,
-        llm_provider: OllamaProvider | OpenRouterProvider,
+        llm_provider: OllamaProvider | OpenRouterProvider | LMStudioProvider,
         speech_provider: LocalSpeechProvider,
-        default_max_tokens: int = 1024,
-        default_temperature: float = 0.5,
+        default_max_tokens: int | None = None,
+        default_temperature: float | None = None,
     ):
         self.llm = llm_provider
         self.speech = speech_provider
 
         # LLM behavior defaults (can be overridden via AppSettings)
-        self.default_max_tokens = max(64, int(default_max_tokens or 1024))
+        self.default_max_tokens = max(
+            64,
+            int(
+                config.AI_MAX_TOKENS
+                if default_max_tokens is None
+                else default_max_tokens
+            ),
+        )
         # Clamp temperature to reasonable range
         self.default_temperature = float(
-            default_temperature if default_temperature is not None else 0.5
+            config.AI_TEMPERATURE
+            if default_temperature is None
+            else default_temperature
         )
         if self.default_temperature < 0.0:
             self.default_temperature = 0.0
         if self.default_temperature > 1.5:
             self.default_temperature = 1.5
 
-        # Determine provider type. LM Studio must be checked first: its provider
-        # subclasses OpenRouterProvider (OpenAI-compatible API), so an isinstance
-        # check against OpenRouter alone would mislabel LM Studio sessions.
-        if isinstance(llm_provider, LMStudioProvider):
+        # Determine provider type. Subclass providers (LM Studio, Groq) must be
+        # checked before OpenRouterProvider: they share its OpenAI-compatible
+        # API, so an isinstance check against OpenRouter alone would mislabel
+        # them.
+        if isinstance(llm_provider, GroqProvider):
+            self.provider_type = "groq"
+        elif isinstance(llm_provider, LMStudioProvider):
             self.provider_type = "lmstudio"
         elif isinstance(llm_provider, OpenRouterProvider):
             self.provider_type = "openrouter"
@@ -202,6 +217,10 @@ class LearningCompanionService(
                 )
                 if settings and settings.ui_language:
                     return settings.ui_language
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to read user language for user {}: {}", user_id, exc)
         return "es"
+
+    def get_user_language(self, user_id: int, db: Session | None = None) -> str:
+        """Public alias for cross-layer callers (routers, tests)."""
+        return self._get_user_language(user_id, db)

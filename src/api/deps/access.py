@@ -5,7 +5,13 @@ from collections.abc import Callable
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import CommunicationBoard, LearningSession, User
+from src.aac_app.models import (
+    BoardAssignment,
+    CommunicationBoard,
+    LearningSession,
+    StudentTeacher,
+    User,
+)
 
 from .auth import get_text, verify_student_access
 
@@ -16,12 +22,16 @@ def get_learning_session_or_404(
     current_user: User,
     *,
     message: Callable[[str], str] | None = None,
+    require_active: bool = False,
+    allow_teacher: bool = False,
 ) -> LearningSession:
-    """Load a learning session and enforce its owner/admin access rule.
+    """Load a learning session and enforce its owner/admin (or teacher read) access rule.
 
     ``message`` lets routers retain their domain-specific translation namespace.
     """
-    message = message or (lambda key: get_text(current_user, key))
+    message = message or (
+        lambda key: get_text(current_user, key, namespace="pages/learning")
+    )
     session = db.query(LearningSession).filter(LearningSession.id == session_id).first()
     if session is None:
         raise HTTPException(
@@ -29,9 +39,17 @@ def get_learning_session_or_404(
             detail=message("errors.sessionNotFound"),
         )
     if session.user_id != current_user.id and current_user.user_type != "admin":
+        if allow_teacher and current_user.user_type == "teacher":
+            verify_student_access(session.user_id, current_user, db)
+        else:
+            raise HTTPException(
+                status_code=403,
+                detail=message("errors.unauthorized"),
+            )
+    if require_active and session.status != "active":
         raise HTTPException(
-            status_code=403,
-            detail=message("errors.unauthorized"),
+            status_code=409,
+            detail=message("errors.sessionNotActive"),
         )
     return session
 
@@ -53,6 +71,51 @@ def get_board_or_404(
             detail=get_text(user=current_user, key="errors.boards.boardNotFound"),
         )
     return board
+
+
+def require_board_view_access(
+    board: CommunicationBoard,
+    current_user: User,
+    db: Session,
+) -> CommunicationBoard:
+    """Require the same read access used by board detail and collaboration.
+
+    Board-scoped prediction and learning requests must not be able to use an
+    arbitrary board ID as an oracle for another user's private symbols.
+    """
+    if current_user.user_type == "admin" or board.user_id == current_user.id or board.is_public:
+        return board
+
+    if current_user.user_type == "student":
+        assigned = (
+            db.query(BoardAssignment.id)
+            .filter(
+                BoardAssignment.board_id == board.id,
+                BoardAssignment.student_id == current_user.id,
+            )
+            .first()
+        )
+        if assigned is not None:
+            return board
+
+    if current_user.user_type == "teacher":
+        owner = db.query(User).filter(User.id == board.user_id).first()
+        if owner is not None and owner.user_type == "student":
+            rostered = (
+                db.query(StudentTeacher.id)
+                .filter(
+                    StudentTeacher.teacher_id == current_user.id,
+                    StudentTeacher.student_id == owner.id,
+                )
+                .first()
+            )
+            if rostered is not None:
+                return board
+
+    raise HTTPException(
+        status_code=403,
+        detail=get_text(user=current_user, key="errors.boards.unauthorizedViewBoard"),
+    )
 
 
 def require_board_owner_or_admin(

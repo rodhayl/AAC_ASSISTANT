@@ -1,10 +1,13 @@
 import { useTranslation } from 'react-i18next';
 import { Search, Volume2, X } from 'lucide-react';
-import { assetUrl } from '../../lib/utils';
+import { SymbolImage } from '../common/SymbolImage';
 import { glossSymbolUtterance } from '../../lib/gloss';
 import { getCategoryStyle } from '../../lib/symbolCategoryStyle';
 import { LEARNING_SYMBOL_CATEGORY_IDS } from '../../lib/symbolCategories';
 import type { LearningSymbolItem } from '../../types';
+import { Button } from '../ui/button';
+
+import { SectionTitle } from '@/components/ui/SectionTitle';
 
 export type { LearningSymbolItem } from '../../types';
 
@@ -58,15 +61,15 @@ export function LearningSymbolPanel({
   };
 
   return (
-    <div className="w-[450px] bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
-      <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+    <div className="w-[450px] bg-surface rounded-xl shadow-sm border border-border flex flex-col overflow-hidden">
+      <div className="p-4 border-b border-border">
+        <SectionTitle as="h3">
           {t('symbolFirst')}
-        </h3>
+        </SectionTitle>
 
         {symbolUtterance.length > 0 && (
-          <div className="mb-2 bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-            <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">
+          <div className="mb-2 bg-muted border border-border rounded-lg p-3">
+            <div className="text-sm font-semibold text-foreground mb-2">
               {t('utteranceBuilder')}
             </div>
             <div className="flex flex-wrap gap-2 mb-2">
@@ -80,7 +83,7 @@ export function LearningSymbolPanel({
                     type="button"
                     onClick={() => onRemoveSymbol(index)}
                     className="hover:opacity-70 ml-1"
-                    aria-label="Remove symbol"
+                    aria-label={t('removeSymbolLabel')}
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -91,25 +94,20 @@ export function LearningSymbolPanel({
               <button
                 type="button"
                 onClick={() => onSpeakSymbols(glossSymbolUtterance(symbolUtterance))}
-                className="px-3 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg text-xs hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center gap-1"
+                className="px-3 py-2 bg-muted text-foreground rounded-lg text-xs hover:bg-surface-hover flex items-center gap-1"
                 disabled={symbolUtterance.length === 0}
                 title={t('speakOnly')}
               >
                 <Volume2 className="w-4 h-4" />
                 {t('speakOnly')}
               </button>
-              <button
-                type="button"
-                onClick={onSendSymbols}
-                className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs hover:bg-indigo-700 disabled:opacity-50"
-                disabled={isLoading || symbolUtterance.length === 0 || isStartingSession}
-              >
+              <Button type="button" onClick={onSendSymbols} className="text-xs" disabled={isLoading || symbolUtterance.length === 0 || isStartingSession} >
                 {isStartingSession ? t('startingSession') : t('sendSymbols')}
-              </button>
+              </Button>
               <button
                 type="button"
                 onClick={onClearSymbols}
-                className="px-3 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg text-xs hover:bg-gray-300 dark:hover:bg-gray-600"
+                className="px-3 py-2 bg-muted text-foreground rounded-lg text-xs hover:bg-surface-hover"
                 disabled={isLoading || isStartingSession}
               >
                 {t('clear')}
@@ -120,14 +118,14 @@ export function LearningSymbolPanel({
 
         <div className="mt-3 flex gap-2">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+            <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
             <input
               id="learning-symbol-search"
               name="learning_symbol_search"
               value={symbolSearch}
               onChange={(event) => onSearchChange(event.target.value)}
               placeholder={t('search')}
-              className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+              className="w-full pl-9 pr-3 py-2 border border-border rounded-lg bg-surface text-foreground text-sm"
             />
           </div>
         </div>
@@ -139,8 +137,8 @@ export function LearningSymbolPanel({
               onClick={() => onCategoryChange(category.id)}
               className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
                 selectedCategory === category.id
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  ? 'bg-brand text-white'
+                  : 'bg-muted text-muted-foreground hover:bg-surface-hover'
               }`}
             >
               {category.label}
@@ -150,8 +148,8 @@ export function LearningSymbolPanel({
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        <div className="w-24 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-2 space-y-2">
-          <div className="text-xs font-semibold text-gray-500 uppercase mb-2 text-center">
+        <div className="w-24 bg-background border-r border-border overflow-y-auto p-2 space-y-2">
+          <div className="text-xs font-semibold text-muted-foreground uppercase mb-2 text-center">
             {t('categories.core')}
           </div>
           {coreWords.map((symbol) => (
@@ -167,29 +165,29 @@ export function LearningSymbolPanel({
 
         <div className="flex-1 overflow-y-auto p-3 grid grid-cols-3 gap-2 content-start">
           {symbolLoading ? (
-            <div className="col-span-3 text-center text-gray-500 py-8">{t('loading')}</div>
+            <div className="col-span-3 text-center text-muted-foreground py-8">{t('loading')}</div>
           ) : filteredSymbols.length === 0 ? (
-            <div className="col-span-3 text-center text-gray-500 py-8">{t('noSymbols')}</div>
+            <div className="col-span-3 text-center text-muted-foreground py-8">{t('noSymbols')}</div>
           ) : (
             filteredSymbols.map((symbol) => (
               <button
                 key={symbol.id}
                 onClick={() => onAddSymbol(symbol)}
-                className="p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 hover:border-indigo-500 text-center flex flex-col items-center h-24 justify-center"
+                className="p-2 rounded-lg border border-border bg-background hover:border-brand text-center flex flex-col items-center h-24 justify-center"
                 title={symbol.label}
               >
                 {symbol.image_path ? (
-                  <img
-                    src={assetUrl(symbol.image_path)}
+                  <SymbolImage
+                    imagePath={symbol.image_path}
                     alt={symbol.label}
                     className="w-10 h-10 object-contain mb-1"
                   />
                 ) : (
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-1 ${categoryClasses(symbol.category)} bg-opacity-20`}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-1 ${categoryClasses(symbol.category)} bg-surface/20`}>
                     <span className="text-xs font-bold">{symbol.label.substring(0, 2).toUpperCase()}</span>
                   </div>
                 )}
-                <span className="text-xs font-medium text-gray-900 dark:text-gray-100 leading-tight line-clamp-2">
+                <span className="text-xs font-medium text-foreground leading-tight line-clamp-2">
                   {symbol.label}
                 </span>
               </button>

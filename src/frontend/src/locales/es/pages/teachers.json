@@ -35,6 +35,12 @@
     "displayName": "ej., Sr. Pérez",
     "email": "ej., profesor@ejemplo.com"
   },
+  "success": {
+    "created": "Profesor creado",
+    "updated": "Profesor actualizado",
+    "deleted": "Profesor eliminado",
+    "passwordReset": "Contraseña restablecida"
+  },
   "errors": {
     "loadFailed": "Error al cargar profesores",
     "updateFailed": "Error al actualizar",
@@ -44,6 +50,7 @@
     "passwordsDoNotMatch": "Las contraseñas no coinciden"
   },
   "actions": {
+    "resetSelfTitle": "Usa Cambiar contraseña en Ajustes",
     "editAria": "Editar {{name}}",
     "editTitle": "Editar profesor",
     "deleteAria": "Eliminar {{name}}",
@@ -51,5 +58,31 @@
     "resetPassword": "Resetear Pass",
     "resetPasswordAria": "Restablecer contraseña para {{name}}",
     "resetPasswordTitle": "Restablecer Contraseña"
+  },
+  "savedTopics": {
+    "title": "Temas guardados por los profesores",
+    "subtitle": "Revisa y elimina los temas que los profesores han guardado para sus estudiantes.",
+    "empty": "Ningún profesor ha guardado temas todavía.",
+    "topic": "Tema",
+    "board": "Contexto",
+    "teacher": "Profesor",
+    "savedAt": "Guardado",
+    "delete": "Eliminar",
+    "deleteConfirm": "¿Eliminar este tema guardado?",
+    "deleteSuccess": "Tema eliminado",
+    "deleteFailed": "No se pudo eliminar el tema",
+    "loadFailed": "No se pudieron cargar los temas guardados",
+    "searchPlaceholder": "Buscar por tema, contexto o profesor",
+    "searchAria": "Buscar temas guardados",
+    "total": "{{count}} temas en total",
+    "pageSize": "{{size}} por página",
+    "pageSizeAria": "Temas por página",
+    "prevPage": "Anterior",
+    "nextPage": "Siguiente",
+    "pageIndicator": "Página {{page}} de {{pages}}",
+    "actions": {
+      "deleteTitle": "Eliminar tema",
+      "deleteAria": "Eliminar tema {topic}"
+    }
   }
 }

@@ -1,3 +1,5 @@
+import { AVATAR_BG_COLORS } from './avatarPalette';
+
 export type CategoryKind =
   | 'pronouns'
   | 'verbs'
@@ -6,6 +8,12 @@ export type CategoryKind =
   | 'emotions'
   | 'punctuation'
   | 'general'
+
+// Category dots reuse the shared avatar palette so symbol dots and teacher
+// avatars share one saturated solid visual language. (Emotions uses violet,
+// matching the palette, instead of a near-duplicate purple.)
+// Palette order: indigo, sky, emerald, amber, rose, violet, teal, orange.
+const [DOT_PRONOUNS, , DOT_VERBS, DOT_NOUNS, DOT_ARTICLES, DOT_EMOTIONS] = AVATAR_BG_COLORS;
 
 export interface CategoryStyle {
   kind: CategoryKind
@@ -68,49 +76,49 @@ const STYLES: Record<CategoryKind, Omit<CategoryStyle, 'kind'>> = {
     hoverBorder: 'hover:border-indigo-400 dark:hover:border-indigo-500',
     badgeBg: 'bg-indigo-100 dark:bg-indigo-900/60',
     badgeText: 'text-indigo-700 dark:text-indigo-200',
-    dot: 'bg-indigo-500',
+    dot: DOT_PRONOUNS,
   },
   verbs: {
     border: 'border-emerald-200 dark:border-emerald-800/70',
     hoverBorder: 'hover:border-emerald-400 dark:hover:border-emerald-500',
     badgeBg: 'bg-emerald-100 dark:bg-emerald-900/60',
     badgeText: 'text-emerald-700 dark:text-emerald-200',
-    dot: 'bg-emerald-500',
+    dot: DOT_VERBS,
   },
   articles: {
     border: 'border-rose-200 dark:border-rose-800/70',
     hoverBorder: 'hover:border-rose-400 dark:hover:border-rose-500',
     badgeBg: 'bg-rose-100 dark:bg-rose-900/60',
     badgeText: 'text-rose-700 dark:text-rose-200',
-    dot: 'bg-rose-500',
+    dot: DOT_ARTICLES,
   },
   nouns: {
     border: 'border-amber-200 dark:border-amber-800/70',
     hoverBorder: 'hover:border-amber-400 dark:hover:border-amber-500',
     badgeBg: 'bg-amber-100 dark:bg-amber-900/60',
     badgeText: 'text-amber-700 dark:text-amber-200',
-    dot: 'bg-amber-500',
+    dot: DOT_NOUNS,
   },
   emotions: {
-    border: 'border-purple-200 dark:border-purple-800/70',
-    hoverBorder: 'hover:border-purple-400 dark:hover:border-purple-500',
-    badgeBg: 'bg-purple-100 dark:bg-purple-900/60',
-    badgeText: 'text-purple-700 dark:text-purple-200',
-    dot: 'bg-purple-500',
+    border: 'border-violet-200 dark:border-violet-800/70',
+    hoverBorder: 'hover:border-violet-400 dark:hover:border-violet-500',
+    badgeBg: 'bg-violet-100 dark:bg-violet-900/60',
+    badgeText: 'text-violet-700 dark:text-violet-200',
+    dot: DOT_EMOTIONS,
   },
   punctuation: {
-    border: 'border-gray-200 dark:border-gray-700',
-    hoverBorder: 'hover:border-gray-400 dark:hover:border-gray-500',
-    badgeBg: 'bg-gray-100 dark:bg-gray-800',
-    badgeText: 'text-gray-700 dark:text-gray-200',
-    dot: 'bg-gray-500',
+    border: 'border-border',
+    hoverBorder: 'hover:border-muted-foreground',
+    badgeBg: 'bg-muted',
+    badgeText: 'text-muted-foreground',
+    dot: 'bg-muted-foreground',
   },
   general: {
-    border: 'border-slate-200 dark:border-slate-800/70',
-    hoverBorder: 'hover:border-slate-400 dark:hover:border-slate-500',
-    badgeBg: 'bg-slate-100 dark:bg-slate-900/60',
-    badgeText: 'text-slate-700 dark:text-slate-200',
-    dot: 'bg-slate-500',
+    border: 'border-border',
+    hoverBorder: 'hover:border-muted-foreground',
+    badgeBg: 'bg-muted',
+    badgeText: 'text-muted-foreground',
+    dot: 'bg-muted-foreground',
   },
 }
 

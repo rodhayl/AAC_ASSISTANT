@@ -20,13 +20,36 @@
   "close": "Cerrar",
   "createTitle": "Crear Nuevo Estudiante",
   "resetPasswordTitle": "Restablecer Contraseña para {{name}}",
+  "save": "Guardar",
+  "guardianProfile": "Perfil del tutor",
+  "preferencesTitle": "Preferencias de",
+  "preferences": {
+    "title": "Preferencias",
+    "voiceMode": "Modo de voz",
+    "voiceModeHelp": "Activar/desactivar funciones de voz"
+  },
+  "tabs": {
+    "general": "General",
+    "persona": "Persona",
+    "safety": "Seguridad"
+  },
+  "success": {
+    "saved": "Perfil guardado correctamente",
+    "created": "Estudiante creado",
+    "updated": "Estudiante actualizado",
+    "deleted": "Estudiante eliminado",
+    "passwordReset": "Contraseña restablecida",
+    "boardAssigned": "Tablero asignado",
+    "boardUnassigned": "Tablero desasignado"
+  },
   "labels": {
     "username": "Usuario *",
     "displayName": "Nombre para mostrar *",
     "email": "Correo (opcional)",
     "password": "Contraseña *",
     "passwordHint": "Mínimo 8 caracteres, con mayúscula, minúscula y número",
-    "newPassword": "Nueva Contraseña"
+    "newPassword": "Nueva Contraseña",
+    "confirmPassword": "Confirmar Contraseña"
   },
   "cancel": "Cancelar",
   "createBtn": "Crear Estudiante",
@@ -38,18 +61,25 @@
   "placeholders": {
     "username": "ej., estudiante123",
     "displayName": "ej., Alex Smith",
-    "email": "ej., alex@ejemplo.com"
+    "email": "ej., alex@ejemplo.com",
+    "companionName": "ej., Buddy, Robo",
+    "role": "ej., Profesor, Amigo, Asistente"
   },
   "errors": {
     "loadFailed": "Error al cargar estudiantes",
+    "loadBoardsFailed": "Error al cargar tableros",
     "assignFailed": "Error al asignar tablero",
     "unassignFailed": "Error al desasignar tablero",
     "updateFailed": "Error al actualizar",
     "createFailed": "Error al crear estudiante",
     "deleteFailed": "Error al eliminar",
-    "resetPasswordFailed": "Error al restablecer contraseña"
+    "resetPasswordFailed": "Error al restablecer contraseña",
+    "passwordsDoNotMatch": "Las contraseñas no coinciden",
+    "saveFailed": "No se pudo guardar el perfil",
+    "profileLoadFailed": "No se pudieron cargar los datos del perfil"
   },
   "actions": {
+    "resetSelfTitle": "Usa Cambiar contraseña en Ajustes",
     "unassignAria": "Desasignar {{board}}",
     "unassignTitle": "Desasignar tablero",
     "assignAria": "Asignar tablero a {{student}}",
@@ -76,5 +106,25 @@
   "strict": "Estricto",
   "standard": "Estándar",
   "relaxed": "Relajado",
-  "ai": "IA"
+  "ai": "IA",
+  "forbiddenTopics": "Temas prohibidos",
+  "forbiddenTopicsHelp": "Un término por línea. Se bloquean al hablar de ellos y en las respuestas.",
+  "triggerWords": "Palabras desencadenantes",
+  "triggerWordsHelp": "Términos que bloquean contenido para esta estudiante.",
+  "featureGates": "Funciones bloqueadas para este estudiante",
+  "featureGatesHelp": "Deja desmarcado para seguir la política global del administrador.",
+  "blockChat": "Bloquear chat de aprendizaje",
+  "blockBoardAI": "Bloquear generación de tableros con IA",
+  "blockCustomTopics": "Bloquear temas personalizados",
+  "blockAutogen": "Bloquear pictogramas autogenerados",
+  "blockSocial": "Bloquear mensajería social",
+  "sentinel": "Centinela de moderación",
+  "sentinelHelp": "Re-verificación de IA en las respuestas del chat (nivel estricto).",
+  "maxResponseLength": "Longitud máxima de respuesta (palabras)",
+  "maxResponseLengthHelp": "Vacío = sin límite.",
+  "triStateOn": "Bloqueado",
+  "triStateDefault": "Por defecto del admin",
+  "triStateOff": "Permitido",
+  "createSafety": "Configuración de seguridad (opcional)",
+  "createSafetyHelp": "Define la edad, el nivel de filtro y los bloqueos ahora. Si lo dejas vacío, se aplicarán los valores por defecto automáticos."
 }

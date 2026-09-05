@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import jwt
 import pytest
@@ -12,7 +12,7 @@ from src.aac_app.utils.jwt_utils import (
     create_refresh_token,
 )
 from src.api.main import app
-from tests.test_utils_auth import create_test_headers
+from tests.auth_helpers import create_test_headers
 
 client = TestClient(app)
 
@@ -60,6 +60,68 @@ def test_logout_revokes_existing_access_and_refresh_tokens(test_db_session):
 
 
 @pytest.mark.usefixtures("setup_test_db")
+def test_logout_with_expired_access_token_still_revokes(test_db_session):
+    """Logout must succeed with an expired access token and revoke refresh.
+
+    The access token expires after 2h while the refresh token lives 7 days; a
+    user logging out after a long session must not get a 401 that blocks
+    revoking the still-valid refresh token.
+    """
+    student = User(
+        username="expired_logout_target",
+        display_name="Expired Logout Target",
+        user_type="student",
+        password_hash=get_password_hash("OldPass123"),
+        is_active=True,
+    )
+    test_db_session.add(student)
+    test_db_session.commit()
+    test_db_session.refresh(student)
+
+    expired_access_token = jwt.encode(
+        {
+            "sub": student.username,
+            "user_id": student.id,
+            "user_type": student.user_type,
+            "sec_ver": student.security_version,
+            "exp": datetime.now(UTC) - timedelta(hours=1),
+            "iat": datetime.now(UTC) - timedelta(hours=3),
+            "iss": "aac-assistant",
+        },
+        jwt_utils.JWT_SECRET_KEY,
+        algorithm=jwt_utils.JWT_ALGORITHM,
+    )
+    refresh_token = create_refresh_token(
+        {
+            "sub": student.username,
+            "user_id": student.id,
+            "sec_ver": student.security_version,
+        }
+    )
+
+    response = client.post(
+        "/api/auth/logout",
+        headers={"Authorization": f"Bearer {expired_access_token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    test_db_session.refresh(student)
+    assert student.security_version == 2
+    assert client.post(
+        f"/api/auth/refresh?refresh_token={refresh_token}"
+    ).status_code == 401
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_logout_without_token_returns_ok(test_db_session):
+    """Logout without any token still succeeds (client clears local session)."""
+    response = client.post("/api/auth/logout")
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+
+@pytest.mark.usefixtures("setup_test_db")
 def test_admin_password_reset_rejects_weak_password(test_db_session, admin_user):
     student = User(
         username="reset_target",
@@ -80,6 +142,26 @@ def test_admin_password_reset_rejects_weak_password(test_db_session, admin_user)
 
     assert response.status_code == 400
     assert "password" in response.json()["detail"].lower()
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_admin_cannot_reset_own_password_via_reset_route(
+    test_db_session, admin_user
+):
+    """Self-reset is rejected; admins must use the change-password endpoint
+    that verifies the current password (mirrors the self-delete guard)."""
+    original_hash = admin_user.password_hash
+    original_security_version = admin_user.security_version
+    response = client.post(
+        "/api/users/reset-password",
+        json={"user_id": admin_user.id, "new_password": "NewPass123"},
+        headers=create_test_headers(admin_user.id, admin_user.username, "admin"),
+    )
+
+    assert response.status_code == 400
+    test_db_session.refresh(admin_user)
+    assert admin_user.password_hash == original_hash
+    assert admin_user.security_version == original_security_version
 
 
 @pytest.mark.usefixtures("setup_test_db")

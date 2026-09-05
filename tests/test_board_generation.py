@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from src.aac_app.models import BoardSymbol, CommunicationBoard, User
 from src.api.main import app
-from tests.test_utils_auth import create_test_headers
+from tests.auth_helpers import create_test_headers
 
 # Setup TestClient
 client = TestClient(app)

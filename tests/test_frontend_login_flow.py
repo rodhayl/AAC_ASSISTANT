@@ -12,6 +12,7 @@ import sys
 import uuid
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 # Add src to path
@@ -21,6 +22,7 @@ sys.path.insert(0, str(src_dir))
 from src.api.main import app  # noqa: E402
 
 client = TestClient(app)
+pytestmark = pytest.mark.usefixtures("setup_test_db")
 
 
 def decode_jwt_payload(token: str):

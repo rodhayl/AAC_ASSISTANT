@@ -3,23 +3,197 @@
     "yo": {
       "quiero": 1.0,
       "necesito": 0.9,
-      "puedo": 0.8
+      "puedo": 0.8,
+      "tengo": 0.7,
+      "me": 0.6,
+      "voy": 0.55
     },
     "tú": {
       "quieres": 1.0,
       "puedes": 0.9,
-      "tienes": 0.8
+      "tienes": 0.8,
+      "eres": 0.7,
+      "necesitas": 0.6
+    },
+    "él": {
+      "es": 1.0,
+      "quiere": 0.9,
+      "tiene": 0.8,
+      "puede": 0.7
+    },
+    "ella": {
+      "es": 1.0,
+      "quiere": 0.9,
+      "tiene": 0.8,
+      "puede": 0.7
+    },
+    "nosotros": {
+      "somos": 1.0,
+      "queremos": 0.9,
+      "podemos": 0.8,
+      "tenemos": 0.7
+    },
+    "ellos": {
+      "son": 1.0,
+      "quieren": 0.9,
+      "pueden": 0.8,
+      "tienen": 0.7
     },
     "quiero": {
       "comer": 1.0,
       "beber": 0.9,
       "jugar": 0.8,
-      "más": 0.7
+      "más": 0.7,
+      "agua": 0.6,
+      "ir": 0.55
     },
     "necesito": {
       "ayuda": 1.0,
       "agua": 0.9,
-      "ir": 0.8
+      "ir": 0.8,
+      "más": 0.7,
+      "comer": 0.6
+    },
+    "puedo": {
+      "ir": 1.0,
+      "jugar": 0.9,
+      "comer": 0.8,
+      "tener": 0.7,
+      "hacer": 0.6
+    },
+    "tengo": {
+      "hambre": 1.0,
+      "sed": 0.9,
+      "sueño": 0.8,
+      "miedo": 0.7,
+      "frío": 0.6,
+      "calor": 0.55
+    },
+    "me": {
+      "gusta": 1.0,
+      "duele": 0.9,
+      "siento": 0.7,
+      "llamo": 0.6
+    },
+    "el": {
+      "perro": 1.0,
+      "gato": 0.9,
+      "agua": 0.8,
+      "pan": 0.7,
+      "baño": 0.6,
+      "colegio": 0.55
+    },
+    "la": {
+      "casa": 1.0,
+      "comida": 0.9,
+      "mano": 0.8,
+      "cama": 0.7,
+      "mesa": 0.6
+    },
+    "un": {
+      "poco": 1.0,
+      "momento": 0.9,
+      "vaso": 0.8,
+      "abrazo": 0.7
+    },
+    "una": {
+      "galleta": 1.0,
+      "manzana": 0.9,
+      "ayuda": 0.8,
+      "pelota": 0.7
+    },
+    "comer": {
+      "más": 1.0,
+      "ahora": 0.9,
+      "manzana": 0.7,
+      "pan": 0.6,
+      "comida": 0.55
+    },
+    "beber": {
+      "agua": 1.0,
+      "más": 0.9,
+      "leche": 0.8,
+      "ahora": 0.6
+    },
+    "jugar": {
+      "más": 1.0,
+      "ahora": 0.9,
+      "con": 0.7,
+      "pelota": 0.6,
+      "fuera": 0.5
+    },
+    "ir": {
+      "a": 1.0,
+      "casa": 0.9,
+      "al": 0.8,
+      "ahora": 0.7,
+      "fuera": 0.6
+    },
+    "ver": {
+      "más": 1.0,
+      "la": 0.8,
+      "televisión": 0.7,
+      "el": 0.6
+    },
+    "tener": {
+      "más": 1.0,
+      "que": 0.8,
+      "miedo": 0.6,
+      "hambre": 0.5
+    },
+    "ayuda": {
+      "por favor": 1.0,
+      "ahora": 0.9,
+      "más": 0.7,
+      "necesito": 0.5
+    },
+    "parar": {
+      "ahora": 1.0,
+      "por favor": 0.9,
+      "ya": 0.8
+    },
+    "más": {
+      "por favor": 1.0,
+      "agua": 0.9,
+      "comida": 0.8,
+      "leche": 0.7,
+      "jugar": 0.6
+    },
+    "por favor": {
+      "ayuda": 1.0,
+      "más": 0.9,
+      "parar": 0.8,
+      "sí": 0.5
+    },
+    "no": {
+      "más": 1.0,
+      "quiero": 0.9,
+      "por favor": 0.7,
+      "parar": 0.6
+    },
+    "sí": {
+      "por favor": 1.0,
+      "más": 0.8,
+      "quiero": 0.6
+    },
+    "a": {
+      "la": 1.0,
+      "el": 0.9,
+      "casa": 0.8,
+      "jugar": 0.6,
+      "comer": 0.55
+    },
+    "en": {
+      "la": 1.0,
+      "el": 0.9,
+      "casa": 0.7,
+      "mi": 0.6
+    },
+    "con": {
+      "mi": 1.0,
+      "más": 0.7,
+      "él": 0.6,
+      "ella": 0.55
     }
   }
 }

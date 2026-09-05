@@ -19,7 +19,7 @@ from sqlalchemy import event
 from src.aac_app.models import GuardianProfile, StudentTeacher, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.api.main import app
-from tests.test_utils_auth import create_test_headers
+from tests.auth_helpers import create_test_headers
 
 client = TestClient(app)
 
@@ -33,7 +33,7 @@ def create_admin_for_tests(test_db_session, test_password) -> tuple[dict, str]:
     """Create an admin user directly in DB for test setup."""
     from src.aac_app.models import User
     from src.aac_app.services.auth_service import get_password_hash
-    from tests.test_utils_auth import create_test_token
+    from tests.auth_helpers import create_test_token
 
     admin = User(
         username="test_admin",
@@ -90,7 +90,7 @@ def create_user(
     # Teachers and admins need to be created by an admin
     if admin_token is None:
         from src.aac_app.services.guardian_profile_service import get_session
-        from tests.test_utils_auth import create_test_token
+        from tests.auth_helpers import create_test_token
 
         with get_session() as db:
             bootstrap_admin = (
@@ -398,6 +398,88 @@ class TestProfileCRUD:
             headers=get_auth_header(teacher["id"])
         )
         assert response.status_code == 409
+
+    def test_create_profile_unique_race_returns_409(self, test_password):
+        """A create-vs-create race lost at the DB maps to 409, not 500."""
+        teacher = create_user("teacher_race1", "teacher", test_password)
+        student = create_user(
+            "student_race1", "student", test_password,
+            assigned_teacher_id=teacher["id"],
+        )
+
+        from unittest.mock import patch
+
+        from sqlalchemy.exc import IntegrityError
+
+        from src.aac_app.services.guardian_profile_service import (
+            get_guardian_profile_service,
+        )
+
+        service = get_guardian_profile_service()
+        with patch.object(
+            service,
+            "update_profile",
+            side_effect=IntegrityError(
+                "INSERT INTO guardian_profiles",
+                None,
+                Exception("UNIQUE constraint failed: guardian_profiles.user_id"),
+            ),
+        ):
+            response = client.post(
+                f"/api/guardian-profiles/students/{student['id']}",
+                json={"template_name": "default"},
+                headers=get_auth_header(teacher["id"]),
+            )
+
+        assert response.status_code == 409
+
+    def test_update_profile_unique_race_retries_as_update(self, test_password):
+        """An update that loses a concurrent create retries against the winner."""
+        teacher = create_user("teacher_race2", "teacher", test_password)
+        student = create_user(
+            "student_race2", "student", test_password,
+            assigned_teacher_id=teacher["id"],
+        )
+
+        created = client.post(
+            f"/api/guardian-profiles/students/{student['id']}",
+            json={"template_name": "default", "age": 7},
+            headers=get_auth_header(teacher["id"]),
+        )
+        assert created.status_code == 200
+
+        from unittest.mock import patch
+
+        from sqlalchemy.exc import IntegrityError
+
+        from src.aac_app.services.guardian_profile_service import (
+            get_guardian_profile_service,
+        )
+
+        service = get_guardian_profile_service()
+        real_update = type(service).update_profile
+        attempts = {"count": 0}
+
+        def flaky_update(profile_self, **kwargs):
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise IntegrityError(
+                    "INSERT INTO guardian_profiles",
+                    None,
+                    Exception("UNIQUE constraint failed: guardian_profiles.user_id"),
+                )
+            return real_update(profile_self, **kwargs)
+
+        with patch.object(type(service), "update_profile", flaky_update):
+            response = client.put(
+                f"/api/guardian-profiles/students/{student['id']}",
+                json={"age": 9},
+                headers=get_auth_header(teacher["id"]),
+            )
+
+        assert response.status_code == 200
+        assert attempts["count"] == 2
+        assert response.json()["age"] == 9
 
     def test_get_profile(self, test_password):
         """Should retrieve an existing profile."""
@@ -888,7 +970,7 @@ class TestSafetyConfiguration:
         assert "violence" in safety["forbidden_topics"]
         assert "scary" in safety["trigger_words"]
 
-    def test_medical_context_stored_but_private(self, test_password):
+    def test_medical_context_stored_but_private(self, test_password, test_db_session):
         """Should store medical context privately (never sent to LLM)."""
         teacher = create_user("teacher_s2", "teacher", test_password)
         student = create_user("student_s2", "student", test_password, assigned_teacher_id=teacher["id"])
@@ -913,8 +995,19 @@ class TestSafetyConfiguration:
         assert "autism_spectrum" in medical["diagnoses"]
         assert "loud_noises" in medical["sensitivities"]
 
-        # Note: The actual prompt should NOT contain this medical info
-        # This would be verified in integration tests with actual LLM
+        # Confidential medical/accessibility data is stored for authorized
+        # profile views but must never be copied into an LLM system prompt.
+        from src.aac_app.services.guardian_profile_service import GuardianProfileService
+
+        prompt = GuardianProfileService().build_system_prompt(
+            student["id"],
+            db=test_db_session,
+        )
+        assert "autism_spectrum" not in prompt
+        assert "anxiety" not in prompt
+        assert "loud_noises" not in prompt
+        assert "bright_lights" not in prompt
+        assert "Needs extra processing time" not in prompt
 
 
 # --- Student Listing Tests ---
@@ -1022,12 +1115,8 @@ class TestStudentListing:
         )
         test_db_session.add_all([teacher, assigned, unassigned])
         test_db_session.flush()
-        test_db_session.add_all(
-            [
-                StudentTeacher(student_id=assigned.id, teacher_id=teacher.id),
-                # Duplicate legacy assignment must not duplicate the roster row.
-                StudentTeacher(student_id=assigned.id, teacher_id=teacher.id),
-            ]
+        test_db_session.add(
+            StudentTeacher(student_id=assigned.id, teacher_id=teacher.id)
         )
         test_db_session.commit()
 

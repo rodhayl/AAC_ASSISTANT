@@ -2,6 +2,7 @@ export type AuthStateSnapshot = {
   token?: string | null;
   user?: { id?: number; user_type?: string } | null;
   logout?: () => void | Promise<void>;
+  refreshAccessToken?: () => Promise<boolean>;
 };
 
 type AuthStateReader = () => AuthStateSnapshot;

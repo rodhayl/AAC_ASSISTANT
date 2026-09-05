@@ -1,46 +1,27 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.user_service import UserService
-from src.api.deps import get_current_active_user, get_db, get_text
+from src.api.deps import get_current_active_user, get_db, get_request_text, get_text
 from src.api.routers.auth_helpers import (
+    apply_student_safety_at_creation,
     ensure_username_email_available,
     validate_email_format,
     validate_password_strength,
 )
 from src.api.schemas import (
     ResetPasswordRequest,
+    StaffStudentCreate,
     StudentAssignRequest,
-    UserCreate,
     UserResponse,
-    UserUpdate,
 )
 
 router = APIRouter()
 user_service = UserService()
-
-
-@router.get("/me", response_model=UserResponse)
-def get_current_user_info(current_user: User = Depends(get_current_active_user)):
-    """Get current user info"""
-    return current_user
-
-
-@router.put("/me", response_model=UserResponse)
-def update_current_user(
-    user_update: UserUpdate,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db),
-):
-    """Update current user profile/settings"""
-    updated = user_service.update_user(db, current_user.id, user_update)
-    # Commit before responding so the updated profile is durable for the
-    # immediate follow-up reads in the UI.
-    db.commit()
-    return updated
 
 
 @router.get("/students", response_model=list[UserResponse])
@@ -68,7 +49,7 @@ def get_students(
 @router.post("/students", response_model=UserResponse)
 def create_student(
     request: Request,
-    user: UserCreate,
+    user: StaffStudentCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -76,11 +57,7 @@ def create_student(
     if current_user.user_type not in ["admin", "teacher"]:
         raise HTTPException(
             status_code=403,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.users.unauthorizedCreateStudents",
-            ),
+            detail=get_request_text(request, "errors.users.unauthorizedCreateStudents", user=current_user),
         )
 
     # Force user_type to student
@@ -112,6 +89,10 @@ def create_student(
             )
 
     created = user_service.create_user(db, user)
+    # Optional one-step safety configuration: age, filter level, forbidden
+    # topics/words and feature gates land in the guardian profile inside the
+    # same transaction as the user row (teacher lock rules still apply).
+    apply_student_safety_at_creation(db, created, user.safety, current_user)
     # Commit before responding: the UI re-fetches the student list right
     # after this create, and the request dependency's teardown commit runs
     # only after the response is sent.
@@ -128,7 +109,10 @@ def assign_student(
 ):
     """Assign a student to a teacher (Admin/Teacher only)"""
     if current_user.user_type not in ["admin", "teacher"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(user=current_user, key="errors.unauthorized"),
+        )
 
     # If teacher, can only assign to self
     target_teacher_id = data.teacher_id
@@ -136,11 +120,7 @@ def assign_student(
     if current_user.user_type == "teacher" and target_teacher_id != current_user.id:
         raise HTTPException(
             status_code=403,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.users.assignOnlySelf",
-            ),
+            detail=get_request_text(request, "errors.users.assignOnlySelf", user=current_user),
         )
 
     # Check if student exists
@@ -166,15 +146,31 @@ def assign_student(
         .first()
     )
     if exists:
-        return {"message": "Already assigned", "status": "exists"}
+        return {"message": get_text(user=current_user, key="assignmentAlreadyExists"), "status": "exists"}
 
-    # Create assignment
+    # Create assignment. The database uniqueness constraint closes the race
+    # between the existence check above and the insert; a concurrent request
+    # that loses that race is still an idempotent success for the caller.
     assignment = StudentTeacher(student_id=data.student_id, teacher_id=target_teacher_id)
-    db.add(assignment)
-    db.commit()
+    try:
+        db.add(assignment)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if not (
+            db.query(StudentTeacher)
+            .filter_by(student_id=data.student_id, teacher_id=target_teacher_id)
+            .first()
+        ):
+            raise
+        return {
+            "message": get_text(user=current_user, key="assignmentAlreadyExists"),
+            "status": "exists",
+        }
+
     return JSONResponse(
         status_code=201,
-        content={"message": "Student assigned successfully", "status": "created"}
+        content={"message": get_text(user=current_user, key="studentAssigned"), "status": "created"}
     )
 
 
@@ -188,16 +184,15 @@ def unassign_student(
 ):
     """Unassign a student from a teacher (Admin/Teacher only)"""
     if current_user.user_type not in ["admin", "teacher"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(user=current_user, key="errors.unauthorized"),
+        )
 
     if current_user.user_type == "teacher" and teacher_id != current_user.id:
         raise HTTPException(
             status_code=403,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.users.unassignOnlySelf",
-            ),
+            detail=get_request_text(request, "errors.users.unassignOnlySelf", user=current_user),
         )
 
     # Check if assignment exists
@@ -216,7 +211,7 @@ def unassign_student(
 
     db.delete(assignment)
     db.commit()
-    return {"message": "Assignment removed successfully"}
+    return {"message": get_text(user=current_user, key="assignmentRemoved")}
 
 
 @router.post("/reset-password")
@@ -228,7 +223,10 @@ def reset_user_password(
 ):
     """Reset user password (Admin can reset any, Teacher can reset assigned students)"""
     if current_user.user_type not in ["admin", "teacher"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(user=current_user, key="errors.unauthorized"),
+        )
 
     # Determine user_id from payload (support both user_id and legacy student_id)
     target_user_id = data.user_id if data.user_id is not None else data.student_id
@@ -236,11 +234,7 @@ def reset_user_password(
     if target_user_id is None:
         raise HTTPException(
             status_code=400,
-            detail=get_text(
-                user=current_user,
-                accept_language=request.headers.get("accept-language"),
-                key="errors.users.studentIdRequired",
-            ),
+            detail=get_request_text(request, "errors.users.studentIdRequired", user=current_user),
         )
 
     # Fetch user
@@ -253,18 +247,20 @@ def reset_user_password(
 
     # Permission check
     if current_user.user_type == "admin":
-        # Admin can reset anyone
-        pass
+        # Admin can reset anyone *except themselves*: resetting your own
+        # password here bypasses the current-password check that
+        # /auth/change-password enforces (mirroring the self-delete guard).
+        if target_user_id == current_user.id:
+            raise HTTPException(
+                status_code=400,
+                detail=get_request_text(request, "errors.users.cannotResetOwnPassword", user=current_user),
+            )
     elif current_user.user_type == "teacher":
         # Teacher can only reset assigned students
         if user.user_type != "student":
             raise HTTPException(
                 status_code=403,
-                detail=get_text(
-                    user=current_user,
-                    accept_language=request.headers.get("accept-language"),
-                    key="errors.users.resetOnlyStudents",
-                ),
+                detail=get_request_text(request, "errors.users.resetOnlyStudents", user=current_user),
             )
 
         # Check assignment
@@ -279,11 +275,7 @@ def reset_user_password(
         if not assignment:
             raise HTTPException(
                 status_code=403,
-                detail=get_text(
-                    user=current_user,
-                    accept_language=request.headers.get("accept-language"),
-                    key="errors.users.notAssignedToTeacher",
-                ),
+                detail=get_request_text(request, "errors.users.notAssignedToTeacher", user=current_user),
             )
 
     validate_password_strength(data.new_password, user=current_user)
@@ -293,4 +285,4 @@ def reset_user_password(
     # Commit before responding so a login with the new password (which
     # follows this response in the UI flow) cannot read the old hash.
     db.commit()
-    return {"message": "Password reset successfully"}
+    return {"message": get_text(user=current_user, key="passwordResetSuccessfully")}

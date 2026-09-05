@@ -1,16 +1,49 @@
-export type SavedTopic = { id: number; board: string; topic: string; createdBy: string };
+import api from './api';
+
+export type SavedTopic = {
+  id: number;
+  board: string;
+  boardId?: number;
+  topic: string;
+  createdBy: string;
+  createdByUserId?: number;
+};
+
+/**
+ * Saved topics now live in the backend (`/learning/topics/saved`) so a
+ * student sees their teacher's topics on any device. The localStorage
+ * helpers below exist only for the one-time migration of data that predates
+ * server-side storage; they are removed after a successful upload.
+ */
 
 const keyForUser = (userId: number) => `learning-topics-${userId}`;
 
-export function loadTopicsForUser(userId: number): SavedTopic[] {
+function isDuplicateResponse(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('response' in error)) {
+    return false;
+  }
+  const response = error.response;
+  if (typeof response !== 'object' || response === null || !('status' in response)) {
+    return false;
+  }
+  return response.status === 409;
+}
+
+function loadLocalTopics(userId: number): SavedTopic[] {
   try {
     const raw = localStorage.getItem(keyForUser(userId));
     if (!raw) return [];
-    const parsed = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
     if (Array.isArray(parsed)) {
       return parsed.filter(
-        (t) => typeof t?.id === 'number' && typeof t?.topic === 'string'
-      ) as SavedTopic[];
+        (t: unknown): t is SavedTopic =>
+          typeof t === 'object' &&
+          t !== null &&
+          'id' in t &&
+          typeof t.id === 'number' &&
+          'topic' in t &&
+          typeof t.topic === 'string',
+      );
     }
   } catch {
     /* ignore */
@@ -18,23 +51,102 @@ export function loadTopicsForUser(userId: number): SavedTopic[] {
   return [];
 }
 
-export function saveTopicsForUser(userId: number, topics: SavedTopic[]) {
+// The Learning page mounts both the sidebar and the topic-picker pool, and
+// each triggers the migration on mount. Serialize them through a single
+// in-flight promise so the second caller waits for the first to finish (and
+// find the localStorage key already gone) instead of double-posting.
+const migrationsInFlight = new Map<number, Promise<void>>();
+
+/**
+ * One-time migration: push topics still sitting in legacy localStorage into
+ * the backend, then clear the local copy. Only call for users who can
+ * create topics (teacher/admin) — the endpoint rejects students.
+ */
+export function migrateLocalTopicsToBackend(userId: number): Promise<void> {
+  const existing = migrationsInFlight.get(userId);
+  if (existing) return existing;
+
+  const migration = doMigrateLocalTopics(userId).finally(() => {
+    if (migrationsInFlight.get(userId) === migration) {
+      migrationsInFlight.delete(userId);
+    }
+  });
+  migrationsInFlight.set(userId, migration);
+  return migration;
+}
+
+async function doMigrateLocalTopics(userId: number): Promise<void> {
+  const storageKey = keyForUser(userId);
+  const local = loadLocalTopics(userId);
+  if (local.length === 0) return;
   try {
-    localStorage.setItem(keyForUser(userId), JSON.stringify(topics));
+    for (const topic of local) {
+      try {
+        await api.post('/learning/topics/saved', {
+          board: topic.board,
+          board_id: topic.boardId ?? null,
+          topic: topic.topic,
+        });
+      } catch (error) {
+        // A 409 means a previous attempt already persisted this item; treat
+        // it as confirmed so retries can finish the remaining legacy items.
+        if (!isDuplicateResponse(error)) throw error;
+      }
+      // Remove each item immediately after success. If the browser closes or
+      // the connection fails midway, a retry cannot resend already migrated
+      // items. A duplicate response is also safe: the server's uniqueness
+      // policy treats it as already migrated.
+      const remaining = loadLocalTopics(userId).filter((candidate) => candidate.id !== topic.id);
+      if (remaining.length === 0) localStorage.removeItem(storageKey);
+      else localStorage.setItem(storageKey, JSON.stringify(remaining));
+    }
   } catch {
-    /* ignore */
+    // Keep only the unconfirmed items so the migration retries safely.
   }
 }
 
-export function addTopic(userId: number, topic: SavedTopic): SavedTopic[] {
-  const topics = loadTopicsForUser(userId);
-  const next = [...topics, topic];
-  saveTopicsForUser(userId, next);
-  return next;
+function mapFromApi(raw: {
+  id: number;
+  board: string;
+  board_id?: number | null;
+  topic: string;
+  created_by: string;
+  created_by_user_id?: number | null;
+  created_by_name?: string | null;
+}): SavedTopic {
+  return {
+    id: raw.id,
+    board: raw.board,
+    ...(raw.board_id != null ? { boardId: raw.board_id } : {}),
+    topic: raw.topic,
+    createdBy: raw.created_by_name || raw.created_by,
+    ...(raw.created_by_user_id != null ? { createdByUserId: raw.created_by_user_id } : {}),
+  };
 }
 
-export function removeTopic(userId: number, topicId: number): SavedTopic[] {
-  const next = loadTopicsForUser(userId).filter((t) => t.id !== topicId);
-  saveTopicsForUser(userId, next);
-  return next;
+export async function loadTopicsForUser(
+  userId: number,
+  migrate = false
+): Promise<SavedTopic[]> {
+  if (migrate) {
+    await migrateLocalTopicsToBackend(userId);
+  }
+  const { data } = await api.get('/learning/topics/saved');
+  return Array.isArray(data) ? data.map(mapFromApi) : [];
+}
+
+export async function addTopic(
+  _userId: number,
+  topic: Omit<SavedTopic, 'id' | 'createdBy' | 'createdByUserId'>
+): Promise<SavedTopic> {
+  const { data } = await api.post('/learning/topics/saved', {
+    board: topic.board,
+    board_id: topic.boardId ?? null,
+    topic: topic.topic,
+  });
+  return mapFromApi(data);
+}
+
+export async function removeTopic(_userId: number, topicId: number): Promise<void> {
+  await api.delete(`/learning/topics/saved/${topicId}`);
 }

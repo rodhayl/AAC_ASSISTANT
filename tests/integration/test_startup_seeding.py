@@ -14,7 +14,13 @@ from sqlalchemy.orm import sessionmaker
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.aac_app.models import Achievement, Base, User, UserAchievement  # noqa: E402
+from src.aac_app.models import (  # noqa: E402
+    Achievement,
+    Base,
+    CommunicationBoard,
+    User,
+    UserAchievement,
+)
 from src.aac_app.services.auth_service import verify_password  # noqa: E402
 
 # Use a separate test database file for this test to verify seeding logic specifically
@@ -241,8 +247,47 @@ def test_database_initialization_idempotency():
     assert session.query(User).count() == 0
     from src.aac_app.models import Symbol
 
-    assert session.query(Symbol).count() == 12
+    # 17 concepts seeded in both UI locales (es + en, incl. computing/IA
+    # vocabulary for topic-aware predictions); count after the first run must
+    # not grow on the second run even for labels that already exist under
+    # other categories (e.g. an ARASAAC bulk import).
+    assert session.query(Symbol).count() == 34
     assert session.query(Achievement).count() == 3
+    session.close()
+    engine.dispose()
+
+
+def test_sample_symbols_do_not_duplicate_imported_labels():
+    """An imported symbol with the same label under a different category
+    (e.g. the ARASAAC bulk import's "herbivorous" vs the seed's
+    "farm_animals") must stop the seed from inserting a duplicate row."""
+    from src.aac_app.models import Symbol
+    from src.aac_app.seed import _create_sample_symbols
+
+    engine = create_engine(TEST_DB_URL)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    session.add(
+        Symbol(
+            label="vaca",
+            category="herbivorous",
+            language="es",
+            is_builtin=False,
+        )
+    )
+    session.flush()
+    _create_sample_symbols(session)
+    session.commit()
+
+    es_vacas = (
+        session.query(Symbol)
+        .filter(Symbol.label == "vaca", Symbol.language == "es")
+        .all()
+    )
+    assert len(es_vacas) == 1
+    assert es_vacas[0].category == "herbivorous"
     session.close()
     engine.dispose()
 
@@ -276,7 +321,7 @@ def test_seeded_demo_board_is_playable():
 
     board = (
         session.query(CommunicationBoard)
-        .filter(CommunicationBoard.name == "General Communication")
+        .filter(CommunicationBoard.name == "Comunicación General")
         .first()
     )
     assert board is not None
@@ -292,6 +337,133 @@ def test_seeded_demo_board_is_playable():
     assert capacity > 0
     assert symbol_count / capacity >= 0.5, (
         f"demo board underfilled: {symbol_count}/{capacity}"
+    )
+    session.close()
+    engine.dispose()
+
+
+def test_default_learning_modes_are_seeded_idempotently():
+    """
+    System learning modes are seeded on first run and never duplicated, and
+    custom teacher modes are left untouched.
+    """
+    from src.aac_app.models import LearningMode
+    from src.aac_app.seed import DEFAULT_LEARNING_MODES, _create_default_learning_modes
+
+    engine = create_engine(TEST_DB_URL)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    # A custom teacher mode must survive the system-mode seed.
+    teacher = User(
+        username="mode_teacher",
+        display_name="Mode Teacher",
+        user_type="teacher",
+        password_hash="test-hash",
+    )
+    session.add(teacher)
+    session.flush()
+    custom = LearningMode(
+        name="Andaluz",
+        key="andalusian",
+        description="Speaks Andalusian Spanish",
+        prompt_instruction="Speak in Andalusian Spanish.",
+        is_custom=True,
+        created_by=teacher.id,
+    )
+    session.add(custom)
+    session.flush()
+
+    _create_default_learning_modes(session)
+    session.commit()
+
+    system_modes = (
+        session.query(LearningMode)
+        .filter(LearningMode.created_by.is_(None))
+        .order_by(LearningMode.key)
+        .all()
+    )
+    assert [mode.key for mode in system_modes] == sorted(
+        mode["key"] for mode in DEFAULT_LEARNING_MODES
+    )
+    assert all(not mode.is_custom for mode in system_modes)
+    assert all(mode.prompt_instruction for mode in system_modes)
+    assert [mode.key for mode in system_modes if not mode.auto_ask_enabled] == [
+        "conversation",
+        "roleplay",
+    ]
+
+    # Second run must not duplicate the system modes nor touch the custom one.
+    _create_default_learning_modes(session)
+    session.commit()
+    assert (
+        session.query(LearningMode).filter(LearningMode.created_by.is_(None)).count()
+        == len(DEFAULT_LEARNING_MODES)
+    )
+    custom_still = session.get(LearningMode, custom.id)
+    assert custom_still is not None
+    assert custom_still.key == "andalusian"
+
+    session.close()
+    engine.dispose()
+
+
+def test_legacy_demo_board_is_renamed_without_touching_custom_boards():
+    """Startup migrates the old demo name but preserves user-created boards."""
+    from src.aac_app.seed import _rename_legacy_default_board
+
+    engine = create_engine(TEST_DB_URL)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    admin = User(
+        username="admin1",
+        display_name="Admin",
+        user_type="admin",
+        password_hash="test-hash",
+    )
+    teacher = User(
+        username="teacher1",
+        display_name="Teacher",
+        user_type="teacher",
+        password_hash="test-hash",
+    )
+    session.add_all([admin, teacher])
+    session.flush()
+    session.add_all(
+        [
+            CommunicationBoard(
+                name="General Communication",
+                user_id=admin.id,
+                is_template=True,
+            ),
+            CommunicationBoard(
+                name="General Communication",
+                user_id=teacher.id,
+                is_template=True,
+            ),
+        ]
+    )
+    session.flush()
+
+    _rename_legacy_default_board(session)
+    session.commit()
+
+    assert (
+        session.query(CommunicationBoard)
+        .filter_by(user_id=admin.id)
+        .one()
+        .name
+        == "Comunicación General"
+    )
+    assert (
+        session.query(CommunicationBoard)
+        .filter_by(user_id=teacher.id)
+        .one()
+        .name
+        == "General Communication"
     )
     session.close()
     engine.dispose()

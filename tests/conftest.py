@@ -20,6 +20,12 @@ from src.api.deps import clear_settings_cache, get_db
 from src.api.main import app
 
 
+@pytest.fixture(scope="session")
+def anyio_backend():
+    """Run async tests on the asyncio backend used by the application."""
+    return "asyncio"
+
+
 @pytest.fixture(scope="function")
 def test_db_engine(tmp_path: Path, monkeypatch, reset_production_db):
     """
@@ -72,6 +78,22 @@ def test_db_session(test_db_engine):
     yield session
 
     session.close()
+
+
+@pytest.fixture(scope="function")
+def client(test_db_session):
+    """FastAPI test client bound to the function-scoped test database."""
+    from fastapi.testclient import TestClient
+
+    def override_get_db():
+        try:
+            yield test_db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    yield TestClient(app)
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture(autouse=False)
@@ -159,7 +181,18 @@ def mock_llm_provider():
     Returns predictable responses without making real API calls.
     """
     mock_provider = Mock()
-    mock_provider.generate = AsyncMock(return_value="This is a test response from the mock LLM.")
+
+    async def generate(**kwargs):
+        prompt = kwargs.get("prompt", "")
+        if "Create a brief, encouraging summary" in prompt:
+            return "{\"response\": \"Great work completing this learning session.\"}"
+        if "Analyze if the student's answer is correct" in prompt:
+            return "{\"is_correct\": false, \"confidence\": 0.5, \"encouraging_feedback\": \"Keep practicing.\"}"
+        if "Generate a " in prompt and "level question about" in prompt:
+            return "{\"question\": \"What is a useful AAC word?\", \"choices\": [\"Help\", \"Blue\", \"Round\"], \"correct\": 0}"
+        return "{\"response\": \"Thanks for sharing. What would you like to practice next?\"}"
+
+    mock_provider.generate = AsyncMock(side_effect=generate)
     mock_provider.is_available = Mock(return_value=True)
     return mock_provider
 

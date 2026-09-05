@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Download, Upload } from 'lucide-react';
 import api from '../../lib/api';
 import { downloadJson } from '../../lib/download';
+import { Button } from '../../components/ui/button';
 
 export function DataManagementTab() {
   const user = useAuthStore(state => state.user);
@@ -30,15 +31,15 @@ export function DataManagementTab() {
     try {
       const text = await file.text();
       const json = JSON.parse(text);
-      if (!json.meta || typeof json.meta !== 'object') throw new Error('Invalid export: missing meta');
-      if (!Array.isArray(json.boards)) throw new Error('Invalid export: boards must be array');
-      if (!Array.isArray(json.assignedBoards)) throw new Error('Invalid export: assignedBoards must be array');
-      if (!Array.isArray(json.achievements)) throw new Error('Invalid export: achievements must be array');
+      if (!json.meta || typeof json.meta !== 'object') throw new Error(t('data.invalidExportMeta'));
+      if (!Array.isArray(json.boards)) throw new Error(t('data.invalidExportBoards'));
+      if (!Array.isArray(json.assignedBoards)) throw new Error(t('data.invalidExportAssignedBoards'));
+      if (!Array.isArray(json.achievements)) throw new Error(t('data.invalidExportAchievements'));
       await api.post('/data/import', json);
       addToast(t('data.importSuccess'), 'success');
     } catch (error) {
       console.error('Failed to import data:', error);
-      const errorMessage = error instanceof Error ? error.message : t('errors.unknownError', 'Unknown error');
+      const errorMessage = error instanceof Error ? error.message : t('errors.unknownError');
       addToast(t('data.importFailed') + errorMessage, 'error');
     }
   };
@@ -47,24 +48,23 @@ export function DataManagementTab() {
     <section
       id="settings-data"
       aria-labelledby="settings-data-heading"
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+      className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden"
     >
-      <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-        <h3 id="settings-data-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+      <div className="p-6 border-b border-border">
+        <h3 id="settings-data-heading" className="text-lg font-semibold text-foreground">
           {t('data.title')}
         </h3>
-        <p className="text-sm text-gray-500 mt-1">{t('data.subtitle')}</p>
+        <p className="text-sm text-muted-foreground mt-1">{t('data.subtitle')}</p>
       </div>
       <div className="p-6 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <button
+          <Button
             onClick={() => void handleExportData()}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center justify-center"
             title={t('data.exportClientTitle')}
           >
-            <Download className="w-4 h-4 mr-2" />
+            <Download />
             {t('data.exportClient')}
-          </button>
+          </Button>
           {isTeacherOrAdmin && (
             <button
               onClick={() => void handleExportData(true)}
@@ -77,7 +77,7 @@ export function DataManagementTab() {
           )}
         </div>
         {isTeacherOrAdmin && (
-          <label className="flex items-center justify-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 w-full">
+          <label className="flex items-center justify-center px-4 py-2 bg-muted text-foreground rounded-lg cursor-pointer hover:bg-muted w-full">
             <Upload className="w-4 h-4 mr-2" />
             {t('data.importBoards')}
             <input

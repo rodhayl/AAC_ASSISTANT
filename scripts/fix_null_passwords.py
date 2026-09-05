@@ -7,8 +7,13 @@ This script:
 3. Validates database integrity
 
 Run this after updating the schema to ensure no users have null passwords.
+
+DESTRUCTIVE by default: users with a null password_hash are DELETED unless
+``--dry-run`` is passed for a report-only preview. An interactive
+confirmation is required unless ``--yes`` is given.
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -22,13 +27,14 @@ from src.aac_app.services.auth_service import get_password_hash  # noqa: E402
 from src.aac_app.services.credential_service import mark_credentials_changed  # noqa: E402
 
 
-def fix_null_password_hashes(delete_invalid=False):
+def fix_null_password_hashes(delete_invalid=False, dry_run=False):
     """
     Fix users with null password hashes.
 
     Args:
         delete_invalid: If True, delete users with null passwords.
                        If False, set a random hash (user won't be able to login).
+        dry_run: If True, only report what would change without writing.
     """
     print("Checking for users with null password hashes...")
 
@@ -43,6 +49,11 @@ def fix_null_password_hashes(delete_invalid=False):
         print(f"\n⚠ Found {len(invalid_users)} users with null password hashes:")
         for user in invalid_users:
             print(f"  - {user.username} ({user.user_type}, ID: {user.id})")
+
+        if dry_run:
+            action = "delete" if delete_invalid else "disable login for"
+            print(f"\nDry run: would {action} {len(invalid_users)} user(s). No changes written.")
+            return True
 
         if delete_invalid:
             print("\nDeleting invalid users...")
@@ -90,15 +101,45 @@ def validate_database():
         return True
 
 
-def main():
+def main(argv=None):
     """Main migration function"""
+    parser = argparse.ArgumentParser(
+        description=(
+            "Fix users whose password_hash is NULL. "
+            "DESTRUCTIVE: deletes those users by default."
+        )
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report affected users without writing any change",
+    )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip the interactive confirmation prompt",
+    )
+    args = parser.parse_args(argv)
+
     print("=" * 60)
     print("Database Migration: Fix Null Password Hashes")
     print("=" * 60)
 
     try:
+        if not args.dry_run and not args.yes:
+            response = input(
+                "Users with a null password_hash will be DELETED. Continue? (yes/no): "
+            ).strip().lower()
+            if response not in ("y", "yes"):
+                print("Aborted; no changes written.")
+                return 1
+
         # Fix null password hashes (delete invalid users)
-        fix_null_password_hashes(delete_invalid=True)
+        fix_null_password_hashes(delete_invalid=True, dry_run=args.dry_run)
+
+        if args.dry_run:
+            print("\nDry run complete; database left untouched.")
+            return 0
 
         # Validate database
         if validate_database():

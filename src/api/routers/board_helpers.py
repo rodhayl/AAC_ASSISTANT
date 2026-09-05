@@ -1,18 +1,42 @@
 from src.aac_app.models import BoardSymbol, CommunicationBoard
 from src.aac_app.services.runtime_translation import translate_text as _translate_symbol_text
 
+SUPPORTED_AI_PROVIDERS = ("ollama", "openrouter", "lmstudio", "groq")
 
-def serialize_symbol(
-    bs: BoardSymbol, target_lang: str = None, is_language_learning: bool = False
-):
+
+def _serialize_symbol(
+    bs: BoardSymbol,
+    target_lang: str = None,
+    is_language_learning: bool = False,
+    *,
+    export: bool = False,
+) -> dict:
+    """Serialize one placement for either the API or export contract."""
     sym = getattr(bs, "symbol", None)
-
     custom_text = bs.custom_text
     symbol_label = sym.label if sym else None
 
     if target_lang and not is_language_learning:
         custom_text = _translate_symbol_text(custom_text, target_lang)
         symbol_label = _translate_symbol_text(symbol_label, target_lang)
+
+    symbol_data = None
+    if sym is not None:
+        symbol_data = {
+            "id": sym.id,
+            "label": symbol_label,
+            "description": sym.description,
+            "category": sym.category,
+            "image_path": sym.image_path,
+            "audio_path": sym.audio_path,
+            "keywords": sym.keywords,
+            "language": sym.language,
+        }
+        if not export:
+            symbol_data.update(
+                is_builtin=sym.is_builtin,
+                created_at=sym.created_at,
+            )
 
     return {
         "id": bs.id,
@@ -24,23 +48,15 @@ def serialize_symbol(
         "custom_text": custom_text,
         "color": bs.color,
         "linked_board_id": bs.linked_board_id,
-        "symbol": (
-            {
-                "id": sym.id,
-                "label": symbol_label,
-                "description": sym.description,
-                "category": sym.category,
-                "image_path": sym.image_path,
-                "audio_path": sym.audio_path,
-                "keywords": sym.keywords,
-                "language": sym.language,
-                "is_builtin": sym.is_builtin,
-                "created_at": sym.created_at,
-            }
-            if sym is not None
-            else None
-        ),
+        "symbol": symbol_data,
     }
+
+
+def serialize_symbol(
+    bs: BoardSymbol, target_lang: str = None, is_language_learning: bool = False
+):
+    """Serialize one board placement for the regular API response."""
+    return _serialize_symbol(bs, target_lang, is_language_learning)
 
 
 def get_playable_count(board: CommunicationBoard) -> int:
@@ -84,52 +100,20 @@ def serialize_board(b: CommunicationBoard, target_lang: str = None):
 
 
 def serialize_export_board(board: CommunicationBoard) -> dict:
-    """Return the stable, minimal board shape used by data exports.
-
-    The API and export serializers intentionally have different contracts, but
-    they share the canonical placement/symbol serializer above. Keeping the
-    export projection here prevents fields from drifting between endpoints.
-    """
-    serialized = serialize_board(board)
+    """Return the stable, minimal board shape used by data exports."""
+    is_learning = getattr(board, "is_language_learning", False)
     return {
-        "id": serialized["id"],
-        "name": serialized["name"],
-        "description": serialized["description"],
-        "category": serialized["category"],
-        "is_public": serialized["is_public"],
-        "is_template": serialized["is_template"],
-        "grid_rows": serialized["grid_rows"],
-        "grid_cols": serialized["grid_cols"],
+        "id": board.id,
+        "name": board.name,
+        "description": board.description,
+        "category": board.category,
+        "is_public": board.is_public,
+        "is_template": board.is_template,
+        "grid_rows": board.grid_rows,
+        "grid_cols": board.grid_cols,
         "symbols": [
-            {
-                "id": symbol["id"],
-                "symbol_id": symbol["symbol_id"],
-                "position_x": symbol["position_x"],
-                "position_y": symbol["position_y"],
-                "size": symbol["size"],
-                "is_visible": symbol["is_visible"],
-                "custom_text": symbol["custom_text"],
-                "color": symbol["color"],
-                "linked_board_id": symbol["linked_board_id"],
-                "symbol": (
-                    {
-                        key: symbol["symbol"][key]
-                        for key in (
-                            "id",
-                            "label",
-                            "description",
-                            "category",
-                            "image_path",
-                            "audio_path",
-                            "keywords",
-                            "language",
-                        )
-                    }
-                    if symbol["symbol"] is not None
-                    else None
-                ),
-            }
-            for symbol in serialized["symbols"]
+            _serialize_symbol(symbol, is_language_learning=is_learning, export=True)
+            for symbol in (board.symbols or [])
         ],
         "created_at": board.created_at.isoformat() if board.created_at else None,
         "updated_at": board.updated_at.isoformat() if board.updated_at else None,

@@ -36,10 +36,20 @@ vi.mock('lucide-react', () => ({
 }));
 
 // Mock translation
+const i18nLanguage = vi.hoisted(() => ({ current: 'en-US' }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, defaultVal: string) => defaultVal || key,
-    i18n: { language: 'en-US' },
+    t: (key: string) => ({
+      home: 'Home', back: 'Back', yes: 'Yes', no: 'No', thanks: 'Thanks',
+      listen: 'Listen', search: 'Search', context: 'Context', topic: 'Topic',
+      chat: 'Chat', keyboard: 'Keyboard', type: 'Type', attention: 'Attention',
+      alert: 'Alert', tapSymbolsToSpeak: 'Tap symbols to create a sentence...',
+      backspace: 'Backspace', clearSentence: 'Clear sentence',
+      speakSentence: 'Speak sentence', askAI: 'Ask AI',
+      speechNotAvailable: 'Speech recognition is not available.', paused: 'Paused',
+      typeHere: 'Type something here...', speak: 'Speak',
+    }[key] ?? key),
+    i18n: { language: i18nLanguage.current },
   }),
   initReactI18next: {
     type: '3rdParty',
@@ -361,5 +371,44 @@ describe('KeyboardOverlay', () => {
     fireEvent.click(screen.getByText('Speak'));
 
     expect(onSpeak).toHaveBeenCalledWith('Hello World');
+  });
+
+  it('does not crash when the saved phrase history is corrupt', () => {
+    localStorage.setItem('aac_phrase_history', '{not valid json');
+    try {
+      render(
+        <KeyboardOverlay
+          isOpen={true}
+          onClose={vi.fn()}
+          onSpeak={vi.fn()}
+        />
+      );
+
+      // The overlay still renders and works.
+      expect(screen.getByPlaceholderText('Type something here...')).toBeInTheDocument();
+    } finally {
+      localStorage.removeItem('aac_phrase_history');
+    }
+  });
+
+  it('suggests words matching the active language', async () => {
+    i18nLanguage.current = 'es';
+    try {
+      render(
+        <KeyboardOverlay
+          isOpen={true}
+          onClose={vi.fn()}
+          onSpeak={vi.fn()}
+        />
+      );
+
+      const input = screen.getByPlaceholderText('Type something here...');
+      fireEvent.change(input, { target: { value: 'qui' } });
+
+      // Spanish list contains "quiero"; the English list has no "qui" word.
+      expect(screen.getByText('quiero')).toBeInTheDocument();
+    } finally {
+      i18nLanguage.current = 'en-US';
+    }
   });
 });

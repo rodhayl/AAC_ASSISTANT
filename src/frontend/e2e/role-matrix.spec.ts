@@ -5,7 +5,6 @@ type Role = 'student' | 'teacher' | 'admin';
 type RoleCase = {
   role: Role;
   stateFile: string;
-  visibleLinks: RegExp[];
   allowedPaths: string[];
   forbiddenPaths: string[];
 };
@@ -14,51 +13,18 @@ const roleCases: RoleCase[] = [
   {
     role: 'student',
     stateFile: 'playwright/.auth/student.json',
-    visibleLinks: [
-      /dashboard|panel/i,
-      /communication|comunicación/i,
-      /boards|tableros/i,
-      /learning|aprendizaje/i,
-      /symbol hunt|caza de símbolos/i,
-      /achievements|logros/i,
-      /settings|ajustes/i,
-    ],
     allowedPaths: ['/communication', '/boards', '/learning', '/symbol-hunt', '/achievements', '/settings'],
     forbiddenPaths: ['/symbols', '/students', '/teachers', '/admins'],
   },
   {
     role: 'teacher',
     stateFile: 'playwright/.auth/teacher.json',
-    visibleLinks: [
-      /dashboard|panel/i,
-      /communication|comunicación/i,
-      /boards|tableros/i,
-      /symbols|símbolos/i,
-      /learning|aprendizaje/i,
-      /symbol hunt|caza de símbolos/i,
-      /achievements|logros/i,
-      /students|estudiantes/i,
-      /settings|ajustes/i,
-    ],
     allowedPaths: ['/communication', '/boards', '/learning', '/symbol-hunt', '/achievements', '/symbols', '/students', '/settings'],
     forbiddenPaths: ['/teachers', '/admins'],
   },
   {
     role: 'admin',
     stateFile: 'playwright/.auth/admin.json',
-    visibleLinks: [
-      /dashboard|panel/i,
-      /communication|comunicación/i,
-      /boards|tableros/i,
-      /symbols|símbolos/i,
-      /learning|aprendizaje/i,
-      /symbol hunt|caza de símbolos/i,
-      /achievements|logros/i,
-      /students|estudiantes/i,
-      /teachers|profesores/i,
-      /admins|administradores/i,
-      /settings|ajustes/i,
-    ],
     allowedPaths: ['/communication', '/boards', '/learning', '/symbol-hunt', '/achievements', '/symbols', '/students', '/teachers', '/admins', '/settings'],
     forbiddenPaths: [],
   },
@@ -81,19 +47,19 @@ for (const roleCase of roleCases) {
       const navigation = page.getByRole('navigation');
       await expect(navigation).toBeVisible();
 
-      for (const linkName of roleCase.visibleLinks) {
-        await expect(navigation.getByRole('link', { name: linkName })).toBeVisible();
+      // The dashboard link points to the root route.
+      const visibleHrefs = ['/', ...roleCase.allowedPaths];
+      for (const href of visibleHrefs) {
+        await expect(
+          navigation.locator(`a[href="${href}"]`),
+        ).toBeVisible();
       }
 
-      const forbiddenLabels: Record<string, RegExp> = {
-        '/symbols': /symbols|símbolos/i,
-        '/students': /students|estudiantes/i,
-        '/teachers': /teachers|profesores/i,
-        '/admins': /admins|administradores/i,
-      };
       for (const path of roleCase.forbiddenPaths) {
+        // Match by href so language variants and similarly-named links
+        // (e.g. "symbols" vs "symbol hunt") do not collide.
         await expect(
-          navigation.getByRole('link', { name: forbiddenLabels[path] }),
+          navigation.locator(`a[href="${path}"]`),
         ).toHaveCount(0);
       }
     });

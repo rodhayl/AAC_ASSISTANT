@@ -9,6 +9,15 @@ const defaults = {
   FRONTEND_PORT: Number(import.meta.env.VITE_FRONTEND_PORT) || 5176,
   API_BASE_URL: import.meta.env.VITE_API_BASE_URL || '',
   OLLAMA_BASE_URL: import.meta.env.VITE_OLLAMA_BASE_URL || 'http://localhost:11434',
+  LMSTUDIO_BASE_URL: import.meta.env.VITE_LMSTUDIO_BASE_URL || 'http://localhost:1234/v1',
+  AI_MAX_TOKENS: Number(import.meta.env.VITE_AI_MAX_TOKENS) || 1024,
+  AI_TEMPERATURE: import.meta.env.VITE_AI_TEMPERATURE
+    ? Number(import.meta.env.VITE_AI_TEMPERATURE)
+    : 0.5,
+  // -1 = unlimited (default), 0 = disabled, positive = daily cap.
+  AUTOGEN_DAILY_CAP: Number.isFinite(Number(import.meta.env.VITE_AUTOGEN_DAILY_CAP))
+    ? Number(import.meta.env.VITE_AUTOGEN_DAILY_CAP)
+    : -1,
   APP_NAME: import.meta.env.VITE_APP_NAME || 'AAC Assistant',
   APP_VERSION: import.meta.env.VITE_APP_VERSION || '2.0.0',
 };
@@ -36,6 +45,10 @@ export const config = {
   
   // AI
   OLLAMA_BASE_URL: defaults.OLLAMA_BASE_URL,
+  LMSTUDIO_BASE_URL: defaults.LMSTUDIO_BASE_URL,
+  AI_MAX_TOKENS: defaults.AI_MAX_TOKENS,
+  AI_TEMPERATURE: defaults.AI_TEMPERATURE,
+  AUTOGEN_DAILY_CAP: defaults.AUTOGEN_DAILY_CAP,
   
   // App
   APP_NAME: defaults.APP_NAME,

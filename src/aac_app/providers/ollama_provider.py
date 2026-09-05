@@ -3,6 +3,8 @@ import json
 import httpx
 from loguru import logger
 
+from src import config
+
 from .base_provider import BaseLLMProvider
 
 
@@ -19,12 +21,12 @@ class OllamaProvider(BaseLLMProvider):
 
     def __init__(
         self,
-        base_url="http://localhost:11434",
+        base_url: str | None = None,
         hardware_profile="mid_range",
         model: str | None = None,
     ):
         super().__init__()
-        self.base_url = base_url
+        self.base_url = base_url or config.OLLAMA_BASE_URL
         self.hardware_profile = hardware_profile
         # Default to user-specified model, env var, or hardware profile
         env_model = None
@@ -32,7 +34,8 @@ class OllamaProvider(BaseLLMProvider):
             import os
 
             env_model = os.getenv("OLLAMA_MODEL")
-        except Exception:
+        except Exception as exc:
+            logger.debug("Could not read OLLAMA_MODEL: {}", exc)
             env_model = None
         self._configured_model = model or ""
         self.recommended_model = (
@@ -149,6 +152,70 @@ class OllamaProvider(BaseLLMProvider):
             raise ConnectionError(
                 f"Failed to connect to Ollama at {self.base_url}. Make sure Ollama is running and reachable."
             )
+
+    def generate_sync(
+        self,
+        prompt: str,
+        model: str = None,
+        system: str = None,
+        temperature: float = 0.7,
+        max_tokens: int = 500,
+        json_schema: dict = None,
+        **kwargs,
+    ) -> str:
+        """Synchronous completion for threadpool callers (e.g. next-symbol)."""
+        if not model:
+            model = self.recommended_model
+
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
+        request_data = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+                **kwargs,
+            },
+        }
+        if json_schema:
+            request_data["format"] = "json"
+            schema_instruction = (
+                f"\n\nRespond with valid JSON matching this schema: {json.dumps(json_schema)}"
+            )
+            if messages[0]["role"] == "system":
+                messages[0]["content"] += schema_instruction
+            else:
+                messages.insert(0, {"role": "system", "content": schema_instruction})
+
+        try:
+            response = self.sync_client.post(
+                f"{self.base_url}/api/chat", json=request_data
+            )
+            response.raise_for_status()
+            result = response.json()
+            return result["message"]["content"]
+        except httpx.TimeoutException as e:
+            logger.error(f"Ollama sync timeout: {e}")
+            raise ConnectionError(
+                f"Ollama timed out at {self.base_url}. Try again or reduce request size."
+            )
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"Ollama HTTP error {e.response.status_code}: {e.response.text}"
+            )
+            raise ConnectionError(
+                f"Ollama returned error {e.response.status_code}: {e.response.text}"
+            )
+        except httpx.RequestError as e:
+            logger.error(f"Ollama request failed: {e}")
+            raise ConnectionError(
+                f"Failed to connect to Ollama at {self.base_url}. Make sure Ollama is running and reachable."
+            )
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse Ollama response: {e}")
             raise ValueError("Invalid response from Ollama")
@@ -184,7 +251,3 @@ class OllamaProvider(BaseLLMProvider):
         except Exception as e:
             logger.debug(f"Ollama not available: {e}")
             return False
-
-    def close(self):
-        """Backward-compatible synchronous close alias."""
-        self.close_sync()

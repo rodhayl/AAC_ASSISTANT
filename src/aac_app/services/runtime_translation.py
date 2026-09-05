@@ -150,23 +150,24 @@ def _note_success() -> None:
 
 
 def translate_text(text: str | None, target_lang: str | None) -> str | None:
-    """Best-effort runtime translation that degrades to the original text.
+    """Translate text through the configured runtime service.
 
     Results are cached per label/language, each network call is bounded by a
-    short timeout, and a circuit breaker skips translation entirely while the
-    service is unreachable so suggestions/board loads stay fast.
+    short timeout, and a circuit breaker fails fast while the service is
+    unreachable. Callers must surface that failure instead of using source text
+    as a false translation.
     """
     normalized_target = normalize_language_code(target_lang)
     if not text or not normalized_target:
         return text
     if _translation_disabled():
-        return text
+        raise RuntimeError("Runtime translation is temporarily unavailable")
 
     try:
         translated = _translate_cached(text, normalized_target)
     except Exception as exc:
         _note_failure()
         logger.warning(f"Translation failed for {text!r}: {exc}")
-        return text
+        raise RuntimeError("Runtime translation failed") from exc
     _note_success()
     return translated

@@ -34,7 +34,7 @@ def check_markdown_links(root: Path) -> bool:
         content = md_file.read_text(encoding="utf-8")
         links = re.findall(r"\[([^\]]+)\]\(([^)]+)\)", content)
         for text, target in links:
-            if target.startswith(("http://", "https://", "#", "mailto:")):
+            if target.startswith(("http://", "https://", "file://", "#", "mailto:")):
                 continue
             clean_target = target.split("#")[0]
             if not clean_target:
@@ -91,11 +91,23 @@ def main() -> int:
     steps = [
         ("Backend Ruff Linter", ["uv", "run", "ruff", "check", "src", "tests", "scripts"], root),
         ("Backend Compileall", ["uv", "run", "python", "-m", "compileall", "-q", "src", "scripts"], root),
+        ("Backend Import Audit", ["uv", "run", "python", "scripts/audit_codebase.py"], root),
+        ("Dependency Usage Audit", ["uv", "run", "python", "scripts/check_dependency_usage.py"], root),
+        ("Python Production Dependency Audit", ["uv", "run", "pip-audit", "--requirement", "requirements.txt", "--strict", "--progress-spinner", "off"], root),
+        ("Python Development Dependency Audit", ["uv", "run", "pip-audit", "--local", "--strict", "--progress-spinner", "off"], root),
+        ("i18n Key Audit", ["uv", "run", "python", "scripts/check_i18n_keys.py"], root),
         ("Backend Pytest & Coverage", ["uv", "run", "pytest", "--cov=src", "--cov-report=term-missing:skip-covered", "--cov-branch", "-q"], root),
         ("Frontend TypeScript Typecheck", ["npm", "run", "typecheck"], frontend_dir),
         ("Frontend ESLint", ["npm", "run", "lint"], frontend_dir),
+        ("Frontend Production Dependency Audit", ["npm", "audit", "--omit=dev", "--audit-level=moderate"], frontend_dir),
+        ("Frontend Development Dependency Audit", ["npm", "audit", "--audit-level=high"], frontend_dir),
         ("Frontend Vitest & Coverage", ["npm", "run", "test", "--", "--run", "--coverage"], frontend_dir),
         ("Frontend Production Build", ["npm", "run", "build"], frontend_dir),
+        # The appearance/contrast E2E specs (e2e/appearance.spec.ts,
+        # e2e/contrast-audit.spec.ts, e2e/contrast-interactive.spec.ts) run in
+        # the e2e-production GitHub Actions job, which starts the real backend
+        # and seeds data. They are intentionally not part of this local gate
+        # because they need a live server on PLAYWRIGHT_BASE_URL.
     ]
 
     for name, cmd, cwd in steps:

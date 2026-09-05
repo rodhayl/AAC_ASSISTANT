@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from src.aac_app.models import BoardAssignment, CommunicationBoard, StudentTeacher, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.api.main import app
-from tests.test_utils_auth import create_test_headers
+from tests.auth_helpers import create_test_headers
 
 client = TestClient(app)
 
@@ -70,3 +70,32 @@ def test_empty_roster_teacher_gets_no_student_summaries(setup_test_db, test_db_s
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_promoted_student_does_not_resurface_in_teacher_student_lists(
+    setup_test_db, test_db_session
+):
+    """After an admin promotes a roster member out of the student role, the
+    stale roster row must not make the account reappear in the teacher's
+    student lists (both the summaries endpoint and /users/students)."""
+    teacher = create_user(test_db_session, "summary_promote_teacher", "teacher")
+    promoted = create_user(test_db_session, "summary_promoted", "student")
+    test_db_session.add(StudentTeacher(student_id=promoted.id, teacher_id=teacher.id))
+    test_db_session.commit()
+
+    # Promote the roster member to teacher, leaving the roster row behind.
+    promoted.user_type = "teacher"
+    test_db_session.commit()
+
+    headers = create_test_headers(teacher.id, teacher.username, teacher.user_type)
+    summaries = client.get(
+        "/api/auth/users/student-summaries",
+        params={"limit": 100},
+        headers=headers,
+    )
+    assert summaries.status_code == 200
+    assert all(item["id"] != promoted.id for item in summaries.json())
+
+    students = client.get("/api/users/students", headers=headers)
+    assert students.status_code == 200
+    assert all(item["id"] != promoted.id for item in students.json())

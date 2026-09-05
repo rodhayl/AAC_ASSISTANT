@@ -7,6 +7,8 @@ import { tts } from '../../lib/tts';
 import { SymbolImage } from '../common/SymbolImage';
 import { useAuthStore } from '../../store/authStore';
 import { getCategoryStyle } from '../../lib/symbolCategoryStyle';
+import { useTranslation } from 'react-i18next';
+import { cn } from '../../lib/utils';
 
 interface DraggableSymbolProps {
   boardSymbol: BoardSymbol;
@@ -17,6 +19,7 @@ interface DraggableSymbolProps {
 
 function DraggableSymbolInner({ boardSymbol, isOverlay, onRemove, onEdit }: DraggableSymbolProps) {
   const user = useAuthStore(state => state.user);
+  const { t } = useTranslation('boards');
   const categoryStyle = getCategoryStyle(boardSymbol.symbol?.category);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `symbol-${boardSymbol.id}`,
@@ -38,7 +41,7 @@ function DraggableSymbolInner({ boardSymbol, isOverlay, onRemove, onEdit }: Drag
 
     try {
       const api = (await import('../../lib/api')).default;
-      await api.post('/analytics/log', {
+      await api.post('/analytics/usage', {
         symbols: [{
           id: boardSymbol.symbol.id,
           label: boardSymbol.symbol.label,
@@ -56,24 +59,24 @@ function DraggableSymbolInner({ boardSymbol, isOverlay, onRemove, onEdit }: Drag
       style={style}
       {...listeners}
       {...attributes}
-      className={`
-        group relative flex flex-col items-center justify-center p-2 
-        ${!boardSymbol.color ? 'bg-white dark:bg-gray-800' : ''} 
-        border-2 ${categoryStyle.border} rounded-xl shadow-sm 
-        ${categoryStyle.hoverBorder} hover:shadow-md transition-all
-        ${isOverlay ? 'shadow-xl scale-105 z-50 cursor-grabbing' : ''}
-        h-full w-full
-      `}
+      className={cn(
+        'group relative flex h-full w-full flex-col items-center justify-center rounded-xl border-2 p-2 shadow-sm transition-all',
+        !boardSymbol.color && 'bg-surface',
+        categoryStyle.border,
+        categoryStyle.hoverBorder,
+        'hover:shadow-md',
+        isOverlay && 'z-50 scale-105 cursor-grabbing shadow-xl',
+      )}
     >
-      <div className={`absolute top-2 left-2 w-2.5 h-2.5 rounded-full ${categoryStyle.dot} opacity-80`} aria-hidden="true" />
+      <div className={cn('absolute top-2 left-2 h-2.5 w-2.5 rounded-full opacity-80', categoryStyle.dot)} aria-hidden="true" />
       {!isOverlay && (
         <div className="absolute top-1 right-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
           {onEdit && (
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onEdit(boardSymbol); }}
-              className="p-1 rounded-md bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800"
-              aria-label="Edit symbol"
+              className="p-1 rounded-md bg-brand/10 text-brand hover:bg-brand/20"
+              aria-label={t('editSymbol')}
             >
               <Pencil className="w-4 h-4" />
             </button>
@@ -82,28 +85,28 @@ function DraggableSymbolInner({ boardSymbol, isOverlay, onRemove, onEdit }: Drag
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRemove(boardSymbol.id); }}
-              className="p-1 rounded-md bg-red-50 dark:bg-red-900/40 text-red-600 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-800"
-              aria-label="Remove symbol"
+              className="p-1 rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20"
+              aria-label={t('removeSymbol')}
             >
               <X className="w-4 h-4" />
             </button>
           )}
-          <GripVertical className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+          <GripVertical className="w-4 h-4 text-muted-foreground" />
         </div>
       )}
 
       {/* Linked Board Indicator */}
       {boardSymbol.linked_board_id && (
         <div className="absolute top-1 right-1 z-0">
-          <Folder className="w-5 h-5 text-indigo-500/50" />
+          <Folder className="w-5 h-5 text-brand/50" />
         </div>
       )}
 
       <button
         type="button"
         onClick={speak}
-        className="absolute top-1 left-1 p-1 rounded-md bg-indigo-50 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900"
-        aria-label="Speak label"
+        className="absolute top-1 left-1 p-1 rounded-md bg-brand/10 text-brand hover:bg-brand/20"
+        aria-label={t('speakLabel')}
       >
         <Volume2 className="w-4 h-4" />
       </button>
@@ -116,8 +119,7 @@ function DraggableSymbolInner({ boardSymbol, isOverlay, onRemove, onEdit }: Drag
         />
       </div>
 
-      <span className={`text-sm font-medium text-center leading-tight ${boardSymbol.color ? 'text-gray-900' : 'text-gray-900 dark:text-gray-100'
-        }`}>
+      <span className="text-center text-sm font-medium leading-tight text-foreground">
         {boardSymbol.custom_text || boardSymbol.symbol.label}
       </span>
     </div>

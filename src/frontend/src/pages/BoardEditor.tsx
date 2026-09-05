@@ -13,8 +13,9 @@ import { useTranslation } from 'react-i18next';
 import { AISuggestionPanel } from '../components/board/AISuggestionPanel';
 import { BoardSettingsDialog } from '../components/board/BoardSettingsDialog';
 import { BoardEditorToolbar } from '../components/board/BoardEditorToolbar';
+import { StatusMessage } from '../components/ui/StatusMessage';
 import { useBoardAISuggestions } from '../hooks/useBoardAISuggestions';
-import { extractError } from '../lib/api';
+import api, { extractError } from '../lib/api';
 import { useBoardCollab } from '../hooks/useBoardCollab';
 import { useBoardEditorSymbols } from '../hooks/useBoardEditorSymbols';
 import { getBoardPlayabilityStatus } from './boardEditorUtils';
@@ -48,6 +49,7 @@ export function BoardEditor() {
   const [boardCategory, setBoardCategory] = useState('general');
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiConfigError, setAiConfigError] = useState<string | null>(null);  const [saveSuccess, setSaveSuccess] = useState(false)
+  const [savingSettings, setSavingSettings] = useState(false)
   const [clearLoading, setClearLoading] = useState(false)
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const saveSettingsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -58,7 +60,9 @@ export function BoardEditor() {
     ? aiSettings?.openrouter_model
     : primaryProvider === 'lmstudio'
       ? aiSettings?.lmstudio_model
-      : aiSettings?.ollama_model;
+      : primaryProvider === 'groq'
+        ? aiSettings?.groq_model
+        : aiSettings?.ollama_model;
   const primaryReady = Boolean(primaryProvider && primaryModel);
   const resolvedProvider = primaryProvider;
   const resolvedModel = primaryModel;
@@ -89,6 +93,12 @@ export function BoardEditor() {
   }, [currentBoard]);
 
   const currentBoardId = currentBoard?.id;
+  const editorContextKey = `${user?.id ?? 'anonymous'}:${id ?? 'none'}`;
+  const editorContextKeyRef = useRef(editorContextKey);
+  // Keep the active route/user context current during render so a response
+  // resolving between render and passive effects cannot publish into the next
+  // board or account.
+  editorContextKeyRef.current = editorContextKey;
   const {
     localSymbols,
     activeSymbol,
@@ -101,7 +111,7 @@ export function BoardEditor() {
     handleDragStart: handleSymbolDragStart,
     handleDragEnd: handleSymbolDragEnd,
     handleUpdateSymbol,
-  } = useBoardEditorSymbols({ currentBoard });
+  } = useBoardEditorSymbols({ currentBoard, userId: user?.id });
   const status = useMemo(
     () => currentBoard
       ? getBoardPlayabilityStatus(currentBoard, localSymbols)
@@ -121,7 +131,6 @@ export function BoardEditor() {
     applyId,
     refinePrompt,
     applyAllLoading,
-    setAiError,
     setRefinePrompt,
     loadAISuggestions,
     handleRefine,
@@ -134,17 +143,23 @@ export function BoardEditor() {
     resolvedProvider,
     resolvedModel,
     fetchBoard,
-    deleteBoardSymbol,
     setHasChanges,
   });
 
   useEffect(() => {
+    setSaveSuccess(false);
+    setSavingSettings(false);
+    setClearLoading(false);
+    setClearDialogOpen(false);
+    setIsSymbolPickerOpen(false);
+    setSelectedPosition(null);
     return () => {
       if (saveSettingsTimer.current !== null) {
         clearTimeout(saveSettingsTimer.current);
+        saveSettingsTimer.current = null;
       }
     };
-  }, []);
+  }, [editorContextKey]);
 
   useEffect(() => {
     if (!aiEnabled) {
@@ -176,23 +191,35 @@ export function BoardEditor() {
 
   const handleSymbolSelect = useCallback(async (symbolId: number) => {
     if (!currentBoard || !selectedPosition) return;
+    const requestContext = editorContextKey;
 
     try {
       const existing = localSymbols.find(s => s.position_x === selectedPosition.x && s.position_y === selectedPosition.y);
       if (existing) {
-        await deleteBoardSymbol(currentBoard.id, existing.id);
+        // Replace in one server mutation. Deleting first could permanently lose
+        // the old placement when the subsequent add failed.
+        await api.put(`/boards/${currentBoard.id}/symbols/${existing.id}`, {
+          symbol_id: symbolId,
+          position_x: selectedPosition.x,
+          position_y: selectedPosition.y,
+        });
+      } else {
+        await addSymbolToBoard(currentBoard.id, symbolId, selectedPosition);
       }
-      await addSymbolToBoard(currentBoard.id, symbolId, selectedPosition);
+      if (editorContextKeyRef.current !== requestContext) return;
       await fetchBoard(parseInt(id!), true);
+      if (editorContextKeyRef.current !== requestContext) return;
       setHasChanges(true);
     } catch (error) {
+      if (editorContextKeyRef.current !== requestContext) return;
       console.error('Failed to add symbol:', error);
-      // Optional: Show user feedback if needed
+      addToast(extractError(error, t('failedToAddSymbol')), 'error');
     }
-  }, [currentBoard, selectedPosition, addSymbolToBoard, fetchBoard, id, deleteBoardSymbol, localSymbols, setHasChanges]);
+  }, [addSymbolToBoard, addToast, currentBoard, editorContextKey, editorContextKeyRef, fetchBoard, id, localSymbols, selectedPosition, setHasChanges, t]);
 
   const handleSave = useCallback(async () => {
     if (!currentBoard || !hasChanges) return;
+    const requestContext = editorContextKey;
 
     try {
       const updates = localSymbols.map(s => ({
@@ -207,44 +234,57 @@ export function BoardEditor() {
       }));
 
       await batchUpdateSymbols(currentBoard.id, updates);
+      if (editorContextKeyRef.current !== requestContext) return;
       clearOverrides();
       setHasChanges(false);
       addToast(t('layoutSaved'), 'success');
     } catch (error) {
+      if (editorContextKeyRef.current !== requestContext) return;
       console.error('Failed to save layout:', error);
       addToast(t('layoutSaveFailed'), 'error');
     }
-  }, [currentBoard, hasChanges, localSymbols, batchUpdateSymbols, clearOverrides, setHasChanges, t, addToast]);
+  }, [addToast, batchUpdateSymbols, clearOverrides, currentBoard, editorContextKey, editorContextKeyRef, hasChanges, localSymbols, setHasChanges, t]);
 
   const handleGridChange = useCallback(async (preset: string) => {
     const [r, c] = preset.split('x').map(Number)
     if (!currentBoard) return
+    const requestContext = editorContextKey;
     try {
       await updateBoard(currentBoard.id, { grid_rows: r, grid_cols: c })
+      if (editorContextKeyRef.current !== requestContext) return;
       setGridPreset(preset)
     } catch (e) {
+      if (editorContextKeyRef.current !== requestContext) return;
       console.error('Failed to update grid layout', e)
       setGridPreset(`${currentBoard.grid_rows ?? 4}x${currentBoard.grid_cols ?? 5}`)
       addToast(t('settingsSaveFailed'), 'error')
     }
-  }, [addToast, currentBoard, t, updateBoard]);
+  }, [addToast, currentBoard, editorContextKey, editorContextKeyRef, t, updateBoard]);
 
   const handleSaveSettings = async () => {
     if (!currentBoard) return;
+    const requestContext = editorContextKey;
+    const trimmedBoardName = boardName.trim();
+    if (!trimmedBoardName) {
+      addToast(t('boardNameRequired'), 'error');
+      return;
+    }
     if (aiEnabled && (!resolvedProvider || !resolvedModel)) {
       setAiConfigError(t('aiConfigIncomplete'));
       return;
     }
 
+    setSavingSettings(true);
     try {
       await updateBoard(currentBoard.id, {
-        name: boardName,
+        name: trimmedBoardName,
         description: boardDescription,
         category: boardCategory,
         ai_enabled: aiEnabled,
-        ai_provider: aiEnabled ? (resolvedProvider ?? undefined) : undefined,
-        ai_model: aiEnabled ? '@primary' : undefined
+        ai_provider: aiEnabled ? (resolvedProvider ?? undefined) : null,
+        ai_model: aiEnabled ? '@primary' : null
       });
+      if (editorContextKeyRef.current !== requestContext) return;
 
       setSaveSuccess(true);
       if (saveSettingsTimer.current !== null) {
@@ -257,41 +297,59 @@ export function BoardEditor() {
       }, 1500);
 
       await fetchBoard(parseInt(id!), true);
-      setHasChanges(true);
     } catch (error) {
+      if (editorContextKeyRef.current !== requestContext) return;
       console.error('Failed to save board settings:', error);
       addToast(t('settingsSaveFailed'), 'error');
+    } finally {
+      if (editorContextKeyRef.current === requestContext) {
+        setSavingSettings(false);
+      }
     }
   };
 
   const removeSymbol = useCallback(async (boardSymbolId: number) => {
     if (!currentBoard) return;
+    const requestContext = editorContextKey;
     try {
       await deleteBoardSymbol(currentBoard.id, boardSymbolId);
+      if (editorContextKeyRef.current !== requestContext) return;
       await fetchBoard(currentBoard.id, true);
+      if (editorContextKeyRef.current !== requestContext) return;
       setHasChanges(true);
     } catch (e: unknown) {
-      setAiError(extractError(e, t('failedToRemoveSymbol')));
+      if (editorContextKeyRef.current !== requestContext) return;
+      // Toast (not the AI panel error) so the failure is visible even on
+      // boards without AI enabled, where the panel never renders.
+      addToast(extractError(e, t('failedToRemoveSymbol')), 'error');
     }
-  }, [currentBoard, deleteBoardSymbol, fetchBoard, setAiError, setHasChanges, t]);
+  }, [addToast, currentBoard, deleteBoardSymbol, editorContextKey, editorContextKeyRef, fetchBoard, setHasChanges, t]);
 
   const clearBoard = useCallback(async () => {
     if (!currentBoard || !currentBoard.symbols?.length) return;
+    const requestContext = editorContextKey;
     setClearLoading(true);
-    setAiError(null);
     try {
       for (const s of currentBoard.symbols) {
+        if (editorContextKeyRef.current !== requestContext) return;
         await deleteBoardSymbol(currentBoard.id, s.id);
       }
+      if (editorContextKeyRef.current !== requestContext) return;
       await fetchBoard(currentBoard.id, true);
+      if (editorContextKeyRef.current !== requestContext) return;
       setHasChanges(true);
       setClearDialogOpen(false);
     } catch (e: unknown) {
-      setAiError(extractError(e, t('failedToClearBoard')));
+      if (editorContextKeyRef.current !== requestContext) return;
+      // Toast (not the AI panel error) so the failure is visible even on
+      // boards without AI enabled, where the panel never renders.
+      addToast(extractError(e, t('failedToClearBoard')), 'error');
     } finally {
-      setClearLoading(false);
+      if (editorContextKeyRef.current === requestContext) {
+        setClearLoading(false);
+      }
     }
-  }, [currentBoard, deleteBoardSymbol, fetchBoard, setAiError, setHasChanges, t]);
+  }, [addToast, currentBoard, deleteBoardSymbol, editorContextKey, editorContextKeyRef, fetchBoard, setHasChanges, t]);
 
   const requestClearBoard = useCallback(() => {
     setClearDialogOpen(true);
@@ -299,20 +357,20 @@ export function BoardEditor() {
 
   if (isBoardLoading && !currentBoard) {
     return (
-      <LoadingState label={t('loadingBoard', { defaultValue: 'Loading board' })} />
+      <LoadingState label={t('loadingBoard')} />
     );
   }
 
   if (error && !currentBoard) {
     return (
-      <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-4 rounded-lg">
+      <StatusMessage variant="error">
         {error}
-      </div>
+      </StatusMessage>
     );
   }
 
   if (!currentBoard) {
-    return <div className="text-gray-900 dark:text-gray-100">{t('boardNotFound')}</div>;
+    return <div className="text-foreground">{t('boardNotFound')}</div>;
   }
 
   const rows = currentBoard.grid_rows ?? 4;
@@ -412,6 +470,7 @@ export function BoardEditor() {
         primaryProvider={primaryProvider}
         primaryModel={primaryModel}
         aiConfigError={aiConfigError}
+        saving={savingSettings}
         onClose={() => setIsSettingsOpen(false)}
         onSave={handleSaveSettings}
         onBoardNameChange={setBoardName}

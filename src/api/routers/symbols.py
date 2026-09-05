@@ -9,6 +9,8 @@ from src import config
 from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol, SymbolUsageLog, User
 from src.aac_app.services.achievement_system import AchievementSystem
 from src.aac_app.services.local_vector_store import vector_store_operation_lock
+from src.aac_app.services.runtime_translation import normalize_language_code
+from src.aac_app.services.symbol_image_backfill import schedule_symbol_image_download
 from src.aac_app.services.vector_utils import delete_symbol as delete_symbol_embedding
 from src.aac_app.services.vector_utils import index_symbol
 from src.api import schemas
@@ -17,6 +19,7 @@ from src.api.deps import (
     get_current_active_user,
     get_current_staff_user,
     get_db,
+    get_llm_provider,
     get_text,
     require_board_owner_or_admin,
     validate_board_position,
@@ -67,7 +70,7 @@ async def _save_symbol_image(file: UploadFile, current_user: User) -> str:
         file,
         invalid_type_detail=get_text(user=current_user, key="errors.boards.invalidFileType"),
         too_large_detail=get_text(user=current_user, key="errors.boards.fileTooLarge"),
-        empty_detail=get_text(user=current_user, key="errors.boards.invalidFileType"),
+        empty_detail=get_text(user=current_user, key="errors.boards.emptyFile"),
     )
     name = f"{uuid.uuid4().hex}{ext}"
     path = uploads_dir / name
@@ -180,7 +183,9 @@ def get_symbols(
     if category:
         query = query.filter(Symbol.category == category)
     if language:
-        query = query.filter(Symbol.language == language)
+        normalized_language = normalize_language_code(language)
+        if normalized_language:
+            query = query.filter(Symbol.language == normalized_language)
     if search:
         query = _apply_symbol_search(query, search, db)
     if keywords:
@@ -239,11 +244,22 @@ def create_symbol(
     current_user: User = Depends(get_current_staff_user),
 ):
     """Create a new symbol"""
-    db_symbol = Symbol(**symbol.model_dump())
+    symbol_data = symbol.model_dump()
+    symbol_data["label"] = symbol_data["label"].strip()
+    if not symbol_data["label"]:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(user=current_user, key="errors.validation"),
+        )
+    # Normalize to a base code so it matches the exact-match language filter.
+    symbol_data["language"] = normalize_language_code(symbol_data.get("language")) or "en"
+    db_symbol = Symbol(**symbol_data)
     db.add(db_symbol)
     db.commit()
     db.refresh(db_symbol)
     index_symbol(db_symbol)
+    if not db_symbol.image_path:
+        schedule_symbol_image_download([db_symbol.id])
     return db_symbol
 
 
@@ -298,6 +314,13 @@ async def upload_symbol(
     current_user: User = Depends(get_current_staff_user),
 ):
     """Upload a new symbol image"""
+    language = normalize_language_code(language) or "en"
+    label = label.strip()
+    if not label:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(user=current_user, key="errors.validation"),
+        )
     public_path = await _save_symbol_image(file, current_user)
     uploads_dir = config.UPLOADS_DIR / "symbols"
     db_symbol = Symbol(
@@ -328,6 +351,94 @@ async def upload_symbol(
     return db_symbol
 
 
+@router.post("/symbols/generate-svg", response_model=schemas.SymbolResponse)
+def generate_svg_symbol(
+    label: str = Form(...),
+    description: str = Form(None),
+    category: str = Form("general"),
+    keywords: str = Form(None),
+    language: str = Form("en"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_staff_user),
+):
+    """Generate a pictogram for a label the catalog does not contain.
+
+    The LLM emits a strict JSON *shape spec* (never raw SVG), which is
+    validated and rendered with drawsvg — so the only tags/attributes ever
+    written are ones we control. The rendered SVG is stored under the symbol
+    uploads directory and a normal symbol row is created.
+    """
+    language = normalize_language_code(language) or "en"
+    label = label.strip()
+    if not label:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(user=current_user, key="errors.validation"),
+        )
+
+    provider = get_llm_provider()
+    generate_sync = getattr(provider, "generate_sync", None)
+    if not callable(generate_sync):
+        raise HTTPException(status_code=503, detail="LLM provider has no sync generation")
+
+    from src.aac_app.services.svg_symbol_generator import (
+        ShapeSpecError,
+        generate_svg_text,
+    )
+
+    try:
+        svg_text = generate_svg_text(label, language, generate_sync)
+    except ShapeSpecError as exc:
+        logger.error(f"LLM SVG generation failed for {label!r}: {exc}")
+        raise HTTPException(
+            status_code=422,
+            detail="Model did not return a valid shape spec; try again",
+        ) from exc
+    except Exception as exc:
+        logger.error(f"LLM SVG generation failed for {label!r}: {exc}")
+        raise HTTPException(
+            status_code=502, detail="Failed to generate symbol image"
+        ) from exc
+
+    try:
+        from src.aac_app.services.svg_symbol_generator import (
+            write_generated_symbol_image,
+        )
+
+        public_path = write_generated_symbol_image(svg_text, config.UPLOADS_DIR / "symbols")
+    except OSError:
+        raise HTTPException(status_code=500, detail="Failed to store symbol image")
+
+    uploads_dir = config.UPLOADS_DIR / "symbols"
+
+    db_symbol = Symbol(
+        label=label,
+        description=description,
+        category=category,
+        image_path=public_path,
+        audio_path=None,
+        keywords=keywords,
+        language=language,
+        is_builtin=False,
+    )
+    db.add(db_symbol)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        remove_owned_upload(public_path, uploads_dir)
+        raise HTTPException(status_code=500, detail="Failed to create symbol")
+    try:
+        db.refresh(db_symbol)
+    except Exception as exc:
+        logger.warning("Generated symbol persisted but refresh failed: {}", exc)
+    try:
+        index_symbol(db_symbol)
+    except Exception as exc:
+        logger.warning("Generated symbol saved but indexing failed: {}", exc)
+    return db_symbol
+
+
 @router.put("/symbols/{symbol_id}", response_model=schemas.SymbolResponse)
 def update_symbol(
     symbol_id: int,
@@ -336,7 +447,17 @@ def update_symbol(
     current_user: User = Depends(get_current_staff_user),
 ):
     db_symbol = _get_symbol_or_404(db, symbol_id, current_user)
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    symbol_data = payload.model_dump(exclude_unset=True)
+    if "label" in symbol_data:
+        symbol_data["label"] = symbol_data["label"].strip()
+        if not symbol_data["label"]:
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(user=current_user, key="errors.validation"),
+            )
+    if "language" in symbol_data:
+        symbol_data["language"] = normalize_language_code(symbol_data["language"])
+    for key, value in symbol_data.items():
         setattr(db_symbol, key, value)
     db.commit()
     db.refresh(db_symbol)
@@ -464,6 +585,16 @@ def _update_single_symbol(
 ) -> bool:
     """Apply updates to a single board symbol after validating link targets."""
     changed = False
+    if "symbol_id" in update:
+        new_symbol_id = update["symbol_id"]
+        if type(new_symbol_id) is not int:
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(user=current_user, key="errors.boards.symbolNotFound"),
+            )
+        _get_symbol_or_404(db, new_symbol_id, current_user)
+        db_board_symbol.symbol_id = new_symbol_id
+        changed = True
     if "position_x" in update:
         db_board_symbol.position_x = update["position_x"]
         changed = True
@@ -475,6 +606,9 @@ def _update_single_symbol(
         changed = True
     if "is_visible" in update:
         db_board_symbol.is_visible = update["is_visible"]
+        changed = True
+    if "color" in update:
+        db_board_symbol.color = update["color"]
         changed = True
     if "custom_text" in update:
         db_board_symbol.custom_text = update["custom_text"]
@@ -504,7 +638,7 @@ def _update_single_symbol(
 @router.put("/{board_id}/symbols/batch")
 def batch_update_board_symbols(
     board_id: int,
-    updates: list[dict],
+    updates: list[schemas.BoardSymbolBatchUpdate],
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -513,8 +647,9 @@ def batch_update_board_symbols(
     require_board_owner_or_admin(board, current_user)
 
     updated_count = 0
-    for update in updates:
-        symbol_id = update.get("id")
+    for update_model in updates:
+        update = update_model.model_dump(exclude_unset=True)
+        symbol_id = update.pop("id", None)
         if not symbol_id:
             continue
 
@@ -556,11 +691,22 @@ def update_board_symbol(
             symbol_data.position_y if symbol_data.position_y is not None else db_board_symbol.position_y or 0,
             current_user,
         )
+    updates = symbol_data.model_dump(exclude_unset=True)
+    if "symbol_id" in updates:
+        new_symbol_id = updates.pop("symbol_id")
+        if new_symbol_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(user=current_user, key="errors.boards.symbolNotFound"),
+            )
+        _get_symbol_or_404(db, new_symbol_id, current_user)
+        db_board_symbol.symbol_id = new_symbol_id
+
     validate_linked_board(
         db, board_id, symbol_data.linked_board_id, current_user
     )
 
-    for key, value in symbol_data.model_dump(exclude_unset=True).items():
+    for key, value in updates.items():
         setattr(db_board_symbol, key, value)
 
     db.commit()

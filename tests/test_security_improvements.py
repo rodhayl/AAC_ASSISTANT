@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import inspect
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.aac_app.models import Notification
@@ -155,7 +156,7 @@ class TestAdminResetDbSafeguards:
         """Test that reset-db is blocked in production even if ALLOW_DB_RESET is true."""
         with patch('src.api.routers.admin.config') as mock_config:
             mock_config.ALLOW_DB_RESET = True
-            mock_config.ENVIRONMENT = "production"
+            mock_config.ENVIRONMENT = " Production "
 
             response = self.client.post(
                 "/api/admin/reset-db",
@@ -163,6 +164,27 @@ class TestAdminResetDbSafeguards:
             )
             assert response.status_code == 403
             assert "production" in response.json()["detail"].lower()
+
+    def test_reset_db_reapplies_runtime_schema_indexes(self, admin_token, test_db_engine):
+        """A reset must restore indexes added by runtime schema upgrades."""
+        with patch('src.api.routers.admin.config') as mock_config, patch(
+            'src.api.routers.admin.init_database',
+        ) as mock_init_database:
+            mock_config.ALLOW_DB_RESET = True
+            mock_config.ENVIRONMENT = "development"
+
+            response = self.client.post(
+                "/api/admin/reset-db",
+                headers={"Authorization": f"Bearer {admin_token}"}
+            )
+
+        assert response.status_code == 200
+        mock_init_database.assert_called_once_with(ensure_schema=False)
+        index_names = {
+            index["name"]
+            for index in inspect(test_db_engine).get_indexes("communication_boards")
+        }
+        assert "ix_communication_boards_user_public" in index_names
 
     def test_reset_db_requires_authentication(self):
         """Test that reset-db endpoint requires authentication."""
@@ -191,15 +213,15 @@ class TestEnvPropertiesCleanup:
     """Further Considerations: Test env.properties is properly formatted."""
 
     def test_env_properties_no_echo_commands(self):
-        """Test that env.properties doesn't contain shell script fragments."""
-        from src.config import CONFIG_FILE
+        """Test that the canonical dotenv file has no shell fragments."""
+        from src.config import ENV_FILE
 
-        if CONFIG_FILE.exists():
-            content = CONFIG_FILE.read_text(encoding="utf-8")
+        if ENV_FILE.exists():
+            content = ENV_FILE.read_text(encoding="utf-8")
 
             # Should not contain shell echo commands
-            assert "echo." not in content.lower(), "env.properties should not contain shell commands"
-            assert "echo #" not in content.lower(), "env.properties should not contain shell commands"
+            assert "echo." not in content.lower(), "dotenv should not contain shell commands"
+            assert "echo #" not in content.lower(), "dotenv should not contain shell commands"
 
     def test_config_loads_without_errors(self):
         """Test that configuration loads correctly after cleanup."""

@@ -3,18 +3,125 @@ Test suite for user preferences and profile endpoints
 """
 
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models import StudentTeacher, User, UserSettings
+from src.aac_app.models import LearningMode, StudentTeacher, User, UserSettings
 from src.aac_app.services.auth_service import get_password_hash
 from src.api.main import app
-from tests.test_utils_auth import create_test_headers
+from src.api.routers.auth_helpers import build_preferences_response
+from tests.auth_helpers import create_test_headers
 
 client = TestClient(app)
 
 pytestmark = pytest.mark.usefixtures("setup_test_db")
+
+
+class TestBuildPreferencesResponse:
+    """Unit tests for the preferences response mapper."""
+
+    def test_build_preferences_response_uses_defaults_without_settings(self):
+        response = build_preferences_response(None)
+
+        assert response.model_dump() == {
+            "tts_provider": "kokoro",
+            "tts_voice": "default",
+            "tts_local_voice": "default",
+            "tts_local_speed": 1.0,
+            "tts_language": None,
+            "ui_language": None,
+            "notifications_enabled": True,
+            "voice_mode_enabled": True,
+            "dark_mode": False,
+            "dwell_time": 0,
+            "ignore_repeats": 0,
+            "high_contrast": False,
+            "hover_speak_enabled": False,
+            "hover_speak_delay_ms": 1000,
+            "default_learning_mode": "practice",
+        }
+
+    def test_build_preferences_response_handles_legacy_and_null_values(self):
+        settings = SimpleNamespace(
+            tts_voice=None,
+            notifications_enabled=None,
+            dark_mode=None,
+            dwell_time=None,
+            ignore_repeats=None,
+            high_contrast=None,
+        )
+
+        response = build_preferences_response(settings)
+
+        assert response.tts_voice == "default"
+        assert response.tts_language is None
+        assert response.ui_language is None
+        assert response.notifications_enabled is True
+        assert response.voice_mode_enabled is True
+        assert response.dark_mode is False
+        assert response.dwell_time == 0
+        assert response.ignore_repeats == 0
+        assert response.high_contrast is False
+        # Missing on legacy rows: falls back to the neutral speed.
+        assert response.tts_local_speed == 1.0
+
+    def test_build_preferences_response_clamps_out_of_range_speed(self):
+        settings = SimpleNamespace(tts_local_speed=9.0)
+
+        assert build_preferences_response(settings).tts_local_speed == 2.0
+
+        settings = SimpleNamespace(tts_local_speed="fast")
+
+        assert build_preferences_response(settings).tts_local_speed == 1.0
+
+    def test_build_preferences_response_clamps_out_of_range_hover_delay(self):
+        settings = SimpleNamespace(hover_speak_delay_ms=99999)
+
+        assert build_preferences_response(settings).hover_speak_delay_ms == 5000
+
+        settings = SimpleNamespace(hover_speak_delay_ms="slow")
+
+        assert build_preferences_response(settings).hover_speak_delay_ms == 1000
+
+    def test_build_preferences_response_maps_populated_settings(self):
+        settings = SimpleNamespace(
+            tts_provider="browser",
+            tts_voice="female",
+            tts_local_voice="ef_dora",
+            tts_local_speed=1.25,
+            tts_language="es",
+            ui_language="es-ES",
+            notifications_enabled=False,
+            voice_mode_enabled=False,
+            dark_mode=True,
+            dwell_time=250,
+            ignore_repeats=3,
+            high_contrast=True,
+            hover_speak_enabled=True,
+            hover_speak_delay_ms=1500,
+        )
+
+        response = build_preferences_response(settings)
+
+        assert response.model_dump() == {
+            "tts_provider": "browser",
+            "tts_voice": "female",
+            "tts_local_voice": "ef_dora",
+            "tts_local_speed": 1.25,
+            "tts_language": "es",
+            "ui_language": "es-ES",
+            "notifications_enabled": False,
+            "voice_mode_enabled": False,
+            "dark_mode": True,
+            "dwell_time": 250,
+            "ignore_repeats": 3,
+            "high_contrast": True,
+            "hover_speak_enabled": True,
+            "hover_speak_delay_ms": 1500,
+            "default_learning_mode": "practice",
+        }
 
 
 @pytest.fixture(scope="function")
@@ -44,9 +151,13 @@ class TestUserPreferences:
         )
         assert response.status_code == 200
         data = response.json()
+        assert data["tts_provider"] == "kokoro"
         assert data["tts_voice"] == "default"
+        assert data["tts_local_voice"] == "default"
+        assert data["tts_local_speed"] == 1.0
         assert data["notifications_enabled"] is True
         assert data["dark_mode"] is False
+        assert data["default_learning_mode"] == "practice"
 
     def test_update_preferences(self, prefs_user):
         """Test updating user preferences"""
@@ -55,16 +166,75 @@ class TestUserPreferences:
             "/api/auth/preferences",
             headers=create_test_headers(user_id, username, user_type),
             json={
+                "tts_provider": "browser",
                 "tts_voice": "female",
+                "tts_local_voice": "ef_dora",
+                "tts_local_speed": 1.5,
                 "notifications_enabled": False,
                 "dark_mode": True,
             },
         )
         assert response.status_code == 200
         data = response.json()
+        assert data["tts_provider"] == "browser"
         assert data["tts_voice"] == "female"
+        assert data["tts_local_voice"] == "ef_dora"
+        assert data["tts_local_speed"] == 1.5
         assert data["notifications_enabled"] is False
         assert data["dark_mode"] is True
+
+    def test_default_learning_mode_roundtrip_and_validation(self, prefs_user, test_db_session):
+        """The default mode is persisted only when it is visible to the user."""
+        mode = LearningMode(
+            name="Quiz",
+            key="quiz_preference",
+            description="Multiple-choice practice",
+            prompt_instruction="Ask quiz questions.",
+            is_custom=False,
+            created_by=None,
+        )
+        test_db_session.add(mode)
+        test_db_session.commit()
+
+        user_id, username, user_type = prefs_user
+        headers = create_test_headers(user_id, username, user_type)
+        response = client.put(
+            "/api/auth/preferences",
+            headers=headers,
+            json={"default_learning_mode": mode.key},
+        )
+        assert response.status_code == 200
+        assert response.json()["default_learning_mode"] == mode.key
+
+        stored = (
+            test_db_session.query(UserSettings)
+            .filter(UserSettings.user_id == user_id)
+            .one()
+        )
+        assert stored.default_learning_mode == mode.key
+
+        invalid = client.put(
+            "/api/auth/preferences",
+            headers=headers,
+            json={"default_learning_mode": "not_visible"},
+        )
+        assert invalid.status_code == 400
+
+    def test_update_preferences_rejects_out_of_range_speed(self, prefs_user):
+        """Kokoro speed must stay within the range the synthesis endpoint accepts."""
+        user_id, username, user_type = prefs_user
+        response = client.put(
+            "/api/auth/preferences",
+            headers=create_test_headers(user_id, username, user_type),
+            json={"tts_local_speed": 3.0},
+        )
+        assert response.status_code == 422
+        response = client.put(
+            "/api/auth/preferences",
+            headers=create_test_headers(user_id, username, user_type),
+            json={"tts_local_speed": 0.1},
+        )
+        assert response.status_code == 422
 
     def test_concurrent_cross_route_updates_keep_one_settings_row(self, prefs_user, test_db_session):
         """Concurrent preference routes must not duplicate the unique settings row."""
@@ -130,6 +300,25 @@ class TestUserPreferences:
             .all()
         )
         assert len(settings_rows) == 1
+
+    def test_preferences_reject_unsupported_language_and_out_of_range_timing(self, prefs_user):
+        """The API accepts only configured UI languages and the UI timing range."""
+        user_id, username, user_type = prefs_user
+        headers = create_test_headers(user_id, username, user_type)
+
+        unsupported = client.put(
+            "/api/auth/preferences",
+            headers=headers,
+            json={"ui_language": "fr-FR"},
+        )
+        assert unsupported.status_code == 400
+
+        too_large = client.put(
+            "/api/auth/preferences",
+            headers=headers,
+            json={"dwell_time": 2001},
+        )
+        assert too_large.status_code == 422
 
     def test_update_partial_preferences(self, prefs_user):
         """Test updating only some preferences"""
@@ -285,6 +474,34 @@ class TestUserProfile:
         assert response.status_code == 200
         data = response.json()
         assert data["email"] == "newemail@test.com"
+
+    def test_explicit_null_email_clears_existing_email(self, prefs_user, test_db_session):
+        """An explicit null clears an optional email instead of being ignored."""
+        user_id, username, user_type = prefs_user
+        user = test_db_session.get(User, user_id)
+        user.email = "existing@test.com"
+        test_db_session.commit()
+
+        response = client.put(
+            "/api/auth/profile",
+            headers=create_test_headers(user_id, username, user_type),
+            json={"email": None},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["email"] is None
+        test_db_session.refresh(user)
+        assert user.email is None
+
+    def test_blank_display_name_is_rejected(self, prefs_user):
+        """Profile saves must not leave the account without a display name."""
+        user_id, username, user_type = prefs_user
+        response = client.put(
+            "/api/auth/profile",
+            headers=create_test_headers(user_id, username, user_type),
+            json={"display_name": "   "},
+        )
+        assert response.status_code == 400
 
     def test_update_profile_both_fields(self, prefs_user):
         """Test updating both display name and email"""

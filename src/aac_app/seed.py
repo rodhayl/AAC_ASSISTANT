@@ -6,6 +6,7 @@ import os
 import secrets
 
 from loguru import logger
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src import config
@@ -16,6 +17,7 @@ from src.aac_app.models import (
     BoardAssignment,
     BoardSymbol,
     CommunicationBoard,
+    LearningMode,
     Symbol,
     User,
     UserAchievement,
@@ -27,13 +29,8 @@ from src.aac_app.services.achievement_catalog import (
 from src.aac_app.services.auth_service import password_strength_error
 from src.aac_app.services.credential_service import mark_credentials_changed
 
-
-def _env_flag(name: str, default: bool = False) -> bool:
-    """Read a boolean environment flag."""
-    raw_value = os.environ.get(name)
-    if raw_value is None:
-        return default
-    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+DEFAULT_COMMUNICATION_BOARD_NAME = "Comunicación General"
+LEGACY_COMMUNICATION_BOARD_NAME = "General Communication"
 
 
 def _seed_password_for(username: str) -> str:
@@ -58,9 +55,11 @@ def init_database(*, ensure_schema: bool = True) -> None:
     with get_session() as session:
         _create_sample_symbols(session)
         _create_sample_achievements(session)
+        _create_default_learning_modes(session)
         _ensure_bootstrap_admin(session)
+        _rename_legacy_default_board(session)
 
-        if _env_flag("AAC_SEED_SAMPLE_DATA", default=False):
+        if config.get_bool("AAC_SEED_SAMPLE_DATA", False):
             _create_sample_users(session)
             _create_sample_boards(session)
             logger.warning(
@@ -135,6 +134,25 @@ def _ensure_bootstrap_admin(session: Session) -> None:
     session.flush()
 
 
+def _rename_legacy_default_board(session: Session) -> None:
+    """Rename only the untouched legacy demo template, once."""
+    admin = session.query(User).filter(User.username == "admin1").first()
+    if admin is None:
+        return
+    board = (
+        session.query(CommunicationBoard)
+        .filter(
+            CommunicationBoard.user_id == admin.id,
+            CommunicationBoard.name == LEGACY_COMMUNICATION_BOARD_NAME,
+            CommunicationBoard.is_template.is_(True),
+        )
+        .first()
+    )
+    if board is not None:
+        board.name = DEFAULT_COMMUNICATION_BOARD_NAME
+        logger.info("Renamed legacy demo board to {}", DEFAULT_COMMUNICATION_BOARD_NAME)
+
+
 def _create_sample_boards(session: Session) -> None:
     """Create the demo communication board and its student assignment."""
     admin = session.query(User).filter(User.username == "admin1").first()
@@ -147,13 +165,27 @@ def _create_sample_boards(session: Session) -> None:
         session.query(CommunicationBoard)
         .filter(
             CommunicationBoard.user_id == admin.id,
-            CommunicationBoard.name == "General Communication",
+            CommunicationBoard.name == DEFAULT_COMMUNICATION_BOARD_NAME,
         )
         .first()
     )
     if board is None:
+        # Migrate only the untouched demo board created by older versions.
+        # A user-created board that was renamed must never be overwritten.
+        board = (
+            session.query(CommunicationBoard)
+            .filter(
+                CommunicationBoard.user_id == admin.id,
+                CommunicationBoard.name == LEGACY_COMMUNICATION_BOARD_NAME,
+                CommunicationBoard.is_template.is_(True),
+            )
+            .first()
+        )
+        if board is not None:
+            board.name = DEFAULT_COMMUNICATION_BOARD_NAME
+    if board is None:
         board = CommunicationBoard(
-            name="General Communication",
+            name=DEFAULT_COMMUNICATION_BOARD_NAME,
             description="Basic vocabulary board with common symbols",
             user_id=admin.id,
             is_public=True,
@@ -234,89 +266,321 @@ def _create_sample_users(session: Session) -> None:
     session.flush()
 
 
+DEFAULT_LEARNING_MODES = [
+    {
+        "key": "practice",
+        "name": "Practice",
+        "description": "Adaptive questions with feedback on every answer.",
+        "prompt_instruction": "Ask short adaptive questions about the topic and give encouraging feedback after each answer.",
+        "auto_ask_enabled": True,
+    },
+    {
+        "key": "quiz",
+        "name": "Quiz",
+        "description": "Multiple-choice questions with a score at the end.",
+        "prompt_instruction": "Run a quiz: ask multiple-choice questions one at a time, track correct answers, and summarise the score at the end.",
+        "auto_ask_enabled": True,
+    },
+    {
+        "key": "conversation",
+        "name": "Conversation",
+        "description": "Open-ended conversation practice without auto-generated questions.",
+        "prompt_instruction": "Hold a natural conversation about the topic. Do not generate quiz-style questions; respond conversationally.",
+        "auto_ask_enabled": False,
+    },
+    {
+        "key": "roleplay",
+        "name": "Roleplay",
+        "description": "Practice by acting out a scenario with the AI.",
+        "prompt_instruction": "Act out a roleplay scenario about the topic. Take one role and invite the student to take the other, staying in character.",
+        "auto_ask_enabled": False,
+    },
+]
+
+
+def _create_default_learning_modes(session: Session) -> None:
+    """Seed the system learning modes when none exist (idempotent)."""
+    existing = (
+        session.query(LearningMode).filter(LearningMode.created_by.is_(None)).first()
+    )
+    if existing is not None:
+        return
+    for mode in DEFAULT_LEARNING_MODES:
+        session.add(
+            LearningMode(
+                name=mode["name"],
+                key=mode["key"],
+                description=mode["description"],
+                prompt_instruction=mode["prompt_instruction"],
+                auto_ask_enabled=mode["auto_ask_enabled"],
+                is_custom=False,
+                created_by=None,
+            )
+        )
+    logger.info("Seeded %d default learning modes", len(DEFAULT_LEARNING_MODES))
+
+
 def _create_sample_symbols(session: Session) -> None:
-    """Create the built-in communication symbols when they are missing."""
+    """Create the built-in communication symbols when they are missing.
+
+    Seed both supported UI locales so a Spanish learner never receives an
+    English-only fallback symbol (and therefore an unrelated English pictogram).
+    """
     sample_symbols = [
+        {
+            "label": "vaca",
+            "description": "Animal de granja que produce leche",
+            "category": "farm_animals",
+            "keywords": "vaca, granja, leche, animal",
+            "language": "es",
+        },
         {
             "label": "cow",
             "description": "A farm animal that gives milk",
             "category": "farm_animals",
             "keywords": "cow, farm, milk, animal",
+            "language": "en",
+        },
+        {
+            "label": "caballo",
+            "description": "Animal grande que se puede montar",
+            "category": "farm_animals",
+            "keywords": "caballo, granja, montar, animal",
+            "language": "es",
         },
         {
             "label": "horse",
             "description": "A large animal you can ride",
             "category": "farm_animals",
             "keywords": "horse, farm, ride, animal",
+            "language": "en",
+        },
+        {
+            "label": "gallina",
+            "description": "Ave que pone huevos",
+            "category": "farm_animals",
+            "keywords": "gallina, granja, huevos, ave",
+            "language": "es",
         },
         {
             "label": "chicken",
             "description": "A bird that lays eggs",
             "category": "farm_animals",
             "keywords": "chicken, farm, eggs, bird",
+            "language": "en",
+        },
+        {
+            "label": "manzana",
+            "description": "Una fruta roja",
+            "category": "food",
+            "keywords": "manzana, fruta, roja, comida",
+            "language": "es",
         },
         {
             "label": "apple",
             "description": "A red fruit",
             "category": "food",
             "keywords": "apple, fruit, red, food",
+            "language": "en",
+        },
+        {
+            "label": "agua",
+            "description": "Líquido transparente para beber",
+            "category": "drinks",
+            "keywords": "agua, beber, líquido",
+            "language": "es",
         },
         {
             "label": "water",
             "description": "Clear liquid for drinking",
             "category": "drinks",
             "keywords": "water, drink, liquid",
+            "language": "en",
+        },
+        {
+            "label": "hola",
+            "description": "Un saludo amistoso",
+            "category": "social",
+            "keywords": "hola, saludo, saludos",
+            "language": "es",
         },
         {
             "label": "hello",
             "description": "A friendly greeting",
             "category": "social",
             "keywords": "hello, hi, greetings",
+            "language": "en",
+        },
+        {
+            "label": "adiós",
+            "description": "Una palabra de despedida",
+            "category": "social",
+            "keywords": "adiós, despedida, irse",
+            "language": "es",
         },
         {
             "label": "goodbye",
             "description": "A parting word",
             "category": "social",
             "keywords": "goodbye, bye, leave",
+            "language": "en",
+        },
+        {
+            "label": "sí",
+            "description": "Acuerdo o confirmación",
+            "category": "social",
+            "keywords": "sí, aceptar, correcto",
+            "language": "es",
         },
         {
             "label": "yes",
             "description": "Agreement or confirmation",
             "category": "social",
             "keywords": "yes, agree, correct",
+            "language": "en",
+        },
+        {
+            "label": "no",
+            "description": "Desacuerdo o rechazo",
+            "category": "social",
+            "keywords": "no, rechazar, incorrecto",
+            "language": "es",
         },
         {
             "label": "no",
             "description": "Disagreement or refusal",
             "category": "social",
             "keywords": "no, disagree, incorrect",
+            "language": "en",
+        },
+        {
+            "label": "por favor",
+            "description": "Una palabra para pedir algo con educación",
+            "category": "social",
+            "keywords": "por favor, educación",
+            "language": "es",
         },
         {
             "label": "please",
             "description": "A polite request word",
             "category": "social",
             "keywords": "please, polite",
+            "language": "en",
+        },
+        {
+            "label": "gracias",
+            "description": "Expresar gratitud",
+            "category": "social",
+            "keywords": "gracias, gratitud",
+            "language": "es",
         },
         {
             "label": "thank you",
             "description": "Expressing gratitude",
             "category": "social",
             "keywords": "thanks, gratitude, thank you",
+            "language": "en",
+        },
+        {
+            "label": "ayuda",
+            "description": "Pedir asistencia",
+            "category": "social",
+            "keywords": "ayuda, asistir, apoyo",
+            "language": "es",
         },
         {
             "label": "help",
             "description": "Asking for assistance",
             "category": "social",
             "keywords": "help, assist, support",
+            "language": "en",
+        },
+        # Technology / AI vocabulary so study topics like "Inteligencia
+        # Artificial y LLMs" have matching symbols for the topic-aware
+        # prediction tier to surface instead of only generic social words.
+        {
+            "label": "inteligencia artificial",
+            "description": "Sistemas que aprenden y razonan como una persona",
+            "category": "computing",
+            "keywords": "inteligencia artificial, IA, tecnología, ordenador",
+            "language": "es",
+        },
+        {
+            "label": "artificial intelligence",
+            "description": "Systems that learn and reason like a person",
+            "category": "computing",
+            "keywords": "artificial intelligence, AI, technology, computer",
+            "language": "en",
+        },
+        {
+            "label": "ordenador",
+            "description": "Máquina para procesar información",
+            "category": "computing",
+            "keywords": "ordenador, computadora, tecnología, pantalla",
+            "language": "es",
+        },
+        {
+            "label": "computer",
+            "description": "A machine for processing information",
+            "category": "computing",
+            "keywords": "computer, technology, screen",
+            "language": "en",
+        },
+        {
+            "label": "datos",
+            "description": "Información que un ordenador guarda y procesa",
+            "category": "computing",
+            "keywords": "datos, información, procesar, almacenar",
+            "language": "es",
+        },
+        {
+            "label": "data",
+            "description": "Information a computer stores and processes",
+            "category": "computing",
+            "keywords": "data, information, process, store",
+            "language": "en",
+        },
+        {
+            "label": "modelo de lenguaje",
+            "description": "Un programa que entiende y genera texto",
+            "category": "computing",
+            "keywords": "modelo de lenguaje, IA, texto, generar, LLM",
+            "language": "es",
+        },
+        {
+            "label": "language model",
+            "description": "A program that understands and generates text",
+            "category": "computing",
+            "keywords": "language model, AI, text, generate, LLM",
+            "language": "en",
+        },
+        {
+            "label": "pregunta",
+            "description": "Algo que se quiere saber o preguntar",
+            "category": "computing",
+            "keywords": "pregunta, preguntar, IA, consultar",
+            "language": "es",
+        },
+        {
+            "label": "prompt",
+            "description": "The instruction given to an AI",
+            "category": "computing",
+            "keywords": "prompt, instruction, AI, ask",
+            "language": "en",
         },
     ]
 
+    # Dedupe by (label, language) only: the category is descriptive metadata,
+    # not part of the symbol's identity. An ARASAAC library import stores the
+    # same words under ARASAAC's own categories ("herbivorous", "beverage"),
+    # so including the category in the check would insert a second "vaca"
+    # next to the imported one on every restart.
     for values in sample_symbols:
         existing = (
             session.query(Symbol)
             .filter(
-                Symbol.label == values["label"],
-                Symbol.category == values["category"],
+                func.lower(func.trim(Symbol.label)) == values["label"].strip().lower(),
+                Symbol.language == values.get("language", "en"),
             )
             .first()
         )
@@ -328,7 +592,6 @@ def _create_sample_symbols(session: Session) -> None:
 
 
 def _create_sample_achievements(session: Session) -> None:
-    """Create the three system achievements without duplicating them."""
     sample_achievements = [
         {
             field: PREDEFINED_ACHIEVEMENTS[key][field]

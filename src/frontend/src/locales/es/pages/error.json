@@ -2,5 +2,7 @@
   "title": "Algo salió mal",
   "subtitle": "Por favor intenta nuevamente o vuelve al panel.",
   "retry": "Reintentar",
-  "dashboard": "Panel"
+  "dashboard": "Panel",
+  "notFoundTitle": "Página no encontrada",
+  "notFoundMessage": "La página que buscas no existe o ha sido movida."
 }

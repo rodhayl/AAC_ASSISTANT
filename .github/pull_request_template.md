@@ -9,10 +9,15 @@ A concise summary of what changed.
 ## Test evidence
 
 - [ ] `uv run ruff check src tests scripts`
+- [ ] `uv run python scripts/check_dependency_usage.py`
+- [ ] `uv run pip-audit --requirement requirements.txt --strict --progress-spinner off`
+- [ ] `uv run pip-audit --local --strict --progress-spinner off`
 - [ ] `uv run python -m compileall -q src scripts`
 - [ ] `uv run pytest -q`
 - [ ] `npm --prefix src/frontend run typecheck`
 - [ ] `npm --prefix src/frontend run lint`
+- [ ] `npm --prefix src/frontend audit --omit=dev --audit-level=moderate`
+- [ ] `npm --prefix src/frontend audit --audit-level=high`
 - [ ] `npm --prefix src/frontend run test -- --run`
 - [ ] `npm --prefix src/frontend run build`
 

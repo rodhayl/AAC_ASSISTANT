@@ -22,7 +22,7 @@ test.describe('Accessibility: keyboard operation', () => {
 
   async function openBoard(page: import('@playwright/test').Page) {
     await page.goto('/communication');
-    const board = page.getByRole('button', { name: /General Communication/ }).first();
+    const board = page.getByRole('button', { name: /Comunicación General/ }).first();
     await expect(board).toBeVisible();
     await board.click();
     const grid = page.locator('.grid');
@@ -63,16 +63,26 @@ test.describe('Accessibility: keyboard operation', () => {
   test('sentence controls are keyboard-operable and stay in the tab order', async ({ page }) => {
     const grid = await openBoard(page);
 
-    await grid.getByRole('button', { name: /Add hello to sentence/ }).click();
-    await grid.getByRole('button', { name: /Add yes to sentence/ }).click();
-    await expect(page.getByTestId('sentence-preview')).toHaveText('hello yes');
+    // Read the rendered labels: the app localizes symbols to the student's
+    // UI language, so this must not hardcode English.
+    const buttons = grid.getByRole('button', { name: /Add .* to sentence/ });
+    const first = await buttons.nth(0).getAttribute('aria-label');
+    const second = await buttons.nth(1).getAttribute('aria-label');
+    const firstLabel = first?.match(/Add (.*) to sentence/)?.[1];
+    const secondLabel = second?.match(/Add (.*) to sentence/)?.[1];
+    expect(firstLabel).toBeTruthy();
+    expect(secondLabel).toBeTruthy();
+
+    await buttons.nth(0).click();
+    await buttons.nth(1).click();
+    await expect(page.getByTestId('sentence-preview')).toHaveText(`${firstLabel} ${secondLabel}`);
 
     // Backspace is a real button: it must accept focus and activate on Enter.
     const backspace = page.getByTestId('sentence-backspace');
     await backspace.focus();
     await expect(backspace).toBeFocused();
     await page.keyboard.press('Enter');
-    await expect(page.getByTestId('sentence-preview')).toHaveText('hello');
+    await expect(page.getByTestId('sentence-preview')).toHaveText(firstLabel!);
 
     // Clear is likewise keyboard-operable.
     const clear = page.getByTestId('sentence-clear');

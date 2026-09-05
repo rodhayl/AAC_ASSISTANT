@@ -33,8 +33,9 @@ Some features are opt-in and may send data off-device:
   use. No audio leaves the machine.
 - **Text-to-speech** — uses the browser's local speech synthesis by default.
 - **LLM learning questions** — `Ollama` and `LM Studio` are local services.
-  `OpenRouter` is a third-party API used only if the operator configures an API
-  key and selects it. Content sent to `OpenRouter` is governed by its terms.
+  `OpenRouter` and `Groq` are third-party APIs used only if the operator
+  configures an API key and selects them. Content sent to those services is
+  governed by their terms.
 - **ARASAAC symbol images** — fetched from `static.arasaac.org` when symbol
   image backfill is enabled (off by default).
 
@@ -59,9 +60,9 @@ Core communication never depends on these services.
 
 - Use a strong, unique administrator password and change it after first login.
 - Use full-disk encryption on devices holding sensitive communication content.
-- Review third-party terms before enabling `OpenRouter` or other remote
-  services, because content sent to those services is processed under their
-  policies.
+- Review third-party terms before enabling `OpenRouter`, `Groq`, or other
+  remote services, because content sent to those services is processed under
+  their policies.
 - Do not expose the application to the network unless you understand the risks.
 
 ## 7. Reporting

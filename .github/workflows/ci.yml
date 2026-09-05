@@ -46,6 +46,10 @@ jobs:
       - run: uv sync --locked --group dev
       - run: uv run ruff check src tests scripts
       - run: uv run python scripts/audit_codebase.py
+      - run: uv run python scripts/check_dependency_usage.py
+      - run: uv run pip-audit --requirement requirements.txt --strict --progress-spinner off
+      - run: uv export --locked --all-groups --format requirements-txt --output-file /tmp/aac-all-requirements.txt >/dev/null
+      - run: uv run pip-audit --requirement /tmp/aac-all-requirements.txt --strict --progress-spinner off
       - run: uv run python -m compileall -q src scripts
       - run: uv pip check
       - run: uv run pytest --cov=src --cov-report=term-missing:skip-covered --cov-branch -q
@@ -65,6 +69,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint -- --max-warnings=0
+      - run: npm audit --omit=dev --audit-level=moderate
+      - run: npm audit --audit-level=high
       - run: npm run test -- --run --coverage --coverage.reporter=text-summary
       - run: npm run i18n:audit
       - run: npm run build

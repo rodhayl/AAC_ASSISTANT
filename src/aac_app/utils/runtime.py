@@ -7,11 +7,10 @@ import io
 import shutil
 import sys
 from collections.abc import Iterator
-from typing import Any
 
 
 @contextlib.contextmanager
-def safe_streams() -> Iterator[tuple[io.StringIO | Any, io.StringIO | Any]]:
+def safe_streams() -> Iterator[None]:
     """Temporarily provide writable stdout/stderr for windowed frozen builds.
 
     PyInstaller windowed builds can expose ``None`` for the standard streams,
@@ -25,7 +24,7 @@ def safe_streams() -> Iterator[tuple[io.StringIO | Any, io.StringIO | Any]]:
         with contextlib.redirect_stdout(redirect_out), contextlib.redirect_stderr(
             redirect_err
         ):
-            yield redirect_out, redirect_err
+            yield
     finally:
         sys.stdout, sys.stderr = saved_out, saved_err
 

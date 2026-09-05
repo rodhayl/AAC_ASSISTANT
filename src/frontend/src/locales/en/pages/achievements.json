@@ -11,6 +11,7 @@
   "createTitle": "Create Achievement",
   "editTitle": "Edit Achievement",
   "awardTitle": "Award Achievement",
+  "deleteTitle": "Delete Achievement",
   "icon": "Icon",
   "name": "Name",
   "description": "Description",
@@ -28,7 +29,6 @@
   "targetUser": "For specific student (optional)",
   "allStudents": "All students",
   "selectStudent": "Select Student",
-  "chooseStudent": "Choose a student...",
   "confirmDelete": "Are you sure you want to delete this achievement?",
   "awardType": "Award Type",
   "manualAward": "Manual Award",
@@ -38,5 +38,43 @@
   "auto": "Auto",
   "manual": "Manual",
   "searchStudent": "Search student by name...",
-  "noStudents": "No students found"
+  "noStudents": "No students found",
+  "close": "Close",
+  "categories": {
+    "beginner": "Beginner",
+    "vocabulary": "Vocabulary",
+    "performance": "Performance",
+    "consistency": "Consistency",
+    "exploration": "Exploration",
+    "interaction": "Interaction",
+    "custom": "Custom"
+  },
+  "criteria": {
+    "sessions_completed": "Sessions completed",
+    "vocabulary_size": "Vocabulary size",
+    "correct_answers": "Correct answers",
+    "comprehension_score": "Comprehension score",
+    "consecutive_days": "Consecutive days",
+    "topics_completed": "Topics completed",
+    "voice_usage": "Voice usage"
+  },
+  "systemAchievements": {
+    "first_steps": { "name": "First Steps", "description": "Complete your first learning session" },
+    "vocabulary_explorer": { "name": "Vocabulary Explorer", "description": "Learn 10 new words" },
+    "quick_learner": { "name": "Quick Learner", "description": "Answer 5 questions correctly" },
+    "comprehension_champion": { "name": "Comprehension Champion", "description": "Achieve 80% comprehension score" },
+    "streak_master": { "name": "Streak Master", "description": "Complete sessions for 3 consecutive days" },
+    "dedicated_learner": { "name": "Dedicated Learner", "description": "Complete 10 learning sessions" },
+    "topic_expert": { "name": "Topic Expert", "description": "Complete sessions in 5 different topics" },
+    "voice_pioneer": { "name": "Voice Pioneer", "description": "Use voice input 10 times" }
+  },
+  "errors": {
+    "loadFailed": "Failed to load achievements",
+    "checkFailed": "Failed to check achievements",
+    "createFailed": "Failed to create achievement",
+    "updateFailed": "Failed to update achievement",
+    "deleteFailed": "Failed to delete achievement",
+    "awardFailed": "Failed to award achievement",
+    "managementLoadFailed": "Some management data could not be loaded. Please try again."
+  }
 }

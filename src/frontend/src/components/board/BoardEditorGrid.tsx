@@ -39,7 +39,7 @@ export function BoardEditorGrid({
   const symbolsByPosition = useMemo(() => indexBoardSymbols(symbols), [symbols]);
 
   return (
-    <div className="flex-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-8 overflow-auto">
+    <div className="flex-1 bg-muted rounded-xl p-8 overflow-auto">
       <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
         <div
           className="grid gap-4 mx-auto max-w-4xl"

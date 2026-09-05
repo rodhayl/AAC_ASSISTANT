@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 from loguru import logger
 
-from .base_provider import BaseLLMProvider
+from .base_provider import BaseLLMProvider, ProviderRateLimitError
 
 
 class OpenRouterProvider(BaseLLMProvider):
@@ -59,6 +59,7 @@ class OpenRouterProvider(BaseLLMProvider):
         system: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 500,
+        json_schema: dict | None = None,
         **kwargs,
     ) -> str:
         """
@@ -70,13 +71,16 @@ class OpenRouterProvider(BaseLLMProvider):
             system: System prompt (optional)
             temperature: Sampling temperature
             max_tokens: Maximum tokens to generate
+            json_schema: Optional JSON schema for structured output
             **kwargs: Additional parameters
 
         Returns:
             Generated text
         """
         if not self.is_configured():
-            raise ValueError("OpenRouter not configured. Please provide API key.")
+            raise ValueError(
+                f"{type(self).__name__} not configured. Please provide API key."
+            )
 
         try:
             headers = {
@@ -91,13 +95,37 @@ class OpenRouterProvider(BaseLLMProvider):
                 messages.append({"role": "system", "content": system})
             messages.append({"role": "user", "content": prompt})
 
-            payload = {
-                "model": model or self.default_model,
+            selected_model = model or self.default_model
+            payload: dict = {
+                "model": selected_model,
                 "messages": messages,
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "stream": False,
             }
+
+            # Groq's GPT-OSS models may spend the entire completion budget in
+            # reasoning tokens unless the API is told to return only the final
+            # answer. Keep reasoning out of user-facing content and structured
+            # parsers while leaving other OpenAI-compatible models unchanged.
+            if type(self).__name__ == "GroqProvider" and selected_model.startswith(
+                "openai/gpt-oss-"
+            ):
+                payload["reasoning_format"] = "hidden"
+                payload["reasoning_effort"] = "low"
+
+            # Enforce structured JSON output when a schema is requested.
+            # OpenRouter forwards response_format to providers that support it
+            # (OpenAI-compatible structured output).
+            if json_schema is not None:
+                payload["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "response",
+                        "strict": True,
+                        "schema": json_schema,
+                    },
+                }
 
             response = await self.client.post(
                 f"{self.base_url}/chat/completions", headers=headers, json=payload
@@ -105,15 +133,120 @@ class OpenRouterProvider(BaseLLMProvider):
 
             if response.status_code != 200:
                 logger.error(
-                    f"OpenRouter API error: {response.status_code} - {response.text}"
+                    f"{type(self).__name__} API error: {response.status_code} - {response.text}"
                 )
-                raise Exception(f"OpenRouter API error: {response.status_code}")
+                if response.status_code == 429:
+                    raise ProviderRateLimitError(
+                        f"{type(self).__name__} rate limited (429): {response.text[:300]}"
+                    )
+                raise Exception(
+                    f"{type(self).__name__} API error: {response.status_code}"
+                )
 
             result = response.json()
-            return result["choices"][0]["message"]["content"]
+            content = result["choices"][0]["message"].get("content")
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError(
+                    f"{type(self).__name__} returned an empty assistant response"
+                )
+            return content
 
         except Exception as e:
-            logger.error(f"OpenRouter generation failed: {e}")
+            logger.error(f"{type(self).__name__} generation failed: {e}")
+            raise
+
+    def generate_sync(
+        self,
+        prompt: str,
+        model: str | None = None,
+        system: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 500,
+        json_schema: dict | None = None,
+        **kwargs,
+    ) -> str:
+        """Synchronous completion for threadpool callers (e.g. next-symbol).
+
+        Mirrors ``generate`` but posts through the provider's ``sync_client``
+        so synchronous endpoints never need an event loop. Provider subclasses
+        (notably Groq) may override it to enforce the same model contract as
+        their async counterpart.
+        """
+        if not self.is_configured():
+            raise ValueError(
+                f"{type(self).__name__} not configured. Please provide API key."
+            )
+
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "HTTP-Referer": "https://aac-assistant.local",
+                "X-Title": "AAC Assistant 2.0",
+                "Content-Type": "application/json",
+            }
+
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
+
+            selected_model = model or self.default_model
+            payload: dict = {
+                "model": selected_model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "stream": False,
+            }
+
+            if type(self).__name__ == "GroqProvider" and selected_model.startswith(
+                "openai/gpt-oss-"
+            ):
+                payload["reasoning_format"] = "hidden"
+                payload["reasoning_effort"] = "low"
+
+            if json_schema is not None:
+                payload["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "response",
+                        "strict": True,
+                        "schema": json_schema,
+                    },
+                }
+
+            # The shared sync client defaults to a short timeout for quick
+            # calls (model listing); generations need the same budget as the
+            # async path, so override it per request.
+            response = self.sync_client.post(
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=30.0,
+            )
+
+            if response.status_code != 200:
+                logger.error(
+                    f"{type(self).__name__} API error: {response.status_code} - {response.text}"
+                )
+                if response.status_code == 429:
+                    raise ProviderRateLimitError(
+                        f"{type(self).__name__} rate limited (429): {response.text[:300]}"
+                    )
+                raise Exception(
+                    f"{type(self).__name__} API error: {response.status_code}"
+                )
+
+            result = response.json()
+            content = result["choices"][0]["message"].get("content")
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError(
+                    f"{type(self).__name__} returned an empty assistant response"
+                )
+            return content
+
+        except Exception as e:
+            logger.error(f"{type(self).__name__} sync generation failed: {e}")
             raise
 
     async def get_available_models(self) -> dict[str, Any]:
@@ -139,7 +272,3 @@ class OpenRouterProvider(BaseLLMProvider):
         except Exception as e:
             logger.error(f"Failed to get OpenRouter models: {e}")
             return {}
-
-    async def close(self):
-        """Backward-compatible async close alias."""
-        await self.close_async()

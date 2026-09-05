@@ -1,8 +1,14 @@
-import { useCallback, useRef } from 'react';
 import { Award, CheckCircle2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { SessionSummary } from '../../store/learningStore';
-import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
+import { Button } from '../ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog';
 
 interface SessionSummaryModalProps {
   summary: SessionSummary;
@@ -11,13 +17,6 @@ interface SessionSummaryModalProps {
 
 export function SessionSummaryModal({ summary, onClose }: SessionSummaryModalProps) {
   const { t } = useTranslation('learning');
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-
-  const close = useCallback(() => {
-    onClose();
-  }, [onClose]);
-
-  useModalFocusTrap(dialogRef, true, close);
 
   const comprehensionPercent =
     summary.comprehension_score !== undefined
@@ -30,49 +29,38 @@ export function SessionSummaryModal({ summary, onClose }: SessionSummaryModalPro
   const correct = summary.correct_answers ?? summary.statistics?.correct_answers ?? 0;
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-      onClick={close}
-      role="presentation"
-      data-testid="session-summary-modal"
-    >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="session-summary-title"
-        className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full p-6"
-        onClick={(event) => event.stopPropagation()}
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        data-testid="session-summary-modal"
+        className="max-w-lg p-6"
       >
-        <div className="flex items-start justify-between mb-4">
+        <DialogHeader className="flex-row items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">
+            <div className="p-2.5 rounded-lg bg-brand/10 text-brand">
               <Award className="w-6 h-6" />
             </div>
             <div>
-              <h4
-                id="session-summary-title"
-                className="text-lg font-semibold text-gray-900 dark:text-gray-100"
-              >
-                {t('summaryTitle', 'Session Summary')}
-              </h4>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                {t('summarySubtitle', 'Great job — here is how you did.')}
-              </p>
+              <DialogTitle className="text-lg font-semibold text-foreground">
+                {t('summaryTitle')}
+              </DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground">
+                {t('summarySubtitle')}
+              </DialogDescription>
             </div>
           </div>
           <button
             type="button"
-            onClick={close}
-            aria-label="Close summary"
-            className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+            onClick={onClose}
+            aria-label={t('closeSummary')}
+            className="p-2 text-muted-foreground hover:bg-surface-hover rounded-lg"
           >
             <X className="w-5 h-5" />
           </button>
-        </div>
+        </DialogHeader>
 
         {summary.summary && (
-          <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed bg-gray-50 dark:bg-gray-900/40 rounded-lg p-4 mb-4">
+          <p className="text-sm text-foreground leading-relaxed bg-background/40 rounded-lg p-4 mb-4">
             {summary.summary}
           </p>
         )}
@@ -86,11 +74,11 @@ export function SessionSummaryModal({ summary, onClose }: SessionSummaryModalPro
               {t('score')}
             </div>
           </div>
-          <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 p-3 text-center">
-            <div className="text-2xl font-bold text-indigo-700 dark:text-indigo-400">
+          <div className="rounded-lg border border-brand/20 bg-brand/10 p-3 text-center">
+            <div className="text-2xl font-bold text-brand">
               {answered}
             </div>
-            <div className="text-xs text-indigo-700 dark:text-indigo-400 mt-1">
+            <div className="text-xs text-brand mt-1">
               {t('questionsAnswered')}
             </div>
           </div>
@@ -106,15 +94,11 @@ export function SessionSummaryModal({ summary, onClose }: SessionSummaryModalPro
         </div>
 
         <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={close}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium"
-          >
-            {t('close', 'Close')}
-          </button>
+          <Button type="button" onClick={onClose} className="font-medium">
+            {t('close')}
+          </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

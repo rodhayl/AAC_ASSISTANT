@@ -1,9 +1,46 @@
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from loguru import logger
+
+# ``lang`` and ``namespace`` become filesystem path components below. Only
+# well-formed language tags (e.g. "en", "es-ES") and plain namespace names
+# (letters, digits, '_', '-', '/', '.') are accepted; everything else is
+# rejected before it can reach a path operation.
+_LOCALE_TAG_RE = re.compile(r"^[A-Za-z]{2}(?:-[A-Za-z0-9]{1,8})?$")
+_NAMESPACE_RE = re.compile(r"^[A-Za-z0-9_.\/-]+$")
+
+
+class UserSettingsLanguage(Protocol):
+    """Structural contract for the user-settings language preference."""
+
+    ui_language: str | None
+
+
+class UserLanguage(Protocol):
+    """Structural contract for resolving a user's UI language."""
+
+    settings: UserSettingsLanguage | None
+
+
+def _resolve_locale_code(lang: str | None, available: frozenset[str]) -> str:
+    """Map a requested language onto an existing locale directory name.
+
+    Returns ``lang`` only when it equals a name already present in
+    ``available``; otherwise its base tag (``"es-ES"`` → ``"es"``) is tried
+    and finally the English code is returned. The result is always a member
+    of ``available`` (or ``"en"``), so callers can safely build paths from
+    it.
+    """
+    if not lang:
+        return "en"
+    prefix = lang.split("-")[0]
+    for name in available:
+        if name in (lang, prefix):
+            return name
+    return "en"
 
 
 class TranslationService:
@@ -28,20 +65,26 @@ class TranslationService:
         self._cache: dict[str, Any] = {}
         self._initialized = True
 
+    def _available_locales(self) -> frozenset[str]:
+        """Return the names of the locale directories that exist on disk."""
+        try:
+            return frozenset(
+                entry.name for entry in self.locales_dir.iterdir() if entry.is_dir()
+            )
+        except OSError:
+            return frozenset({"en"})
+
     def resolve_language(
-        self, user: Any = None, accept_language: str | None = None
+        self, user: UserLanguage | None = None, accept_language: str | None = None
     ) -> str:
         """
         Resolve the best language to use based on user settings or headers.
         """
         # 1. User preference
-        if (
-            user
-            and hasattr(user, "settings")
-            and user.settings
-            and user.settings.ui_language
-        ):
-            return user.settings.ui_language
+        settings = user.settings if user is not None else None
+        ui_language = settings.ui_language if settings is not None else None
+        if ui_language:
+            return ui_language
 
         # 2. Accept-Language header
         if accept_language:
@@ -49,14 +92,12 @@ class TranslationService:
             # e.g. "es-ES,es;q=0.9,en;q=0.8" -> "es-ES"
             parts = accept_language.split(",")
             if parts:
+                # The header is attacker-controlled: map it onto the locale
+                # directory names that exist on disk. The returned value is
+                # always a server-side name (or the English fallback), never
+                # the header text itself.
                 first_lang = parts[0].split(";")[0].strip()
-                # Check if we support it
-                if (self.locales_dir / first_lang).exists():
-                    return first_lang
-                # Try short code
-                short_lang = first_lang.split("-")[0]
-                if (self.locales_dir / short_lang).exists():
-                    return short_lang
+                return _resolve_locale_code(first_lang, self._available_locales())
 
         # 3. Default
         return "en"
@@ -70,16 +111,13 @@ class TranslationService:
             key: Key in the JSON file (supports dot notation for nested keys)
             **kwargs: Variables to interpolate (e.g., name="John")
         """
-        # Normalize lang (take first 2 chars usually, but directory names are 'en', 'es')
-        if not lang:
-            lang = "en"
-        else:
-            # Handle 'en-US' -> 'en' if directory is just 'en'
-            # Check if directory exists, otherwise try prefix
-            if not (self.locales_dir / lang).exists():
-                short_lang = lang.split("-")[0]
-                if (self.locales_dir / short_lang).exists():
-                    lang = short_lang
+        # Normalize lang (take first 2 chars usually, but directory names are
+        # 'en', 'es'). ``lang`` may reach here from caller-supplied strings
+        # (e.g. the Accept-Language header), so it is mapped onto the locale
+        # directory names that exist on disk: the assigned value is always a
+        # server-side directory name or the English code, never the caller's
+        # string, so no path component below can depend on user input.
+        lang = _resolve_locale_code(lang, self._available_locales())
 
         # Try to load
         data = self._load_locale(lang, namespace)
@@ -129,8 +167,14 @@ class TranslationService:
         if cache_key in self._cache:
             return self._cache[cache_key]
 
-        # Construct file path
-        file_path = self.locales_dir / lang / f"{namespace}.json"
+        # Defense in depth on top of the caller-side tag checks: lang and
+        # namespace build a filesystem path, so both must be well-formed and
+        # the resolved file must stay inside the locales tree.
+        if not _LOCALE_TAG_RE.fullmatch(lang) or not _NAMESPACE_RE.fullmatch(namespace):
+            return None
+        file_path = (self.locales_dir / lang / f"{namespace}.json").resolve()
+        if not file_path.is_relative_to(self.locales_dir.resolve()):
+            return None
 
         if not file_path.exists():
             return None

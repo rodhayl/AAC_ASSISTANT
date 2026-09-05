@@ -1,14 +1,55 @@
 """Session lifecycle and persistence operations."""
 
 import contextlib
-from datetime import datetime
+import re
+import unicodedata
+from datetime import datetime, timedelta
 
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from ...models import LearningPlan, LearningSession, LearningTask, User
+from ...models import CommunicationBoard, LearningPlan, LearningSession, LearningTask, User
 from ...services.achievement_system import AchievementSystem
 from .history import append_history_entry
+
+# A display name may carry a machine-generated suffix (e.g. "Admin
+# 1787688161578") from older seeding. Reading that 13-digit number aloud adds
+# seconds of TTS to the first spoken message for zero value, so strip a
+# trailing whitespace-separated numeric token of 4+ digits before greeting.
+_TIMESTAMP_SUFFIX_RE = re.compile(r"\s+\d{4,}$")
+
+# The student-facing topic picker pool: canonical key -> the English topic
+# value stored on LearningSession when a session is started from that key.
+# Must stay in sync with the frontend topic catalog (topicCatalog.ts) and the
+# welcome-message topic_labels mapping in this module.
+COMMON_TOPICS: tuple[tuple[str, str], ...] = (
+    ("general", "general conversation"),
+    ("daily", "daily routines"),
+    ("food", "food and dining"),
+    ("school", "school and education"),
+    ("emotions", "emotions and feelings"),
+    ("travel", "travel and transport"),
+    ("hobbies", "hobbies and play"),
+    ("health", "health and body"),
+    ("shopping", "shopping"),
+)
+
+# A topic practiced inside this window counts as "covered" for the picker's
+# shuffle-bag ordering. Older sessions fall out of the window so children can
+# naturally re-learn topics after a break.
+TOPIC_COVERAGE_WINDOW_DAYS = 30
+
+
+def _normalize_topic(name: str) -> str:
+    """Lowercase, strip accents, and collapse whitespace for topic matching."""
+    text = unicodedata.normalize("NFD", name or "").lower()
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _speakable_display_name(display_name: str) -> str:
+    """Return a greeting-friendly name without a trailing timestamp suffix."""
+    return _TIMESTAMP_SUFFIX_RE.sub("", display_name).strip()
 
 
 class SessionLifecycleMixin:
@@ -35,6 +76,38 @@ class SessionLifecycleMixin:
                 if not user:
                     return {"success": False, "error": "User not found"}
 
+                # Layered content safety (Layer 1): never start a session on a
+                # topic the student's effective policy blocks, and honor the
+                # teacher/admin feature lock on custom topics.
+                from ...services.content_safety import (
+                    check_text,
+                    log_event,
+                    resolve_policy_for_user,
+                )
+
+                policy = resolve_policy_for_user(user_id, db)
+                topic_verdict = check_text(policy, topic)
+                blocked_by_lock = policy.feature_blocked("block_custom_topics")
+                if blocked_by_lock or topic_verdict.blocked:
+                    log_event(
+                        user_id=user_id,
+                        surface="topic",
+                        direction="input",
+                        verdict="blocked",
+                        matched=list(topic_verdict.matched_terms),
+                        detail=(
+                            f"feature_lock: block_custom_topics; topic: {topic[:120]}"
+                            if blocked_by_lock
+                            else topic[:300]
+                        ),
+                        db=db,
+                    )
+                    return {
+                        "success": False,
+                        "error": "Blocked topic",
+                        "safety_blocked": True,
+                    }
+
                 # Create learning plan and task
                 plan = LearningPlan(
                     user_id=user_id,
@@ -60,6 +133,7 @@ class SessionLifecycleMixin:
                     user_id=user_id,
                     topic_name=topic,
                     purpose=purpose,
+                    board_id=board_id,
                     mode_key=mode_key,
                     status="active",
                     conversation_history=[],
@@ -73,51 +147,9 @@ class SessionLifecycleMixin:
                 plan_id = plan.id
                 task_id = task.id
 
-                # Generate welcome message with local LLM
-                welcome = ""
+                # Generate the same localized welcome for new and legacy sessions.
+                welcome = self._build_welcome_message(user_id, topic, purpose, db, board_id)
 
-                # Use existing translation system
-                from src.aac_app.services.translation_service import (
-                    get_translation_service,
-                )
-
-                user_lang = self._get_user_language(user_id, db)
-                logger.debug(f"user_lang resolved to: {user_lang}")
-                ts = get_translation_service()
-
-                # Check if it's a symbol-first session
-                if purpose and purpose.lower() == "aac symbols":
-                    # For Symbol First, we want a minimal greeting or instruction
-                    # Currently using welcomeMessageShort if available, or just a simple "Hi"
-                    # But user said: "Just hardcode a welcome message instead of sending a message to the LLM to say just 'hi'"
-                    # And "make sure this message is translated"
-
-                    # We will use a specific key for symbol-first greeting
-                    welcome = ts.get(
-                        user_lang,
-                        "pages/learning",
-                        "welcomeMessageSymbol",  # New key we should add
-                        name=user.display_name,
-                    )
-
-                    # Fallback if key doesn't exist yet (safeguard)
-                    if not welcome or welcome == "welcomeMessageSymbol":
-                        welcome = ts.get(
-                            user_lang,
-                            "pages/learning",
-                            "welcomeMessage",
-                            name=user.display_name,
-                            topic=topic,
-                        )
-                else:
-                    # Standard welcome message
-                    welcome = ts.get(
-                        user_lang,
-                        "pages/learning",
-                        "welcomeMessage",
-                        name=user.display_name,
-                        topic=topic,
-                    )
 
                 # Add welcome message to conversation history if it exists
                 if welcome:
@@ -153,6 +185,179 @@ class SessionLifecycleMixin:
             logger.error(f"Failed to start learning session: {e}")
             return {"success": False, "error": str(e)}
 
+    def _build_welcome_message(
+        self,
+        user_id: int,
+        topic: str,
+        purpose: str | None,
+        db: Session,
+        board_id: int | None = None,
+    ) -> str:
+        """Build the localized welcome used for new and legacy sessions."""
+        from src.aac_app.services.translation_service import get_translation_service
+
+        user = db.get(User, user_id)
+        if not user:
+            return ""
+        user_lang = self._get_user_language(user_id, db)
+        translation_service = get_translation_service()
+        topic_labels = {
+            "general conversation": "general",
+            "daily routines": "daily",
+            "food and dining": "food",
+            "school and education": "school",
+            "emotions and feelings": "emotions",
+            "travel and transport": "travel",
+            "hobbies and play": "hobbies",
+            "health and body": "health",
+            "shopping": "shopping",
+        }
+        topic_key = topic_labels.get(topic.strip().lower(), topic.strip().lower())
+        topic_label = translation_service.get(
+            user_lang, "pages/learning", f"topics.{topic_key}"
+        )
+        if topic_label == f"topics.{topic_key}":
+            topic_label = topic.strip() or translation_service.get(
+                user_lang, "pages/learning", "topics.general"
+            )
+        board = db.get(CommunicationBoard, board_id) if board_id else None
+        board_label = board.name if board else ""
+        # Greet with a name that does not force the TTS to read a long
+        # machine-generated number aloud (see _speakable_display_name).
+        display_name = _speakable_display_name(user.display_name)
+        if (purpose or "").lower() == "aac symbols":
+            return translation_service.get(
+                user_lang, "pages/learning", "welcomeMessageSymbol", name=display_name
+            )
+        key = "welcomeContext" if board_label else "welcomeMessage"
+        return translation_service.get(
+            user_lang,
+            "pages/learning",
+            key,
+            name=display_name,
+            topic=topic_label,
+            board=board_label,
+        )
+
+    def get_topic_pool(self, user_id: int, db: Session | None = None) -> dict:
+        """Build the topic pool + coverage for the student-facing picker.
+
+        ``common`` lists the nine canonical topics with a ``practiced`` flag
+        (a session on that topic inside the coverage window) and the most
+        recent ``last_used_at``. ``recent`` lists every other topic the user
+        has sessions on (custom/teacher topics), newest first, so the UI can
+        offer to continue them. When the student's policy blocks custom
+        topics, ``recent`` is empty: offering topics the session-start layer
+        would reject is a dead end for the student.
+        """
+        try:
+            with self._session_scope(db) as db:
+                from ...services.content_safety import resolve_policy_for_user
+                from ...services.translation_service import get_translation_service
+
+                user_lang = self._get_user_language(user_id, db)
+                translation = get_translation_service()
+
+                # Every label that can refer to a common topic (the canonical
+                # English name plus the localized label in the user's
+                # language), so sessions started from any UI surface count
+                # against the same picker topic.
+                key_by_name: dict[str, str] = {}
+                for key, canonical in COMMON_TOPICS:
+                    key_by_name[_normalize_topic(canonical)] = key
+                    localized = translation.get(
+                        user_lang, "pages/learning", f"topics.{key}"
+                    )
+                    if localized and localized != f"topics.{key}":
+                        key_by_name[_normalize_topic(localized)] = key
+
+                cutoff = datetime.now() - timedelta(days=TOPIC_COVERAGE_WINDOW_DAYS)
+                rows = (
+                    db.query(LearningSession.topic_name, LearningSession.started_at)
+                    .filter(LearningSession.user_id == user_id)
+                    .order_by(LearningSession.started_at.desc())
+                    .all()
+                )
+
+                last_used: dict[str, str | None] = {
+                    key: None for key, _ in COMMON_TOPICS
+                }
+                practiced: dict[str, bool] = {
+                    key: False for key, _ in COMMON_TOPICS
+                }
+                recent: dict[str, dict] = {}
+
+                for topic_name, started_at in rows:
+                    if not topic_name:
+                        continue
+                    normalized = _normalize_topic(topic_name)
+                    timestamp = started_at.isoformat() if started_at else None
+                    key = key_by_name.get(normalized)
+                    if key is not None:
+                        if started_at and started_at >= cutoff:
+                            practiced[key] = True
+                        if last_used[key] is None and timestamp:
+                            last_used[key] = timestamp
+                        continue
+                    entry = recent.setdefault(
+                        normalized,
+                        {
+                            "topic": topic_name,
+                            "last_used_at": None,
+                            "count": 0,
+                            "purpose": "",
+                        },
+                    )
+                    entry["count"] += 1
+                    if entry["last_used_at"] is None and timestamp:
+                        entry["last_used_at"] = timestamp
+                        entry["purpose"] = self._topic_purpose(db, topic_name)
+
+                policy = resolve_policy_for_user(user_id, db)
+                recent_list = (
+                    []
+                    if policy.feature_blocked("block_custom_topics")
+                    else [
+                        entry
+                        for entry in recent.values()
+                        if entry["last_used_at"] is not None
+                    ]
+                )
+
+                return {
+                    "success": True,
+                    "common": [
+                        {
+                            "key": key,
+                            "practiced": practiced[key],
+                            "last_used_at": last_used[key],
+                        }
+                        for key, _ in COMMON_TOPICS
+                    ],
+                    "recent": sorted(
+                        recent_list,
+                        key=lambda entry: entry["last_used_at"] or "",
+                        reverse=True,
+                    )[:8],
+                }
+        except Exception as e:
+            logger.error(f"Failed to build topic pool for user {user_id}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _topic_purpose(self, db: Session, topic_name: str) -> str:
+        """Most recent non-empty purpose for a topic (or '')."""
+        session = (
+            db.query(LearningSession)
+            .filter(
+                LearningSession.topic_name == topic_name,
+                LearningSession.purpose.isnot(None),
+                LearningSession.purpose != "",
+            )
+            .order_by(LearningSession.started_at.desc())
+            .first()
+        )
+        return session.purpose or "" if session else ""
+
     def get_session_progress(self, session_id: int, db: Session | None = None) -> dict:
         """Get current progress for a learning session"""
 
@@ -162,18 +367,41 @@ class SessionLifecycleMixin:
                 if not session:
                     return {"success": False, "error": "Session not found"}
 
+                history = session.conversation_history or []
+                if history and history[0].get("type") == "question":
+                    first_question = history[0].get("data", {}).get("question")
+                    if isinstance(first_question, str) and (
+                        "Vamos a aprender sobre" in first_question
+                        or "Let's learn about" in first_question
+                    ):
+                        history = [*history]
+                        history[0] = {
+                            **history[0],
+                            "data": {
+                                **history[0].get("data", {}),
+                                "question": self._build_welcome_message(
+                                    session.user_id,
+                                    session.topic_name,
+                                    session.purpose,
+                                    db,
+                                    getattr(session, "board_id", None),
+                                ),
+                            },
+                        }
+
                 return {
                     "success": True,
                     "id": session_id,
                     "session_id": session_id,  # Keep for backward compatibility
                     "topic": session.topic_name,
+                    "board_id": session.board_id,
                     "status": session.status,
                     "comprehension_score": session.comprehension_score,
                     "questions_asked": session.questions_asked,
                     "questions_answered": session.questions_answered,
                     "correct_answers": session.correct_answers,
                     "started_at": (session.started_at.isoformat() if session.started_at else None),
-                    "conversation_history": session.conversation_history or [],
+                    "conversation_history": history,
                 }
 
         except Exception as e:
@@ -198,6 +426,7 @@ class SessionLifecycleMixin:
                         {
                             "id": s.id,
                             "topic": s.topic_name,
+                            "board_id": s.board_id,
                             "purpose": s.purpose or "practice",
                             "status": s.status,
                             "created_at": (s.started_at.isoformat() if s.started_at else None),

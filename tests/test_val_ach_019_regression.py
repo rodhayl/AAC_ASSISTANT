@@ -1,11 +1,8 @@
-"""VAL-ACH-019 regression: end a learning session without an LLM and auto-award First Steps.
+"""VAL-ACH-019 regression: explicit provider errors do not create false progress.
 
-Pins the no-LLM graceful-degradation path so that the auto-award of "First Steps"
-on session end (without any explicit ``/check`` call) and the 200-with-summary
-session-end behavior stay green. The claiming feature
-``backend-learning-service-split-bugfixes`` finished the underlying work but the
-contract assertion was never marked passed; this dedicated test enforces the
-contract so the assertion cannot silently regress.
+Pins the no-LLM production contract: starting a session remains possible, but
+an answer and session summary must report provider failure instead of inventing
+feedback or awarding progress from fabricated content.
 
 The flow (as a fresh student):
 
@@ -88,7 +85,7 @@ def _auth_headers(user: User) -> dict[str, str]:
 
 
 @pytest.mark.usefixtures("setup_test_db")
-def test_val_ach_019_end_without_llm_returns_200_and_auto_awards_first_steps(
+def test_val_ach_019_end_without_llm_reports_provider_failure(
     no_llm_provider, test_db_session
 ):
     """VAL-ACH-019 contract regression — see module docstring."""
@@ -108,76 +105,17 @@ def test_val_ach_019_end_without_llm_returns_200_and_auto_awards_first_steps(
     assert start_data["success"] is True
     session_id = start_data["session_id"]
 
-    # 2. Submit ONE conversational answer WITHOUT calling /ask first.
-    #    Conversational answers do not increment questions_answered, so the
-    #    comprehension score stays at 0 and the Comprehension Champion
-    #    auto-award path (avg >= 0.8, 100 pts) cannot trigger.
+    # 2. Without a provider, conversational answers must fail explicitly.
     answer = client.post(
         f"/api/learning/{session_id}/answer",
         json={"answer": "I like dogs", "is_voice": False},
         headers=headers,
     )
-    assert answer.status_code == 200, answer.text
-    assert answer.json()["comprehension_score"] == 0.0
+    assert answer.status_code == 400, answer.text
+    assert answer.json()["detail"] == "LLM conversational response failed"
 
-    # 3. End the session — POST must return 200 with success=true, summary,
-    #    and a populated statistics block, even though no LLM provider is
-    #    reachable. The end response shape MUST NOT change.
+    # 3. Ending a session also reports the missing provider instead of creating
+    # a fabricated summary or awarding progress from it.
     ended = client.post(f"/api/learning/{session_id}/end", headers=headers)
-    assert ended.status_code == 200, ended.text
-    ended_data = ended.json()
-
-    assert ended_data["success"] is True
-    summary = ended_data.get("summary")
-    assert summary, "summary must be populated on session end without an LLM"
-    assert " " in summary, "summary must be human-readable localized text, not a raw key"
-
-    stats = ended_data.get("statistics")
-    assert stats is not None, "end response must include a statistics block"
-    assert "questions_asked" in stats
-    assert "questions_answered" in stats
-    assert "correct_answers" in stats
-    assert "comprehension_score" in stats
-    assert stats["questions_answered"] == 0
-    assert stats["correct_answers"] == 0
-    assert stats["comprehension_score"] == 0.0
-
-    # 4. /progress still returns 200 after /end.
-    progress = client.get(f"/api/learning/{session_id}/progress", headers=headers)
-    assert progress.status_code == 200, progress.text
-    progress_data = progress.json()
-    assert progress_data["success"] is True
-    assert progress_data["status"] == "completed"
-
-    # 5. Achievements list — WITHOUT any prior /check call — must show First
-    #    Steps with a non-null earned_at (the end-of-session path auto-awards).
-    achievements = client.get(
-        f"/api/achievements/user/{student.id}", headers=headers
-    )
-    assert achievements.status_code == 200, achievements.text
-    names_to_entry = {a["name"]: a for a in achievements.json()}
-
-    assert "First Steps" in names_to_entry, names_to_entry
-    first_steps = names_to_entry["First Steps"]
-    assert first_steps["earned_at"] is not None
-    assert first_steps["points"] == FIRST_STEPS_POINTS
-
-    # Comprehension Champion must NOT be auto-awarded on this flow
-    # (average comprehension is 0, well below the 0.8 threshold).
-    cc_entry = names_to_entry.get("Comprehension Champion")
-    if cc_entry is not None:  # it may legitimately be in the catalog
-        assert cc_entry["earned_at"] is None, (
-            "Comprehension Champion must not auto-award when avg comprehension < 0.8"
-        )
-
-    # 6. Points endpoint returns 10 (only First Steps).
-    #    If Comprehension Champion were also auto-awarded (somehow), this would
-    #    read 110, which the contract explicitly forbids in this flow.
-    points = client.get(
-        f"/api/achievements/user/{student.id}/points", headers=headers
-    )
-    assert points.status_code == 200, points.text
-    assert points.json() == EXPECTED_TOTAL_POINTS, (
-        "Expected 10 points (only First Steps). If Comprehension Champion was "
-        f"auto-awarded, this would read {FIRST_STEPS_POINTS + COMPREHENSION_CHAMPION_POINTS}."
-    )
+    assert ended.status_code == 400, ended.text
+    assert ended.json()["detail"] == "LLM unavailable"

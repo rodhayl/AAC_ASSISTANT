@@ -19,12 +19,10 @@
     "notDefault": "No se pueden usar credenciales predeterminadas"
   },
   "submit": "Crear Cuenta de Administrador",
-  "submitting": "Creando cuenta...",
   "loginLink": "¿Ya tienes una cuenta? Iniciar sesión",
   "errors": {
     "passwordMismatch": "Las contraseñas no coinciden",
     "passwordTooShort": "La contraseña debe tener al menos 8 caracteres",
-    "setupFailed": "Error en la configuración inicial: ",
-    "setupCompleted": "La configuración ya se ha completado. Inicia sesión."
+    "statusCheckFailed": "No se pudo verificar el estado de configuración. Aun así puedes continuar, pero es posible que el servidor ya esté configurado."
   }
 }

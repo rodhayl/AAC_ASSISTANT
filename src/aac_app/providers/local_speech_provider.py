@@ -24,6 +24,13 @@ def is_faster_whisper_available() -> bool:
 FASTER_WHISPER_AVAILABLE = is_faster_whisper_available()
 faster_whisper = None
 
+
+def refresh_faster_whisper_availability() -> bool:
+    """Refresh the cached optional-stack flag after a runtime installation."""
+    global FASTER_WHISPER_AVAILABLE
+    FASTER_WHISPER_AVAILABLE = is_faster_whisper_available()
+    return FASTER_WHISPER_AVAILABLE
+
 DEFAULT_STT_MODEL = "tiny"
 SUPPORTED_STT_MODELS: dict[str, dict[str, str]] = {
     "tiny": {"size": "~39M parameters / ~75MB", "description": "Fastest, lowest memory use"},

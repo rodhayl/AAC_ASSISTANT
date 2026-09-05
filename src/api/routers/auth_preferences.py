@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import User, UserSettings
+from src.aac_app.models import LearningMode, User, UserSettings
 from src.api import schemas
 from src.api.deps import (
     authorize_user_access,
@@ -42,6 +42,34 @@ def _get_authorized_preferences_user(
     return target
 
 
+def _validate_default_learning_mode(
+    db: Session,
+    user_id: int,
+    mode_key: str | None,
+    current_user: User,
+) -> None:
+    """Ensure a saved default belongs to the target user's visible modes."""
+    if mode_key is None:
+        return
+    mode = (
+        db.query(LearningMode)
+        .filter(LearningMode.key == mode_key)
+        .filter(
+            (LearningMode.created_by.is_(None))
+            | (LearningMode.created_by == user_id)
+        )
+        .first()
+    )
+    if mode is None:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=current_user,
+                key="errors.learningModes.defaultNotFound",
+            ),
+        )
+
+
 @router.get("/preferences", response_model=schemas.UserPreferencesResponse)
 def get_preferences(
     current_user: User = Depends(get_current_active_user),
@@ -69,6 +97,12 @@ def update_preferences(
         updates,
         user=current_user,
         accept_language=request.headers.get("accept-language"),
+    )
+    _validate_default_learning_mode(
+        db,
+        current_user.id,
+        updates.get("default_learning_mode"),
+        current_user,
     )
     settings = update_user_settings(db, current_user.id, updates)
 
@@ -109,6 +143,12 @@ def update_user_preferences(
         updates,
         user=current_user,
         accept_language=request.headers.get("accept-language"),
+    )
+    _validate_default_learning_mode(
+        db,
+        target.id,
+        updates.get("default_learning_mode"),
+        current_user,
     )
     settings = update_user_settings(db, target.id, updates)
 

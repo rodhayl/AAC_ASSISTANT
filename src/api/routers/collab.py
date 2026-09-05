@@ -28,7 +28,12 @@ class ConnectionManager:
 
     def disconnect(self, board_id: int, websocket: WebSocket):
         with contextlib.suppress(Exception):
-            self.rooms.get(board_id, set()).discard(websocket)
+            room = self.rooms.get(board_id)
+            if room is None:
+                return
+            room.discard(websocket)
+            if not room:
+                self.rooms.pop(board_id, None)
         logger.info(f"WS disconnected from board {board_id}")
 
     async def broadcast(
@@ -39,7 +44,12 @@ class ConnectionManager:
                 continue
             try:
                 await ws.send_json(message)
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "WebSocket send failed for board {}; disconnecting client: {}",
+                    board_id,
+                    exc,
+                )
                 self.disconnect(board_id, ws)
 
 
@@ -158,8 +168,9 @@ async def board_channel(
 
         # Mark the room registration before awaiting accept so cancellation in
         # this tiny handoff window still triggers the outer cleanup path.
-        connected = True
+        connected = False
         await manager.connect(board_id, websocket, subprotocol=auth_subprotocol)
+        connected = True
         shutdown_event = getattr(websocket.app.state, "shutdown_event", None)
         if not getattr(websocket.app.state, "lifespan_active", False):
             shutdown_event = None
@@ -194,6 +205,62 @@ async def board_channel(
 
                 if not has_access and board.is_public:
                     continue
+
+                # Layer-1 content gate on board-change payloads that carry a
+                # free-text label (e.g. an added symbol). Blocked labels are
+                # never fanned out to the room; the REST admission gates
+                # (get_or_create_symbol) are the authoritative DB guard, this
+                # protects every connected peer from forged/malformed input.
+                label_candidate = (
+                    data.get("label")
+                    if isinstance(data, dict)
+                    else None
+                )
+                if isinstance(label_candidate, str) and label_candidate.strip():
+                    try:
+                        from src.aac_app.services.content_safety import (
+                            check_text,
+                            load_global_policy,
+                            log_event,
+                            resolve_policy_for_user,
+                        )
+
+                        # Per-student lock: a teacher/admin may disable collab
+                        # messaging entirely for this student.
+                        student_policy = resolve_policy_for_user(user.id, db=db)
+                        if student_policy.feature_blocked("block_social_messaging"):
+                            log_event(
+                                user_id=user.id,
+                                surface="social",
+                                direction="output",
+                                verdict="blocked",
+                                matched=[],
+                                detail="feature_lock: block_social_messaging",
+                                db=db,
+                            )
+                            continue
+
+                        verdict = check_text(load_global_policy(), label_candidate)
+                        if verdict.blocked:
+                            log_event(
+                                user_id=user.id,
+                                surface="social",
+                                direction="output",
+                                verdict="blocked",
+                                matched=list(verdict.matched_terms),
+                                detail=f"collab label: {label_candidate[:200]}",
+                                db=db,
+                            )
+                            logger.info(
+                                "Blocked collab label from {}: {!r}",
+                                user.username,
+                                label_candidate[:80],
+                            )
+                            continue
+                    except Exception as exc:
+                        logger.warning(
+                            "Content gate unavailable for collab payload: {}", exc
+                        )
 
                 message = {
                     "type": "board_change",

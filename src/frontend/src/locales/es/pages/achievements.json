@@ -11,6 +11,7 @@
   "createTitle": "Crear Logro",
   "editTitle": "Editar Logro",
   "awardTitle": "Otorgar Logro",
+  "deleteTitle": "Eliminar Logro",
   "icon": "Icono",
   "name": "Nombre",
   "description": "Descripción",
@@ -28,7 +29,6 @@
   "targetUser": "Para estudiante específico (opcional)",
   "allStudents": "Todos los estudiantes",
   "selectStudent": "Seleccionar Estudiante",
-  "chooseStudent": "Elige un estudiante...",
   "confirmDelete": "¿Estás seguro de que quieres eliminar este logro?",
   "awardType": "Tipo de Otorgamiento",
   "manualAward": "Otorgamiento Manual",
@@ -38,5 +38,43 @@
   "auto": "Auto",
   "manual": "Manual",
   "searchStudent": "Buscar estudiante por nombre...",
-  "noStudents": "No se encontraron estudiantes"
+  "noStudents": "No se encontraron estudiantes",
+  "close": "Cerrar",
+  "categories": {
+    "beginner": "Principiante",
+    "vocabulary": "Vocabulario",
+    "performance": "Rendimiento",
+    "consistency": "Constancia",
+    "exploration": "Exploración",
+    "interaction": "Interacción",
+    "custom": "Personalizado"
+  },
+  "criteria": {
+    "sessions_completed": "Sesiones completadas",
+    "vocabulary_size": "Tamaño de vocabulario",
+    "correct_answers": "Respuestas correctas",
+    "comprehension_score": "Puntuación de comprensión",
+    "consecutive_days": "Días consecutivos",
+    "topics_completed": "Temas completados",
+    "voice_usage": "Uso de voz"
+  },
+  "systemAchievements": {
+    "first_steps": { "name": "Primeros Pasos", "description": "Completa tu primera sesión de aprendizaje" },
+    "vocabulary_explorer": { "name": "Explorador de Vocabulario", "description": "Aprende 10 palabras nuevas" },
+    "quick_learner": { "name": "Aprendiz Rápido", "description": "Responde 5 preguntas correctamente" },
+    "comprehension_champion": { "name": "Campeón de Comprensión", "description": "Alcanza un 80% de comprensión" },
+    "streak_master": { "name": "Maestro de Rachas", "description": "Completa sesiones 3 días consecutivos" },
+    "dedicated_learner": { "name": "Aprendiz Dedicado", "description": "Completa 10 sesiones de aprendizaje" },
+    "topic_expert": { "name": "Experto en Temas", "description": "Completa sesiones en 5 temas diferentes" },
+    "voice_pioneer": { "name": "Pionero de la Voz", "description": "Usa la entrada de voz 10 veces" }
+  },
+  "errors": {
+    "loadFailed": "No se pudieron cargar los logros",
+    "checkFailed": "No se pudieron comprobar los logros",
+    "createFailed": "No se pudo crear el logro",
+    "updateFailed": "No se pudo actualizar el logro",
+    "deleteFailed": "No se pudo eliminar el logro",
+    "awardFailed": "No se pudo otorgar el logro",
+    "managementLoadFailed": "No se pudieron cargar algunos datos de gestión. Inténtalo de nuevo."
+  }
 }

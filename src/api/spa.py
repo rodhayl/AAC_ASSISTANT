@@ -2,12 +2,42 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+
+class ImmutableStaticFiles(StaticFiles):
+    """Serve uploaded files with long-lived immutable cache headers.
+
+    Every file under the uploads mount is content-addressed by its filename:
+    user uploads and the ARASAAC backfill both generate a fresh UUID name and
+    delete the previous file on replacement, so the bytes at a given URL never
+    change. Serving them with ``Cache-Control: public, max-age=..., immutable``
+    lets browsers and proxies reuse the file without revalidating on every
+    board render, which matters for the multi-gigabyte pictogram libraries.
+    """
+
+    # One year matches the hashed/versioned-asset convention; content never
+    # changes under a URL, so an infinite policy would be equally correct.
+    cache_control = "public, max-age=31536000, immutable"
+
+    def file_response(
+        self,
+        full_path: os.PathLike[str],
+        stat_result: os.stat_result,
+        scope: dict[str, Any],
+        status_code: int = 200,
+    ):
+        response = super().file_response(
+            full_path, stat_result, scope, status_code=status_code
+        )
+        response.headers.setdefault("Cache-Control", self.cache_control)
+        return response
 
 
 class SPAStaticFiles(StaticFiles):

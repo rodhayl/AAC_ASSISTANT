@@ -3,12 +3,14 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src import config
 from src.aac_app.models import Symbol, User, UserSettings
 from src.aac_app.services.arasaac import ArasaacService
+from src.aac_app.services.runtime_translation import normalize_language_code
 from src.aac_app.services.vector_utils import index_symbol
 from src.api import schemas
 from src.api.deps import get_current_active_user, get_db, get_text
@@ -25,11 +27,11 @@ class ArasaacSymbol(BaseModel):
 
 
 class ImportArasaacRequest(BaseModel):
-    arasaac_id: int
-    label: str
-    description: str | None = None
-    category: str = "general"
-    keywords: str | None = None
+    arasaac_id: int = Field(..., ge=1)
+    label: str = Field(..., min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=10_000)
+    category: str = Field("general", min_length=1, max_length=50)
+    keywords: str | None = Field(None, max_length=10_000)
 
 
 @router.get("/search", response_model=list[ArasaacSymbol])
@@ -48,8 +50,11 @@ async def search_arasaac(
                 settings = current_user.settings
                 if settings and settings.ui_language:
                     effective_locale = settings.ui_language
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "Failed to read UI language for ARASAAC search: {}",
+                exc,
+            )
         results = await service.search_symbols(q, effective_locale)
         return results
     finally:
@@ -71,8 +76,23 @@ async def import_arasaac_symbol(
     committed = False
     db_symbol = None
     try:
-        # Check if symbol already exists (optional, maybe by label or some external ID field if we added one)
-        # For now, we just allow duplicates or user manages them.
+        normalized_label = payload.label.strip()
+        if not normalized_label:
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(user=current_user, key="errors.validation"),
+            )
+
+        # Dedupe: link to an existing symbol with the same (case-folded) label
+        # instead of creating a duplicate row and downloading the image again.
+        # This mirrors the bulk library import, which also dedupes by label.
+        existing = (
+            db.query(Symbol)
+            .filter(func.lower(Symbol.label) == normalized_label.casefold())
+            .first()
+        )
+        if existing is not None:
+            return existing
 
         # Download image
         image_content = await service.download_symbol_image(payload.arasaac_id)
@@ -103,12 +123,18 @@ async def import_arasaac_symbol(
                 .filter(UserSettings.user_id == current_user.id)
                 .first()
             )
-            user_lang = settings.ui_language if settings else None
-        except Exception:
+            # Store the base code (e.g. "es") so it matches the language
+            # filter used by the symbol search (exact match against "es"/"en").
+            user_lang = normalize_language_code(settings.ui_language) if settings else None
+        except Exception as exc:
+            logger.debug(
+                "Failed to read UI language for ARASAAC import: {}",
+                exc,
+            )
             user_lang = None
 
         db_symbol = Symbol(
-            label=payload.label,
+            label=normalized_label,
             description=payload.description,
             category=payload.category,
             image_path=public_path,

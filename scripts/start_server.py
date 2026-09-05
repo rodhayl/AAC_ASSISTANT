@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import signal
 import socket
@@ -31,8 +32,38 @@ def is_port_available(host: str, port: int) -> bool:
 _npm_command = npm_command
 
 
+def _frontend_dependencies_need_install(frontend_dir: Path) -> bool:
+    """Return whether npm dependencies are absent or out of sync with the lockfile.
+
+    Uses a content hash of package-lock.json so git operations that touch
+    file mtimes (checkout, merge, pull) do not force a reinstall.
+    """
+    node_modules = frontend_dir / "node_modules"
+    if not node_modules.is_dir():
+        return True
+
+    lockfile = frontend_dir / "package-lock.json"
+    if not lockfile.is_file():
+        return True
+
+    hash_stamp = node_modules / ".package-lock-hash"
+    current_hash = hashlib.sha256(lockfile.read_bytes()).hexdigest()
+
+    if not hash_stamp.is_file():
+        return True
+
+    return hash_stamp.read_text().strip() != current_hash
+
+
+def _write_dependency_hash_stamp(frontend_dir: Path) -> None:
+    """Store the current package-lock.json hash so the next startup can skip npm ci."""
+    lockfile = frontend_dir / "package-lock.json"
+    hash_stamp = frontend_dir / "node_modules" / ".package-lock-hash"
+    hash_stamp.write_text(hashlib.sha256(lockfile.read_bytes()).hexdigest())
+
+
 def ensure_frontend_build() -> Path:
-    """Return the built frontend directory, building it when Node is available."""
+    """Return a current built frontend, rebuilding it when source changed."""
     frontend_dir = config.PROJECT_ROOT / "src" / "frontend"
     dist_dir = frontend_dir / "dist"
     prebuilt_candidates = (
@@ -42,7 +73,23 @@ def ensure_frontend_build() -> Path:
         config.BUNDLE_DIR / "frontend",
     )
     for candidate in prebuilt_candidates:
-        if (candidate / "index.html").is_file():
+        index_file = candidate / "index.html"
+        if not index_file.is_file():
+            continue
+        # A checked-in/stale dist directory otherwise hides frontend changes
+        # forever because production startup only checks for index.html.
+        # Compare application sources, not tests or node_modules, so a normal
+        # restart rebuilds only when the served SPA actually changed.
+        if candidate == dist_dir:
+            built_at = index_file.stat().st_mtime
+            source_roots = (frontend_dir / "src", frontend_dir / "public")
+            source_files = [frontend_dir / "index.html", frontend_dir / "package.json"]
+            for root in source_roots:
+                if root.is_dir():
+                    source_files.extend(path for path in root.rglob("*") if path.is_file())
+            if all(path.stat().st_mtime <= built_at for path in source_files if path.exists()):
+                return candidate
+        else:
             return candidate
 
     npm = _npm_command()
@@ -52,8 +99,19 @@ def ensure_frontend_build() -> Path:
             f"{dist_dir}. Install Node.js to build it, or ship a prebuilt dist/ folder."
         )
 
-    print("Production frontend is missing; installing Node dependencies and building it.")
-    subprocess.run([npm, "ci"], cwd=frontend_dir, check=True)
+    if _frontend_dependencies_need_install(frontend_dir):
+        lockfile_hash = hashlib.sha256(
+            (frontend_dir / "package-lock.json").read_bytes()
+        ).hexdigest()[:8]
+        print(f"Installing Node dependencies (lockfile {lockfile_hash}) before building the production frontend.")
+        subprocess.run(
+            [npm, "ci", "--prefer-offline", "--no-audit", "--no-fund"],
+            cwd=frontend_dir,
+            check=True,
+        )
+        _write_dependency_hash_stamp(frontend_dir)
+    else:
+        print("Node dependencies are up to date; rebuilding the production frontend.")
     subprocess.run([npm, "run", "build"], cwd=frontend_dir, check=True)
     if not (dist_dir / "index.html").is_file():
         raise RuntimeError(f"Frontend build completed without creating {dist_dir}.")
@@ -120,7 +178,7 @@ def _wait_for_process_with_signal_handling(
     previous_sigterm = signal.getsignal(signal.SIGTERM)
     previous_sigbreak = signal.getsignal(signal.SIGBREAK) if hasattr(signal, "SIGBREAK") else None
 
-    def _request_shutdown(signum, frame):  # type: ignore[unused-argument]
+    def _request_shutdown(_signum, _frame):
         shutdown_requested.set()
 
     signal.signal(signal.SIGINT, _request_shutdown)

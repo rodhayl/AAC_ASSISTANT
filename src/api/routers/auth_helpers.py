@@ -6,7 +6,7 @@ import os
 import re
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, TypeVar
+from typing import Any, ParamSpec
 
 from fastapi import HTTPException
 from slowapi import Limiter
@@ -14,33 +14,112 @@ from slowapi.util import get_remote_address
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from src import config
 from src.aac_app.models import User, UserSettings
 from src.aac_app.services.auth_service import password_strength_error_key
 from src.api import schemas
 from src.api.deps import get_text
 
-_F = TypeVar("_F", bound=Callable[..., Any])
+# Shared with the guardian-profiles router. guardian_profiles imports only
+# src.api.deps + services (never auth_helpers), so this is acyclic.
+from src.api.routers.guardian_profiles import enforce_locked_safety_fields
+
+_P = ParamSpec("_P")
 _limiter_instance = Limiter(key_func=get_remote_address)
 
 
-def conditional_limiter(rate: str) -> Callable[[_F], _F]:
+def apply_student_safety_at_creation(
+    db: Session,
+    user: User,
+    safety: schemas.StudentSafetyCreate | None,
+    current_user: User,
+) -> None:
+    """Persist optional per-student safety configuration during creation.
+
+    Creates (or fills) the student's guardian profile in the same transaction
+    as the user row, so a student can be created with age, filter level,
+    forbidden topics/trigger words and feature gates in one step — or without
+    any of it, in which case the automatic age-based floor and admin global
+    policy apply as usual. Teachers cannot override admin-locked fields;
+    admins set the locks, so they can set anything.
+    """
+    if safety is None or user.user_type != "student":
+        return
+    from src.aac_app.models import GuardianProfile
+    from src.aac_app.services import content_safety as safety_service
+
+    level = safety.content_filter_level
+    if level is not None and level not in safety_service.VALID_LEVELS:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=current_user, key="errors.safety.invalidLevel"
+            ),
+        )
+
+    constraints: dict[str, Any] = {
+        "forbidden_topics": [
+            str(term).strip()
+            for term in (safety.forbidden_topics or [])
+            if str(term).strip()
+        ],
+        "trigger_words": [
+            str(term).strip()
+            for term in (safety.trigger_words or [])
+            if str(term).strip()
+        ],
+    }
+    if level is not None:
+        constraints["content_filter_level"] = level
+    for key in safety_service.FEATURE_LOCKS:
+        value = getattr(safety, key)
+        if isinstance(value, bool):
+            constraints[key] = value
+    if safety.sentinel_moderation is not None:
+        constraints["sentinel_moderation"] = safety.sentinel_moderation
+    if safety.max_response_length is not None:
+        constraints["max_response_length"] = safety.max_response_length
+
+    enforce_locked_safety_fields(constraints, current_user)
+
+    profile = db.query(GuardianProfile).filter_by(user_id=user.id).first()
+    if profile is None:
+        profile = GuardianProfile(
+            user_id=user.id,
+            created_by=current_user.id,
+            template_name="default",
+        )
+        db.add(profile)
+        db.flush()
+    if safety.age is not None:
+        profile.age = safety.age
+    merged = dict(profile.safety_constraints or {})
+    merged.update(constraints)
+    profile.safety_constraints = merged
+    profile.updated_by = current_user.id
+
+
+def conditional_limiter(rate: str) -> Callable[[Callable[_P, Any]], Callable[_P, Any]]:
     """Apply rate limiting in production while keeping tests deterministic."""
 
-    def decorator(func: _F) -> _F:
+    def decorator(func: Callable[_P, Any]) -> Callable[_P, Any]:
         limited_func = _limiter_instance.limit(rate)(func)
 
         @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> Any:
             if os.getenv("TESTING", "0") == "1":
                 return func(*args, **kwargs)
             return limited_func(*args, **kwargs)
 
-        return wrapper  # type: ignore[return-value]
+        return wrapper
 
     return decorator
 
 
 _EMAIL_PATTERN = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+SUPPORTED_UI_LANGUAGES = frozenset(
+    value.strip() for value in config.SUPPORTED_UI_LANGUAGES.split(",") if value.strip()
+)
 
 
 def validate_email_format(
@@ -109,7 +188,27 @@ def validate_preference_updates(
     user: User | None = None,
 ) -> None:
     """Reject negative timing preferences consistently across preference routes."""
-    for key in ("dwell_time", "ignore_repeats"):
+    provider = updates.get("tts_provider")
+    if provider is not None and provider not in {"browser", "kokoro"}:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=user,
+                accept_language=accept_language,
+                key="errors.preferences.unsupportedTtsProvider",
+            ),
+        )
+    language = updates.get("ui_language")
+    if language is not None and language not in SUPPORTED_UI_LANGUAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=user,
+                accept_language=accept_language,
+                key="errors.settings.unsupportedLanguage",
+            ),
+        )
+    for key in ("dwell_time", "ignore_repeats", "hover_speak_delay_ms"):
         value = updates.get(key)
         if value is not None and int(value) < 0:
             raise HTTPException(
@@ -173,17 +272,57 @@ def build_preferences_response(
     notifications_enabled = getattr(settings, "notifications_enabled", None)
     voice_mode_enabled = getattr(settings, "voice_mode_enabled", None)
     dark_mode = getattr(settings, "dark_mode", None)
+    tts_provider = getattr(settings, "tts_provider", None)
+    ui_language = getattr(settings, "ui_language", None)
+
+    def bounded_int(value: Any, default: int = 0) -> int:
+        try:
+            return min(max(int(value), 0), 2000)
+        except (TypeError, ValueError):
+            return default
+
+    def bounded_speed(value: Any) -> float:
+        # Legacy rows may keep NULL or garbage: clamp to the Kokoro range.
+        try:
+            return min(max(float(value), 0.5), 2.0)
+        except (TypeError, ValueError):
+            return 1.0
+
+    def bounded_hover_delay(value: Any) -> int:
+        # Clamp to the range the update schema accepts (see schemas.py);
+        # legacy rows may keep NULL or out-of-range values.
+        try:
+            return min(max(int(value), 0), 5000)
+        except (TypeError, ValueError):
+            return 1000
 
     return schemas.UserPreferencesResponse(
+        tts_provider=(
+            tts_provider if tts_provider in {"browser", "kokoro"} else "kokoro"
+        ),
         tts_voice=getattr(settings, "tts_voice", None) or "default",
+        tts_local_voice=getattr(settings, "tts_local_voice", None) or "default",
+        tts_local_speed=bounded_speed(getattr(settings, "tts_local_speed", 1.0)),
         tts_language=getattr(settings, "tts_language", None),
-        ui_language=getattr(settings, "ui_language", None),
+        # Legacy rows may keep NULL: preserve it (the frontend normalizes a
+        # missing language to its default). Only an unsupported non-null value
+        # is corrected so the select always shows a known option.
+        ui_language=(
+            ui_language if ui_language is None or ui_language in SUPPORTED_UI_LANGUAGES else "es-ES"
+        ),
         notifications_enabled=(
             notifications_enabled if notifications_enabled is not None else True
         ),
         voice_mode_enabled=voice_mode_enabled if voice_mode_enabled is not None else True,
         dark_mode=dark_mode if dark_mode is not None else False,
-        dwell_time=int(getattr(settings, "dwell_time", 0) or 0),
-        ignore_repeats=int(getattr(settings, "ignore_repeats", 0) or 0),
+        dwell_time=bounded_int(getattr(settings, "dwell_time", 0)),
+        ignore_repeats=bounded_int(getattr(settings, "ignore_repeats", 0)),
         high_contrast=bool(getattr(settings, "high_contrast", False) or False),
+        hover_speak_enabled=bool(getattr(settings, "hover_speak_enabled", False) or False),
+        hover_speak_delay_ms=bounded_hover_delay(
+            getattr(settings, "hover_speak_delay_ms", 1000)
+        ),
+        default_learning_mode=(
+            getattr(settings, "default_learning_mode", None) or "practice"
+        ),
     )

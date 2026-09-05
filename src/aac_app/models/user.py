@@ -1,6 +1,16 @@
 """User accounts, preferences, and teacher/student relationships."""
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -38,7 +48,10 @@ class UserSettings(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    tts_provider = Column(String(20), default="kokoro", server_default="kokoro")
     tts_voice = Column(String(20), default="default")
+    tts_local_voice = Column(String(40), default="default", server_default="default")
+    tts_local_speed = Column(Float, default=1.0, server_default="1.0")
     tts_language = Column(String(10), default="en")
     ui_language = Column(String(10), default="es-ES")
     notifications_enabled = Column(Boolean, default=True)
@@ -47,6 +60,12 @@ class UserSettings(Base):
     dwell_time = Column(Integer, default=0)
     ignore_repeats = Column(Integer, default=0)
     high_contrast = Column(Boolean, default=False)
+    # Speak a symbol suggestion aloud when the pointer rests on it.
+    hover_speak_enabled = Column(Boolean, default=False, server_default="0")
+    hover_speak_delay_ms = Column(Integer, default=1000, server_default="1000")
+    # Learning mode used when a section starts a session without an explicit
+    # mode selection. The key is validated against the user's visible modes.
+    default_learning_mode = Column(String(50), default="practice", server_default="practice")
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
@@ -57,6 +76,13 @@ class StudentTeacher(Base):
     """Association between students and teachers."""
 
     __tablename__ = "student_teachers"
+    __table_args__ = (
+        UniqueConstraint(
+            "student_id",
+            "teacher_id",
+            name="uq_student_teachers_student_teacher",
+        ),
+    )
 
     id = Column(Integer, primary_key=True)
     student_id = Column(Integer, ForeignKey("users.id"), nullable=False)

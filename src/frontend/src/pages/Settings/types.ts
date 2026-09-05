@@ -1,5 +1,8 @@
 export interface Preferences {
+  tts_provider: 'kokoro' | 'browser';
   tts_voice: string;
+  tts_local_voice: string;
+  tts_local_speed: number;
   ui_language: string;
   notifications_enabled: boolean;
   voice_mode_enabled: boolean;
@@ -7,6 +10,10 @@ export interface Preferences {
   dwell_time: number;
   ignore_repeats: number;
   high_contrast: boolean;
+  hover_speak_enabled: boolean;
+  hover_speak_delay_ms: number;
+  // Learning mode used when a section starts without an explicit override.
+  default_learning_mode?: string;
 }
 
 export interface LearningMode {
@@ -22,18 +29,21 @@ export interface LearningMode {
   auto_ask_enabled?: boolean;
 }
 
-export type AiProvider = 'ollama' | 'openrouter' | 'lmstudio';
+export type AiProvider = 'ollama' | 'openrouter' | 'lmstudio' | 'groq';
 
 export interface AiOverride {
   provider?: AiProvider;
   ollama_model?: string;
   openrouter_model?: string;
   lmstudio_model?: string;
+  groq_model?: string;
   openrouter_api_key?: string;
+  groq_api_key?: string;
   ollama_base_url?: string;
   lmstudio_base_url?: string;
   max_tokens?: number;
   temperature?: number;
+  autogen_daily_cap?: number;
 }
 
 export interface VoiceStatus {
@@ -41,6 +51,7 @@ export interface VoiceStatus {
     provider?: string;
     installed: boolean;
     model?: string;
+    model_loaded?: boolean;
     models?: Record<string, { size: string; description: string; selected?: boolean }>;
   };
   whisper?: { provider?: string; installed: boolean };
@@ -51,6 +62,7 @@ export interface VoiceStatus {
     installed?: boolean;
     model_present?: boolean;
     available?: boolean;
+    model_loaded?: boolean;
     model_size_mb?: number;
     import_error?: string | null;
     download_in_progress?: boolean;
@@ -81,4 +93,5 @@ export interface ProviderHealth {
   ollama?: { available: boolean; configured?: boolean; reason?: string | null };
   openrouter?: { available: boolean; configured?: boolean; reason?: string | null };
   lmstudio?: { available: boolean; configured?: boolean; reason?: string | null };
+  groq?: { available: boolean; configured?: boolean; reason?: string | null };
 }

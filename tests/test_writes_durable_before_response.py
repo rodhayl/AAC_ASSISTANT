@@ -30,7 +30,7 @@ from src.aac_app.models import (
 from src.aac_app.services.auth_service import get_password_hash, verify_password
 from src.api.deps import get_db
 from src.api.main import app
-from tests.test_utils_auth import create_test_token
+from tests.auth_helpers import create_test_token
 
 client = TestClient(app)
 
@@ -252,7 +252,7 @@ class TestUserServiceWrites:
         user = _make_user(test_db_session, "durable_updater", "student", test_password)
 
         response = client.put(
-            "/api/users/me",
+            "/api/auth/profile",
             headers=_token(user.id, user.username, "student"),
             json={"display_name": "Updated Name"},
         )

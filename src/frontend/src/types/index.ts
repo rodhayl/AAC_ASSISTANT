@@ -1,5 +1,8 @@
 export interface UserPreferences {
+  tts_provider: 'kokoro' | 'browser';
   tts_voice: string;
+  tts_local_voice: string;
+  tts_local_speed: number;
   tts_language: string;
   ui_language: string;
   notifications_enabled: boolean;
@@ -8,6 +11,10 @@ export interface UserPreferences {
   dwell_time: number;
   ignore_repeats: number;
   high_contrast: boolean;
+  hover_speak_enabled: boolean;
+  hover_speak_delay_ms: number;
+  // Learning mode used when a section starts without an explicit override.
+  default_learning_mode?: string;
 }
 
 export interface User {
@@ -46,6 +53,7 @@ export interface LearningSymbolItem {
   category: string;
   image_path?: string;
   keywords?: string;
+  language?: string;
 }
 
 export interface BoardSymbol {
@@ -75,15 +83,12 @@ export interface Board {
   grid_rows?: number;
   grid_cols?: number;
   ai_enabled?: boolean;
-  ai_provider?: string;
-  ai_model?: string;
+  ai_provider?: string | null;
+  ai_model?: string | null;
   playable_symbols_count?: number;
   locale?: string;
   is_language_learning?: boolean;
 }
-// Ensure Board is exported
-
-
 export interface Achievement {
   name: string;
   description: string;
@@ -103,6 +108,37 @@ export interface AchievementFull extends Achievement {
   created_at?: string;
   criteria_type?: string | null;
   criteria_value?: number | null;
+}
+
+export interface BoardCreateData {
+  name: string;
+  description?: string;
+  category: string;
+  is_public?: boolean;
+  is_template?: boolean;
+  grid_rows?: number;
+  grid_cols?: number;
+  locale?: string;
+  is_language_learning?: boolean;
+  ai_enabled?: boolean;
+  ai_provider?: string;
+  ai_model?: string;
+}
+
+export interface AuthSetupData {
+  username: string;
+  password: string;
+  confirm_password: string;
+  email?: string;
+  display_name?: string;
+}
+
+export interface RegistrationData {
+  username: string;
+  password: string;
+  email?: string;
+  display_name?: string;
+  user_type?: User['user_type'];
 }
 
 export interface LearningSessionStart {
@@ -149,6 +185,12 @@ export interface SafetyConstraints {
   forbidden_topics?: string[];
   trigger_words?: string[];
   max_response_length?: number;
+  block_ai_chat?: boolean;
+  block_board_ai?: boolean;
+  block_custom_topics?: boolean;
+  block_autogen_pictograms?: boolean;
+  block_social_messaging?: boolean;
+  sentinel_moderation?: boolean;
 }
 
 export interface CompanionPersona {
@@ -203,6 +245,9 @@ export interface AnswerResponse {
   is_correct?: boolean;
   transcription?: string;
   feedback_message?: string;
+  // True once the tutor revealed the full correct answer after enough failed
+  // attempts; only then (or on a correct answer) should the UI auto-advance.
+  answer_revealed?: boolean;
   assistant_reply?: string;  // LLM response field
   encouraging_feedback?: string;  // Feedback field
   message?: string;  // Generic message field

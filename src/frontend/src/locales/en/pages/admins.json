@@ -36,20 +36,27 @@
     "displayName": "e.g., Administrator",
     "email": "e.g., admin@example.com"
   },
+  "success": {
+    "created": "Admin created",
+    "updated": "Admin updated",
+    "deleted": "Admin deleted",
+    "passwordReset": "Password reset"
+  },
   "errors": {
     "loadFailed": "Failed to load admins",
     "updateFailed": "Failed to update",
     "createFailed": "Failed to create admin",
     "deleteFailed": "Failed to delete",
-    "deleteSelf": "You cannot delete your own account",
     "resetPasswordFailed": "Failed to reset password",
     "passwordsDoNotMatch": "Passwords do not match"
   },
   "actions": {
+    "resetSelfTitle": "Use Change Password in Settings",
     "editAria": "Edit {{name}}",
     "editTitle": "Edit admin",
     "deleteAria": "Delete {{name}}",
     "deleteTitle": "Delete admin",
+    "deleteSelfTitle": "You cannot delete your own account",
     "resetPassword": "Reset Pwd",
     "resetPasswordAria": "Reset password for {{name}}",
     "resetPasswordTitle": "Reset Password"

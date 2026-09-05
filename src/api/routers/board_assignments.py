@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from src.aac_app.models import BoardAssignment, BoardSymbol, CommunicationBoard, User
 from src.api import schemas
 from src.api.deps import (
+    STAFF_USER_TYPES,
     get_board_or_404,
     get_current_active_user,
     get_db,
@@ -55,7 +57,7 @@ def assign_board_to_student(
 ):
     # Assignment management is a staff action. Board ownership alone must not
     # let a student change another student's roster or forge distribution.
-    if current_user.user_type not in {"admin", "teacher"}:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_text(user=current_user, key="errors.boards.unauthorizedAssign"),
@@ -94,7 +96,23 @@ def assign_board_to_student(
         board_id=board_id, student_id=payload.student_id, assigned_by=current_user.id
     )
     db.add(assignment)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # The existence check above is not sufficient under concurrent
+        # requests. Let the database uniqueness invariant arbitrate the race,
+        # then make the losing request idempotent after its rollback.
+        db.rollback()
+        existing = (
+            db.query(BoardAssignment)
+            .filter(
+                BoardAssignment.board_id == board_id,
+                BoardAssignment.student_id == payload.student_id,
+            )
+            .first()
+        )
+        if existing is None:
+            raise
     return {"ok": True}
 
 
@@ -107,7 +125,7 @@ def unassign_board_from_student(
 ):
     # Assignment management is a staff action. Board ownership alone must not
     # let a student change another student's roster or forge distribution.
-    if current_user.user_type not in {"admin", "teacher"}:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_text(user=current_user, key="errors.boards.unauthorizedUnassign"),
