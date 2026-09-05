@@ -25,6 +25,24 @@ class UserLanguage(Protocol):
     settings: UserSettingsLanguage | None
 
 
+def _resolve_locale_code(lang: str | None, available: frozenset[str]) -> str:
+    """Map a requested language onto an existing locale directory name.
+
+    Returns ``lang`` only when it equals a name already present in
+    ``available``; otherwise its base tag (``"es-ES"`` → ``"es"``) is tried
+    and finally the English code is returned. The result is always a member
+    of ``available`` (or ``"en"``), so callers can safely build paths from
+    it.
+    """
+    if not lang:
+        return "en"
+    prefix = lang.split("-")[0]
+    for name in available:
+        if name in (lang, prefix):
+            return name
+    return "en"
+
+
 class TranslationService:
     _instance = None
 
@@ -74,16 +92,12 @@ class TranslationService:
             # e.g. "es-ES,es;q=0.9,en;q=0.8" -> "es-ES"
             parts = accept_language.split(",")
             if parts:
-                # The header is attacker-controlled, so only codes that match
-                # an existing locale directory may be returned; the header text
-                # itself never becomes a filesystem path component.
-                available = self._available_locales()
+                # The header is attacker-controlled: map it onto the locale
+                # directory names that exist on disk. The returned value is
+                # always a server-side name (or the English fallback), never
+                # the header text itself.
                 first_lang = parts[0].split(";")[0].strip()
-                if first_lang in available:
-                    return first_lang
-                short_lang = first_lang.split("-")[0]
-                if short_lang in available:
-                    return short_lang
+                return _resolve_locale_code(first_lang, self._available_locales())
 
         # 3. Default
         return "en"
@@ -99,16 +113,11 @@ class TranslationService:
         """
         # Normalize lang (take first 2 chars usually, but directory names are
         # 'en', 'es'). ``lang`` may reach here from caller-supplied strings
-        # (e.g. the Accept-Language header), so only codes that match an
-        # existing locale directory may be kept; everything else is replaced
-        # by the English code rather than turned into a path component.
-        if not lang:
-            lang = "en"
-        else:
-            available = self._available_locales()
-            if lang not in available:
-                short_lang = lang.split("-")[0]
-                lang = short_lang if short_lang in available else "en"
+        # (e.g. the Accept-Language header), so it is mapped onto the locale
+        # directory names that exist on disk: the assigned value is always a
+        # server-side directory name or the English code, never the caller's
+        # string, so no path component below can depend on user input.
+        lang = _resolve_locale_code(lang, self._available_locales())
 
         # Try to load
         data = self._load_locale(lang, namespace)
