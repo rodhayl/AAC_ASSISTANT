@@ -569,7 +569,8 @@ def test_warmup_endpoint_failure_isolation(admin_token, monkeypatch):
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["tts"] == {"warmed": False, "error": "model exploded"}
+    # The failure is logged server-side, never echoed to the client.
+    assert body["tts"] == {"warmed": False, "error": "Warmup failed"}
     assert body["speech"] == {"warmed": True}
     assert body["vector"] == {"warmed": False}
     assert loaded == [True]

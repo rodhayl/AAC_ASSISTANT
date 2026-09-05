@@ -258,6 +258,19 @@ _import_attempted = False
 _import_lock = threading.Lock()
 
 
+def _safe_import_reason(exc: Exception) -> str:
+    """A client-safe reason for a missing Kokoro engine.
+
+    ``kokoro_import_error()`` is exposed to authenticated clients in the
+    voice-status payload, so the raw exception text (which can embed paths
+    or environment details) is never stored; the full detail stays in the
+    debug log instead.
+    """
+    if isinstance(exc, ModuleNotFoundError) and exc.name:
+        return f"Missing Python module: {exc.name}"
+    return type(exc).__name__
+
+
 def _module_available() -> bool:
     """Return whether kokoro_onnx can be imported (attempted only once)."""
     global _available, _import_error, _import_attempted
@@ -272,7 +285,7 @@ def _module_available() -> bool:
 
             _available = True
         except Exception as exc:  # pragma: no cover - environment dependent
-            _import_error = str(exc)
+            _import_error = _safe_import_reason(exc)
             _available = False
             logger.debug("Kokoro import unavailable: {}", exc)
     return _available

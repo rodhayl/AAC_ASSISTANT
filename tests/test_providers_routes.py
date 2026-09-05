@@ -140,4 +140,5 @@ def test_lmstudio_models_error_returns_empty_list(
     )
     assert response.status_code == 200
     assert response.json()["models"] == []
-    assert "connection refused" in response.json()["error"]
+    # The exception is logged server-side, never echoed to the client.
+    assert response.json()["error"] == "Failed to fetch LM Studio models"
