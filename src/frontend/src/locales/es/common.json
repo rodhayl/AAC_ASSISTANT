@@ -83,11 +83,11 @@
     "provider": {
       "invalid": "El proveedor debe ser 'ollama', 'openrouter', 'lmstudio' o 'groq'",
       "unavailable": "El servicio de Ollama no está disponible. Asegúrate de que Ollama se esté ejecutando.",
-      "fetchModelsFailed": "Error al obtener modelos de Ollama: {{error}}",
+      "fetchModelsFailed": "Error al obtener modelos de Ollama.",
       "openRouterKeyMissing": "Clave API de OpenRouter no configurada. Configúrala en ajustes primero.",
-      "fetchOpenRouterModelsFailed": "Error al obtener modelos de OpenRouter: {{error}}",
+      "fetchOpenRouterModelsFailed": "Error al obtener modelos de OpenRouter.",
       "groqKeyMissing": "Clave API de Groq no configurada. Configúrala en ajustes primero.",
-      "fetchGroqModelsFailed": "Error al obtener modelos de Groq: {{error}}"
+      "fetchGroqModelsFailed": "Error al obtener modelos de Groq."
     },
     "settings": {
       "maxTokensPositive": "max_tokens debe ser un entero positivo",
@@ -108,7 +108,7 @@
     },
     "arasaac": {
       "downloadFailed": "Error al descargar imagen de ARASAAC",
-      "importFailed": "Importación fallida: {{error}}"
+      "importFailed": "Importación fallida."
     },
     "guardian": {
       "onlyTeachersAdmins": "Solo profesores y administradores pueden acceder a los perfiles de tutor",
@@ -187,16 +187,16 @@
       "assignmentNotFound": "Asignación no encontrada",
       "unauthorizedAssign": "No autorizado para asignar este tablero",
       "unauthorizedUnassign": "No autorizado para desasignar este tablero",
-      "suggestionsFailed": "Error al generar sugerencias: {{error}}",
-      "reorderFailed": "Error al reordenar símbolos: {{error}}",
+      "suggestionsFailed": "Error al generar sugerencias.",
+      "reorderFailed": "Error al reordenar símbolos.",
       "invalidSymbolLabel": "Etiqueta de símbolo no válida: {{label}}"
     },
     "analytics": {
       "logSymbolFailed": "Error al registrar uso de símbolo",
-      "frequentSequencesFailed": "Error al recuperar secuencias frecuentes: {{error}}",
-      "suggestionsFailed": "Error al generar sugerencias: {{error}}",
-      "preferencesFailed": "Error al recuperar preferencias de categoría: {{error}}",
-      "statsFailed": "Error al recuperar estadísticas de uso: {{error}}"
+      "frequentSequencesFailed": "Error al recuperar secuencias frecuentes.",
+      "suggestionsFailed": "Error al generar sugerencias.",
+      "preferencesFailed": "Error al recuperar preferencias de categoría.",
+      "statsFailed": "Error al recuperar estadísticas de uso."
     },
     "achievements": {
       "notFound": "Logro no encontrado",
@@ -225,7 +225,7 @@
       "defaultNotFound": "El modo de aprendizaje por defecto ya no existe"
     },
     "admin": {
-      "databaseResetFailed": "Error al restablecer la base de datos: {{error}}",
+      "databaseResetFailed": "Error al restablecer la base de datos. Consulta los registros del servidor.",
       "databaseResetDisabled": "El restablecimiento de la base de datos está desactivado. Define ALLOW_DB_RESET=true en .env para activarlo.",
       "databaseResetProduction": "El restablecimiento de la base de datos está bloqueado en entornos de producción."
     },
@@ -263,7 +263,7 @@
       "ttsInstallUnavailable": "La instalación automática de TTS no está disponible.",
       "ttsInstallInProgress": "Ya hay una instalación de TTS en curso.",
       "ttsInstallFailed": "La instalación automática de TTS falló. Consulta los registros del servidor.",
-      "ttsInstallFailedWithError": "La instalación automática de TTS falló: {{error}}",
+      "ttsInstallFailedWithError": "La instalación automática de TTS falló. Consulta los registros del servidor.",
       "ttsInstalled": "TTS neuronal local instalado correctamente.",
       "voiceAlreadyInstalled": "Las dependencias de voz ya están instaladas.",
       "voiceInstallInProgress": "Ya hay una instalación de dependencias de voz en curso.",

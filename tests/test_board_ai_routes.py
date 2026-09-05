@@ -295,7 +295,9 @@ def test_suggestions_fail_explicitly_when_provider_fails(
             json={"item_count": 2},
         )
     assert response.status_code == 502
-    assert "timeout" in response.json()["detail"]
+    # Stable client message; the raw exception is not echoed to the client.
+    assert response.json()["detail"] == "Failed to generate suggestions."
+    assert "timeout" not in response.json()["detail"]
 
 
 def test_suggestions_502_when_no_offline_fallback_available(

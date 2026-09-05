@@ -335,7 +335,9 @@ def test_tts_install_generic_failure_maps_to_500(admin_headers, monkeypatch):
             "/api/providers/tts/install", headers=admin_headers
         )
     assert response.status_code == 500
-    assert "boom" in response.json()["detail"]
+    # Stable client message; the raw exception is not echoed to the client.
+    assert "Automatic TTS installation failed" in response.json()["detail"]
+    assert "boom" not in response.json()["detail"]
 
 
 def test_voice_install_409_when_lock_busy(admin_headers, monkeypatch):

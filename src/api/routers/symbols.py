@@ -297,7 +297,7 @@ def reorder_symbols(
         raise HTTPException(
             status_code=500,
             detail=get_text(
-                user=current_user, key="errors.boards.reorderFailed", error=str(e)
+                user=current_user, key="errors.boards.reorderFailed"
             ),
         )
 

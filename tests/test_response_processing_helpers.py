@@ -445,12 +445,18 @@ async def test_process_response_rejects_invalid_confidence(
     )
     harness = _FullHarness(llm=llm)
 
-    result = await harness.process_response(
-        session_id=session.id, student_response="blue", db=test_db_session
-    )
+    captured: list[str] = []
+    sink_id = logger.add(lambda message: captured.append(str(message)), level="ERROR")
+    try:
+        result = await harness.process_response(
+            session_id=session.id, student_response="blue", db=test_db_session
+        )
+    finally:
+        logger.remove(sink_id)
 
-    assert result["success"] is False
-    assert "confidence must be between 0 and 1" in result["error"]
+    # Stable client message; the precise reason stays in the server log.
+    assert result == {"success": False, "error": "Failed to process response"}
+    assert any("confidence must be between 0 and 1" in message for message in captured)
 
 
 @pytest.mark.anyio
@@ -465,12 +471,18 @@ async def test_process_response_rejects_incomplete_llm_json(
     )
     harness = _FullHarness(llm=llm)
 
-    result = await harness.process_response(
-        session_id=session.id, student_response="blue", db=test_db_session
-    )
+    captured: list[str] = []
+    sink_id = logger.add(lambda message: captured.append(str(message)), level="ERROR")
+    try:
+        result = await harness.process_response(
+            session_id=session.id, student_response="blue", db=test_db_session
+        )
+    finally:
+        logger.remove(sink_id)
 
-    assert result["success"] is False
-    assert "incomplete JSON" in result["error"]
+    # Stable client message; the precise reason stays in the server log.
+    assert result == {"success": False, "error": "Failed to process response"}
+    assert any("incomplete JSON" in message for message in captured)
 
 
 @pytest.mark.anyio
@@ -523,3 +535,25 @@ async def test_process_response_voice_without_audio_is_explicit_error(
     )
 
     assert result == {"success": False, "error": "No audio data received."}
+
+
+@pytest.mark.anyio
+async def test_process_response_never_echoes_raw_exception(
+    regular_user, test_db_session: Session
+) -> None:
+    """A provider crash returns a stable message; raw internals stay in logs."""
+    session = _question_session(test_db_session, regular_user.id)
+    llm = Mock()
+    llm.generate = AsyncMock(
+        side_effect=RuntimeError(
+            "provider endpoint http://internal:5432/db leaked a traceback"
+        )
+    )
+    harness = _FullHarness(llm=llm)
+
+    result = await harness.process_response(
+        session_id=session.id, student_response="blue", db=test_db_session
+    )
+
+    assert result == {"success": False, "error": "Failed to process response"}
+    assert "internal" not in result["error"]

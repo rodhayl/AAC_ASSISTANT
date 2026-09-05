@@ -89,7 +89,8 @@ def test_question_returns_error_when_retry_is_still_invalid(
     question = client.post(f"/api/learning/{session_id}/ask", headers=headers)
 
     assert question.status_code == 400
-    assert question.json()["detail"] == "LLM returned invalid question JSON after retry"
+    # Stable client message; the precise reason stays in the server log.
+    assert question.json()["detail"] == "Failed to generate question"
 
 
 @pytest.mark.usefixtures("setup_test_db")
@@ -103,7 +104,8 @@ def test_question_returns_error_when_provider_is_unavailable(
     question = client.post(f"/api/learning/{session_id}/ask", headers=headers)
 
     assert question.status_code == 400
-    assert question.json()["detail"] == "LLM question generation failed"
+    # Stable client message; the precise reason stays in the server log.
+    assert question.json()["detail"] == "Failed to generate question"
 
 
 @pytest.mark.usefixtures("setup_test_db")
@@ -123,4 +125,5 @@ def test_conversational_provider_failure_is_explicit(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "LLM conversational response failed"
+    # Stable client message; the precise reason stays in the server log.
+    assert response.json()["detail"] == "Failed to process response"

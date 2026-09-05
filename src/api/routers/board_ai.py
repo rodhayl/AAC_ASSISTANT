@@ -294,7 +294,6 @@ async def create_board(
                 detail=get_text(
                     user=current_user,
                     key="errors.boards.aiGenerationFailed",
-                    error=str(e)
                 ),
             ) from e
 
@@ -457,7 +456,7 @@ async def generate_ai_suggestions(
     except Exception as e:
         logger.error(f"Failed to generate AI suggestions for board {board_id}: {e}")
         detail_msg = get_text(
-            user=current_user, key="errors.boards.suggestionsFailed", error=str(e)
+            user=current_user, key="errors.boards.suggestionsFailed"
         )
         raise HTTPException(status_code=502, detail=detail_msg)
 

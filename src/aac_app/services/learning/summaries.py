@@ -120,4 +120,6 @@ Be very positive and encouraging. Keep it to 2-3 sentences."""
 
         except Exception as e:
             logger.error(f"Failed to end learning session: {e}")
-            return {"success": False, "error": str(e)}
+            # Never echo the raw exception to the client (it can contain
+            # internals); the logger above keeps the full detail.
+            return {"success": False, "error": "Failed to end learning session"}

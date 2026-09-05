@@ -349,7 +349,6 @@ async def get_ollama_models(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=get_text(
                 key="errors.provider.fetchModelsFailed",
-                error=str(e),
                 accept_language=(
                     current_user.settings.ui_language if current_user.settings else None
                 ),
@@ -401,7 +400,6 @@ async def get_openrouter_models(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=get_text(
                 key="errors.provider.fetchOpenRouterModelsFailed",
-                error=str(e),
                 accept_language=(
                     current_user.settings.ui_language if current_user.settings else None
                 ),
@@ -453,7 +451,6 @@ async def get_groq_models(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=get_text(
                 key="errors.provider.fetchGroqModelsFailed",
-                error=str(e),
                 accept_language=(
                     current_user.settings.ui_language if current_user.settings else None
                 ),
@@ -498,7 +495,6 @@ async def get_lmstudio_models(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=get_text(
                 key="errors.provider.fetchModelsFailed",
-                error=str(e),
                 accept_language=(
                     current_user.settings.ui_language if current_user.settings else None
                 ),

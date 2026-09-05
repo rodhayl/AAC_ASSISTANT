@@ -171,7 +171,7 @@ async def import_arasaac_symbol(
         raise HTTPException(
             status_code=500,
             detail=get_text(
-                user=current_user, key="errors.arasaac.importFailed", error=str(e)
+                user=current_user, key="errors.arasaac.importFailed"
             ),
         )
     finally:

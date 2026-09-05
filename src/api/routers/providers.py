@@ -422,7 +422,6 @@ def install_tts_dependencies(
             detail=get_text(
                 user=current_user,
                 key="errors.providers.ttsInstallFailedWithError",
-                error=str(exc),
             ),
         ) from exc
     finally:
