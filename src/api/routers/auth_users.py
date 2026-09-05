@@ -235,7 +235,7 @@ def get_users(
     response_model=list[schemas.StudentBoardSummaryResponse],
 )
 def get_student_summaries(
-    skip: int = Query(0, ge=0),
+    skip: int = Query(0, ge=0, le=100_000),
     limit: int = Query(100, ge=1, le=500),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),

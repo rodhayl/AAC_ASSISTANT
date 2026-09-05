@@ -47,3 +47,25 @@ def test_offset_pagination_rejects_negative_offsets(path, params, admin_token, s
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("path", "params"),
+    [
+        # get_students (users.py) and get_student_summaries (auth_users.py)
+        # must cap skip like every other paginated list endpoint; an
+        # oversized OFFSET would otherwise scan the whole table for nothing.
+        ("/api/users/students", {"skip": 100_001}),
+        ("/api/auth/users/student-summaries", {"skip": 100_001}),
+    ],
+)
+def test_student_list_endpoints_reject_oversized_offsets(
+    path, params, admin_token, setup_test_db
+):
+    response = client.get(
+        path,
+        params=params,
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert response.status_code == 422
