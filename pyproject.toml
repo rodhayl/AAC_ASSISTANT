@@ -5,9 +5,9 @@ description = "Local-first AAC Assistant"
 requires-python = ">=3.13,<3.15"
 dependencies = [
     "fastapi==0.141.1",
-    "uvicorn==0.52.1",
+    "uvicorn==0.52.4",
     "sqlalchemy==2.0.52",
-    "pydantic==2.13.4",
+    "pydantic==2.13.5",
     "pydantic-settings==2.15.0",
     "pyjwt==2.13.0",
     "pwdlib[argon2]",
@@ -22,7 +22,7 @@ dependencies = [
     "fastembed==0.8.0",
     "sqlite-vec==0.1.9",
     "bcrypt==5.0.0",
-    "websockets==17.0.1",
+    "websockets==17.1",
     "drawsvg>=2.4,<3",
     "resvg-py>=0.5.0",
 ]
@@ -40,8 +40,8 @@ tts = [
 dev = [
     "pytest==9.1.1",
     "pytest-cov",
-    "ruff==0.16.2",
-    "pyinstaller==6.22.0",
+    "ruff==0.16.5",
+    "pyinstaller==6.22.2",
     "pip-audit",
 ]
 
