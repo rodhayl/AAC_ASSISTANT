@@ -295,7 +295,11 @@ def test_suggestions_fail_explicitly_when_provider_fails(
             json={"item_count": 2},
         )
     assert response.status_code == 502
-    assert "timeout" in response.json()["detail"]
+    detail = response.json()["detail"]
+    # The exception is logged server-side; the client sees only the safe
+    # exception-class label, never the raw message.
+    assert "RuntimeError" in detail
+    assert "timeout" not in detail
 
 
 def test_suggestions_502_when_no_offline_fallback_available(

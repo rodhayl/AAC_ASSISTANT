@@ -37,6 +37,7 @@ from src.api.deps import (
     get_setting_value,
     get_text,
     invalidate_setting,
+    safe_exception_reason,
 )
 from src.api.deps import providers as provider_deps
 
@@ -425,7 +426,7 @@ def install_tts_dependencies(
             detail=get_text(
                 user=current_user,
                 key="errors.providers.ttsInstallFailedWithError",
-                error=str(exc),
+                error=safe_exception_reason(exc),
             ),
         ) from exc
     finally:

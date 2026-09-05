@@ -335,7 +335,11 @@ def test_tts_install_generic_failure_maps_to_500(admin_headers, monkeypatch):
             "/api/providers/tts/install", headers=admin_headers
         )
     assert response.status_code == 500
-    assert "boom" in response.json()["detail"]
+    detail = response.json()["detail"]
+    # The exception is logged server-side; the client sees only the safe
+    # exception-class label, never the raw message.
+    assert "RuntimeError" in detail
+    assert "boom" not in detail
 
 
 def test_voice_install_409_when_lock_busy(admin_headers, monkeypatch):

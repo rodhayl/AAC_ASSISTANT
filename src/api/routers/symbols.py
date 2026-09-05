@@ -22,6 +22,7 @@ from src.api.deps import (
     get_llm_provider,
     get_text,
     require_board_owner_or_admin,
+    safe_exception_reason,
     validate_board_position,
     validate_linked_board,
 )
@@ -297,7 +298,7 @@ def reorder_symbols(
         raise HTTPException(
             status_code=500,
             detail=get_text(
-                user=current_user, key="errors.boards.reorderFailed", error=str(e)
+                user=current_user, key="errors.boards.reorderFailed", error=safe_exception_reason(e)
             ),
         )
 

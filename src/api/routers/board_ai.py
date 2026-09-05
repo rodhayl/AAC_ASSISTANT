@@ -22,6 +22,7 @@ from src.api.deps import (
     get_setting_value,
     get_text,
     require_board_staff_or_owner,
+    safe_exception_reason,
     validate_board_position,
     validate_linked_board,
 )
@@ -294,7 +295,7 @@ async def create_board(
                 detail=get_text(
                     user=current_user,
                     key="errors.boards.aiGenerationFailed",
-                    error=str(e)
+                    error=safe_exception_reason(e)
                 ),
             ) from e
 
@@ -457,7 +458,7 @@ async def generate_ai_suggestions(
     except Exception as e:
         logger.error(f"Failed to generate AI suggestions for board {board_id}: {e}")
         detail_msg = get_text(
-            user=current_user, key="errors.boards.suggestionsFailed", error=str(e)
+            user=current_user, key="errors.boards.suggestionsFailed", error=safe_exception_reason(e)
         )
         raise HTTPException(status_code=502, detail=detail_msg)
 
