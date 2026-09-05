@@ -277,11 +277,12 @@ def ensure_jwt_secret(env_path: Path | None = None) -> str:
 
     updated_content = "\n".join(updated_lines).rstrip() + "\n"
     if updated_content != original_content:
-        # The dotenv file is the documented, gitignored secret store (like a
-        # container secret file): the JWT signing key must be readable in
-        # clear text at startup. The file is chmod 0600 and never tracked;
-        # do not "encrypt" it, which would move key management one level up.
-        # codeql[py/clear-text-storage-sensitive-data]
+        # Note (py/clear-text-storage-sensitive-data): the dotenv file is the
+        # documented, gitignored secret store (like a container secret file):
+        # the JWT signing key must be readable in clear text at startup. The
+        # file is chmod 0600 and never tracked; do not "encrypt" it, which
+        # would move key management one level up. CodeQL inline suppression
+        # is not honored by the default GitHub Actions analysis.
         path.write_text(updated_content, encoding="utf-8")
         os.chmod(path, 0o600)
 
