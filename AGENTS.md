@@ -24,6 +24,15 @@ For audit work, inspect every production root at least once, then repeat the sca
 - Reduce duplicate database/API work, unnecessary allocations, and unbounded concurrency where behavior remains clear.
 - Do not modify Windows launch or packaging behavior unless the task specifically requires it. The 2026-08-12 release-safety task explicitly required and validated launcher/installer changes; future work must still keep those changes isolated and tested.
 
+## Dependency discipline
+
+- Do not add a library when the standard library or an existing dependency already covers the requirement; record the concrete production or tooling use before adding it.
+- Direct runtime dependencies must be justified by production code, an operator script, or a declared optional extra—not by tests, fixtures, mocks, or E2E files alone. Test, build, lint, and security tools belong in the development group.
+- Keep optional ML, voice, vector, and rendering packages optional or lazy; do not move them into startup-critical imports just to make a test pass.
+- Run `uv run python scripts/check_dependency_usage.py` after manifest changes. It rejects unreviewed direct dependencies and runtime packages whose only evidence is outside their allowed scope; adding a new package requires a reviewed evidence rule in that script.
+- Keep `uv.lock` and `src/frontend/package-lock.json` authoritative. Never run broad upgrade or `npm audit fix` commands as a shortcut; review narrow lockfile changes and run the locked production audits instead.
+- CI enforces the dependency-evidence check, locked production and all-group `pip-audit`, moderate-or-higher production `npm audit` findings, and high-or-higher development-tree npm findings. Lower-severity advisories must be tracked and explained rather than hidden with a broad ignore.
+
 ## Validation
 
 **NEVER run full test suites (pytest, vitest, or Playwright E2E) unless the user explicitly asks for a full run.** Full suites are slow and the user does not have unlimited time. Default to running only the specific test files/specs affected by the current change, then the final consolidated gate (`verify_pr.py`) only when the user requests it or a broad change genuinely requires it. This is a permanent rule: do not run `uv run pytest` without paths, `npx playwright test` without a spec filter, or `npm test -- --run` without a file filter unless the user explicitly says to run everything. For GUI verification, prefer targeted API smoke checks (curl) and at most one or two specific Playwright specs over the whole E2E suite.

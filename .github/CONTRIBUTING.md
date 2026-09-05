@@ -32,10 +32,15 @@ All participants must follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
    ```powershell
    uv run ruff check src tests scripts
+   uv run python scripts/check_dependency_usage.py
+   uv run pip-audit --requirement requirements.txt --strict --progress-spinner off
+   uv run pip-audit --local --strict --progress-spinner off
    uv run python -m compileall -q src scripts
    uv run pytest -q
    npm --prefix src/frontend run typecheck
    npm --prefix src/frontend run lint
+   npm --prefix src/frontend audit --omit=dev --audit-level=moderate
+   npm --prefix src/frontend audit --audit-level=high
    npm --prefix src/frontend run test -- --run
    npm --prefix src/frontend run build
    ```
@@ -43,6 +48,18 @@ All participants must follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 4. Add or update tests for every meaningful change.
 5. Open a pull request and describe the motivation, user-visible change, and
    test evidence.
+
+## Dependency discipline
+
+- Prefer the standard library or an existing project dependency over adding a
+  new package for a narrow helper.
+- Keep runtime dependencies justified by production code or an explicit optional
+  feature. Tests and mocks do not justify adding a runtime dependency.
+- Put lint, test, build, and security tooling in the development group and keep
+  optional ML/voice/vector packages out of startup-critical imports.
+- Any direct dependency addition must pass
+  `uv run python scripts/check_dependency_usage.py`; add a reviewed evidence
+  rule when the package is genuinely needed.
 
 ## Style and conventions
 
