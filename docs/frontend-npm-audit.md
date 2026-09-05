@@ -1,6 +1,6 @@
 # Frontend npm audit
 
-Audit date: 2026-09-05 (re-verified after moving build-only tooling out of runtime dependencies)
+Audit date: 2026-09-05 (re-verified after moving build-only tooling out of runtime dependencies and updating `qs` in the development tree)
 
 > This is the current production-dependency audit record. Re-run the commands below after any dependency change; build/test counts belong to the current validation run, not to this audit record unless explicitly dated.
 
@@ -59,18 +59,22 @@ npm --prefix src/frontend run build:e2e
 ```
 
 The production audit blocks moderate-or-higher findings; the full
-development-tree audit blocks high-or-higher findings. The current development tree may
-contain lower-severity advisories in build-only tooling, but they must remain
-documented and must not enter the production graph.
+development-tree audit blocks high-or-higher findings. Lower-severity advisories
+in build-only tooling must be fixed via a targeted, compatible resolution or
+kept documented here, and must never enter the production graph.
 
-### Current development-only advisory
+### Development-only advisory history
 
-As of 2026-09-05, the full development-tree audit reports one moderate `qs`
-advisory (`GHSA-x5fp-wj9c-mxmx`, `GHSA-4mjr-xmp4-gh2g`) through
-`shadcn`'s CLI dependency chain (`shadcn` → Express → `qs`). The production
-graph does not contain that chain and passes the moderate threshold. The CI
-high-severity development audit remains enabled; do not hide this finding with
-an audit ignore or broad upgrade.
+On 2026-09-05 the full development-tree audit reported one moderate `qs`
+advisory (`GHSA-x5fp-wj9c-mxmx`, `GHSA-4mjr-xmp4-gh2g`, fixed in `6.16.0`)
+through `shadcn`'s CLI dependency chain (`shadcn` → `@modelcontextprotocol/sdk`
+→ `express` → `qs`). It was resolved the same day with a lockfile-only update
+of `qs` `6.15.3` → `6.16.0`, which is inside the existing parent ranges
+(`express ^6.14.0`, `body-parser ^6.15.2`), so no override or manifest change
+was required. The production graph never contained that chain. The full audit
+(including development dependencies) now reports 0 vulnerabilities.
 
 Do not use `npm audit fix --force` without reviewing the resulting major
-version changes and rerunning the complete frontend gate.
+version changes and rerunning the complete frontend gate. Prefer a targeted
+`npm update <package>` when the parent ranges already permit the fixed version,
+and record the change here.
