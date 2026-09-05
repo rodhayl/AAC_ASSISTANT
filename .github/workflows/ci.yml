@@ -272,7 +272,7 @@ jobs:
         language: [javascript-typescript, python]
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
-      - uses: github/codeql-action/init@be7a3dbb8147b82cd6d27e0707105b36aa190fc1 # v3
+      - uses: github/codeql-action/init@9ee088e13615f8d1eaef4766f9dde95d3356a8f6 # v3
         with:
           languages: ${{ matrix.language }}
           queries: security-extended
