@@ -247,9 +247,12 @@ def test_failed_generation_gets_cooldown_then_retries(test_db_session, monkeypat
         autogen.ensure_symbol_generated("qasarcool", "es")
     assert len(started) == 1
 
-    # After the cooldown elapses the word is retried once.
+    # After the cooldown elapses the word is retried once. The timestamp is
+    # relative to monotonic(): an absolute literal (e.g. 0) would be treated
+    # as "failed right now" on a runner whose monotonic clock has barely
+    # started, so the retry would wrongly stay inside the cooldown.
     with autogen._lock:
-        autogen._recent_failures[key] = 0  # long ago
+        autogen._recent_failures[key] = time_module.monotonic() - 3600
     with patch.object(threading.Thread, "start", new=capturing_start):
         autogen.ensure_symbol_generated("qasarcool", "es")
     assert len(started) == 2
