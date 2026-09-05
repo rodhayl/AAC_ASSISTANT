@@ -47,6 +47,15 @@ class TranslationService:
         self._cache: dict[str, Any] = {}
         self._initialized = True
 
+    def _available_locales(self) -> frozenset[str]:
+        """Return the names of the locale directories that exist on disk."""
+        try:
+            return frozenset(
+                entry.name for entry in self.locales_dir.iterdir() if entry.is_dir()
+            )
+        except OSError:
+            return frozenset({"en"})
+
     def resolve_language(
         self, user: UserLanguage | None = None, accept_language: str | None = None
     ) -> str:
@@ -65,17 +74,15 @@ class TranslationService:
             # e.g. "es-ES,es;q=0.9,en;q=0.8" -> "es-ES"
             parts = accept_language.split(",")
             if parts:
+                # The header is attacker-controlled, so only codes that match
+                # an existing locale directory may be returned; the header text
+                # itself never becomes a filesystem path component.
+                available = self._available_locales()
                 first_lang = parts[0].split(";")[0].strip()
-                # The header is attacker-controlled: only a well-formed
-                # language tag may probe the locale directory.
-                if not _LOCALE_TAG_RE.fullmatch(first_lang):
-                    first_lang = ""
-                # Check if we support it
-                if first_lang and (self.locales_dir / first_lang).exists():
+                if first_lang in available:
                     return first_lang
-                # Try short code
-                short_lang = first_lang.split("-")[0] if first_lang else ""
-                if short_lang and (self.locales_dir / short_lang).exists():
+                short_lang = first_lang.split("-")[0]
+                if short_lang in available:
                     return short_lang
 
         # 3. Default
@@ -90,20 +97,18 @@ class TranslationService:
             key: Key in the JSON file (supports dot notation for nested keys)
             **kwargs: Variables to interpolate (e.g., name="John")
         """
-        # Normalize lang (take first 2 chars usually, but directory names are 'en', 'es')
+        # Normalize lang (take first 2 chars usually, but directory names are
+        # 'en', 'es'). ``lang`` may reach here from caller-supplied strings
+        # (e.g. the Accept-Language header), so only codes that match an
+        # existing locale directory may be kept; everything else is replaced
+        # by the English code rather than turned into a path component.
         if not lang:
             lang = "en"
-        elif not _LOCALE_TAG_RE.fullmatch(lang):
-            # ``lang`` may reach here from caller-supplied strings (e.g. the
-            # Accept-Language header); never turn it into a path component.
-            lang = "en"
         else:
-            # Handle 'en-US' -> 'en' if directory is just 'en'
-            # Check if directory exists, otherwise try prefix
-            if not (self.locales_dir / lang).exists():
+            available = self._available_locales()
+            if lang not in available:
                 short_lang = lang.split("-")[0]
-                if (self.locales_dir / short_lang).exists():
-                    lang = short_lang
+                lang = short_lang if short_lang in available else "en"
 
         # Try to load
         data = self._load_locale(lang, namespace)

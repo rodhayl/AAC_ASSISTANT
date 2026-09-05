@@ -11,9 +11,11 @@ ARASAAC_IMAGE_BASE = "https://static.arasaac.org/pictograms"
 # ARASAAC language codes are two lowercase letters; pictogram ids are decimal
 # numbers. Every value interpolated into a request URL below is checked
 # against these whitelists first, so a malformed or hostile value can never
-# steer the request to another host, path, or query.
+# steer the request to another host, path, or query. The percent-encoded
+# search query may only contain unreserved characters plus '%'.
 _LOCALE_RE = re.compile(r"^[a-z]{2}$")
 _ARASAAC_ID_RE = re.compile(r"^[0-9]{1,10}$")
+_ENCODED_QUERY_RE = re.compile(r"^[A-Za-z0-9_.~%-]{1,600}$")
 
 
 def _validated_locale(locale: str | None) -> str:
@@ -57,9 +59,12 @@ class ArasaacService:
             # and must be percent-encoded: spaces, '/', '?' or '#' in a raw
             # query would otherwise corrupt the URL (extra path segments,
             # query-string parsing, or an early fragment).
+            encoded_query = quote(query, safe="")
+            if not _ENCODED_QUERY_RE.fullmatch(encoded_query):
+                raise ValueError("Unsupported ARASAAC search query")
             url = (
                 f"{ARASAAC_API_BASE}/pictograms/{_validated_locale(locale)}/"
-                f"bestsearch/{quote(query, safe='')}"
+                f"bestsearch/{encoded_query}"
             )
             response = await self.client.get(url)
             response.raise_for_status()
