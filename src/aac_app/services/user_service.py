@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.auth_service import get_password_hash
@@ -16,8 +16,11 @@ if TYPE_CHECKING:
 
 class UserService:
     def get_all_students(self, db: Session, skip: int = 0, limit: int = 500):
+        # UserResponse serialization reads User.settings per row; without the
+        # eager load a large roster issues one lazy query per student.
         return (
             db.query(User)
+            .options(joinedload(User.settings))
             .filter(User.user_type == "student")
             .order_by(User.id)
             .offset(skip)

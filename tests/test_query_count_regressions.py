@@ -192,6 +192,40 @@ def test_student_summary_query_budget_is_bulk_for_large_roster(
     assert query_count() <= 6, f"student summary query budget exceeded: {query_count()}"
 
 
+def test_student_list_query_budget_is_independent_of_roster_size(
+    test_db_session, test_db_engine, admin_user
+):
+    """GET /users/students stays bounded for a large roster."""
+    from types import SimpleNamespace
+
+    from src.aac_app.services.user_service import UserService
+
+    service = UserService()
+    for index in range(120):
+        service.create_user(
+            test_db_session,
+            SimpleNamespace(
+                username=f"query_students_list_{index}",
+                display_name=f"Students list {index}",
+                email=None,
+                user_type="student",
+                password="QueryBudget123",
+                created_by_teacher_id=None,
+            ),
+        )
+    test_db_session.commit()
+
+    with count_queries(test_db_engine) as query_count:
+        response = client.get(
+            "/api/users/students?limit=500",
+            headers=_board_headers(admin_user),
+        )
+
+    assert response.status_code == 200, response.text
+    assert len(response.json()) == 120
+    assert query_count() <= 5, f"students list query budget exceeded: {query_count()}"
+
+
 def test_assigned_board_query_budget_is_eager_for_many_symbols(
     test_db_session, test_db_engine, admin_user
 ):
