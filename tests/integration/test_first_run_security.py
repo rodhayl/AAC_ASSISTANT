@@ -316,7 +316,9 @@ def test_ensure_bootstrap_admin_script_no_plaintext_persistence(
         finally:
             session.close()
 
-    monkeypatch.setattr(script_module, "get_session", _override_session)
+    # The script imports the session factory lazily after argument parsing, so
+    # the override must patch the db module attribute it resolves at call time.
+    monkeypatch.setattr("src.aac_app.db.get_session", _override_session)
     monkeypatch.setattr("src.aac_app.seed.get_session", _override_session)
     monkeypatch.setattr(config, "ENV_FILE", tmp_path / ".env")
     monkeypatch.setattr(config, "LEGACY_ENV_FILE", tmp_path / "env.properties")

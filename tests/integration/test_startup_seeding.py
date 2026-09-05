@@ -195,7 +195,7 @@ def test_ensure_bootstrap_admin_script_reports_rejection_cleanly(monkeypatch):
         raise ValueError("AAC_BOOTSTRAP_ADMIN_PASSWORD is not acceptable in production")
 
     monkeypatch.setattr(script, "ensure_bootstrap_admin", _raise_value_error)
-    assert script.main() == 1
+    assert script.main([]) == 1
 
 
 def test_ensure_bootstrap_admin_script_propagates_disabled(monkeypatch):
@@ -204,7 +204,98 @@ def test_ensure_bootstrap_admin_script_propagates_disabled(monkeypatch):
 
     script = importlib.import_module("scripts.ensure_bootstrap_admin")
     monkeypatch.setattr(script, "ensure_bootstrap_admin", lambda: 0)
-    assert script.main() == 0
+    assert script.main([]) == 0
+
+
+def test_ensure_bootstrap_admin_script_help_is_inert(monkeypatch, capsys):
+    """``--help`` must exit 0 without running any bootstrap work."""
+    import importlib
+
+    script = importlib.import_module("scripts.ensure_bootstrap_admin")
+
+    def _fail_if_called() -> int:
+        raise AssertionError("--help must not run the bootstrap")
+
+    monkeypatch.setattr(script, "ensure_bootstrap_admin", _fail_if_called)
+    with pytest.raises(SystemExit) as excinfo:
+        script.main(["--help"])
+    assert excinfo.value.code == 0
+    assert "--check" in capsys.readouterr().out
+
+
+def test_ensure_bootstrap_admin_script_rejects_unknown_flags(monkeypatch):
+    """An unknown argument must be rejected, not silently trigger a bootstrap."""
+    import importlib
+
+    script = importlib.import_module("scripts.ensure_bootstrap_admin")
+
+    def _fail_if_called() -> int:
+        raise AssertionError("unknown flags must not run the bootstrap")
+
+    monkeypatch.setattr(script, "ensure_bootstrap_admin", _fail_if_called)
+    with pytest.raises(SystemExit) as excinfo:
+        script.main(["--definitely-not-a-flag"])
+    assert excinfo.value.code == 2
+
+
+def test_ensure_bootstrap_admin_script_check_skips_bootstrap(monkeypatch):
+    """``--check`` routes to the report-only path and never bootstraps."""
+    import importlib
+
+    script = importlib.import_module("scripts.ensure_bootstrap_admin")
+
+    def _fail_if_called() -> int:
+        raise AssertionError("--check must not run the bootstrap")
+
+    monkeypatch.setattr(script, "ensure_bootstrap_admin", _fail_if_called)
+    monkeypatch.setattr(script, "check_bootstrap_config", lambda: 7)
+    assert script.main(["--check"]) == 7
+
+
+def test_ensure_bootstrap_admin_check_disabled_reports_zero(monkeypatch, capsys):
+    """``--check`` mirrors the run-mode message when bootstrap is disabled."""
+    import importlib
+
+    from src import config
+
+    script = importlib.import_module("scripts.ensure_bootstrap_admin")
+    monkeypatch.setattr(config, "get_bool", lambda key, default=False: False)
+    assert script.check_bootstrap_config() == 0
+    assert "disabled" in capsys.readouterr().out
+
+
+def test_ensure_bootstrap_admin_check_rejects_production_without_password(
+    monkeypatch, capsys
+):
+    """``--check`` fails fast on a production config that a run would reject."""
+    import importlib
+
+    from src import config
+
+    script = importlib.import_module("scripts.ensure_bootstrap_admin")
+    monkeypatch.setattr(config, "ENVIRONMENT", "production")
+    monkeypatch.setattr(config, "get_bool", lambda key, default=False: True)
+    monkeypatch.setattr(config, "explicit_bootstrap_password", lambda: None)
+    assert script.check_bootstrap_config() == 1
+    captured = capsys.readouterr()
+    assert "not acceptable in production" in captured.err
+    assert "Fix AAC_BOOTSTRAP_ADMIN_PASSWORD" in captured.err
+
+
+def test_ensure_bootstrap_admin_check_accepts_production_password(monkeypatch, capsys):
+    """``--check`` exits 0 when production has an explicit strong password."""
+    import importlib
+
+    from src import config
+
+    script = importlib.import_module("scripts.ensure_bootstrap_admin")
+    monkeypatch.setattr(config, "ENVIRONMENT", "production")
+    monkeypatch.setattr(config, "get_bool", lambda key, default=False: True)
+    monkeypatch.setattr(
+        config, "explicit_bootstrap_password", lambda: "Sup3r-Prod-Secret-2026!"
+    )
+    assert script.check_bootstrap_config() == 0
+    assert "Bootstrap admin ready." in capsys.readouterr().out
 
 
 def test_database_initialization_idempotency():

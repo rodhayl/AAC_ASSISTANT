@@ -9,6 +9,7 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import re
 import subprocess
 from pathlib import Path
@@ -127,4 +128,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # ``--help`` must never start the full verification gate.
+    argparse.ArgumentParser(description=__doc__).parse_args()
     raise SystemExit(main())

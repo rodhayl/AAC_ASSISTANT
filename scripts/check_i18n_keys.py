@@ -25,6 +25,7 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import ast
 import json
 import sys
@@ -184,4 +185,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # ``--help`` must never start the i18n scan.
+    argparse.ArgumentParser(description=__doc__).parse_args()
     sys.exit(main())

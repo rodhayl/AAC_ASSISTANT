@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import ast
 import sys
 from pathlib import Path
@@ -288,4 +289,6 @@ def audit_codebase() -> int:
 
 
 if __name__ == "__main__":
+    # ``--help`` must never start the audit scan.
+    argparse.ArgumentParser(description=__doc__).parse_args()
     sys.exit(audit_codebase())

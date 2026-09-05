@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import secrets
 import shutil
 import socket
 import sqlite3
@@ -280,15 +281,24 @@ def main(argv: list[str] | None = None) -> int:
         # warmup fails and /ready reports degraded.
         degraded_dir = Path(smoke_dir) / "degraded"
         degraded_dir.mkdir()
+        # Production rejects the shared development default and any literal
+        # checked into the repo (the repository is secret-scanned), so the
+        # throwaway degraded server gets a fresh strong password per run.
+        while True:
+            degraded_admin_password = secrets.token_urlsafe(24)
+            if (
+                any(char.islower() for char in degraded_admin_password)
+                and any(char.isupper() for char in degraded_admin_password)
+                and any(char.isdigit() for char in degraded_admin_password)
+            ):
+                break
         degraded_env = dict(env)
         degraded_env.update(
             {
                 "DATA_DIR": str(degraded_dir),
                 "DATABASE_NAME": PATH_ENV["DATABASE_NAME"],
                 "ENVIRONMENT": "production",
-                # Production rejects the shared development default, so the
-                # throwaway degraded server needs its own strong password.
-                "AAC_BOOTSTRAP_ADMIN_PASSWORD": "Smoke#Prod!2026-Admin",
+                "AAC_BOOTSTRAP_ADMIN_PASSWORD": degraded_admin_password,
                 "ALLOWED_ORIGINS": "http://localhost:5173",
             }
         )
@@ -380,6 +390,9 @@ def main(argv: list[str] | None = None) -> int:
                 except subprocess.TimeoutExpired:
                     degraded_server.kill()
                     degraded_server.wait(timeout=10)
+            # Release the handle (same GC-close pattern as the main log_file)
+            # so the temp tree can be removed on every platform afterwards.
+            degraded_log_file = None
 
         print("SMOKE OK")
         return 0
