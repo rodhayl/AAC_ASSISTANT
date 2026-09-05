@@ -19,10 +19,6 @@ from loguru import logger
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.aac_app.db import get_session  # noqa: E402
-from src.aac_app.models import User  # noqa: E402
-from src.aac_app.services.credential_service import mark_credentials_changed  # noqa: E402
-
 TEMP_PASSWORD_ENV = "AAC_MIGRATION_TEMP_PASSWORD"
 
 
@@ -55,6 +51,13 @@ def migrate_passwords(temp_password: str, skip_confirmation: bool = False) -> No
     """
     Migrate users that still store SHA-256 hashes to bcrypt.
     """
+    # Imported inside the write path so ``--help``/``--verify-only`` stays
+    # inert: importing the DB module initializes app config (and creates the
+    # data/logs/uploads directories) before argparse runs.
+    from src.aac_app.db import get_session
+    from src.aac_app.models import User
+    from src.aac_app.services.credential_service import mark_credentials_changed
+
     logger.info("=" * 80)
     logger.info("PASSWORD MIGRATION SCRIPT")
     logger.info("=" * 80)
@@ -126,6 +129,9 @@ def verify_migration() -> None:
     """
     Verify password hash formats after migration.
     """
+    from src.aac_app.db import get_session
+    from src.aac_app.models import User
+
     logger.info("Verifying migration...")
 
     try:
@@ -167,7 +173,7 @@ def verify_migration() -> None:
         sys.exit(1)
 
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Migrate user passwords from SHA-256 to bcrypt"
     )
@@ -188,7 +194,7 @@ if __name__ == "__main__":
             f"If omitted, uses {TEMP_PASSWORD_ENV}."
         ),
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.verify_only:
         verify_migration()
@@ -197,6 +203,11 @@ if __name__ == "__main__":
             temporary_password = _resolve_temp_password(args.temp_password)
         except ValueError as exc:
             logger.error(str(exc))
-            sys.exit(2)
+            return 2
         migrate_passwords(temporary_password, skip_confirmation=args.yes)
         verify_migration()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

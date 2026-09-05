@@ -24,16 +24,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from loguru import logger  # noqa: E402
-from sqlalchemy.exc import OperationalError  # noqa: E402
 
-from src.aac_app.services.arasaac_library_import import (  # noqa: E402
-    count_importable_arasaac_terms,
-    import_arasaac_library,
-)
-
-
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "locale",
@@ -49,7 +41,18 @@ def main() -> None:
             "database or downloading images"
         ),
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    # Imported after parsing so ``--help`` stays inert: the import service
+    # module pulls in app config/DB modules that create runtime directories
+    # as an import side effect.
+    from loguru import logger
+    from sqlalchemy.exc import OperationalError
+
+    from src.aac_app.services.arasaac_library_import import (
+        count_importable_arasaac_terms,
+        import_arasaac_library,
+    )
 
     if args.dry_run:
         try:

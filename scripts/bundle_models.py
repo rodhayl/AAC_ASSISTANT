@@ -19,23 +19,39 @@ import argparse
 import sys
 from pathlib import Path
 
+from loguru import logger
+
 # Make direct execution work from the repository root:
 # ``uv run python scripts/bundle_models.py``.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from loguru import logger
 
-from src.aac_app.providers.local_speech_provider import DEFAULT_STT_MODEL  # noqa: E402
-from src.aac_app.providers.local_tts_provider import (  # noqa: E402
-    KOKORO_MODEL_FILENAME,
-    KOKORO_VOICES_FILENAME,
-    download_kokoro_model,
-)
-from src.aac_app.services.local_vector_store import MODEL_NAME  # noqa: E402
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("bundled_models/models"),
+        help="Output Hugging Face cache directory (default: bundled_models/models)",
+    )
+    parser.add_argument(
+        "--stt-model",
+        default=None,
+        help="faster-whisper model to bundle (default: provider default)",
+    )
+    args = parser.parse_args(argv)
+
+    # Imported after parsing so ``--help`` stays inert: these modules read
+    # the model-directory configuration and import optional heavy
+    # dependencies, which an informational help run must not require.
+    return 0 if download_all(args.output, args.stt_model) else 1
 
 
 def _fastembed_ready(cache_dir: Path) -> bool:
     """Return whether the fastembed model cache already exists."""
+    # Keep the cache directory name used by the original bundling path. The
+    # provider's logical model name is not the same as fastembed's ONNX cache
+    # directory, so deriving it would make an existing cache look missing.
     return (cache_dir / "models--qdrant--all-MiniLM-L6-v2-onnx").is_dir()
 
 
@@ -46,6 +62,11 @@ def _whisper_ready(cache_dir: Path, stt_model: str) -> bool:
 
 def _kokoro_ready(bundle_models_dir: Path) -> bool:
     """Return whether both Kokoro model files are present in the bundle."""
+    from src.aac_app.providers.local_tts_provider import (
+        KOKORO_MODEL_FILENAME,
+        KOKORO_VOICES_FILENAME,
+    )
+
     return (
         (bundle_models_dir / "kokoro" / KOKORO_MODEL_FILENAME).is_file()
         and (bundle_models_dir / "kokoro" / KOKORO_VOICES_FILENAME).is_file()
@@ -60,6 +81,7 @@ def _download_kokoro_to_bundle(bundle_models_dir: Path) -> bool:
     directory by patching ``kokoro_model_dir``.
     """
     import src.aac_app.providers.local_tts_provider as tts_mod
+    from src.aac_app.providers.local_tts_provider import download_kokoro_model
 
     kokoro_dir = bundle_models_dir / "kokoro"
     kokoro_dir.mkdir(parents=True, exist_ok=True)
@@ -92,6 +114,8 @@ def _download_step(label: str, ready: bool, action) -> bool:
 def _download_fastembed(output_dir: Path) -> bool:
     from fastembed import TextEmbedding
 
+    from src.aac_app.services.local_vector_store import MODEL_NAME
+
     logger.info("Downloading fastembed model '{}' into {}", MODEL_NAME, output_dir)
     TextEmbedding(model_name=MODEL_NAME, cache_dir=str(output_dir), lazy_load=True)
     logger.success("fastembed model ready")
@@ -121,9 +145,14 @@ def _download_kokoro_bundle(output_dir: Path) -> bool:
     return False
 
 
-def download_all(output_dir: Path, stt_model: str = DEFAULT_STT_MODEL) -> bool:
+def download_all(output_dir: Path, stt_model: str | None = None) -> bool:
     """Download all models into ``output_dir``; returns True when all are ready."""
     from functools import partial
+
+    if stt_model is None:
+        from src.aac_app.providers.local_speech_provider import DEFAULT_STT_MODEL
+
+        stt_model = DEFAULT_STT_MODEL
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -140,23 +169,6 @@ def download_all(output_dir: Path, stt_model: str = DEFAULT_STT_MODEL) -> bool:
     # model must not skip the remaining downloads.
     results = [_download_step(label, ready, action) for label, ready, action in steps]
     return all(results)
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path("bundled_models/models"),
-        help="Output Hugging Face cache directory (default: bundled_models/models)",
-    )
-    parser.add_argument(
-        "--stt-model",
-        default=DEFAULT_STT_MODEL,
-        help=f"faster-whisper model to bundle (default: {DEFAULT_STT_MODEL})",
-    )
-    args = parser.parse_args(argv)
-    return 0 if download_all(args.output, args.stt_model) else 1
 
 
 if __name__ == "__main__":

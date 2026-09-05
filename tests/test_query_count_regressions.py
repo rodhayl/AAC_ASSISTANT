@@ -329,6 +329,159 @@ def test_next_symbol_query_budget_does_not_scale_with_transition_candidates(
     assert query_count() <= 14, f"next-symbol query budget exceeded: {query_count()}"
 
 
+def test_guardian_roster_query_budget_is_independent_of_roster_size(
+    test_db_session, test_db_engine, admin_user
+):
+    """GET /guardian-profiles/students stays bounded for a large roster."""
+    from src.aac_app.models import GuardianProfile
+
+    students = [
+        User(
+            username=f"query_roster_student_{index}",
+            display_name=f"Roster student {index}",
+            user_type="student",
+            password_hash="not-used-in-this-test",
+            is_active=True,
+        )
+        for index in range(30)
+    ]
+    test_db_session.add_all(students)
+    test_db_session.flush()
+    # Profiles on a third of the roster exercise the outer-join status path.
+    test_db_session.add_all(
+        [
+            GuardianProfile(
+                user_id=student.id,
+                created_by=admin_user.id,
+                template_name="default",
+                is_active=True,
+            )
+            for student in students[:10]
+        ]
+    )
+    test_db_session.commit()
+
+    with count_queries(test_db_engine) as query_count:
+        response = client.get(
+            "/api/guardian-profiles/students",
+            headers=_board_headers(admin_user),
+        )
+
+    assert response.status_code == 200, response.text
+    assert len(response.json()) == 30
+    assert query_count() <= 5, f"guardian roster query budget exceeded: {query_count()}"
+
+
+def test_notifications_query_budget_is_independent_of_history_size(
+    test_db_session, test_db_engine, admin_user
+):
+    """GET /notifications stays at count+page queries for a large history."""
+    from src.aac_app.models import Notification
+
+    test_db_session.add_all(
+        [
+            Notification(
+                user_id=admin_user.id,
+                title=f"Notification {index}",
+                message="budget probe",
+                notification_type="info",
+                priority="normal",
+                is_read=False,
+            )
+            for index in range(60)
+        ]
+    )
+    test_db_session.commit()
+
+    with count_queries(test_db_engine) as query_count:
+        response = client.get(
+            "/api/notifications",
+            params={"user_id": admin_user.id, "limit": 50},
+            headers=_board_headers(admin_user),
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == 60
+    assert len(response.json()["notifications"]) == 50
+    assert query_count() <= 5, f"notifications query budget exceeded: {query_count()}"
+
+
+def test_provider_health_query_budget_is_bounded(
+    test_db_engine, admin_user, monkeypatch
+):
+    """GET /providers/health performs no per-provider database work."""
+    from unittest.mock import MagicMock
+
+    provider = MagicMock()
+    provider.is_available.return_value = False
+    provider.is_configured.return_value = False
+    for name in ("ollama", "openrouter", "lmstudio", "groq"):
+        monkeypatch.setattr(
+            f"src.api.routers.providers.get_{name}_provider",
+            lambda provider=provider: provider,
+        )
+
+    with count_queries(test_db_engine) as query_count:
+        response = client.get(
+            "/api/providers/health",
+            headers=_board_headers(admin_user),
+        )
+
+    assert response.status_code == 200, response.text
+    assert set(response.json()) == {"ollama", "openrouter", "lmstudio", "groq"}
+    assert query_count() <= 2, f"provider health query budget exceeded: {query_count()}"
+
+
+def test_learning_start_route_query_budget_is_bounded(
+    test_db_session, test_db_engine, admin_user
+):
+    """POST /learning/start route work (mode resolution) stays bounded.
+
+    The service is mocked so this pins the route's own queries: auth, the
+    default-mode settings lookup, and the visible-mode lookup. None of them
+    may scale with the number of modes or users.
+    """
+    from unittest.mock import MagicMock
+
+    from src.aac_app.models import LearningMode
+    from src.api.deps import get_learning_service
+
+    test_db_session.add_all(
+        [
+            LearningMode(
+                key=f"query_mode_{index}",
+                name=f"Query mode {index}",
+                prompt_instruction="practice politely",
+                is_custom=False,
+                created_by=None,
+            )
+            for index in range(20)
+        ]
+    )
+    test_db_session.commit()
+
+    mock_service = MagicMock()
+    mock_service.start_learning_session.return_value = {
+        "success": True,
+        "session_id": 1,
+    }
+    app.dependency_overrides[get_learning_service] = lambda: mock_service
+    try:
+        with count_queries(test_db_engine) as query_count:
+            response = client.post(
+                "/api/learning/start",
+                params={"user_id": admin_user.id},
+                json={"topic": "Weather"},
+                headers=_board_headers(admin_user),
+            )
+    finally:
+        app.dependency_overrides.pop(get_learning_service, None)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["session_id"] == 1
+    assert query_count() <= 6, f"learning start query budget exceeded: {query_count()}"
+
+
 def clear_caches() -> None:
     """Clear process-local caches that would make this measurement order-dependent."""
     from src.aac_app.services.prediction_service import clear_prediction_cache

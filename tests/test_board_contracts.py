@@ -303,6 +303,102 @@ def test_notification_sse_payload_matches_frontend_notification_item(
     assert payload["type"] == "info"
 
 
+def test_auth_token_and_refresh_payloads_match_frontend_authstore(
+    test_db_session, admin_user, admin_token, client: TestClient
+):
+    """Token + refresh responses expose exactly the keys authStore reads.
+
+    ``authStore.login`` reads ``access_token``/``refresh_token`` off
+    ``POST /auth/token``; ``refreshAccessToken`` reads ``access_token``
+    (and nothing else) off ``POST /auth/refresh``. An added or renamed key
+    is a silent frontend contract change.
+    """
+    from src.aac_app.services.auth_service import get_password_hash
+
+    user = User(
+        username="contract_token_user",
+        display_name="Contract Token User",
+        user_type="student",
+        password_hash=get_password_hash("ContractPass123"),
+        is_active=True,
+    )
+    test_db_session.add(user)
+    test_db_session.commit()
+
+    login = client.post(
+        "/api/auth/token",
+        data={"username": "contract_token_user", "password": "ContractPass123"},
+    )
+    assert login.status_code == 200, login.text
+    login_body = login.json()
+    assert set(login_body) == {"access_token", "token_type", "refresh_token"}
+    assert login_body["token_type"] == "bearer"
+
+    refresh = client.post(
+        "/api/auth/refresh",
+        params={"refresh_token": login_body["refresh_token"]},
+    )
+    assert refresh.status_code == 200, refresh.text
+    # The frontend refresh handler consumes exactly access_token + token_type.
+    assert set(refresh.json()) == {"access_token", "token_type"}
+    assert refresh.json()["token_type"] == "bearer"
+
+
+def test_board_ai_suggestions_contract_matches_frontend_type(
+    test_db_session, admin_user, admin_token, client: TestClient
+):
+    """POST /boards/{id}/ai/suggestions returns exactly {items} with the
+    keys the frontend ``AISuggestion`` type (components/board/
+    AISuggestionPanel.tsx) consumes: label/symbol_key/color/description;
+    ``linked_board_id`` is backend-only and must never be renamed or dropped
+    when present.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    board = CommunicationBoard(
+        user_id=admin_user.id,
+        name="AI contract board",
+        grid_rows=4,
+        grid_cols=5,
+        ai_enabled=True,
+        ai_provider="ollama",
+        ai_model="test-model",
+    )
+    test_db_session.add(board)
+    test_db_session.commit()
+    test_db_session.refresh(board)
+
+    items = [
+        {
+            "label": "Water",
+            "symbol_key": "water",
+            "color": "#3B82F6",
+            "linked_board_id": None,
+            "description": "a drink",
+        },
+        {"label": "Hungry", "symbol_key": "hungry"},
+    ]
+    with patch(
+        "src.api.routers.board_ai.BoardGenerationService.generate_board_items",
+        new=AsyncMock(return_value=items),
+    ):
+        response = client.post(
+            f"/api/boards/{board.id}/ai/suggestions",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"item_count": 2},
+        )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    # useBoardAISuggestions reads response.data.items || [] and nothing else.
+    assert set(body) == {"items"}
+    assert isinstance(body["items"], list) and len(body["items"]) == 2
+    allowed_item_keys = {"label", "symbol_key", "color", "linked_board_id", "description"}
+    for item in body["items"]:
+        assert set(item) <= allowed_item_keys, f"unexpected keys: {set(item) - allowed_item_keys}"
+        assert item.get("label"), "every suggestion carries a label"
+
+
 def test_learning_session_start_contract_matches_ts_response(
     test_db_session, admin_user, admin_token, client: TestClient
 ):
