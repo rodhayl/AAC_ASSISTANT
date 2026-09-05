@@ -281,7 +281,8 @@ def ensure_jwt_secret(env_path: Path | None = None) -> str:
         # container secret file): the JWT signing key must be readable in
         # clear text at startup. The file is chmod 0600 and never tracked;
         # do not "encrypt" it, which would move key management one level up.
-        path.write_text(updated_content, encoding="utf-8")  # codeql[py/clear-text-storage-sensitive-data]
+        # codeql[py/clear-text-storage-sensitive-data]
+        path.write_text(updated_content, encoding="utf-8")
         os.chmod(path, 0o600)
 
     return secret
