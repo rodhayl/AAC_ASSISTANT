@@ -268,6 +268,9 @@ export function Learning() {
 
   const startActivity = useCallback(async (topic: string, purpose: string, boardId?: number) => {
     if (!user) return;
+    // Re-entrancy guard: a double click must not fire two start requests
+    // (two live sessions). The store drops the duplicate POST as well.
+    if (isStartingSession) return;
     setIsStartingSession(true);
     setSessionStartError(null);
     try {
@@ -283,7 +286,7 @@ export function Learning() {
     } finally {
       setIsStartingSession(false);
     }
-  }, [askNextQuestion, fetchSessionHistory, selectedModeKey, sessionDifficulty, showSessionStartError, startSession, t, user]);
+  }, [askNextQuestion, fetchSessionHistory, isStartingSession, selectedModeKey, sessionDifficulty, showSessionStartError, startSession, t, user]);
 
   const handleToggleHistory = useCallback(() => {
     const nextVisible = !showHistory;

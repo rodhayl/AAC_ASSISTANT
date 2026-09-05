@@ -653,6 +653,7 @@ def get_progress(
 @router.get("/history/{user_id}")
 def get_history(
     user_id: int,
+    skip: int = Query(0, ge=0, le=100_000),
     limit: int = Query(10, ge=1, le=1000),
     service: LearningCompanionService = Depends(get_learning_service),
     current_user: User = Depends(get_current_active_user),
@@ -667,7 +668,7 @@ def get_history(
                 status_code=403, detail=get_text(current_user, "errors.unauthorized")
             )
 
-    result = service.get_user_history(user_id, limit, db=db)
+    result = service.get_user_history(user_id, limit, skip=skip, db=db)
 
     if not result["success"]:
         raise HTTPException(

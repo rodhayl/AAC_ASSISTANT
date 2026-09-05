@@ -153,6 +153,39 @@ def validate_password_strength(
         )
 
 
+def username_email_integrity_conflict(
+    db: Session,
+    username: str,
+    email: str | None,
+    *,
+    accept_language: str | None = None,
+    user: User | None = None,
+) -> HTTPException:
+    """Build the conflict response for a lost username/email insert race.
+
+    Callers catch ``IntegrityError`` from the INSERT the pre-check
+    (``ensure_username_email_available``) cannot fully guard, roll back, and
+    raise this so a concurrent duplicate becomes the same 400/409 response
+    the pre-check would have produced instead of an unhandled 500.
+    """
+    db.rollback()
+    if db.query(User).filter(User.username == username).first() is not None:
+        return HTTPException(
+            status_code=409,
+            detail=get_text(
+                user=user, accept_language=accept_language, key="errors.auth.usernameTaken"
+            ),
+        )
+    if email and db.query(User).filter(User.email == email).first() is not None:
+        return HTTPException(
+            status_code=409,
+            detail=get_text(
+                user=user, accept_language=accept_language, key="errors.auth.emailTaken"
+            ),
+        )
+    return HTTPException(status_code=409, detail="Username or email already registered")
+
+
 def ensure_username_email_available(
     db: Session,
     username: str,

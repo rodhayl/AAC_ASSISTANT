@@ -226,6 +226,54 @@ def test_student_list_query_budget_is_independent_of_roster_size(
     assert query_count() <= 5, f"students list query budget exceeded: {query_count()}"
 
 
+def test_teacher_assigned_students_query_budget_is_independent_of_roster_size(
+    test_db_session, test_db_engine, admin_user
+):
+    """GET /users/students for a teacher stays bounded for a large roster."""
+    from types import SimpleNamespace
+
+    from src.aac_app.services.user_service import UserService
+
+    teacher = User(
+        username="query_assigned_roster_teacher",
+        display_name="Assigned roster teacher",
+        user_type="teacher",
+        password_hash="not-used-in-this-test",
+        is_active=True,
+    )
+    test_db_session.add(teacher)
+    test_db_session.flush()
+
+    service = UserService()
+    # create_user assigns the student to the teacher when created_by_teacher_id
+    # is set, which also seeds the StudentTeacher rows under test.
+    for index in range(60):
+        service.create_user(
+            test_db_session,
+            SimpleNamespace(
+                username=f"query_assigned_student_{index}",
+                display_name=f"Assigned student {index}",
+                email=None,
+                user_type="student",
+                password="QueryBudget123",
+                created_by_teacher_id=teacher.id,
+            ),
+        )
+    test_db_session.commit()
+
+    with count_queries(test_db_engine) as query_count:
+        response = client.get(
+            "/api/users/students?limit=500",
+            headers=create_test_headers(
+                teacher.id, teacher.username, teacher.user_type
+            ),
+        )
+
+    assert response.status_code == 200, response.text
+    assert len(response.json()) == 60
+    assert query_count() <= 6, f"assigned students query budget exceeded: {query_count()}"
+
+
 def test_assigned_board_query_budget_is_eager_for_many_symbols(
     test_db_session, test_db_engine, admin_user
 ):

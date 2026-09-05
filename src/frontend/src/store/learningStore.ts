@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import api, { extractError } from '../lib/api';
+import { walkPages } from '../lib/pagination';
 import i18n from '../i18n/index';
 import { tts } from '../lib/tts';
 import { useAuthStore } from './authStore';
@@ -389,6 +390,11 @@ export const useLearningStore = create<LearningState>((set, get) => {
   },
 
   startSession: async (data, userId) => {
+    // In-flight guard: a double click fires two POSTs and the backend would
+    // create two live sessions. The first caller sets isLoading synchronously
+    // before its first await, so a concurrent second caller is dropped here
+    // while an intentional later start (new conversation) still proceeds.
+    if (get().isLoading) return;
     const requestEpoch = ++sessionEpoch;
     tts.cancelAll();
     cancelPendingAutoAsk();
@@ -587,6 +593,9 @@ export const useLearningStore = create<LearningState>((set, get) => {
 
   endSession: async (sessionId) => {
     if (get().currentSession?.session_id !== sessionId) return;
+    // In-flight guard: a double click would double-spend the LLM summary
+    // call and overwrite the just-written summary/ended_at.
+    if (get().isLoading) return;
     tts.cancelAll();
     const requestEpoch = ++sessionEpoch;
     cancelPendingAutoAsk();
@@ -628,11 +637,23 @@ export const useLearningStore = create<LearningState>((set, get) => {
     const requestId = ++historyRequestId;
     set({ isLoadingHistory: true });
     try {
-      const response = await api.get(`/learning/history/${userId}`, {
-        params: { limit: 50 }
+      // Walk every page so users with more sessions than one page are not
+      // silently truncated; a short final page terminates the walk.
+      const sessions = await walkPages<SessionHistoryItem>({
+        pageSize: 1000,
+        fetchPage: async (skip) => {
+          const response = await api.get<{ sessions: SessionHistoryItem[] }>(
+            `/learning/history/${userId}`,
+            {
+              params: { ...(skip > 0 ? { skip } : {}), limit: 1000 },
+            },
+          );
+          return response.data.sessions || [];
+        },
+        isCancelled: () => requestId !== historyRequestId,
       });
       if (requestId !== historyRequestId) return;
-      set({ sessionHistory: response.data.sessions || [], isLoadingHistory: false });
+      set({ sessionHistory: sessions, isLoadingHistory: false });
     } catch (error) {
       if (requestId !== historyRequestId) return;
       console.error('Failed to fetch session history:', error);

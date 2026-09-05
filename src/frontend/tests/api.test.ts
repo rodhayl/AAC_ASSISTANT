@@ -48,6 +48,28 @@ describe('auth response handling', () => {
     expect(extractError({ message: 'client error' }, 'fallback')).toBe('client error');
   });
 
+  it('extends the client timeout for long-running operations', async () => {
+    const seen: Array<number | undefined> = [];
+    const timeoutAdapter = (config: { timeout?: number }) => {
+      seen.push(config.timeout);
+      return Promise.resolve({ data: {}, status: 200, statusText: 'OK', headers: {}, config });
+    };
+
+    // LLM suggestion generation may take minutes on local providers.
+    await api.request({ url: '/boards/7/ai/suggestions', method: 'post', data: {}, timeout: undefined, adapter: timeoutAdapter });
+    // Local Whisper transcription of a voice answer likewise.
+    await api.request({ url: '/learning/3/answer/voice', method: 'post', data: new FormData(), timeout: undefined, adapter: timeoutAdapter });
+    // Everything else keeps the 30s instance default, and an explicit
+    // per-request timeout always wins over the override.
+    await api.request({ url: '/boards/7', method: 'get', timeout: undefined, adapter: timeoutAdapter });
+    await api.request({ url: '/boards/7/ai/suggestions', method: 'post', timeout: 5_000, adapter: timeoutAdapter });
+
+    expect(seen[0]).toBeGreaterThan(30_000);
+    expect(seen[1]).toBeGreaterThan(30_000);
+    expect(seen[2]).toBe(30_000);
+    expect(seen[3]).toBe(5_000);
+  });
+
   it('recognizes auth endpoints whose 401 responses belong to the active flow', () => {
     expect(isAuthFlowEndpoint('/auth/token')).toBe(true);
     expect(isAuthFlowEndpoint('/auth/logout')).toBe(true);

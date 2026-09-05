@@ -1,6 +1,17 @@
 """Achievement definitions and user-earned achievements."""
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -38,6 +49,15 @@ class UserAchievement(Base):
     """Achievement earned by a user."""
 
     __tablename__ = "user_achievements"
+    __table_args__ = (
+        # A user can earn an achievement once; concurrent awards must lose
+        # with an integrity error instead of double-scoring the leaderboard.
+        UniqueConstraint(
+            "user_id",
+            "achievement_id",
+            name="uq_user_achievements_user_achievement",
+        ),
+    )
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)

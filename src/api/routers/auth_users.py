@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from loguru import logger
 from sqlalchemy import delete, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import (
@@ -44,6 +45,7 @@ from src.api.routers.auth_helpers import (
     apply_student_safety_at_creation,
     conditional_limiter,
     ensure_username_email_available,
+    username_email_integrity_conflict,
     validate_email_format,
     validate_password_strength,
 )
@@ -134,7 +136,18 @@ def admin_create_user(
     )
 
     db.add(new_user)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        # A concurrent admin/teacher creation with the same username or email
+        # can win the insert after both requests passed the pre-check.
+        raise username_email_integrity_conflict(
+            db,
+            user.username,
+            user.email,
+            accept_language=request.headers.get("accept-language"),
+            user=current_user,
+        ) from exc
     db.refresh(new_user)
 
     # Log admin action and account creation; the request dependency commits
@@ -531,7 +544,18 @@ def update_user(
         if key in payload:
             setattr(user, key, new_email if key == "email" else payload[key])
     db.add(user)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        # A concurrent update/creation may claim the same email after this
+        # request's pre-check read a free address.
+        raise username_email_integrity_conflict(
+            db,
+            user.username,
+            new_email,
+            accept_language=request.headers.get("accept-language"),
+            user=current_user,
+        ) from exc
     db.commit()
     db.refresh(user)
     return user

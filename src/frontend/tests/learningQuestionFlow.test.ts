@@ -810,7 +810,8 @@ describe('learningStore resilience and history reconstruction', () => {
       undefined,
       expect.anything(),
     );
-    expect(get).toHaveBeenCalledWith('/learning/history/42', { params: { limit: 50 } });
+    // The history walk requests the first page with the maximum page size.
+    expect(get).toHaveBeenCalledWith('/learning/history/42', { params: { limit: 1000 } });
   });
 
   it('fetchSessionHistory failure clears the loading flag', async () => {

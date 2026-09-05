@@ -35,8 +35,12 @@ class UserService:
         # user out of the student role (update_user), leaving a stale roster
         # row. Filtering by user_type here matches get_student_summaries and
         # /auth/users so promoted users never resurface in teacher lists.
+        # Same serialization contract as get_all_students: eager-load the
+        # one-to-one settings row so UserResponse does not issue one lazy
+        # query per assigned student.
         return (
             db.query(User)
+            .options(joinedload(User.settings))
             .join(StudentTeacher, User.id == StudentTeacher.student_id)
             .filter(StudentTeacher.teacher_id == teacher_id)
             .filter(User.user_type == "student")

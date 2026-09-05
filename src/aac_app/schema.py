@@ -279,6 +279,34 @@ def _ensure_sqlite_indexes(engine: Engine) -> None:
                         "ON student_teachers (student_id, teacher_id)"
                     )
                 )
+        if "user_achievements" in existing_tables:
+            achievement_columns = {
+                row[1]
+                for row in connection.execute(
+                    text("PRAGMA table_info(user_achievements)")
+                )
+            }
+            if {"id", "user_id", "achievement_id"} <= achievement_columns:
+                # Older databases allowed duplicate award rows (double
+                # leaderboard points). Keep the earliest award, then enforce
+                # the same invariant declared by the ORM so concurrent award
+                # requests cannot duplicate a user/achievement pair.
+                connection.execute(
+                    text(
+                        "DELETE FROM user_achievements "
+                        "WHERE id NOT IN ("
+                        "SELECT MIN(id) FROM user_achievements "
+                        "GROUP BY user_id, achievement_id"
+                        ")"
+                    )
+                )
+                connection.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS "
+                        "uq_user_achievements_user_achievement "
+                        "ON user_achievements (user_id, achievement_id)"
+                    )
+                )
 
 
 def _ensure_foreign_key_actions(engine: Engine) -> None:

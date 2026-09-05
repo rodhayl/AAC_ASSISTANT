@@ -2,6 +2,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from loguru import logger
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import Achievement, User, UserAchievement
@@ -378,7 +379,19 @@ def award_achievement(
         progress=1.0,
     )
     session.add(user_achievement)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        # Two concurrent awards can both pass the existence check above; the
+        # user_achievements unique invariant arbitrates the race and the
+        # loser reports the same conflict the pre-check produces.
+        session.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=get_request_text(
+                request, "errors.achievements.alreadyAwarded", user=current_user
+            ),
+        ) from exc
 
     logger.info(
         f"Awarded achievement {achievement_id} to user {data.user_id} by {current_user.id}"

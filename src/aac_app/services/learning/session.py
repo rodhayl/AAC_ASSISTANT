@@ -408,7 +408,14 @@ class SessionLifecycleMixin:
             logger.error(f"Failed to get session progress: {e}")
             return {"success": False, "error": str(e)}
 
-    def get_user_history(self, user_id: int, limit: int = 10, db: Session | None = None) -> dict:
+    def get_user_history(
+        self,
+        user_id: int,
+        limit: int = 10,
+        *,
+        skip: int = 0,
+        db: Session | None = None,
+    ) -> dict:
         """Get recent learning sessions for a user"""
         try:
             with self._session_scope(db) as db:
@@ -416,6 +423,7 @@ class SessionLifecycleMixin:
                     db.query(LearningSession)
                     .filter(LearningSession.user_id == user_id)
                     .order_by(LearningSession.started_at.desc())
+                    .offset(max(skip, 0))
                     .limit(limit)
                     .all()
                 )

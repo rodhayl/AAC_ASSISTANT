@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from loguru import logger
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src import config
@@ -26,6 +27,7 @@ from src.api.deps import get_db, get_request_text, get_text, oauth2_scheme
 from src.api.routers.auth_helpers import (
     conditional_limiter,
     ensure_username_email_available,
+    username_email_integrity_conflict,
     validate_email_format,
     validate_password_strength,
 )
@@ -113,7 +115,14 @@ def initial_admin_setup(
         is_active=True,
     )
     db.add(admin)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        # Two concurrent setup requests can both pass the pre-check; the
+        # database uniqueness invariant arbitrates the race.
+        raise username_email_integrity_conflict(
+            db, username, payload.email, accept_language=accept_language
+        ) from exc
     db.refresh(admin)
 
     client_ip = request.client.host if request.client else "unknown"
@@ -490,7 +499,14 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
     )
 
     db.add(new_user)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        # A concurrent registration with the same username/email can win the
+        # insert after both requests passed the pre-check.
+        raise username_email_integrity_conflict(
+            db, user.username, user.email, accept_language=accept_language
+        ) from exc
     db.refresh(new_user)
 
     # Log successful account creation in the same request transaction.

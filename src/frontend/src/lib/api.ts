@@ -64,6 +64,28 @@ const api = axios.create({
   timeout: 30000, // 30 seconds timeout
 });
 
+// Per-endpoint timeout overrides for operations that legitimately run longer
+// than the 30s default. Local Whisper transcription and LLM board-suggestion
+// generation can take minutes on modest hardware; without an override the
+// client aborts at 30s and shows an error while the server keeps working.
+// Values are ceilings, not expectations: a stalled request still fails.
+const LONG_REQUEST_TIMEOUT_MS: Readonly<Record<string, number>> = {
+  // POST /boards/{id}/ai/suggestions — LLM suggestion generation.
+  '/ai/suggestions': 120_000,
+  // POST /learning/{id}/answer/voice — local Whisper transcription upload.
+  '/answer/voice': 300_000,
+};
+
+function resolveRequestTimeout(url: string | undefined): number | undefined {
+  if (!url) return undefined;
+  const pathname = pathnameOf(url);
+  if (!pathname) return undefined;
+  for (const [suffix, timeout] of Object.entries(LONG_REQUEST_TIMEOUT_MS)) {
+    if (pathname.endsWith(suffix)) return timeout;
+  }
+  return undefined;
+}
+
 const AUTH_FLOW_ENDPOINTS = new Set([
   '/auth/token',
   '/auth/refresh',
@@ -345,6 +367,20 @@ api.interceptors.request.use((config) => {
     config.headers = AxiosHeaders.from(config.headers ?? {});
   }
   config.headers.set('Accept-Language', currentUILanguage());
+  // Long-running operations (LLM generation, local speech-to-text) get a
+  // larger client ceiling than the 30s default. Axios has already merged the
+  // instance default into config.timeout by the time interceptors run, so an
+  // override is applied only when the caller did not set an explicit
+  // per-request timeout of their own.
+  const longTimeout = resolveRequestTimeout(config.url);
+  if (
+    longTimeout !== undefined &&
+    (config.timeout === undefined ||
+      config.timeout === api.defaults.timeout ||
+      !Number.isFinite(config.timeout))
+  ) {
+    config.timeout = longTimeout;
+  }
   // If offline and non-GET, queue the request for retry. Authentication and
   // registration requests are never retained in browser storage or replayed.
   if (
