@@ -213,7 +213,15 @@ def test_failed_generation_gets_cooldown_then_retries(test_db_session, monkeypat
         generate_sync = _exploding_generate
 
     autogen.set_llm_provider_factory(lambda: _ExplodingProvider())
-    key = autogen._PendingKey("quasar", "es")
+    # Keep the test hermetic: a label no other test uses, an unlimited daily
+    # budget, and no catalog symbol, so the schedule/retry decisions depend
+    # only on the failure bookkeeping under test and never on ambient DB
+    # state or a real background thread for the same label from another test.
+    autogen.invalidate_generated_today_cache()
+    monkeypatch.setattr(autogen, "_daily_cap", lambda: -1)
+    monkeypatch.setattr(autogen, "_count_generated_today", lambda: 0)
+    monkeypatch.setattr(autogen, "_has_catalog_symbol", lambda *_a, **_k: False)
+    key = autogen._PendingKey("qasarcool", "es")
 
     started: list[threading.Thread] = []
 
@@ -228,21 +236,21 @@ def test_failed_generation_gets_cooldown_then_retries(test_db_session, monkeypat
     ):
         # First attempt: the provider blows up -> failure recorded. The real
         # thread runs once (synchronously through the capture wrapper).
-        autogen.ensure_symbol_generated("quasar", "es")
+        autogen.ensure_symbol_generated("qasarcool", "es")
     assert len(started) == 1
     assert autogen._in_flight == set()
     assert key in autogen._recent_failures
 
     # A second call within the cooldown must not spawn another attempt.
     with patch.object(threading.Thread, "start", new=capturing_start):
-        autogen.ensure_symbol_generated("quasar", "es")
+        autogen.ensure_symbol_generated("qasarcool", "es")
     assert len(started) == 1
 
     # After the cooldown elapses the word is retried once.
     with autogen._lock:
         autogen._recent_failures[key] = 0  # long ago
     with patch.object(threading.Thread, "start", new=capturing_start):
-        autogen.ensure_symbol_generated("quasar", "es")
+        autogen.ensure_symbol_generated("qasarcool", "es")
     assert len(started) == 2
 
 
@@ -260,7 +268,13 @@ def test_rate_limited_generation_retries_sooner_than_generic_failure(
             raise ProviderRateLimitError("Groq rate limited (429)")
 
     autogen.set_llm_provider_factory(lambda: _RateLimitedProvider())
-    key = autogen._PendingKey("quasar", "es")
+    # Hermetic like the cooldown sibling: unique label and neutral budget/
+    # catalog so retry timing depends only on the bookkeeping under test.
+    autogen.invalidate_generated_today_cache()
+    monkeypatch.setattr(autogen, "_daily_cap", lambda: -1)
+    monkeypatch.setattr(autogen, "_count_generated_today", lambda: 0)
+    monkeypatch.setattr(autogen, "_has_catalog_symbol", lambda *_a, **_k: False)
+    key = autogen._PendingKey("qasarrate", "es")
 
     started: list[threading.Thread] = []
 
@@ -269,7 +283,7 @@ def test_rate_limited_generation_retries_sooner_than_generic_failure(
         return self.run()
 
     with patch.object(threading.Thread, "start", new=capturing_start):
-        autogen.ensure_symbol_generated("quasar", "es")
+        autogen.ensure_symbol_generated("qasarrate", "es")
     assert len(started) == 1
     assert key in autogen._recent_failures
     assert key in autogen._rate_limited
@@ -278,8 +292,9 @@ def test_rate_limited_generation_retries_sooner_than_generic_failure(
     # rate-limit cooldown -> the word retries now.
     with autogen._lock:
         autogen._recent_failures[key] = time_module.monotonic() - 40
+
     with patch.object(threading.Thread, "start", new=capturing_start):
-        autogen.ensure_symbol_generated("quasar", "es")
+        autogen.ensure_symbol_generated("qasarrate", "es")
     assert len(started) == 2
 
     # The same age for a generic failure is still inside its cooldown.
@@ -287,7 +302,7 @@ def test_rate_limited_generation_retries_sooner_than_generic_failure(
         autogen._rate_limited.discard(key)
         autogen._recent_failures[key] = time_module.monotonic() - 40
     with patch.object(threading.Thread, "start", new=capturing_start):
-        autogen.ensure_symbol_generated("quasar", "es")
+        autogen.ensure_symbol_generated("qasarrate", "es")
     assert len(started) == 2  # unchanged: blocked until the 5-minute mark
 
 
