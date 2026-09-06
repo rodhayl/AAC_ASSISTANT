@@ -5,6 +5,13 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 PreferenceLanguage = Annotated[str, Field(min_length=2, max_length=10)]
 
+# Speaking-rate bounds for Kokoro TTS. Single backend home: the preference
+# update schema, the synthesize endpoint schema (providers.py) and the legacy
+# value clamp (auth_helpers.bounded_speed) all import these, so the three
+# copies cannot drift apart.
+TTS_SPEED_MIN = 0.5
+TTS_SPEED_MAX = 2.0
+
 
 class UserPreferencesResponse(BaseModel):
     tts_provider: str = "kokoro"
@@ -28,10 +35,10 @@ class UserPreferencesResponse(BaseModel):
 
 class UserPreferencesUpdate(BaseModel):
     tts_provider: Literal["browser", "kokoro"] | None = None
-    tts_voice: str | None = Field(None, max_length=200)
-    tts_local_voice: str | None = Field(None, max_length=40)
+    tts_voice: str | None = Field(None, max_length=20)  # UserSettings.tts_voice String(20)
+    tts_local_voice: str | None = Field(None, max_length=40)  # String(40): verified aligned
     # Same bounds as the Kokoro synthesis endpoint (providers.py).
-    tts_local_speed: float | None = Field(None, ge=0.5, le=2.0)
+    tts_local_speed: float | None = Field(None, ge=TTS_SPEED_MIN, le=TTS_SPEED_MAX)
     tts_language: PreferenceLanguage | None = None
     ui_language: PreferenceLanguage | None = None
     notifications_enabled: bool | None = None
@@ -256,8 +263,8 @@ class SymbolBase(BaseModel):
     label: str = Field(..., min_length=1, max_length=100)
     description: str | None = Field(None, max_length=10_000)
     category: str = Field("general", min_length=1, max_length=50)
-    image_path: str | None = Field(None, max_length=500)
-    audio_path: str | None = Field(None, max_length=500)
+    image_path: str | None = Field(None, max_length=255)  # Symbol.image_path String(255)
+    audio_path: str | None = Field(None, max_length=255)  # Symbol.audio_path String(255)
     keywords: str | None = Field(None, max_length=10_000)
     language: str = Field("en", min_length=2, max_length=10)
 
@@ -279,8 +286,8 @@ class SymbolUpdate(BaseModel):
     label: str | None = Field(None, min_length=1, max_length=100)
     description: str | None = Field(None, max_length=10_000)
     category: str | None = Field(None, min_length=1, max_length=50)
-    image_path: str | None = Field(None, max_length=500)
-    audio_path: str | None = Field(None, max_length=500)
+    image_path: str | None = Field(None, max_length=255)  # Symbol.image_path String(255)
+    audio_path: str | None = Field(None, max_length=255)  # Symbol.audio_path String(255)
     keywords: str | None = Field(None, max_length=10_000)
     language: str | None = Field(None, min_length=2, max_length=10)
 
@@ -401,10 +408,13 @@ class AISuggestionApplyRequest(BaseModel):
 # --- Notification Schemas ---
 class NotificationCreate(BaseModel):
     user_id: int
-    title: str
+    # Bounds mirror the Notification columns (title String(200),
+    # notification_type/priority String(20)) so oversize input fails
+    # validation instead of blowing up on Postgres.
+    title: str = Field(..., min_length=1, max_length=200)
     message: str
-    notification_type: str = "info"
-    priority: str = "normal"
+    notification_type: str = Field("info", min_length=1, max_length=20)
+    priority: str = Field("normal", min_length=1, max_length=20)
 
 
 class BoardAssignRequest(BaseModel):
@@ -419,10 +429,16 @@ class StudentAssignRequest(BaseModel):
 
 
 # --- Learning Schemas ---
+# Real difficulty bands used by the question engine (learning/common.py:
+# difficulty_for_score). Anything else would leak into the LLM prompt and be
+# persisted on the session row, so the start payload only accepts these.
+DifficultyBand = Literal["basic", "intermediate", "advanced"]
+
+
 class LearningSessionStart(BaseModel):
     topic: str = Field(..., min_length=1, max_length=100)
     purpose: str | None = Field(None, max_length=10_000)
-    difficulty: str = Field("basic", min_length=1, max_length=20)
+    difficulty: DifficultyBand = "basic"
     board_id: int | None = Field(None, ge=1)
     mode_key: str | None = Field(None, min_length=1, max_length=50)
 
@@ -604,7 +620,6 @@ class SymbolUsageRequest(BaseModel):
 
 class NextSymbolRequest(BaseModel):
     current_symbols: str = ""
-    chat_history: list[dict[str, str]] = Field(default_factory=list)
     limit: int = Field(5, ge=1, le=50)
     intent: str = "general"
     offset: int = Field(0, ge=0, le=100_000)
@@ -644,7 +659,9 @@ class SafetyConstraintsSchema(BaseModel):
     content_filter_level: str | None = None  # strict, standard, relaxed
     forbidden_topics: list[str] | None = None
     trigger_words: list[str] | None = None
-    max_response_length: int | None = None
+    # >=1 only: 0/negative feedback caps corrupt replies (a 0-length slice),
+    # and the UI clears the cap with null/undefined.
+    max_response_length: int | None = Field(None, ge=1)
     # Per-student feature gates. ``None`` = follow the admin global setting.
     block_ai_chat: bool | None = None
     block_board_ai: bool | None = None
@@ -728,7 +745,7 @@ class ContentSafetyPolicySchema(BaseModel):
     trigger_words: list[str] = []
     feature_locks: dict[str, bool] = {}
     sentinel_moderation: bool = False
-    max_response_length: int | None = None
+    max_response_length: int | None = Field(None, ge=1)
     # Fields teachers may not override per student.
     locked_fields: list[str] = []
 

@@ -603,3 +603,29 @@ class TestAnalyticsAPI:
         # Filter out always-included punctuation for limit check
         non_punctuation = [s for s in data if s.get("category") != "punctuation"]
         assert len(non_punctuation) <= 1
+
+    def test_next_symbol_chat_history_removed(self, sample_usage_logs):
+        """chat_history was dead per-keystroke payload; now gone end to end."""
+        from src.api.schemas import NextSymbolRequest
+
+        # Schema no longer declares the unused field.
+        assert "chat_history" not in NextSymbolRequest.model_fields
+
+        # A legacy client that still sends it is ignored (pydantic default
+        # ignores extras) and the prediction still succeeds unchanged.
+        response = client.post(
+            "/api/analytics/next-symbol",
+            json={
+                "current_symbols": "I,want",
+                "limit": 3,
+                "chat_history": [
+                    {"role": "user", "content": "hello"},
+                    {"role": "assistant", "content": "hi"},
+                ],
+            },
+        )
+        assert response.status_code == 200
+        non_punctuation = [
+            s for s in response.json() if s.get("category") != "punctuation"
+        ]
+        assert len(non_punctuation) <= 3

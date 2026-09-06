@@ -22,12 +22,23 @@ sys.path.insert(0, str(project_root))
 TEMP_PASSWORD_ENV = "AAC_MIGRATION_TEMP_PASSWORD"
 
 
-def _password_is_strong(password: str) -> bool:
+def _temp_password_is_strong(password: str) -> bool:
+    """Require the shared app policy PLUS documented temp-password hardening.
+
+    The base requirements (length 8, upper, lower, digit) come from the same
+    ``password_strength_error_key`` the API routes and CLI admin tool use, so
+    the two definitions cannot drift apart. On top of that, a migration
+    temporary password is handed out to many users at once and must be rotated
+    immediately, so it is deliberately stricter: at least 12 chars including a
+    non-alphanumeric character. That extra bar is intentional and must not be
+    relaxed below the historical level (12 + upper + lower + digit + special).
+    """
+    from src.aac_app.services.auth_service import password_strength_error_key
+
+    if password_strength_error_key(password) is not None:
+        return False
     return bool(
         len(password) >= 12
-        and re.search(r"[A-Z]", password)
-        and re.search(r"[a-z]", password)
-        and re.search(r"\d", password)
         and re.search(r"[^A-Za-z0-9]", password)
     )
 
@@ -39,7 +50,7 @@ def _resolve_temp_password(cli_temp_password: str | None) -> str:
             "Temporary password is required via --temp-password or "
             f"{TEMP_PASSWORD_ENV}."
         )
-    if not _password_is_strong(temp_password):
+    if not _temp_password_is_strong(temp_password):
         raise ValueError(
             "Temporary password must be at least 12 chars and include upper, lower, "
             "digit, and special characters."

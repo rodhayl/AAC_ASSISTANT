@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from src.aac_app.models import (
     ContentSafetyEvent,
@@ -17,6 +18,7 @@ from src.aac_app.models import (
     Symbol,
     User,
 )
+from src.aac_app.services import content_safety as content_safety_mod
 from src.aac_app.services.content_safety import (
     ContentPolicy,
     check_text,
@@ -25,6 +27,7 @@ from src.aac_app.services.content_safety import (
     resolve_policy_for_user,
     save_global_policy,
 )
+from src.api import schemas
 from src.api.main import app
 from tests.auth_helpers import create_test_token
 
@@ -114,6 +117,72 @@ def test_default_level_for_age():
     assert default_level_for_age(10) == "standard"
     assert default_level_for_age(16) == "relaxed"
     assert default_level_for_age(None) == "standard"
+
+
+def test_max_response_length_rejects_zero_and_negative_at_schema(
+    test_db_session,
+):
+    """0/negative caps corrupt reply truncation; schemas require >= 1."""
+    with pytest.raises(ValidationError):
+        schemas.SafetyConstraintsSchema(max_response_length=0)
+    with pytest.raises(ValidationError):
+        schemas.SafetyConstraintsSchema(max_response_length=-3)
+    positive = schemas.SafetyConstraintsSchema(max_response_length=3)
+    assert positive.max_response_length == 3
+    unset = schemas.SafetyConstraintsSchema(max_response_length=None)
+    assert unset.max_response_length is None
+
+
+def test_optional_int_treats_non_positive_as_unset(test_db_session):
+    """Legacy stored 0/negatives normalize to 'no cap', never to a crash."""
+    optional = content_safety_mod._optional_int
+    assert optional(0) is None
+    assert optional(-3) is None
+    assert optional("0") is None
+    assert optional("-3") is None
+    assert optional(True) is None
+    assert optional("5") == 5
+    assert optional(50) == 50
+    assert optional("") is None
+    assert optional("abc") is None
+
+
+def test_legacy_non_positive_student_cap_does_not_override_global(
+    test_db_session,
+):
+    """A guardian row persisting 0/-1 falls back to the global cap."""
+    import src.aac_app.services.content_safety as safety_mod
+
+    student = _make_user(test_db_session, "safety_legacy_cap", "student")
+    test_db_session.add(
+        GuardianProfile(
+            user_id=student.id,
+            template_name="default",
+            safety_constraints={
+                # Legacy value a teacher could not set through the current UI.
+                "max_response_length": -1,
+                "content_filter_level": "standard",
+            },
+            is_active=True,
+            created_by=student.id,
+        )
+    )
+    test_db_session.commit()
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        safety_mod,
+        "load_global_policy",
+        lambda: ContentPolicy(max_response_length=30),
+    )
+    try:
+        policy = safety_mod.resolve_policy_for_user(
+            student.id, db=test_db_session
+        )
+        # The non-positive override is ignored: the global 30-word cap stands
+        # instead of corrupting feedback truncation with a <=0 slice.
+        assert policy.max_response_length == 30
+    finally:
+        monkeypatch.undo()
 
 
 def test_feature_locks():

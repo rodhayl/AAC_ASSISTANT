@@ -4,6 +4,12 @@ export type WSHandlers = {
   onClose?: () => void
 }
 
+// Bound the offline queue so a dead socket cannot grow memory forever. Mirrors
+// SUBSCRIBER_QUEUE_MAXSIZE=100 (backend) and MAX_OFFLINE_QUEUE_SIZE=100
+// (api.ts offline replay); the oldest payloads are dropped to keep the most
+// recent state (e.g. the last board move) for the reconnect flush.
+const WS_QUEUE_MAXSIZE = 100;
+
 export function createWSClient(
   url: string,
   handlers: WSHandlers = {},
@@ -71,6 +77,10 @@ export function createWSClient(
       if (socket && socket.readyState === WebSocket.OPEN) {
         try { socket.send(JSON.stringify(payload)) } catch { /* send failed */ }
       } else if (!closed) {
+        if (queue.length >= WS_QUEUE_MAXSIZE) {
+          // Drop the oldest queued payload so a long outage cannot leak.
+          queue.shift()
+        }
         queue.push(payload)
       }
     },

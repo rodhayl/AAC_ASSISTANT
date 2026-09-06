@@ -253,6 +253,7 @@
     },
     "providers": {
       "unsupportedSttModel": "Modelo de faster-whisper no compatible.",
+      "unsupportedVoice": "Voz TTS desconocida. Elige una de la lista de voces.",
       "voiceInstallWindowsOnly": "La instalación automática de voz solo está disponible en Windows.",
       "voiceInstallUnavailable": "La instalación automática de voz no está disponible.",
       "voiceInstallFrozen": "La aplicación de Windows empaquetada no puede modificar las dependencias de Python durante la ejecución.",

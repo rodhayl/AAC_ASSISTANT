@@ -1,6 +1,11 @@
 import axios, { AxiosHeaders } from 'axios';
 import type { AxiosRequestConfig } from 'axios';
 import { getAuthState } from './authState';
+import {
+  errorMessageOf,
+  errorPayloadOf,
+  isCancelledError,
+} from './httpErrors';
 import { config } from '../config';
 import {
   clearOfflinePersistence,
@@ -12,21 +17,9 @@ import {
 } from './offlinePersistence';
 import { useOfflineStore } from '../store/offlineStore';
 
-type ApiError = {
-  message?: unknown;
-  response?: {
-    status?: number;
-    data?: {
-      detail?: unknown;
-      error?: unknown;
-      message?: unknown;
-    };
-  };
-};
-
 export function extractError(error: unknown, fallback: string): string {
-  const apiError = error as ApiError;
-  const detail = apiError?.response?.data?.detail;
+  const payload = errorPayloadOf(error);
+  const detail = payload?.data?.detail;
 
   if (typeof detail === 'string') return detail;
 
@@ -37,9 +30,9 @@ export function extractError(error: unknown, fallback: string): string {
           entry &&
           typeof entry === 'object' &&
           'msg' in entry &&
-          typeof (entry as { msg?: unknown }).msg === 'string'
+          typeof entry.msg === 'string'
         ) {
-          return (entry as { msg: string }).msg;
+          return entry.msg;
         }
         return String(entry);
       })
@@ -50,13 +43,13 @@ export function extractError(error: unknown, fallback: string): string {
     return JSON.stringify(detail);
   }
 
-  const responseError = apiError?.response?.data?.error;
+  const responseError = payload?.data?.error;
   if (typeof responseError === 'string' && responseError) return responseError;
 
-  const responseMessage = apiError?.response?.data?.message;
+  const responseMessage = payload?.data?.message;
   if (typeof responseMessage === 'string' && responseMessage) return responseMessage;
 
-  return typeof apiError?.message === 'string' && apiError.message ? apiError.message : fallback;
+  return errorMessageOf(error) ?? fallback;
 }
 
 const api = axios.create({
@@ -247,15 +240,15 @@ async function flushQueue() {
       queue.shift();
       persistQueue();
     } catch (error) {
-      const replayError = error as ApiError & { code?: unknown; name?: unknown };
-      const cancelled =
-        replayError.code === 'ERR_CANCELED' || replayError.name === 'CanceledError';
+      const cancelled = isCancelledError(error);
       // Logout cancellation and late results from an invalidated session are
       // intentional, not user-visible conflicts.
       if (generation === replayGeneration && !cancelled) {
+        const payload = errorPayloadOf(error);
+        const detail = payload?.data?.detail;
         const errorMsg =
-          replayError.response?.data?.detail ||
-          replayError.message ||
+          (typeof detail === 'string' && detail ? detail : undefined) ||
+          errorMessageOf(error) ||
           'Request failed after reconnection';
         useOfflineStore.getState().addConflict(item.config, String(errorMsg), item.userId);
         queue.shift();
@@ -266,7 +259,7 @@ async function flushQueue() {
         // stop there (the refresh/logout flow re-triggers a fresh flush).
         // Network-level failures mean the connection dropped again, so stop
         // and let the next flush trigger (online event, auth-ready) retry.
-        const status = replayError.response?.status;
+        const status = payload?.status;
         if (typeof status === 'number' && status !== 401) continue;
         return;
       }

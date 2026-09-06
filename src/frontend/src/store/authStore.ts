@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import api, { extractError } from '../lib/api';
 import { registerAuthStateReader } from '../lib/authState';
+import { isOfflineError } from '../lib/httpErrors';
 import type { AuthSetupData, RegistrationData, User } from '../types';
 import { useLocaleStore } from './localeStore';
 import { useThemeStore } from './themeStore';
@@ -266,10 +267,7 @@ export const useAuthStore = create<AuthState>()(
           } catch (error: unknown) {
             // If offline, don't log out. A stale request must not clear the
             // newer session either — one guard covers both.
-            const apiError = error as { code?: unknown; message?: unknown };
-            const isOfflineError =
-              apiError.code === 'ERR_OFFLINE' || apiError.message === 'offline';
-            if (isOfflineError || !isCurrentRequest()) return;
+            if (isOfflineError(error) || !isCurrentRequest()) return;
             // If we can't get user details, token might be invalid on server side
             clearSession();
           }
@@ -304,8 +302,7 @@ export const useAuthStore = create<AuthState>()(
           return false;
         } catch (error: unknown) {
           // If offline, don't clear session, just return false (failed to refresh)
-          const apiError = error as { code?: unknown; message?: unknown };
-          if (apiError.code === 'ERR_OFFLINE' || apiError.message === 'offline') {
+          if (isOfflineError(error)) {
             return false;
           }
           // Refresh failed

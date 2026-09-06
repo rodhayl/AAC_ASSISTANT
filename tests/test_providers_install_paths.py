@@ -167,6 +167,49 @@ def test_tts_synthesize_success_returns_wav(admin_headers, monkeypatch):
     assert response.headers["cache-control"] == "no-store"
 
 
+def test_tts_synthesize_unknown_voice_returns_400_not_500(
+    admin_headers, monkeypatch
+):
+    """An invented voice is a 400 client error, never an unhandled 500."""
+    provider = MagicMock()
+    provider.is_available.return_value = True
+
+    def _boom(*args, **kwargs):
+        raise ValueError("Unknown Kokoro voice: nope")
+
+    provider.synthesize.side_effect = _boom
+    monkeypatch.setattr(
+        "src.api.routers.providers.get_local_tts_provider", lambda: provider
+    )
+
+    response = client.post(
+        "/api/providers/tts/synthesize",
+        json={"text": "Hola", "lang": "es", "voice": "nope"},
+        headers=admin_headers,
+    )
+    assert response.status_code == 400
+    provider.synthesize.assert_not_called()
+
+
+def test_tts_synthesize_unknown_voice_is_400_even_without_engine(
+    admin_headers, monkeypatch
+):
+    """Voice validation runs before engine availability: 400, not 503/500."""
+    provider = MagicMock()
+    provider.is_available.return_value = False
+    provider.is_installed.return_value = False
+    monkeypatch.setattr(
+        "src.api.routers.providers.get_local_tts_provider", lambda: provider
+    )
+
+    response = client.post(
+        "/api/providers/tts/synthesize",
+        json={"text": "Hola", "voice": "nope"},
+        headers=admin_headers,
+    )
+    assert response.status_code == 400
+
+
 def test_lmstudio_models_success(admin_headers, monkeypatch):
     """An available LM Studio returns its model list."""
     from unittest.mock import AsyncMock

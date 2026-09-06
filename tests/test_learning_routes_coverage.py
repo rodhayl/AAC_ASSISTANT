@@ -74,6 +74,37 @@ def test_start_session_forbidden_for_other_user(admin_user, user_headers):
     assert response.status_code == 403
 
 
+def test_start_session_rejects_invalid_difficulty_bands(
+    admin_user, admin_headers, mock_learning_service
+):
+    """Only real difficulty bands reach the service; anything else is 422.
+
+    'adaptive' is a UI concept and must never be accepted as a wire value: it
+    used to flow into the LLM prompt and get persisted on the session row.
+    """
+    for bad in ("adaptive", "random", "HARD", ""):
+        response = client.post(
+            f"/api/learning/start?user_id={admin_user.id}",
+            headers=admin_headers,
+            json={"topic": "Weather", "difficulty": bad},
+        )
+        assert response.status_code == 422, bad
+    assert mock_learning_service.start_learning_session.call_count == 0
+
+
+def test_start_session_accepts_real_difficulty_bands(
+    admin_user, admin_headers, mock_learning_service
+):
+    """The concrete bands (basic/intermediate/advanced) still start sessions."""
+    for band in ("basic", "intermediate", "advanced"):
+        response = client.post(
+            f"/api/learning/start?user_id={admin_user.id}",
+            headers=admin_headers,
+            json={"topic": "Weather", "difficulty": band},
+        )
+        assert response.status_code == 200, band
+
+
 def test_start_session_failure_maps_to_400(
     admin_user, admin_headers, mock_learning_service
 ):

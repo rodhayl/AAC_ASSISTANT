@@ -3,7 +3,7 @@ import '../src/i18n/index'
 import { render, waitFor } from '@testing-library/react'
 import { LanguageSwitcher } from '../src/components/LanguageSwitcher'
 import { I18nextProvider } from 'react-i18next'
-import i18n, { ensureLocale } from '../src/i18n/index'
+import i18n, { NAMESPACE_TABLE, ensureLocale } from '../src/i18n/index'
 import { useLocaleStore } from '../src/store/localeStore'
 
 describe('i18n initialization', () => {
@@ -25,6 +25,24 @@ describe('i18n initialization', () => {
       },
       { timeout: 5000 }
     )
+  })
+
+  it('derives es, en and i18next resources from one namespace table', async () => {
+    const nsNames = NAMESPACE_TABLE.map(({ ns }) => ns)
+    // The i18next ns option and the es resources map come from the same rows.
+    expect(i18n.options.ns).toEqual(nsNames)
+    const esKeys = Object.keys(i18n.options.resources?.es ?? {})
+    expect(esKeys).toEqual(nsNames)
+    expect(new Set(esKeys).size).toBe(nsNames.length)
+
+    // Every English bundle exposes the same top-level keys as its Spanish
+    // sibling, so no namespace can silently ship a partial file.
+    for (const row of NAMESPACE_TABLE) {
+      const enBundle = await row.en()
+      expect(Object.keys(enBundle.default).sort()).toEqual(
+        Object.keys(row.es).sort(),
+      )
+    }
   })
 
   it('ensureLocale is idempotent for the English locale', async () => {

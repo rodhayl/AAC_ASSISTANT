@@ -14,6 +14,13 @@ from src.aac_app.models.notification import Notification
 
 SUBSCRIBER_QUEUE_MAXSIZE = 100
 _PENDING_NOTIFICATIONS_KEY = "aac_pending_notification_events"
+# Tracks SAVEPOINT nesting so staged events publish only at a real commit.
+# SQLAlchemy fires Session after_commit/after_rollback for nested
+# (begin_nested) transactions too: releasing a savepoint looks like a commit
+# and rolling one back (e.g. a lost achievement-award race) looks like a
+# rollback. Publishing on those would leak events from transactions that
+# never committed, so the listeners below defer to the root boundary.
+_NESTED_TX_KEY = "aac_nested_transaction_depth"
 
 
 class _SubscriberQueue(asyncio.Queue[dict[str, Any]]):
@@ -133,9 +140,40 @@ def stage_notification(session: Session, notification: Notification) -> None:
     pending.append((notification_payload(notification), notification.user_id))
 
 
+@event.listens_for(Session, "after_transaction_create")
+def _note_nested_transaction(session: Session, transaction: Any) -> None:
+    """Count live SAVEPOINTs so commit/rollback events can find the root."""
+    if transaction.nested:
+        session.info[_NESTED_TX_KEY] = session.info.get(_NESTED_TX_KEY, 0) + 1
+
+
+@event.listens_for(Session, "after_transaction_end")
+def _forget_nested_transaction(session: Session, transaction: Any) -> None:
+    """Drop the SAVEPOINT count when the root transaction ends."""
+    if not transaction.nested:
+        # Subtransactions also end with nested=False but keep a live parent;
+        # only the root end (session no longer in any transaction) is the
+        # hard reset that guarantees no staged payload outlives the root.
+        if session.get_transaction() is None:
+            session.info.pop(_NESTED_TX_KEY, None)
+        return
+    depth = session.info.get(_NESTED_TX_KEY, 0)
+    if depth > 1:
+        session.info[_NESTED_TX_KEY] = depth - 1
+    else:
+        session.info.pop(_NESTED_TX_KEY, None)
+
+
 @event.listens_for(Session, "after_commit")
 def _publish_staged_notifications(session: Session) -> None:
-    """Publish staged notifications only after the transaction commits."""
+    """Publish staged notifications only after the root transaction commits.
+
+    SQLAlchemy fires after_commit when a SAVEPOINT is released as well; the
+    session is still inside its real transaction at that point, so publishing
+    would leak events whose rows may still roll back.
+    """
+    if session.info.get(_NESTED_TX_KEY):
+        return
     pending = session.info.pop(_PENDING_NOTIFICATIONS_KEY, ())
     for event_payload, user_id in pending:
         _publish_event(event_payload, user_id)
@@ -143,7 +181,14 @@ def _publish_staged_notifications(session: Session) -> None:
 
 @event.listens_for(Session, "after_rollback")
 def _discard_staged_notifications(session: Session) -> None:
-    """Discard events from transactions that did not commit."""
+    """Discard staged events only when the root transaction rolls back.
+
+    A SAVEPOINT rollback (e.g. a lost achievement-award race that skips one
+    award while the batch continues) must not discard notifications staged by
+    awards that already succeeded in the same root transaction.
+    """
+    if session.info.get(_NESTED_TX_KEY):
+        return
     session.info.pop(_PENDING_NOTIFICATIONS_KEY, None)
 
 

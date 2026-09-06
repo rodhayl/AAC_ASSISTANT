@@ -29,14 +29,6 @@ vi.mock('../src/store/authStore', () => ({
     selector ? selector(authState) : authState,
 }));
 
-vi.mock('../src/store/learningStore', () => {
-  const state = { messages: [] };
-  return {
-    useLearningStore: (selector?: (s: typeof state) => unknown) =>
-      selector ? selector(state) : state,
-  };
-});
-
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, arg2?: string | Record<string, unknown>) =>

@@ -3,6 +3,8 @@
 Covers GET /api/learning/topics/saved (owner + roster-student visibility),
 POST (teacher/admin only), and DELETE (owner, admin override, 404).
 """
+import threading
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -137,6 +139,65 @@ def test_saved_topic_rejects_duplicate_for_same_teacher_and_board(
 
     assert first.status_code == 201
     assert second.status_code == 409
+
+
+def test_concurrent_saved_topic_race_creates_single_row(
+    teacher_user, test_db_session
+):
+    """Two simultaneous POSTs of the same folded topic yield one row + a 409.
+
+    Both requests can read "not saved yet" before either commits (there is no
+    DB unique constraint because the duplicate fold is app logic), so without
+    serialization they would both insert. The write lock makes the loser
+    re-check after the winner's commit and answer 409 like the sequential
+    duplicate path.
+    """
+    import json
+
+    board = CommunicationBoard(user_id=teacher_user.id, name="Race board")
+    test_db_session.add(board)
+    test_db_session.commit()
+    test_db_session.refresh(board)
+
+    headers = create_test_headers(teacher_user.id, teacher_user.username, "teacher")
+    payload = json.dumps(
+        {"topic": "Rocket Science", "board": "Race board", "board_id": board.id}
+    ).encode()
+    concurrency = 6
+    # One client per thread: a shared TestClient serializes requests internally,
+    # which would hide the race. Separate clients exercise real interleaving
+    # over the same database.
+    barrier = threading.Barrier(concurrency)
+    results: list[int] = []
+    results_lock = threading.Lock()
+
+    def _post():
+        barrier.wait()  # start all requests as close to simultaneously as possible
+        local_client = TestClient(app)
+        response = local_client.post(
+            "/api/learning/topics/saved",
+            content=payload,
+            headers={**headers, "Content-Type": "application/json"},
+        )
+        with results_lock:
+            results.append(response.status_code)
+        local_client.close()
+
+    threads = [threading.Thread(target=_post) for _ in range(concurrency)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    # Exactly one winner; every other request observes the committed row and
+    # answers 409 like the sequential duplicate path.
+    assert sorted(results) == [201] + [409] * (concurrency - 1)
+    rows = (
+        test_db_session.query(SavedTopic)
+        .filter(SavedTopic.user_id == teacher_user.id)
+        .count()
+    )
+    assert rows == 1
 
 
 def test_saved_topic_duplicate_detection_folds_case_accents_and_whitespace(

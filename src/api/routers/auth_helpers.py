@@ -333,9 +333,13 @@ def build_preferences_response(
             return default
 
     def bounded_speed(value: Any) -> float:
-        # Legacy rows may keep NULL or garbage: clamp to the Kokoro range.
+        # Legacy rows may keep NULL or garbage: clamp to the Kokoro range
+        # declared once in schemas.py (single home for the backend bounds).
         try:
-            return min(max(float(value), 0.5), 2.0)
+            return min(
+                max(float(value), schemas.TTS_SPEED_MIN),
+                schemas.TTS_SPEED_MAX,
+            )
         except (TypeError, ValueError):
             return 1.0
 

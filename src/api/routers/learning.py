@@ -2,6 +2,7 @@
 import contextlib
 import os
 import re
+import threading
 import unicodedata
 from typing import Any
 
@@ -28,6 +29,12 @@ from src.api.deps import (
 from src.api.file_uploads import DEFAULT_MAX_AUDIO_BYTES, save_audio_upload
 
 router = APIRouter()
+
+
+# Serializes create_saved_topic's fold-based duplicate check + insert (see
+# the route body); saved-topic writes are rare user actions, so a coarse lock
+# is fine.
+_saved_topic_write_lock = threading.RLock()
 
 
 def _normalize_topic_text(name: str) -> str:
@@ -344,33 +351,42 @@ def create_saved_topic(
             detail=get_text(current_user, "errors.topicNotFound"),
         )
     # Duplicate detection compares folded text so "Astrofísica", " astrofisica ",
-    # and "ASTROFISICA" all resolve to the same topic.
-    duplicate_candidates = (
-        db.query(SavedTopic)
-        .filter(SavedTopic.user_id == current_user.id, SavedTopic.board == board_name)
-        .all()
-    )
-    normalized_topic = _normalize_topic_text(topic_name)
-    duplicate_exists = any(
-        _normalize_topic_text(existing.topic) == normalized_topic
-        for existing in duplicate_candidates
-    )
-    if duplicate_exists:
-        raise HTTPException(
-            status_code=409,
-            detail=get_text(current_user, "errors.topicAlreadySaved"),
+    # and "ASTROFISICA" all resolve to the same topic. There is no DB unique
+    # constraint (the fold is app logic, not a column), so two concurrent POSTs
+    # can both read "free" and then both insert. The in-process write lock
+    # serializes check+insert: the second request re-reads after the first
+    # commit and answers 409 like the sequential case. (Local-first single
+    # server; a multi-process deployment would need a real unique key.)
+    with _saved_topic_write_lock:
+        duplicate_candidates = (
+            db.query(SavedTopic)
+            .filter(
+                SavedTopic.user_id == current_user.id,
+                SavedTopic.board == board_name,
+            )
+            .all()
         )
+        normalized_topic = _normalize_topic_text(topic_name)
+        duplicate_exists = any(
+            _normalize_topic_text(existing.topic) == normalized_topic
+            for existing in duplicate_candidates
+        )
+        if duplicate_exists:
+            raise HTTPException(
+                status_code=409,
+                detail=get_text(current_user, "errors.topicAlreadySaved"),
+            )
 
-    topic = SavedTopic(
-        user_id=current_user.id,
-        board=board_name,
-        board_id=payload.board_id,
-        topic=topic_name,
-        created_by=current_user.display_name or current_user.username,
-        created_by_user_id=current_user.id,
-    )
-    db.add(topic)
-    db.commit()
+        topic = SavedTopic(
+            user_id=current_user.id,
+            board=board_name,
+            board_id=payload.board_id,
+            topic=topic_name,
+            created_by=current_user.display_name or current_user.username,
+            created_by_user_id=current_user.id,
+        )
+        db.add(topic)
+        db.commit()
     db.refresh(topic)
     topic.created_by_name = _creator_name(db, topic)
     return topic

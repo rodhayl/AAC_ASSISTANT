@@ -8,6 +8,7 @@ import { config } from '../config';
 import { useTranslation } from 'react-i18next';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { isStaffUser } from '../lib/roles';
+import { isAbortError } from '../lib/httpErrors';
 
 interface NavbarProps {
   onMenuToggle?: () => void;
@@ -91,7 +92,7 @@ export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
           }
         }
         } catch (error) {
-        if ((error as { name?: string })?.name === 'AbortError') return;
+        if (isAbortError(error)) return;
         // Notification delivery is optional and must not disrupt the AAC UI.
       }
 

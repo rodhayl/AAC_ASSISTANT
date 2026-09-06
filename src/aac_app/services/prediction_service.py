@@ -72,10 +72,34 @@ TopicWordFetcher = Callable[[str, str], list[str]]
 
 # LLM topic-word fetch is cached per (language, normalized topic) so repeated
 # keystrokes in the Smartbar do not re-call the provider. TTL bounds staleness
-# without ever re-generating on every prediction request.
+# and the cache is size-capped: the topic string is user-controlled and the
+# TTL never expels an entry until the same key is looked up again, so without
+# a cap a bombardment of unique topics would grow process memory monotonically.
 _TOPIC_WORD_TTL_SECONDS = 60 * 60
+_TOPIC_WORD_CACHE_MAXSIZE = 500
 _topics_word_cache: dict[tuple[str, str], tuple[float, tuple[str, ...]]] = {}
 _topics_word_lock = RLock()
+
+
+def _prune_topic_word_cache(now: float) -> None:
+    """Drop expired entries, then evict the oldest beyond the size cap.
+
+    Called (under ``_topics_word_lock``) on every insertion; a bounded sweep
+    keeps the write cost small while guaranteeing the dict never exceeds
+    ``_TOPIC_WORD_CACHE_MAXSIZE`` entries.
+    """
+    expired = [
+        key
+        for key, (timestamp, _words) in _topics_word_cache.items()
+        if now - timestamp >= _TOPIC_WORD_TTL_SECONDS
+    ]
+    for key in expired:
+        del _topics_word_cache[key]
+    while len(_topics_word_cache) > _TOPIC_WORD_CACHE_MAXSIZE:
+        oldest_key = min(
+            _topics_word_cache, key=lambda key: _topics_word_cache[key][0]
+        )
+        del _topics_word_cache[oldest_key]
 
 
 def _cached_topic_words(
@@ -103,6 +127,7 @@ def _cached_topic_words(
     )
     with _topics_word_lock:
         _topics_word_cache[key] = (now, result)
+        _prune_topic_word_cache(now)
     return result
 
 

@@ -19,6 +19,18 @@ interface LearningHistoryItem {
   created_at: string;
 }
 
+interface AchievementSummary {
+  earned_at: string | null;
+}
+
+/** The /achievements/user/{id}/points endpoint returns a bare number. */
+type PointsPayload = number;
+
+/** The /learning/history/{id} endpoint returns { sessions: [...] }. */
+interface LearningHistoryPayload {
+  sessions: LearningHistoryItem[];
+}
+
 interface DashboardState {
   stats: DashboardStats | null;
   recentActivity: ActivityItem[];
@@ -46,26 +58,34 @@ export const useDashboardStore = create<DashboardState>((set) => ({
     try {
       // Fetch multiple endpoints in parallel
       const [achievementsRes, pointsRes, learningHistoryRes] = await Promise.all([
-        api.get(`/achievements/user/${userId}`),
-        api.get(`/achievements/user/${userId}/points`),
+        api.get<AchievementSummary[]>(`/achievements/user/${userId}`),
+        api.get<PointsPayload>(`/achievements/user/${userId}/points`),
         // Keep the history window bounded while leaving enough rows for a
         // meaningful streak calculation when a user has several sessions per day.
-        api.get(`/learning/history/${userId}`, { params: { limit: 100 } })
+        api.get<LearningHistoryPayload | LearningHistoryItem[]>(`/learning/history/${userId}`, { params: { limit: 100 } })
       ]);
 
-      const achievements = achievementsRes.data;
-      const totalPoints = pointsRes.data;
+      const achievements = Array.isArray(achievementsRes.data) ? achievementsRes.data : [];
+      const totalPoints = typeof pointsRes.data === 'number' ? pointsRes.data : 0;
       const learningHistoryData = learningHistoryRes.data;
 
       // Only count unlocked achievements: the user endpoint also returns locked
       // ones (with progress) so the dashboard's "badges earned" card must not
       // count trophies the student has not earned yet.
       const earnedAchievements = achievements.filter(
-        (a: { earned_at: string | null }) => a.earned_at != null,
+        (a: AchievementSummary) => a.earned_at != null,
       );
 
-      // Extract sessions array from response (API returns { sessions: [...] })
-      const learningHistory: LearningHistoryItem[] = learningHistoryData.sessions || learningHistoryData || [];
+      // Extract sessions array from response (API returns { sessions: [...] },
+      // older clients also accepted a bare list); a drifted payload falls back
+      // to an empty list instead of crashing on ``undefined.map``.
+      const learningHistory: LearningHistoryItem[] = Array.isArray(
+        learningHistoryData,
+      )
+        ? learningHistoryData
+        : Array.isArray(learningHistoryData?.sessions)
+          ? learningHistoryData.sessions
+          : [];
 
       // Calculate streak from learning history
       const learningStreak = calculateStreak(learningHistory);

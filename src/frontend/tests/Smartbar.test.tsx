@@ -15,14 +15,6 @@ vi.mock('../src/hooks/useHoverSpeak', () => ({
   useHoverSpeak: () => ({ getHoverSpeakProps: () => ({}) }),
 }));
 
-vi.mock('../src/store/learningStore', () => {
-  const state = { messages: [] };
-  return {
-    useLearningStore: (selector?: (s: typeof state) => unknown) =>
-      selector ? selector(state) : state,
-  };
-});
-
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, arg2?: string | Record<string, unknown>) => {
@@ -66,6 +58,22 @@ describe('Smartbar', () => {
     expect(vi.mocked(api.post).mock.calls[0][1]).toEqual(
       expect.objectContaining({ board_id: 42 }),
     );
+  });
+
+  it('does not send the dead chat_history payload', async () => {
+    vi.mocked(api.post).mockResolvedValue({ data: [] });
+
+    render(
+      <Smartbar
+        currentSentence={[]}
+        onSelectSymbol={vi.fn()}
+        boardId={42}
+      />,
+    );
+
+    await waitFor(() => expect(vi.mocked(api.post)).toHaveBeenCalledTimes(1));
+    const body = vi.mocked(api.post).mock.calls[0][1] as Record<string, unknown>;
+    expect(body).not.toHaveProperty('chat_history');
   });
 
   it('passes the active Learning topic to the prediction request', async () => {

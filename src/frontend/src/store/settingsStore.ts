@@ -66,28 +66,35 @@ let updateRequestSequence = 0;
 
 export const useSettingsStore = create<SettingsState>((set, get) => {
 
-  // The three model-fetch actions share one load-and-store shape; only the
-  // endpoint, state key, and failure message differ. A newer request wins so
-  // an older response cannot replace a list fetched with newer credentials or
-  // clear its loading/error state while it is still in flight.
-  const fetchModelList = async (
+  // The four model-fetch actions share one load-and-store shape; only the
+  // endpoint, element type, and failure message differ. A newer request wins
+  // so an older response cannot replace a list fetched with newer credentials
+  // or clear its loading/error state while it is still in flight. The list is
+  // typed per endpoint and guarded at runtime: a missing/non-array ``models``
+  // payload becomes an empty list (never ``undefined``), so consumers calling
+  // ``.find``/``.length`` on the stored list cannot crash on a shape drift.
+  // Returns the fetched list (possibly empty) or null when the result is
+  // stale (a newer request owns the state) or the request failed (error
+  // already stored).
+  const fetchModelList = async <T>(
     endpoint: string,
-    stateKey: 'ollamaModels' | 'openRouterModels' | 'lmStudioModels' | 'groqModels',
     failureMessage: string,
     headers?: Record<string, string>
-  ) => {
+  ): Promise<T[] | null> => {
     const requestId = ++modelRequestSequence;
     set({ loading: true, error: null });
     try {
       const response = headers
-        ? await api.get(endpoint, { headers })
-        : await api.get(endpoint);
-      if (requestId !== modelRequestSequence) return;
-      set({ [stateKey]: response.data.models, loading: false });
+        ? await api.get<{ models?: T[] }>(endpoint, { headers })
+        : await api.get<{ models?: T[] }>(endpoint);
+      if (requestId !== modelRequestSequence) return null;
+      const models = response.data?.models;
+      return Array.isArray(models) ? models : [];
     } catch (error: unknown) {
-      if (requestId !== modelRequestSequence) return;
+      if (requestId !== modelRequestSequence) return null;
       const message = extractError(error, failureMessage);
       set({ error: message, loading: false });
+      return null;
     }
   };
 
@@ -129,35 +136,43 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
     },
 
     fetchOllamaModels: async () => {
-      await fetchModelList('/settings/ai/models/ollama', 'ollamaModels', tSettings('settings:ai.fetchOllamaFailed'));
+      const models = await fetchModelList<OllamaModel>(
+        '/settings/ai/models/ollama',
+        tSettings('settings:ai.fetchOllamaFailed'),
+      );
+      if (models !== null) set({ ollamaModels: models, loading: false });
     },
 
     fetchOpenRouterModels: async (apiKey?: string) => {
       const headers = apiKey?.trim()
         ? { 'X-OpenRouter-API-Key': apiKey.trim() }
         : undefined;
-      await fetchModelList(
+      const models = await fetchModelList<OpenRouterModel>(
         '/settings/ai/models/openrouter',
-        'openRouterModels',
         tSettings('settings:ai.fetchOpenRouterFailed'),
         headers,
       );
+      if (models !== null) set({ openRouterModels: models, loading: false });
     },
 
     fetchLmStudioModels: async () => {
-      await fetchModelList('/settings/ai/models/lmstudio', 'lmStudioModels', tSettings('settings:ai.fetchLmStudioFailed'));
+      const models = await fetchModelList<OpenRouterModel>(
+        '/settings/ai/models/lmstudio',
+        tSettings('settings:ai.fetchLmStudioFailed'),
+      );
+      if (models !== null) set({ lmStudioModels: models, loading: false });
     },
 
     fetchGroqModels: async (apiKey?: string) => {
       const headers = apiKey?.trim()
         ? { 'X-Groq-API-Key': apiKey.trim() }
         : undefined;
-      await fetchModelList(
+      const models = await fetchModelList<OpenRouterModel>(
         '/settings/ai/models/groq',
-        'groqModels',
         tSettings('settings:ai.fetchGroqFailed'),
         headers,
       );
+      if (models !== null) set({ groqModels: models, loading: false });
     },
   };
 });

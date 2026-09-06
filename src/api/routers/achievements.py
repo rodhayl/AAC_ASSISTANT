@@ -9,6 +9,7 @@ from src.aac_app.models import Achievement, User, UserAchievement
 from src.aac_app.services.achievement_system import AchievementSystem
 from src.api import schemas
 from src.api.deps import (
+    STAFF_USER_TYPES,
     get_achievement_system,
     get_current_active_user,
     get_db,
@@ -18,6 +19,38 @@ from src.api.deps import (
 )
 
 router = APIRouter()
+
+
+def _to_full_response(
+    achievement: Achievement,
+    *,
+    default_category: str,
+    coerce_is_manual: bool = False,
+) -> schemas.AchievementFullResponse:
+    """Build the full achievement response shared by list/create/update.
+
+    The only differences between the three call sites are preserved as
+    parameters: the fallback category when a row has none (custom for a fresh
+    create, general for stored rows) and whether ``is_manual`` is coerced to a
+    strict bool (stored/legacy rows may hold NULL, a fresh create never can).
+    """
+    return schemas.AchievementFullResponse(
+        id=achievement.id,
+        name=achievement.name,
+        description=achievement.description or "",
+        category=achievement.category or default_category,
+        points=achievement.points or 10,
+        icon=achievement.icon or "🏆",
+        is_manual=(
+            bool(achievement.is_manual) if coerce_is_manual else achievement.is_manual
+        ),
+        created_by=achievement.created_by,
+        target_user_id=achievement.target_user_id,
+        is_active=achievement.is_active,
+        created_at=achievement.created_at,
+        criteria_type=achievement.criteria_type,
+        criteria_value=achievement.criteria_value,
+    )
 
 
 def _validate_criteria_pair(
@@ -43,7 +76,7 @@ def get_categories(
     current_user: User = Depends(get_current_active_user),
 ):
     """Get all predefined achievement categories. Teachers/admins only."""
-    if current_user.user_type not in ["teacher", "admin"]:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_request_text(request, "errors.achievements.viewCategories", user=current_user),
@@ -57,7 +90,7 @@ def get_criteria_types(
     current_user: User = Depends(get_current_active_user),
 ):
     """Get all available criteria types for achievements. Teachers/admins only."""
-    if current_user.user_type not in ["teacher", "admin"]:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_request_text(request, "errors.achievements.viewCriteriaTypes", user=current_user),
@@ -83,7 +116,7 @@ def list_all_achievements(
     db: Session = Depends(get_db),
 ):
     """List all achievements (system + custom). Teachers/admins only."""
-    if current_user.user_type not in ["teacher", "admin"]:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_request_text(request, "errors.achievements.manage", user=current_user),
@@ -96,20 +129,10 @@ def list_all_achievements(
         .all()
     )
     return [
-        schemas.AchievementFullResponse(
-            id=a.id,
-            name=a.name,
-            description=a.description or "",
-            category=a.category or "general",
-            points=a.points or 10,
-            icon=a.icon or "🏆",
-            is_manual=bool(a.is_manual),
-            created_by=a.created_by,
-            target_user_id=a.target_user_id,
-            is_active=a.is_active,
-            created_at=a.created_at,
-            criteria_type=a.criteria_type,
-            criteria_value=a.criteria_value,
+        _to_full_response(
+            a,
+            default_category="general",
+            coerce_is_manual=True,
         )
         for a in achievements
     ]
@@ -124,7 +147,7 @@ def create_achievement(
     db: Session = Depends(get_db),
 ):
     """Create a custom achievement. Teachers/admins only."""
-    if current_user.user_type not in ["teacher", "admin"]:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_request_text(request, "errors.achievements.create", user=current_user),
@@ -168,20 +191,9 @@ def create_achievement(
 
     logger.info(f"Created custom achievement '{data.name}' by user {current_user.id}")
 
-    return schemas.AchievementFullResponse(
-        id=achievement.id,
-        name=achievement.name,
-        description=achievement.description or "",
-        category=achievement.category or "custom",
-        points=achievement.points or 10,
-        icon=achievement.icon or "🏆",
-        is_manual=achievement.is_manual,
-        created_by=achievement.created_by,
-        target_user_id=achievement.target_user_id,
-        is_active=achievement.is_active,
-        created_at=achievement.created_at,
-        criteria_type=achievement.criteria_type,
-        criteria_value=achievement.criteria_value,
+    return _to_full_response(
+        achievement,
+        default_category="custom",
     )
 
 
@@ -194,7 +206,7 @@ def update_achievement(
     db: Session = Depends(get_db),
 ):
     """Update an achievement. Only the creator or admin can update."""
-    if current_user.user_type not in ["teacher", "admin"]:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_request_text(request, "errors.achievements.update", user=current_user),
@@ -263,20 +275,10 @@ def update_achievement(
 
     logger.info(f"Updated achievement {achievement_id} by user {current_user.id}")
 
-    return schemas.AchievementFullResponse(
-        id=achievement.id,
-        name=achievement.name,
-        description=achievement.description or "",
-        category=achievement.category or "general",
-        points=achievement.points or 10,
-        icon=achievement.icon or "🏆",
-        is_manual=bool(achievement.is_manual),
-        created_by=achievement.created_by,
-        target_user_id=achievement.target_user_id,
-        is_active=achievement.is_active,
-        created_at=achievement.created_at,
-        criteria_type=achievement.criteria_type,
-        criteria_value=achievement.criteria_value,
+    return _to_full_response(
+        achievement,
+        default_category="general",
+        coerce_is_manual=True,
     )
 
 
@@ -288,7 +290,7 @@ def delete_achievement(
     db: Session = Depends(get_db),
 ):
     """Delete a custom achievement. Only the creator or admin can delete."""
-    if current_user.user_type not in ["teacher", "admin"]:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_request_text(request, "errors.achievements.delete", user=current_user),
@@ -338,7 +340,7 @@ def award_achievement(
     db: Session = Depends(get_db),
 ):
     """Manually award an achievement to a user. Teachers/admins only."""
-    if current_user.user_type not in ["teacher", "admin"]:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_request_text(request, "errors.achievements.award", user=current_user),

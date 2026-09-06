@@ -23,46 +23,41 @@ import esTeachers from '../locales/es/pages/teachers.json'
 import esAdmins from '../locales/es/pages/admins.json'
 import esSetup from '../locales/es/pages/setup.json'
 
-const ES_NAMESPACES = [
-  'common',
-  'dashboard',
-  'learning',
-  'achievements',
-  'boards',
-  'login',
-  'register',
-  'settings',
-  'students',
-  'symbols',
-  'sidebar',
-  'layout',
-  'error',
-  'games',
-  'teachers',
-  'admins',
-  'setup',
+// One table per namespace: its name, the eagerly-imported Spanish bundle, and
+// the lazily-imported English bundle. Everything below is derived from this
+// table (the i18n ns list, the ``resources`` map, the English loader loop), so
+// adding a namespace is a single-row edit and the es/en lists cannot drift
+// apart. The static es imports stay put; only the mappings are derived.
+export const NAMESPACE_TABLE: ReadonlyArray<{
+  ns: string
+  es: Record<string, unknown>
+  en: () => Promise<{ default: Record<string, unknown> }>
+}> = [
+  { ns: 'common', es: esCommon, en: () => import('../locales/en/common.json') },
+  { ns: 'dashboard', es: esDashboard, en: () => import('../locales/en/pages/dashboard.json') },
+  { ns: 'learning', es: esLearning, en: () => import('../locales/en/pages/learning.json') },
+  { ns: 'achievements', es: esAchievements, en: () => import('../locales/en/pages/achievements.json') },
+  { ns: 'boards', es: esBoards, en: () => import('../locales/en/pages/boards.json') },
+  { ns: 'login', es: esLogin, en: () => import('../locales/en/pages/login.json') },
+  { ns: 'register', es: esRegister, en: () => import('../locales/en/pages/register.json') },
+  { ns: 'settings', es: esSettings, en: () => import('../locales/en/pages/settings.json') },
+  { ns: 'students', es: esStudents, en: () => import('../locales/en/pages/students.json') },
+  { ns: 'symbols', es: esSymbols, en: () => import('../locales/en/pages/symbols.json') },
+  { ns: 'sidebar', es: esSidebar, en: () => import('../locales/en/pages/sidebar.json') },
+  { ns: 'layout', es: esLayout, en: () => import('../locales/en/pages/layout.json') },
+  { ns: 'error', es: esError, en: () => import('../locales/en/pages/error.json') },
+  { ns: 'games', es: esGames, en: () => import('../locales/en/pages/games.json') },
+  { ns: 'teachers', es: esTeachers, en: () => import('../locales/en/pages/teachers.json') },
+  { ns: 'admins', es: esAdmins, en: () => import('../locales/en/pages/admins.json') },
+  { ns: 'setup', es: esSetup, en: () => import('../locales/en/pages/setup.json') },
 ]
 
+const ES_NAMESPACES = NAMESPACE_TABLE.map(({ ns }) => ns)
+
 const resources = {
-  es: {
-    common: esCommon,
-    dashboard: esDashboard,
-    learning: esLearning,
-    achievements: esAchievements,
-    boards: esBoards,
-    login: esLogin,
-    register: esRegister,
-    settings: esSettings,
-    students: esStudents,
-    symbols: esSymbols,
-    sidebar: esSidebar,
-    layout: esLayout,
-    error: esError,
-    games: esGames,
-    teachers: esTeachers,
-    admins: esAdmins,
-    setup: esSetup,
-  },
+  es: Object.fromEntries(
+    NAMESPACE_TABLE.map(({ ns, es }) => [ns, es]),
+  ),
 }
 
 export const DEFAULT_LOCALE = 'es'
@@ -102,30 +97,6 @@ i18n
 // loader, so a missing `await` can never silently strand the UI in Spanish.
 // ---------------------------------------------------------------------------
 
-// Pair each namespace with its static dynamic import so the namespace-to-file
-// mapping stays adjacent (a reorder can't silently miswire a bundle).
-const EN_BUNDLES: ReadonlyArray<
-  readonly [string, () => Promise<{ default: Record<string, unknown> }>]
-> = [
-  ['common', () => import('../locales/en/common.json')],
-  ['dashboard', () => import('../locales/en/pages/dashboard.json')],
-  ['learning', () => import('../locales/en/pages/learning.json')],
-  ['achievements', () => import('../locales/en/pages/achievements.json')],
-  ['boards', () => import('../locales/en/pages/boards.json')],
-  ['login', () => import('../locales/en/pages/login.json')],
-  ['register', () => import('../locales/en/pages/register.json')],
-  ['settings', () => import('../locales/en/pages/settings.json')],
-  ['students', () => import('../locales/en/pages/students.json')],
-  ['symbols', () => import('../locales/en/pages/symbols.json')],
-  ['sidebar', () => import('../locales/en/pages/sidebar.json')],
-  ['layout', () => import('../locales/en/pages/layout.json')],
-  ['error', () => import('../locales/en/pages/error.json')],
-  ['games', () => import('../locales/en/pages/games.json')],
-  ['teachers', () => import('../locales/en/pages/teachers.json')],
-  ['admins', () => import('../locales/en/pages/admins.json')],
-  ['setup', () => import('../locales/en/pages/setup.json')],
-]
-
 let enLoaded: Promise<void> | null = null
 
 export function ensureLocale(lng: string): Promise<void> {
@@ -134,8 +105,8 @@ export function ensureLocale(lng: string): Promise<void> {
 
   if (!enLoaded) {
     enLoaded = (async () => {
-      const loaded = await Promise.all(EN_BUNDLES.map(([, load]) => load()))
-      EN_BUNDLES.forEach(([ns], i) => {
+      const loaded = await Promise.all(NAMESPACE_TABLE.map(({ en }) => en()))
+      NAMESPACE_TABLE.forEach(({ ns }, i) => {
         i18n.addResourceBundle('en', ns, loaded[i].default, true, true)
       })
       // addResourceBundle emits no event react-i18next subscribes to, so if

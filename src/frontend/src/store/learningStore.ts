@@ -426,7 +426,15 @@ export const useLearningStore = create<LearningState>((set, get) => {
       skipInitialSpeech: false,
     });
     try {
-      const response = await api.post<LearningSessionResponse & WithProvider>('/learning/start', data, {
+      // 'adaptive' is a UI concept (start at the default band and let the
+      // backend adjust), never a wire value: it is dropped here so the only
+      // startSession call site (the learning store) normalizes it instead of
+      // each caller. The backend accepts only real difficulty bands.
+      const payload = {
+        ...data,
+        difficulty: data.difficulty === 'adaptive' ? undefined : data.difficulty,
+      };
+      const response = await api.post<LearningSessionResponse & WithProvider>('/learning/start', payload, {
         params: { user_id: userId }
       });
 

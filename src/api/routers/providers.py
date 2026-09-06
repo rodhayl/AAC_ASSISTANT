@@ -26,6 +26,7 @@ from src.aac_app.providers.local_tts_provider import (
     model_files_present,
 )
 from src.aac_app.services.local_vector_store import vector_store_operation_lock
+from src.api import schemas
 from src.api.deps import (
     get_current_active_user,
     get_current_admin_user,
@@ -243,7 +244,12 @@ class TTSSynthesizeRequest(BaseModel):
         description="'default', 'female', 'male', or a specific Kokoro voice name "
         "such as 'ef_dora' (a specific voice also selects its language)",
     )
-    speed: float = Field(1.0, ge=0.5, le=2.0, description="Speaking rate multiplier")
+    speed: float = Field(
+        1.0,
+        ge=schemas.TTS_SPEED_MIN,
+        le=schemas.TTS_SPEED_MAX,
+        description="Speaking rate multiplier",
+    )
 
 
 @router.post("/tts/synthesize")
@@ -257,6 +263,19 @@ def tts_synthesize(
     Returns a 16-bit mono WAV. When the engine or its model files are missing
     this returns 503 so the selected Kokoro provider can report a clear error.
     """
+    # Validate the voice before touching the engine: an invented voice would
+    # otherwise surface as an unhandled ValueError from the provider (500)
+    # instead of a clean client error. The aliases plus every catalog voice are
+    # valid; the catalog is static for the process lifetime.
+    requested_voice = (payload.voice or "default").strip()
+    if requested_voice not in ("default", "female", "male") and requested_voice not in {
+        v["name"] for v in list_kokoro_voices()
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=get_text(user=current_user, key="errors.providers.unsupportedVoice"),
+        )
+
     provider = get_local_tts_provider()
     if not provider.is_available():
         if not provider.is_installed():

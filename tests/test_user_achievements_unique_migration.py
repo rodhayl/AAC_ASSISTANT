@@ -15,9 +15,11 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import Achievement, User
+from src.aac_app.models import Achievement, User, UserAchievement
 from src.aac_app.schema import ensure
+from src.aac_app.services.achievement_system import AchievementSystem
 from src.api.main import app
+from tests.auth_helpers import create_test_headers
 
 client = TestClient(app)
 
@@ -129,3 +131,64 @@ def test_award_race_returns_400_not_500(test_db_session, test_db_engine, admin_t
 
     assert response.status_code == 400, response.text
     assert response.json()["detail"]
+
+
+def test_check_batch_survives_lost_award_race(test_db_session, admin_user, monkeypatch):
+    """A conflicting award in the batch skips cleanly; the rest are granted.
+
+    Two concurrent checks can both read "not yet earned" and then race on the
+    user/achievement unique constraint. Pre-fix the losing flush poisoned the
+    whole session (PendingRollbackError on the batch's final flush → 500) and
+    discarded the legitimate awards. The criteria guard is bypassed here as
+    the deterministic stand-in for that lost pre-read; the already-earned
+    ``First Steps`` row makes the award insert hit the real constraint.
+    """
+    from src.aac_app.services.achievement_catalog import PREDEFINED_ACHIEVEMENTS
+
+    monkeypatch.setattr(
+        AchievementSystem,
+        "_check_achievement_criteria",
+        lambda self, *args, **kwargs: True,
+    )
+
+    first = PREDEFINED_ACHIEVEMENTS["first_steps"]
+    earned = Achievement(
+        name=first["name"],
+        description=first["description"],
+        category=first["category"],
+        criteria_type=first["criteria_type"],
+        criteria_value=first["criteria_value"],
+        points=first["points"],
+        icon=first["icon"],
+    )
+    test_db_session.add(earned)
+    test_db_session.commit()
+    test_db_session.add(
+        UserAchievement(user_id=admin_user.id, achievement_id=earned.id)
+    )
+    test_db_session.commit()
+
+    headers = create_test_headers(admin_user.id, admin_user.username, "admin")
+    response = client.post(
+        f"/api/achievements/user/{admin_user.id}/check", headers=headers
+    )
+
+    assert response.status_code == 200, response.text
+    # The already-earned achievement was not double awarded.
+    duplicate_rows = (
+        test_db_session.query(UserAchievement)
+        .filter(
+            UserAchievement.user_id == admin_user.id,
+            UserAchievement.achievement_id == earned.id,
+        )
+        .count()
+    )
+    assert duplicate_rows == 1
+    # The rest of the batch was still granted (def + award rows for the other
+    # catalog achievements the race did not touch).
+    granted = (
+        test_db_session.query(UserAchievement)
+        .filter(UserAchievement.user_id == admin_user.id)
+        .count()
+    )
+    assert granted == len(PREDEFINED_ACHIEVEMENTS)

@@ -94,4 +94,57 @@ describe('createWSClient reconnect lifecycle', () => {
     socket.onopen?.();
     expect(socket.send).not.toHaveBeenCalled();
   });
+
+  it('drops the oldest payload once the offline queue overflows', () => {
+    const client = createWSClient('ws://example.test');
+    const socket = MockWebSocket.instances[0];
+    socket.readyState = 0;
+
+    // Send one more than the cap so the oldest must be evicted.
+    for (let i = 0; i < 101; i++) {
+      client.send({ op: 'move', seq: i });
+    }
+    socket.readyState = MockWebSocket.OPEN;
+    socket.onopen?.();
+
+    // Only the most recent 100 survive, in their original order (seq 1..100).
+    const sent = socket.send.mock.calls.map(c => JSON.parse(c[0]));
+    expect(sent).toHaveLength(100);
+    expect(sent[0]).toEqual({ op: 'move', seq: 1 });
+    expect(sent[99]).toEqual({ op: 'move', seq: 100 });
+  });
+
+  it('preserves order while the queue is below the cap', () => {
+    const client = createWSClient('ws://example.test');
+    const socket = MockWebSocket.instances[0];
+    socket.readyState = 0;
+
+    for (let i = 0; i < 3; i++) {
+      client.send({ op: 'select', seq: i });
+    }
+    socket.readyState = MockWebSocket.OPEN;
+    socket.onopen?.();
+
+    const sent = socket.send.mock.calls.map(c => JSON.parse(c[0]));
+    expect(sent).toEqual([
+      { op: 'select', seq: 0 },
+      { op: 'select', seq: 1 },
+      { op: 'select', seq: 2 },
+    ]);
+  });
+
+  it('close() empties the queue even after overflow evictions', () => {
+    const client = createWSClient('ws://example.test');
+    const socket = MockWebSocket.instances[0];
+    socket.readyState = 0;
+
+    for (let i = 0; i < 120; i++) {
+      client.send({ op: 'move', seq: i });
+    }
+    client.close();
+
+    socket.readyState = MockWebSocket.OPEN;
+    socket.onopen?.();
+    expect(socket.send).not.toHaveBeenCalled();
+  });
 });

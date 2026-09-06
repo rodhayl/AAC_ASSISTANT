@@ -4,6 +4,7 @@ from typing import Any
 
 from loguru import logger
 from sqlalchemy import case, func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from ..db import get_session
@@ -270,66 +271,107 @@ class AchievementSystem:
             return False
         return stats[stat_key] >= criteria_value
 
+    @staticmethod
+    def _ensure_savepoint_outer_transaction(session: Session) -> None:
+        """Force a real outer transaction before using SAVEPOINTs on SQLite.
+
+        pysqlite (Python 3.12+) treats releasing the outermost SAVEPOINT as
+        the end of its implicit transaction and commits it, so rows written
+        inside a savepoint would survive a later outer rollback and the
+        caller's rollback becomes a no-op. Issuing a raw BEGIN first makes the
+        savepoints nest inside a real transaction whose rollback stays durable
+        until the caller commits or rolls back. Engines with explicit
+        transaction management (and SQLite connections already in a real
+        transaction) do not need this.
+        """
+        if session.bind is None or session.bind.dialect.name != "sqlite":
+            return
+        dbapi_connection = session.connection().connection
+        if getattr(dbapi_connection, "in_transaction", False):
+            return
+        session.connection().exec_driver_sql("BEGIN")
+
     def _award_achievement(self, user_id: int, achievement_key: str, session) -> bool:
         """Award an achievement to a user"""
         try:
-            achievement_data = self.achievements[achievement_key]
+            self._ensure_savepoint_outer_transaction(session)
+            with session.begin_nested():
+                achievement_data = self.achievements[achievement_key]
 
-            # Get or create achievement definition
-            achievement = (
-                session.query(Achievement)
-                .filter(
-                    Achievement.created_by.is_(None),
-                    Achievement.name == achievement_data["name"],
-                )
-                .first()
-            )
-
-            if not achievement:
-                achievement = Achievement(
-                    name=achievement_data["name"],
-                    description=achievement_data["description"],
-                    category=achievement_data["category"],
-                    criteria_type=achievement_data["criteria_type"],
-                    criteria_value=achievement_data["criteria_value"],
-                    points=achievement_data["points"],
-                    icon=achievement_data["icon"],
-                )
-                session.add(achievement)
-                session.flush()
-
-            # Create user achievement
-            user_achievement = UserAchievement(
-                user_id=user_id, achievement_id=achievement.id, earned_at=datetime.now()
-            )
-            session.add(user_achievement)
-
-            # Persist and publish a notification for the user.
-            try:
-                title = "Achievement Unlocked"
-                message = (
-                    f"{achievement_data['name']} (+{achievement_data['points']} pts)"
+                # Get or create achievement definition
+                achievement = (
+                    session.query(Achievement)
+                    .filter(
+                        Achievement.created_by.is_(None),
+                        Achievement.name == achievement_data["name"],
+                    )
+                    .first()
                 )
 
-                db_notification = Notification(
+                if not achievement:
+                    achievement = Achievement(
+                        name=achievement_data["name"],
+                        description=achievement_data["description"],
+                        category=achievement_data["category"],
+                        criteria_type=achievement_data["criteria_type"],
+                        criteria_value=achievement_data["criteria_value"],
+                        points=achievement_data["points"],
+                        icon=achievement_data["icon"],
+                    )
+                    session.add(achievement)
+                    session.flush()
+
+                # Create user achievement
+                user_achievement = UserAchievement(
                     user_id=user_id,
-                    title=title,
-                    message=message,
-                    notification_type="achievement",
-                    priority="high",
-                    is_read=False,
+                    achievement_id=achievement.id,
+                    earned_at=datetime.now(),
                 )
-                session.add(db_notification)
+                session.add(user_achievement)
+                # Flush inside the savepoint so a concurrent double-award hits
+                # the unique constraint HERE: the savepoint rolls back only this
+                # award and the rest of the batch keeps going.
                 session.flush()
-                stage_notification(session, db_notification)
-            except Exception as e:
-                logger.warning(f"Failed to send notification: {e}")
+
+                # Persist and publish a notification for the user. Best-effort
+                # inside its own savepoint: a staging failure must not fail the
+                # award, and must not poison the outer savepoint either.
+                try:
+                    with session.begin_nested():
+                        title = "Achievement Unlocked"
+                        message = (
+                            f"{achievement_data['name']} "
+                            f"(+{achievement_data['points']} pts)"
+                        )
+
+                        db_notification = Notification(
+                            user_id=user_id,
+                            title=title,
+                            message=message,
+                            notification_type="achievement",
+                            priority="high",
+                            is_read=False,
+                        )
+                        session.add(db_notification)
+                        session.flush()
+                        stage_notification(session, db_notification)
+                except Exception as e:
+                    logger.warning(f"Failed to send notification: {e}")
 
             logger.success(
                 f"Awarded achievement '{achievement_data['name']}' to user {user_id}"
             )
             return True
 
+        except IntegrityError:
+            # A concurrent request already awarded this achievement between our
+            # criteria check and this insert. Rolled back to the savepoint, so
+            # the session stays usable for the rest of the batch.
+            logger.info(
+                f"Achievement {achievement_key} already awarded for user {user_id}; "
+                "skipping (concurrent race)"
+            )
+            return False
         except Exception as e:
             logger.error(
                 f"Failed to award achievement {achievement_key} to user {user_id}: {e}"
@@ -341,33 +383,45 @@ class AchievementSystem:
     ) -> bool:
         """Award a custom automatic achievement already stored in the database."""
         try:
-            user_achievement = UserAchievement(
-                user_id=user_id,
-                achievement_id=achievement.id,
-                earned_at=datetime.now(),
-            )
-            session.add(user_achievement)
-
-            try:
-                db_notification = Notification(
+            self._ensure_savepoint_outer_transaction(session)
+            with session.begin_nested():
+                user_achievement = UserAchievement(
                     user_id=user_id,
-                    title="Achievement Unlocked",
-                    message=f"{achievement.name} (+{achievement.points or 0} pts)",
-                    notification_type="achievement",
-                    priority="high",
-                    is_read=False,
+                    achievement_id=achievement.id,
+                    earned_at=datetime.now(),
                 )
-                session.add(db_notification)
+                session.add(user_achievement)
+                # Flush inside the savepoint so a concurrent double-award hits
+                # the unique constraint HERE (see _award_achievement).
                 session.flush()
-                stage_notification(session, db_notification)
-            except Exception as e:
-                logger.warning(f"Failed to send notification: {e}")
+
+                try:
+                    with session.begin_nested():
+                        db_notification = Notification(
+                            user_id=user_id,
+                            title="Achievement Unlocked",
+                            message=f"{achievement.name} (+{achievement.points or 0} pts)",
+                            notification_type="achievement",
+                            priority="high",
+                            is_read=False,
+                        )
+                        session.add(db_notification)
+                        session.flush()
+                        stage_notification(session, db_notification)
+                except Exception as e:
+                    logger.warning(f"Failed to send notification: {e}")
 
             logger.success(
                 f"Awarded custom achievement '{achievement.name}' to user {user_id}"
             )
             return True
 
+        except IntegrityError:
+            logger.info(
+                f"Custom achievement {achievement.id} already awarded for user "
+                f"{user_id}; skipping (concurrent race)"
+            )
+            return False
         except Exception as e:
             logger.error(
                 f"Failed to award custom achievement {achievement.id} to user {user_id}: {e}"

@@ -202,6 +202,30 @@ def test_migrate_passwords_marks_credentials_changed_for_sha256_users(
         session.close()
 
 
+def test_migrate_temp_password_policy_reuses_shared_policy(op_db):
+    """The temp-password bar is the shared policy plus temp-only hardening.
+
+    Migration temp passwords are handed out to many accounts at once, so the
+    script is deliberately stricter than the shared policy (12+ chars and a
+    special char, not just 8+upper+lower+digit). It must never relax below
+    that historical bar, and its base requirements must come from the shared
+    policy so the two definitions cannot diverge.
+    """
+    import scripts.migrate_passwords as migrate_passwords
+
+    strong = migrate_passwords._temp_password_is_strong
+
+    # Old bar preserved: 12+ chars with upper/lower/digit/special.
+    assert strong("TempPass123!") is True
+    # Base shared-policy violations are still rejected.
+    assert strong("short1!") is False  # too short for the shared policy too
+    assert strong("abcdefghijklm") is False  # no upper/digit/special
+    # The temp-only hardening sits on top: meets the shared 8-char policy but
+    # lacks 12+ chars / a special character, so it stays rejected.
+    assert strong("Abcd1234") is False
+    assert strong("Abcdefghijkl1") is False  # 12+ chars, no special char
+
+
 def test_fix_null_passwords_marks_credentials_changed(legacy_null_password_db, monkeypatch):
     """Repairing a null password hash revokes the affected user's sessions."""
     factory, get_session = legacy_null_password_db

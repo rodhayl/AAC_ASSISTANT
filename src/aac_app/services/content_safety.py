@@ -234,10 +234,13 @@ def _policy_from_dict(data: dict[str, Any]) -> ContentPolicy:
 def _optional_int(value: Any) -> int | None:
     if isinstance(value, bool):
         return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str) and value.strip().isdigit():
-        return int(value)
+    parsed = value if isinstance(value, int) else None
+    if parsed is None and isinstance(value, str) and value.strip().isdigit():
+        parsed = int(value)
+    # Zero and negatives would corrupt feedback (a <=0 slice in the reply
+    # truncation), so legacy values are treated as "no cap", never stored.
+    if parsed is not None and parsed > 0:
+        return parsed
     return None
 
 
@@ -355,8 +358,11 @@ def resolve_policy_for_user(user_id: int | None, db=None) -> ContentPolicy:
     if isinstance(safety.get("sentinel_moderation"), bool):
         sentinel = safety["sentinel_moderation"]
     max_len = global_policy.max_response_length
-    if isinstance(safety.get("max_response_length"), int):
-        max_len = safety["max_response_length"]
+    safety_len = safety.get("max_response_length")
+    # Legacy per-student rows may persist 0/negative; treat them as "no cap"
+    # (the global policy stands) instead of corrupting the reply truncation.
+    if isinstance(safety_len, int) and safety_len > 0:
+        max_len = safety_len
 
     return ContentPolicy(
         level=level,

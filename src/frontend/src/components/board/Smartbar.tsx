@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Sparkles, Brain, Type, User, Play, FileText, Plus, MapPin, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../../lib/api';
+import { isCancelledError } from '../../lib/httpErrors';
 import { SymbolImage } from '../common/SymbolImage';
 import { useHoverSpeak } from '../../hooks/useHoverSpeak';
-import { useLearningStore } from '../../store/learningStore';
 import type { BoardSymbol } from '../../types';
 import { getCategoryStyle } from '../../lib/symbolCategoryStyle';
 
@@ -47,7 +47,6 @@ const SMARTBAR_AUTOREFRESH_MAX = 12;
 export function Smartbar({ currentSentence, onSelectSymbol, boardId, topic }: SmartbarProps) {
   const { t, i18n } = useTranslation('boards');
   const currentLanguage = i18n?.language?.split('-')[0] || 'en';
-  const messages = useLearningStore((state) => state.messages);
   const { getHoverSpeakProps } = useHoverSpeak();
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [activeIntent, setActiveIntent] = useState<IntentType>('general');
@@ -131,16 +130,11 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId, topic }: Sm
           .map(s => s.custom_text || s.symbol.label)
           .join(',');
 
-        // Use last 5 messages for context
-        const chatHistory = messages.slice(-5).map(m => ({
-          role: m.role,
-          content: m.content
-        }));
-
-        // Use POST for AI-enhanced prediction
+        // Use POST for AI-enhanced prediction. The prediction engine is
+        // purely n-gram/usage based and never consumed chat context, so no
+        // chat payload is sent (it was dead traffic per keystroke).
         const response = await api.post('/analytics/next-symbol', {
           current_symbols: labels,
-          chat_history: chatHistory,
           limit: SUGGESTIONS_PAGE_SIZE,
           intent: activeIntent,
           offset: offset,
@@ -167,7 +161,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId, topic }: Sm
           if (offset === 0) setGeneratingSuggestion(Boolean(pending));
         }
       } catch (error) {
-        if (active && (error as { code?: string })?.code !== 'ERR_CANCELED') {
+        if (active && !isCancelledError(error)) {
           console.error('Failed to fetch suggestions:', error);
           if (offset === 0) setSuggestions([]);
         }
@@ -182,7 +176,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId, topic }: Sm
       active = false;
       controller.abort();
     };
-  }, [debouncedSentence, messages, activeIntent, offset, boardId, topic, refreshKey]); // Re-fetch when sentence OR chat updates
+  }, [debouncedSentence, activeIntent, offset, boardId, topic, refreshKey]); // Re-fetch when the sentence changes
 
   // Auto-refresh while LLM topic words are still getting their pictograms:
   // poll silently (no spinner) until the tiles upgrade to real images, with a

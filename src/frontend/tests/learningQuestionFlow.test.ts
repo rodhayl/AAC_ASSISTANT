@@ -56,6 +56,42 @@ describe('learningStore adaptive question flow', () => {
     vi.useRealTimers();
   });
 
+  it('startSession never sends the UI-only adaptive difficulty over the wire', async () => {
+    useLearningStore.setState({ currentSession: null });
+    post.mockResolvedValue({ data: { success: true, session_id: 11 } });
+
+    await useLearningStore.getState().startSession(
+      {
+        topic: 'Space',
+        purpose: 'practice',
+        difficulty: 'adaptive',
+        board_id: undefined,
+        mode_key: 'guided',
+      },
+      1,
+    );
+
+    const call = post.mock.calls.find(([url]) => url === '/learning/start');
+    expect(call).toBeDefined();
+    const body = call[1] as { difficulty?: string };
+    expect(body.difficulty).toBeUndefined();
+    expect(JSON.stringify(body)).not.toContain('adaptive');
+  });
+
+  it('startSession passes concrete difficulty bands through', async () => {
+    useLearningStore.setState({ currentSession: null });
+    post.mockResolvedValue({ data: { success: true, session_id: 12 } });
+
+    await useLearningStore.getState().startSession(
+      { topic: 'Space', purpose: 'practice', difficulty: 'advanced', mode_key: 'guided' },
+      1,
+    );
+
+    const call = post.mock.calls.find(([url]) => url === '/learning/start');
+    const body = call[1] as { difficulty?: string };
+    expect(body.difficulty).toBe('advanced');
+  });
+
   it('resetSession cancels pending auto-ask work and clears active learning state', async () => {
     useLearningStore.setState({ currentSession: { session_id: 7, success: true } });
     post.mockResolvedValue({

@@ -474,6 +474,52 @@ def test_achievements_list_and_create_accept_both_slash_variants(
         assert response.json()["name"] == name
 
 
+def test_achievement_response_defaults_pin_create_vs_update(
+    setup_test_db, test_db_session, admin_user, admin_token
+):
+    """create defaults to 'custom'; stored/legacy rows map to 'general'.
+
+    The shared _to_full_response builder preserves each route's historical
+    default category (custom on a fresh create vs general for stored rows)
+    and coerces legacy NULL booleans on the read paths.
+    """
+    client = TestClient(app)
+    headers = _headers(admin_token)
+
+    created = client.post(
+        "/api/achievements",
+        headers=headers,
+        json={"name": "No category given", "points": 5},
+    )
+    assert created.status_code == 201
+    assert created.json()["category"] == "custom"
+
+    # Legacy row: NULL category and NULL is_manual must read back as the
+    # general/False defaults on both list and update responses.
+    legacy = Achievement(
+        name="Legacy nulls",
+        category=None,
+        is_manual=None,
+        is_active=True,
+    )
+    test_db_session.add(legacy)
+    test_db_session.commit()
+    test_db_session.refresh(legacy)
+
+    listed = client.get("/api/achievements", headers=headers).json()
+    legacy_listed = next(item for item in listed if item["name"] == "Legacy nulls")
+    assert legacy_listed["category"] == "general"
+    assert legacy_listed["is_manual"] is False
+
+    updated = client.put(
+        f"/api/achievements/{legacy.id}",
+        headers=headers,
+        json={"name": "Legacy nulls renamed"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["category"] == "general"
+
+
 def test_board_list_name_filter_matches_literally(
     setup_test_db, test_db_session, admin_user, admin_token
 ):

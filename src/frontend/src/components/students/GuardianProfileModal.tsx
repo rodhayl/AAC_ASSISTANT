@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Save, Sparkles, AlertTriangle, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import api, { extractError } from '../../lib/api';
+import { httpStatusOf } from '../../lib/httpErrors';
 import type { User, GuardianProfile, TemplateInfo } from '../../types';
 import { Button } from '../ui/button';
 import {
@@ -60,7 +61,7 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                 setSelectedTemplate(profileRes.data.template_name);
             } catch (error: unknown) {
                 if (requestId !== requestRef.current) return;
-                const status = (error as { response?: { status?: number } }).response?.status;
+                const status = httpStatusOf(error);
                 if (status === 404) {
                     // No profile yet, use default
                     setProfile({});
@@ -334,7 +335,14 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                                         ...profile,
                                         safety_constraints: {
                                             ...profile.safety_constraints,
-                                            max_response_length: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value))
+                                            // <=0 clears the cap (sent as
+                                            // undefined): the backend rejects
+                                            // 0 because it corrupts feedback.
+                                            max_response_length:
+                                              e.target.value !== '' &&
+                                              Number(e.target.value) > 0
+                                                ? Number(e.target.value)
+                                                : undefined
                                         }
                                     })}
                                     className="w-full p-2 border border-border rounded-lg bg-surface-hover"

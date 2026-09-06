@@ -301,8 +301,10 @@ class TemplateManager:
             prompt_parts.append(
                 "Apply strict content filtering - keep everything G-rated and safe."
             )
-        if safety.get("max_response_length"):
-            max_len = safety["max_response_length"]
+        max_len = safety.get("max_response_length")
+        # Only a positive cap constrains the prompt; 0/negative (legacy rows
+        # or cleared fields) mean "no cap" and must not emit a nonsense line.
+        if isinstance(max_len, int) and max_len > 0:
             prompt_parts.append(f"Keep responses under {max_len} words.")
 
         # Core AAC principles (always included)
