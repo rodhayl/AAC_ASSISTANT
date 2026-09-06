@@ -46,6 +46,11 @@ def _is_locked_error(exc: OperationalError) -> bool:
     return "locked" in message.lower()
 
 
+def _default_locale(locale: str) -> str:
+    """Normalize a caller locale, falling back to Spanish (the ARASAAC default)."""
+    return normalize_language_code(locale) or "es"
+
+
 def _imported_key(locale: str) -> str:
     return f"arasaac_library_imported_{locale}"
 
@@ -89,7 +94,7 @@ async def import_arasaac_library(locale: str = "es") -> dict[str, int]:
 
     Returns a summary with ``imported``, ``failed``, and ``skipped`` counts.
     """
-    locale = normalize_language_code(locale) or "es"
+    locale = _default_locale(locale)
     service = ArasaacService()
     imported = 0
     failed = 0
@@ -231,7 +236,7 @@ async def count_importable_arasaac_terms(locale: str = "es") -> dict[str, int]:
     keywords, duplicate labels, labels already stored for the locale) but
     touches neither the database nor the image files.
     """
-    locale = normalize_language_code(locale) or "es"
+    locale = _default_locale(locale)
     service = ArasaacService()
     try:
         pictograms = await service.list_all_symbols(locale)
@@ -275,7 +280,7 @@ async def import_arasaac_library_if_needed(
     Returns the import summary, or ``None`` when the library was already
     imported for this locale.
     """
-    locale = normalize_language_code(locale) or "es"
+    locale = _default_locale(locale)
     if _already_imported(locale):
         logger.info("ARASAAC library already imported for locale={}; skipping", locale)
         return None

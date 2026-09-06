@@ -73,6 +73,56 @@ def enforce_locked_safety_fields(
     return safety
 
 
+def _collect_profile_changes(
+    profile_data, *, skip_falsy: bool, current_user: User
+) -> dict:
+    """Map a guardian-profile payload onto the storage ``changes`` keys.
+
+    Shared by create and update so the ~10-field mapping cannot drift apart.
+    ``skip_falsy`` preserves the historical semantic difference between the
+    two routes: create omits falsy optional values (an empty gender on a new
+    profile is simply absent), while update applies any explicitly provided
+    field (``None`` omitted, falsy applied so a value can be cleared). ``age``
+    is intentionally excluded from the falsy rule — both routes store an age
+    of 0 when it is not None.
+    """
+
+    def take(value) -> bool:
+        if skip_falsy:
+            return bool(value)
+        return value is not None
+
+    changes: dict = {}
+    if take(profile_data.template_name):
+        changes["template_name"] = profile_data.template_name
+    if profile_data.age is not None:
+        changes["age"] = profile_data.age
+    if take(profile_data.gender):
+        changes["gender"] = profile_data.gender
+    if take(profile_data.medical_context):
+        changes["medical_context"] = profile_data.medical_context.model_dump(
+            exclude_none=True
+        )
+    if take(profile_data.communication_style):
+        changes["communication_style"] = profile_data.communication_style.model_dump(
+            exclude_none=True
+        )
+    if take(profile_data.safety_constraints):
+        changes["safety_constraints"] = enforce_locked_safety_fields(
+            profile_data.safety_constraints.model_dump(exclude_none=True),
+            current_user,
+        )
+    if take(profile_data.companion_persona):
+        changes["companion_persona"] = profile_data.companion_persona.model_dump(
+            exclude_none=True
+        )
+    if take(profile_data.custom_instructions):
+        changes["custom_instructions"] = profile_data.custom_instructions
+    if take(profile_data.private_notes):
+        changes["private_notes"] = profile_data.private_notes
+    return changes
+
+
 # --- Template Endpoints ---
 
 
@@ -243,35 +293,12 @@ def create_student_profile(
             detail=get_text(user=current_user, key="errors.guardian.profileExists"),
         )
 
-    # Build changes dict from the profile data
-    changes = {}
-    if profile_data.template_name:
-        changes["template_name"] = profile_data.template_name
-    if profile_data.age is not None:
-        changes["age"] = profile_data.age
-    if profile_data.gender:
-        changes["gender"] = profile_data.gender
-    if profile_data.medical_context:
-        changes["medical_context"] = profile_data.medical_context.model_dump(
-            exclude_none=True
-        )
-    if profile_data.communication_style:
-        changes["communication_style"] = profile_data.communication_style.model_dump(
-            exclude_none=True
-        )
-    if profile_data.safety_constraints:
-        changes["safety_constraints"] = enforce_locked_safety_fields(
-            profile_data.safety_constraints.model_dump(exclude_none=True),
-            current_user,
-        )
-    if profile_data.companion_persona:
-        changes["companion_persona"] = profile_data.companion_persona.model_dump(
-            exclude_none=True
-        )
-    if profile_data.custom_instructions:
-        changes["custom_instructions"] = profile_data.custom_instructions
-    if profile_data.private_notes:
-        changes["private_notes"] = profile_data.private_notes
+    # Build changes dict from the profile data (create semantics: falsy
+    # optional fields are omitted so a fresh profile never stores an empty
+    # explicit value).
+    changes = _collect_profile_changes(
+        profile_data, skip_falsy=True, current_user=current_user
+    )
 
     try:
         profile = guardian_service.update_profile(
@@ -334,35 +361,12 @@ def update_student_profile(
             ),
         )
 
-    # Build changes dict from provided fields
-    changes = {}
-    if profile_data.template_name is not None:
-        changes["template_name"] = profile_data.template_name
-    if profile_data.age is not None:
-        changes["age"] = profile_data.age
-    if profile_data.gender is not None:
-        changes["gender"] = profile_data.gender
-    if profile_data.medical_context is not None:
-        changes["medical_context"] = profile_data.medical_context.model_dump(
-            exclude_none=True
-        )
-    if profile_data.communication_style is not None:
-        changes["communication_style"] = profile_data.communication_style.model_dump(
-            exclude_none=True
-        )
-    if profile_data.safety_constraints is not None:
-        changes["safety_constraints"] = enforce_locked_safety_fields(
-            profile_data.safety_constraints.model_dump(exclude_none=True),
-            current_user,
-        )
-    if profile_data.companion_persona is not None:
-        changes["companion_persona"] = profile_data.companion_persona.model_dump(
-            exclude_none=True
-        )
-    if profile_data.custom_instructions is not None:
-        changes["custom_instructions"] = profile_data.custom_instructions
-    if profile_data.private_notes is not None:
-        changes["private_notes"] = profile_data.private_notes
+    # Build changes dict from provided fields (update semantics: every
+    # explicitly provided non-None field applies, so falsy values can clear
+    # previously stored content).
+    changes = _collect_profile_changes(
+        profile_data, skip_falsy=False, current_user=current_user
+    )
 
     if not changes:
         raise HTTPException(

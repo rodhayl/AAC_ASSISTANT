@@ -301,6 +301,10 @@ def login_for_access_token(
         user_type=user.user_type,
         ip_address=client_ip
     )
+    # Bound the write-only audit table: this already-committing login path
+    # trims the oldest rows beyond the cap in small batches so the table does
+    # not grow monotonically forever.
+    audit_service.purge_old_entries(db)
     # Commit the lockout reset and audit entry before issuing the token.
     # The request session holds SQLite's single write lock from its first
     # write until commit; deferring this to the get_db teardown kept the
@@ -525,74 +529,4 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
     db.commit()
     logger.info(f"New student account registered: {new_user.username} (id={new_user.id})")
     return new_user
-
-
-@router.post(
-    "/login",
-    response_model=schemas.UserResponse,
-    deprecated=True,
-)
-def login(
-    request: Request,
-    credentials: schemas.LoginRequest,
-    db: Session = Depends(get_db),
-):
-    """Deprecated JSON login endpoint; use ``/auth/token`` for JWT login."""
-    logger.info(f"Login attempt for username: {credentials.username}")
-    accept_language = request.headers.get("accept-language")
-
-    user = db.query(User).filter(User.username == credentials.username).first()
-    if not user:
-        logger.warning(f"Login failed: User '{credentials.username}' not found")
-        raise HTTPException(
-            status_code=401,
-            detail=get_text(
-                accept_language=accept_language, key="errors.auth.invalidCredentials"
-            ),
-        )
-
-    if not user.is_active:
-        logger.warning(f"Login failed: User '{credentials.username}' is inactive")
-        raise HTTPException(
-            status_code=403,
-            detail=get_text(
-                accept_language=accept_language, key="errors.auth.accountInactive"
-            ),
-        )
-
-    if not user.password_hash:
-        logger.error(f"Login failed: User '{credentials.username}' has no password hash")
-        raise HTTPException(
-            status_code=500,
-            detail=get_text(
-                accept_language=accept_language, key="errors.auth.configError"
-            ),
-        )
-
-    password_valid, updated_password_hash = verify_password_and_update(
-        credentials.password, user.password_hash
-    )
-    if not password_valid:
-        logger.warning(f"Login failed: Invalid password for user '{credentials.username}'")
-        raise HTTPException(
-            status_code=401,
-            detail=get_text(
-                accept_language=accept_language, key="errors.auth.invalidCredentials"
-            ),
-        )
-
-    if updated_password_hash:
-        user.password_hash = updated_password_hash
-        mark_credentials_changed(user)
-        db.add(user)
-        db.flush()
-        # Commit the rehash before responding so the durable user row matches
-        # the security version the issued token carries.
-        db.commit()
-
-    logger.info(
-        f"Login successful for user '{credentials.username}' "
-        f"(id={user.id}, type={user.user_type})"
-    )
-    return user
 

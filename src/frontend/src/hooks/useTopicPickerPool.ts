@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/authStore';
 import { useLearningStore } from '../store/learningStore';
 import api from '../lib/api';
 import { walkPages } from '../lib/pagination';
+import { isStaffUser } from '../lib/roles';
 import { loadTopicsForUser, type SavedTopic } from '../lib/learningTopics';
 import { dedupeLearningSymbols } from '../lib/symbols';
 import {
@@ -53,7 +54,7 @@ export function useTopicPickerPool() {
     setSavedTopics([]);
     if (!user?.id) return;
     let cancelled = false;
-    const canManage = user.user_type === 'teacher' || user.user_type === 'admin';
+    const canManage = isStaffUser(user);
     void loadTopicsForUser(user.id, canManage)
       .then((topics) => {
         if (!cancelled) setSavedTopics(topics);
@@ -65,7 +66,7 @@ export function useTopicPickerPool() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, user?.user_type]);
+  }, [user]);
 
   useEffect(() => {
     topicPoolGenerationRef.current += 1;

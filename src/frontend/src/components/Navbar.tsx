@@ -7,6 +7,7 @@ import { NotificationsPanel } from './NotificationsPanel';
 import { config } from '../config';
 import { useTranslation } from 'react-i18next';
 import { LanguageSwitcher } from './LanguageSwitcher';
+import { isStaffUser } from '../lib/roles';
 
 interface NavbarProps {
   onMenuToggle?: () => void;
@@ -135,7 +136,7 @@ export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
       </div>
 
       <div className="flex items-center gap-1 md:gap-4 min-w-0">
-        {(user?.user_type === 'teacher' || user?.user_type === 'admin') && (
+        {isStaffUser(user) && (
           <a
             href={`${config.BACKEND_URL}/docs`}
             target="_blank"

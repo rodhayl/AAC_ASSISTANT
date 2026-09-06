@@ -400,3 +400,28 @@ def test_teacher_isolation(setup_test_db, admin_token):
     # and the frontend is responsible for filtering.
     # My implementation of Teachers.tsx does: setTeachers(list.filter(u => u.user_type === 'teacher'))
     # So backend isolation isn't enforced for admin, which is correct.
+
+
+def test_unknown_role_cannot_list_users(setup_test_db, test_db_session):
+    """User listing fails closed for any non-staff role.
+
+    Only admin and teacher may list users. Before the fix the guard denied
+    exactly ``student`` and every other value fell through to the admin
+    branch; a future role (or a legacy row with a bad value) would have
+    listed the entire roster.
+    """
+    from tests.auth_helpers import create_test_headers
+
+    fake = User(
+        username="future_role_user",
+        display_name="Future Role User",
+        user_type="supervisor",  # Not a known staff role.
+        password_hash="not-used-in-this-test",
+        is_active=True,
+    )
+    test_db_session.add(fake)
+    test_db_session.commit()
+
+    headers = create_test_headers(fake.id, fake.username, fake.user_type)
+    response = client.get("/api/auth/users", headers=headers)
+    assert response.status_code == 403

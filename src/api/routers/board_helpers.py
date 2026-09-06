@@ -52,13 +52,6 @@ def _serialize_symbol(
     }
 
 
-def serialize_symbol(
-    bs: BoardSymbol, target_lang: str = None, is_language_learning: bool = False
-):
-    """Serialize one board placement for the regular API response."""
-    return _serialize_symbol(bs, target_lang, is_language_learning)
-
-
 def get_playable_count(board: CommunicationBoard) -> int:
     """Count visible symbols that have custom text or a symbol label."""
     count = 0
@@ -94,7 +87,7 @@ def serialize_board(b: CommunicationBoard, target_lang: str = None):
         "is_language_learning": is_learning,
         "playable_symbols_count": get_playable_count(b),
         "symbols": [
-            serialize_symbol(bs, target_lang, is_learning) for bs in (b.symbols or [])
+            _serialize_symbol(bs, target_lang, is_learning) for bs in (b.symbols or [])
         ],
     }
 

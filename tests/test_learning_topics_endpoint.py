@@ -252,3 +252,24 @@ def test_topics_service_failure_maps_to_400(
     )
     assert response.status_code == 400
     assert "boom" in response.json()["detail"]
+
+
+def test_common_topics_parity_with_topic_labels():
+    """TOPIC_LABELS is exactly the inverse of COMMON_TOPICS (both directions).
+
+    The welcome-message mapping is derived from the canonical tuple; this test
+    pins the 9 pairs so a future edit to one place cannot silently desync the
+    other. (Cross-stack: the frontend topicCatalog.ts TOPIC_CANONICAL_NAME
+    spells the same 9 canonical names, verified by reading lines 22-32.)
+    """
+    from src.aac_app.services.learning.session import COMMON_TOPICS, TOPIC_LABELS
+
+    assert len(COMMON_TOPICS) == 9
+    assert len(TOPIC_LABELS) == 9
+    assert set(TOPIC_LABELS.items()) == {
+        (canonical, key) for key, canonical in COMMON_TOPICS
+    }
+    # Spot checks: every canonical text resolves to its picker key.
+    assert TOPIC_LABELS["general conversation"] == "general"
+    assert TOPIC_LABELS["health and body"] == "health"
+    assert TOPIC_LABELS["shopping"] == "shopping"

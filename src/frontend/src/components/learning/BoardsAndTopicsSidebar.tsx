@@ -7,6 +7,7 @@ import { useToastStore } from '../../store/toastStore';
 import { Button } from '../ui/button';
 import { IconButton } from '../ui/icon-button';
 import { cn } from '../../lib/utils';
+import { isStaffUser } from '../../lib/roles';
 import { extractError } from '../../lib/api';
 import {
     loadTopicsForUser,
@@ -68,7 +69,7 @@ export function BoardsAndTopicsSidebar({
     const savedTopicsRequestRef = useRef(0);
 
     const userId = user?.id ?? null;
-    const canManageTopics = useMemo(() => user?.user_type === 'teacher' || user?.user_type === 'admin', [user?.user_type]);
+    const canManageTopics = useMemo(() => isStaffUser(user), [user]);
     const savedTopicsContext = `${userId ?? 'anonymous'}:${canManageTopics ? 'manager' : 'viewer'}`;
     const visibleSavedTopics = useMemo(
         () => savedTopicsContextKey === savedTopicsContext ? savedTopics : [],

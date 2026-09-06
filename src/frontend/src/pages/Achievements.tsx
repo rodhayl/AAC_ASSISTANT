@@ -3,6 +3,7 @@ import { Trophy, Star, Lock, CheckCircle, Settings, Plus, Pencil, Trash2, Award,
 import { useAuthStore } from '../store/authStore'
 import api, { extractError } from '../lib/api'
 import { walkPages } from '../lib/pagination'
+import { isStaffUser } from '../lib/roles'
 import type { Achievement, AchievementFull, User } from '../types'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../components/ui/button';
@@ -92,7 +93,7 @@ export function Achievements() {
     )
   }, [studentSearch, visibleStudents])
 
-  const isTeacherOrAdmin = user?.user_type === 'teacher' || user?.user_type === 'admin'
+  const isTeacherOrAdmin = isStaffUser(user)
 
   const loadData = useCallback(async () => {
     const contextKey = userContextKey

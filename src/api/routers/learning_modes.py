@@ -154,7 +154,7 @@ def create_learning_mode(
     db: Session = Depends(get_db),
 ):
     """Create a custom learning mode"""
-    if current_user.user_type not in ["admin", "teacher"]:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_text(user=current_user, key="errors.learningModes.staffOnly"),

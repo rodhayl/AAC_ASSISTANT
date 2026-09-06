@@ -271,3 +271,62 @@ def test_update_email_lost_race_returns_409_not_500(
         response.json()["detail"]
         == "Nombre de usuario o correo ya registrado"
     ), response.text == "Username or email already registered"
+
+
+def test_update_profile_email_lost_race_returns_409_not_500(
+    test_db_session, test_db_engine, regular_user
+):
+    """A lost /profile email race mirrors the pre-check, never a 500.
+
+    update_profile reads the target email as free and then flushes; a
+    concurrent claimant commits first, so the flush raises the UNIQUE
+    constraint. Before the fix this escaped as an unhandled IntegrityError
+    (500); it must now answer 409 with the exact pre-check message.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    from src.api.deps import get_current_active_user, get_db
+
+    _add_user(
+        test_db_session,
+        username="profile_email_holder",
+        email="profile_held@example.com",
+    )
+
+    app.dependency_overrides[get_current_active_user] = lambda: regular_user
+    try:
+        # Sequential pre-check: the email is already owned -> 400 + message.
+        sequential = client.put(
+            "/api/auth/profile", json={"email": "profile_held@example.com"}
+        )
+        assert sequential.status_code == 400, sequential.text
+        seq_detail = sequential.json()["detail"]
+
+        real_flush = test_db_session.flush
+
+        def losing_flush(*args, **kwargs):
+            # The route's pending users-row UPDATE (and only that) hits the
+            # fake UNIQUE constraint a concurrent claimant would produce.
+            if test_db_session.dirty:
+                raise IntegrityError(
+                    "UPDATE users SET email = %(email)s",
+                    {},
+                    Exception("UNIQUE constraint failed: users.email"),
+                )
+            return real_flush(*args, **kwargs)
+
+        test_db_session.flush = losing_flush
+        try:
+            app.dependency_overrides[get_db] = lambda: test_db_session
+            raced = client.put(
+                "/api/auth/profile",
+                json={"email": "profile_race_new@example.com"},
+            )
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+            test_db_session.flush = real_flush
+    finally:
+        app.dependency_overrides.pop(get_current_active_user, None)
+
+    assert raced.status_code == 409, raced.text
+    assert raced.json()["detail"] == seq_detail

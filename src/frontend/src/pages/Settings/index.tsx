@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
+import { isStaffUser } from '../../lib/roles';
 import { usePreferences } from './usePreferences';
 import { AiProviderTab } from './AiProviderTab';
 import { AppearanceTab } from './AppearanceTab';
@@ -30,7 +31,7 @@ export function Settings() {
   const [activeSection, setActiveSection] = useState<SectionId>('profile');
   const preferences = usePreferences();
   const isAdmin = user?.user_type === 'admin';
-  const isStaff = isAdmin || user?.user_type === 'teacher';
+  const isStaff = isStaffUser(user);
   const visibleSections = sectionAnchors.filter(
     (section) => (!section.staffOnly || isStaff) && (!section.adminOnly || isAdmin),
   );

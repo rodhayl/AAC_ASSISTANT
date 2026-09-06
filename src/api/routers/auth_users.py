@@ -212,7 +212,10 @@ def get_users(
     db: Session = Depends(get_db)
 ):
     """List all users (Admin/Teacher only)"""
-    if current_user.user_type == 'student':
+    # Fail closed: only the two staff roles may list users. A future role (or
+    # a legacy row with a bad value) must be denied instead of falling through
+    # to the admin branch and seeing the whole roster.
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_text(
@@ -860,8 +863,20 @@ def update_profile(
                 )
         current_user.email = profile.email
 
-    db.flush()
-    db.commit()
+    try:
+        db.flush()
+        db.commit()
+    except IntegrityError as exc:
+        # A concurrent profile update can claim this email after the pre-check
+        # above read it as free. Only the email column can collide on this
+        # path (the username never changes), so report the same fact the
+        # pre-check reports — at 409 instead of an unhandled 500. Mirrors the
+        # admin update route's race handling.
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=get_text(user=current_user, key="errors.auth.emailInUse"),
+        ) from exc
     db.refresh(current_user)
     logger.info(f"Updated profile for user {current_user.username}")
     return current_user

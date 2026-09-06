@@ -10,6 +10,7 @@ import { AppToaster } from './components/ui/AppToaster';
 import { SettingsManager } from './components/SettingsManager';
 import { lazyWithRetry } from './lib/lazyWithRetry';
 import { LoadingState } from './components/ui/LoadingState';
+import { STAFF_ROLES } from './lib/roles';
 import type { User } from './types';
 
 const Dashboard = lazyWithRetry(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })), 'dashboard');
@@ -72,7 +73,7 @@ function RoleProtectedRoute({
   roles,
 }: {
   children: React.ReactNode;
-  roles: UserRole[];
+  roles: readonly UserRole[];
 }) {
   const userRole = useAuthStore((state) => state.user?.user_type);
   if (!userRole || !roles.includes(userRole)) return <Navigate to="/" replace />;
@@ -124,10 +125,10 @@ const router = createBrowserRouter(
         <Route path="boards/:id" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><BoardEditor /></Suspense></ErrorBoundary>} />
         <Route path="learning" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Learning /></Suspense></ErrorBoundary>} />
         <Route path="symbol-hunt" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><SymbolHunt /></Suspense></ErrorBoundary>} />
-        <Route path="symbols" element={<RoleProtectedRoute roles={['admin', 'teacher']}><ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Symbols /></Suspense></ErrorBoundary></RoleProtectedRoute>} />
+        <Route path="symbols" element={<RoleProtectedRoute roles={STAFF_ROLES}><ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Symbols /></Suspense></ErrorBoundary></RoleProtectedRoute>} />
         <Route path="settings" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Settings /></Suspense></ErrorBoundary>} />
         <Route path="achievements" element={<ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Achievements /></Suspense></ErrorBoundary>} />
-        <Route path="students" element={<RoleProtectedRoute roles={['admin', 'teacher']}><ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Students /></Suspense></ErrorBoundary></RoleProtectedRoute>} />
+        <Route path="students" element={<RoleProtectedRoute roles={STAFF_ROLES}><ErrorBoundary><Suspense fallback={<LoadingSpinner />}><Students /></Suspense></ErrorBoundary></RoleProtectedRoute>} />
         <Route path="teachers" element={<RoleProtectedRoute roles={['admin']}><ErrorBoundary><Suspense fallback={<LoadingSpinner />}><UserManagementPage role="teacher" /></Suspense></ErrorBoundary></RoleProtectedRoute>} />
         <Route path="admins" element={<RoleProtectedRoute roles={['admin']}><ErrorBoundary><Suspense fallback={<LoadingSpinner />}><UserManagementPage role="admin" /></Suspense></ErrorBoundary></RoleProtectedRoute>} />
       </Route>

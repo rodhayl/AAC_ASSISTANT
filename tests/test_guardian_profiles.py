@@ -1236,3 +1236,39 @@ class TestEdgeCases:
         # Other fields should be preserved
         assert profile["template_name"] == "default"
         assert profile["custom_instructions"] == "Be patient"
+
+
+def test_profile_change_collection_preserves_create_vs_update_semantics():
+    """The shared changes collector keeps create/update falsy behavior apart.
+
+    Create omits falsy optional values (an empty gender/instructions on a new
+    profile is simply absent), while update applies any explicitly provided
+    non-None value so fields can be cleared. ``age`` stores whenever set on
+    both routes.
+    """
+    from src.api.routers.guardian_profiles import _collect_profile_changes
+    from src.api.schemas import GuardianProfileCreate, GuardianProfileUpdate
+
+    created = _collect_profile_changes(
+        GuardianProfileCreate(
+            template_name="",
+            gender="",
+            custom_instructions="",
+            age=7,
+        ),
+        skip_falsy=True,
+        current_user=None,
+    )
+    assert created == {"age": 7}
+
+    updated = _collect_profile_changes(
+        GuardianProfileUpdate(
+            template_name=None,
+            gender="",
+            custom_instructions="",
+            age=8,
+        ),
+        skip_falsy=False,
+        current_user=None,
+    )
+    assert updated == {"gender": "", "custom_instructions": "", "age": 8}

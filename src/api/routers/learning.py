@@ -137,6 +137,12 @@ def start_session(
     db: Session = Depends(get_db),
 ):
     """Start a new learning session"""
+    # Deliberate asymmetry with the read endpoints (topics/history/progress):
+    # teachers may inspect a roster student's saved state, but a live session
+    # is the student's own interactive flow and the frontend only ever starts
+    # one for the signed-in user. Starting for a roster student stays 403
+    # (pinned by test_learning_routes_coverage.py) instead of mirroring
+    # verify_student_access.
     if user_id != current_user.id and current_user.user_type != "admin":
         raise HTTPException(
             status_code=403, detail=get_text(current_user, "errors.unauthorizedUser")

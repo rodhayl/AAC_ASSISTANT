@@ -96,7 +96,6 @@ const AUTH_FLOW_ENDPOINTS = new Set([
 const OFFLINE_EXCLUDED_ENDPOINTS = new Set([
   ...AUTH_FLOW_ENDPOINTS,
   '/auth/register',
-  '/auth/login',
   '/auth/logout',
 ]);
 

@@ -20,8 +20,8 @@ _TIMESTAMP_SUFFIX_RE = re.compile(r"\s+\d{4,}$")
 
 # The student-facing topic picker pool: canonical key -> the English topic
 # value stored on LearningSession when a session is started from that key.
-# Must stay in sync with the frontend topic catalog (topicCatalog.ts) and the
-# welcome-message topic_labels mapping in this module.
+# Must stay in sync with the frontend topic catalog (topicCatalog.ts); the
+# welcome-message inverse (TOPIC_LABELS) is derived from this tuple.
 COMMON_TOPICS: tuple[tuple[str, str], ...] = (
     ("general", "general conversation"),
     ("daily", "daily routines"),
@@ -33,6 +33,13 @@ COMMON_TOPICS: tuple[tuple[str, str], ...] = (
     ("health", "health and body"),
     ("shopping", "shopping"),
 )
+
+# Inverse of COMMON_TOPICS: canonical topic text -> picker key, used to
+# localize the welcome message. Derived instead of written out again so the
+# nine pairs cannot drift out of sync.
+TOPIC_LABELS: dict[str, str] = {
+    canonical: key for key, canonical in COMMON_TOPICS
+}
 
 # A topic practiced inside this window counts as "covered" for the picker's
 # shuffle-bag ordering. Older sessions fall out of the window so children can
@@ -203,18 +210,7 @@ class SessionLifecycleMixin:
             return ""
         user_lang = self._get_user_language(user_id, db)
         translation_service = get_translation_service()
-        topic_labels = {
-            "general conversation": "general",
-            "daily routines": "daily",
-            "food and dining": "food",
-            "school and education": "school",
-            "emotions and feelings": "emotions",
-            "travel and transport": "travel",
-            "hobbies and play": "hobbies",
-            "health and body": "health",
-            "shopping": "shopping",
-        }
-        topic_key = topic_labels.get(topic.strip().lower(), topic.strip().lower())
+        topic_key = TOPIC_LABELS.get(topic.strip().lower(), topic.strip().lower())
         topic_label = translation_service.get(
             user_lang, "pages/learning", f"topics.{topic_key}"
         )

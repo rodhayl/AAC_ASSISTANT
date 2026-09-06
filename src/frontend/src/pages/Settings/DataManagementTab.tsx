@@ -4,13 +4,14 @@ import { useTranslation } from 'react-i18next';
 import { Download, Upload } from 'lucide-react';
 import api from '../../lib/api';
 import { downloadJson } from '../../lib/download';
+import { isStaffUser } from '../../lib/roles';
 import { Button } from '../../components/ui/button';
 
 export function DataManagementTab() {
   const user = useAuthStore(state => state.user);
   const addToast = useToastStore((state) => state.addToast);
   const { t } = useTranslation('settings');
-  const isTeacherOrAdmin = user?.user_type === 'admin' || user?.user_type === 'teacher';
+  const isTeacherOrAdmin = isStaffUser(user);
 
   const handleExportData = async (serverExport = false) => {
     if (!user) return;

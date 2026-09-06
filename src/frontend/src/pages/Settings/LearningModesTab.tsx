@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateA
 import { AlertCircle, Check, Copy, Edit2, Eye, Plus, Trash2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
+import { isStaffUser } from '../../lib/roles';
 import api, { extractError } from '../../lib/api';
 import { useAutoHide } from '../../hooks/useAutoHide';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
@@ -118,7 +119,7 @@ export function LearningModesTab({
   }, [defaultModeKey]);
 
   useEffect(() => {
-    if (user?.user_type === 'admin' || user?.user_type === 'teacher') {
+    if (isStaffUser(user)) {
       fetchLearningModes();
     }
   }, [fetchLearningModes, user]);

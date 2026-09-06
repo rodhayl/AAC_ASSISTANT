@@ -88,13 +88,6 @@ class UserProfileUpdate(BaseModel):
     email: EmailStr | None = None
 
 
-class LoginRequest(BaseModel):
-    """Deprecated JSON login contract retained for external clients."""
-
-    username: str
-    password: str
-
-
 class ChangePasswordRequest(BaseModel):
     username: str
     current_password: str
