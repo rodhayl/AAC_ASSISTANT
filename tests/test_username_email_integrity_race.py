@@ -108,6 +108,112 @@ def test_admin_create_user_race_returns_409_not_500(
     assert response.json()["detail"]
 
 
+def test_setup_race_message_matches_sequential_pre_check(test_db_session, monkeypatch):
+    """Same fact, same message: a lost setup race says what the 400 pre-check says."""
+    _add_user(test_db_session, username="parity_setup")
+
+    sequential = client.post(
+        "/api/auth/setup",
+        json={
+            "username": "parity_setup",
+            "display_name": "Parity Setup",
+            "password": "StrongPassword123!",
+            "confirm_password": "StrongPassword123!",
+        },
+    )
+    assert sequential.status_code == 400, sequential.text
+
+    _disable_pre_check(monkeypatch, "src.api.routers.auth")
+    raced = client.post(
+        "/api/auth/setup",
+        json={
+            "username": "parity_setup",
+            "display_name": "Parity Setup",
+            "password": "StrongPassword123!",
+            "confirm_password": "StrongPassword123!",
+        },
+    )
+
+    assert raced.status_code == 409, raced.text
+    assert raced.json()["detail"] == sequential.json()["detail"]
+
+
+def test_register_race_message_matches_sequential_pre_check(test_db_session, monkeypatch):
+    """Same fact, same message for self-registration username conflicts."""
+    _add_user(test_db_session, username="parity_register")
+
+    register_payload = {
+        "username": "parity_register",
+        "display_name": "Parity Register",
+        "password": "RaceUserPass123",
+    }
+    sequential = client.post("/api/auth/register", json=register_payload)
+    assert sequential.status_code == 400, sequential.text
+
+    _disable_pre_check(monkeypatch, "src.api.routers.auth")
+    raced = client.post("/api/auth/register", json=register_payload)
+
+    assert raced.status_code == 409, raced.text
+    assert raced.json()["detail"] == sequential.json()["detail"]
+
+
+def test_admin_create_race_message_matches_email_pre_check(
+    test_db_session, admin_token, monkeypatch
+):
+    """Same fact, same message for admin-created email conflicts."""
+    _add_user(test_db_session, username="parity_email_user", email="parity@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    create_payload = {
+        "username": "parity_email_other",
+        "display_name": "Parity Email Other",
+        "user_type": "student",
+        "password": "RaceEmailPass123",
+        "confirm_password": "RaceEmailPass123",
+        "email": "parity@example.com",
+    }
+    sequential = client.post(
+        "/api/auth/admin/create-user", json=create_payload, headers=headers
+    )
+    assert sequential.status_code == 400, sequential.text
+
+    _disable_pre_check(monkeypatch, "src.api.routers.auth_users")
+    raced = client.post(
+        "/api/auth/admin/create-user", json=create_payload, headers=headers
+    )
+
+    assert raced.status_code == 409, raced.text
+    assert raced.json()["detail"] == sequential.json()["detail"]
+
+
+def test_update_email_race_reports_email_fact_not_username_fact(test_db_session):
+    """A lost email race must report the email fact, not a username fact.
+
+    The edited row's own username is still in the table after the rollback;
+    the conflict check must skip it (the UPDATE never changes the username)
+    so the visible competitor produces the same emailTaken message the
+    sequential pre-check produced for the same fact.
+    """
+    from src.api.routers.auth_helpers import username_email_integrity_conflict
+
+    updater = _add_user(test_db_session, username="parity_updater")
+    holder = _add_user(
+        test_db_session,
+        username="parity_email_holder",
+        email="held@example.com",
+    )
+
+    response = username_email_integrity_conflict(
+        test_db_session,
+        updater.username,
+        holder.email,
+        exclude_user_id=updater.id,
+    )
+
+    assert response.status_code == 409
+    assert response.detail == "Email already registered"
+
+
 def test_update_email_lost_race_returns_409_not_500(
     test_db_session, test_db_engine, admin_token
 ):
@@ -150,10 +256,18 @@ def test_update_email_lost_race_returns_409_not_500(
         response = client.put(
             f"/api/auth/users/{user.id}",
             json={"email": "race_update_new@example.com"},
-            headers={"Authorization": f"Bearer {admin_token}"},
+            headers={
+                "Authorization": f"Bearer {admin_token}",
+                "Accept-Language": "es-ES",
+            },
         )
     finally:
         app.dependency_overrides.pop(get_db, None)
 
     assert response.status_code == 409, response.text
-    assert response.json()["detail"]
+    # The fallback conflict message is i18n'd: an es client must not receive
+    # the raw English literal the pre-fix code returned.
+    assert (
+        response.json()["detail"]
+        == "Nombre de usuario o correo ya registrado"
+    ), response.text == "Username or email already registered"

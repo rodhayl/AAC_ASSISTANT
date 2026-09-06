@@ -3,6 +3,7 @@ import { X, Search, ArrowUp, ArrowDown, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useToastStore } from '../../store/toastStore';
 import api, { extractError } from '../../lib/api';
+import { walkPages } from '../../lib/pagination';
 import { SymbolImage } from '../common/SymbolImage';
 import { Button } from '../ui/button';
 import { IconButton } from '../ui/icon-button';
@@ -28,6 +29,8 @@ interface SymbolPickerProps {
   onSelect: (symbolId: number) => void;
   position: { x: number; y: number };
 }
+
+const SYMBOL_PICKER_PAGE_SIZE = 1000;
 
 export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPickerProps) {
   const { t } = useTranslation('boards');
@@ -82,9 +85,21 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
         params.search = searchTerm;
       }
 
-      const response = await api.get('/boards/symbols', { params });
+      // Walk every page: the backend caps a single request at `limit`
+      // (default 100, max 1000), so one fetch silently truncated catalogs
+      // with more symbols than the page size.
+      const symbols = await walkPages<Symbol>({
+        pageSize: SYMBOL_PICKER_PAGE_SIZE,
+        fetchPage: async (skip) => {
+          const response = await api.get('/boards/symbols', {
+            params: { ...params, skip, limit: SYMBOL_PICKER_PAGE_SIZE },
+          });
+          return response.data;
+        },
+        isCancelled: () => requestId !== symbolRequestIdRef.current,
+      });
       if (requestId !== symbolRequestIdRef.current) return;
-      setSymbols(response.data);
+      setSymbols(symbols);
     } catch (error) {
       if (requestId === symbolRequestIdRef.current) {
         console.error('Failed to fetch symbols:', error);

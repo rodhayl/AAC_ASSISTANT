@@ -140,3 +140,49 @@ describe('SymbolPicker request ordering', () => {
     });
   });
 });
+
+describe('SymbolPicker pagination walk', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('walks every page instead of silently truncating at the first page', async () => {
+    const page = (offset: number, count: number) =>
+      Array.from({ length: count }, (_, i) => symbol(offset + i + 1, `Sym${offset + i + 1}`));
+    api.get.mockImplementation((url: string, config?: { params?: { skip?: number; limit?: number } }) => {
+      if (url === '/boards/symbols/categories') return Promise.resolve({ data: ['general'] });
+      if (url === '/boards/symbols') {
+        // Mirror the backend contract: a single request is capped at the
+        // requested limit (default 100, max 1000).
+        const skip = config?.params?.skip ?? 0;
+        const limit = config?.params?.limit ?? 100;
+        if (skip === 0) return Promise.resolve({ data: page(0, limit) });
+        if (skip === 1000) return Promise.resolve({ data: page(1000, limit) });
+        return Promise.resolve({ data: page(2000, 7) });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    render(
+      <SymbolPicker
+        isOpen
+        onClose={vi.fn()}
+        onSelect={vi.fn()}
+        position={{ x: 0, y: 0 }}
+      />,
+    );
+
+    // The catalog has 2007 symbols; a single-request implementation stops at
+    // the first page and this row never renders.
+    await waitFor(() => {
+      expect(screen.getByText('Sym2007')).toBeInTheDocument();
+    });
+    const symbolCalls = api.get.mock.calls.filter(([url]) => url === '/boards/symbols');
+    expect(symbolCalls).toHaveLength(3);
+    expect(symbolCalls[1][1]).toMatchObject({ params: { skip: 1000, limit: 1000 } });
+  });
+});

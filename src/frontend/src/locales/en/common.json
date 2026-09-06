@@ -128,6 +128,7 @@
       "emailInvalid": "Invalid email format",
       "usernameTaken": "Username already registered",
       "emailTaken": "Email already registered",
+      "usernameOrEmailTaken": "Username or email already registered",
       "invalidCredentials": "Invalid credentials",
       "accountInactive": "Account is inactive. Please contact an administrator.",
       "configError": "Account configuration error. Please contact administrator.",

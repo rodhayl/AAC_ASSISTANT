@@ -555,6 +555,7 @@ def update_user(
             new_email,
             accept_language=request.headers.get("accept-language"),
             user=current_user,
+            exclude_user_id=user.id,
         ) from exc
     db.commit()
     db.refresh(user)

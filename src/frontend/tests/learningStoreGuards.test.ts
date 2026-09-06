@@ -157,6 +157,32 @@ describe('learning store per-operation guards', () => {
     expect(useLearningStore.getState().currentSession).toBeNull();
   });
 
+  it('asks the next question while an answer submit is still in flight', async () => {
+    const api = await getApi();
+    useLearningStore.setState({
+      currentSession: { session_id: 7 } as never,
+      // An answer submit is in flight (shared chat spinner on).
+      isLoading: true,
+      isSubmittingAnswer: true,
+      isAskingQuestion: false,
+    });
+    api.post.mockImplementation((url: string) => {
+      if (url === '/learning/7/ask') {
+        return Promise.resolve({
+          data: { success: true, question_text: 'Next', choices: ['A'] },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    await useLearningStore.getState().askQuestion(7);
+
+    expect(
+      api.post.mock.calls.filter(([url]) => url === '/learning/7/ask'),
+    ).toHaveLength(1);
+    expect(useLearningStore.getState().currentQuestion?.question_text).toBe('Next');
+  });
+
   it('starts a session while an unrelated answer submit is still in flight', async () => {
     const api = await getApi();
     useLearningStore.setState({

@@ -128,6 +128,7 @@
       "emailInvalid": "Formato de correo electrónico inválido",
       "usernameTaken": "Nombre de usuario ya registrado",
       "emailTaken": "Correo electrónico ya registrado",
+      "usernameOrEmailTaken": "Nombre de usuario o correo ya registrado",
       "invalidCredentials": "Credenciales inválidas",
       "accountInactive": "La cuenta está inactiva. Por favor contacte a un administrador.",
       "configError": "Error de configuración de cuenta. Por favor contacte al administrador.",

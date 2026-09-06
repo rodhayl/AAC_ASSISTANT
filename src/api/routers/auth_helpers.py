@@ -160,6 +160,7 @@ def username_email_integrity_conflict(
     *,
     accept_language: str | None = None,
     user: User | None = None,
+    exclude_user_id: int | None = None,
 ) -> HTTPException:
     """Build the conflict response for a lost username/email insert race.
 
@@ -167,9 +168,16 @@ def username_email_integrity_conflict(
     (``ensure_username_email_available``) cannot fully guard, roll back, and
     raise this so a concurrent duplicate becomes the same 400/409 response
     the pre-check would have produced instead of an unhandled 500.
+
+    ``exclude_user_id`` skips the edited row itself: an UPDATE path (email
+    change) never alters its own username, so after the rollback that row
+    still matches and would misreport an email conflict as a username one.
     """
     db.rollback()
-    if db.query(User).filter(User.username == username).first() is not None:
+    username_filters = [User.username == username]
+    if exclude_user_id is not None:
+        username_filters.append(User.id != exclude_user_id)
+    if db.query(User).filter(*username_filters).first() is not None:
         return HTTPException(
             status_code=409,
             detail=get_text(
@@ -183,7 +191,17 @@ def username_email_integrity_conflict(
                 user=user, accept_language=accept_language, key="errors.auth.emailTaken"
             ),
         )
-    return HTTPException(status_code=409, detail="Username or email already registered")
+    # The competing row is not visible to this session (e.g. still
+    # uncommitted elsewhere); keep the fallback message stable and i18n'd
+    # instead of a raw English literal.
+    return HTTPException(
+        status_code=409,
+        detail=get_text(
+            user=user,
+            accept_language=accept_language,
+            key="errors.auth.usernameOrEmailTaken",
+        ),
+    )
 
 
 def ensure_username_email_available(
