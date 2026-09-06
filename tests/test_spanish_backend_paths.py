@@ -348,3 +348,27 @@ def test_prediction_service_keeps_suggestions_in_requested_language(
     assert suggestions
     assert all(suggestion["label"] != "cookie" for suggestion in suggestions)
     assert all(suggestion["source"] != "history" for suggestion in suggestions)
+
+
+def test_normalize_language_code_accepts_base_and_regional_codes():
+    """ISO base codes and locale tags collapse to the two/three-letter base."""
+    assert runtime_translation.normalize_language_code("es") == "es"
+    assert runtime_translation.normalize_language_code("en") == "en"
+    assert runtime_translation.normalize_language_code("fil") == "fil"
+    assert runtime_translation.normalize_language_code("es-ES") == "es"
+    assert runtime_translation.normalize_language_code("en_US") == "en"
+    assert runtime_translation.normalize_language_code("es-419") == "es"
+    assert runtime_translation.normalize_language_code("  EN-us  ") == "en"
+    assert runtime_translation.normalize_language_code(None) is None
+    assert runtime_translation.normalize_language_code("") is None
+
+
+def test_normalize_language_code_rejects_wildcards_and_non_iso_inputs():
+    """No LIKE wildcard or non-alpha garbage may survive into SQL LIKE filters."""
+    for garbage in ("%", "_", "en%", "e%", "e_", "-", "-US",
+                    "0es", "es1", "e", "esp!", "ñ", "es paña", "en%US"):
+        assert runtime_translation.normalize_language_code(garbage) is None, garbage
+    # Wildcards placed in the *regional* segment never survive either: the
+    # region is dropped and only the validated base code is returned.
+    assert runtime_translation.normalize_language_code("en_") == "en"
+    assert runtime_translation.normalize_language_code("es-US%") == "es"

@@ -321,6 +321,59 @@ class TestAnalyticsAPI:
         assert "yo" in labels
         assert "I" not in labels
 
+    def test_intent_language_filter_ignores_like_wildcard_garbage(
+        self, monkeypatch, test_db_session, regular_user
+    ):
+        """A legacy garbage ui_language with '%' must not widen the locale filter.
+
+        The intent query filters symbols with ``Symbol.language LIKE
+        '<lang>-%'``. A stored value such as 'fr%' previously survived
+        ``normalize_language_code`` and produced the wildcard pattern
+        ``fr%-%``, silently replacing the learner's own catalog rows with a
+        different regional language. Whitelisting in the normalizer degrades
+        the garbage to the 'en' default, so the English catalog row surfaces
+        and the unrelated French row does not.
+        """
+        settings = UserSettings(user_id=regular_user.id, ui_language="fr%")
+        test_db_session.add(settings)
+        test_db_session.add_all(
+            [
+                Symbol(
+                    id=401,
+                    label="I",
+                    category="pronoun",
+                    language="en",
+                    is_builtin=True,
+                ),
+                Symbol(
+                    id=402,
+                    label="je",
+                    category="pronoun",
+                    language="fr-FR",
+                    is_builtin=True,
+                ),
+            ]
+        )
+        test_db_session.commit()
+        test_db_session.refresh(regular_user)
+
+        # Keep the pre-fix path deterministic: a non-default-language row would
+        # otherwise attempt a live translation before being surfaced.
+        monkeypatch.setattr(
+            "src.api.routers.analytics.translate_text",
+            lambda text, target_lang: text,
+        )
+
+        response = client.post(
+            "/api/analytics/next-symbol",
+            json={"intent": "pronouns", "limit": 5},
+        )
+
+        assert response.status_code == 200
+        labels = [item["label"] for item in response.json()]
+        assert "I" in labels
+        assert "je" not in labels
+
     def test_intent_filters_use_arasaac_category_taxonomy(
         self, test_db_session, regular_user
     ):

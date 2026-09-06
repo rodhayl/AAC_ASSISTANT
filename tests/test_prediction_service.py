@@ -845,3 +845,91 @@ def test_predict_next_popular_tier_failure_is_explicit(
             offset=0,
             db=test_db_session,
         )
+
+
+def test_suggest_topic_treats_underscore_as_literal_character(
+    test_db_session, regular_user, monkeypatch
+):
+    """Topic LIKE tokens escape '_' so 'wash_hands' cannot match 'washXhands'.
+
+    _tokenize_topic splits on ``\\W+`` and ``_`` is a word character, so an
+    underscore inside a topic survives into the token. Before the escape fix
+    the generated LIKE pattern treated that underscore as a single-character
+    wildcard and wrongly surfaced labels that only differ in that position.
+    """
+    service = PredictionService()
+    monkeypatch.setitem(service._models, "en", {"bigrams": {}})
+    test_db_session.add_all(
+        [
+            Symbol(
+                label="wash_hands",
+                category="verb",
+                language="en",
+                is_builtin=True,
+            ),
+            # Matches the unescaped LIKE 'wash_hands%' (the '_' wildcard) but
+            # must NOT match the escaped literal pattern.
+            Symbol(
+                label="washXhands",
+                category="verb",
+                language="en",
+                is_builtin=True,
+            ),
+        ]
+    )
+    test_db_session.commit()
+
+    analytics = Mock()
+    analytics.suggest_next_symbol.return_value = []
+    monkeypatch.setattr(service, "analytics_service", analytics)
+
+    suggestions = service.predict_next(
+        user_id=regular_user.id,
+        current_symbols=[],
+        limit=5,
+        language="en",
+        offset=0,
+        topic="wash_hands",
+        db=test_db_session,
+    )
+
+    labels = [suggestion["label"] for suggestion in suggestions]
+    assert "wash_hands" in labels
+    assert "washXhands" not in labels
+
+
+def test_suggest_topic_language_filter_rejects_wildcard_garbage(
+    test_db_session, regular_user, monkeypatch
+):
+    """A stray '%' in the requested language cannot widen/break the locale filter.
+
+    A garbage locale like 'en%' previously survived normalize_language_code and
+    built a LIKE 'en%-%' pattern that silently excluded plain 'en' catalog rows
+    from the topic tier. After normalization it degrades to the 'en' default so
+    the topic match surfaces as a topic suggestion again.
+    """
+    service = PredictionService()
+    monkeypatch.setitem(service._models, "en", {"bigrams": {}})
+    test_db_session.add(
+        Symbol(label="cookie", category="noun", language="en", is_builtin=True)
+    )
+    test_db_session.commit()
+
+    analytics = Mock()
+    analytics.suggest_next_symbol.return_value = []
+    monkeypatch.setattr(service, "analytics_service", analytics)
+
+    suggestions = service.predict_next(
+        user_id=regular_user.id,
+        current_symbols=[],
+        limit=5,
+        language="en%",
+        offset=0,
+        topic="cookie",
+        db=test_db_session,
+    )
+
+    # The only symbol row is plain 'en': with a wildcard-garbage locale the
+    # topic tier cannot match it, so nothing is ever suggested as a topic hit.
+    assert suggestions and suggestions[0]["source"] == "topic"
+    assert suggestions[0]["label"] == "cookie"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import threading
 import time
 from functools import lru_cache
@@ -30,14 +31,32 @@ _circuit_open_until = 0.0
 _circuit_lock = threading.Lock()
 
 
+# A valid base language code is two or three ASCII letters (ISO 639-1/-2/-3).
+# Everything else - punctuation, digits, stray LIKE wildcards such as ``%`` and
+# ``_``, or a region tag without a language - is not a code the application
+# understands, so it must not survive into the SQL ``LIKE`` patterns that
+# consume normalized codes (prediction/analytics regional-language filters).
+_BASE_LANGUAGE_CODE = re.compile(r"^[a-z]{2,3}$")
+
+
 def normalize_language_code(language: str | None) -> str | None:
-    """Normalize UI locale tags and provider language values to base codes."""
+    """Normalize UI locale tags and provider language values to base codes.
+
+    Accepts ``es``/``en``/``fil``-style base codes plus regional tags such as
+    ``es-ES`` or ``en_US`` (the region is dropped). Anything that does not
+    resolve to a literal two/three-letter alpha base code returns ``None`` so
+    callers fall back to their default instead of feeding garbage (for
+    example a ``%`` from an Accept-Language header) into SQL LIKE filters.
+    """
     if not language:
         return None
     normalized = language.strip().replace("_", "-")
     if not normalized:
         return None
-    return normalized.split("-", 1)[0].lower()
+    base_code = normalized.split("-", 1)[0].lower()
+    if not _BASE_LANGUAGE_CODE.match(base_code):
+        return None
+    return base_code
 
 
 def _translate_worker(text: str, target_lang: str) -> str:

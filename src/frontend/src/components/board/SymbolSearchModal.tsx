@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { isAxiosError } from 'axios';
 import { X, Search, Loader2, Filter, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import api from '../../lib/api';
+import { walkPages } from '../../lib/pagination';
 import { SymbolCard } from './SymbolCard';
 import type { BoardSymbol, Symbol } from '../../types';
 import { Button } from '../ui/button';
@@ -23,6 +25,14 @@ interface SymbolSearchModalProps {
   onClose: () => void;
   onSelectSymbol: (symbol: BoardSymbol) => void;
 }
+
+// The backend caps a single /boards/symbols request at `limit` (max 1000); a
+// single hardcoded 100-item page silently truncated larger result sets with no
+// way to reach the rest (same defect class already fixed in SymbolPicker,
+// rosters and history with walkPages). Walking pages keeps the whole match
+// set reachable; walkPages stops on the first short page and hard-caps the
+// walk so a backend that never shrinks its pages cannot loop forever.
+const SEARCH_PAGE_SIZE = 1000;
 
 const CATEGORIES = [
   'general',
@@ -112,9 +122,10 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
     searchController.current = controller;
     setIsLoading(true);
     try {
-      // Use server-side search
+      // Use server-side search and walk every matching page (see
+      // SEARCH_PAGE_SIZE). walkPages validates each page with Array.isArray so
+      // a malformed payload can never be rendered as a result list.
       const params: Record<string, string | number> = {
-        limit: 100,
         search: searchQuery // Pass search query to backend
       };
 
@@ -126,13 +137,24 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
         params.category = searchCategory;
       }
 
-      const res = await api.get('/boards/symbols', { params, signal: controller.signal });
+      const symbols = await walkPages<Symbol>({
+        pageSize: SEARCH_PAGE_SIZE,
+        fetchPage: async (skip) => {
+          const res = await api.get('/boards/symbols', {
+            params: { ...params, skip, limit: SEARCH_PAGE_SIZE },
+            signal: controller.signal,
+          });
+          return res.data;
+        },
+        isCancelled: () => generation !== searchGeneration.current,
+      });
 
       if (generation === searchGeneration.current) {
-        setResults(res.data || []);
+        setResults(symbols);
       }
     } catch (error) {
-      if (generation === searchGeneration.current && (error as { code?: string })?.code !== 'ERR_CANCELED') {
+      const isCancellation = isAxiosError(error) && error.code === 'ERR_CANCELED';
+      if (generation === searchGeneration.current && !isCancellation) {
         console.error("Search failed", error);
         setResults([]);
       }

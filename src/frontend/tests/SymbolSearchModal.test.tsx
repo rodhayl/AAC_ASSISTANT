@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SymbolSearchModal } from '../src/components/board/SymbolSearchModal';
 import api from '../src/lib/api';
@@ -145,5 +145,54 @@ describe('SymbolSearchModal request lifecycle', () => {
     expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', expect.objectContaining({
       params: expect.objectContaining({ search: 'cat', language: 'es' }),
     }));
+  });
+});
+
+describe('SymbolSearchModal pagination walk', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('walks every page instead of silently truncating at the first page', async () => {
+    const page = (offset: number, count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        id: offset + i + 1,
+        label: `Symbol ${offset + i + 1}`,
+        category: 'general',
+      }));
+    vi.mocked(api.get).mockImplementation(
+      (_url: string, config?: { params?: { skip?: number; limit?: number } }) => {
+        // Mirror the backend contract: one request is capped at the requested
+        // limit, and the walk must continue until a short page arrives.
+        const skip = config?.params?.skip ?? 0;
+        if (skip === 0) return Promise.resolve({ data: page(0, 1000) });
+        return Promise.resolve({ data: page(1000, 5) });
+      },
+    );
+
+    renderModal();
+    const input = screen.getByPlaceholderText('Search for a symbol...');
+    const form = input.closest('form')!;
+    fireEvent.change(input, { target: { value: 'sym' } });
+    fireEvent.submit(form);
+
+    // A row beyond the first full 1000-item page must still be reachable: the
+    // previous single-request implementation stopped at the first page and no
+    // 'has more' signal ever surfaced the remaining results.
+    await waitFor(
+      () => {
+        expect(screen.getByText('Symbol 1005')).toBeInTheDocument();
+      },
+      { timeout: 15000 },
+    );
+    const symbolCalls = vi.mocked(api.get).mock.calls.filter(
+      ([url]) => url === '/boards/symbols',
+    );
+    expect(symbolCalls).toHaveLength(2);
+    expect(symbolCalls[1][1]).toMatchObject({ params: { skip: 1000, limit: 1000 } });
   });
 });

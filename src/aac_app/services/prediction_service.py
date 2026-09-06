@@ -24,6 +24,19 @@ from ..services.symbol_catalog import (
 # Re-exported under the historical private name (tests import it from here).
 _label_looks_bad = label_looks_bad
 
+# SQL LIKE escape character: LIKE wildcards (% and _) in user-derived
+# tokens are escaped with this marker so a topic such as "a_b" matches the
+# literal underscore instead of acting as a single-character wildcard. Same
+# doctrine (and marker) as src/api/routers/symbols.py._LIKE_ESCAPE.
+_LIKE_ESCAPE = "\\"
+
+
+def _escape_like_literal(text: str) -> str:
+    """Escape LIKE metacharacters so the input matches literally."""
+    escaped = text.replace(_LIKE_ESCAPE, _LIKE_ESCAPE + _LIKE_ESCAPE)
+    return escaped.replace("%", _LIKE_ESCAPE + "%").replace("_", _LIKE_ESCAPE + "_")
+
+
 # Common stop-words excluded from topic tokenization so a topic like
 # "Inteligencia Artificial y LLMs" focuses on inteligencia/artificial/llms.
 _TOPIC_STOPWORDS: frozenset[str] = frozenset(
@@ -451,12 +464,21 @@ class _PredictionContext:
         # via word boundaries. LIKE is portable across SQLite/Postgres.
         clauses: list = []
         for token in self.topic_tokens:
-            like_tok = f"% {token}%"
+            # Token text must match literally: _tokenize_topic splits on \W+,
+            # so an underscore in a topic survives into the token and would
+            # otherwise act as a LIKE single-character wildcard (a topic
+            # "a_b" matching labels like "axb"). Escape both LIKE
+            # metacharacters and declare the escape marker on every clause.
+            literal = _escape_like_literal(token)
             clauses.extend(
                 [
-                    func.lower(Symbol.label).like(f"{token}%"),
-                    func.lower(Symbol.label).like(like_tok),
-                    func.lower(Symbol.keywords).like(f"%{token}%"),
+                    func.lower(Symbol.label).like(f"{literal}%", escape=_LIKE_ESCAPE),
+                    func.lower(Symbol.label).like(
+                        f"% {literal}%", escape=_LIKE_ESCAPE
+                    ),
+                    func.lower(Symbol.keywords).like(
+                        f"%{literal}%", escape=_LIKE_ESCAPE
+                    ),
                 ]
             )
         if not clauses:
