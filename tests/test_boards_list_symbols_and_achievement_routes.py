@@ -472,3 +472,37 @@ def test_achievements_list_and_create_accept_both_slash_variants(
         )
         assert response.status_code == 201
         assert response.json()["name"] == name
+
+
+def test_board_list_name_filter_matches_literally(
+    setup_test_db, test_db_session, admin_user, admin_token
+):
+    """Board-name search treats % and _ as literal text, not LIKE wildcards."""
+    client = TestClient(app)
+    names = ["100%_sure", "dog house", "100%"]
+    boards = [
+        CommunicationBoard(
+            user_id=admin_user.id,
+            name=name,
+            grid_rows=2,
+            grid_cols=2,
+        )
+        for name in names
+    ]
+    test_db_session.add_all(boards)
+    test_db_session.commit()
+
+    def search(term: str) -> set[str]:
+        response = client.get(
+            "/api/boards/", params={"name": term}, headers=_headers(admin_token)
+        )
+        assert response.status_code == 200
+        return {item["name"] for item in response.json()}
+
+    # A lone "%" must not list every board: it matches only literal percent.
+    assert search("%") == {"100%_sure", "100%"}
+    # "_" is a literal underscore, not a single-character wildcard: no board
+    # name spells d_g, so the search is empty (it must not match "dog house").
+    assert search("d_g") == set()
+    assert search("100%") == {"100%_sure", "100%"}
+    assert search("dog") == {"dog house"}

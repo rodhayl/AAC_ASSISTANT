@@ -220,3 +220,27 @@ def test_fix_null_passwords_marks_credentials_changed(legacy_null_password_db, m
         _assert_revoked(session, fixed.id, previous_version=1)
     finally:
         session.close()
+
+
+def test_account_admin_reset_password_rejects_weak_password_unless_forced(op_db):
+    """The CLI reset enforces the shared policy; --force is the only escape."""
+    factory, _ = op_db
+    user = _make_user(factory, "weak_cli_user", "initial_test_hash")
+    session = factory()
+    try:
+        # A weak password is refused by default (same policy as API routes).
+        assert reset_password(session, user.username, "123") is False
+        session.expire_all()
+        unchanged = session.query(User).filter(User.id == user.id).first()
+        assert unchanged.password_hash == "initial_test_hash"
+        assert unchanged.security_version == 1
+
+        # --force is the explicit emergency-recovery override: it hashes and
+        # still revokes previously issued sessions like a normal reset.
+        assert reset_password(session, user.username, "123", force=True) is True
+        session.expire_all()
+        refreshed = session.query(User).filter(User.id == user.id).first()
+        assert refreshed.password_hash != "initial_test_hash"
+        _assert_revoked(session, user.id, previous_version=1)
+    finally:
+        session.close()

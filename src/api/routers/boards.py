@@ -4,7 +4,11 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
 from src.aac_app.models import BoardAssignment, BoardSymbol, CommunicationBoard, User
-from src.aac_app.services.runtime_translation import normalize_language_code
+from src.aac_app.services.runtime_translation import (
+    LIKE_ESCAPE,
+    contains_like_pattern,
+    normalize_language_code,
+)
 from src.aac_app.services.translation_service import get_translation_service
 from src.api import schemas
 from src.api.deps import (
@@ -39,9 +43,15 @@ def get_boards(
     try:
         query = db.query(CommunicationBoard)
 
-        # Filter by name if provided
+        # Filter by name if provided. The name is user text: escape LIKE
+        # wildcards so searching for "%" lists only literal matches instead of
+        # every board, and "a_b" does not match "axb".
         if name:
-            query = query.filter(CommunicationBoard.name.ilike(f"%{name}%"))
+            query = query.filter(
+                CommunicationBoard.name.ilike(
+                    contains_like_pattern(name), escape=LIKE_ESCAPE
+                )
+            )
 
         # Eager load symbols
         query = query.options(

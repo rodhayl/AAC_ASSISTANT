@@ -6,7 +6,13 @@ from sqlalchemy.orm import Session
 
 from src.aac_app.models import StudentTeacher, User
 from src.aac_app.services.user_service import UserService
-from src.api.deps import get_current_active_user, get_db, get_request_text, get_text
+from src.api.deps import (
+    STAFF_USER_TYPES,
+    get_current_active_user,
+    get_db,
+    get_request_text,
+    get_text,
+)
 from src.api.routers.auth_helpers import (
     apply_student_safety_at_creation,
     ensure_username_email_available,
@@ -54,7 +60,7 @@ def create_student(
     db: Session = Depends(get_db),
 ):
     """Create a new student"""
-    if current_user.user_type not in ["admin", "teacher"]:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_request_text(request, "errors.users.unauthorizedCreateStudents", user=current_user),
@@ -108,7 +114,7 @@ def assign_student(
     db: Session = Depends(get_db),
 ):
     """Assign a student to a teacher (Admin/Teacher only)"""
-    if current_user.user_type not in ["admin", "teacher"]:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_text(user=current_user, key="errors.unauthorized"),
@@ -183,7 +189,7 @@ def unassign_student(
     db: Session = Depends(get_db),
 ):
     """Unassign a student from a teacher (Admin/Teacher only)"""
-    if current_user.user_type not in ["admin", "teacher"]:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_text(user=current_user, key="errors.unauthorized"),
@@ -222,7 +228,7 @@ def reset_user_password(
     db: Session = Depends(get_db),
 ):
     """Reset user password (Admin can reset any, Teacher can reset assigned students)"""
-    if current_user.user_type not in ["admin", "teacher"]:
+    if current_user.user_type not in STAFF_USER_TYPES:
         raise HTTPException(
             status_code=403,
             detail=get_text(user=current_user, key="errors.unauthorized"),

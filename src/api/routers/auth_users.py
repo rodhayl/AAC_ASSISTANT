@@ -50,6 +50,11 @@ from src.api.routers.auth_helpers import (
     validate_password_strength,
 )
 
+# Every role the application knows. Single source so admin-create, list
+# filters and the admin edit contract cannot drift apart; kept as an ordered
+# tuple so ``", ".join(VALID_USER_TYPES)`` renders a stable message.
+VALID_USER_TYPES = ("student", "teacher", "admin")
+
 router = APIRouter()
 
 @router.post("/admin/create-user", response_model=schemas.UserResponse)
@@ -105,15 +110,14 @@ def admin_create_user(
         )
 
     # Validate user_type
-    valid_types = ("student", "teacher", "admin")
-    if user.user_type not in valid_types:
+    if user.user_type not in VALID_USER_TYPES:
         raise HTTPException(
             status_code=400,
             detail=get_text(
                 user=current_user,
                 accept_language=accept_language,
                 key="errors.auth.invalidUserType",
-                types=", ".join(valid_types),
+                types=", ".join(VALID_USER_TYPES),
             ),
         )
 
@@ -216,8 +220,7 @@ def get_users(
             ),
         )
 
-    allowed_types = {"student", "teacher", "admin"}
-    if user_type is not None and user_type not in allowed_types:
+    if user_type is not None and user_type not in VALID_USER_TYPES:
         raise HTTPException(
             status_code=400,
             detail=get_text(user=current_user, key="errors.auth.invalidUserTypeFilter"),
@@ -468,15 +471,14 @@ def update_user(
     # affect role checks and uniqueness before mutating the row. This keeps the
     # endpoint consistent with admin_create_user and update_profile, which
     # already reject invalid roles and duplicate emails.
-    valid_types = ("student", "teacher", "admin")
-    if "user_type" in payload and payload.get("user_type") not in valid_types:
+    if "user_type" in payload and payload.get("user_type") not in VALID_USER_TYPES:
         raise HTTPException(
             status_code=400,
             detail=get_request_text(
                 request,
                 "errors.auth.invalidUserType",
                 user=current_user,
-                types=", ".join(valid_types),
+                types=", ".join(VALID_USER_TYPES),
             ),
         )
 
