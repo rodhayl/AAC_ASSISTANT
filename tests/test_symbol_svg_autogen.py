@@ -585,3 +585,28 @@ def test_auto_generated_symbol_reused_across_future_conversations(
     assert reused.get("is_text_only") is not True
     # Only the truly-missing word gets scheduled for generation.
     assert scheduled == ["pulsar"]
+
+
+def test_has_catalog_symbol_matches_labels_literally(test_db_session):
+    """A '%' or '_' in the requested word cannot suppress generation for a
+    symbol that only matches through a LIKE wildcard.
+
+    The pictogram existence check must compare literal labels: a catalog
+    ``washXhands`` must not count as the distinct word ``wash_hands``, and a
+    stored ``50%`` must not suppress generation of a plain ``50`` either way.
+    """
+    from src.aac_app.services.symbol_svg_autogen import _has_catalog_symbol
+
+    test_db_session.add_all(
+        [
+            Symbol(label="washXhands", category="verb", language="es", is_builtin=True),
+            Symbol(label="50%", category="number", language="en", is_builtin=True),
+        ]
+    )
+    test_db_session.commit()
+
+    # Distinct word: generation must proceed (no catalog symbol exists).
+    assert _has_catalog_symbol("wash_hands") is False
+    # Exact literal labels still de-duplicate correctly.
+    assert _has_catalog_symbol("washXhands") is True
+    assert _has_catalog_symbol("50%") is True

@@ -188,3 +188,46 @@ describe('useTopicPickerPool savedBy attribution', () => {
     });
   });
 });
+
+
+describe('useTopicPickerPool symbol pagination walk', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('walks every symbol page instead of silently truncating at 1000', async () => {
+    const page = (offset: number, count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        id: offset + i + 1,
+        label: `Symbol ${offset + i + 1}`,
+        category: 'general',
+        language: 'es',
+      }));
+    apiMock.get.mockImplementation(
+      (url: string, config?: { params?: { skip?: number; limit?: number } }) => {
+        if (url === '/boards/symbols') {
+          // Mirror the backend contract: one request is capped at the
+          // requested limit (max 1000), so the walk must keep fetching until
+          // a short page arrives.
+          const skip = config?.params?.skip ?? 0;
+          if (skip === 0) return Promise.resolve({ data: page(0, 1000) });
+          return Promise.resolve({ data: page(1000, 3) });
+        }
+        return Promise.resolve({ data: [] });
+      },
+    );
+
+    const { result } = renderHook(() => useTopicPickerPool());
+    // A pictogram row past the first full 1000-symbol page must be reachable:
+    // the previous single-request implementation stopped at one page and the
+    // picker silently lost every later symbol.
+    await waitFor(() => {
+      expect(result.current.symbolItems.some((s) => s.id === 1003)).toBe(true);
+    });
+    const symbolCalls = apiMock.get.mock.calls.filter(
+      ([url]) => url === '/boards/symbols',
+    );
+    expect(symbolCalls).toHaveLength(2);
+    expect(symbolCalls[1][1]).toMatchObject({ params: { skip: 1000, limit: 1000 } });
+  });
+});

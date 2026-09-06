@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_session
 from ..models import Symbol, SymbolUsageLog
-from .runtime_translation import normalize_language_code
+from .runtime_translation import LIKE_ESCAPE, escape_like_literal, normalize_language_code
 
 # A new utterance begins when the session changes or when more than this many
 # seconds separate consecutive logs; mirrors SymbolAnalytics sequence logic.
@@ -65,10 +65,18 @@ def _resolve_log_language(session: Session, log: SymbolUsageLog) -> str | None:
     label = (log.symbol_label or "").strip().casefold()
     if not label:
         return None
+    # The stored label is user content from usage logs: a ``%`` or ``_`` in
+    # it must match literally, never act as a LIKE wildcard that attributes
+    # the log to the wrong locale (e.g. a "wash_hands" log matching a
+    # "washXhands" symbol).
+    literal = escape_like_literal(label)
     for locale in DEFAULT_LOCALES:
         exists = (
             session.query(Symbol.id)
-            .filter(Symbol.language == locale, Symbol.label.ilike(label))
+            .filter(
+                Symbol.language == locale,
+                Symbol.label.ilike(literal, escape=LIKE_ESCAPE),
+            )
             .first()
         )
         if exists:

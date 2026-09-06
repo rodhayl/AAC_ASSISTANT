@@ -61,3 +61,20 @@ def test_keywords_filter_escapes_wildcards(setup_test_db, test_db_session, admin
     # "animal pet" has no literal %; without escaping "a%" matched every
     # keywords column containing "a" (dog, d_g) plus the % row.
     assert {item["label"] for item in response.json()} == {"100%_sure"}
+
+
+def test_like_escape_helpers_live_in_runtime_translation():
+    """All layers share the single escaping home (no per-module duplicates)."""
+    from src.aac_app.services.runtime_translation import (
+        LIKE_ESCAPE,
+        contains_like_pattern,
+        escape_like_literal,
+    )
+
+    assert LIKE_ESCAPE == "\\"
+    assert escape_like_literal("a_b") == "a\\_b"
+    assert escape_like_literal("100%") == "100\\%"
+    assert escape_like_literal("a\\b") == "a\\\\b"
+    assert escape_like_literal("plain") == "plain"
+    assert contains_like_pattern("MixedCase") == "%mixedcase%"
+    assert contains_like_pattern("a_b%") == "%a\\_b\\%%"

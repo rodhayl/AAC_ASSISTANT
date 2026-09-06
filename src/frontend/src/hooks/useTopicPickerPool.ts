@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/authStore';
 import { useLearningStore } from '../store/learningStore';
 import api from '../lib/api';
+import { walkPages } from '../lib/pagination';
 import { loadTopicsForUser, type SavedTopic } from '../lib/learningTopics';
 import { dedupeLearningSymbols } from '../lib/symbols';
 import {
@@ -103,11 +104,24 @@ export function useTopicPickerPool() {
     const request = ++symbolRequestRef.current;
     setSymbolLoading(true);
     try {
-      const response = await api.get('/boards/symbols', {
-        params: { limit: 1000, language: symbolLanguage },
+      // The backend caps one /boards/symbols request at `limit` (max 1000); a
+      // single fetch silently truncated catalogs larger than one page with no
+      // way to reach the rest (same defect class fixed in SymbolPicker,
+      // rosters, history, notifications and the search modal). Walk every
+      // page; walkPages validates each page with Array.isArray and stops on
+      // the first short page, and the request-id guard drops late results.
+      const symbols = await walkPages<LearningSymbolItem>({
+        pageSize: 1000,
+        fetchPage: async (skip) => {
+          const response = await api.get('/boards/symbols', {
+            params: { limit: 1000, language: symbolLanguage, skip },
+          });
+          return response.data;
+        },
+        isCancelled: () => request !== symbolRequestRef.current,
       });
       if (request !== symbolRequestRef.current) return;
-      setSymbolItems(dedupeLearningSymbols(response.data || []));
+      setSymbolItems(dedupeLearningSymbols(symbols));
       setSymbolLang(symbolLanguage);
     } catch {
       if (request === symbolRequestRef.current) {

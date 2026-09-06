@@ -59,6 +59,38 @@ def normalize_language_code(language: str | None) -> str | None:
     return base_code
 
 
+# ---------------------------------------------------------------------------
+# SQL LIKE literal-matching helpers.
+#
+# Single home for escaping LIKE metacharacters, shared by every layer that
+# matches user-supplied text with ``LIKE``/``ilike`` (symbol search in
+# ``src/api/routers/symbols.py``, topic tokens in prediction_service.py,
+# locale attribution from usage logs in ngram_builder.py and pictogram
+# de-duplication in symbol_svg_autogen.py). Keeping one copy prevents the
+# identical helpers from drifting apart again.
+# ---------------------------------------------------------------------------
+
+# Marker that neutralizes LIKE wildcards. Passed as ``escape=`` on every
+# ``.like``/``.ilike`` call that consumes an escaped pattern.
+LIKE_ESCAPE = "\\"
+
+
+def escape_like_literal(text: str) -> str:
+    """Escape LIKE metacharacters so ``text`` matches literally.
+
+    Backslashes are doubled first so an input backslash cannot neutralize the
+    escape marker; ``%`` and ``_`` are then escaped, turning them into literal
+    characters instead of wildcards.
+    """
+    escaped = text.replace(LIKE_ESCAPE, LIKE_ESCAPE + LIKE_ESCAPE)
+    return escaped.replace("%", LIKE_ESCAPE + "%").replace("_", LIKE_ESCAPE + "_")
+
+
+def contains_like_pattern(text: str) -> str:
+    """Build a case-folded ``%...%`` substring pattern for a literal string."""
+    return f"%{escape_like_literal(text).lower()}%"
+
+
 def _translate_worker(text: str, target_lang: str) -> str:
     """Translate through Google's bounded JSON endpoint.
 

@@ -117,14 +117,23 @@ def _has_catalog_symbol(label: str) -> bool:
     """
     from src.aac_app.db import get_session
     from src.aac_app.models import Symbol
+    from src.aac_app.services.runtime_translation import (
+        LIKE_ESCAPE,
+        escape_like_literal,
+    )
 
     normalized = _normalize_label(label)
     if not normalized:
         return True  # Nothing to generate for empty labels.
+    # A label may legitimately contain LIKE metacharacters; the existence
+    # check must match them literally, otherwise a catalog "washXhands" would
+    # wrongly suppress generation for the distinct word "wash_hands" (and a
+    # ``%`` in the label would match any prefix).
+    literal = escape_like_literal(normalized)
     with get_session() as session:
         return (
             session.query(Symbol.id)
-            .filter(Symbol.label.ilike(normalized))
+            .filter(Symbol.label.ilike(literal, escape=LIKE_ESCAPE))
             .first()
             is not None
         )

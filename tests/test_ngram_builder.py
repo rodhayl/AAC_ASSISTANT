@@ -553,3 +553,38 @@ def test_lifespan_cancels_periodic_ngram_rebuild_on_shutdown(monkeypatch):
     after_shutdown = len(calls)
     time_module.sleep(1.3)
     assert len(calls) == after_shutdown
+
+
+def test_resolve_log_language_matches_stored_labels_literally(test_db_session):
+    """A '%' or '_' inside a logged label cannot wildcard-match another symbol.
+
+    Logs without a linked symbol are attributed by matching their stored
+    label against the catalog. Before escaping, a ``_`` in the log label
+    matched any single character and a ``%`` matched any prefix, attributing
+    logs to the wrong locale (or to any locale at all when no literal
+    symbol exists).
+    """
+    from types import SimpleNamespace
+
+    from src.aac_app.services import ngram_builder
+
+    test_db_session.add_all(
+        [
+            Symbol(label="washXhands", category="verb", language="es", is_builtin=True),
+            # The literal label of the log used below: exists only in en.
+            Symbol(label="wash_hands", category="verb", language="en", is_builtin=True),
+            # Prefix "50" exists (es), but the literal label "50%" does not.
+            Symbol(label="50", category="number", language="es", is_builtin=True),
+        ]
+    )
+    test_db_session.commit()
+
+    # '_' in the log label must not prefer the es "washXhands" wildcard match;
+    # the literal en symbol is the only correct attribution.
+    underscore_log = SimpleNamespace(symbol_id=None, symbol_label="wash_hands")
+    assert ngram_builder._resolve_log_language(test_db_session, underscore_log) == "en"
+
+    # '%' in the log label must not act as a prefix wildcard over "50": no
+    # literal "50%" symbol exists anywhere, so the log is unattributed.
+    percent_log = SimpleNamespace(symbol_id=None, symbol_label="50%")
+    assert ngram_builder._resolve_log_language(test_db_session, percent_log) is None

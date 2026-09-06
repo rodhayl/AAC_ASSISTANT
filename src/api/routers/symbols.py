@@ -9,7 +9,11 @@ from src import config
 from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol, SymbolUsageLog, User
 from src.aac_app.services.achievement_system import AchievementSystem
 from src.aac_app.services.local_vector_store import vector_store_operation_lock
-from src.aac_app.services.runtime_translation import normalize_language_code
+from src.aac_app.services.runtime_translation import (
+    LIKE_ESCAPE,
+    contains_like_pattern,
+    normalize_language_code,
+)
 from src.aac_app.services.symbol_image_backfill import schedule_symbol_image_download
 from src.aac_app.services.vector_utils import delete_symbol as delete_symbol_embedding
 from src.aac_app.services.vector_utils import index_symbol
@@ -99,24 +103,9 @@ def get_symbol_categories(
     return [category for (category,) in categories]
 
 
-_LIKE_ESCAPE = "\\"
-
-
-def _literal_like_pattern(search: str) -> str:
-    """Escape LIKE wildcards so the user's text matches literally.
-
-    Without escaping, a ``%`` in the search box matches everything and ``_``
-    matches any character; ``\\`` neutralizes them and is passed to every
-    ``.like(..., escape=...)`` using this pattern.
-    """
-    escaped = search.replace(_LIKE_ESCAPE, _LIKE_ESCAPE + _LIKE_ESCAPE)
-    escaped = escaped.replace("%", _LIKE_ESCAPE + "%").replace("_", _LIKE_ESCAPE + "_")
-    return f"%{escaped.lower()}%"
-
-
 def _apply_symbol_search(query, search: str, db: Session):
     """Apply the existing keyword-plus-semantic symbol search to a query."""
-    s = _literal_like_pattern(search)
+    s = contains_like_pattern(search)
 
     try:
         from src.api.deps import get_vector_store
@@ -144,13 +133,13 @@ def _apply_symbol_search(query, search: str, db: Session):
                 return query.filter(
                     or_(
                         func.lower(Symbol.label).like(
-                            s, escape=_LIKE_ESCAPE
+                            s, escape=LIKE_ESCAPE
                         ),
                         func.lower(Symbol.description).like(
-                            s, escape=_LIKE_ESCAPE
+                            s, escape=LIKE_ESCAPE
                         ),
                         func.lower(Symbol.keywords).like(
-                            s, escape=_LIKE_ESCAPE
+                            s, escape=LIKE_ESCAPE
                         ),
                         Symbol.id.in_(semantic_ids),
                     )
@@ -158,18 +147,18 @@ def _apply_symbol_search(query, search: str, db: Session):
 
         return query.filter(
             or_(
-                func.lower(Symbol.label).like(s, escape=_LIKE_ESCAPE),
-                func.lower(Symbol.description).like(s, escape=_LIKE_ESCAPE),
-                func.lower(Symbol.keywords).like(s, escape=_LIKE_ESCAPE),
+                func.lower(Symbol.label).like(s, escape=LIKE_ESCAPE),
+                func.lower(Symbol.description).like(s, escape=LIKE_ESCAPE),
+                func.lower(Symbol.keywords).like(s, escape=LIKE_ESCAPE),
             )
         )
     except Exception as e:
         logger.warning(f"Semantic search failed: {e}")
         return query.filter(
             or_(
-                func.lower(Symbol.label).like(s, escape=_LIKE_ESCAPE),
-                func.lower(Symbol.description).like(s, escape=_LIKE_ESCAPE),
-                func.lower(Symbol.keywords).like(s, escape=_LIKE_ESCAPE),
+                func.lower(Symbol.label).like(s, escape=LIKE_ESCAPE),
+                func.lower(Symbol.description).like(s, escape=LIKE_ESCAPE),
+                func.lower(Symbol.keywords).like(s, escape=LIKE_ESCAPE),
             )
         )
 
@@ -212,7 +201,7 @@ def get_symbols(
     if keywords:
         query = query.filter(
             func.lower(Symbol.keywords).like(
-                _literal_like_pattern(keywords), escape=_LIKE_ESCAPE
+                contains_like_pattern(keywords), escape=LIKE_ESCAPE
             )
         )
     if usage == "in_use":

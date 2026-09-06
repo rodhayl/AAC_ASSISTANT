@@ -13,7 +13,11 @@ from sqlalchemy.orm import Session
 
 from ..db import get_session
 from ..models import BoardSymbol, Symbol, SymbolUsageLog
-from ..services.runtime_translation import normalize_language_code
+from ..services.runtime_translation import (
+    LIKE_ESCAPE,
+    escape_like_literal,
+    normalize_language_code,
+)
 from ..services.symbol_analytics import SymbolAnalytics
 from ..services.symbol_catalog import (
     category_is_noun,
@@ -23,19 +27,6 @@ from ..services.symbol_catalog import (
 
 # Re-exported under the historical private name (tests import it from here).
 _label_looks_bad = label_looks_bad
-
-# SQL LIKE escape character: LIKE wildcards (% and _) in user-derived
-# tokens are escaped with this marker so a topic such as "a_b" matches the
-# literal underscore instead of acting as a single-character wildcard. Same
-# doctrine (and marker) as src/api/routers/symbols.py._LIKE_ESCAPE.
-_LIKE_ESCAPE = "\\"
-
-
-def _escape_like_literal(text: str) -> str:
-    """Escape LIKE metacharacters so the input matches literally."""
-    escaped = text.replace(_LIKE_ESCAPE, _LIKE_ESCAPE + _LIKE_ESCAPE)
-    return escaped.replace("%", _LIKE_ESCAPE + "%").replace("_", _LIKE_ESCAPE + "_")
-
 
 # Common stop-words excluded from topic tokenization so a topic like
 # "Inteligencia Artificial y LLMs" focuses on inteligencia/artificial/llms.
@@ -469,15 +460,15 @@ class _PredictionContext:
             # otherwise act as a LIKE single-character wildcard (a topic
             # "a_b" matching labels like "axb"). Escape both LIKE
             # metacharacters and declare the escape marker on every clause.
-            literal = _escape_like_literal(token)
+            literal = escape_like_literal(token)
             clauses.extend(
                 [
-                    func.lower(Symbol.label).like(f"{literal}%", escape=_LIKE_ESCAPE),
+                    func.lower(Symbol.label).like(f"{literal}%", escape=LIKE_ESCAPE),
                     func.lower(Symbol.label).like(
-                        f"% {literal}%", escape=_LIKE_ESCAPE
+                        f"% {literal}%", escape=LIKE_ESCAPE
                     ),
                     func.lower(Symbol.keywords).like(
-                        f"%{literal}%", escape=_LIKE_ESCAPE
+                        f"%{literal}%", escape=LIKE_ESCAPE
                     ),
                 ]
             )
