@@ -183,7 +183,9 @@ class SessionLifecycleMixin:
 
         except Exception as e:
             logger.error(f"Failed to start learning session: {e}")
-            return {"success": False, "error": str(e)}
+            # Never echo the raw exception to the client (it can contain
+            # internals); the logger above keeps the full detail.
+            return {"success": False, "error": "Failed to start learning session"}
 
     def _build_welcome_message(
         self,
@@ -342,7 +344,7 @@ class SessionLifecycleMixin:
                 }
         except Exception as e:
             logger.error(f"Failed to build topic pool for user {user_id}: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": "Failed to build topic pool"}
 
     def _topic_purpose(self, db: Session, topic_name: str) -> str:
         """Most recent non-empty purpose for a topic (or '')."""
@@ -406,7 +408,7 @@ class SessionLifecycleMixin:
 
         except Exception as e:
             logger.error(f"Failed to get session progress: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": "Failed to get session progress"}
 
     def get_user_history(
         self,
@@ -449,4 +451,4 @@ class SessionLifecycleMixin:
 
         except Exception as e:
             logger.error(f"Failed to get user history: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": "Failed to get user history"}

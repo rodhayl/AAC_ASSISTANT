@@ -132,6 +132,57 @@ describe('learning store double-request guards', () => {
   });
 });
 
+describe('learning store per-operation guards', () => {
+  beforeEach(async () => {
+    const api = await getApi();
+    api.get.mockResolvedValue({ data: { sessions: [] } });
+  });
+
+  it('ends the session while a question generation is still in flight', async () => {
+    const api = await getApi();
+    useLearningStore.setState({
+      currentSession: { session_id: 7 } as never,
+      // A question generation is in flight (shared chat spinner on).
+      isLoading: true,
+      isAskingQuestion: true,
+      isEndingSession: false,
+    });
+    api.post.mockResolvedValueOnce({ data: { success: true, summary: 'Done' } });
+
+    await useLearningStore.getState().endSession(7);
+
+    expect(
+      api.post.mock.calls.filter(([url]) => url === '/learning/7/end'),
+    ).toHaveLength(1);
+    expect(useLearningStore.getState().currentSession).toBeNull();
+  });
+
+  it('starts a session while an unrelated answer submit is still in flight', async () => {
+    const api = await getApi();
+    useLearningStore.setState({
+      currentSession: null,
+      isLoading: true,
+      isSubmittingAnswer: true,
+      isStartingSession: false,
+    });
+    api.post.mockImplementation((url: string) => {
+      if (url === '/learning/start') {
+        return Promise.resolve({ data: { ...startedSession, session_id: 9 } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    await useLearningStore
+      .getState()
+      .startSession({ topic: 'Weather', purpose: 'practice' } as never, 1);
+
+    expect(
+      api.post.mock.calls.filter(([url]) => url === '/learning/start'),
+    ).toHaveLength(1);
+    expect(useLearningStore.getState().currentSession?.session_id).toBe(9);
+  });
+});
+
 describe('learning store history walk', () => {
   it('walks every history page instead of silently truncating', async () => {
     const api = await getApi();

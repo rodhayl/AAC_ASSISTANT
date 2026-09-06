@@ -269,7 +269,9 @@ class QuestionGenerationMixin:
 
         except Exception as e:
             logger.error(f"Failed to generate question: {e}")
-            return {"success": False, "error": str(e)}
+            # Never echo the raw exception to the client (it can contain
+            # internals); the logger above keeps the full detail.
+            return {"success": False, "error": "Failed to generate question"}
 
     async def _generate_question_data(
         self,

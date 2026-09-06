@@ -99,9 +99,24 @@ def get_symbol_categories(
     return [category for (category,) in categories]
 
 
+_LIKE_ESCAPE = "\\"
+
+
+def _literal_like_pattern(search: str) -> str:
+    """Escape LIKE wildcards so the user's text matches literally.
+
+    Without escaping, a ``%`` in the search box matches everything and ``_``
+    matches any character; ``\\`` neutralizes them and is passed to every
+    ``.like(..., escape=...)`` using this pattern.
+    """
+    escaped = search.replace(_LIKE_ESCAPE, _LIKE_ESCAPE + _LIKE_ESCAPE)
+    escaped = escaped.replace("%", _LIKE_ESCAPE + "%").replace("_", _LIKE_ESCAPE + "_")
+    return f"%{escaped.lower()}%"
+
+
 def _apply_symbol_search(query, search: str, db: Session):
     """Apply the existing keyword-plus-semantic symbol search to a query."""
-    s = f"%{search.lower()}%"
+    s = _literal_like_pattern(search)
 
     try:
         from src.api.deps import get_vector_store
@@ -128,27 +143,33 @@ def _apply_symbol_search(query, search: str, db: Session):
                 )
                 return query.filter(
                     or_(
-                        func.lower(Symbol.label).like(s),
-                        func.lower(Symbol.description).like(s),
-                        func.lower(Symbol.keywords).like(s),
+                        func.lower(Symbol.label).like(
+                            s, escape=_LIKE_ESCAPE
+                        ),
+                        func.lower(Symbol.description).like(
+                            s, escape=_LIKE_ESCAPE
+                        ),
+                        func.lower(Symbol.keywords).like(
+                            s, escape=_LIKE_ESCAPE
+                        ),
                         Symbol.id.in_(semantic_ids),
                     )
                 ).order_by(semantic_order)
 
         return query.filter(
             or_(
-                func.lower(Symbol.label).like(s),
-                func.lower(Symbol.description).like(s),
-                func.lower(Symbol.keywords).like(s),
+                func.lower(Symbol.label).like(s, escape=_LIKE_ESCAPE),
+                func.lower(Symbol.description).like(s, escape=_LIKE_ESCAPE),
+                func.lower(Symbol.keywords).like(s, escape=_LIKE_ESCAPE),
             )
         )
     except Exception as e:
         logger.warning(f"Semantic search failed: {e}")
         return query.filter(
             or_(
-                func.lower(Symbol.label).like(s),
-                func.lower(Symbol.description).like(s),
-                func.lower(Symbol.keywords).like(s),
+                func.lower(Symbol.label).like(s, escape=_LIKE_ESCAPE),
+                func.lower(Symbol.description).like(s, escape=_LIKE_ESCAPE),
+                func.lower(Symbol.keywords).like(s, escape=_LIKE_ESCAPE),
             )
         )
 
@@ -189,8 +210,11 @@ def get_symbols(
     if search:
         query = _apply_symbol_search(query, search, db)
     if keywords:
-        kw = f"%{keywords.lower()}%"
-        query = query.filter(func.lower(Symbol.keywords).like(kw))
+        query = query.filter(
+            func.lower(Symbol.keywords).like(
+                _literal_like_pattern(keywords), escape=_LIKE_ESCAPE
+            )
+        )
     if usage == "in_use":
         query = query.filter(
             (usage_subq.c.use_count.is_not(None)) & (usage_subq.c.use_count > 0)
@@ -297,7 +321,7 @@ def reorder_symbols(
         raise HTTPException(
             status_code=500,
             detail=get_text(
-                user=current_user, key="errors.boards.reorderFailed", error=str(e)
+                user=current_user, key="errors.boards.reorderFailed"
             ),
         )
 

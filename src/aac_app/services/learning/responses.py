@@ -623,7 +623,9 @@ class ResponseProcessingMixin:
 
         except Exception as e:
             logger.error(f"Failed to process response: {e}")
-            return {"success": False, "error": str(e)}
+            # Never echo the raw exception to the client (it can contain
+            # internals); the logger above keeps the full detail.
+            return {"success": False, "error": "Failed to process response"}
 
     @staticmethod
     def _lang_instruction(user_lang: str) -> str:

@@ -22,6 +22,24 @@ class AccountLockoutService:
     ATTEMPT_WINDOW_MINUTES = 60  # Count attempts within last hour
 
     @staticmethod
+    def _purge_expired_attempts(db: Session, now: datetime) -> None:
+        """Delete attempt rows that can no longer influence lockout.
+
+        ``record_failed_attempt`` counts only rows inside the attempt window,
+        and a row's lock always expires before its timestamp leaves that
+        window (LOCKOUT_DURATION < ATTEMPT_WINDOW). Rows older than the
+        window are therefore pure disk growth — failed logins are an
+        unauthenticated endpoint, so without this purge the table grows
+        without bound.
+        """
+        window_start = now - timedelta(
+            minutes=AccountLockoutService.ATTEMPT_WINDOW_MINUTES
+        )
+        db.query(FailedLoginAttempt).filter(
+            FailedLoginAttempt.timestamp < window_start
+        ).delete()
+
+    @staticmethod
     def record_failed_attempt(
         db: Session, username: str, ip_address: str | None = None
     ) -> tuple[bool, datetime | None, int]:
@@ -37,6 +55,7 @@ class AccountLockoutService:
             Tuple of (is_locked, locked_until, attempt_count)
         """
         now = datetime.now(UTC)
+        AccountLockoutService._purge_expired_attempts(db, now)
         window_start = now - timedelta(
             minutes=AccountLockoutService.ATTEMPT_WINDOW_MINUTES
         )

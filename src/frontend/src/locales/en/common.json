@@ -83,11 +83,11 @@
     "provider": {
       "invalid": "Provider must be 'ollama', 'openrouter', 'lmstudio', or 'groq'",
       "unavailable": "Ollama service is not available. Please ensure Ollama is running.",
-      "fetchModelsFailed": "Failed to fetch Ollama models: {{error}}",
+      "fetchModelsFailed": "Failed to fetch Ollama models.",
       "openRouterKeyMissing": "OpenRouter API key not configured. Please set it in settings first.",
-      "fetchOpenRouterModelsFailed": "Failed to fetch OpenRouter models: {{error}}",
+      "fetchOpenRouterModelsFailed": "Failed to fetch OpenRouter models.",
       "groqKeyMissing": "Groq API key not configured. Please set it in settings first.",
-      "fetchGroqModelsFailed": "Failed to fetch Groq models: {{error}}"
+      "fetchGroqModelsFailed": "Failed to fetch Groq models."
     },
     "settings": {
       "maxTokensPositive": "max_tokens must be a positive integer",
@@ -108,7 +108,7 @@
     },
     "arasaac": {
       "downloadFailed": "Failed to download image from ARASAAC",
-      "importFailed": "Import failed: {{error}}"
+      "importFailed": "Import failed."
     },
     "guardian": {
       "onlyTeachersAdmins": "Only teachers and admins can access guardian profiles",
@@ -187,16 +187,16 @@
       "assignmentNotFound": "Assignment not found",
       "unauthorizedAssign": "Not authorized to assign this board",
       "unauthorizedUnassign": "Not authorized to unassign this board",
-      "suggestionsFailed": "Failed to generate suggestions: {{error}}",
-      "reorderFailed": "Failed to reorder symbols: {{error}}",
+      "suggestionsFailed": "Failed to generate suggestions.",
+      "reorderFailed": "Failed to reorder symbols.",
       "invalidSymbolLabel": "Invalid symbol label: {{label}}"
     },
     "analytics": {
       "logSymbolFailed": "Failed to log symbol usage",
-      "frequentSequencesFailed": "Failed to retrieve frequent sequences: {{error}}",
-      "suggestionsFailed": "Failed to generate suggestions: {{error}}",
-      "preferencesFailed": "Failed to retrieve category preferences: {{error}}",
-      "statsFailed": "Failed to retrieve usage statistics: {{error}}"
+      "frequentSequencesFailed": "Failed to retrieve frequent sequences.",
+      "suggestionsFailed": "Failed to generate suggestions.",
+      "preferencesFailed": "Failed to retrieve category preferences.",
+      "statsFailed": "Failed to retrieve usage statistics."
     },
     "achievements": {
       "notFound": "Achievement not found",
@@ -225,7 +225,7 @@
       "defaultNotFound": "The default learning mode no longer exists"
     },
     "admin": {
-      "databaseResetFailed": "Failed to reset database: {{error}}",
+      "databaseResetFailed": "Failed to reset database. Check the server logs.",
       "databaseResetDisabled": "Database reset is disabled. Set ALLOW_DB_RESET=true in .env to enable it.",
       "databaseResetProduction": "Database reset is blocked in production environments."
     },
@@ -263,7 +263,7 @@
       "ttsInstallUnavailable": "Automatic TTS installation is unavailable.",
       "ttsInstallInProgress": "A TTS installation is already in progress.",
       "ttsInstallFailed": "Automatic TTS installation failed. Check the server logs.",
-      "ttsInstallFailedWithError": "Automatic TTS installation failed: {{error}}",
+      "ttsInstallFailedWithError": "Automatic TTS installation failed. Check the server logs.",
       "ttsInstalled": "Local neural TTS installed successfully.",
       "voiceAlreadyInstalled": "Voice dependencies are already installed.",
       "voiceInstallInProgress": "A voice dependency installation is already in progress.",

@@ -194,7 +194,6 @@ def get_frequent_sequences(
             detail=get_text(
                 user=current_user,
                 key="errors.analytics.frequentSequencesFailed",
-                error=str(e),
             ),
         )
 
@@ -441,7 +440,6 @@ def get_next_symbol_suggestions_post(
             detail=get_text(
                 user=current_user,
                 key="errors.analytics.suggestionsFailed",
-                error=str(e),
             ),
         )
 
@@ -472,7 +470,6 @@ def get_category_preferences(
             detail=get_text(
                 user=current_user,
                 key="errors.analytics.preferencesFailed",
-                error=str(e),
             ),
         )
 
@@ -506,6 +503,6 @@ def get_usage_statistics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=get_text(
-                user=current_user, key="errors.analytics.statsFailed", error=str(e)
+                user=current_user, key="errors.analytics.statsFailed"
             ),
         )

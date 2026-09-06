@@ -77,6 +77,13 @@ interface LearningState {
   progressStats: LearningProgress | null;
   lastSessionSummary: SessionSummary | null;
   isLoading: boolean;
+  // Per-operation in-flight flags: they only gate their own operation so an
+  // in-flight question generation cannot silently drop an unrelated
+  // start/end/answer (the shared isLoading is kept for the chat spinner).
+  isStartingSession: boolean;
+  isAskingQuestion: boolean;
+  isSubmittingAnswer: boolean;
+  isEndingSession: boolean;
   error: string | null;
   messages: Array<{
     role: 'user' | 'assistant';
@@ -346,6 +353,10 @@ export const useLearningStore = create<LearningState>((set, get) => {
   progressStats: null,
   lastSessionSummary: null,
   isLoading: false,
+  isStartingSession: false,
+  isAskingQuestion: false,
+  isSubmittingAnswer: false,
+  isEndingSession: false,
   error: null,
   messages: [],
   providerInUse: undefined,
@@ -379,6 +390,10 @@ export const useLearningStore = create<LearningState>((set, get) => {
       progressStats: null,
       lastSessionSummary: null,
       isLoading: false,
+      isStartingSession: false,
+      isAskingQuestion: false,
+      isSubmittingAnswer: false,
+      isEndingSession: false,
       error: null,
       messages: [],
       providerInUse: undefined,
@@ -391,15 +406,17 @@ export const useLearningStore = create<LearningState>((set, get) => {
 
   startSession: async (data, userId) => {
     // In-flight guard: a double click fires two POSTs and the backend would
-    // create two live sessions. The first caller sets isLoading synchronously
-    // before its first await, so a concurrent second caller is dropped here
-    // while an intentional later start (new conversation) still proceeds.
-    if (get().isLoading) return;
+    // create two live sessions. The first caller sets isStartingSession
+    // synchronously before its first await, so a concurrent second caller is
+    // dropped here. The flag is start-specific: an intentional start (new
+    // conversation) is not blocked by an unrelated in-flight question/answer.
+    if (get().isStartingSession) return;
     const requestEpoch = ++sessionEpoch;
     tts.cancelAll();
     cancelPendingAutoAsk();
     cancelAchievementCheck();
     set({
+      isStartingSession: true,
       isLoading: true,
       error: null,
       messages: [],
@@ -451,15 +468,17 @@ export const useLearningStore = create<LearningState>((set, get) => {
       console.error('[startSession] Error:', error);
       set({ error: detail, isLoading: false });
       throw error instanceof Error ? error : new Error(detail);
+    } finally {
+      set({ isStartingSession: false });
     }
   },
 
   askQuestion: async (sessionId, difficulty) => {
-    if (get().isLoading || get().currentSession?.session_id !== sessionId) return;
+    if (get().isAskingQuestion || get().currentSession?.session_id !== sessionId) return;
     const requestEpoch = sessionEpoch;
     const requestId = ++questionRequestId;
     cancelPendingAutoAsk();
-    set({ isLoading: true, error: null, currentQuestion: null, revealedAnswer: null });
+    set({ isAskingQuestion: true, isLoading: true, error: null, currentQuestion: null, revealedAnswer: null });
     try {
       const response = await api.post(`/learning/${sessionId}/ask`, null, {
         params: { difficulty }
@@ -494,22 +513,24 @@ export const useLearningStore = create<LearningState>((set, get) => {
         return extractError(error, 'Failed to get question');
       })();
       set({ error: detail, isLoading: false, currentQuestion: null, revealedAnswer: null });
+    } finally {
+      set({ isAskingQuestion: false });
     }
   },
 
   askNextQuestion: async (difficulty?: string) => {
-    const { currentSession, isLoading, autoAskEnabled, difficultyOverride } = get();
-    if (!currentSession || isLoading || !autoAskEnabled) return;
+    const { currentSession, isAskingQuestion, autoAskEnabled, difficultyOverride } = get();
+    if (!currentSession || isAskingQuestion || !autoAskEnabled) return;
     const requestedDifficulty =
       difficulty ?? (difficultyOverride === 'adaptive' ? undefined : difficultyOverride);
     await get().askQuestion(currentSession.session_id, requestedDifficulty);
   },
 
   submitAnswer: async (sessionId, answer) => {
-    if (get().isLoading || get().currentSession?.session_id !== sessionId) return;
+    if (get().isSubmittingAnswer || get().currentSession?.session_id !== sessionId) return;
     const requestEpoch = sessionEpoch;
     const requestId = ++answerRequestId;
-    set({ isLoading: true, error: null });
+    set({ isSubmittingAnswer: true, isLoading: true, error: null });
     set((state) => ({
       messages: [...state.messages, { role: 'user' as const, content: answer }],
     }));
@@ -529,14 +550,16 @@ export const useLearningStore = create<LearningState>((set, get) => {
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
       set({ error: extractError(error, tLearning('learning:errors.submitAnswerFailed')), isLoading: false, revealedAnswer: null });
+    } finally {
+      set({ isSubmittingAnswer: false });
     }
   },
 
   submitVoiceAnswer: async (sessionId, audioBlob) => {
-    if (get().isLoading || get().currentSession?.session_id !== sessionId) return;
+    if (get().isSubmittingAnswer || get().currentSession?.session_id !== sessionId) return;
     const requestEpoch = sessionEpoch;
     const requestId = ++answerRequestId;
-    set({ isLoading: true, error: null });
+    set({ isSubmittingAnswer: true, isLoading: true, error: null });
     const formData = new FormData();
     formData.append('file', audioBlob, 'recording.wav');
     try {
@@ -556,14 +579,16 @@ export const useLearningStore = create<LearningState>((set, get) => {
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
       set({ error: extractError(error, tLearning('learning:errors.submitVoiceAnswerFailed')), isLoading: false, revealedAnswer: null });
+    } finally {
+      set({ isSubmittingAnswer: false });
     }
   },
 
   submitSymbolAnswer: async (sessionId, symbols, enriched_gloss, raw_gloss) => {
-    if (get().isLoading || get().currentSession?.session_id !== sessionId) return;
+    if (get().isSubmittingAnswer || get().currentSession?.session_id !== sessionId) return;
     const requestEpoch = sessionEpoch;
     const requestId = ++answerRequestId;
-    set({ isLoading: true, error: null });
+    set({ isSubmittingAnswer: true, isLoading: true, error: null });
     const userMessage = enriched_gloss || raw_gloss || symbols.map((s) => s.label).join(' ');
     const userContent = userMessage || '[symbols]';
     const symbolImages = symbols.map((s) => ({ label: s.label, image_path: s.image_path, category: s.category }));
@@ -588,19 +613,22 @@ export const useLearningStore = create<LearningState>((set, get) => {
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
       set({ error: extractError(error, tLearning('learning:errors.submitSymbolAnswerFailed')), isLoading: false, revealedAnswer: null });
+    } finally {
+      set({ isSubmittingAnswer: false });
     }
   },
 
   endSession: async (sessionId) => {
     if (get().currentSession?.session_id !== sessionId) return;
     // In-flight guard: a double click would double-spend the LLM summary
-    // call and overwrite the just-written summary/ended_at.
-    if (get().isLoading) return;
+    // call and overwrite the just-written summary/ended_at. The flag is
+    // end-specific: ending is not blocked by an unrelated in-flight question.
+    if (get().isEndingSession) return;
     tts.cancelAll();
     const requestEpoch = ++sessionEpoch;
     cancelPendingAutoAsk();
     cancelAchievementCheck();
-    set({ isLoading: true, error: null });
+    set({ isEndingSession: true, isLoading: true, error: null });
     try {
       const response = await api.post(`/learning/${sessionId}/end`);
       const summary = response.data;
@@ -630,6 +658,8 @@ export const useLearningStore = create<LearningState>((set, get) => {
         return extractError(error, 'Failed to end session');
       })();
       set({ error: detail, isLoading: false });
+    } finally {
+      set({ isEndingSession: false });
     }
   },
 

@@ -450,7 +450,8 @@ async def test_process_response_rejects_invalid_confidence(
     )
 
     assert result["success"] is False
-    assert "confidence must be between 0 and 1" in result["error"]
+    # Stable client message; the precise reason stays in the server log.
+    assert result == {"success": False, "error": "Failed to process response"}
 
 
 @pytest.mark.anyio
@@ -470,7 +471,8 @@ async def test_process_response_rejects_incomplete_llm_json(
     )
 
     assert result["success"] is False
-    assert "incomplete JSON" in result["error"]
+    # Stable client message; the precise reason stays in the server log.
+    assert result == {"success": False, "error": "Failed to process response"}
 
 
 @pytest.mark.anyio

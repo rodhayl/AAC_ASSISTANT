@@ -34,6 +34,10 @@ describe('learningStore adaptive question flow', () => {
       progressStats: null,
       lastSessionSummary: null,
       isLoading: false,
+      isStartingSession: false,
+      isAskingQuestion: false,
+      isSubmittingAnswer: false,
+      isEndingSession: false,
       error: null,
       messages: [],
       providerInUse: undefined,
@@ -619,9 +623,9 @@ describe('learningStore adaptive question flow', () => {
 
     const first = useLearningStore.getState().askQuestion(7);
     // A direct caller may intentionally replace an in-flight request; model
-    // that explicit reset so the test exercises the per-request token guard
-    // rather than the UI loading lock.
-    useLearningStore.setState({ isLoading: false });
+    // that explicit reset so the test exercises the per-request epoch guard
+    // rather than the in-flight duplicate-request guard.
+    useLearningStore.setState({ isAskingQuestion: false, isLoading: false });
     const second = useLearningStore.getState().askQuestion(7);
     resolveSecond({ data: { success: true, question_text: 'Newest', choices: ['A'] } });
     await second;
@@ -644,8 +648,10 @@ describe('learningStore adaptive question flow', () => {
     useLearningStore.setState({ currentSession: { session_id: 7, success: true } });
 
     const first = useLearningStore.getState().submitAnswer(7, 'First');
-    // Reset loading only to model a caller that allows a replacement operation.
-    useLearningStore.setState({ isLoading: false });
+    // Reset the in-flight guard only to model a caller that force-clears it,
+    // so the test exercises the stale-response epoch guard rather than the
+    // concurrent duplicate-request guard.
+    useLearningStore.setState({ isSubmittingAnswer: false, isLoading: false });
     const second = useLearningStore.getState().submitAnswer(7, 'Second');
     resolveSecond({ data: { success: true, feedback_message: 'Newest reply' } });
     await second;

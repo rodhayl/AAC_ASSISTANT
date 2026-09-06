@@ -131,10 +131,40 @@ describe('notifications store read-state and load resilience', () => {
     await useNotificationsStore.getState().loadFromBackend(9);
 
     expect(get).toHaveBeenCalledWith('/notifications', {
-      params: { user_id: 9, limit: 50 },
+      params: { user_id: 9, skip: 0, limit: 100 },
     });
     expect(useNotificationsStore.getState().loading).toBe(false);
     expect(useNotificationsStore.getState().loaded).toBe(false);
     expect(consoleSpy).toHaveBeenCalled();
+  });
+
+  it('loadFromBackend walks every page instead of truncating at 50', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, i) => ({
+      id: i + 1,
+      title: `N${i + 1}`,
+      message: 'Message',
+      is_read: false,
+      created_at: '2026-01-01T00:00:00Z',
+    }));
+    const secondPage = Array.from({ length: 35 }, (_, i) => ({
+      id: 101 + i,
+      title: `N${101 + i}`,
+      message: 'Message',
+      is_read: false,
+      created_at: '2026-01-02T00:00:00Z',
+    }));
+    const get = vi.spyOn(api, 'get').mockImplementation((_url: string, config?: { params?: { skip?: number } }) => {
+      const skip = config?.params?.skip ?? 0;
+      return Promise.resolve({ data: { notifications: skip === 0 ? firstPage : secondPage } });
+    });
+
+    await useNotificationsStore.getState().loadFromBackend(1);
+
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(get).toHaveBeenNthCalledWith(2, '/notifications', {
+      params: { user_id: 1, skip: 100, limit: 100 },
+    });
+    expect(useNotificationsStore.getState().items).toHaveLength(135);
+    expect(useNotificationsStore.getState().loaded).toBe(true);
   });
 });

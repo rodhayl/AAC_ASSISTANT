@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import api from '../lib/api'
+import { walkPages } from '../lib/pagination'
 
 export interface NotificationItem {
   id: string | number
@@ -74,10 +75,26 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
     activeUserId = userId
     set({ items: [], loading: true, loaded: false })
     try {
-      const response = await api.get('/notifications', {
-        params: { user_id: userId, limit: 50 }
+      // Walk every page so users with more notifications than one page are
+      // not silently truncated (same class as roster/history truncation);
+      // the backend caps limit at 100, and a short final page ends the walk.
+      const notifications = await walkPages<{
+        id: string;
+        title: string;
+        message: string;
+        is_read: boolean;
+        created_at: string;
+        type?: NotificationItem['type'];
+      }>({
+        pageSize: 100,
+        fetchPage: async (skip) => {
+          const response = await api.get('/notifications', {
+            params: { user_id: userId, skip, limit: 100 },
+          })
+          return response.data.notifications
+        },
+        isCancelled: () => generation !== loadGeneration || activeUserId !== userId,
       })
-      const { notifications } = response.data
 
       // Convert backend format to store format
       const items: NotificationItem[] = notifications.map((n: { id: string; title: string; message: string; is_read: boolean; created_at: string; type?: NotificationItem['type'] }) => ({
