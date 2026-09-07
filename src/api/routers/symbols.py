@@ -290,7 +290,14 @@ def create_symbol(
 
 @router.put("/symbols/reorder")
 def reorder_symbols(
-    updates: list[schemas.SymbolReorderUpdate],
+    updates: list[schemas.SymbolReorderUpdate] = Body(
+        ...,
+        # Mirror the board-symbols batch cap: an unbounded list would let a
+        # client force one giant ``Symbol.id.in_(...)`` expression plus a
+        # per-row UPDATE loop. A thousand rows is far beyond any real library
+        # drag-and-drop save.
+        max_length=1000,
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_staff_user),
 ):

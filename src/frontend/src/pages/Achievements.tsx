@@ -3,7 +3,7 @@ import { Trophy, Star, Lock, CheckCircle, Settings, Plus, Pencil, Trash2, Award,
 import { useAuthStore } from '../store/authStore'
 import api, { extractError } from '../lib/api'
 import { walkPages } from '../lib/pagination'
-import { isStaffUser } from '../lib/roles'
+import { canManageBoard, isStaffUser } from '../lib/roles'
 import type { Achievement, AchievementFull, User } from '../types'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../components/ui/button';
@@ -436,7 +436,7 @@ export function Achievements() {
                         <IconButton label={t('award')} onClick={() => openAwardModal(a.id)} className="p-2 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded">
                           <Award className="w-4 h-4" />
                         </IconButton>
-                        {a.created_by && (a.created_by === user?.id || user?.user_type === 'admin') && (
+                        {a.created_by && canManageBoard(user, a.created_by) && (
                           <>
                             <IconButton label={t('edit')} onClick={() => openEditModal(a)} className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded">
                               <Pencil className="w-4 h-4" />

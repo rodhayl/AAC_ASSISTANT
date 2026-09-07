@@ -430,3 +430,65 @@ def test_voice_install_400_when_uv_disappears_after_support_check(
         )
     assert response.status_code == 400
     assert "uv is not available" in response.json()["detail"]
+
+
+def test_install_timeout_constant_defined_and_below_client_ceilings():
+    """AUTO_INSTALL_TIMEOUT_SECONDS is defined and fires before the client.
+
+    VoiceTab.runInstall aborts voice installs after 10 minutes and TTS
+    installs after 30 minutes; the backend must give up first so the hung
+    subprocess maps to a localized 503 instead of the browser aborting with a
+    generic error while the lock stays held.
+    """
+    from src.api.routers.providers import AUTO_INSTALL_TIMEOUT_SECONDS
+
+    assert isinstance(AUTO_INSTALL_TIMEOUT_SECONDS, int)
+    # Voice client ceiling: 10 min = 600 s (the tighter of the two clients).
+    assert 0 < AUTO_INSTALL_TIMEOUT_SECONDS < 600
+
+
+def test_tts_install_timeout_maps_to_503_and_releases_lock(
+    admin_headers, monkeypatch
+):
+    """A hung uv sync surfaces as a localized 503, never a NameError 500."""
+    import subprocess
+
+    _mock_windows_runtime(monkeypatch)
+    with patch(
+        "src.api.routers.providers.get_local_tts_provider",
+        return_value=MagicMock(is_installed=lambda: False),
+    ), patch(
+        "src.api.routers.providers.subprocess.run",
+        side_effect=subprocess.TimeoutExpired(["uv", "sync"], timeout=540),
+    ):
+        response = client.post(
+            "/api/providers/tts/install", headers=admin_headers
+        )
+    assert response.status_code == 503
+    assert "Automatic TTS installation failed" in response.json()["detail"]
+    from src.api.routers import providers as providers_module
+
+    assert providers_module._tts_download_lock.locked() is False
+
+
+def test_voice_install_timeout_maps_to_503_and_releases_lock(
+    admin_headers, monkeypatch
+):
+    """A hung voice uv sync surfaces as a localized 503 and frees the lock."""
+    import subprocess
+
+    _mock_windows_runtime(monkeypatch)
+    with patch(
+        "src.api.routers.providers.is_faster_whisper_available", return_value=False
+    ), patch(
+        "src.api.routers.providers.subprocess.run",
+        side_effect=subprocess.TimeoutExpired(["uv", "sync"], timeout=540),
+    ):
+        response = client.post(
+            "/api/providers/voice/install", headers=admin_headers
+        )
+    assert response.status_code == 503
+    assert "Automatic voice installation failed" in response.json()["detail"]
+    from src.api.routers import providers as providers_module
+
+    assert providers_module._voice_install_lock.locked() is False

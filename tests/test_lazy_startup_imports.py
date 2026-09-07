@@ -124,6 +124,46 @@ def test_vector_store_imports_dependencies_on_first_search(monkeypatch, tmp_path
     assert store.model is not None
 
 
+def test_achievement_service_imports_in_clean_process_before_api() -> None:
+    """The achievement service must import without src.api being loaded first.
+
+    Regression for the api<->service circular import: the service used to do
+    ``from ...api.schemas import ACHIEVEMENT_CRITERIA_TYPES`` while
+    src.api.deps.providers imports AchievementSystem, so a script/worker that
+    imported the service first blew up with an ImportError. The canonical
+    tuple now lives in the models layer, so both import orders must work.
+    """
+    script = """
+from src.aac_app.services.achievement_system import AchievementSystem, _CRITERIA_STAT_KEYS
+from src.aac_app.models import ACHIEVEMENT_CRITERIA_TYPES
+
+assert set(_CRITERIA_STAT_KEYS) == set(ACHIEVEMENT_CRITERIA_TYPES)
+system = AchievementSystem()
+assert isinstance(system, AchievementSystem)
+print("service imported cleanly")
+"""
+
+    result = _run_clean_import(script)
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_achievement_service_imports_after_api_in_clean_process() -> None:
+    """The api-first import order keeps working with the models-layer tuple."""
+    script = """
+import src.api.main
+from src.aac_app.services.achievement_system import _CRITERIA_STAT_KEYS
+from src.aac_app.models import ACHIEVEMENT_CRITERIA_TYPES
+
+assert set(_CRITERIA_STAT_KEYS) == set(ACHIEVEMENT_CRITERIA_TYPES)
+print("api-first import ok")
+"""
+
+    result = _run_clean_import(script)
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
 def test_prediction_service_loads_bundled_static_ngram_model() -> None:
     script = """
 from src.aac_app.services.prediction_service import PredictionService

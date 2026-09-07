@@ -280,6 +280,24 @@ describe('Boards page management', () => {
     fireEvent.click(within(dialog).getByText('Delete'));
 
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/boards/1'));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+  });
+
+  it('closes the confirm dialog and shows an error when deleting fails', async () => {
+    mockBoardList(board);
+    vi.mocked(api.delete).mockRejectedValue(new Error('server down'));
+    renderBoards();
+    await screen.findByText('Morning Routine');
+
+    fireEvent.click(screen.getByLabelText('Delete'));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByText('Delete'));
+
+    // The dialog must not stay open and the rejection must not escape: the
+    // store error banner carries the failure message instead.
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByText('server down')).toBeInTheDocument();
   });
 
   it('duplicates a board including its symbols', async () => {

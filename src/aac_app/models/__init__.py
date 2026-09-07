@@ -4,7 +4,7 @@ Importing this package registers every model on :data:`Base.metadata`, while
 re-exporting the classes keeps model imports stable for callers.
 """
 
-from .achievement import Achievement, UserAchievement
+from .achievement import ACHIEVEMENT_CRITERIA_TYPES, Achievement, UserAchievement
 from .analytics import SymbolUsageLog
 from .audit_log import AuditLog, FailedLoginAttempt
 from .base import Base
@@ -26,6 +26,7 @@ from .symbol import Symbol
 from .user import StudentTeacher, User, UserSettings
 
 __all__ = [
+    "ACHIEVEMENT_CRITERIA_TYPES",
     "Achievement",
     "AppSettings",
     "AuditLog",

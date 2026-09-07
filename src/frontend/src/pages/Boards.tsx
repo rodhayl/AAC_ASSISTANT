@@ -18,6 +18,7 @@ import {
 } from '../components/ui/select';
 import type { User } from '../types';
 import { useTranslation } from 'react-i18next';
+import { canManageBoard } from '../lib/roles';
 import { formatDate } from '../lib/format';
 
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
@@ -298,8 +299,15 @@ export function Boards() {
   };
 
   const confirmDeleteBoard = async () => {
-    if (deleteBoardId) {
-      await deleteBoard(deleteBoardId);
+    if (!deleteBoardId) return;
+    const id = deleteBoardId;
+    try {
+      await deleteBoard(id);
+    } catch {
+      // deleteBoard rethrows after surfacing the failure in the store error
+      // banner (finishMutation -> extractError); do not leave the dialog
+      // open or the rejection unhandled — close it and let the banner speak.
+    } finally {
       setDeleteBoardId(null);
     }
   };
@@ -573,7 +581,7 @@ export function Boards() {
                     </div>
                   </Link>
                   <div className="flex space-x-2">
-                    {(user?.user_type === 'admin' || board.user_id === user?.id) && (
+                    {canManageBoard(user, board.user_id) && (
                       <button
                         onClick={() => handleDeleteBoard(board.id)}
                         className="p-2 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
@@ -591,7 +599,7 @@ export function Boards() {
                         <Copy className="w-4 h-4" />
                       </button>
                     )}
-                    {user && (user.user_type === 'admin' || board.user_id === user.id) && (
+                    {user && canManageBoard(user, board.user_id) && (
                       <IconButton
                         label={t('assignToStudent')}
                         title={t('assignToStudentTitle')}
@@ -620,7 +628,7 @@ export function Boards() {
                     <Play className="w-4 h-4 mr-1 fill-current" />
                     {t('speakMode')}
                   </Link>
-                  {(user?.user_type === 'admin' || board.user_id === user?.id) && (
+                  {canManageBoard(user, board.user_id) && (
                     <Link
                       to={`/boards/${board.id}`}
                       className="flex items-center text-brand hover:text-brand font-medium"

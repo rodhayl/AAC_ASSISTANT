@@ -157,6 +157,54 @@ def test_assign_student_permission_and_error_paths(
     assert res.json()["status"] == "exists"
 
 
+def test_assign_student_requires_active_teacher(
+    student_user, admin_user, test_db_session
+):
+    """Assigning a student to a deactivated teacher is refused with 404.
+
+    create_student/create_user already require an active assignment teacher;
+    assign_student must agree or an admin could silently build a roster under
+    a deactivated account.
+    """
+    headers = create_test_headers(admin_user.id, admin_user.username, "admin")
+
+    inactive = User(
+        username="inactive_assign_teacher",
+        display_name="Inactive Assign Teacher",
+        user_type="teacher",
+        password_hash="test-hash",
+        is_active=False,
+    )
+    test_db_session.add(inactive)
+    test_db_session.commit()
+    test_db_session.refresh(inactive)
+
+    payload = {"student_id": student_user.id, "teacher_id": inactive.id}
+    res = client.post("/api/users/assign-student", headers=headers, json=payload)
+    assert res.status_code == 404, res.text
+    assert res.json()["detail"] == "Teacher not found"
+    assert (
+        test_db_session.query(StudentTeacher)
+        .filter_by(student_id=student_user.id, teacher_id=inactive.id)
+        .count()
+        == 0
+    )
+
+    # Nonexistent teacher stays 404.
+    res = client.post(
+        "/api/users/assign-student",
+        headers=headers,
+        json={"student_id": student_user.id, "teacher_id": 999999},
+    )
+    assert res.status_code == 404
+
+    # Re-activating makes the same teacher assignable: 201, not a stale 404.
+    inactive.is_active = True
+    test_db_session.commit()
+    res = client.post("/api/users/assign-student", headers=headers, json=payload)
+    assert res.status_code == 201, res.text
+
+
 def test_unassign_student_permission_and_404(teacher_user, student_user):
     teacher_headers = create_test_headers(
         teacher_user.id, teacher_user.username, "teacher"

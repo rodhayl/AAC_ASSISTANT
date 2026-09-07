@@ -16,6 +16,7 @@ from src.api.deps import (
 from src.api.routers.auth_helpers import (
     apply_student_safety_at_creation,
     ensure_username_email_available,
+    username_email_integrity_conflict,
     validate_email_format,
     validate_password_strength,
 )
@@ -94,15 +95,36 @@ def create_student(
                 detail=get_text(user=current_user, key="errors.users.teacherNotFound"),
             )
 
-    created = user_service.create_user(db, user)
-    # Optional one-step safety configuration: age, filter level, forbidden
-    # topics/words and feature gates land in the guardian profile inside the
-    # same transaction as the user row (teacher lock rules still apply).
-    apply_student_safety_at_creation(db, created, user.safety, current_user)
-    # Commit before responding: the UI re-fetches the student list right
-    # after this create, and the request dependency's teardown commit runs
-    # only after the response is sent.
-    db.commit()
+    try:
+        created = user_service.create_user(db, user)
+        # Optional one-step safety configuration: age, filter level, forbidden
+        # topics/words and feature gates land in the guardian profile inside
+        # the same transaction as the user row (teacher lock rules still
+        # apply).
+        apply_student_safety_at_creation(db, created, user.safety, current_user)
+        # Commit before responding: the UI re-fetches the student list right
+        # after this create, and the request dependency's teardown commit runs
+        # only after the response is sent.
+        db.commit()
+    except IntegrityError as exc:
+        # A concurrent staff create with the same username or email can win
+        # the insert after both requests passed the pre-check above; surface
+        # the same conflict message the sequential pre-check would have
+        # produced (409 instead of a bare 500).
+        raise username_email_integrity_conflict(
+            db,
+            user.username,
+            user.email,
+            user=current_user,
+        ) from exc
+    except ValueError as exc:
+        # The chosen teacher was deactivated (or removed) between the active-
+        # teacher check above and create_user's flush: answer with the same
+        # 404 the sequential path returns, never an unhandled 500.
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.users.teacherNotFound"),
+        ) from exc
     return created
 
 
@@ -137,8 +159,19 @@ def assign_student(
             detail=get_text(user=current_user, key="errors.users.studentNotFound"),
         )
 
-    # Check if teacher exists
-    teacher = db.query(User).filter_by(id=target_teacher_id, user_type="teacher").first()
+    # Check if the teacher exists and is still active. Assigning students to
+    # a deactivated teacher contradicts the deactivation (create_student and
+    # create_user both require an active teacher); the lookup mirrors the
+    # create path's filter so both routes agree on who can hold a roster.
+    teacher = (
+        db.query(User)
+        .filter(
+            User.id == target_teacher_id,
+            User.user_type == "teacher",
+            User.is_active.is_(True),
+        )
+        .first()
+    )
     if not teacher:
         raise HTTPException(
             status_code=404,

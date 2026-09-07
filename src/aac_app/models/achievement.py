@@ -16,6 +16,21 @@ from sqlalchemy.orm import relationship
 
 from .base import Base
 
+# Single canonical source of the automatic achievement criteria types. The
+# criteria-types endpoint (achievements.py), the achievement service's
+# stat-key map and the wire Literal in api/schemas.py all import this from
+# the models layer (never the reverse), so adding a type in one place cannot
+# silently break the other two or create an api<->service import cycle.
+ACHIEVEMENT_CRITERIA_TYPES = (
+    "sessions_completed",
+    "correct_answers",
+    "comprehension_score",
+    "vocabulary_size",
+    "topics_completed",
+    "consecutive_days",
+    "voice_usage",
+)
+
 
 class Achievement(Base):
     """Achievement definition."""

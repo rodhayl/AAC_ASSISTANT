@@ -5,7 +5,12 @@ from loguru import logger
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import Achievement, User, UserAchievement
+from src.aac_app.models import (
+    ACHIEVEMENT_CRITERIA_TYPES,
+    Achievement,
+    User,
+    UserAchievement,
+)
 from src.aac_app.services.achievement_system import AchievementSystem
 from src.api import schemas
 from src.api.deps import (
@@ -95,7 +100,7 @@ def get_criteria_types(
             status_code=403,
             detail=get_request_text(request, "errors.achievements.viewCriteriaTypes", user=current_user),
         )
-    return list(schemas.ACHIEVEMENT_CRITERIA_TYPES)
+    return list(ACHIEVEMENT_CRITERIA_TYPES)
 
 
 # ============== CRUD Endpoints for Achievement Management ==============

@@ -24,6 +24,11 @@ export function DataManagementTab() {
       downloadJson(response.data, `aac-data-${user.username}.json`);
     } catch (error) {
       console.error('Failed to export data:', error);
+      // A failed export must not be silent: the server /data/export endpoint
+      // can be down even when the rest of the app responds (the old "server
+      // export" button surfaced this with a toast before the two buttons were
+      // collapsed into one).
+      addToast(t('data.exportFailed'), 'error');
     }
   };
 
@@ -74,7 +79,12 @@ export function DataManagementTab() {
               className="hidden"
               onChange={(event) => {
                 const file = event.target.files?.[0];
-                if (file) handleImportData(file);
+                // Reset the input value after every selection (success or
+                // failure): an uncontrolled file input keeps the previous
+                // value, so choosing the SAME file twice would not re-fire
+                // onChange and the second import would be impossible.
+                event.target.value = '';
+                if (file) void handleImportData(file);
               }}
             />
           </label>

@@ -273,6 +273,108 @@ def test_update_email_lost_race_returns_409_not_500(
     ), response.text == "Username or email already registered"
 
 
+def test_create_student_race_returns_409_not_500(
+    test_db_session, admin_token, monkeypatch
+):
+    """POST /users/students with a taken username: 409, never a 500.
+
+    create_student is the one staff create route that lacked the
+    IntegrityError handling auth.py/auth_users.py share; a concurrent create
+    that passes the pre-check then loses the INSERT race escaped as a 500.
+    """
+    _add_user(test_db_session, username="race_student_user")
+    _disable_pre_check(monkeypatch, "src.api.routers.users")
+
+    response = client.post(
+        "/api/users/students",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "username": "race_student_user",
+            "display_name": "Race Student",
+            "user_type": "student",
+            "password": "RaceStudentPass123",
+        },
+    )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]
+
+
+def test_create_student_race_message_matches_sequential_pre_check(
+    test_db_session, admin_token, monkeypatch
+):
+    """Same fact, same message: the raced create mirrors the 400 pre-check."""
+    _add_user(test_db_session, username="parity_create_student")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    payload = {
+        "username": "parity_create_student",
+        "display_name": "Parity Create Student",
+        "user_type": "student",
+        "password": "ParityCreate123",
+    }
+
+    sequential = client.post("/api/users/students", json=payload, headers=headers)
+    assert sequential.status_code == 400, sequential.text
+
+    _disable_pre_check(monkeypatch, "src.api.routers.users")
+    raced = client.post("/api/users/students", json=payload, headers=headers)
+
+    assert raced.status_code == 409, raced.text
+    assert raced.json()["detail"] == sequential.json()["detail"]
+
+
+def test_create_student_teacher_deactivation_between_check_and_flush_is_404(
+    test_db_session, admin_token, monkeypatch
+):
+    """A teacher deactivated after the pre-check maps to 404, never a 500.
+
+    create_user re-validates created_by_teacher_id (an active teacher) after
+    the route's own check and raises ValueError when the teacher vanished in
+    between; the route must surface the same 404 teacherNotFound the
+    sequential path returns instead of an unhandled 500.
+    """
+    from src.api.routers import users as users_module
+
+    teacher = User(
+        username="vanishing_teacher",
+        display_name="Vanishing Teacher",
+        user_type="teacher",
+        password_hash="unused",
+        is_active=True,
+    )
+    test_db_session.add(teacher)
+    test_db_session.commit()
+
+    def _deactivated_between(*args, **kwargs):
+        raise ValueError(
+            "created_by_teacher_id must identify an active teacher"
+        )
+
+    monkeypatch.setattr(users_module.user_service, "create_user", _deactivated_between)
+
+    response = client.post(
+        "/api/users/students",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "username": "student_with_vanishing_teacher",
+            "display_name": "Vanishing Teacher Student",
+            "user_type": "student",
+            "password": "VanishingPass123",
+            "created_by_teacher_id": teacher.id,
+        },
+    )
+
+    assert response.status_code == 404, response.text
+    assert response.json()["detail"] == "Teacher not found"
+    # No partial user row may survive a mid-create failure.
+    assert (
+        test_db_session.query(User)
+        .filter_by(username="student_with_vanishing_teacher")
+        .count()
+        == 0
+    )
+
+
 def test_update_profile_email_lost_race_returns_409_not_500(
     test_db_session, test_db_engine, regular_user
 ):

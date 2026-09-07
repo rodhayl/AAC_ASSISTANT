@@ -410,6 +410,108 @@ def test_admin_student_creation_rejects_inactive_teacher_assignment(
     )
 
 
+def test_staff_create_rejects_oversized_and_whitespace_usernames(
+    setup_test_db,
+    test_db_session,
+    admin_user,
+    admin_token,
+    test_password,
+):
+    """username/display_name are bounded and stripped on every create route.
+
+    A 10KB username previously reached the DB layer (500 on Postgres) and a
+    padded username (" bob ") could create a look-alike row that login's exact
+    match and the availability pre-check treat differently. Both must fail or
+    normalize at validation time, before any INSERT.
+    """
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    def create(username, display_name="Valid Name"):
+        return client.post(
+            "/api/users/students",
+            headers=headers,
+            json={
+                "username": username,
+                "display_name": display_name,
+                "password": test_password,
+                "user_type": "student",
+            },
+        )
+
+    oversized = create("x" * 10_000)
+    assert oversized.status_code == 422, oversized.text
+
+    whitespace_only = create("   ")
+    assert whitespace_only.status_code == 422, whitespace_only.text
+
+    whitespace_display = create("padded_ok", display_name="  ")
+    assert whitespace_display.status_code == 422, whitespace_display.text
+
+    oversized_display = create("padded_display", display_name="y" * 10_000)
+    assert oversized_display.status_code == 422, oversized_display.text
+
+    # Nothing above reached the database.
+    assert test_db_session.query(User).filter_by(username="padded_ok").count() == 0
+
+    # A padded username is stripped and stored exactly; no twin row exists.
+    padded = create("  padded_user  ")
+    assert padded.status_code == 200, padded.text
+    assert padded.json()["username"] == "padded_user"
+    stored = (
+        test_db_session.query(User).filter_by(username="padded_user").first()
+    )
+    assert stored is not None and stored.display_name == "Valid Name"
+
+    # A duplicate padded request is now a real duplicate, not a look-alike.
+    dup = create("padded_user")
+    assert dup.status_code == 400, dup.text
+
+
+def test_public_register_strips_and_bounds_names(
+    setup_test_db,
+    test_db_session,
+    test_password,
+):
+    """Public self-registration gets the same strip + bounds normalization."""
+    padded = client.post(
+        "/api/auth/register",
+        json={
+            "username": "  self_registered  ",
+            "display_name": "Self Registered",
+            "password": test_password,
+        },
+    )
+    assert padded.status_code == 200, padded.text
+    assert padded.json()["username"] == "self_registered"
+
+    whitespace_only = client.post(
+        "/api/auth/register",
+        json={
+            "username": "\t\n ",
+            "display_name": "Self Registered 2",
+            "password": test_password,
+        },
+    )
+    assert whitespace_only.status_code == 422, whitespace_only.text
+
+    oversized = client.post(
+        "/api/auth/register",
+        json={
+            "username": "u" * 2000,
+            "display_name": "Self Registered 3",
+            "password": test_password,
+        },
+    )
+    assert oversized.status_code == 422, oversized.text
+
+    stored = (
+        test_db_session.query(User)
+        .filter_by(username="self_registered")
+        .first()
+    )
+    assert stored is not None and stored.display_name == "Self Registered"
+
+
 def test_student_creation_assigns_to_active_teacher(
     setup_test_db,
     test_db_session,

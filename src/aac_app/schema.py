@@ -545,10 +545,16 @@ def _widen_legacy_tts_voice(engine: Engine) -> None:
     schema introspection and non-SQLite engines.
 
     SQLite has no ``ALTER COLUMN TYPE``, so the column is widened by the
-    rename/add/copy/drop sequence. The migration is idempotent: it runs only
-    while the declared type still carries an explicit length limit and then
-    leaves the widened column alone on every later startup.
+    rename/add/copy/drop sequence. PostgreSQL gets the native idempotent
+    ``ALTER COLUMN TYPE`` in ``_widen_postgresql_tts_voice`` (``DATABASE_URL``
+    accepts postgres connection strings, so a PG deployment must not keep the
+    narrow type forever). The migration is idempotent on both backends: it
+    runs only while the declared type still carries an explicit length limit
+    below 200 and then leaves the widened column alone on later startups.
     """
+    if engine.dialect.name == "postgresql":
+        _widen_postgresql_tts_voice(engine)
+        return
     if engine.dialect.name != "sqlite":
         return
 
@@ -614,6 +620,40 @@ def _widen_legacy_tts_voice(engine: Engine) -> None:
         )
         connection.execute(
             text("ALTER TABLE user_settings DROP COLUMN _tts_voice_legacy")
+        )
+
+
+def _widen_postgresql_tts_voice(engine: Engine) -> None:
+    """Widen a legacy ``user_settings.tts_voice`` column on PostgreSQL.
+
+    Mirrors the SQLite branch: only an explicit declared length below 200
+    needs widening (an unbounded TEXT or an already-widened column is left
+    alone). PostgreSQL reports lengths through ``information_schema``, so the
+    migration can introspect the current limit instead of guessing.
+    """
+    with engine.begin() as connection:
+        row = connection.execute(
+            text(
+                "SELECT character_maximum_length "
+                "FROM information_schema.columns "
+                "WHERE table_schema = current_schema() "
+                "AND table_name = 'user_settings' "
+                "AND column_name = 'tts_voice'"
+            )
+        ).fetchone()
+        if row is None or row[0] is None or int(row[0]) >= 200:
+            # No column yet, an unbounded type (TEXT), or already widened.
+            return
+        logger.info(
+            "DB upgrade: widening user_settings.tts_voice from VARCHAR({}) to "
+            "VARCHAR(200) on postgresql",
+            row[0],
+        )
+        connection.execute(
+            text(
+                "ALTER TABLE user_settings "
+                "ALTER COLUMN tts_voice TYPE VARCHAR(200)"
+            )
         )
 
 

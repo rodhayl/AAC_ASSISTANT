@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { usePreferences } from '../src/pages/Settings/usePreferences';
+import { normalizePreferencesResponse } from '../src/lib/utils';
 import { useAuthStore } from '../src/store/authStore';
 import { useThemeStore } from '../src/store/themeStore';
 
@@ -315,6 +316,66 @@ describe('usePreferences', () => {
       detail: { defaultModeKey: 'roleplay' },
     });
     window.removeEventListener('aac:learning-modes-changed', modeChanged);
+  });
+
+  it('hydrates the GET and the PUT response through the same normalization', async () => {
+    // A response full of persisted NULLs and a free-form provider must map to
+    // the same typed defaults no matter which path produced it. The backend
+    // builder (auth_helpers.build_preferences_response) guarantees most of
+    // these, but the language/provider fields may still arrive NULL/garbage.
+    const wire = {
+      tts_provider: 'garbage-provider',
+      tts_voice: 'Microsoft Sabina - Spanish (Mexico)',
+      tts_local_voice: null as string | null,
+      tts_local_speed: null as number | null,
+      tts_language: null as string | null,
+      ui_language: null as string | null,
+      notifications_enabled: null as boolean | null,
+      voice_mode_enabled: null as boolean | null,
+      dark_mode: null as boolean | null,
+      dwell_time: null as number | null,
+      ignore_repeats: null as number | null,
+      high_contrast: null as boolean | null,
+      hover_speak_enabled: null as boolean | null,
+      hover_speak_delay_ms: null as number | null,
+      default_learning_mode: undefined as string | undefined,
+    };
+    const expected = normalizePreferencesResponse(wire);
+    get.mockResolvedValue({ data: wire });
+    put.mockResolvedValue({ data: wire });
+    useAuthStore.setState({
+      user: {
+        id: 1,
+        username: 'student1',
+        display_name: 'Student',
+        user_type: 'student',
+        settings: {},
+      },
+    });
+
+    const { result } = renderHook(() => usePreferences());
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // The GET hydration produced exactly the shared normalizer's output for
+    // every field the page Preferences surface exposes.
+    for (const [key, value] of Object.entries(expected)) {
+      if (key === 'tts_language') continue; // not part of the page Preferences type
+      expect(result.current.preferences[key as keyof typeof expected]).toEqual(value);
+    }
+
+    // The PUT path derives the auth store from the same response; the two
+    // stores must agree field for field (including tts_language, which the
+    // pre-fix hydration silently dropped).
+    await act(async () => {
+      await result.current.handleSavePreferences();
+    });
+    const stored = useAuthStore.getState().user?.settings;
+    expect(stored).toEqual(expected);
+    for (const [key, value] of Object.entries(expected)) {
+      expect((result.current.preferences as Record<string, unknown>)[key]).toEqual(value);
+    }
   });
 
   it('normalizes a legacy short ui_language so it matches the select options', async () => {

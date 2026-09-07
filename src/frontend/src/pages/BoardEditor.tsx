@@ -16,6 +16,7 @@ import { BoardEditorToolbar } from '../components/board/BoardEditorToolbar';
 import { StatusMessage } from '../components/ui/StatusMessage';
 import { useBoardAISuggestions } from '../hooks/useBoardAISuggestions';
 import api, { extractError } from '../lib/api';
+import { canManageBoard } from '../lib/roles';
 import { useBoardCollab } from '../hooks/useBoardCollab';
 import { useBoardEditorSymbols } from '../hooks/useBoardEditorSymbols';
 import { getBoardPlayabilityStatus } from './boardEditorUtils';
@@ -383,7 +384,7 @@ export function BoardEditor() {
     <div className="h-[calc(100vh-6rem)] flex flex-col">
       <BoardEditorToolbar
         boardName={currentBoard.name}
-        showSuggestions={Boolean(currentBoard.ai_enabled && (user?.id === currentBoard.user_id || user?.user_type === 'admin'))}
+        showSuggestions={Boolean(currentBoard.ai_enabled && canManageBoard(user, currentBoard.user_id))}
         aiLoading={aiLoading}
         status={status}
         gridPreset={gridPreset}

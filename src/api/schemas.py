@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+from src.aac_app.models.achievement import ACHIEVEMENT_CRITERIA_TYPES
 
 PreferenceLanguage = Annotated[str, Field(min_length=2, max_length=10)]
 
@@ -66,10 +68,25 @@ class UserPreferencesUpdate(BaseModel):
 
 # --- User Schemas ---
 class UserBase(BaseModel):
-    username: str
+    # Bounds mirror the User columns (username String(50), display_name
+    # String(100), see models/user.py) so oversized input fails clean 422
+    # validation instead of 500ing on Postgres. Both fields are stripped
+    # BEFORE the length check: a padded value (" admin1 ") can no longer create
+    # a look-alike row for the exact username match that login and the
+    # availability pre-check perform, and a whitespace-only value is rejected
+    # as empty. No charset regex is imposed (none exists elsewhere in the
+    # repo): normalization is strip + non-empty only.
+    username: str = Field(..., min_length=1, max_length=50)
     email: EmailStr | None = None
-    display_name: str
+    display_name: str = Field(..., min_length=1, max_length=100)
     user_type: str = "student"
+
+    @field_validator("username", "display_name", mode="before")
+    @classmethod
+    def _strip_user_name_fields(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
 
 class UserCreate(UserBase):
@@ -533,20 +550,10 @@ class AchievementResponse(AchievementBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-# Single canonical source of the automatic achievement criteria types. The
-# criteria-types endpoint (achievements.py), the achievement service's
-# stat-key map and this wire Literal all derive from it, so adding a type in
-# one place cannot silently break the other two.
-ACHIEVEMENT_CRITERIA_TYPES = (
-    "sessions_completed",
-    "correct_answers",
-    "comprehension_score",
-    "vocabulary_size",
-    "topics_completed",
-    "consecutive_days",
-    "voice_usage",
-)
-
+# The canonical tuple lives in the models layer
+# (aac_app/models/achievement.py) and is imported here for the wire Literal;
+# the schema must not re-declare the values so a service importing this module
+# can never accidentally depend on api.schemas.
 AchievementCriteriaType = Literal[*ACHIEVEMENT_CRITERIA_TYPES]
 
 

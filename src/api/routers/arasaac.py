@@ -41,7 +41,11 @@ async def search_arasaac(
     # list_saved_topics) so a giant string cannot build a pathological
     # request or pattern.
     q: str = Query(..., min_length=1, max_length=200),
-    locale: str = Query("es", min_length=2, max_length=10),
+    # Optional so an omitted locale can actually defer to the user's persisted
+    # ui_language. A non-optional default made the old ``if not locale``
+    # preference branch unreachable: FastAPI always delivered a non-empty
+    # string and the promised UI-language fallback never ran.
+    locale: str | None = Query(None, min_length=2, max_length=10),
     current_user: User = Depends(get_current_active_user),
 ):
     """
@@ -49,18 +53,25 @@ async def search_arasaac(
     """
     service = ArasaacService()
     try:
-        effective_locale = locale or "es"
-        try:
-            # Prefer user's UI language if available when locale not explicitly set
-            if not locale:
+        if locale is not None:
+            effective_locale = locale
+        else:
+            # No explicit locale: fall back to the user's persisted UI
+            # language (normalized to its base code, e.g. en-US -> en, the
+            # same shape the import path stores) and finally to the API
+            # default of "es".
+            effective_locale = "es"
+            try:
                 settings = current_user.settings
                 if settings and settings.ui_language:
-                    effective_locale = settings.ui_language
-        except Exception as exc:
-            logger.debug(
-                "Failed to read UI language for ARASAAC search: {}",
-                exc,
-            )
+                    effective_locale = (
+                        normalize_language_code(settings.ui_language) or "es"
+                    )
+            except Exception as exc:
+                logger.debug(
+                    "Failed to read UI language for ARASAAC search: {}",
+                    exc,
+                )
         results = await service.search_symbols(q, effective_locale)
         return results
     finally:

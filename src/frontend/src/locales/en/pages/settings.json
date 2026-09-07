@@ -88,6 +88,7 @@
     "subtitle": "Export and import your boards and settings",
     "exportClient": "Export My Data",
     "exportClientTitle": "Download a full copy of your data",
+    "exportFailed": "Failed to export data. Please try again later.",
     "importBoards": "Import Boards",
     "importSuccess": "Import completed successfully",
     "importFailed": "Import failed: ",

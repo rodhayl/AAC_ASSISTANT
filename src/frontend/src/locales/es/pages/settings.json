@@ -88,6 +88,7 @@
     "subtitle": "Exporta e importa tus tableros y ajustes",
     "exportClient": "Exportar Mis Datos",
     "exportClientTitle": "Descargar una copia completa de tus datos",
+    "exportFailed": "No se pudieron exportar los datos. Inténtalo de nuevo más tarde.",
     "importBoards": "Importar Tableros",
     "importSuccess": "Importación completada correctamente",
     "importFailed": "Importación fallida: ",

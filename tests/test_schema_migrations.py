@@ -486,3 +486,81 @@ def test_schema_ensure_widens_legacy_tts_voice_column():
         }
         assert columns["tts_voice"] == "VARCHAR(200)"
     engine.dispose()
+
+
+class _PostgresResult:
+    """Minimal result stand-in: the migration only calls ``fetchone``."""
+
+    def __init__(self, row):
+        self._row = row
+
+    def fetchone(self):
+        return self._row
+
+
+class _PostgresConnection:
+    """Records the statements a postgres migration would run."""
+
+    def __init__(self, declared_length):
+        self._declared_length = declared_length
+        self.executed = []
+
+    def execute(self, statement, *_args, **_kwargs):
+        self.executed.append(str(statement))
+        if "information_schema.columns" in str(statement):
+            return _PostgresResult((self._declared_length,))
+        return _PostgresResult(None)
+
+
+class _PostgresEngine:
+    """Stands in for a real postgres engine (no local PG available)."""
+
+    def __init__(self, declared_length):
+        self.dialect = type(
+            "Dialect", (), {"name": "postgresql"}
+        )()
+        self._connection = _PostgresConnection(declared_length)
+
+    def begin(self):
+        connection = self._connection
+
+        class _Tx:
+            def __enter__(self):
+                return connection
+
+            def __exit__(self, *_args):
+                return False
+
+        return _Tx()
+
+    @property
+    def executed(self):
+        return self._connection.executed
+
+
+def test_schema_ensure_widens_legacy_tts_voice_on_postgresql():
+    """A legacy VARCHAR(20) tts_voice widens to VARCHAR(200) on postgres.
+
+    DATABASE_URL accepts postgres connection strings; without this branch a
+    PG deployment would silently keep the narrow type and long browser
+    voiceURIs would keep failing. No local PG is available, so the dialect
+    and execution are mocked and the emitted DDL is asserted.
+    """
+    engine = _PostgresEngine(declared_length=20)
+
+    schema._widen_legacy_tts_voice(engine)
+
+    alter = [s for s in engine.executed if "ALTER TABLE user_settings" in s]
+    assert len(alter) == 1
+    assert "ALTER COLUMN tts_voice TYPE VARCHAR(200)" in alter[0]
+
+
+def test_schema_tts_voice_postgresql_widen_is_idempotent():
+    """An already-widened (or unbounded) postgres column is left untouched."""
+    widened = _PostgresEngine(declared_length=200)
+    schema._widen_legacy_tts_voice(widened)
+    assert not any("ALTER TABLE" in s for s in widened.executed)
+
+    unbounded = _PostgresEngine(declared_length=None)
+    schema._widen_legacy_tts_voice(unbounded)
+    assert not any("ALTER TABLE" in s for s in unbounded.executed)

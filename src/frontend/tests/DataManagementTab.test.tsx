@@ -29,6 +29,7 @@ vi.mock('react-i18next', () => ({
     t: (key: string, defaultValue?: string) => {
       const table: Record<string, string> = {
         'data.exportClient': 'Export My Data',
+        'data.exportFailed': 'Failed to export data. Please try again later.',
         // Kept only so the negative assertion below can tell the old duplicate
         // "server" button apart when the component regresses to two buttons.
         'data.exportServer': 'Server Export',
@@ -79,6 +80,68 @@ describe('DataManagementTab', () => {
     await waitFor(() =>
       expect(downloadJson).toHaveBeenCalledWith({ boards: [] }, 'aac-data-teacher1.json'),
     );
+  });
+
+  it('surfaces a toast when the export request fails', async () => {
+    get.mockRejectedValue(new Error('server down'));
+    render(<DataManagementTab />);
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Export My Data' })[0]);
+
+    await waitFor(() =>
+      expect(addToast).toHaveBeenCalledWith(
+        'Failed to export data. Please try again later.',
+        'error',
+      ),
+    );
+    expect(downloadJson).not.toHaveBeenCalled();
+  });
+
+  it('clears the file input after each selection so re-imports re-fire', async () => {
+    post.mockResolvedValue({});
+    render(<DataManagementTab />);
+    const input = document.getElementById('import-boards-file') as HTMLInputElement;
+    const payload = JSON.stringify({
+      meta: { version: 1 },
+      boards: [],
+      assignedBoards: [],
+      achievements: [],
+    });
+
+    // jsdom dispatches a change event even when the same file is picked again
+    // (a real browser suppresses it because the input value did not change),
+    // so the red regression is the handler explicitly clearing the value:
+    // without ``event.target.value = ''`` a second pick of the same file
+    // would never fire onChange. Track writes to the input's value.
+    const protoValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    );
+    let valueResetCount = 0;
+    Object.defineProperty(input, 'value', {
+      configurable: true,
+      get() {
+        return protoValue?.get?.call(this);
+      },
+      set(v: string) {
+        if (v === '') valueResetCount += 1;
+        protoValue?.set?.call(this, v);
+      },
+    });
+
+    fireEvent.change(input, { target: { files: [makeFile(payload)] } });
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith('/data/import', expect.any(Object)),
+    );
+    expect(addToast).toHaveBeenCalledWith('Import completed successfully', 'success');
+    expect(valueResetCount).toBeGreaterThanOrEqual(1);
+
+    // Picking the same file again still runs the import: both dispatches
+    // reach the handler because the value was cleared in between.
+    fireEvent.change(input, { target: { files: [makeFile(payload)] } });
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+    expect(valueResetCount).toBeGreaterThanOrEqual(2);
+    expect(addToast).toHaveBeenCalledTimes(2);
   });
 
   it('shows a localized validation error when importing a file without meta', async () => {

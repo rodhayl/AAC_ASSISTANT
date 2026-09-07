@@ -7,9 +7,9 @@ from sqlalchemy import case, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
-from ...api.schemas import ACHIEVEMENT_CRITERIA_TYPES
 from ..db import get_session
 from ..models import (
+    ACHIEVEMENT_CRITERIA_TYPES,
     Achievement,
     LearningSession,
     Notification,

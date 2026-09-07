@@ -360,6 +360,37 @@ def test_symbol_reorder_batch(symbols_setup, staff_headers):
     assert res.json() == {"ok": True, "updated": 0}
 
 
+@pytest.mark.usefixtures("setup_test_db")
+def test_symbol_reorder_batch_rejects_oversized_payload(symbols_setup, staff_headers):
+    """A reorder batch beyond 1000 rows is a clean 422, never a giant query.
+
+    The same cap the board-symbols batch endpoint enforces: without it an
+    unbounded list could force one oversized Symbol.id.in_(...) expression
+    plus a per-row update loop.
+    """
+    ids = [s.id for s in symbols_setup]
+    oversized = [
+        {"id": ids[i % len(ids)], "order_index": i}
+        for i in range(1001)
+    ]
+    res = client.put(
+        "/api/boards/symbols/reorder",
+        json=oversized,
+        headers=staff_headers,
+    )
+    assert res.status_code == 422
+    assert res.json()["detail"][0]["type"] == "too_long"
+
+    # A normal batch still reorders after the rejected oversized request.
+    res = client.put(
+        "/api/boards/symbols/reorder",
+        json=[{"id": ids[0], "order_index": 7}],
+        headers=staff_headers,
+    )
+    assert res.status_code == 200
+    assert res.json() == {"ok": True, "updated": 1}
+
+
 class FaultySession:
     """Session wrapper that raises on the configured method names."""
 

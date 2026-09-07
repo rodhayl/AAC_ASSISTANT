@@ -4,7 +4,7 @@ import { useLocaleStore } from '../../store/localeStore';
 import { useThemeStore } from '../../store/themeStore';
 import { useTTSStore } from '../../store/ttsStore';
 import api from '../../lib/api';
-import { normalizeUILanguage } from '../../lib/utils';
+import { normalizePreferencesResponse, normalizeUILanguage } from '../../lib/utils';
 import { useToastStore } from '../../store/toastStore';
 import { useTranslation } from 'react-i18next';
 import type { Preferences } from './types';
@@ -70,33 +70,18 @@ export function usePreferences() {
           activeUserIdRef.current !== userId ||
           userEditedRef.current
         ) return;
-        const voice = res.data.tts_voice || 'default';
-        const darkMode = res.data.dark_mode ?? false;
-        const language = normalizeUILanguage(res.data.ui_language);
-
-        setPreferencesState({
-          tts_provider: res.data.tts_provider === 'browser' ? 'browser' : 'kokoro',
-          tts_voice: voice,
-          tts_local_voice: res.data.tts_local_voice || 'default',
-          tts_local_speed: res.data.tts_local_speed ?? 1.0,
-          ui_language: language,
-          notifications_enabled: res.data.notifications_enabled ?? true,
-          voice_mode_enabled: res.data.voice_mode_enabled ?? true,
-          dark_mode: darkMode,
-          dwell_time: res.data.dwell_time ?? 0,
-          ignore_repeats: res.data.ignore_repeats ?? 0,
-          high_contrast: res.data.high_contrast ?? false,
-          hover_speak_enabled: res.data.hover_speak_enabled ?? false,
-          hover_speak_delay_ms: res.data.hover_speak_delay_ms ?? 1000,
-          default_learning_mode: res.data.default_learning_mode || 'practice',
-        });
-        useTTSStore.getState().setSelectedVoice(voice);
-        useTTSStore.getState().setTTSProvider(res.data.tts_provider === 'browser' ? 'browser' : 'kokoro');
-        useTTSStore.getState().setLocalVoice(res.data.tts_local_voice || 'default');
-        useTTSStore.getState().setLocalSpeed(res.data.tts_local_speed ?? 1.0);
-        useThemeStore.getState().setDarkMode(darkMode);
-        useThemeStore.getState().setHighContrast(res.data.high_contrast ?? false);
-        await useLocaleStore.getState().setLocale(language);
+        // The same wire-to-store mapping the PUT path uses
+        // (normalizePreferencesResponse): both hydration and updateAuthSettings
+        // must derive identical state from an identical response.
+        const normalized = normalizePreferencesResponse(res.data);
+        setPreferencesState(normalized);
+        useTTSStore.getState().setSelectedVoice(normalized.tts_voice);
+        useTTSStore.getState().setTTSProvider(normalized.tts_provider);
+        useTTSStore.getState().setLocalVoice(normalized.tts_local_voice);
+        useTTSStore.getState().setLocalSpeed(normalized.tts_local_speed);
+        useThemeStore.getState().setDarkMode(normalized.dark_mode);
+        useThemeStore.getState().setHighContrast(normalized.high_contrast);
+        await useLocaleStore.getState().setLocale(normalized.ui_language);
       } catch (err) {
         if (active) console.error('Failed to load preferences:', err);
       }
@@ -148,23 +133,9 @@ export function usePreferences() {
       // and a free-form tts_provider string; normalize each field into the
       // typed UserPreferences contract the auth store exposes so no component
       // ever reads null where the type promises a string.
-      const settings: UserPreferences = {
-        tts_provider: data.tts_provider === 'browser' ? 'browser' : 'kokoro',
-        tts_voice: data.tts_voice || 'default',
-        tts_local_voice: data.tts_local_voice || 'default',
-        tts_local_speed: data.tts_local_speed ?? 1.0,
-        tts_language: data.tts_language ?? 'en',
-        ui_language: normalizeUILanguage(data.ui_language),
-        notifications_enabled: data.notifications_enabled ?? true,
-        voice_mode_enabled: data.voice_mode_enabled ?? true,
-        dark_mode: data.dark_mode ?? false,
-        dwell_time: data.dwell_time ?? 0,
-        ignore_repeats: data.ignore_repeats ?? 0,
-        high_contrast: data.high_contrast ?? false,
-        hover_speak_enabled: data.hover_speak_enabled ?? false,
-        hover_speak_delay_ms: data.hover_speak_delay_ms ?? 1000,
-        default_learning_mode: data.default_learning_mode || 'practice',
-      };
+      // Shared wire-to-store mapping (also used by the GET hydration path)
+      // so the PUT response cannot drift from the initial fetch.
+      const settings: UserPreferences = normalizePreferencesResponse(data);
       return {
         user: {
           ...state.user,

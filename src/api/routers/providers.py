@@ -45,6 +45,13 @@ router = APIRouter(prefix="/api/providers", tags=["providers"])
 _voice_install_lock = threading.Lock()
 _tts_download_lock = threading.Lock()
 
+# Generous ceiling for the automatic uv-sync installers (hundreds of MB over a
+# slow link), yet strictly below the client ceilings in VoiceTab.runInstall so
+# a hung network surfaces as the localized 503 here instead of the browser
+# aborting first: the voice client gives up at 10 minutes and TTS at 30, so a
+# single shared ceiling must sit under the tighter 600 s.
+AUTO_INSTALL_TIMEOUT_SECONDS = 540
+
 
 @router.get("/health")
 def providers_health(current_user: User = Depends(get_current_active_user)):

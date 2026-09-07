@@ -279,6 +279,121 @@ def test_arasaac_import_normalizes_ui_language_to_base_code(
     assert result.language == "es"
 
 
+@pytest.mark.usefixtures("setup_test_db")
+def test_arasaac_search_without_locale_uses_ui_language(
+    test_db_session, monkeypatch
+):
+    """Omitted locale defers to the persisted ui_language (normalized).
+
+    The pre-fix code declared ``locale: str = Query("es", ...)`` so the
+    ``if not locale`` branch that promised this behavior was unreachable and
+    the UI-language preference never applied.
+    """
+    user = User(
+        username="arasaac_lang_search_user",
+        display_name="ARASAAC Lang Search User",
+        user_type="teacher",
+        password_hash="unused",
+        is_active=True,
+    )
+    test_db_session.add(user)
+    test_db_session.commit()
+    test_db_session.refresh(user)
+    test_db_session.add(UserSettings(user_id=user.id, ui_language="en-US"))
+    test_db_session.commit()
+    test_db_session.refresh(user)
+
+    captured = {}
+
+    class FakeArasaacService:
+        def __init__(self):
+            pass
+
+        async def search_symbols(self, query: str, locale: str):
+            captured["query"] = query
+            captured["locale"] = locale
+            return []
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(arasaac, "ArasaacService", FakeArasaacService)
+
+    asyncio.run(arasaac.search_arasaac(q="pan", locale=None, current_user=user))
+
+    # en-US normalizes to its base code, matching the import path.
+    assert captured == {"query": "pan", "locale": "en"}
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_arasaac_search_explicit_locale_wins_over_ui_language(
+    test_db_session, monkeypatch
+):
+    """An explicitly supplied locale is used verbatim; ui_language is skipped."""
+    user = User(
+        username="arasaac_explicit_search_user",
+        display_name="ARASAAC Explicit Search User",
+        user_type="teacher",
+        password_hash="unused",
+        is_active=True,
+    )
+    test_db_session.add(user)
+    test_db_session.commit()
+    test_db_session.refresh(user)
+    test_db_session.add(UserSettings(user_id=user.id, ui_language="es-ES"))
+    test_db_session.commit()
+    test_db_session.refresh(user)
+
+    captured = {}
+
+    class FakeArasaacService:
+        async def search_symbols(self, query: str, locale: str):
+            captured["locale"] = locale
+            return []
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(arasaac, "ArasaacService", FakeArasaacService)
+
+    asyncio.run(
+        arasaac.search_arasaac(q="pain", locale="fr", current_user=user)
+    )
+    assert captured == {"locale": "fr"}
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_arasaac_search_without_locale_or_settings_defaults_to_es(
+    test_db_session, monkeypatch
+):
+    """No locale and no settings row: the API default "es" applies."""
+    user = User(
+        username="arasaac_default_search_user",
+        display_name="ARASAAC Default Search User",
+        user_type="teacher",
+        password_hash="unused",
+        is_active=True,
+    )
+    test_db_session.add(user)
+    test_db_session.commit()
+    test_db_session.refresh(user)
+
+    captured = {}
+
+    class FakeArasaacService:
+        async def search_symbols(self, query: str, locale: str):
+            captured["locale"] = locale
+            return []
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(arasaac, "ArasaacService", FakeArasaacService)
+
+    asyncio.run(arasaac.search_arasaac(q="pan", locale=None, current_user=user))
+    assert captured == {"locale": "es"}
+
+
 def test_arasaac_search_rejects_oversized_query(test_db_session, client):
     """A giant ARASAAC search query is rejected by validation (422) before
     any upstream network request is built."""
