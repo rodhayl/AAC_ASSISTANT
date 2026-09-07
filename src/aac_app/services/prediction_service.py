@@ -40,11 +40,26 @@ _TOPIC_STOPWORDS: frozenset[str] = frozenset(
 )
 
 
+# Hard cap on unique topic tokens feeding the LIKE-clause builder. Each
+# token expands into three SQL LIKE clauses in ``suggest_topic``, so an
+# unbounded token stream (from a caller that bypassed the request-schema
+# ``max_length=200`` bound) would build a pathological SQL expression. Fifty
+# unique tokens already exceeds any realistic study topic; the schema bound
+# makes this unreachable from HTTP, it is defense in depth for direct callers.
+_TOPIC_TOKEN_MAX = 50
+# Topic keys longer than this are never stored in the process topic-word
+# cache: the key IS the full normalized topic string, and 500 such keys of
+# ~1 MB each would hold ~500 MB of memory that the TTL never expels early.
+_TOPIC_CACHE_KEY_MAX_CHARS = 200
+
+
 def _tokenize_topic(topic: str) -> list[str]:
     r"""Split a topic string into meaningful lowercase tokens (len >= 2).
 
     Splits on any non-alphanumeric character (Unicode-aware via ``\W``)
-    so accented words like "inteligencia" survive intact.
+    so accented words like "inteligencia" survive intact. The result is
+    deduplicated (order-preserving) and capped at ``_TOPIC_TOKEN_MAX``
+    unique tokens so the per-token LIKE-clause builder stays bounded.
     """
     import re
 
@@ -61,7 +76,7 @@ def _tokenize_topic(topic: str) -> list[str]:
         if word not in seen:
             seen.add(word)
             unique.append(word)
-    return unique
+    return unique[:_TOPIC_TOKEN_MAX]
 
 # Punctuation appended after all real suggestions (only when they fit).
 PUNCTUATION: tuple[str, ...] = (".", ",", "?", "!")
@@ -126,9 +141,13 @@ def _cached_topic_words(
             word.strip() for word in words if word and not _label_looks_bad(word)
         )
     )
-    with _topics_word_lock:
-        _topics_word_cache[key] = (now, result)
-        _prune_topic_word_cache(now)
+    # Key-length guard: an oversized normalized topic would mint a giant
+    # cache key (the key IS the topic text). Skip STORING it — still compute
+    # and return the words, just never let the entry hold ~MBs in memory.
+    if len(normalized_topic) <= _TOPIC_CACHE_KEY_MAX_CHARS:
+        with _topics_word_lock:
+            _topics_word_cache[key] = (now, result)
+            _prune_topic_word_cache(now)
     return result
 
 

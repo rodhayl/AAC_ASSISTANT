@@ -342,6 +342,17 @@ def validate_preference_updates(
             )
 
 
+# The ONLY UserSettings columns this helper may write. Deriving the set from
+# the update schema (single home) keeps a future column addition from
+# silently widening the mass-assignment surface: an unknown key is a server
+# bug (callers pass schema model_dumps or a fixed dict), so it raises
+# ValueError to surface in logs/tests — never a localized 400, which would
+# imply the end user typed a wrong preference name.
+_SETTABLE_PREFERENCE_KEYS: frozenset[str] = frozenset(
+    schemas.UserPreferencesUpdate.model_fields
+)
+
+
 def update_user_settings(
     db: Session,
     user_id: int,
@@ -354,7 +365,15 @@ def update_user_settings(
     unique, two requests that both observe a missing row can race on INSERT.
     Flush the new row early; if another request wins, roll back only this
     request's failed transaction, reload the winner, and apply the update.
+
+    Only keys in ``_SETTABLE_PREFERENCE_KEYS`` are ever written: a stray key
+    (a typo, or an attempt to reassign the row's ``user_id`` FK) must fail
+    loudly instead of silently setting a dead Python attribute or hijacking
+    the row.
     """
+    unknown = [key for key in updates if key not in _SETTABLE_PREFERENCE_KEYS]
+    if unknown:
+        raise ValueError(f"Unknown user-settings key(s): {sorted(unknown)}")
     settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
     if settings is None:
         try:

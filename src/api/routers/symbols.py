@@ -22,6 +22,7 @@ from src.aac_app.services.runtime_translation import (
     LIKE_ESCAPE,
     contains_like_pattern,
     normalize_language_code,
+    unicode_recall_ids,
 )
 from src.aac_app.services.symbol_image_backfill import schedule_symbol_image_download
 from src.aac_app.services.vector_utils import delete_symbol as delete_symbol_embedding
@@ -117,41 +118,46 @@ def _apply_symbol_search(query, search: str, db: Session):
 
     The SQL LIKE clauses compare against ``func.lower(column)``, which is
     ASCII-only on SQLite (and SQL lower() never folds ``ß``/``İ`` anywhere):
-    they cannot match what the Python dedupe paths call equal (a stored
-    ``straße`` never matches ``%ss%``). The canonical lookup
-    (find_symbol_by_normalized_label) resolves exactly those unicode-fold
-    cases in Python, so when it hits, its row id is OR-ed into the SQL filter
-    as a recall supplement — the LIKE/escaping stays the fast path and the
-    Python hit is the net for precisely the fold cases SQL cannot see.
+    they cannot match stored rows whose casefold differs from their ASCII
+    lower (a stored ``straße`` never matches ``%strasse%``). When the LIKE
+    filter returns NOTHING, the shared unicode-recall net
+    (``unicode_recall_ids``) scans the same columns in Python and ORs the
+    found ids in — recall matters exactly when SQL shows nothing, which is
+    also what keeps the O(catalog) scan off the hot path (it fires only on
+    empty LIKE results, not on every keystroke). An "ASCII query fast path"
+    is deliberately absent: ``STRASSE`` (pure ASCII, casefold == lower)
+    still needs the scan to recall a stored ``straße``, because the fold gap
+    is in the STORED text — see the D7 regression test.
     """
     s = contains_like_pattern(search)
+    like_conditions: list = [
+        func.lower(Symbol.label).like(s, escape=LIKE_ESCAPE),
+        func.lower(Symbol.description).like(s, escape=LIKE_ESCAPE),
+        func.lower(Symbol.keywords).like(s, escape=LIKE_ESCAPE),
+    ]
 
-    # Imported inside the function to avoid a cycle (symbol_catalog imports
-    # only models + runtime_translation; the pattern mirrors
-    # symbol_svg_autogen.py's inline import).
-    canonical_ids: list[int] = []
-    try:
-        from src.aac_app.services.symbol_catalog import (
-            find_symbol_by_normalized_label,
-        )
-
-        found = find_symbol_by_normalized_label(db, search)
-        if found is not None:
-            canonical_ids = [found.id]
-    except Exception as exc:
+    like_hit = (
+        query.filter(or_(*like_conditions))
+        .with_entities(Symbol.id)
+        .limit(1)
+        .first()
+        is not None
+    )
+    conditions: list = [*like_conditions]
+    if not like_hit:
         # The recall supplement must never break the search: a lookup error
         # degrades to the SQL-only filter, exactly like the semantic branch.
-        logger.warning(f"Canonical search supplement failed: {exc}")
-
-    def _like_filter() -> list:
-        conditions: list = [
-            func.lower(Symbol.label).like(s, escape=LIKE_ESCAPE),
-            func.lower(Symbol.description).like(s, escape=LIKE_ESCAPE),
-            func.lower(Symbol.keywords).like(s, escape=LIKE_ESCAPE),
-        ]
-        if canonical_ids:
-            conditions.append(Symbol.id.in_(canonical_ids))
-        return conditions
+        try:
+            recall_ids = unicode_recall_ids(
+                db,
+                Symbol,
+                [Symbol.label, Symbol.description, Symbol.keywords],
+                search,
+            )
+            if recall_ids:
+                conditions.append(Symbol.id.in_(recall_ids))
+        except Exception as exc:
+            logger.warning(f"Canonical search supplement failed: {exc}")
 
     try:
         from src.api.deps import get_vector_store
@@ -177,13 +183,13 @@ def _apply_symbol_search(query, search: str, db: Session):
                     else_=len(semantic_ids),
                 )
                 return query.filter(
-                    or_(*_like_filter(), Symbol.id.in_(semantic_ids))
+                    or_(*conditions, Symbol.id.in_(semantic_ids))
                 ).order_by(semantic_order)
 
-        return query.filter(or_(*_like_filter()))
+        return query.filter(or_(*conditions))
     except Exception as e:
         logger.warning(f"Semantic search failed: {e}")
-        return query.filter(or_(*_like_filter()))
+        return query.filter(or_(*conditions))
 
 
 @router.get("/symbols", response_model=list[schemas.SymbolResponse])
@@ -205,6 +211,21 @@ def get_symbols(
     """Get symbols with optional filters, ordered by order_index ASC"""
     from sqlalchemy import func
 
+    # W1 regression: contains_like_pattern strips internally and maps the
+    # empty string to "%%" (match-all), so a guard on the UNstripped value
+    # would let whitespace-only search/keywords through as a full-library
+    # query. Strip first and treat a whitespace-only term as a query for
+    # nothing (mirrors learning.py's strip-then-guard). An absent or empty
+    # param still means "no filter".
+    raw_search = search
+    search = raw_search.strip() if raw_search else None
+    if raw_search and not search:
+        return []
+    raw_keywords = keywords
+    keywords = raw_keywords.strip() if raw_keywords else None
+    if raw_keywords and not keywords:
+        return []
+
     usage_subq = (
         db.query(
             BoardSymbol.symbol_id.label("sid"),
@@ -225,11 +246,36 @@ def get_symbols(
     if search:
         query = _apply_symbol_search(query, search, db)
     if keywords:
-        query = query.filter(
-            func.lower(Symbol.keywords).like(
-                contains_like_pattern(keywords), escape=LIKE_ESCAPE
-            )
+        # Standalone keyword filter (search above is absent): like the label
+        # path, an all-caps keyword misses a stored fold-only value, so the
+        # shared unicode-recall net supplements the SQL filter when it finds
+        # nothing. U2: same helper, same recall, one degradation policy.
+        keyword_condition = func.lower(Symbol.keywords).like(
+            contains_like_pattern(keywords), escape=LIKE_ESCAPE
         )
+        keyword_hit = (
+            query.filter(keyword_condition)
+            .with_entities(Symbol.id)
+            .limit(1)
+            .first()
+            is not None
+        )
+        if not keyword_hit:
+            try:
+                recall_ids = unicode_recall_ids(
+                    db, Symbol, [Symbol.keywords], keywords
+                )
+            except Exception as exc:
+                logger.warning(f"Keyword recall supplement failed: {exc}")
+                recall_ids = []
+            if recall_ids:
+                query = query.filter(
+                    or_(keyword_condition, Symbol.id.in_(recall_ids))
+                )
+            else:
+                query = query.filter(keyword_condition)
+        else:
+            query = query.filter(keyword_condition)
     if usage == "in_use":
         query = query.filter(
             (usage_subq.c.use_count.is_not(None)) & (usage_subq.c.use_count > 0)
@@ -350,9 +396,13 @@ def reorder_symbols(
 
 @router.post("/symbols/upload", response_model=schemas.SymbolResponse)
 async def upload_symbol(
-    label: str = Form(...),
+    # Column-bounded like the JSON sibling (SymbolBase.label max 100 /
+    # category max 50): multipart params bypassed the schema sweep and a
+    # 5 KB label would otherwise DataError 500 on Postgres at flush (SQLite
+    # silently over-stores).
+    label: str = Form(..., max_length=100),
     description: str = Form(None),
-    category: str = Form("general"),
+    category: str = Form("general", max_length=50),
     keywords: str = Form(None),
     language: str = Form("en"),
     file: UploadFile = File(...),
@@ -399,9 +449,12 @@ async def upload_symbol(
 
 @router.post("/symbols/generate-svg", response_model=schemas.SymbolResponse)
 def generate_svg_symbol(
-    label: str = Form(...),
+    # Same column bounds as upload_symbol (Symbol.label String(100),
+    # Symbol.category String(50)): the LLM path must not be the one entry
+    # point that can overrun the columns.
+    label: str = Form(..., max_length=100),
     description: str = Form(None),
-    category: str = Form("general"),
+    category: str = Form("general", max_length=50),
     keywords: str = Form(None),
     language: str = Form("en"),
     db: Session = Depends(get_db),

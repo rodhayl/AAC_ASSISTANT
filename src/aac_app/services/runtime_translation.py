@@ -115,11 +115,64 @@ def contains_like_pattern(text: str) -> str:
 
     The text is stripped first, mirroring ``normalize_symbol_label``'s strip:
     a search with accidental padding (copy/paste, mobile keyboards) must not
-    miss the exact label the catalog holds. After strip the empty string
-    yields ``"%%"`` — callers guard falsy search text before building a
-    pattern, so a whitespace-only query never reaches SQL as a match-all.
+    miss the exact label the catalog holds.
+
+    NOTE the real contract: after the internal strip, an empty input maps to
+    ``"%%"`` — a match-all. Callers MUST strip their query text before the
+    truthiness guard and never feed this helper blank/whitespace text; a
+    whitespace-only query reaching SQL as ``"%%"`` would silently list the
+    whole table. Every search route (learning.py, symbols.py, boards.py)
+    strips before deciding whether to search at all.
     """
     return f"%{escape_like_literal(text.strip()).casefold()}%"
+
+
+def unicode_recall_ids(
+    db,
+    model,
+    columns,
+    text: str,
+) -> list[int]:
+    """Return ids whose stored text casefolds-contains ``text``.
+
+    Shared unicode-recall net for the search routes (symbol label/descrip-
+    tion/keywords, the keywords standalone filter, board names). SQL
+    ``lower()``/``ilike`` never folds ``ß``/``İ`` the way Python ``casefold()``
+    does, so a stored ``straße`` row is invisible to ``LIKE '%STRASSE%'`` on
+    both backends. This helper scans the given columns in Python and returns
+    the small id set whose casefolded text contains the casefolded query —
+    the exact recall SQL cannot express.
+
+    Callers gate on their SQL filter returning NOTHING first (recall matters
+    only on empty results); this helper is then the O(catalog) fallback. An
+    "ASCII fast path" is deliberately NOT used: the fold gap lives in the
+    STORED text as well as the query, so an all-caps query (``STRASSE``)
+    against a stored ``straße`` has ``query.casefold() == query.lower()`` yet
+    still needs the scan (see the committed D7 test in
+    tests/test_prompt20_regressions.py). Any scan error must degrade to an
+    empty recall set at the call site, never a 500.
+
+    The scan is deliberately NOT row-capped: rows stream through
+    ``yield_per`` so memory stays bounded, and truncating at an arbitrary
+    row count would silently miss a fold-only match stored beyond it (the
+    ARASAAC auto-import alone seeds ~17k symbols). The cost is acceptable
+    because callers invoke this only after SQL showed nothing.
+    """
+    stripped = (text or "").strip()
+    if not stripped:
+        return []
+    folded = stripped.casefold()
+    ids: list[int] = []
+    for row_id, *values in db.query(model.id, *columns).yield_per(500):
+        # Values are compared in Python (where the fold happens) so NULL
+        # columns simply never match — do NOT pre-filter with ``IS NOT NULL``
+        # per column: AND-ing them would drop every row that leaves one of
+        # the searched columns empty (a label row without a description).
+        for value in values:
+            if isinstance(value, str) and folded in value.casefold():
+                ids.append(row_id)
+                break
+    return ids
 
 
 def _translate_worker(text: str, target_lang: str) -> str:

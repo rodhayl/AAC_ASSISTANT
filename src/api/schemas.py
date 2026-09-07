@@ -7,6 +7,14 @@ from src.aac_app.models.achievement import ACHIEVEMENT_CRITERIA_TYPES
 
 PreferenceLanguage = Annotated[str, Field(min_length=2, max_length=10)]
 
+# Column-mirroring bounds shared by every schema field AND the raw-dict/login
+# route checks that bypass schemas (auth.py's username bound, auth_users.py's
+# admin-edit bounds). Single home so the next column change cannot touch three
+# files and diverge the way the D2/D3 class did.
+USERNAME_MAX_LENGTH = 50  # User.username String(50)
+DISPLAY_NAME_MAX_LENGTH = 100  # User.display_name String(100)
+EMAIL_MAX_LENGTH = 100  # User.email String(100)
+
 # Password length bound shared by every password-accepting schema. Argon2/
 # bcrypt hashing cost grows with the input, so an unbounded passphrase on the
 # rate-limited-but-unauthenticated register/login endpoints would be CPU/memory
@@ -100,9 +108,9 @@ class UserBase(BaseModel):
     # a whitespace-only value is rejected as empty. No charset regex is
     # imposed (none exists elsewhere in the repo): normalization is strip +
     # non-empty only.
-    username: str = Field(..., min_length=1, max_length=50)
-    email: EmailStr | None = Field(None, max_length=100)  # User.email String(100)
-    display_name: str = Field(..., min_length=1, max_length=100)
+    username: str = Field(..., min_length=1, max_length=USERNAME_MAX_LENGTH)
+    email: EmailStr | None = Field(None, max_length=EMAIL_MAX_LENGTH)
+    display_name: str = Field(..., min_length=1, max_length=DISPLAY_NAME_MAX_LENGTH)
     user_type: str = "student"
 
     @field_validator("username", "display_name", mode="before")
@@ -143,8 +151,8 @@ class StaffStudentCreate(UserCreate):
 
 
 class UserProfileUpdate(BaseModel):
-    display_name: str | None = Field(None, max_length=100)
-    email: EmailStr | None = Field(None, max_length=100)  # User.email String(100)
+    display_name: str | None = Field(None, max_length=DISPLAY_NAME_MAX_LENGTH)
+    email: EmailStr | None = Field(None, max_length=EMAIL_MAX_LENGTH)
 
     @field_validator("display_name", mode="before")
     @classmethod
@@ -161,7 +169,7 @@ class ChangePasswordRequest(BaseModel):
     # Username bound mirrors the User column (String(50)) with a strip
     # before-validator, like UserBase: an overlong or padded value cannot
     # slip past into the lockout/audit storage of the password flow.
-    username: str = Field(..., min_length=1, max_length=50)
+    username: str = Field(..., min_length=1, max_length=USERNAME_MAX_LENGTH)
     current_password: str = Field(..., max_length=PASSWORD_MAX_LENGTH)
     new_password: str = Field(..., max_length=PASSWORD_MAX_LENGTH)
     confirm_password: str = Field(..., max_length=PASSWORD_MAX_LENGTH)
@@ -191,9 +199,9 @@ class UserResponse(BaseModel):
     """
 
     id: int
-    username: str = Field(..., max_length=50)  # User.username String(50)
+    username: str = Field(..., max_length=USERNAME_MAX_LENGTH)
     email: EmailStr | None = None
-    display_name: str = Field(..., max_length=100)  # User.display_name String(100)
+    display_name: str = Field(..., max_length=DISPLAY_NAME_MAX_LENGTH)
     user_type: str = "student"
     is_active: bool
     created_at: datetime
@@ -227,9 +235,9 @@ class InitialAdminSetupRequest(BaseModel):
     ``admin1``/``Administrator`` (a naive ``min_length=1`` would 422 it).
     """
 
-    username: str = Field(SETUP_DEFAULT_USERNAME, max_length=50)  # String(50)
-    display_name: str = Field(SETUP_DEFAULT_DISPLAY_NAME, max_length=100)  # String(100)
-    email: EmailStr | None = Field(None, max_length=100)  # User.email String(100)
+    username: str = Field(SETUP_DEFAULT_USERNAME, max_length=USERNAME_MAX_LENGTH)
+    display_name: str = Field(SETUP_DEFAULT_DISPLAY_NAME, max_length=DISPLAY_NAME_MAX_LENGTH)
+    email: EmailStr | None = Field(None, max_length=EMAIL_MAX_LENGTH)
     password: str = Field(..., max_length=PASSWORD_MAX_LENGTH)
     confirm_password: str = Field(..., max_length=PASSWORD_MAX_LENGTH)
 
@@ -466,7 +474,7 @@ class BoardBase(BaseModel):
     grid_cols: int | None = Field(5, ge=1, le=100)
     ai_enabled: bool = False
     ai_provider: str | None = None
-    ai_model: str | None = None
+    ai_model: str | None = Field(None, max_length=100)  # CommunicationBoard.ai_model String(100)
     locale: str = Field("en", min_length=2, max_length=10)
     is_language_learning: bool = False
 
@@ -485,7 +493,7 @@ class BoardUpdate(BaseModel):
     grid_cols: int | None = Field(None, ge=1, le=100)
     ai_enabled: bool | None = None
     ai_provider: str | None = None
-    ai_model: str | None = None
+    ai_model: str | None = Field(None, max_length=100)  # CommunicationBoard.ai_model String(100)
     locale: str | None = Field(None, min_length=2, max_length=10)
     is_language_learning: bool | None = None
 
@@ -718,25 +726,36 @@ class LeaderboardEntry(BaseModel):
 
 # --- Analytics Schemas ---
 class SymbolUsageItem(BaseModel):
+    # Bounds mirror the SymbolUsageLog columns (symbol_label String(50),
+    # symbol_category String(50), see models/analytics.py) so oversized
+    # telemetry fails validation instead of 500ing on Postgres inside the
+    # best-effort savepoint (which catches only IntegrityError).
     id: int = Field(..., ge=1)
-    label: str = Field(..., min_length=1, max_length=100)
-    category: str | None = None
+    label: str = Field(..., min_length=1, max_length=50)
+    category: str | None = Field(None, max_length=50)
 
 
 class SymbolUsageRequest(BaseModel):
     symbols: list[SymbolUsageItem]
     session_id: int | None = None
-    semantic_intent: str | None = None
-    context_topic: str | None = None
+    # Column widths (semantic_intent String(20), context_topic String(100))
+    # bound the optional telemetry strings the same way the item fields are.
+    semantic_intent: str | None = Field(None, max_length=20)
+    context_topic: str | None = Field(None, max_length=100)
 
 
 class NextSymbolRequest(BaseModel):
-    current_symbols: str = ""
+    # ``current_symbols`` is comma-split into per-label predictions: 2000
+    # chars comfortably covers any real utterance while capping the list
+    # size. ``topic`` mirrors the SavedTopic/search param bound (200): it is
+    # tokenized into one SQL LIKE expression per token, so an unbounded topic
+    # would build a pathological query and mint giant cache keys.
+    current_symbols: str = Field("", max_length=2000)
     limit: int = Field(5, ge=1, le=50)
     intent: str = "general"
     offset: int = Field(0, ge=0, le=100_000)
     board_id: int | None = None
-    topic: str | None = None
+    topic: str | None = Field(None, max_length=200)
 
 
 # --- Guardian Profile Schemas (Learning Companion Personality) ---
@@ -804,7 +823,7 @@ class GuardianProfileFields(BaseModel):
     """Shared editable fields for guardian profile create and update."""
 
     age: int | None = Field(None, ge=1, le=100, description="Student age (1-100)")
-    gender: str | None = None
+    gender: str | None = Field(None, max_length=30)  # GuardianProfile.gender String(30)
     medical_context: MedicalContextSchema | None = None
     communication_style: CommunicationStyleSchema | None = None
     safety_constraints: SafetyConstraintsSchema | None = None

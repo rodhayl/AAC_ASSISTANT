@@ -201,7 +201,7 @@ def login_for_access_token(
     # retention window (and beyond 100 chars it would 500 on Postgres inside
     # this unauthenticated path). Return the same generic 401 without writing
     # any row — there is no account to lock or audit meaningfully.
-    if not username or len(username) > 50:
+    if not username or len(username) > schemas.USERNAME_MAX_LENGTH:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=get_request_text(request, "errors.incorrectCredentials"),

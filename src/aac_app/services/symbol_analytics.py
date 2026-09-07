@@ -12,7 +12,7 @@ from weakref import WeakKeyDictionary
 from loguru import logger
 from sqlalchemy import and_, desc, event, func, or_
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session, aliased
 
 from ..db import get_session, session_scope
@@ -174,12 +174,15 @@ class SymbolAnalytics:
                             context_topic=context_topic,
                         )
                         try:
-                            # Analytics is best-effort. A stale FK must not
-                            # poison the caller's main learning transaction.
+                            # Analytics is best-effort. A stale FK (or, on
+                            # Postgres, a column-width overflow DataError from
+                            # a caller that bypassed the schema bounds) must
+                            # not poison the caller's main learning
+                            # transaction — skip the row either way.
                             with session.begin_nested():
                                 session.add(usage_log)
                                 session.flush()
-                        except IntegrityError:
+                        except (IntegrityError, DataError):
                             logger.warning(
                                 "Skipping invalid symbol analytics row for user {}",
                                 user_id,

@@ -72,6 +72,33 @@ manager = ConnectionManager()
 MAX_COLLAB_PAYLOAD_BYTES = 256 * 1024
 
 
+def _is_collab_move_payload(data: dict) -> bool:
+    """True when ``data`` is the one payload the product actually speaks.
+
+    The ONLY collab sender in the tree emits ``{op: 'move', symbol_id,
+    position: {x, y}}`` and the ONLY receiver acts solely on
+    ``payload.op === 'move'`` with a ``symbol_id`` and a ``position`` — see
+    src/frontend/src/hooks/useBoardCollab.ts (the contract). Allow-listing
+    the op and validating the exact shape the receiver dereferences means a
+    junk or forged dict (e.g. an ``add``/``ping`` payload, or a move without
+    a usable position) is never amplified to every peer. bool is rejected
+    (it is an int subclass and a JSON ``true`` must not become symbol id 1).
+    """
+    if data.get("op") != "move":
+        return False
+    symbol_id = data.get("symbol_id")
+    if isinstance(symbol_id, bool) or not isinstance(symbol_id, int):
+        return False
+    position = data.get("position")
+    if not isinstance(position, dict):
+        return False
+    for axis in ("x", "y"):
+        value = position.get(axis)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return False
+    return True
+
+
 @router.websocket("/boards/{board_id}")
 async def board_channel(
     websocket: WebSocket,
@@ -244,16 +271,17 @@ async def board_channel(
                     # Public-board read-only viewer: keep receiving, never emit.
                     continue
 
-                # The fan-out contract is a JSON dict with a known shape (the
-                # frontend collab sender emits {"op": ..., ...} dicts — see
-                # src/frontend/src/hooks/useBoardCollab.ts and the WS tests:
-                # op add/move/ping). A list/str/int payload would otherwise
-                # skip the content gate below (its label_candidate lookup is
-                # dict-only) and still be wrapped and broadcast to every peer
-                # as garbage. Drop non-dict payloads silently and keep the
-                # connection alive: a malformed client must not kill the room
-                # (mirrors the fail-closed gate philosophy — unshaped input is
-                # not fanned out).
+                # The fan-out contract is a JSON dict whose vocabulary is a
+                # SINGLE op — ``move`` (the frontend collab sender/receiver in
+                # src/frontend/src/hooks/useBoardCollab.ts speaks nothing
+                # else). A list/str/int payload would otherwise skip the
+                # label content gate below (its label_candidate lookup is
+                # dict-only) and be wrapped and broadcast to every peer as
+                # garbage; an op outside the allow-list (or a move with an
+                # unusable shape) would do the same. Both are dropped
+                # silently and the connection stays alive: a malformed client
+                # must not kill the room (mirrors the fail-closed gate
+                # philosophy — unshaped input is not fanned out).
                 if not isinstance(data, dict):
                     logger.debug(
                         "Dropping non-dict collab payload from {} ({} bytes)",
@@ -263,11 +291,16 @@ async def board_channel(
                     continue
 
                 # Layer-1 content gate on board-change payloads that carry a
-                # free-text label (e.g. an added symbol). Blocked labels are
-                # never fanned out to the room; the REST admission gates
+                # free-text label. This layer vets ANY label-bearing dict
+                # (whatever its op) because it is the only enforcement point
+                # of the guardian ``block_social_messaging`` lock and the
+                # fail-closed net for text that could not be vetted; the
+                # vocabulary gate below then restricts what may actually fan
+                # out to the move op alone. Blocked labels are never fanned
+                # out to the room; the REST admission gates
                 # (get_or_create_symbol) are the authoritative DB guard, this
                 # protects every connected peer from forged/malformed input.
-                # (data is a dict here — the shape gate above ran first.)
+                # (data is a dict here — the dict gate above ran first.)
                 label_candidate = data.get("label")
                 if isinstance(label_candidate, str) and label_candidate.strip():
                     try:
@@ -320,6 +353,20 @@ async def board_channel(
                             exc,
                         )
                         continue
+
+                # Layer-2 vocabulary gate (C1): only the ``move`` op with the
+                # exact shape the client receiver dereferences is broadcast.
+                # Anything else — ``add``/``ping``/unknown ops, malformed
+                # moves — is dropped here with the connection kept alive; the
+                # label content gate above already vetted any text it
+                # carried, so nothing unvetted can slip past this continue.
+                if not _is_collab_move_payload(data):
+                    logger.debug(
+                        "Dropping non-move collab payload from {} ({} bytes)",
+                        user.username,
+                        payload_size,
+                    )
+                    continue
 
                 message = {
                     "type": "board_change",

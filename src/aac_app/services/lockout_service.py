@@ -98,9 +98,6 @@ class AccountLockoutService:
         """
         now = datetime.now(UTC)
         AccountLockoutService._purge_expired_attempts(db, now)
-        # Bound the table on every failed attempt (the flood case never
-        # reaches a success that could reset/trim elsewhere).
-        AccountLockoutService._trim_to_cap(db)
         window_start = now - timedelta(
             minutes=AccountLockoutService.ATTEMPT_WINDOW_MINUTES
         )
@@ -146,10 +143,10 @@ class AccountLockoutService:
                 )
 
                 db.flush()
-                return True, lockout_until, recent_attempt.attempt_count
-
-            db.flush()
-            return False, None, recent_attempt.attempt_count
+                is_locked, locked_until, attempt_count = True, lockout_until, recent_attempt.attempt_count
+            else:
+                db.flush()
+                is_locked, locked_until, attempt_count = False, None, recent_attempt.attempt_count
         else:
             # First failed attempt
             new_attempt = FailedLoginAttempt(
@@ -161,14 +158,20 @@ class AccountLockoutService:
             )
             db.add(new_attempt)
             db.flush()
-            # The insert grew the table by one row: trim it back to the cap so
-            # a distinct-username flood cannot outgrow the bounded table.
-            AccountLockoutService._trim_to_cap(db)
+            is_locked, locked_until, attempt_count = False, None, 1
 
             logger.info(
                 f"Recorded first failed login attempt for '{username}' from IP {ip_address}"
             )
-            return False, None, 1
+
+        # The mutation above grew the table by exactly one row (increment or
+        # insert): trim it back to the cap once, AFTER the mutation. Trimming
+        # before the lookup as well would pay a second COUNT/DELETE per failed
+        # attempt for zero benefit — the flood case grows the table only via
+        # this insert/increment. The still-locked early return above performs
+        # no mutation and correctly skips the trim.
+        AccountLockoutService._trim_to_cap(db)
+        return is_locked, locked_until, attempt_count
 
     @staticmethod
     def is_locked(db: Session, username: str) -> tuple[bool, datetime | None]:

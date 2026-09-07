@@ -346,7 +346,10 @@ def create_saved_topic(
         require_board_view_access(board, current_user, db)
 
     board_name = payload.board.strip()[:100]
-    topic_name = payload.topic.strip()[:200]
+    # SavedTopicCreate.topic already caps at 200 (schemas.py) — the strip is
+    # the only normalization left; the old [:200] slice was unreachable
+    # because the schema rejects overlong topics before the handler runs.
+    topic_name = payload.topic.strip()
     if not topic_name:
         raise HTTPException(
             status_code=422,

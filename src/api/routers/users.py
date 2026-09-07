@@ -306,15 +306,6 @@ def reset_user_password(
             status_code=404,
             detail=get_text(user=current_user, key="errors.userNotFound"),
         )
-    # Unified deactivation policy (D4): password resets on a deactivated
-    # account are denied for everyone — resetting is pointless (the account
-    # cannot log in) and would keep an admin/teacher operating on a dead
-    # account. Same 404 as a missing user so the state stays non-oracleable.
-    if not user.is_active:
-        raise HTTPException(
-            status_code=404,
-            detail=get_text(user=current_user, key="errors.userNotFound"),
-        )
 
     # Permission check
     if current_user.user_type == "admin":
@@ -348,6 +339,20 @@ def reset_user_password(
                 status_code=403,
                 detail=get_request_text(request, "errors.users.notAssignedToTeacher", user=current_user),
             )
+
+    # Unified deactivation policy (D4), applied AFTER the permission block on
+    # purpose: resetting a deactivated account is denied for everyone with
+    # the same 404 as a missing user, but a teacher probing an UNASSIGNED
+    # inactive student must get the roster 403 first — otherwise the 404
+    # leaks "this id exists but is inactive" to any teacher (R1). Assigned
+    # inactive students and admin resets still hit this 404. Mirror the
+    # ordering of assign_student (staff/self checks before the student
+    # lookup/inactive 404).
+    if not user.is_active:
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.userNotFound"),
+        )
 
     validate_password_strength(data.new_password, user=current_user)
 

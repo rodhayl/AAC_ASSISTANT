@@ -543,7 +543,7 @@ def update_user(
                 status_code=400,
             detail=get_request_text(request, "errors.auth.displayNameRequired", user=current_user),
             )
-        if len(display_name) > 100:
+        if len(display_name) > schemas.DISPLAY_NAME_MAX_LENGTH:
             raise HTTPException(
                 status_code=400,
                 detail=get_text(user=current_user, key="errors.auth.displayNameInvalid"),
@@ -573,7 +573,7 @@ def update_user(
             # normalization, like every schema email field (max_length=100):
             # an overlong address must be a clean 400 here, never a Postgres
             # DataError 500 at flush (only IntegrityError is caught below).
-            if len(new_email) > 100:
+            if len(new_email) > schemas.EMAIL_MAX_LENGTH:
                 raise HTTPException(
                     status_code=400,
                     detail=get_text(user=current_user, key="errors.auth.emailInvalid"),

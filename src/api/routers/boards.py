@@ -8,6 +8,7 @@ from src.aac_app.services.runtime_translation import (
     LIKE_ESCAPE,
     contains_like_pattern,
     normalize_language_code,
+    unicode_recall_ids,
 )
 from src.aac_app.services.translation_service import get_translation_service
 from src.api import schemas
@@ -46,15 +47,56 @@ def get_boards(
     try:
         query = db.query(CommunicationBoard)
 
+        # W1 regression: contains_like_pattern strips internally and maps ""
+        # to "%%" (match-all), so a guard on the unstripped name would let
+        # whitespace-only through as a full-library query. Strip first; a
+        # whitespace-only name is a query for nothing. (An absent/empty param
+        # still means no filter.)
+        raw_name = name
+        name = raw_name.strip() if raw_name else None
+        if raw_name and not name:
+            return []
+
         # Filter by name if provided. The name is user text: escape LIKE
         # wildcards so searching for "%" lists only literal matches instead of
         # every board, and "a_b" does not match "axb".
+        name_condition = None
         if name:
-            query = query.filter(
-                CommunicationBoard.name.ilike(
-                    contains_like_pattern(name), escape=LIKE_ESCAPE
-                )
+            name_condition = CommunicationBoard.name.ilike(
+                contains_like_pattern(name), escape=LIKE_ESCAPE
             )
+            # U2: SQL ilike cannot see stored fold-only names (a stored
+            # "straße" never matches an all-caps query). Run the shared
+            # unicode-recall net only when NO stored board name matches via
+            # SQL — recall matters on empty results, and gating keeps the
+            # O(catalog) Python scan off the common (matching) path. RBAC
+            # filters still AND onto whatever the recall adds.
+            sql_hit = (
+                db.query(CommunicationBoard.id)
+                .filter(name_condition)
+                .limit(1)
+                .first()
+                is not None
+            )
+            if sql_hit:
+                query = query.filter(name_condition)
+            else:
+                try:
+                    recall_ids = unicode_recall_ids(
+                        db, CommunicationBoard, [CommunicationBoard.name], name
+                    )
+                except Exception as exc:
+                    logger.warning(f"Board-name recall supplement failed: {exc}")
+                    recall_ids = []
+                if recall_ids:
+                    query = query.filter(
+                        or_(
+                            name_condition,
+                            CommunicationBoard.id.in_(recall_ids),
+                        )
+                    )
+                else:
+                    query = query.filter(name_condition)
 
         # Eager load symbols
         query = query.options(

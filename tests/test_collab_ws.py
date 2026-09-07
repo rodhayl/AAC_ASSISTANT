@@ -15,6 +15,17 @@ from src.api.main import app
 from src.api.routers.collab import ConnectionManager
 
 
+def _move(symbol_id=1, x=0, y=0, **extra):
+    """The one collab payload the product speaks (C1 contract): the move op
+    with the exact shape src/frontend/src/hooks/useBoardCollab.ts emits and
+    its receiver dereferences. Tests use this for every broadcast they
+    expect to be fanned out — add/ping payloads are dropped by the server's
+    vocabulary gate and must never be used as a fan-out canary."""
+    payload = {"op": "move", "symbol_id": symbol_id, "position": {"x": x, "y": y}}
+    payload.update(extra)
+    return payload
+
+
 @contextmanager
 def finish_collab_connections(client, *websockets):
     def drain_connections():
@@ -147,13 +158,14 @@ def test_collab_ws_block_social_messaging(test_db_session, test_password, collab
         finish_collab_connections(client, ws1, ws2),
     ):
         ws1.send_json({"op": "add", "label": "casa"})
-        # A follow-up ping from ws2 must be the FIRST message ws1 receives:
+        # A follow-up MOVE from ws2 must be the FIRST message ws1 receives:
         # if the labeled payload had passed the gate, the add would arrive
-        # before the ping.
-        ws2.send_json({"op": "ping"})
+        # before the move. (Pings are not a usable canary: the C1 vocabulary
+        # gate drops non-move ops, so only a valid move is broadcast.)
+        ws2.send_json(_move(symbol_id=999))
         recv = ws1.receive_json()
         assert recv["type"] == "board_change"
-        assert recv["payload"]["op"] == "ping"
+        assert recv["payload"]["symbol_id"] == 999
 
     from src.aac_app.models import ContentSafetyEvent
 
@@ -485,16 +497,18 @@ def test_collab_ws_broadcast_skips_sender(
         client.websocket_connect(url, subprotocols=["aac-auth", token]) as ws2,
         finish_collab_connections(client, ws1, ws2),
     ):
-        ws1.send_json({"op": "move", "symbol_id": 1})
+        ws1.send_json(_move(symbol_id=1))
         recv = ws2.receive_json()
         assert recv["payload"]["symbol_id"] == 1
 
         # ws2 responds; ws1 receives it and ws2's own socket stays usable
         # (the sender is skipped in the broadcast).
-        ws2.send_json({"op": "move", "symbol_id": 2})
+        ws2.send_json(_move(symbol_id=2))
         recv = ws1.receive_json()
         assert recv["payload"]["symbol_id"] == 2
-        ws2.send_json({"op": "ping"})
+        ws2.send_json(_move(symbol_id=3))
+        recv = ws1.receive_json()
+        assert recv["payload"]["symbol_id"] == 3
 
 
 def test_collab_ws_oversized_payload_closes_sender_with_1009(
@@ -592,8 +606,8 @@ def test_collab_ws_oversized_payload_is_not_fanned_out(
             sender.receive_json()
         assert exc_info.value.code == 1009
 
-        # peer_a broadcasts a small message; peer_b must see THAT first.
-        peer_a.send_json({"op": "move", "symbol_id": 42})
+        # peer_a broadcasts a small move; peer_b must see THAT first.
+        peer_a.send_json(_move(symbol_id=42))
         first = peer_b.receive_json()
         assert first["type"] == "board_change"
         assert first["payload"]["symbol_id"] == 42
@@ -659,13 +673,13 @@ def test_collab_ws_public_viewer_cannot_broadcast(
         finish_collab_connections(collab_client, owner_a, owner_b, viewer_ws),
     ):
         # The viewer's attempt to edit must be swallowed silently (read-only):
-        # had it fanned out, owner_a would receive it BEFORE the ping that
+        # had it fanned out, owner_a would receive it BEFORE the move that
         # owner_b broadcasts next.
-        viewer_ws.send_json({"op": "move", "symbol_id": 99})
-        owner_b.send_json({"op": "ping"})
+        viewer_ws.send_json(_move(symbol_id=99))
+        owner_b.send_json(_move(symbol_id=100))
         recv = owner_a.receive_json()
         assert recv["type"] == "board_change"
-        assert recv["payload"]["op"] == "ping"
+        assert recv["payload"]["symbol_id"] == 100
 
 
 def test_collab_ws_public_board_read_only_viewer(
@@ -721,7 +735,7 @@ def test_collab_ws_public_board_read_only_viewer(
         ) as viewer_ws,
         finish_collab_connections(collab_client, owner_ws, viewer_ws),
     ):
-        owner_ws.send_json({"op": "move", "symbol_id": 7})
+        owner_ws.send_json(_move(symbol_id=7))
         recv = viewer_ws.receive_json()
         assert recv["payload"]["symbol_id"] == 7
 
@@ -793,9 +807,14 @@ def test_collab_ws_multibyte_payload_under_cap_is_fanned_out_intact(
         # 50_000 chars x 2 bytes = 100KB on the wire: comfortably under the
         # cap and must broadcast normally.
         blob = "\u00e9" * 50_000
-        sender.send_json({"op": "add", "blob": blob})
+        # A valid move payload carrying the giant multibyte field: the byte
+        # cap counts the whole frame, and an under-cap frame must reach the
+        # peer byte-for-byte (op ``move`` is the only fan-out-able op).
+        sender.send_json(_move(symbol_id=1, blob=blob))
         recv = observer.receive_json()
         assert recv["type"] == "board_change"
+        assert recv["payload"]["op"] == "move"
+        assert recv["payload"]["symbol_id"] == 1
         assert recv["payload"]["blob"] == blob
 
 
@@ -862,14 +881,15 @@ def test_collab_ws_content_gate_error_drops_message_fail_closed(
         # A labeled message whose gate check raises must be dropped.
         ws_a.send_json({"op": "add", "label": "casa"})
         # The peer's first message must be the NEXT normal broadcast (the
-        # dropped label must never precede it).
-        ws_a.send_json({"op": "ping"})
+        # dropped label must never precede it) — a valid move, since pings
+        # are not fanned out under the move-only vocabulary gate.
+        ws_a.send_json(_move(symbol_id=11))
         first = ws_b.receive_json()
-        assert first["payload"]["op"] == "ping"
+        assert first["payload"]["symbol_id"] == 11
         # Both sockets remain usable.
-        ws_b.send_json({"op": "ping"})
+        ws_b.send_json(_move(symbol_id=12))
         second = ws_a.receive_json()
-        assert second["payload"]["op"] == "ping"
+        assert second["payload"]["symbol_id"] == 12
 
 
 def test_collab_ws_broadcast_error_closes_sender_with_1011(
@@ -891,7 +911,7 @@ def test_collab_ws_broadcast_error_closes_sender_with_1011(
         client.websocket_connect(url, subprotocols=["aac-auth", token]) as sender,
         finish_collab_connections(client, sender),
     ):
-        sender.send_json({"op": "move", "symbol_id": 1})
+        sender.send_json(_move(symbol_id=1))
         with pytest.raises(WebSocketDisconnect) as exc_info:
             sender.receive_json()
         assert exc_info.value.code == 1011
@@ -900,10 +920,11 @@ def test_collab_ws_broadcast_error_closes_sender_with_1011(
 def test_collab_ws_non_dict_payload_is_dropped_and_sender_stays_usable(
     test_db_session, test_password, collab_client
 ):
-    """The fan-out contract is a JSON dict with a known shape: a list/str/int
-    payload must be dropped (never wrapped in a board_change and broadcast to
-    peers), and the sender's connection must survive the malformed input.
-    A dict payload (e.g. {"op": "add", "label": "casa"}) still broadcasts.
+    """The fan-out contract is a JSON dict speaking the single ``move`` op
+    (C1; see useBoardCollab.ts). Non-dict payloads, non-move ops and moves
+    with an unusable shape are all dropped silently — never wrapped in a
+    board_change and broadcast to peers — and the sender's connection
+    survives the malformed input.
     """
     client = collab_client
     token, url = _make_collab_room(client, test_password, "ws_shape")
@@ -912,22 +933,25 @@ def test_collab_ws_non_dict_payload_is_dropped_and_sender_stays_usable(
         client.websocket_connect(url, subprotocols=["aac-auth", token]) as observer,
         finish_collab_connections(client, sender, observer),
     ):
-        # Non-dict payloads: the observer must NEVER receive them.
+        # Non-dict payloads and non-move dicts: the observer must NEVER
+        # receive any of them.
         sender.send_json([1, 2, 3])
         sender.send_json("hello")
         sender.send_json(42)
-        # The peer's FIRST message must be the next real dict broadcast (the
-        # dropped garbage must never precede it).
         sender.send_json({"op": "ping"})
+        sender.send_json({"op": "add", "label": "casa"})
+        sender.send_json({"op": "move"})  # missing symbol_id/position
+        sender.send_json({"op": "move", "symbol_id": "1", "position": {"x": 0, "y": 0}})
+        sender.send_json({"op": "move", "symbol_id": 1, "position": {"x": "a", "y": 0}})
+        # The peer's FIRST message must be the next real move broadcast (the
+        # dropped garbage must never precede it).
+        sender.send_json(_move(symbol_id=7))
         first = observer.receive_json()
         assert first["type"] == "board_change"
-        assert first["payload"]["op"] == "ping"
-        # Dict payloads with a label still pass the content gate and fan out.
-        sender.send_json({"op": "add", "label": "casa"})
-        second = observer.receive_json()
-        assert second["payload"]["op"] == "add"
-        assert second["payload"]["label"] == "casa"
-        # The sender is still usable after the malformed input.
-        observer.send_json({"op": "ping"})
+        assert first["payload"]["op"] == "move"
+        assert first["payload"]["symbol_id"] == 7
+        # The sender is still usable after all the malformed input.
+        observer.send_json(_move(symbol_id=8))
         back = sender.receive_json()
-        assert back["payload"]["op"] == "ping"
+        assert back["payload"]["op"] == "move"
+        assert back["payload"]["symbol_id"] == 8
