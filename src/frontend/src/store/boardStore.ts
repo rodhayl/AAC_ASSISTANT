@@ -86,12 +86,17 @@ export const useBoardStore = create<BoardState>((set, get) => {
   fetchBoards: async (userId, name, forceRefresh = false, page = 1) => {
     const { lastFetchTime, boards, isFiltered, currentUserId } = get();
     const now = Date.now();
-    
+    // Whitespace-only names mean "no filter" in every search UI: the board
+    // name LIKE filter strips internally, and the server treats a present
+    // whitespace-only ``name`` as a no-match ([]). Omit the param entirely so
+    // typing spaces never blanks the list the way a real query would.
+    const trimmedName = name?.trim() || undefined;
+
     // For pagination (page > 1), we append. For page 1, we replace.
     const isPagination = page > 1;
 
       // Use cache if available and not expired (only if no name filter is applied and current list is not filtered AND we are on page 1)
-      if (!forceRefresh && !name && userId === currentUserId && !isFiltered && !isPagination && lastFetchTime && boards.length > 0 && (now - lastFetchTime) < CACHE_DURATION) {
+      if (!forceRefresh && !trimmedName && userId === currentUserId && !isFiltered && !isPagination && lastFetchTime && boards.length > 0 && (now - lastFetchTime) < CACHE_DURATION) {
         return;
       }
 
@@ -101,7 +106,7 @@ export const useBoardStore = create<BoardState>((set, get) => {
       try {
         const params: Record<string, string | number> = {};
         if (userId) params.user_id = userId;
-        if (name) params.name = name;
+        if (trimmedName) params.name = trimmedName;
         
         // Keep every request on the same fixed page boundary. A refresh must
         // replace page one rather than requesting a larger first page; otherwise
@@ -134,12 +139,12 @@ export const useBoardStore = create<BoardState>((set, get) => {
             return {
               boards: uniqueBoards,
               isListLoading: false,
-              isFiltered: !!name,
+              isFiltered: !!trimmedName,
               hasMore,
               page,
-              lastFetchTime: !name && page === 1 ? now : state.lastFetchTime,
+              lastFetchTime: !trimmedName && page === 1 ? now : state.lastFetchTime,
               currentUserId: userId,
-              currentSearchQuery: name
+              currentSearchQuery: trimmedName
             };
         });
       } catch (error: unknown) {

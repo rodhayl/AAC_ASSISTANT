@@ -125,9 +125,15 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
       // Use server-side search and walk every matching page (see
       // SEARCH_PAGE_SIZE). walkPages validates each page with Array.isArray so
       // a malformed payload can never be rendered as a result list.
-      const params: Record<string, string | number> = {
-        search: searchQuery // Pass search query to backend
-      };
+      const params: Record<string, string | number> = {};
+      // Trim and omit blank text: the backend strips the search pattern and
+      // treats a present whitespace-only ``search`` as a no-match ([]). When
+      // the user only typed spaces (with a category/language filter active)
+      // the category list must still show, never blank.
+      const trimmedQuery = searchQuery.trim();
+      if (trimmedQuery) {
+        params.search = trimmedQuery;
+      }
 
       if (searchLanguage && searchLanguage !== 'all') {
         params.language = searchLanguage;

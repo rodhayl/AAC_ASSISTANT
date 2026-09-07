@@ -125,6 +125,35 @@ describe('SymbolSearchModal request lifecycle', () => {
     }));
   });
 
+  it('never sends a whitespace-only query; with a category it fetches the category list', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: [] });
+    renderModal();
+    const input = screen.getByPlaceholderText('Search for a symbol...');
+
+    // Typing spaces with no filter clears results and makes NO request: the
+    // backend strips a present whitespace-only search into a no-match ([]).
+    fireEvent.change(input, { target: { value: '   ' } });
+    await act(() => vi.advanceTimersByTimeAsync(200));
+    await act(async () => { await Promise.resolve(); });
+    expect(api.get).not.toHaveBeenCalled();
+
+    // Picking a category while the query is still spaces must fetch the
+    // whole category, not a blanked result set.
+    const categoryTrigger = screen.getByRole('combobox', { name: 'All Categories' });
+    fireEvent.pointerDown(categoryTrigger, { button: 0, ctrlKey: false });
+    fireEvent.click(categoryTrigger);
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    const animalsOption = screen.getByRole('option', { name: 'Animals' });
+    fireEvent.pointerDown(animalsOption, { button: 0, ctrlKey: false });
+    fireEvent.click(animalsOption);
+    await act(() => vi.advanceTimersByTimeAsync(200));
+    await act(async () => { await Promise.resolve(); });
+    expect(api.get).toHaveBeenCalledTimes(1);
+    const lastParams = vi.mocked(api.get).mock.calls[0][1]?.params as Record<string, unknown>;
+    expect(lastParams.category).toBe('animals');
+    expect(lastParams.search).toBeUndefined();
+  });
+
   it('re-runs the search when the language filter changes', async () => {
     vi.mocked(api.get).mockResolvedValue({ data: [] });
     renderModal();

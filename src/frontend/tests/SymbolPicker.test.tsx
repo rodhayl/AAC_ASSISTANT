@@ -97,6 +97,38 @@ describe('SymbolPicker request ordering', () => {
     vi.restoreAllMocks();
   });
 
+  it('omits whitespace-only search text from the symbols request', async () => {
+    api.get.mockImplementation((url: string) => {
+      if (url === '/boards/symbols/categories') return Promise.resolve({ data: ['general'] });
+      if (url === '/boards/symbols') return Promise.resolve({ data: [symbol(1, 'Casa')] });
+      return Promise.resolve({ data: [] });
+    });
+
+    render(
+      <SymbolPicker
+        isOpen
+        onClose={vi.fn()}
+        onSelect={vi.fn()}
+        position={{ x: 0, y: 0 }}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText('Casa')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByPlaceholderText('symbolPicker.searchPlaceholder'), {
+      target: { value: '   ' },
+    });
+    // The backend strips a present whitespace-only search into a no-match
+    // ([]); the picker must omit the param so typing spaces keeps the full
+    // list instead of blanking it.
+    await waitFor(() => {
+      const calls = api.get.mock.calls.filter((c) => c[0] === '/boards/symbols');
+      expect(calls.length).toBeGreaterThan(1);
+      const lastParams = calls[calls.length - 1][1]?.params as Record<string, unknown>;
+      expect(lastParams.search).toBeUndefined();
+    });
+    expect(screen.getByText('Casa')).toBeInTheDocument();
+  });
+
   it('ignores a slow search response after a newer search completes', async () => {
     let resolveFirst: ((value: { data: unknown[] }) => void) | undefined;
     let symbolRequests = 0;

@@ -132,6 +132,24 @@ describe('Symbols page', () => {
     );
   });
 
+  it('treats a whitespace-only search as no filter (never sends it)', async () => {
+    const user = userEvent.setup();
+    render(<Symbols />);
+    await screen.findByText('Hello');
+
+    const searchInput = screen.getByPlaceholderText('searchSymbols');
+    await user.type(searchInput, '   ');
+    // The backend strips a present whitespace-only ``search`` into a
+    // no-match ([]); the page must omit the param so typing spaces keeps the
+    // full library instead of blanking it.
+    await waitFor(() =>
+      expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', {
+        params: { skip: 0, limit: 101 },
+      }),
+    );
+    expect(screen.getByText('Hello')).toBeInTheDocument();
+  });
+
   it('creates a symbol without an image', async () => {
     const user = userEvent.setup();
     render(<Symbols />);

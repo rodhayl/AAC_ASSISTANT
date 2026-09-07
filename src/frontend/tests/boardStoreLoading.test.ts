@@ -130,6 +130,21 @@ describe('board store loading state', () => {
     expect(api.get).toHaveBeenCalledTimes(4);
   });
 
+  it('omits a whitespace-only board name from the list request', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: [{ id: 1, name: 'Board' }] } as never);
+
+    await useBoardStore.getState().fetchBoards(10, '   ');
+
+    // The backend strips a present whitespace-only ``name`` into a no-match
+    // ([]); the store must omit the param so typing spaces keeps the full
+    // list and does not mark the list as filtered.
+    expect(api.get).toHaveBeenLastCalledWith('/boards/', {
+      params: { user_id: 10, skip: 0, limit: 100 },
+    });
+    expect(useBoardStore.getState().isFiltered).toBe(false);
+    expect(useBoardStore.getState().boards).toEqual([{ id: 1, name: 'Board' }]);
+  });
+
   it('does not reuse assigned-board results for a different student', async () => {
     vi.mocked(api.get).mockResolvedValue({ data: [{ id: 1 }] } as never);
 
