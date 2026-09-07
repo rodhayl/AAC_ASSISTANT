@@ -836,3 +836,62 @@ def test_collab_ws_non_403_access_error_propagates_as_1011(
     ):
         pass
     assert exc_info.value.code == 1011
+
+
+def test_collab_ws_content_gate_error_drops_message_fail_closed(
+    test_db_session, test_password, collab_client, monkeypatch
+):
+    """When the content-safety gate itself raises, the labeled message must be
+    DROPPED (fail closed): a label that could not be vetted must never be
+    fanned out to the room, and the connection stays usable."""
+    client = collab_client
+    token, url = _make_collab_room(client, test_password, "ws_gate_err")
+
+    import src.aac_app.services.content_safety as content_safety
+
+    def _explode(text, *args, **kwargs):
+        raise RuntimeError("gate down")
+
+    monkeypatch.setattr(content_safety, "check_text", _explode)
+
+    with (
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as ws_a,
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as ws_b,
+        finish_collab_connections(client, ws_a, ws_b),
+    ):
+        # A labeled message whose gate check raises must be dropped.
+        ws_a.send_json({"op": "add", "label": "casa"})
+        # The peer's first message must be the NEXT normal broadcast (the
+        # dropped label must never precede it).
+        ws_a.send_json({"op": "ping"})
+        first = ws_b.receive_json()
+        assert first["payload"]["op"] == "ping"
+        # Both sockets remain usable.
+        ws_b.send_json({"op": "ping"})
+        second = ws_a.receive_json()
+        assert second["payload"]["op"] == "ping"
+
+
+def test_collab_ws_broadcast_error_closes_sender_with_1011(
+    test_db_session, test_password, collab_client, monkeypatch
+):
+    """An unexpected error in the inner loop (e.g. a broadcast failure) closes
+    the socket with an explicit 1011 instead of leaving it half-open."""
+    from unittest.mock import AsyncMock
+
+    client = collab_client
+    token, url = _make_collab_room(client, test_password, "ws_bcast_err")
+
+    monkeypatch.setattr(
+        collab_module.manager,
+        "broadcast",
+        AsyncMock(side_effect=RuntimeError("broadcast exploded")),
+    )
+    with (
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as sender,
+        finish_collab_connections(client, sender),
+    ):
+        sender.send_json({"op": "move", "symbol_id": 1})
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            sender.receive_json()
+        assert exc_info.value.code == 1011

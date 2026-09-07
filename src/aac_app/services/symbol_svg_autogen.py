@@ -112,30 +112,24 @@ def _has_catalog_symbol(label: str) -> bool:
     background re-check must use the same label-only semantics, not narrower
     (label, language) matching that would regenerate an existing symbol.
     """
-    from src.aac_app.db import get_session
-    from src.aac_app.models import Symbol
-    from src.aac_app.services.runtime_translation import (
-        LIKE_ESCAPE,
-        escape_like_literal,
-    )
-
     # Canonical strip+casefold key shared with the catalog/import dedupe
     # paths (normalize_symbol_label in runtime_translation.py).
     normalized = normalize_symbol_label(label)
     if not normalized:
         return True  # Nothing to generate for empty labels.
-    # A label may legitimately contain LIKE metacharacters; the existence
-    # check must match them literally, otherwise a catalog "washXhands" would
-    # wrongly suppress generation for the distinct word "wash_hands" (and a
-    # ``%`` in the label would match any prefix).
-    literal = escape_like_literal(normalized)
+    # Use the canonical existence lookup instead of an ilike comparison:
+    # SQLite LIKE/ilike is ASCII-only, so ilike("strasse") would never match
+    # a stored "straße" even though the canonical dedupe treats them as one
+    # label — the background re-check would regenerate an existing symbol
+    # (duplicate rows + wasted LLM calls). find_symbol_by_normalized_label
+    # runs the Python casefold scan that matches what every other path
+    # considers equal, and matches labels containing LIKE metacharacters
+    # literally.
+    from src.aac_app.db import get_session
+    from src.aac_app.services.symbol_catalog import find_symbol_by_normalized_label
+
     with get_session() as session:
-        return (
-            session.query(Symbol.id)
-            .filter(Symbol.label.ilike(literal, escape=LIKE_ESCAPE))
-            .first()
-            is not None
-        )
+        return find_symbol_by_normalized_label(session, label) is not None
 
 
 def _persist_generated_symbol(label: str, language: str, svg_text: str) -> None:

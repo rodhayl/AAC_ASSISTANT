@@ -105,8 +105,15 @@ def escape_like_literal(text: str) -> str:
 
 
 def contains_like_pattern(text: str) -> str:
-    """Build a case-folded ``%...%`` substring pattern for a literal string."""
-    return f"%{escape_like_literal(text).lower()}%"
+    """Build a case-folded ``%...%`` substring pattern for a literal string.
+
+    Uses the canonical ``casefold()`` (not ``lower()``): the symbol dedupe
+    paths treat ``ß == ss`` and ``İ == i̇``, so a search built with plain
+    ``lower()`` would miss stored labels that casefold equal to the query.
+    (The LIKE comparison itself stays ASCII-faithful per character; this
+    folding only normalizes the query text before escaping.)
+    """
+    return f"%{escape_like_literal(text).casefold()}%"
 
 
 def _translate_worker(text: str, target_lang: str) -> str:

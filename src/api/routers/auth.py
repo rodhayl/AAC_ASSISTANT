@@ -193,6 +193,21 @@ def login_for_access_token(
     # own lockout bucket, multiplying the attempts before the 15-minute lock.
     username = normalize_username(form_data.username)
 
+    # Bound the unauthenticated path: a username longer than the User column
+    # (String(50)) can never match a real account, yet the raw login string
+    # is what the lockout and audit rows would store (their columns are only
+    # String(100)): accepting it lets an attacker rotating random long
+    # usernames grow failed_login_attempts/audit_log unbounded within the
+    # retention window (and beyond 100 chars it would 500 on Postgres inside
+    # this unauthenticated path). Return the same generic 401 without writing
+    # any row — there is no account to lock or audit meaningfully.
+    if not username or len(username) > 50:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=get_request_text(request, "errors.incorrectCredentials"),
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     # Check if account is locked
     is_locked, locked_until = lockout_service.is_locked(db, username)
     if is_locked:
@@ -206,6 +221,9 @@ def login_for_access_token(
         # Authentication failures intentionally persist their security events
         # even though the request raises and the dependency would otherwise
         # roll the transaction back.
+        # Bound the write-only audit table on this commit too: a failed-login
+        # flood must not outgrow the cap just because no success ever purges.
+        audit_service.purge_old_entries(db)
         db.commit()
 
         raise HTTPException(
@@ -227,6 +245,8 @@ def login_for_access_token(
             ip_address=client_ip,
             reason="User not found"
         )
+        # Purge before this failure commit (same bound as the success path).
+        audit_service.purge_old_entries(db)
         db.commit()
 
         raise HTTPException(
@@ -243,6 +263,8 @@ def login_for_access_token(
             ip_address=client_ip,
             reason="Account inactive"
         )
+        # Purge before this failure commit (same bound as the success path).
+        audit_service.purge_old_entries(db)
         db.commit()
 
         raise HTTPException(
@@ -276,6 +298,8 @@ def login_for_access_token(
             ip_address=client_ip,
             reason=reason
         )
+        # Purge before this failure commit (same bound as the success path).
+        audit_service.purge_old_entries(db)
         db.commit()
 
         if is_locked:
@@ -490,6 +514,15 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
     # Validate password strength using shared validation function
     accept_language = request.headers.get("accept-language")
     validate_password_strength(user.password, accept_language=accept_language)
+
+    # The public form has no confirmation field, so confirmation is compared
+    # only when a client supplies it: a supplied mismatch is a hard 400,
+    # never silently ignored.
+    if user.confirm_password is not None and user.password != user.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=get_request_text(request, "errors.auth.passwordsDoNotMatch"),
+        )
 
     # Validate email format if provided
     validate_email_format(user.email, accept_language=accept_language)

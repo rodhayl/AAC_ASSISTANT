@@ -7,6 +7,14 @@ from src.aac_app.models.achievement import ACHIEVEMENT_CRITERIA_TYPES
 
 PreferenceLanguage = Annotated[str, Field(min_length=2, max_length=10)]
 
+# Password length bound shared by every password-accepting schema. Argon2/
+# bcrypt hashing cost grows with the input, so an unbounded passphrase on the
+# rate-limited-but-unauthenticated register/login endpoints would be CPU/memory
+# amplification per request (a DoS bound, not a column bound: the stored hash
+# is what the String(255) column holds). 200 is far above any legitimate
+# passphrase and well below what should ever reach the hasher.
+PASSWORD_MAX_LENGTH = 200
+
 # Speaking-rate bounds for Kokoro TTS. Single backend home: the preference
 # update schema, the synthesize endpoint schema (providers.py) and the legacy
 # value clamp (auth_helpers.bounded_speed) all import these, so the three
@@ -90,18 +98,29 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str
-    confirm_password: str | None = None  # Required for admin-created users
-    created_by_teacher_id: int | None = None  # Auto-assign student to this teacher
+    """Public self-registration payload.
+
+    ``confirm_password`` is optional (the registration form has no
+    confirmation field) and, when supplied, is compared against ``password``
+    by the route (a mismatch is a hard 400, never a silent ignore).
+    ``created_by_teacher_id`` stays on the shared contract ON PURPOSE: a
+    shared registration client may carry the teacher's id, and public
+    registration deliberately ignores it (never auto-assigns, never grants a
+    privilege) — a contract pinned by tests/test_auth_auto_assignment.py.
+    """
+
+    password: str = Field(..., max_length=PASSWORD_MAX_LENGTH)
+    confirm_password: str | None = Field(None, max_length=PASSWORD_MAX_LENGTH)
+    created_by_teacher_id: int | None = None  # Ignored by public register
 
 
 class StaffStudentCreate(UserCreate):
     """Staff (teacher/admin) student-creation payload.
 
     Adds an optional per-student safety configuration applied atomically at
-    creation. Public registration intentionally keeps the plain UserCreate
-    contract so a self-registering student can never attach safety data to
-    their own account.
+    creation. ``created_by_teacher_id`` is read by the staff route (teachers
+    are always auto-assigned to themselves; an admin may name an active
+    teacher). Public registration intentionally ignores it.
     """
 
     # String annotation: StudentSafetyCreate is defined later in this module
@@ -113,18 +132,40 @@ class UserProfileUpdate(BaseModel):
     display_name: str | None = Field(None, max_length=100)
     email: EmailStr | None = None
 
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def _strip_display_name(cls, value: object) -> object:
+        # Strip BEFORE the max_length check, exactly like UserBase does for
+        # registration: a padded valid name ("  " + 99 chars + "  ") is the
+        # same human name that registration accepts and stores stripped, so
+        # the profile edit must not 422 it. A whitespace-only value still
+        # fails in the route's blank-name check (400), not here.
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
 
 class ChangePasswordRequest(BaseModel):
-    username: str
-    current_password: str
-    new_password: str
-    confirm_password: str
+    # Username bound mirrors the User column (String(50)) with a strip
+    # before-validator, like UserBase: an overlong or padded value cannot
+    # slip past into the lockout/audit storage of the password flow.
+    username: str = Field(..., min_length=1, max_length=50)
+    current_password: str = Field(..., max_length=PASSWORD_MAX_LENGTH)
+    new_password: str = Field(..., max_length=PASSWORD_MAX_LENGTH)
+    confirm_password: str = Field(..., max_length=PASSWORD_MAX_LENGTH)
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def _strip_username(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
 
 class ResetPasswordRequest(BaseModel):
     student_id: int | None = None
     user_id: int | None = None
-    new_password: str
+    new_password: str = Field(..., max_length=PASSWORD_MAX_LENGTH)
 
 
 class UserResponse(BaseModel):
@@ -179,8 +220,8 @@ class InitialAdminSetupRequest(BaseModel):
     username: str = Field(SETUP_DEFAULT_USERNAME, max_length=50)  # String(50)
     display_name: str = Field(SETUP_DEFAULT_DISPLAY_NAME, max_length=100)  # String(100)
     email: EmailStr | None = None
-    password: str
-    confirm_password: str
+    password: str = Field(..., max_length=PASSWORD_MAX_LENGTH)
+    confirm_password: str = Field(..., max_length=PASSWORD_MAX_LENGTH)
 
     @field_validator("username", "display_name", mode="before")
     @classmethod

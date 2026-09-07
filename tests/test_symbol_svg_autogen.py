@@ -610,3 +610,23 @@ def test_has_catalog_symbol_matches_labels_literally(test_db_session):
     # Exact literal labels still de-duplicate correctly.
     assert _has_catalog_symbol("washXhands") is True
     assert _has_catalog_symbol("50%") is True
+
+
+def test_has_catalog_symbol_recognizes_unicode_casefold_equivalents(
+    test_db_session,
+):
+    """The existence check must use the canonical casefold lookup, not an
+    ASCII-only ilike: a stored "straße" already covers "STRASSE" (the same
+    equivalence every other dedupe path uses), so the background re-check
+    must not regenerate it."""
+    from src.aac_app.services.symbol_svg_autogen import _has_catalog_symbol
+
+    test_db_session.add(
+        Symbol(label="straße", category="noun", language="de", is_builtin=True)
+    )
+    test_db_session.commit()
+
+    assert _has_catalog_symbol("STRASSE") is True
+    assert _has_catalog_symbol("strasse") is True
+    # A truly missing word still triggers generation.
+    assert _has_catalog_symbol("sonnenblume") is False

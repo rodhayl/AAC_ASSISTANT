@@ -7,20 +7,23 @@ from ..providers.base_provider import BaseLLMProvider
 from ..providers.groq_provider import GroqProvider
 from ..providers.lmstudio_provider import LMStudioProvider
 from ..providers.openrouter_provider import OpenRouterProvider
+from .runtime_translation import normalize_symbol_label
 
 # Matches fenced code blocks (``` or ```json) wrapping provider output.
 _CODE_BLOCK_PATTERN = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```")
-
-
-def _normalize_label(value: str) -> str:
-    return " ".join((value or "").strip().lower().split())
 
 
 def _dedupe_items_by_label(items: list[dict[str, str]]) -> list[dict[str, str]]:
     seen: set[str] = set()
     deduped: list[dict[str, str]] = []
     for item in items:
-        label = _normalize_label(str(item.get("label", "")))
+        # Canonical strip+casefold key shared with every other label dedupe
+        # path (ARASAAC import, board_ai get_or_create_symbol, prediction):
+        # ``straße`` and ``STRASSE`` are one item here exactly as they are
+        # everywhere else. Inner-whitespace collapse is intentionally NOT
+        # performed (double-space variants stay distinct — the safe
+        # direction: never false-dedupe two different labels).
+        label = normalize_symbol_label(str(item.get("label", "")))
         if not label or label in seen:
             continue
         seen.add(label)

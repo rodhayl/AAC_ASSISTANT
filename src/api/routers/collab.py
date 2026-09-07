@@ -296,9 +296,15 @@ async def board_channel(
                             )
                             continue
                     except Exception as exc:
+                        # Fail CLOSED: when the gate itself errors (DB down,
+                        # policy load failure, check_text throw) the message is
+                        # dropped like a blocked one — a label that could not
+                        # be vetted must never be fanned out to the room.
                         logger.warning(
-                            "Content gate unavailable for collab payload: {}", exc
+                            "Content gate unavailable; dropping collab payload: {}",
+                            exc,
                         )
+                        continue
 
                 message = {
                     "type": "board_change",
@@ -317,6 +323,11 @@ async def board_channel(
             pass
         except Exception as e:
             logger.error(f"WebSocket error in loop: {e}")
+            # Leave the transport with an explicit server-error close code so
+            # the peer does not hang on an abruptly dropped (half-open)
+            # connection; mirrors the outer handler's 1011.
+            with contextlib.suppress(Exception):
+                await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
         finally:
             manager.disconnect(board_id, websocket)
 

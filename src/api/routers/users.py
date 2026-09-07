@@ -71,6 +71,15 @@ def create_student(
     # Force user_type to student
     user.user_type = "student"
 
+    # The staff UI form has no confirmation field, so confirmation is
+    # compared only when a client supplies it: a supplied mismatch is a hard
+    # 400, never a silent ignore (mirrors admin_create_user and register).
+    if user.confirm_password is not None and user.password != user.confirm_password:
+        raise HTTPException(
+            status_code=400,
+            detail=get_request_text(request, "errors.auth.passwordsDoNotMatch", user=current_user),
+        )
+
     validate_password_strength(user.password, user=current_user)
     validate_email_format(user.email, user=current_user)
     # Store the canonical lowercase email (see normalize_email) so staff

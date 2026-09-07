@@ -308,7 +308,35 @@ def validate_preference_updates(
         )
     for key in ("dwell_time", "ignore_repeats", "hover_speak_delay_ms"):
         value = updates.get(key)
-        if value is not None and int(value) < 0:
+        if value is None:
+            continue
+        # bool is an int subclass, so int(True) == 1 would pass the sign
+        # check yet is meaningless for a timing preference; reject it with
+        # the same 400. Non-numeric JSON values (or direct helper callers)
+        # must be a clean 400 too, never an unhandled ValueError 500.
+        if isinstance(value, bool):
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(
+                    user=user,
+                    accept_language=accept_language,
+                    key="errors.preferences.mustBeNonNegative",
+                    field=key,
+                ),
+            )
+        try:
+            numeric = int(value)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(
+                    user=user,
+                    accept_language=accept_language,
+                    key="errors.preferences.mustBeNonNegative",
+                    field=key,
+                ),
+            ) from None
+        if numeric < 0:
             raise HTTPException(
                 status_code=400,
                 detail=get_text(

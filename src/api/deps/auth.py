@@ -200,6 +200,18 @@ def verify_student_access(
             detail=get_text(user=current_user, key="errors.guardian.onlyForStudents"),
         )
 
+    # A deactivated account is not operable: login is already blocked via
+    # validate_active_token, and letting a rostered teacher (or admin) keep
+    # driving guardian/learning/achievement flows for it would contradict the
+    # plain meaning of deactivation. Reported as 404 (the same "not found"
+    # as a missing student) so the existence of a deactivated account is not
+    # oracle-able through this helper.
+    if not student.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=get_text(user=current_user, key="errors.guardian.studentNotFound"),
+        )
+
     # Admin can access all students
     if current_user.user_type == "admin":
         return student
