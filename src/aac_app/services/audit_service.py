@@ -17,7 +17,9 @@ from src.aac_app.models.audit_log import AuditLog
 
 # The audit log is a write-mostly diagnostics table: no endpoint or script
 # reads it, so without retention it would grow monotonically forever. A
-# bounded purge runs on an existing cheap path (successful login); each pass
+# bounded purge runs on every login commit (success AND failure paths in
+# auth.py — the failure commits call it explicitly so a failed-login flood
+# cannot outgrow the cap just because no success ever purges); each pass
 # deletes at most AUDIT_LOG_PURGE_BATCH of the oldest rows beyond the cap so
 # the write cost per call stays small and the table converges to keeping the
 # newest AUDIT_LOG_MAX_ROWS entries.
@@ -118,32 +120,35 @@ class AuditLogService:
 
         Returns how many rows were deleted this call. The pass is capped by
         ``batch_limit`` so a single invocation never performs unbounded
-        deletion work; repeated calls (e.g. one per successful login) converge
-        to keeping only the newest ``max_rows`` entries. Rows are identified
-        by ascending id, which matches insert order for this append-only
-        table, so ``id <= newest_id - max_rows`` selects the oldest excess.
+        deletion work; repeated calls (e.g. one per login commit) converge to
+        keeping only the newest ``max_rows`` entries.
+
+        The cutoff is COUNT-based, not id-arithmetic: ``newest_id - max_rows``
+        under-deletes once ids have gaps (rollback gaps, deletes, Postgres
+        sequences), because row count is not ``max_id`` then — e.g. 6000 live
+        rows with ids up to 10 000 would compute a cutoff of 5000 and delete
+        only the ~3000 rows with id <= 5000, leaving the table over cap.
+        Instead the exact excess is computed from the live count and the
+        oldest ``min(excess, batch_limit)`` rows by ascending id (insert order
+        for this append-only table) are deleted, so the newest rows always
+        survive and repeated calls converge to exactly ``max_rows``.
         """
-        newest_id = db.query(func.max(AuditLog.id)).scalar()
-        if newest_id is None or newest_id <= max_rows:
+        total = db.query(func.count(AuditLog.id)).scalar() or 0
+        if total <= max_rows:
             return 0
-        cutoff = newest_id - max_rows
-        deleted = 0
-        while deleted < batch_limit:
-            ids = [
-                row[0]
-                for row in db.query(AuditLog.id)
-                .filter(AuditLog.id <= cutoff)
-                .order_by(AuditLog.id)
-                .limit(batch_limit - deleted)
-                .all()
-            ]
-            if not ids:
-                break
+        excess = min(total - max_rows, batch_limit)
+        ids = [
+            row[0]
+            for row in db.query(AuditLog.id)
+            .order_by(AuditLog.id.asc())
+            .limit(excess)
+            .all()
+        ]
+        if ids:
             db.query(AuditLog).filter(AuditLog.id.in_(ids)).delete(
                 synchronize_session=False
             )
-            deleted += len(ids)
-        return deleted
+        return len(ids)
 
     @staticmethod
     def log_login_failed(

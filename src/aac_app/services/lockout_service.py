@@ -8,9 +8,20 @@ Created: November 30, 2025
 from datetime import UTC, datetime, timedelta
 
 from loguru import logger
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.aac_app.models.audit_log import FailedLoginAttempt
+
+# The failed-login table is a write-mostly security table: nothing reads it
+# except the per-username lockout lookup, so without retention it would grow
+# monotonically forever under a flood of DISTINCT usernames (each within-
+# window username mints its own row; the per-IP limiter does not help across
+# IPs). Mirror the audit-log cap: on each failed attempt the oldest rows
+# beyond the cap are deleted in one bounded batch, so the table converges to
+# keeping the newest LOCKOUT_MAX_ROWS entries.
+LOCKOUT_MAX_ROWS = 5000
+LOCKOUT_PURGE_BATCH = 500
 
 
 class AccountLockoutService:
@@ -40,6 +51,37 @@ class AccountLockoutService:
         ).delete()
 
     @staticmethod
+    def _trim_to_cap(db: Session) -> None:
+        """Delete the oldest rows beyond LOCKOUT_MAX_ROWS in one bounded batch.
+
+        Called after the expiry purge on the failed-attempt path so a flood of
+        distinct usernames (the only growth mode: increments reuse a row,
+        first-attempt inserts add one) cannot outgrow the cap. Rows are
+        ordered by ascending (timestamp, id) — the same insertion order the
+        per-username lookups use — so the NEWEST rows (including the attempt
+        just recorded) always survive.
+        """
+        total = db.query(func.count(FailedLoginAttempt.id)).scalar() or 0
+        if total <= LOCKOUT_MAX_ROWS:
+            return
+        excess = min(total - LOCKOUT_MAX_ROWS, LOCKOUT_PURGE_BATCH)
+        if excess <= 0:
+            return
+        ids = [
+            row[0]
+            for row in db.query(FailedLoginAttempt.id)
+            .order_by(
+                FailedLoginAttempt.timestamp.asc(), FailedLoginAttempt.id.asc()
+            )
+            .limit(excess)
+            .all()
+        ]
+        if ids:
+            db.query(FailedLoginAttempt).filter(
+                FailedLoginAttempt.id.in_(ids)
+            ).delete(synchronize_session=False)
+
+    @staticmethod
     def record_failed_attempt(
         db: Session, username: str, ip_address: str | None = None
     ) -> tuple[bool, datetime | None, int]:
@@ -56,6 +98,9 @@ class AccountLockoutService:
         """
         now = datetime.now(UTC)
         AccountLockoutService._purge_expired_attempts(db, now)
+        # Bound the table on every failed attempt (the flood case never
+        # reaches a success that could reset/trim elsewhere).
+        AccountLockoutService._trim_to_cap(db)
         window_start = now - timedelta(
             minutes=AccountLockoutService.ATTEMPT_WINDOW_MINUTES
         )
@@ -116,6 +161,9 @@ class AccountLockoutService:
             )
             db.add(new_attempt)
             db.flush()
+            # The insert grew the table by one row: trim it back to the cap so
+            # a distinct-username flood cannot outgrow the bounded table.
+            AccountLockoutService._trim_to_cap(db)
 
             logger.info(
                 f"Recorded first failed login attempt for '{username}' from IP {ip_address}"

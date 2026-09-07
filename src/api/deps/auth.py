@@ -184,8 +184,26 @@ def verify_student_access(
 ) -> User:
     """Verify the student exists and the current user can access their profile.
 
-    Admins can access every student; teachers can access only students in their
-    explicit roster. A teacher with no roster has no student access.
+    Unified deactivation policy (D4):
+    * A deactivated account is not OPERABLE for rostered teachers — login is
+      already blocked via validate_active_token, and letting a teacher keep
+      driving guardian/learning/achievement flows for it would contradict the
+      plain meaning of deactivation. Reported as 404 (the same "not found" as
+      a missing student) so the existence of a deactivated account is not
+      oracle-able through a teacher-role helper.
+    * Admins CAN read (and thereby manage/reactivate) a deactivated account:
+      every admin user-management/guardian read returns the row so the admin
+      UI can show and restore it — an admin-only 404 would contradict the
+      admin GET /auth/users/{id} path (authorize_user_access), which returns
+      200 for the same row.
+    * NEW links to a deactivated account (board assignment, roster link,
+      password reset) are denied for EVERYONE in the creating routes (they
+      each re-check is_active after their own lookup); this helper governs
+      existing-link operations, which teachers may not drive on inactive
+      accounts while admins may.
+
+    Admins can access every student; teachers can access only students in
+    their explicit roster. A teacher with no roster has no student access.
     """
     student = db.query(User).filter_by(id=student_id).first()
     if not student:
@@ -200,21 +218,16 @@ def verify_student_access(
             detail=get_text(user=current_user, key="errors.guardian.onlyForStudents"),
         )
 
-    # A deactivated account is not operable: login is already blocked via
-    # validate_active_token, and letting a rostered teacher (or admin) keep
-    # driving guardian/learning/achievement flows for it would contradict the
-    # plain meaning of deactivation. Reported as 404 (the same "not found"
-    # as a missing student) so the existence of a deactivated account is not
-    # oracle-able through this helper.
+    # Admin can access all students (active or deactivated)
+    if current_user.user_type == "admin":
+        return student
+
+    # Non-admin callers (teachers): a deactivated account is not operable.
     if not student.is_active:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=get_text(user=current_user, key="errors.guardian.studentNotFound"),
         )
-
-    # Admin can access all students
-    if current_user.user_type == "admin":
-        return student
 
     # Check the requested student first; this is the common authorized path and
     # avoids counting the entire roster before doing the actual access lookup.

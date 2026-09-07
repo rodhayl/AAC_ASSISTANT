@@ -895,3 +895,39 @@ def test_collab_ws_broadcast_error_closes_sender_with_1011(
         with pytest.raises(WebSocketDisconnect) as exc_info:
             sender.receive_json()
         assert exc_info.value.code == 1011
+
+
+def test_collab_ws_non_dict_payload_is_dropped_and_sender_stays_usable(
+    test_db_session, test_password, collab_client
+):
+    """The fan-out contract is a JSON dict with a known shape: a list/str/int
+    payload must be dropped (never wrapped in a board_change and broadcast to
+    peers), and the sender's connection must survive the malformed input.
+    A dict payload (e.g. {"op": "add", "label": "casa"}) still broadcasts.
+    """
+    client = collab_client
+    token, url = _make_collab_room(client, test_password, "ws_shape")
+    with (
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as sender,
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as observer,
+        finish_collab_connections(client, sender, observer),
+    ):
+        # Non-dict payloads: the observer must NEVER receive them.
+        sender.send_json([1, 2, 3])
+        sender.send_json("hello")
+        sender.send_json(42)
+        # The peer's FIRST message must be the next real dict broadcast (the
+        # dropped garbage must never precede it).
+        sender.send_json({"op": "ping"})
+        first = observer.receive_json()
+        assert first["type"] == "board_change"
+        assert first["payload"]["op"] == "ping"
+        # Dict payloads with a label still pass the content gate and fan out.
+        sender.send_json({"op": "add", "label": "casa"})
+        second = observer.receive_json()
+        assert second["payload"]["op"] == "add"
+        assert second["payload"]["label"] == "casa"
+        # The sender is still usable after the malformed input.
+        observer.send_json({"op": "ping"})
+        back = sender.receive_json()
+        assert back["payload"]["op"] == "ping"

@@ -244,16 +244,31 @@ async def board_channel(
                     # Public-board read-only viewer: keep receiving, never emit.
                     continue
 
+                # The fan-out contract is a JSON dict with a known shape (the
+                # frontend collab sender emits {"op": ..., ...} dicts — see
+                # src/frontend/src/hooks/useBoardCollab.ts and the WS tests:
+                # op add/move/ping). A list/str/int payload would otherwise
+                # skip the content gate below (its label_candidate lookup is
+                # dict-only) and still be wrapped and broadcast to every peer
+                # as garbage. Drop non-dict payloads silently and keep the
+                # connection alive: a malformed client must not kill the room
+                # (mirrors the fail-closed gate philosophy — unshaped input is
+                # not fanned out).
+                if not isinstance(data, dict):
+                    logger.debug(
+                        "Dropping non-dict collab payload from {} ({} bytes)",
+                        user.username,
+                        payload_size,
+                    )
+                    continue
+
                 # Layer-1 content gate on board-change payloads that carry a
                 # free-text label (e.g. an added symbol). Blocked labels are
                 # never fanned out to the room; the REST admission gates
                 # (get_or_create_symbol) are the authoritative DB guard, this
                 # protects every connected peer from forged/malformed input.
-                label_candidate = (
-                    data.get("label")
-                    if isinstance(data, dict)
-                    else None
-                )
+                # (data is a dict here — the shape gate above ran first.)
+                label_candidate = data.get("label")
                 if isinstance(label_candidate, str) and label_candidate.strip():
                     try:
                         from src.aac_app.services.content_safety import (

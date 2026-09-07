@@ -310,11 +310,17 @@ def validate_preference_updates(
         value = updates.get(key)
         if value is None:
             continue
-        # bool is an int subclass, so int(True) == 1 would pass the sign
-        # check yet is meaningless for a timing preference; reject it with
-        # the same 400. Non-numeric JSON values (or direct helper callers)
-        # must be a clean 400 too, never an unhandled ValueError 500.
-        if isinstance(value, bool):
+        # Strict type gate: these keys map to Integer columns and the helper
+        # contract is "reject non-int", not "coerce toward int". int(3.7) == 3
+        # and int("100") == 100 would silently accept a float/string that the
+        # routes then store raw (setattr with the ORIGINAL value) into an
+        # Integer column. bool is an int subclass, so int(True) == 1 would
+        # pass a sign check yet is meaningless for a timing preference.
+        # Accept only a true int (excluding bool); anything else — float,
+        # numeric string, list, bool, garbage — is a clean 400, never a
+        # coercion and never an unhandled ValueError 500. HTTP coercion is
+        # pydantic's job (the update schemas type the fields as int | None).
+        if not isinstance(value, int) or isinstance(value, bool):
             raise HTTPException(
                 status_code=400,
                 detail=get_text(
@@ -324,19 +330,7 @@ def validate_preference_updates(
                     field=key,
                 ),
             )
-        try:
-            numeric = int(value)
-        except (TypeError, ValueError):
-            raise HTTPException(
-                status_code=400,
-                detail=get_text(
-                    user=user,
-                    accept_language=accept_language,
-                    key="errors.preferences.mustBeNonNegative",
-                    field=key,
-                ),
-            ) from None
-        if numeric < 0:
+        if value < 0:
             raise HTTPException(
                 status_code=400,
                 detail=get_text(

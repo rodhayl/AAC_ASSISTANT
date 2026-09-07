@@ -27,6 +27,14 @@ def _dedupe_items_by_label(items: list[dict[str, str]]) -> list[dict[str, str]]:
         if not label or label in seen:
             continue
         seen.add(label)
+        # Keep the SHALLOW COPY with the label stripped, matching what the
+        # symbol catalog stores: the key says " casa " == "casa", so the
+        # surviving item must not carry the padding downstream (every other
+        # write path stores stripped labels). Non-str labels cannot reach
+        # here (generate_board_items validates them), but stay defensive.
+        raw_label = item.get("label")
+        if isinstance(raw_label, str):
+            item = {**item, "label": raw_label.strip()}
         deduped.append(item)
     return deduped
 

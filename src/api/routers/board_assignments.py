@@ -79,6 +79,16 @@ def assign_board_to_student(
             status_code=400,
             detail=get_text(user=current_user, key="errors.boards.invalidStudent"),
         )
+    # Unified deactivation policy (D4): NEW board links to a deactivated
+    # account are denied for everyone. Teachers already 404 via
+    # verify_student_access above; this closes the admin path (which skips
+    # that helper and would otherwise assign to an account that cannot log
+    # in). Same 404 semantics as a missing student for non-oracleability.
+    if not student.is_active:
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.boards.invalidStudent"),
+        )
     existing = (
         db.query(BoardAssignment)
         .filter(

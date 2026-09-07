@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from src.aac_app.models import LearningMode, SavedTopic, StudentTeacher, User, UserSettings
 from src.aac_app.services.learning.service import LearningCompanionService
+from src.aac_app.services.runtime_translation import contains_like_pattern
 from src.api import schemas
 from src.api.deps import (
     STAFF_USER_TYPES,
@@ -278,11 +279,12 @@ def list_saved_topics(
     if search_text:
         # Creator matching uses the refreshed display name: resolve the
         # matching users first, then keep their topics alongside topic/board
-        # matches. Escaping % and _ keeps a query of "100%" literal.
-        escaped = (
-            search_text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        )
-        pattern = f"%{escaped}%"
+        # matches. The pattern comes from the repo's single LIKE-escaping
+        # home (contains_like_pattern in runtime_translation.py): it escapes
+        # % and _ so a query of "100%" stays literal, case-folds like every
+        # other search consumer, and strips (search_text is already stripped;
+        # the canonical helper makes the third call site unable to drift).
+        pattern = contains_like_pattern(search_text)
         matching_creator_ids = [
             row.id
             for row in db.query(User.id).filter(

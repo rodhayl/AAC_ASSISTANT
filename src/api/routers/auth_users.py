@@ -520,7 +520,13 @@ def update_user(
                 )
 
     # Mirror the profile-update contract: a blank display name is rejected so
-    # admins cannot accidentally leave a user with an invisible name.
+    # admins cannot accidentally leave a user with an invisible name, and the
+    # length is measured AFTER strip exactly like registration (UserBase
+    # max_length=100): a padded 99-char name with two spaces is the same
+    # human name registration accepts and stores stripped, so the admin edit
+    # must not reject it — while a genuinely overlong name must not reach the
+    # String(100) column (400, not a Postgres DataError 500 on flush; only
+    # IntegrityError is caught below).
     if "display_name" in payload:
         # The raw-dict contract accepts arbitrary JSON; a non-string here
         # (int/bool/list/...) must be a clean 400, never an AttributeError 500
@@ -536,6 +542,11 @@ def update_user(
             raise HTTPException(
                 status_code=400,
             detail=get_request_text(request, "errors.auth.displayNameRequired", user=current_user),
+            )
+        if len(display_name) > 100:
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(user=current_user, key="errors.auth.displayNameInvalid"),
             )
 
     new_email = payload.get("email")
@@ -558,6 +569,15 @@ def update_user(
         # must neither create such a twin nor allow stealing one's address.
         new_email = normalize_email(new_email)
         if new_email is not None:
+            # Bound the email to the User column (String(100)) after
+            # normalization, like every schema email field (max_length=100):
+            # an overlong address must be a clean 400 here, never a Postgres
+            # DataError 500 at flush (only IntegrityError is caught below).
+            if len(new_email) > 100:
+                raise HTTPException(
+                    status_code=400,
+                    detail=get_text(user=current_user, key="errors.auth.emailInvalid"),
+                )
             validate_email_format(
                 new_email,
                 user=current_user,

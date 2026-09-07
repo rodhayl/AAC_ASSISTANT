@@ -112,8 +112,14 @@ def contains_like_pattern(text: str) -> str:
     ``lower()`` would miss stored labels that casefold equal to the query.
     (The LIKE comparison itself stays ASCII-faithful per character; this
     folding only normalizes the query text before escaping.)
+
+    The text is stripped first, mirroring ``normalize_symbol_label``'s strip:
+    a search with accidental padding (copy/paste, mobile keyboards) must not
+    miss the exact label the catalog holds. After strip the empty string
+    yields ``"%%"`` — callers guard falsy search text before building a
+    pattern, so a whitespace-only query never reaches SQL as a match-all.
     """
-    return f"%{escape_like_literal(text).casefold()}%"
+    return f"%{escape_like_literal(text.strip()).casefold()}%"
 
 
 def _translate_worker(text: str, target_lang: str) -> str:

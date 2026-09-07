@@ -172,6 +172,15 @@ def assign_student(
             status_code=404,
             detail=get_text(user=current_user, key="errors.users.studentNotFound"),
         )
+    # Unified deactivation policy (D4): NEW roster links to a deactivated
+    # account are denied for everyone (an inactive student cannot log in, and
+    # linking them to a teacher would contradict deactivation). Same 404 as a
+    # missing student so the account's state stays non-oracleable.
+    if not student.is_active:
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.users.studentNotFound"),
+        )
 
     # Check if the teacher exists and is still active. Assigning students to
     # a deactivated teacher contradicts the deactivation (create_student and
@@ -293,6 +302,15 @@ def reset_user_password(
     # Fetch user
     user = db.query(User).filter(User.id == target_user_id).first()
     if not user:
+        raise HTTPException(
+            status_code=404,
+            detail=get_text(user=current_user, key="errors.userNotFound"),
+        )
+    # Unified deactivation policy (D4): password resets on a deactivated
+    # account are denied for everyone — resetting is pointless (the account
+    # cannot log in) and would keep an admin/teacher operating on a dead
+    # account. Same 404 as a missing user so the state stays non-oracleable.
+    if not user.is_active:
         raise HTTPException(
             status_code=404,
             detail=get_text(user=current_user, key="errors.userNotFound"),

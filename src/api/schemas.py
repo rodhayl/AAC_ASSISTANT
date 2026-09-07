@@ -74,27 +74,41 @@ class UserPreferencesUpdate(BaseModel):
     hover_speak_delay_ms: int | None = Field(None, le=5000)
 
 
+def _strip_or_passthrough(value: object) -> object:
+    """Strip a string value before pydantic's length constraints run.
+
+    Single home for the pre-check strip that every user-name field needs
+    (registration, profile update, change-password username): a padded value
+    (" admin1 ") is measured by its stripped length, so it can neither sneak
+    past the column-mirroring max_length nor create a look-alike row for the
+    exact username/display-name match other paths perform. Non-strings pass
+    through untouched (pydantic reports its own type error for them).
+    """
+    if isinstance(value, str):
+        return value.strip()
+    return value
+
+
 # --- User Schemas ---
 class UserBase(BaseModel):
     # Bounds mirror the User columns (username String(50), display_name
-    # String(100), see models/user.py) so oversized input fails clean 422
-    # validation instead of 500ing on Postgres. Both fields are stripped
-    # BEFORE the length check: a padded value (" admin1 ") can no longer create
-    # a look-alike row for the exact username match that login and the
-    # availability pre-check perform, and a whitespace-only value is rejected
-    # as empty. No charset regex is imposed (none exists elsewhere in the
-    # repo): normalization is strip + non-empty only.
+    # String(100), email String(100) — see models/user.py) so oversized
+    # input fails clean 422 validation instead of 500ing on Postgres. Both
+    # name fields are stripped BEFORE the length check: a padded value
+    # (" admin1 ") can no longer create a look-alike row for the exact
+    # username match that login and the availability pre-check perform, and
+    # a whitespace-only value is rejected as empty. No charset regex is
+    # imposed (none exists elsewhere in the repo): normalization is strip +
+    # non-empty only.
     username: str = Field(..., min_length=1, max_length=50)
-    email: EmailStr | None = None
+    email: EmailStr | None = Field(None, max_length=100)  # User.email String(100)
     display_name: str = Field(..., min_length=1, max_length=100)
     user_type: str = "student"
 
     @field_validator("username", "display_name", mode="before")
     @classmethod
     def _strip_user_name_fields(cls, value: object) -> object:
-        if isinstance(value, str):
-            return value.strip()
-        return value
+        return _strip_or_passthrough(value)
 
 
 class UserCreate(UserBase):
@@ -130,7 +144,7 @@ class StaffStudentCreate(UserCreate):
 
 class UserProfileUpdate(BaseModel):
     display_name: str | None = Field(None, max_length=100)
-    email: EmailStr | None = None
+    email: EmailStr | None = Field(None, max_length=100)  # User.email String(100)
 
     @field_validator("display_name", mode="before")
     @classmethod
@@ -140,9 +154,7 @@ class UserProfileUpdate(BaseModel):
         # same human name that registration accepts and stores stripped, so
         # the profile edit must not 422 it. A whitespace-only value still
         # fails in the route's blank-name check (400), not here.
-        if isinstance(value, str):
-            return value.strip()
-        return value
+        return _strip_or_passthrough(value)
 
 
 class ChangePasswordRequest(BaseModel):
@@ -157,9 +169,7 @@ class ChangePasswordRequest(BaseModel):
     @field_validator("username", mode="before")
     @classmethod
     def _strip_username(cls, value: object) -> object:
-        if isinstance(value, str):
-            return value.strip()
-        return value
+        return _strip_or_passthrough(value)
 
 
 class ResetPasswordRequest(BaseModel):
@@ -219,7 +229,7 @@ class InitialAdminSetupRequest(BaseModel):
 
     username: str = Field(SETUP_DEFAULT_USERNAME, max_length=50)  # String(50)
     display_name: str = Field(SETUP_DEFAULT_DISPLAY_NAME, max_length=100)  # String(100)
-    email: EmailStr | None = None
+    email: EmailStr | None = Field(None, max_length=100)  # User.email String(100)
     password: str = Field(..., max_length=PASSWORD_MAX_LENGTH)
     confirm_password: str = Field(..., max_length=PASSWORD_MAX_LENGTH)
 

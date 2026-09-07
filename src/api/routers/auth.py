@@ -208,6 +208,24 @@ def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # Bound the password too: OAuth2PasswordRequestForm (this route's only
+    # input contract) has no length limit and validate_password_strength only
+    # checks the minimum/complexity, so R4's schema-level PASSWORD_MAX_LENGTH
+    # never reached this hottest unauthenticated path — a 1-10 MB passphrase
+    # would otherwise reach Argon2/bcrypt (CPU/memory amplification per
+    # request) on every 10/min/IP login. Every account password is stored
+    # through a schema bounded to 200 chars, so no account can match an
+    # overlong password: return the same generic 401 WITHOUT calling
+    # verify_password_and_update and WITHOUT writing lockout/audit rows (a
+    # pre-bound legacy password longer than 200 is unreachable here and takes
+    # the reset flow).
+    if len(form_data.password or "") > schemas.PASSWORD_MAX_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=get_request_text(request, "errors.incorrectCredentials"),
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     # Check if account is locked
     is_locked, locked_until = lockout_service.is_locked(db, username)
     if is_locked:

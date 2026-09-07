@@ -113,8 +113,45 @@ def get_symbol_categories(
 
 
 def _apply_symbol_search(query, search: str, db: Session):
-    """Apply the existing keyword-plus-semantic symbol search to a query."""
+    """Apply the existing keyword-plus-semantic symbol search to a query.
+
+    The SQL LIKE clauses compare against ``func.lower(column)``, which is
+    ASCII-only on SQLite (and SQL lower() never folds ``ß``/``İ`` anywhere):
+    they cannot match what the Python dedupe paths call equal (a stored
+    ``straße`` never matches ``%ss%``). The canonical lookup
+    (find_symbol_by_normalized_label) resolves exactly those unicode-fold
+    cases in Python, so when it hits, its row id is OR-ed into the SQL filter
+    as a recall supplement — the LIKE/escaping stays the fast path and the
+    Python hit is the net for precisely the fold cases SQL cannot see.
+    """
     s = contains_like_pattern(search)
+
+    # Imported inside the function to avoid a cycle (symbol_catalog imports
+    # only models + runtime_translation; the pattern mirrors
+    # symbol_svg_autogen.py's inline import).
+    canonical_ids: list[int] = []
+    try:
+        from src.aac_app.services.symbol_catalog import (
+            find_symbol_by_normalized_label,
+        )
+
+        found = find_symbol_by_normalized_label(db, search)
+        if found is not None:
+            canonical_ids = [found.id]
+    except Exception as exc:
+        # The recall supplement must never break the search: a lookup error
+        # degrades to the SQL-only filter, exactly like the semantic branch.
+        logger.warning(f"Canonical search supplement failed: {exc}")
+
+    def _like_filter() -> list:
+        conditions: list = [
+            func.lower(Symbol.label).like(s, escape=LIKE_ESCAPE),
+            func.lower(Symbol.description).like(s, escape=LIKE_ESCAPE),
+            func.lower(Symbol.keywords).like(s, escape=LIKE_ESCAPE),
+        ]
+        if canonical_ids:
+            conditions.append(Symbol.id.in_(canonical_ids))
+        return conditions
 
     try:
         from src.api.deps import get_vector_store
@@ -140,36 +177,13 @@ def _apply_symbol_search(query, search: str, db: Session):
                     else_=len(semantic_ids),
                 )
                 return query.filter(
-                    or_(
-                        func.lower(Symbol.label).like(
-                            s, escape=LIKE_ESCAPE
-                        ),
-                        func.lower(Symbol.description).like(
-                            s, escape=LIKE_ESCAPE
-                        ),
-                        func.lower(Symbol.keywords).like(
-                            s, escape=LIKE_ESCAPE
-                        ),
-                        Symbol.id.in_(semantic_ids),
-                    )
+                    or_(*_like_filter(), Symbol.id.in_(semantic_ids))
                 ).order_by(semantic_order)
 
-        return query.filter(
-            or_(
-                func.lower(Symbol.label).like(s, escape=LIKE_ESCAPE),
-                func.lower(Symbol.description).like(s, escape=LIKE_ESCAPE),
-                func.lower(Symbol.keywords).like(s, escape=LIKE_ESCAPE),
-            )
-        )
+        return query.filter(or_(*_like_filter()))
     except Exception as e:
         logger.warning(f"Semantic search failed: {e}")
-        return query.filter(
-            or_(
-                func.lower(Symbol.label).like(s, escape=LIKE_ESCAPE),
-                func.lower(Symbol.description).like(s, escape=LIKE_ESCAPE),
-                func.lower(Symbol.keywords).like(s, escape=LIKE_ESCAPE),
-            )
-        )
+        return query.filter(or_(*_like_filter()))
 
 
 @router.get("/symbols", response_model=list[schemas.SymbolResponse])
