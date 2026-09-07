@@ -11,6 +11,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from ...models import LearningSession
 from ...services.achievement_system import AchievementSystem
+from ...services.runtime_translation import normalize_language_code
 from ...services.translation_service import TranslationService
 from .common import next_action_for
 from .history import append_history_entry
@@ -44,10 +45,16 @@ class ResponseProcessingMixin:
                 if not session:
                     return {"success": False, "error": "Session not found"}
 
+                # Get user language for localization. Resolved before the
+                # voice transcription so Whisper transcribes in the session
+                # owner's own language instead of the provider's English
+                # default (the app is Spanish-first).
+                user_lang = self._get_user_language(session.user_id, db)
+
                 # If voice response, transcribe with local Whisper
                 if is_voice and (audio_data or audio_path):
                     student_response = self._transcribe_voice_response(
-                        audio_data, audio_path
+                        audio_data, audio_path, language=user_lang
                     )
                 elif is_voice and not audio_data:
                     return {"success": False, "error": "No audio data received."}
@@ -106,8 +113,6 @@ class ResponseProcessingMixin:
                         failed_attempts += 1
                 attempt_number = failed_attempts + 1
 
-                # Get user language for localization
-                user_lang = self._get_user_language(session.user_id, db)
                 translation_service = TranslationService()
 
                 # --- Layered content safety (Layer 1): gate the student's
@@ -659,12 +664,19 @@ class ResponseProcessingMixin:
         }
 
     def _transcribe_voice_response(
-        self, audio_data: bytes | None, audio_path: str | None
+        self,
+        audio_data: bytes | None,
+        audio_path: str | None,
+        language: str = "es",
     ) -> str:
         """Transcribe an audio response with local Whisper.
 
-        Unavailable or invalid speech raises explicitly so callers cannot
-        mistake an untranscribed upload for a real student response.
+        ``language`` is the session owner's UI language (``_get_user_language``
+        resolves it before the call) and is normalized to its base code so a
+        Spanish-speaking child is transcribed in Spanish instead of the
+        provider's English default. Unavailable or invalid speech raises
+        explicitly so callers cannot mistake an untranscribed upload for a
+        real student response.
         """
         logger.info("Transcribing voice response")
         temp_path: str | None = None
@@ -679,8 +691,16 @@ class ResponseProcessingMixin:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
                     tmp.write(audio_data or b"")
                     temp_path = tmp.name
-            transcription = self.speech.recognize_from_file(temp_path)
-            logger.info(f"Voice transcription: {transcription}")
+            # Whisper takes a base language code ("es"/"en"); normalize the
+            # resolved locale and fall back defensively to the app default
+            # when the stored value is empty or malformed.
+            whisper_language = normalize_language_code(language) or "es"
+            transcription = self.speech.recognize_from_file(
+                temp_path, language=whisper_language
+            )
+            # Privacy: a child's spoken answer is never logged verbatim; only
+            # its length is recorded (the audio_path is logged by the provider).
+            logger.info("Voice transcription captured ({} chars)", len(transcription))
             if not transcription or not transcription.strip():
                 raise RuntimeError("Speech recognition returned no transcription")
             return transcription

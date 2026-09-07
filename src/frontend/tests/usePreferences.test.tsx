@@ -170,6 +170,54 @@ describe('usePreferences', () => {
     );
   });
 
+  it('normalizes a nullable PUT response before storing it in the auth store', async () => {
+    // The backend wire shape may carry persisted NULLs (ui_language) and a
+    // free-form tts_provider; the store must receive the typed UserPreferences
+    // shape so components never read null where the type promises a string.
+    get.mockResolvedValue({ data: {} });
+    put.mockResolvedValue({
+      data: {
+        tts_provider: 'kokoro',
+        tts_voice: 'Microsoft Sabina - Spanish (Mexico)',
+        tts_local_voice: 'ef_dora',
+        tts_local_speed: 1.1,
+        tts_language: null,
+        ui_language: null,
+        notifications_enabled: true,
+        voice_mode_enabled: false,
+        dark_mode: true,
+        dwell_time: 120,
+        ignore_repeats: 0,
+        high_contrast: false,
+        hover_speak_enabled: false,
+        hover_speak_delay_ms: 1000,
+        default_learning_mode: 'practice',
+      },
+    });
+    useAuthStore.setState({
+      user: {
+        id: 1,
+        username: 'student1',
+        display_name: 'Student',
+        user_type: 'student',
+        settings: { ui_language: 'es-ES' },
+      },
+    });
+
+    const { result } = renderHook(() => usePreferences());
+
+    await act(async () => {
+      await result.current.handleSavePreferences();
+    });
+
+    const settings = useAuthStore.getState().user?.settings;
+    expect(settings?.ui_language).toBe('es-ES');
+    expect(settings?.tts_language).toBe('en');
+    expect(settings?.tts_voice).toBe('Microsoft Sabina - Spanish (Mexico)');
+    expect(settings?.tts_provider).toBe('kokoro');
+    expect(settings?.voice_mode_enabled).toBe(false);
+  });
+
   it('discards a preferences response that resolves after the user switched accounts', async () => {
     // The first (slow) GET belongs to user A; the hook must ignore its result
     // once the authenticated user changes to B so stale settings never leak

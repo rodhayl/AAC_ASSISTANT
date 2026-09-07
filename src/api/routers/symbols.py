@@ -1,6 +1,15 @@
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from loguru import logger
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
@@ -167,10 +176,13 @@ def _apply_symbol_search(query, search: str, db: Session):
 def get_symbols(
     skip: int = Query(0, ge=0, le=100_000),
     limit: int = Query(100, ge=1, le=1000),
-    category: str = None,
-    search: str = None,
-    keywords: str = None,
-    language: str = None,
+    # The search/keywords strings feed LIKE patterns and category feeds an
+    # equality filter; each is bound (200, same as list_saved_topics) so a
+    # giant client string cannot build a pathological query.
+    category: str | None = Query(None, max_length=200),
+    search: str | None = Query(None, max_length=200),
+    keywords: str | None = Query(None, max_length=200),
+    language: str | None = Query(None, max_length=10),
     usage: str | None = Query(None, pattern="^(in_use|unused)$"),
     sort: str = Query("default", pattern="^(default|newest|oldest|alpha)$"),
     db: Session = Depends(get_db),
@@ -469,7 +481,12 @@ def update_symbol(
                 detail=get_text(user=current_user, key="errors.validation"),
             )
     if "language" in symbol_data:
-        symbol_data["language"] = normalize_language_code(symbol_data["language"])
+        # Mirror create_symbol/upload_symbol: garbage that cannot normalize
+        # (or an explicit null) stores the default "en" instead of a NULL
+        # that would vanish from exact-match language filters.
+        symbol_data["language"] = (
+            normalize_language_code(symbol_data["language"]) or "en"
+        )
     for key, value in symbol_data.items():
         setattr(db_symbol, key, value)
     db.commit()
@@ -651,7 +668,15 @@ def _update_single_symbol(
 @router.put("/{board_id}/symbols/batch")
 def batch_update_board_symbols(
     board_id: int,
-    updates: list[schemas.BoardSymbolBatchUpdate],
+    updates: list[schemas.BoardSymbolBatchUpdate] = Body(
+        ...,
+        # The board editor saves a whole placement batch in one request. Grid
+        # rows/cols cap at 100 each (10,000 theoretical cells), but a single
+        # save beyond a thousand placements is not a realistic flow and an
+        # unbounded list would let a client force one SELECT per entry (the
+        # loop below queries each placement individually).
+        max_length=1000,
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

@@ -66,6 +66,46 @@ def test_speech_transcription_imports_faster_whisper_on_first_use(monkeypatch) -
     assert provider.model is not None
 
 
+def test_speech_transcription_never_logs_audio_content(monkeypatch) -> None:
+    """A transcribed child answer must never appear verbatim in the logs."""
+    from loguru import logger
+
+    from src.aac_app.providers import local_speech_provider
+
+    class FakeSegment:
+        text = "confidential child utterance"
+
+    class FakeModel:
+        def transcribe(self, _path, **_kwargs):
+            return iter([FakeSegment()]), object()
+
+    fake_faster_whisper = types.SimpleNamespace(
+        WhisperModel=lambda *_args, **_kwargs: FakeModel()
+    )
+    monkeypatch.setitem(sys.modules, "faster_whisper", fake_faster_whisper)
+    monkeypatch.setattr(local_speech_provider, "FASTER_WHISPER_AVAILABLE", True)
+    monkeypatch.setattr(local_speech_provider, "faster_whisper", None)
+
+    captured: list[str] = []
+    sink_id = logger.add(
+        lambda message: captured.append(str(message)), level="INFO"
+    )
+    try:
+        provider = local_speech_provider.LocalSpeechProvider(lazy_load=True)
+        assert (
+            provider.recognize_from_file("sample.wav")
+            == "confidential child utterance"
+        )
+    finally:
+        logger.remove(sink_id)
+
+    log_text = "\n".join(captured)
+    assert "confidential child utterance" not in log_text
+    # Only the length is recorded, never the content.
+    assert "Transcription result captured" in log_text
+    assert "28 chars" in log_text
+
+
 def test_vector_store_imports_dependencies_on_first_search(monkeypatch, tmp_path) -> None:
     from src.aac_app.services import local_vector_store
 

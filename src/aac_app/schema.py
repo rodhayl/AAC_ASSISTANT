@@ -534,6 +534,89 @@ def _ensure_foreign_key_actions(engine: Engine) -> None:
                 )
 
 
+def _widen_legacy_tts_voice(engine: Engine) -> None:
+    """Widen a length-limited ``user_settings.tts_voice`` to VARCHAR(200).
+
+    Browser speechSynthesis voice pickers store full ``voiceURI`` strings
+    (e.g. ``"Microsoft Sabina - Spanish (Mexico)"``) in this column. The
+    original model declared ``String(20)`` which never matched the real-world
+    value size; SQLite does not enforce VARCHAR lengths so nothing was ever
+    truncated, but the declared type must agree with the widened model for
+    schema introspection and non-SQLite engines.
+
+    SQLite has no ``ALTER COLUMN TYPE``, so the column is widened by the
+    rename/add/copy/drop sequence. The migration is idempotent: it runs only
+    while the declared type still carries an explicit length limit and then
+    leaves the widened column alone on every later startup.
+    """
+    if engine.dialect.name != "sqlite":
+        return
+
+    with engine.begin() as connection:
+        table_row = connection.execute(
+            text(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='user_settings'"
+            )
+        ).fetchone()
+        if table_row is None:
+            return
+        info_rows = connection.execute(
+            text("PRAGMA table_info(user_settings)")
+        ).fetchall()
+        voice_column = next((row for row in info_rows if row[1] == "tts_voice"), None)
+        if voice_column is None:
+            return
+
+        # PRAGMA table_info columns: cid, name, type, notnull, dflt_value, pk
+        declared_type = (voice_column[2] or "").strip().upper()
+        # Only a declared length limit below the target needs widening; an
+        # untyped/TEXT column is already unbounded and VARCHAR(200)+ is done.
+        is_length_limited = (
+            declared_type.startswith("VARCHAR(")
+            or declared_type.startswith("CHAR(")
+            or declared_type.startswith("NVARCHAR(")
+        )
+        if not is_length_limited:
+            return
+        try:
+            limit = int(declared_type.split("(", 1)[1].rstrip(")"))
+        except (IndexError, ValueError):
+            return
+        if limit >= 200:
+            return
+
+        logger.info(
+            "DB upgrade: widening user_settings.tts_voice from {} to VARCHAR(200)",
+            declared_type,
+        )
+        # Recreate the column with the same nullability/default but the wider
+        # type, then copy existing values across and drop the narrow original.
+        notnull = " NOT NULL" if voice_column[3] else ""
+        default = f" DEFAULT {voice_column[4]}" if voice_column[4] is not None else ""
+        connection.execute(
+            text(
+                "ALTER TABLE user_settings "
+                "RENAME COLUMN tts_voice TO _tts_voice_legacy"
+            )
+        )
+        connection.execute(
+            text(
+                f"ALTER TABLE user_settings "
+                f"ADD COLUMN tts_voice VARCHAR(200){notnull}{default}"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE user_settings SET tts_voice = _tts_voice_legacy "
+                "WHERE _tts_voice_legacy IS NOT NULL"
+            )
+        )
+        connection.execute(
+            text("ALTER TABLE user_settings DROP COLUMN _tts_voice_legacy")
+        )
+
+
 def ensure(engine: Engine | None = None) -> Engine:
     """Create the current schema and apply all known legacy upgrades.
 
@@ -544,6 +627,7 @@ def ensure(engine: Engine | None = None) -> Engine:
     engine = engine or create_engine_instance()
     create_tables(engine)
     _ensure_sqlite_columns(engine)
+    _widen_legacy_tts_voice(engine)
     _ensure_foreign_key_actions(engine)
     _ensure_sqlite_indexes(engine)
     return engine

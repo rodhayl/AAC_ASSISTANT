@@ -29,9 +29,10 @@ vi.mock('react-i18next', () => ({
     t: (key: string, defaultValue?: string) => {
       const table: Record<string, string> = {
         'data.exportClient': 'Export My Data',
+        // Kept only so the negative assertion below can tell the old duplicate
+        // "server" button apart when the component regresses to two buttons.
         'data.exportServer': 'Server Export',
-        'data.exportClientTitle': 'Export client',
-        'data.exportServerTitle': 'Export server',
+        'data.exportClientTitle': 'Export data',
         'data.importBoards': 'Import Boards',
         'data.importSuccess': 'Import completed successfully',
         'data.importFailed': 'Import failed: ',
@@ -39,7 +40,6 @@ vi.mock('react-i18next', () => ({
         'data.invalidExportBoards': 'Invalid export: boards must be an array',
         'data.invalidExportAssignedBoards': 'Invalid export: assignedBoards must be an array',
         'data.invalidExportAchievements': 'Invalid export: achievements must be an array',
-        'data.exportServerFailed': 'Failed to export from server',
         'errors.unknownError': 'Unknown error',
       };
       return table[key] ?? defaultValue ?? key;
@@ -64,11 +64,17 @@ describe('DataManagementTab', () => {
     downloadJson.mockReset();
   });
 
-  it('exports the user data as a client-side JSON download', async () => {
+  it('exports the user data through the single export button', async () => {
     get.mockResolvedValue({ data: { boards: [] } });
     render(<DataManagementTab />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Export My Data' }));
+    // The old fake "client vs server" pair was collapsed into one export
+    // action: exactly one export button is rendered.
+    const exportButtons = screen.getAllByRole('button', { name: 'Export My Data' });
+    expect(exportButtons).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Server Export' })).toBeNull();
+
+    fireEvent.click(exportButtons[0]);
     expect(get).toHaveBeenCalledWith('/data/export', { params: { username: 'teacher1' } });
     await waitFor(() =>
       expect(downloadJson).toHaveBeenCalledWith({ boards: [] }, 'aac-data-teacher1.json'),

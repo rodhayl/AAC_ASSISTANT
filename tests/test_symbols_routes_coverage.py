@@ -139,6 +139,48 @@ def test_symbol_list_search_uses_semantic_results(
 
 
 @pytest.mark.usefixtures("setup_test_db")
+def test_symbol_list_rejects_oversized_search_params(symbols_setup, staff_headers):
+    """Giant search/keywords/category strings are rejected up front (422),
+    never compiled into pathological LIKE patterns or filters."""
+    for param in ("search", "keywords", "category"):
+        res = client.get(
+            "/api/boards/symbols", params={param: "x" * 201}, headers=staff_headers
+        )
+        assert res.status_code == 422, param
+        assert res.json()["detail"][0]["type"] == "string_too_long", param
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_update_symbol_normalizes_garbage_language_to_en(
+    symbols_setup, test_db_session, admin_user, staff_headers
+):
+    """Updating language with junk falls back to "en", never NULL.
+
+    create_symbol and upload_symbol force ``normalize(...) or "en"``, but
+    update_symbol used to store whatever normalize returned (None for
+    garbage like "%%"), leaving a NULL row that disappears from exact-match
+    language filters. Update must mirror the create path.
+    """
+    symbol = symbols_setup[0]  # language="en"
+    garbage = "%%"
+    res = client.put(
+        f"/api/boards/symbols/{symbol.id}",
+        json={"language": garbage},
+        headers=staff_headers,
+    )
+    assert res.status_code == 200
+    assert res.json()["language"] == "en"
+
+    stored = test_db_session.query(Symbol).filter(Symbol.id == symbol.id).one()
+    assert stored.language == "en"
+
+    # The row is still visible through the exact-match language filter.
+    listed = client.get("/api/boards/symbols?language=en", headers=staff_headers)
+    assert listed.status_code == 200
+    assert symbol.id in {s["id"] for s in listed.json()}
+
+
+@pytest.mark.usefixtures("setup_test_db")
 def test_update_symbol_sets_usage_flag(
     symbols_setup, test_db_session, admin_user, staff_headers
 ):
@@ -269,6 +311,34 @@ def test_batch_update_skips_entries_without_id(
     assert board_symbol.position_x == 2
     assert board_symbol.position_y == 1
     assert board_symbol.size == 2
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_batch_update_rejects_oversized_payload(
+    symbols_setup, test_db_session, admin_user, staff_headers
+):
+    """A giant batch is rejected up front instead of running one SELECT per
+    entry against thousands of placements."""
+    symbol = symbols_setup[0]
+    board = CommunicationBoard(user_id=admin_user.id, name="Batch Board")
+    test_db_session.add(board)
+    test_db_session.flush()
+    test_db_session.add(
+        BoardSymbol(board_id=board.id, symbol_id=symbol.id, position_x=0, position_y=0)
+    )
+    test_db_session.commit()
+
+    oversized = [
+        {"id": 1, "position_x": i % 10, "position_y": i % 10}
+        for i in range(1001)
+    ]
+    res = client.put(
+        f"/api/boards/{board.id}/symbols/batch",
+        json=oversized,
+        headers=staff_headers,
+    )
+    assert res.status_code == 422
+    assert res.json()["detail"][0]["type"] == "too_long"
 
 
 @pytest.mark.usefixtures("setup_test_db")

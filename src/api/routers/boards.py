@@ -31,7 +31,10 @@ def get_boards(
     skip: int = Query(0, ge=0, le=100_000),
     limit: int = Query(100, ge=1, le=1000),
     user_id: int | None = None,
-    name: str | None = None,
+    # The name feeds a LIKE pattern; bound it like the other LIKE-fed query
+    # params (200, same as list_saved_topics) so a giant string cannot build
+    # a pathological pattern.
+    name: str | None = Query(None, max_length=200),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):

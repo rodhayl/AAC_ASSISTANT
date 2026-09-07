@@ -1,4 +1,6 @@
+import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from src.aac_app.models import (
     Achievement,
@@ -552,3 +554,46 @@ def test_board_list_name_filter_matches_literally(
     assert search("d_g") == set()
     assert search("100%") == {"100%_sure", "100%"}
     assert search("dog") == {"dog house"}
+
+
+def test_board_list_rejects_oversized_name_search(setup_test_db, admin_token):
+    """A giant board-name search is rejected up front (422), never turned
+    into a pathological LIKE pattern."""
+    client = TestClient(app)
+    response = client.get(
+        "/api/boards/", params={"name": "x" * 201}, headers=_headers(admin_token)
+    )
+    assert response.status_code == 422
+
+
+def test_achievement_criteria_types_have_one_canonical_source(
+    setup_test_db, admin_user, admin_token
+):
+    """The schema Literal, the router response and the service stat-key map
+    must agree exactly: adding a type in one place without the others is a
+    silent break the tests catch."""
+    from src.aac_app.services import achievement_system as service_module
+    from src.api import schemas
+
+    # 1. The endpoint reports exactly the canonical tuple (same order).
+    client = TestClient(app)
+    headers = _headers(admin_token)
+    response = client.get("/api/achievements/criteria-types", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == list(schemas.ACHIEVEMENT_CRITERIA_TYPES)
+
+    # 2. The service's stat-key map keys are exactly the same set.
+    assert set(service_module._CRITERIA_STAT_KEYS) == set(
+        schemas.ACHIEVEMENT_CRITERIA_TYPES
+    )
+
+    # 3. The wire Literal accepts every canonical type and rejects others.
+    for criteria_type in schemas.ACHIEVEMENT_CRITERIA_TYPES:
+        model = schemas.AchievementCreate(
+            name="Criteria check", criteria_type=criteria_type
+        )
+        assert model.criteria_type == criteria_type
+    with pytest.raises(ValidationError):
+        schemas.AchievementCreate(
+            name="Criteria check", criteria_type="not_a_real_type"
+        )

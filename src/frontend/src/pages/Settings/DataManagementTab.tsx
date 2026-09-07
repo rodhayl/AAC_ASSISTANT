@@ -13,17 +13,17 @@ export function DataManagementTab() {
   const { t } = useTranslation('settings');
   const isTeacherOrAdmin = isStaffUser(user);
 
-  const handleExportData = async (serverExport = false) => {
+  // A single export path: the server assembles and returns the full data
+  // export, which the browser saves as a JSON file. (An earlier UI offered
+  // "client" vs "server" exports, but both buttons called the same endpoint
+  // and only differed by a filename suffix; the labels were removed.)
+  const handleExportData = async () => {
     if (!user) return;
     try {
       const response = await api.get('/data/export', { params: { username: user.username } });
-      const suffix = serverExport ? '-server' : '';
-      downloadJson(response.data, `aac-data-${user.username}${suffix}.json`);
+      downloadJson(response.data, `aac-data-${user.username}.json`);
     } catch (error) {
-      console.error(serverExport ? 'Server export failed:' : 'Failed to export data:', error);
-      if (serverExport) {
-        addToast(t('data.exportServerFailed'), 'error');
-      }
+      console.error('Failed to export data:', error);
     }
   };
 
@@ -58,25 +58,10 @@ export function DataManagementTab() {
         <p className="text-sm text-muted-foreground mt-1">{t('data.subtitle')}</p>
       </div>
       <div className="p-6 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Button
-            onClick={() => void handleExportData()}
-            title={t('data.exportClientTitle')}
-          >
-            <Download />
-            {t('data.exportClient')}
-          </Button>
-          {isTeacherOrAdmin && (
-            <button
-              onClick={() => void handleExportData(true)}
-              className="px-4 py-2 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 flex items-center justify-center"
-              title={t('data.exportServerTitle')}
-            >
-              <Download className="w-4 h-4 mr-2" />
-              {t('data.exportServer')}
-            </button>
-          )}
-        </div>
+        <Button onClick={() => void handleExportData()} title={t('data.exportClientTitle')}>
+          <Download />
+          {t('data.exportClient')}
+        </Button>
         {isTeacherOrAdmin && (
           <label className="flex items-center justify-center px-4 py-2 bg-muted text-foreground rounded-lg cursor-pointer hover:bg-muted w-full">
             <Upload className="w-4 h-4 mr-2" />

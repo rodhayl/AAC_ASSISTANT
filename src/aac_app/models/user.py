@@ -49,7 +49,10 @@ class UserSettings(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
     tts_provider = Column(String(20), default="kokoro", server_default="kokoro")
-    tts_voice = Column(String(20), default="default")
+    # Browser speechSynthesis voice URIs routinely exceed 20 chars (e.g.
+    # "Microsoft Sabina - Spanish (Mexico)"), so the column must be wide
+    # enough for the full URI the picker stores.
+    tts_voice = Column(String(200), default="default")
     tts_local_voice = Column(String(40), default="default", server_default="default")
     tts_local_speed = Column(Float, default=1.0, server_default="1.0")
     tts_language = Column(String(10), default="en")

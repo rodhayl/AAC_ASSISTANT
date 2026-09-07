@@ -220,6 +220,38 @@ class TestUserPreferences:
         )
         assert invalid.status_code == 400
 
+    def test_browser_voice_uri_round_trip_exceeds_old_20_char_cap(self, prefs_user, test_db_session):
+        """Real browser voiceURIs (35+ chars) save, persist, and re-read.
+
+        The settings column and schema used to cap tts_voice at 20 chars,
+        which rejected real picker URIs with a 422 (SQLite tolerated them in
+        the DB, Postgres would have failed). The widened column must round-trip
+        the full URI without truncation or validation errors.
+        """
+        user_id, username, user_type = prefs_user
+        headers = create_test_headers(user_id, username, user_type)
+        long_uri = "Microsoft Sabina - Spanish (Mexico)"
+        assert len(long_uri) > 20
+
+        response = client.put(
+            "/api/auth/preferences",
+            headers=headers,
+            json={"tts_provider": "browser", "tts_voice": long_uri},
+        )
+        assert response.status_code == 200
+        assert response.json()["tts_voice"] == long_uri
+
+        re_read = client.get("/api/auth/preferences", headers=headers)
+        assert re_read.status_code == 200
+        assert re_read.json()["tts_voice"] == long_uri
+
+        stored = (
+            test_db_session.query(UserSettings)
+            .filter(UserSettings.user_id == user_id)
+            .one()
+        )
+        assert stored.tts_voice == long_uri
+
     def test_update_preferences_rejects_out_of_range_speed(self, prefs_user):
         """Kokoro speed must stay within the range the synthesis endpoint accepts."""
         user_id, username, user_type = prefs_user

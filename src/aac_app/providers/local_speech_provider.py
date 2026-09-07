@@ -185,7 +185,10 @@ class LocalSpeechProvider:
                     for segment in segments
                     if getattr(segment, "text", "").strip()
                 ).strip()
-                logger.info("Transcription result: {}", text)
+                # Privacy: a child's spoken answer is never logged verbatim;
+                # only its length is recorded (the audio file path is already
+                # logged above and carries no transcript content).
+                logger.info("Transcription result captured: {} chars", len(text))
                 return text
             except Exception as exc:
                 logger.warning("Transcription failed for {}: {}", audio_path, exc)

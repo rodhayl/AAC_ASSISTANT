@@ -95,15 +95,7 @@ def get_criteria_types(
             status_code=403,
             detail=get_request_text(request, "errors.achievements.viewCriteriaTypes", user=current_user),
         )
-    return [
-        "sessions_completed",
-        "correct_answers",
-        "comprehension_score",
-        "vocabulary_size",
-        "topics_completed",
-        "consecutive_days",
-        "voice_usage",
-    ]
+    return list(schemas.ACHIEVEMENT_CRITERIA_TYPES)
 
 
 # ============== CRUD Endpoints for Achievement Management ==============

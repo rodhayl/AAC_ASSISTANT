@@ -488,7 +488,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
     cancelPendingAutoAsk();
     set({ isAskingQuestion: true, isLoading: true, error: null, currentQuestion: null, revealedAnswer: null });
     try {
-      const response = await api.post(`/learning/${sessionId}/ask`, null, {
+      const response = await api.post<QuestionResponse & WithProvider>(`/learning/${sessionId}/ask`, null, {
         params: { difficulty }
       });
       
@@ -507,10 +507,8 @@ export const useLearningStore = create<LearningState>((set, get) => {
           messages: [...prev, { role: 'assistant' as const, content: formatAssistantContent(question.question_text || tLearning('learning:questionReady'), showReasoning) }],
           isLoading: false
         });
-        const questionWithProvider = question as QuestionResponse & WithProvider
-        if (questionWithProvider.provider_used) {
-          const provider = questionWithProvider.provider_used
-          setProviderState(set, get, provider)
+        if (question.provider_used) {
+          setProviderState(set, get, question.provider_used)
         }
       } else {
         set({ error: question.error || 'Failed to get question', isLoading: false, currentQuestion: null, revealedAnswer: null });

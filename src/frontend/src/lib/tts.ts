@@ -128,6 +128,14 @@ async function refreshLocalTTSCapability() {
 // every lazy backend model in one batched request when the authenticated app
 // shell mounts so the first spoken message in a conversation (and the first
 // microphone answer) starts immediately.
+// The warm-up pre-loads up to three resident local models (Kokoro ~325MB,
+// faster-whisper, fastembed) in one batched request. lib/api.ts caps model-
+// loading endpoints at 120s (LLM generation); mirror that generous ceiling so
+// a black-hole server cannot leave the request hanging forever while a slow
+// (but working) machine is not spuriously cut off. The request is best-effort
+// fire-and-forget: on timeout the targets just report unavailable and the
+// first enqueue re-checks capability as usual.
+export const WARMUP_TIMEOUT_MS = 120_000
 let warmupStarted = false
 
 function setWarmupStatus(kind: 'tts' | 'speech' | 'vector', status: WarmupStatus) {
@@ -186,6 +194,7 @@ export function warmup() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ targets }),
+        signal: AbortSignal.timeout(WARMUP_TIMEOUT_MS),
       })
       let data: Record<string, { warmed?: boolean }> = {}
       try {

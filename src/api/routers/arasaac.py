@@ -1,7 +1,7 @@
 import contextlib
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel, Field
 from sqlalchemy import func
@@ -36,7 +36,13 @@ class ImportArasaacRequest(BaseModel):
 
 @router.get("/search", response_model=list[ArasaacSymbol])
 async def search_arasaac(
-    q: str, locale: str = "es", current_user: User = Depends(get_current_active_user)
+    # The query is interpolated into the upstream ARASAAC URL and its own
+    # search; bound like the other search params (200, same as
+    # list_saved_topics) so a giant string cannot build a pathological
+    # request or pattern.
+    q: str = Query(..., min_length=1, max_length=200),
+    locale: str = Query("es", min_length=2, max_length=10),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Search for symbols in the ARASAAC library.
@@ -93,6 +99,36 @@ async def import_arasaac_symbol(
         )
         if existing is not None:
             return existing
+
+        # Server-wide layer-1 admission gate, identical to
+        # board_ai.get_or_create_symbol: a brand-new symbol whose label the
+        # global policy blocks is never created through the ARASAAC import
+        # either (the payload label is arbitrary client text). It runs before
+        # the download so a blocked label never spends network or disk.
+        try:
+            from src.aac_app.services.content_safety import (
+                check_text as _check,
+            )
+            from src.aac_app.services.content_safety import (
+                load_global_policy as _load_policy,
+            )
+
+            if _check(_load_policy(), normalized_label).blocked:
+                logger.warning(
+                    f"Rejecting ARASAAC symbol label blocked by content policy: {normalized_label!r}"
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail=get_text(
+                        user=current_user,
+                        key="errors.safety.symbolBlocked",
+                        label=normalized_label,
+                    ),
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            logger.debug("Content-policy gate unavailable; skipping label check")
 
         # Download image
         image_content = await service.download_symbol_image(payload.arasaac_id)

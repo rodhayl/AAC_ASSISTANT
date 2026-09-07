@@ -17,6 +17,28 @@ export interface UserPreferences {
   default_learning_mode?: string;
 }
 
+// Wire shape of GET/PUT /auth/preferences (backend
+// UserPreferencesResponse). Persisted NULLs for the language fields and a
+// free-form tts_provider string are legal on the wire and are normalized
+// before they reach the typed UserPreferences stored in the auth store.
+export interface UserPreferencesResponse {
+  tts_provider: string;
+  tts_voice: string;
+  tts_local_voice: string;
+  tts_local_speed: number;
+  tts_language?: string | null;
+  ui_language?: string | null;
+  notifications_enabled: boolean;
+  voice_mode_enabled: boolean;
+  dark_mode: boolean;
+  dwell_time: number;
+  ignore_repeats: number;
+  high_contrast: boolean;
+  hover_speak_enabled: boolean;
+  hover_speak_delay_ms: number;
+  default_learning_mode?: string;
+}
+
 export interface User {
   id: number;
   username: string;

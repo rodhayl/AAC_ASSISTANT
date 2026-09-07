@@ -7,6 +7,7 @@ from sqlalchemy import case, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
+from ...api.schemas import ACHIEVEMENT_CRITERIA_TYPES
 from ..db import get_session
 from ..models import (
     Achievement,
@@ -32,6 +33,11 @@ _CRITERIA_STAT_KEYS = {
     "consecutive_days": "consecutive_days",
     "voice_usage": "voice_usage",
 }
+
+# Keys must cover exactly the canonical criteria-type list (schema Literal +
+# criteria-types endpoint); the import-time assert keeps the three copies in
+# lockstep.
+assert set(_CRITERIA_STAT_KEYS) == set(ACHIEVEMENT_CRITERIA_TYPES)
 
 
 class AchievementSystem:

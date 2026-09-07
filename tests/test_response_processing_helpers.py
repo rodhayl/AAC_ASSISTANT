@@ -8,7 +8,7 @@ fallback grading, Whisper voice transcription, and history persistence.
 from __future__ import annotations
 
 import os
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import ANY, AsyncMock, Mock
 
 import pytest
 from loguru import logger
@@ -149,6 +149,28 @@ def test_transcribe_voice_exception_fails_explicitly() -> None:
         harness._transcribe_voice_response(b"audio", None)
 
 
+def test_transcribe_voice_never_logs_spoken_content() -> None:
+    """A child's spoken answer must never appear verbatim in the logs."""
+    speech = Mock()
+    speech.is_available.return_value = True
+    speech.recognize_from_file.return_value = "confidential child utterance"
+    harness = _Harness(speech)
+
+    captured: list[str] = []
+    sink_id = logger.add(lambda message: captured.append(str(message)), level="INFO")
+    try:
+        transcription = harness._transcribe_voice_response(b"audio", None)
+    finally:
+        logger.remove(sink_id)
+
+    assert transcription == "confidential child utterance"
+    log_text = "\n".join(captured)
+    assert "confidential child utterance" not in log_text
+    # Only the length is recorded, never the content.
+    assert "Voice transcription captured" in log_text
+    assert "28 chars" in log_text
+
+
 def test_transcribe_voice_reuses_audio_path_without_cleanup() -> None:
     speech = Mock()
     speech.is_available.return_value = True
@@ -159,15 +181,62 @@ def test_transcribe_voice_reuses_audio_path_without_cleanup() -> None:
 
     assert transcription == "hola"
     # The streamed request temp file must NOT be removed by the helper.
-    speech.recognize_from_file.assert_called_once_with("/tmp/streamed.wav")
+    speech.recognize_from_file.assert_called_once_with(
+        "/tmp/streamed.wav", language="es"
+    )
+
+
+def test_transcribe_voice_passes_normalized_base_language() -> None:
+    """A regional locale (es-ES) is normalized to its Whisper base code (es)."""
+    speech = Mock()
+    speech.is_available.return_value = True
+    speech.recognize_from_file.return_value = "hola"
+    harness = _Harness(speech)
+
+    transcription = harness._transcribe_voice_response(
+        b"audio", None, language="es-ES"
+    )
+
+    assert transcription == "hola"
+    speech.recognize_from_file.assert_called_once_with(ANY, language="es")
+
+
+def test_transcribe_voice_passes_english_base_code_for_english_owner() -> None:
+    speech = Mock()
+    speech.is_available.return_value = True
+    speech.recognize_from_file.return_value = "hello"
+    harness = _Harness(speech)
+
+    transcription = harness._transcribe_voice_response(
+        b"audio", None, language="en-US"
+    )
+
+    assert transcription == "hello"
+    speech.recognize_from_file.assert_called_once_with(ANY, language="en")
+
+
+def test_transcribe_voice_falls_back_to_spanish_on_malformed_language() -> None:
+    """Garbage in the stored language must not reach the Whisper provider."""
+    speech = Mock()
+    speech.is_available.return_value = True
+    speech.recognize_from_file.return_value = "hola"
+    harness = _Harness(speech)
+
+    transcription = harness._transcribe_voice_response(
+        b"audio", None, language="%%"
+    )
+
+    assert transcription == "hola"
+    speech.recognize_from_file.assert_called_once_with(ANY, language="es")
 
 
 def test_transcribe_voice_writes_and_cleans_temporary_file() -> None:
     speech = Mock()
     speech.is_available.return_value = True
 
-    def _fake_recognize(path: str) -> str:
+    def _fake_recognize(path: str, language: str = "es") -> str:
         captured["path"] = path
+        captured["language"] = language
         return "hola"
 
     captured: dict[str, str] = {}
@@ -179,6 +248,7 @@ def test_transcribe_voice_writes_and_cleans_temporary_file() -> None:
     assert transcription == "hola"
     temp_path = captured["path"]
     assert temp_path.endswith(".wav")
+    assert captured["language"] == "es"
     assert not os.path.exists(temp_path), "temporary audio file must be cleaned up"
 
 
@@ -404,6 +474,89 @@ async def test_process_response_grades_incorrect_answer(
     test_db_session.refresh(session)
     assert session.questions_answered == 1
     assert session.correct_answers == 0
+
+
+@pytest.mark.anyio
+async def test_process_response_transcribes_voice_in_session_owners_language(
+    test_db_session: Session,
+) -> None:
+    """Whisper receives the session owner's base language, not English.
+
+    Spanish-first app: a user storing es-ES is transcribed with
+    language="es" and an en-US user with language="en", resolved from the
+    persisted settings the same way localization resolves them.
+    """
+    from src.aac_app.models import User, UserSettings
+
+    def _make_user(username: str) -> User:
+        user = User(
+            username=username,
+            display_name=username,
+            user_type="student",
+            password_hash="unused",
+            is_active=True,
+        )
+        test_db_session.add(user)
+        test_db_session.flush()
+        return user
+
+    es_user = _make_user("voice_es_user")
+    en_user = _make_user("voice_en_user")
+    test_db_session.add_all(
+        [
+            UserSettings(user_id=es_user.id, ui_language="es-ES"),
+            UserSettings(user_id=en_user.id, ui_language="en-US"),
+        ]
+    )
+    test_db_session.commit()
+
+    class _DbLanguageHarness(_FullHarness):
+        def _get_user_language(self, user_id: int, db=None) -> str:
+            settings = (
+                test_db_session.query(UserSettings)
+                .filter(UserSettings.user_id == user_id)
+                .first()
+            )
+            if settings and settings.ui_language:
+                return settings.ui_language
+            return "es"
+
+    llm = Mock()
+    llm.generate = AsyncMock(
+        return_value=(
+            '{"is_correct": false, "confidence": 0.4, '
+            '"encouraging_feedback": "Almost!"}'
+        )
+    )
+    speech = Mock()
+    speech.is_available.return_value = True
+    speech.recognize_from_file.return_value = "hola"
+    harness = _DbLanguageHarness(llm=llm, speech=speech)
+
+    es_session = _question_session(test_db_session, es_user.id)
+    await harness.process_response(
+        session_id=es_session.id,
+        student_response="",
+        is_voice=True,
+        audio_data=b"fake-wav-bytes",
+        db=test_db_session,
+    )
+    _, es_kwargs = speech.recognize_from_file.call_args
+    assert es_kwargs["language"] == "es"
+
+    speech.recognize_from_file.reset_mock()
+    speech.recognize_from_file.return_value = "hello"
+
+    en_session = _question_session(test_db_session, en_user.id)
+    await harness.process_response(
+        session_id=en_session.id,
+        student_response="",
+        is_voice=True,
+        audio_data=b"fake-wav-bytes",
+        db=test_db_session,
+    )
+    _, en_kwargs = speech.recognize_from_file.call_args
+    assert en_kwargs["language"] == "en"
 
 
 @pytest.mark.anyio

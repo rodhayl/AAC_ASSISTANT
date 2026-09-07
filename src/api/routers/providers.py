@@ -415,6 +415,11 @@ def install_tts_dependencies(
                 [uv_command, "sync", "--extra", "tts"],
                 cwd=config.PROJECT_ROOT,
                 check=True,
+                # The extra can pull hundreds of MB over a slow link; give it
+                # a generous ceiling so a hung network cannot block this admin
+                # endpoint forever (TimeoutExpired below maps to a localized
+                # 503 and the finally block releases the lock either way).
+                timeout=AUTO_INSTALL_TIMEOUT_SECONDS,
             )
             provider_deps.reset_providers()
 
@@ -428,6 +433,15 @@ def install_tts_dependencies(
             if not download_kokoro_model():
                 raise RuntimeError("Kokoro model download failed")
         reset_local_tts_provider(clear_import_state=True)
+    except subprocess.TimeoutExpired as exc:
+        logger.error(
+            "TTS dependency installation timed out after {}s",
+            AUTO_INSTALL_TIMEOUT_SECONDS,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=get_text(user=current_user, key="errors.providers.ttsInstallFailed"),
+        ) from exc
     except subprocess.CalledProcessError as exc:
         logger.error("TTS dependency installation failed with exit code {}", exc.returncode)
         raise HTTPException(
@@ -503,9 +517,21 @@ def install_voice_dependencies(
             [uv_command, "sync", "--extra", "voice"],
             cwd=config.PROJECT_ROOT,
             check=True,
+            # Same generous ceiling as the TTS installer: hundreds of MB over
+            # a slow link; a hung network must not block the worker forever.
+            timeout=AUTO_INSTALL_TIMEOUT_SECONDS,
         )
         refresh_faster_whisper_availability()
         provider_deps.reset_providers()
+    except subprocess.TimeoutExpired as exc:
+        logger.error(
+            "Automatic voice dependency installation timed out after {}s",
+            AUTO_INSTALL_TIMEOUT_SECONDS,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=get_text(user=current_user, key="errors.providers.voiceInstallFailed"),
+        ) from exc
     except subprocess.CalledProcessError as exc:
         logger.error(
             "Automatic voice dependency installation failed with exit code {}",

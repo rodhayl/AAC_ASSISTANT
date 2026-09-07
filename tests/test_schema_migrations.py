@@ -425,3 +425,64 @@ def test_schema_ensure_dedup_is_idempotent_across_restarts(tmp_path):
         "ix_student_teachers_teacher_student",
     } <= roster_indexes
     restarted.dispose()
+
+
+def test_schema_ensure_widens_legacy_tts_voice_column():
+    """Legacy VARCHAR(20) tts_voice widens to VARCHAR(200) without data loss."""
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE users ("
+                "id INTEGER PRIMARY KEY, username VARCHAR(50), "
+                "password_hash VARCHAR(255), display_name VARCHAR(100), "
+                "user_type VARCHAR(20), is_active BOOLEAN)"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE TABLE user_settings ("
+                "id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL UNIQUE, "
+                "tts_voice VARCHAR(20), tts_language VARCHAR(10), "
+                "created_at DATETIME, updated_at DATETIME, "
+                "FOREIGN KEY(user_id) REFERENCES users(id))"
+            )
+        )
+        long_uri = "Microsoft Sabina - Spanish (Mexico)"
+        assert len(long_uri) > 20
+        connection.execute(
+            text(
+                "INSERT INTO users (id, username, password_hash, display_name) "
+                "VALUES (1, 'u1', 'h', 'U1')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO user_settings (id, user_id, tts_voice) "
+                "VALUES (1, 1, :uri)"
+            ),
+            {"uri": long_uri},
+        )
+
+    schema.ensure(engine)
+
+    with engine.connect() as connection:
+        columns = {
+            row[1]: row[2]
+            for row in connection.execute(text("PRAGMA table_info(user_settings)"))
+        }
+        assert columns["tts_voice"] == "VARCHAR(200)"
+        stored = connection.execute(
+            text("SELECT tts_voice FROM user_settings WHERE user_id = 1")
+        ).scalar_one()
+        assert stored == long_uri
+
+    # A second ensure is the restart path and must remain a no-op.
+    schema.ensure(engine)
+    with engine.connect() as connection:
+        columns = {
+            row[1]: row[2]
+            for row in connection.execute(text("PRAGMA table_info(user_settings)"))
+        }
+        assert columns["tts_voice"] == "VARCHAR(200)"
+    engine.dispose()

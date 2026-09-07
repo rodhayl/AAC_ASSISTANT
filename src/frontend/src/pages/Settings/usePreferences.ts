@@ -8,7 +8,7 @@ import { normalizeUILanguage } from '../../lib/utils';
 import { useToastStore } from '../../store/toastStore';
 import { useTranslation } from 'react-i18next';
 import type { Preferences } from './types';
-import type { UserPreferences } from '../../types';
+import type { UserPreferences, UserPreferencesResponse } from '../../types';
 
 const defaultPreferences = (user: ReturnType<typeof useAuthStore.getState>['user']): Preferences => ({
   tts_provider: user?.settings?.tts_provider === 'browser' ? 'browser' : 'kokoro',
@@ -61,7 +61,7 @@ export function usePreferences() {
 
     const loadPreferences = async () => {
       try {
-        const res = await api.get('/auth/preferences');
+        const res = await api.get<UserPreferencesResponse>('/auth/preferences');
         // Do not clobber edits made before the initial hydration resolved, or
         // apply a response belonging to a previous authenticated user.
         if (
@@ -141,16 +141,34 @@ export function usePreferences() {
     [availableVoices, preferences.ui_language],
   );
 
-  const updateAuthSettings = useCallback((data: Record<string, unknown>) => {
+  const updateAuthSettings = useCallback((data: UserPreferencesResponse) => {
     useAuthStore.setState((state) => {
       if (!state.user) return state;
+      // The wire response may carry persisted NULLs (ui_language/tts_language)
+      // and a free-form tts_provider string; normalize each field into the
+      // typed UserPreferences contract the auth store exposes so no component
+      // ever reads null where the type promises a string.
+      const settings: UserPreferences = {
+        tts_provider: data.tts_provider === 'browser' ? 'browser' : 'kokoro',
+        tts_voice: data.tts_voice || 'default',
+        tts_local_voice: data.tts_local_voice || 'default',
+        tts_local_speed: data.tts_local_speed ?? 1.0,
+        tts_language: data.tts_language ?? 'en',
+        ui_language: normalizeUILanguage(data.ui_language),
+        notifications_enabled: data.notifications_enabled ?? true,
+        voice_mode_enabled: data.voice_mode_enabled ?? true,
+        dark_mode: data.dark_mode ?? false,
+        dwell_time: data.dwell_time ?? 0,
+        ignore_repeats: data.ignore_repeats ?? 0,
+        high_contrast: data.high_contrast ?? false,
+        hover_speak_enabled: data.hover_speak_enabled ?? false,
+        hover_speak_delay_ms: data.hover_speak_delay_ms ?? 1000,
+        default_learning_mode: data.default_learning_mode || 'practice',
+      };
       return {
         user: {
           ...state.user,
-          settings: {
-            ...(state.user.settings || {}),
-            ...data,
-          } as UserPreferences,
+          settings,
         },
       };
     });
@@ -176,7 +194,7 @@ export function usePreferences() {
     setPrefsSaveSuccess(false);
     setPrefsSaveError(null);
     try {
-      const res = await api.put('/auth/preferences', {
+      const res = await api.put<UserPreferencesResponse>('/auth/preferences', {
         default_learning_mode: defaultModeKey,
       });
       if (!isCurrentRequest()) return;
@@ -210,7 +228,7 @@ export function usePreferences() {
     setPrefsSaveError(null);
     try {
       if (user) {
-        const res = await api.put('/auth/preferences', preferences);
+        const res = await api.put<UserPreferencesResponse>('/auth/preferences', preferences);
         if (!isCurrentRequest()) return;
         const { setDarkMode, setHighContrast } = useThemeStore.getState();
         const { setLocale } = useLocaleStore.getState();

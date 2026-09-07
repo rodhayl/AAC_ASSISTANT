@@ -35,7 +35,9 @@ class UserPreferencesResponse(BaseModel):
 
 class UserPreferencesUpdate(BaseModel):
     tts_provider: Literal["browser", "kokoro"] | None = None
-    tts_voice: str | None = Field(None, max_length=20)  # UserSettings.tts_voice String(20)
+    # Browser voiceURIs ("Microsoft Sabina - Spanish (Mexico)") exceed any
+    # short cap; mirror the widened UserSettings.tts_voice String(200) column.
+    tts_voice: str | None = Field(None, max_length=200)
     tts_local_voice: str | None = Field(None, max_length=40)  # String(40): verified aligned
     # Same bounds as the Kokoro synthesis endpoint (providers.py).
     tts_local_speed: float | None = Field(None, ge=TTS_SPEED_MIN, le=TTS_SPEED_MAX)
@@ -531,7 +533,11 @@ class AchievementResponse(AchievementBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-AchievementCriteriaType = Literal[
+# Single canonical source of the automatic achievement criteria types. The
+# criteria-types endpoint (achievements.py), the achievement service's
+# stat-key map and this wire Literal all derive from it, so adding a type in
+# one place cannot silently break the other two.
+ACHIEVEMENT_CRITERIA_TYPES = (
     "sessions_completed",
     "correct_answers",
     "comprehension_score",
@@ -539,7 +545,9 @@ AchievementCriteriaType = Literal[
     "topics_completed",
     "consecutive_days",
     "voice_usage",
-]
+)
+
+AchievementCriteriaType = Literal[*ACHIEVEMENT_CRITERIA_TYPES]
 
 
 class AchievementCreate(BaseModel):

@@ -785,4 +785,57 @@ describe('tts queue local neural path', () => {
     expect(useTTSStore.getState().speechWarmupStatus).toBe('ready')
     expect(useTTSStore.getState().vectorWarmupStatus).toBe('ready')
   })
+
+  it('bounds the warmup request with an AbortSignal timeout instead of hanging forever', async () => {
+    // A silent (black-hole) server must not keep the fire-and-forget warm-up
+    // pending indefinitely: the batch request carries an AbortSignal.timeout
+    // and aborting it falls through to the 'unavailable' catch path.
+    const controller = new AbortController()
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, 'timeout')
+      .mockImplementation(() => controller.signal)
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/providers/voice-status')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ tts_local: { available: true } }),
+        })
+      }
+      if (url.includes('/providers/warmup')) {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'))
+          })
+        })
+      }
+      return Promise.resolve({ ok: true, blob: async () => new Blob(['fake-wav']) })
+    })
+    const { warmup, WARMUP_TIMEOUT_MS } = await import('../src/lib/tts')
+    const { useTTSStore } = await import('../src/store/ttsStore')
+    useTTSStore.getState().setTTSProvider('kokoro')
+
+    warmup()
+    await flush()
+    await flush()
+
+    const warmupCall = fetchMock.mock.calls.find(
+      (call) => String(call[0]).includes('/providers/warmup'),
+    )
+    const init = warmupCall?.[1] as { signal?: AbortSignal } | undefined
+    // The request runs against a silent server but stays pending, not hung on
+    // a bare fetch: it exposes the module's bounded deadline as its signal.
+    expect(init?.signal).toBe(controller.signal)
+    expect(timeoutSpy).toHaveBeenCalledWith(WARMUP_TIMEOUT_MS)
+    expect(init?.signal?.aborted).toBe(false)
+
+    controller.abort()
+    await flush()
+
+    // The abort releases the pending request through the catch path, marking
+    // the targets unavailable (a later enqueue re-checks capability).
+    expect(useTTSStore.getState().ttsWarmupStatus).toBe('unavailable')
+    expect(useTTSStore.getState().speechWarmupStatus).toBe('unavailable')
+    expect(useTTSStore.getState().vectorWarmupStatus).toBe('unavailable')
+    timeoutSpy.mockRestore()
+  })
 })

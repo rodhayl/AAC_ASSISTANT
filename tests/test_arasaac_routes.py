@@ -277,3 +277,155 @@ def test_arasaac_import_normalizes_ui_language_to_base_code(
     )
 
     assert result.language == "es"
+
+
+def test_arasaac_search_rejects_oversized_query(test_db_session, client):
+    """A giant ARASAAC search query is rejected by validation (422) before
+    any upstream network request is built."""
+    from tests.auth_helpers import create_test_headers
+
+    user = User(
+        username="arasaac_query_user",
+        display_name="ARASAAC Query User",
+        user_type="teacher",
+        password_hash="unused",
+        is_active=True,
+    )
+    test_db_session.add(user)
+    test_db_session.commit()
+    test_db_session.refresh(user)
+    headers = create_test_headers(user.id, user.username, "teacher")
+
+    response = client.get(
+        "/api/arasaac/search", params={"q": "x" * 201}, headers=headers
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["type"] == "string_too_long"
+
+
+def test_arasaac_import_rejects_label_blocked_by_global_policy(
+    test_db_session, monkeypatch, tmp_path
+):
+    """A client-supplied label the global policy blocks is never imported.
+
+    The ARASAAC import must apply the same layer-1 admission gate as
+    board_ai.get_or_create_symbol (400 errors.safety.symbolBlocked) and must
+    run it BEFORE the image download: a blocked label spends no network and
+    leaves no row or file behind.
+    """
+    from src.aac_app.services import content_safety as safety_module
+
+    user = User(
+        username="arasaac_blocked_user",
+        display_name="ARASAAC Blocked User",
+        user_type="student",
+        password_hash="unused",
+        is_active=True,
+    )
+    test_db_session.add(user)
+    test_db_session.commit()
+    test_db_session.refresh(user)
+
+    checked_labels = []
+
+    class BlockingVerdict:
+        blocked = True
+
+    class FakePolicy:
+        pass
+
+    monkeypatch.setattr(
+        safety_module, "load_global_policy", lambda: FakePolicy()
+    )
+    monkeypatch.setattr(
+        safety_module,
+        "check_text",
+        lambda _policy, text: checked_labels.append(text) or BlockingVerdict(),
+    )
+    monkeypatch.setattr(arasaac, "get_text", lambda **_kwargs: "blocked label")
+    monkeypatch.setattr(config, "UPLOADS_DIR", tmp_path)
+
+    class FakeArasaacService:
+        async def download_symbol_image(self, arasaac_id: int) -> bytes:
+            raise AssertionError(
+                "network must not be spent downloading a blocked label"
+            )
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(arasaac, "ArasaacService", FakeArasaacService)
+
+    payload = arasaac.ImportArasaacRequest(
+        arasaac_id=1, label="badword", category="ARASAAC"
+    )
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            arasaac.import_arasaac_symbol(
+                payload,
+                db=test_db_session,
+                current_user=user,
+            )
+        )
+
+    assert error.value.status_code == 400
+    assert error.value.detail == "blocked label"
+    assert checked_labels == ["badword"]
+    assert test_db_session.query(Symbol).filter(Symbol.label == "badword").count() == 0
+    assert list((tmp_path / "symbols").glob("*.png")) == []
+
+def test_arasaac_import_allows_label_that_passes_global_policy(
+    test_db_session, monkeypatch, tmp_path
+):
+    """A label that passes the policy gate still imports normally (201 path)."""
+    from src.aac_app.services import content_safety as safety_module
+
+    user = User(
+        username="arasaac_clean_user",
+        display_name="ARASAAC Clean User",
+        user_type="student",
+        password_hash="unused",
+        is_active=True,
+    )
+    test_db_session.add(user)
+    test_db_session.commit()
+    test_db_session.refresh(user)
+
+    class PassingVerdict:
+        blocked = False
+
+    monkeypatch.setattr(
+        safety_module, "load_global_policy", lambda: object()
+    )
+    monkeypatch.setattr(
+        safety_module,
+        "check_text",
+        lambda _policy, _text: PassingVerdict(),
+    )
+    monkeypatch.setattr(arasaac, "index_symbol", lambda _symbol: None)
+    monkeypatch.setattr(config, "UPLOADS_DIR", tmp_path)
+
+    class FakeArasaacService:
+        async def download_symbol_image(self, arasaac_id: int) -> bytes:
+            assert arasaac_id == 2
+            return b"image-bytes"
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(arasaac, "ArasaacService", FakeArasaacService)
+
+    payload = arasaac.ImportArasaacRequest(
+        arasaac_id=2, label="pan", category="ARASAAC"
+    )
+    result = asyncio.run(
+        arasaac.import_arasaac_symbol(
+            payload,
+            db=test_db_session,
+            current_user=user,
+        )
+    )
+
+    assert result.label == "pan"
+    assert test_db_session.query(Symbol).filter(Symbol.label == "pan").count() == 1
+    assert list((tmp_path / "symbols").glob("*.png")) != []
