@@ -59,6 +59,24 @@ def normalize_language_code(language: str | None) -> str | None:
     return base_code
 
 
+def normalize_symbol_label(label: str | None) -> str:
+    """Canonical case form of a symbol label.
+
+    Single home for the strip + casefold normalization that every symbol
+    dedupe/lookup key must use. Python's ``str.lower()`` does NOT fold
+    ``straße``/``STRASSE`` (or Greek final sigma) the way ``casefold()`` does,
+    so a mixture of ``.lower()`` and ``.casefold()`` call sites made the same
+    label dedupe differently depending on the entry path; routing all of them
+    through here keeps the keys identical everywhere. Callers that compare in
+    SQL must NOT mix this with ``func.lower`` on the column: SQLite ``lower``
+    is ASCII-only, so the Python side and the SQL side would disagree for
+    accented labels (``ÉCOLE`` vs ``école``) — normalize rows in Python when
+    the comparison must be Unicode-correct (see the symbol lookups in
+    board_ai.py and the ARASAAC import).
+    """
+    return (label or "").strip().casefold()
+
+
 # ---------------------------------------------------------------------------
 # SQL LIKE literal-matching helpers.
 #

@@ -631,6 +631,11 @@ def export_data(
     Returns:
         JSON export with boards, achievements, learning history, and SHA-256 checksum
     """
+    # Usernames are stored stripped (registration normalizes); strip the query
+    # parameter the same way so an export for " Student " resolves to the
+    # "Student" account instead of 404ing.
+    username = username.strip()
+
     # Permission check
     if current_user.username != username and current_user.user_type != "admin":
         raise HTTPException(
@@ -812,7 +817,10 @@ def import_data(
             detail=get_text(user=current_user, key="errors.export.checksumMismatch"),
         )
 
-    username = meta.get("username")
+    # Usernames are stored stripped, so normalize the signed meta username the
+    # same way before the permission check and lookup; an export written for a
+    # stripped account still imports when the meta value carries padding.
+    username = (meta.get("username") or "").strip()
 
     # Permission check
     if current_user.username != username and current_user.user_type != "admin":

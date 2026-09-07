@@ -365,7 +365,9 @@ def test_voice_answer_reports_provider_unavailable(
 
         data = response.json()
         assert response.status_code == 400
-        assert data["detail"] == "Voice transcription failed"
+        # The provider reason stays in the server log; the client gets the
+        # stable answer-processing message (raw detail is never echoed).
+        assert data["detail"] == "Failed to process response"
     finally:
         app.dependency_overrides.clear()
 

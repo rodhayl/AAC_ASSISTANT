@@ -418,6 +418,46 @@ def test_arasaac_search_rejects_oversized_query(test_db_session, client):
     assert response.json()["detail"][0]["type"] == "string_too_long"
 
 
+def test_arasaac_search_rejects_whitespace_only_query_without_upstream_call(
+    test_db_session, client, monkeypatch
+):
+    """A whitespace-only ``q`` is a 400 and never burns an upstream request.
+
+    ``min_length=1`` alone lets ``"   "`` through validation, so the route
+    must strip and reject before constructing the ARASAAC service.
+    """
+    from tests.auth_helpers import create_test_headers
+
+    user = User(
+        username="arasaac_space_query_user",
+        display_name="ARASAAC Space Query User",
+        user_type="teacher",
+        password_hash="unused",
+        is_active=True,
+    )
+    test_db_session.add(user)
+    test_db_session.commit()
+    test_db_session.refresh(user)
+    headers = create_test_headers(user.id, user.username, "teacher")
+
+    class ExplodingService:
+        def __init__(self):
+            pass
+
+        async def search_symbols(self, query, locale):
+            raise AssertionError("upstream must not be called for blank queries")
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(arasaac, "ArasaacService", ExplodingService)
+
+    response = client.get(
+        "/api/arasaac/search", params={"q": "    "}, headers=headers
+    )
+    assert response.status_code == 400, response.text
+
+
 def test_arasaac_import_rejects_label_blocked_by_global_policy(
     test_db_session, monkeypatch, tmp_path
 ):

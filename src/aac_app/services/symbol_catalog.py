@@ -21,6 +21,39 @@ BAD_LABEL_SUBSTRINGS: tuple[str, ...] = (
 )
 
 
+def find_symbol_by_normalized_label(db, label: str | None):
+    """Return the stored Symbol whose label casefolds to ``label``.
+
+    Symbol dedupe (board AI ``get_or_create_symbol``, the ARASAAC import)
+    must be case-insensitive in the FULL Unicode sense: ``func.lower`` is
+    ASCII-only on SQLite and neither backend folds ``ß``/``İ`` the way Python
+    ``casefold()`` does, so an SQL-only equality would miss ``ÉCOLE`` vs
+    ``école`` and ``straße`` vs ``STRASSE``. The ASCII-equality fast path
+    handles the common ASCII case cheaply; only when it misses (the label is
+    new or needs Unicode folding) does a Python-side casefold scan of the
+    label column run.
+    """
+    from sqlalchemy import func
+
+    from src.aac_app.models import Symbol
+    from src.aac_app.services.runtime_translation import normalize_symbol_label
+
+    normalized = normalize_symbol_label(label)
+    if not normalized:
+        return None
+    existing = (
+        db.query(Symbol)
+        .filter(func.lower(Symbol.label) == normalized)
+        .first()
+    )
+    if existing is not None:
+        return existing
+    for row in db.query(Symbol.id, Symbol.label).filter(Symbol.label.isnot(None)):
+        if normalize_symbol_label(row.label) == normalized:
+            return db.get(Symbol, row.id)
+    return None
+
+
 def label_looks_bad(label: str) -> bool:
     """True when a label is clearly an internal path/id, not a real symbol."""
     lower = (label or "").strip().lower()

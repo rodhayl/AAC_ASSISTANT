@@ -1,13 +1,18 @@
 
 import asyncio
 import contextlib
+import json
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import BoardAssignment, CommunicationBoard, StudentTeacher, User
+from src.aac_app.models import CommunicationBoard
 from src.api.deps import get_db, get_text, validate_active_token
+from src.api.deps.access import (
+    require_board_collab_write_access,
+    require_board_view_access,
+)
 
 router = APIRouter(prefix="/api/collab", tags=["collab"])
 
@@ -54,6 +59,17 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+
+# Cap on a single collaboration payload before it is re-broadcast to every
+# member of the room (the fan-out multiplies it N-fold). Uvicorn accepts
+# messages up to ~16MB by default, so without this cap an authenticated
+# client with any board access could amplify 16MB x members per message.
+# The rest of the repo bounds inbound bodies the same way
+# (_MAX_IMPORT_BODY_BYTES = 10MB in export_import.py, batches capped at
+# 1000, search queries at 200 chars); real board_change payloads are a few
+# hundred bytes, so 256KB leaves a wide margin for richer edits while
+# capping amplification.
+MAX_COLLAB_PAYLOAD_BYTES = 256 * 1024
 
 
 @router.websocket("/boards/{board_id}")
@@ -120,51 +136,36 @@ async def board_channel(
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=reason)
             return
 
-        # Access rules: owners and admins may collaborate; students need an
-        # explicit board assignment; teachers need an explicit roster
-        # relationship to the student who owns the board. Public boards remain
-        # available as read-only channels below.
-        has_access = user.user_type == "admin" or board.user_id == user.id
-        if not has_access and user.user_type == "teacher":
-            owner = db.query(User).filter(User.id == board.user_id).first()
-            if owner is not None and owner.user_type == "student":
-                has_access = (
-                    db.query(StudentTeacher)
-                    .filter(
-                        StudentTeacher.teacher_id == user.id,
-                        StudentTeacher.student_id == owner.id,
-                    )
-                    .first()
-                    is not None
-                )
-
-        if not has_access and user.user_type == "student":
-            has_access = (
-                db.query(BoardAssignment)
-                .filter(
-                    BoardAssignment.board_id == board_id,
-                    BoardAssignment.student_id == user.id,
-                )
-                .first()
-                is not None
-            )
-
-        if not has_access:
+        # View access uses the canonical board rule shared with the board
+        # detail/prediction routers (admin/owner/public/assigned/rostered).
+        # Broadcast access uses the sibling helper that excludes the public
+        # shortcut: a public board is viewable read-only by everyone, but only
+        # the owner, an admin, a rostered teacher, or an assigned student may
+        # re-emit edits to the room.
+        view_granted = True
+        try:
+            require_board_view_access(board, user, db)
+        except HTTPException:
+            view_granted = False
+        if not view_granted:
             logger.warning(f"User {user.username} denied access to board {board_id}")
-            if board.is_public:
-                # Allow read-only for public boards?
-                pass
-            else:
-                await websocket.accept(subprotocol=auth_subprotocol)
-                reason = get_text(
-                    user=user,
-                    accept_language=accept_language,
-                    key="errors.collab.accessDenied",
-                )
-                await websocket.close(
-                    code=status.WS_1008_POLICY_VIOLATION, reason=reason
-                )
-                return
+            await websocket.accept(subprotocol=auth_subprotocol)
+            reason = get_text(
+                user=user,
+                accept_language=accept_language,
+                key="errors.collab.accessDenied",
+            )
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=reason)
+            return
+
+        write_granted = True
+        try:
+            require_board_collab_write_access(board, user, db)
+        except HTTPException:
+            # Only a public-board viewer without any write relationship lands
+            # here: view was granted above and the private-board relationships
+            # are exactly the write relationships.
+            write_granted = False
 
         # Mark the room registration before awaiting accept so cancellation in
         # this tiny handoff window still triggers the outer cleanup path.
@@ -203,7 +204,28 @@ async def board_channel(
                         receive_task, shutdown_task, return_exceptions=True
                     )
 
-                if not has_access and board.is_public:
+                # Bound the fan-out (see MAX_COLLAB_PAYLOAD_BYTES above): a
+                # message larger than the cap is refused with 1009 before any
+                # peer receives it.
+                payload_size = len(
+                    json.dumps(data, separators=(",", ":"), ensure_ascii=False)
+                )
+                if payload_size > MAX_COLLAB_PAYLOAD_BYTES:
+                    logger.warning(
+                        "Rejecting oversized collab payload ({} bytes > {}) from {}",
+                        payload_size,
+                        MAX_COLLAB_PAYLOAD_BYTES,
+                        user.username,
+                    )
+                    with contextlib.suppress(Exception):
+                        await websocket.close(
+                            code=status.WS_1009_MESSAGE_TOO_BIG,
+                            reason=f"Payload exceeds {MAX_COLLAB_PAYLOAD_BYTES} bytes",
+                        )
+                    return
+
+                if not write_granted:
+                    # Public-board read-only viewer: keep receiving, never emit.
                     continue
 
                 # Layer-1 content gate on board-change payloads that carry a

@@ -17,6 +17,7 @@ from ..services.runtime_translation import (
     LIKE_ESCAPE,
     escape_like_literal,
     normalize_language_code,
+    normalize_symbol_label,
 )
 from ..services.symbol_analytics import SymbolAnalytics
 from ..services.symbol_catalog import (
@@ -261,7 +262,11 @@ class _PredictionContext:
         return [row[0] for row in rows]
 
     def normalize_label(self, label: str) -> str:
-        return (label or "").strip().lower()
+        # Canonical strip+casefold key (normalize_symbol_label in
+        # runtime_translation.py): catalog buckets, seen-label dedupe and
+        # ngram lookups must fold ß/İ the way the write/import paths do, or
+        # "straße"/"STRASSE" would live in separate buckets.
+        return normalize_symbol_label(label)
 
     def language_rank(self, language_code: str | None) -> int:
         normalized = normalize_language_code(language_code)
@@ -547,11 +552,17 @@ class _PredictionContext:
             ``(-label_hits, -keyword_hits)`` so a label that actually contains
             the topic words always outranks one that merely embeds a token.
             """
-            label_lower = (label or "").lower()
-            keyword_lower = (keywords or "").lower()
+            # Fold both sides with the canonical casefold so the ranking is
+            # consistent with the bucket keys (score() only sees rows the SQL
+            # LIKE prefilter already matched).
+            label_lower = normalize_symbol_label(label)
+            keyword_lower = normalize_symbol_label(keywords)
             label_hits = 0
             keyword_hits = 0
-            for token in self.topic_tokens:
+            for raw_token in self.topic_tokens:
+                token = normalize_symbol_label(raw_token)
+                if not token:
+                    continue
                 if _word_boundary_hit(label_lower, token):
                     label_hits += 3
                 elif label_lower.startswith(token) or token in label_lower:
@@ -704,7 +715,7 @@ class _PredictionContext:
         if not bigrams:
             return
         last_symbol_label = (
-            self.current_symbols[-1].get("label", "").lower()
+            self.normalize_label(self.current_symbols[-1].get("label", ""))
             if self.current_symbols
             else ""
         )

@@ -127,8 +127,23 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
-class UserResponse(UserBase):
+class UserResponse(BaseModel):
+    """Output contract for a user row.
+
+    Deliberately independent from ``UserBase``: the input schema enforces
+    ``min_length`` + strip so every NEW write stores a non-empty name, while
+    rows written before those bounds existed (or written by direct SQL) may
+    legally keep ``display_name=""``. Applying the input bounds on the way
+    out would turn reading those legacy rows into a 500
+    ``ResponseValidationError``; the output keeps only the column-aligned
+    ``max_length`` caps.
+    """
+
     id: int
+    username: str = Field(..., max_length=50)  # User.username String(50)
+    email: EmailStr | None = None
+    display_name: str = Field(..., max_length=100)  # User.display_name String(100)
+    user_type: str = "student"
     is_active: bool
     created_at: datetime
     settings: UserPreferencesResponse | None = None
@@ -143,12 +158,43 @@ class SetupStatusResponse(BaseModel):
     app_version: str
 
 
+# Documented fallbacks for the first-run setup payload (applied AFTER strip,
+# exactly like the route's ``payload.username.strip() or "admin1"`` behavior).
+# Kept here so the before-validator below and the route cannot drift apart.
+SETUP_DEFAULT_USERNAME = "admin1"
+SETUP_DEFAULT_DISPLAY_NAME = "Administrator"
+
+
 class InitialAdminSetupRequest(BaseModel):
-    username: str = "admin1"
-    display_name: str = "Administrator"
+    """First-run administrator payload.
+
+    username/display_name mirror the User columns (String(50)/String(100)) so
+    an oversized value fails clean validation instead of 500ing on Postgres
+    when the User row is flushed. Unlike UserBase this schema does NOT treat a
+    whitespace-only value as an error: the documented fallback semantics are
+    strip -> default-if-empty -> column bound check, so ``"   "`` still yields
+    ``admin1``/``Administrator`` (a naive ``min_length=1`` would 422 it).
+    """
+
+    username: str = Field(SETUP_DEFAULT_USERNAME, max_length=50)  # String(50)
+    display_name: str = Field(SETUP_DEFAULT_DISPLAY_NAME, max_length=100)  # String(100)
     email: EmailStr | None = None
     password: str
     confirm_password: str
+
+    @field_validator("username", "display_name", mode="before")
+    @classmethod
+    def _setup_name_strip_or_default(cls, value: object, info: Any) -> object:
+        if not isinstance(value, str):
+            return value
+        stripped = value.strip()
+        if stripped:
+            return stripped
+        return (
+            SETUP_DEFAULT_USERNAME
+            if info.field_name == "username"
+            else SETUP_DEFAULT_DISPLAY_NAME
+        )
 
 
 class SetupResponse(BaseModel):

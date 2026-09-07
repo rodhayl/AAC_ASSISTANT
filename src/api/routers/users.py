@@ -16,6 +16,7 @@ from src.api.deps import (
 from src.api.routers.auth_helpers import (
     apply_student_safety_at_creation,
     ensure_username_email_available,
+    normalize_email,
     username_email_integrity_conflict,
     validate_email_format,
     validate_password_strength,
@@ -72,6 +73,10 @@ def create_student(
 
     validate_password_strength(user.password, user=current_user)
     validate_email_format(user.email, user=current_user)
+    # Store the canonical lowercase email (see normalize_email) so staff
+    # creation cannot mint an account that only differs from an existing one
+    # in local-part capitalization.
+    user.email = normalize_email(user.email)
     ensure_username_email_available(db, user.username, user.email, user=current_user)
 
     # Teachers always assign students to themselves. Admins may optionally

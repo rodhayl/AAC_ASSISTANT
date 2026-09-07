@@ -106,16 +106,18 @@ def test_val_ach_019_end_without_llm_reports_provider_failure(
     session_id = start_data["session_id"]
 
     # 2. Without a provider, conversational answers must fail explicitly.
+    # The raw provider detail stays in the server log; the client gets the
+    # stable answer-processing message (raw exception text is never echoed).
     answer = client.post(
         f"/api/learning/{session_id}/answer",
         json={"answer": "I like dogs", "is_voice": False},
         headers=headers,
     )
     assert answer.status_code == 400, answer.text
-    assert answer.json()["detail"] == "LLM conversational response failed"
+    assert answer.json()["detail"] == "Failed to process response"
 
     # 3. Ending a session also reports the missing provider instead of creating
     # a fabricated summary or awarding progress from it.
     ended = client.post(f"/api/learning/{session_id}/end", headers=headers)
     assert ended.status_code == 400, ended.text
-    assert ended.json()["detail"] == "LLM unavailable"
+    assert ended.json()["detail"] == "Failed to end learning session"

@@ -29,6 +29,7 @@ from datetime import UTC
 from loguru import logger
 
 from src import config
+from src.aac_app.services.runtime_translation import normalize_symbol_label
 
 # Loaded lazily to keep provider construction off the import path.
 _llm_provider_factory: Callable[[], object] | None = None
@@ -91,7 +92,9 @@ def _rate_limit_cooldown_seconds() -> float:
 
 
 def _normalize_label(label: str) -> str:
-    return (label or "").strip().lower()
+    # Canonical strip+casefold key shared with the catalog/import dedupe
+    # paths (normalize_symbol_label in runtime_translation.py).
+    return normalize_symbol_label(label)
 
 
 def _generate_sync_callable():

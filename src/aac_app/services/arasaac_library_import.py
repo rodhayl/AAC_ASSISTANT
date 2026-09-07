@@ -29,7 +29,10 @@ from src import config
 from src.aac_app.db import get_session
 from src.aac_app.models import AppSettings, Symbol
 from src.aac_app.services.arasaac import ArasaacService
-from src.aac_app.services.runtime_translation import normalize_language_code
+from src.aac_app.services.runtime_translation import (
+    normalize_language_code,
+    normalize_symbol_label,
+)
 
 MAX_CONCURRENCY = 10
 COMMIT_BATCH = 200
@@ -53,15 +56,6 @@ def _default_locale(locale: str) -> str:
 
 def _imported_key(locale: str) -> str:
     return f"arasaac_library_imported_{locale}"
-
-
-def _existing_labels() -> set[str]:
-    with get_session() as db:
-        return {
-            label.casefold()
-            for (label,) in db.query(Symbol.label).all()
-            if label
-        }
 
 
 def _already_imported(locale: str) -> bool:
@@ -107,7 +101,7 @@ async def import_arasaac_library(locale: str = "es") -> dict[str, int]:
         # both be materialized even when their primary terms happen to match.
         with get_session() as db:
             existing = {
-                label.casefold()
+                normalize_symbol_label(label)
                 for (label,) in db.query(Symbol.label)
                 .filter(Symbol.language == locale)
                 .all()
@@ -120,7 +114,7 @@ async def import_arasaac_library(locale: str = "es") -> dict[str, int]:
             if not keywords:
                 continue
             label = (keywords[0].get("keyword") or "").strip()
-            key = label.casefold()
+            key = normalize_symbol_label(label)
             if not label or key in seen:
                 continue
             seen.add(key)
@@ -242,7 +236,7 @@ async def count_importable_arasaac_terms(locale: str = "es") -> dict[str, int]:
         pictograms = await service.list_all_symbols(locale)
         with get_session() as db:
             existing = {
-                label.casefold()
+                normalize_symbol_label(label)
                 for (label,) in db.query(Symbol.label)
                 .filter(Symbol.language == locale)
                 .all()
@@ -260,7 +254,7 @@ async def count_importable_arasaac_terms(locale: str = "es") -> dict[str, int]:
         label = (keywords[0].get("keyword") or "").strip()
         if not label:
             continue
-        key = label.casefold()
+        key = normalize_symbol_label(label)
         if key in seen:
             continue
         seen.add(key)

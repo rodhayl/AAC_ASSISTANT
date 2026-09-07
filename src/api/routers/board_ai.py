@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Body, Depends, HTTPException
 from loguru import logger
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src import config
@@ -10,7 +9,10 @@ from src.aac_app.providers.lmstudio_provider import LMStudioProvider
 from src.aac_app.providers.ollama_provider import OllamaProvider
 from src.aac_app.providers.openrouter_provider import OpenRouterProvider
 from src.aac_app.services.board_generation_service import BoardGenerationService
-from src.aac_app.services.symbol_catalog import label_looks_bad
+from src.aac_app.services.symbol_catalog import (
+    find_symbol_by_normalized_label,
+    label_looks_bad,
+)
 from src.aac_app.services.symbol_image_backfill import schedule_symbol_image_download
 from src.aac_app.services.translation_service import get_translation_service
 from src.aac_app.services.vector_utils import index_symbol
@@ -59,12 +61,10 @@ def get_or_create_symbol(
                 label=label,
             ),
         )
-    # Case-insensitive dedup: no more "Water" and "water" duplicates.
-    existing = (
-        db.query(Symbol)
-        .filter(func.lower(Symbol.label) == label.strip().lower())
-        .first()
-    )
+    # Case-insensitive dedup: no more "Water" and "water" duplicates (or
+    # "ÉCOLE"/"école", "straße"/"STRASSE" — the canonical casefold lookup in
+    # symbol_catalog, see normalize_symbol_label).
+    existing = find_symbol_by_normalized_label(db, label)
     if existing is not None:
         return existing, False
     # Server-wide layer-1 admission gate: a brand-new symbol whose label the

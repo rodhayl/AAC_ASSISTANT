@@ -4,13 +4,13 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel, Field
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src import config
 from src.aac_app.models import Symbol, User, UserSettings
 from src.aac_app.services.arasaac import ArasaacService
 from src.aac_app.services.runtime_translation import normalize_language_code
+from src.aac_app.services.symbol_catalog import find_symbol_by_normalized_label
 from src.aac_app.services.vector_utils import index_symbol
 from src.api import schemas
 from src.api.deps import get_current_active_user, get_db, get_text
@@ -51,6 +51,16 @@ async def search_arasaac(
     """
     Search for symbols in the ARASAAC library.
     """
+    # ``min_length=1`` lets whitespace-only input through; every sibling path
+    # (upload_symbol, create_symbol, update_symbol, the bulk import) rejects
+    # blank text with a 400 before doing any work. Mirror that here so a
+    # spaces-only query never burns an upstream ARASAAC request.
+    stripped_q = q.strip()
+    if not stripped_q:
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(user=current_user, key="errors.validation"),
+        )
     service = ArasaacService()
     try:
         if locale is not None:
@@ -72,7 +82,7 @@ async def search_arasaac(
                     "Failed to read UI language for ARASAAC search: {}",
                     exc,
                 )
-        results = await service.search_symbols(q, effective_locale)
+        results = await service.search_symbols(stripped_q, effective_locale)
         return results
     finally:
         await service.close()
@@ -102,12 +112,10 @@ async def import_arasaac_symbol(
 
         # Dedupe: link to an existing symbol with the same (case-folded) label
         # instead of creating a duplicate row and downloading the image again.
-        # This mirrors the bulk library import, which also dedupes by label.
-        existing = (
-            db.query(Symbol)
-            .filter(func.lower(Symbol.label) == normalized_label.casefold())
-            .first()
-        )
+        # This mirrors the bulk library import, which also dedupes by label;
+        # the canonical casefold lookup handles Unicode (ÉCOLE/école) where
+        # SQL lower() alone is ASCII-only.
+        existing = find_symbol_by_normalized_label(db, normalized_label)
         if existing is not None:
             return existing
 

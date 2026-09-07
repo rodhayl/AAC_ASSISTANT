@@ -27,6 +27,8 @@ from src.api.deps import get_db, get_request_text, get_text, oauth2_scheme
 from src.api.routers.auth_helpers import (
     conditional_limiter,
     ensure_username_email_available,
+    normalize_email,
+    normalize_username,
     username_email_integrity_conflict,
     validate_email_format,
     validate_password_strength,
@@ -101,15 +103,16 @@ def initial_admin_setup(
 
     if payload.email:
         validate_email_format(payload.email, accept_language=accept_language)
+    email = normalize_email(payload.email)
 
     ensure_username_email_available(
-        db, username, payload.email, accept_language=accept_language
+        db, username, email, accept_language=accept_language
     )
 
     admin = User(
         username=username,
         display_name=display_name,
-        email=payload.email,
+        email=email,
         user_type="admin",
         password_hash=get_password_hash(payload.password),
         is_active=True,
@@ -121,7 +124,7 @@ def initial_admin_setup(
         # Two concurrent setup requests can both pass the pre-check; the
         # database uniqueness invariant arbitrates the race.
         raise username_email_integrity_conflict(
-            db, username, payload.email, accept_language=accept_language
+            db, username, email, accept_language=accept_language
         ) from exc
     db.refresh(admin)
 
@@ -179,13 +182,20 @@ def login_for_access_token(
     # Get client IP
     client_ip = request.client.host if request.client else None
 
+    # Canonicalize the username ONCE at the entry of this flow and reuse it
+    # everywhere below (lockout bucket, lookup, audit rows, reset). Reads must
+    # strip like the register write path does (normalize_username), otherwise
+    # a padded login misses the account AND every padding variant becomes its
+    # own lockout bucket, multiplying the attempts before the 15-minute lock.
+    username = normalize_username(form_data.username)
+
     # Check if account is locked
-    is_locked, locked_until = lockout_service.is_locked(db, form_data.username)
+    is_locked, locked_until = lockout_service.is_locked(db, username)
     if is_locked:
         # Log lockout attempt
         audit_service.log_login_failed(
             db=db,
-            username=form_data.username,
+            username=username,
             ip_address=client_ip,
             reason=f"Account locked until {locked_until}"
         )
@@ -203,13 +213,13 @@ def login_for_access_token(
             ),
         )
 
-    user = db.query(User).filter(User.username == form_data.username).first()
+    user = db.query(User).filter(User.username == username).first()
     if not user:
         # Record failed attempt
-        lockout_service.record_failed_attempt(db, form_data.username, client_ip)
+        lockout_service.record_failed_attempt(db, username, client_ip)
         audit_service.log_login_failed(
             db=db,
-            username=form_data.username,
+            username=username,
             ip_address=client_ip,
             reason="User not found"
         )
@@ -225,7 +235,7 @@ def login_for_access_token(
     if not user.is_active:
         audit_service.log_login_failed(
             db=db,
-            username=form_data.username,
+            username=username,
             ip_address=client_ip,
             reason="Account inactive"
         )
@@ -237,7 +247,7 @@ def login_for_access_token(
         )
 
     if not user.password_hash:
-        logger.error(f"Token request failed: User '{form_data.username}' has no password hash")
+        logger.error(f"Token request failed: User '{username}' has no password hash")
         raise HTTPException(
             status_code=500,
             detail=get_request_text(request, "errors.accountConfigurationError"),
@@ -249,7 +259,7 @@ def login_for_access_token(
     if not password_valid:
         # Record failed attempt and check if should lock
         is_locked, locked_until, attempt_count = lockout_service.record_failed_attempt(
-            db, form_data.username, client_ip
+            db, username, client_ip
         )
 
         reason = f"Invalid password (attempt {attempt_count}/{lockout_service.MAX_ATTEMPTS})"
@@ -258,7 +268,7 @@ def login_for_access_token(
 
         audit_service.log_login_failed(
             db=db,
-            username=form_data.username,
+            username=username,
             ip_address=client_ip,
             reason=reason
         )
@@ -291,7 +301,7 @@ def login_for_access_token(
         db.commit()
 
     # Login successful - reset failed attempts
-    lockout_service.reset_attempts(db, form_data.username)
+    lockout_service.reset_attempts(db, username)
 
     # Log successful login
     audit_service.log_login_success(
@@ -479,9 +489,13 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
 
     # Validate email format if provided
     validate_email_format(user.email, accept_language=accept_language)
+    # Normalize the canonical (lowercase) form once so the pre-check, the
+    # stored row and every later lookup agree (see normalize_email in
+    # auth_helpers.py).
+    email = normalize_email(user.email)
 
     ensure_username_email_available(
-        db, user.username, user.email, accept_language=accept_language
+        db, user.username, email, accept_language=accept_language
     )
 
     # SECURITY: Force user_type to 'student' for public registration
@@ -495,7 +509,7 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
     # Create new user with enforced student role
     new_user = User(
         username=user.username,
-        email=user.email,
+        email=email,
         display_name=user.display_name,
         user_type='student',  # Always 'student' for public registration
         password_hash=get_password_hash(user.password),
@@ -509,7 +523,7 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
         # A concurrent registration with the same username/email can win the
         # insert after both requests passed the pre-check.
         raise username_email_integrity_conflict(
-            db, user.username, user.email, accept_language=accept_language
+            db, user.username, email, accept_language=accept_language
         ) from exc
     db.refresh(new_user)
 

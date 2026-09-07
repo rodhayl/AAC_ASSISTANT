@@ -14,10 +14,22 @@ from src.api.routers.collab import ConnectionManager
 @contextmanager
 def finish_collab_connections(client, *websockets):
     def drain_connections():
-        client.portal.call(app.state.shutdown_event.set)
+        # Ask every live handler to leave its receive loop gracefully (it
+        # sends a final 1001 close before returning). Handlers that already
+        # returned mid-test (e.g. the sender closed with 1009 for an
+        # oversized payload) never send another frame, so a blocking
+        # receive() on them would deadlock the teardown. Instead, fully tear
+        # each session down: nudge it with a client close, then cancel the
+        # session task and reap it. Live handlers exit via their
+        # WebSocketDisconnect/CancelledError paths (cleanup still runs);
+        # already-exited handlers have their streams closed by the cancel.
+        with suppress(Exception):
+            client.portal.call(app.state.shutdown_event.set)
         for websocket in websockets:
-            with suppress(WebSocketDisconnect, RuntimeError):
-                websocket.receive()
+            with suppress(Exception):
+                websocket.close()
+            with suppress(Exception):
+                websocket.exit_stack.close()
 
     try:
         yield
@@ -479,6 +491,177 @@ def test_collab_ws_broadcast_skips_sender(
         recv = ws1.receive_json()
         assert recv["payload"]["symbol_id"] == 2
         ws2.send_json({"op": "ping"})
+
+
+def test_collab_ws_oversized_payload_closes_sender_with_1009(
+    test_db_session, test_password, collab_client
+):
+    """A payload over the 256KB collaboration cap closes the sender (1009).
+
+    The oversized message must never be fanned out: the receiving peer's first
+    message is the next NORMAL broadcast, proving the giant payload never
+    arrived ahead of it.
+    """
+    client = collab_client
+    username = f"ws_oversize_{uuid.uuid4().hex[:8]}"
+    reg_response = client.post(
+        "/api/auth/register",
+        json={
+            "username": username,
+            "password": test_password,
+            "display_name": "Oversize User",
+            "user_type": "teacher",
+        },
+    )
+    user_id = reg_response.json()["id"]
+    login_response = client.post(
+        "/api/auth/token", data={"username": username, "password": test_password}
+    )
+    token = login_response.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    board_response = client.post(
+        "/api/boards",
+        headers=headers,
+        params={"user_id": user_id},
+        json={"name": "Oversize Board", "grid_rows": 3, "grid_cols": 4},
+    )
+    board_id = board_response.json()["id"]
+    url = f"/api/collab/boards/{board_id}"
+
+    with (
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as sender,
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as observer,
+        finish_collab_connections(client, sender, observer),
+    ):
+        # ~400KB of JSON payload is well over the 256KB cap but comfortably
+        # under the ASGI server's default receive limit.
+        sender.send_json({"op": "add", "blob": "x" * 400_000})
+        # The observer's own next normal message must be what the peer
+        # receives first: had the giant payload fanned out, it would be first.
+        observer.send_json({"op": "ping"})
+        # In the unfixed code the sender stays connected and receives the
+        # observer's ping; after the fix the sender was closed with 1009.
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            sender.receive_json()
+        assert exc_info.value.code == 1009
+
+
+def test_collab_ws_oversized_payload_is_not_fanned_out(
+    test_db_session, test_password, collab_client
+):
+    """A giant payload is dropped at the sender, so peers only ever see
+    normal-size broadcasts."""
+    client = collab_client
+    username = f"ws_no_fanout_{uuid.uuid4().hex[:8]}"
+    reg_response = client.post(
+        "/api/auth/register",
+        json={
+            "username": username,
+            "password": test_password,
+            "display_name": "No Fanout User",
+            "user_type": "teacher",
+        },
+    )
+    user_id = reg_response.json()["id"]
+    login_response = client.post(
+        "/api/auth/token", data={"username": username, "password": test_password}
+    )
+    token = login_response.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    board_response = client.post(
+        "/api/boards",
+        headers=headers,
+        params={"user_id": user_id},
+        json={"name": "No Fanout Board", "grid_rows": 3, "grid_cols": 4},
+    )
+    board_id = board_response.json()["id"]
+    url = f"/api/collab/boards/{board_id}"
+
+    with (
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as sender,
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as peer_a,
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as peer_b,
+        finish_collab_connections(client, sender, peer_a, peer_b),
+    ):
+        sender.send_json({"op": "add", "blob": "y" * 400_000})
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            sender.receive_json()
+        assert exc_info.value.code == 1009
+
+        # peer_a broadcasts a small message; peer_b must see THAT first.
+        peer_a.send_json({"op": "move", "symbol_id": 42})
+        first = peer_b.receive_json()
+        assert first["type"] == "board_change"
+        assert first["payload"]["symbol_id"] == 42
+
+
+def test_collab_ws_public_viewer_cannot_broadcast(
+    test_db_session, test_password, collab_client
+):
+    """A public-board viewer (no owner/admin/roster/assignment) receives
+    broadcasts but its own messages are never re-emitted to the room."""
+    viewer = User(
+        username="collab_viewer_mute",
+        display_name="Muted Public Viewer",
+        user_type="student",
+        password_hash="test-hash",
+    )
+    test_db_session.add(viewer)
+    test_db_session.commit()
+
+    username = f"ws_public_mute_{uuid.uuid4().hex[:8]}"
+    reg_response = collab_client.post(
+        "/api/auth/register",
+        json={
+            "username": username,
+            "password": test_password,
+            "display_name": "Public Mute Owner",
+            "user_type": "teacher",
+        },
+    )
+    user_id = reg_response.json()["id"]
+    login_response = collab_client.post(
+        "/api/auth/token", data={"username": username, "password": test_password}
+    )
+    token = login_response.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    board_response = collab_client.post(
+        "/api/boards",
+        headers=headers,
+        params={"user_id": user_id},
+        json={
+            "name": "Public Mute Board",
+            "grid_rows": 3,
+            "grid_cols": 4,
+            "is_public": True,
+        },
+    )
+    board_id = board_response.json()["id"]
+
+    viewer_token = create_access_token(
+        data={
+            "sub": viewer.username,
+            "user_id": viewer.id,
+            "user_type": viewer.user_type,
+        }
+    )
+    url = f"/api/collab/boards/{board_id}"
+    with (
+        collab_client.websocket_connect(url, subprotocols=["aac-auth", token]) as owner_a,
+        collab_client.websocket_connect(url, subprotocols=["aac-auth", token]) as owner_b,
+        collab_client.websocket_connect(
+            url, subprotocols=["aac-auth", viewer_token]
+        ) as viewer_ws,
+        finish_collab_connections(collab_client, owner_a, owner_b, viewer_ws),
+    ):
+        # The viewer's attempt to edit must be swallowed silently (read-only):
+        # had it fanned out, owner_a would receive it BEFORE the ping that
+        # owner_b broadcasts next.
+        viewer_ws.send_json({"op": "move", "symbol_id": 99})
+        owner_b.send_json({"op": "ping"})
+        recv = owner_a.receive_json()
+        assert recv["type"] == "board_change"
+        assert recv["payload"]["op"] == "ping"
 
 
 def test_collab_ws_public_board_read_only_viewer(

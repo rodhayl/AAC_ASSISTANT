@@ -133,6 +133,54 @@ def require_board_owner_or_admin(
     return board
 
 
+def require_board_collab_write_access(
+    board: CommunicationBoard,
+    current_user: User,
+    db: Session,
+) -> CommunicationBoard:
+    """Require collaboration (broadcast) access to a board.
+
+    Identical to :func:`require_board_view_access` except the public shortcut:
+    everyone may VIEW a public board, but only the owner, an admin, a rostered
+    teacher, or an assigned student may broadcast edits to it. Collab uses this
+    helper (plus the view helper) instead of re-implementing the access rules
+    inline, so the next permission correction lands in one place.
+    """
+    if current_user.user_type == "admin" or board.user_id == current_user.id:
+        return board
+
+    if current_user.user_type == "student":
+        assigned = (
+            db.query(BoardAssignment.id)
+            .filter(
+                BoardAssignment.board_id == board.id,
+                BoardAssignment.student_id == current_user.id,
+            )
+            .first()
+        )
+        if assigned is not None:
+            return board
+
+    if current_user.user_type == "teacher":
+        owner = db.query(User).filter(User.id == board.user_id).first()
+        if owner is not None and owner.user_type == "student":
+            rostered = (
+                db.query(StudentTeacher.id)
+                .filter(
+                    StudentTeacher.teacher_id == current_user.id,
+                    StudentTeacher.student_id == owner.id,
+                )
+                .first()
+            )
+            if rostered is not None:
+                return board
+
+    raise HTTPException(
+        status_code=403,
+        detail=get_text(user=current_user, key="errors.boards.unauthorizedViewBoard"),
+    )
+
+
 def validate_board_position(
     board: CommunicationBoard,
     position_x: int,

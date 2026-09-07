@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from loguru import logger
-from sqlalchemy import delete, update
+from sqlalchemy import delete, func, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,7 @@ from src.aac_app.models import (
     BoardSymbol,
     CollaborationSession,
     CommunicationBoard,
+    ContentSafetyEvent,
     FailedLoginAttempt,
     GuardianProfile,
     GuardianProfileHistory,
@@ -45,6 +46,8 @@ from src.api.routers.auth_helpers import (
     apply_student_safety_at_creation,
     conditional_limiter,
     ensure_username_email_available,
+    normalize_email,
+    normalize_username,
     username_email_integrity_conflict,
     validate_email_format,
     validate_password_strength,
@@ -121,10 +124,14 @@ def admin_create_user(
             ),
         )
 
+    # Store the canonical lowercase email (normalize_email in auth_helpers.py)
+    # so "USER@x.com" and "user@x.com" can never become twin accounts.
+    email = normalize_email(user.email)
+
     ensure_username_email_available(
         db,
         user.username,
-        user.email,
+        email,
         accept_language=accept_language,
         user=current_user,
     )
@@ -132,7 +139,7 @@ def admin_create_user(
     # Create new user with admin-specified role
     new_user = User(
         username=user.username,
-        email=user.email,
+        email=email,
         display_name=user.display_name,
         user_type=user.user_type,
         password_hash=get_password_hash(user.password),
@@ -148,7 +155,7 @@ def admin_create_user(
         raise username_email_integrity_conflict(
             db,
             user.username,
-            user.email,
+            email,
             accept_language=request.headers.get("accept-language"),
             user=current_user,
         ) from exc
@@ -389,8 +396,11 @@ def change_password(
 
     accept_language = request.headers.get("accept-language")
 
-    # If it's the user themselves
-    if current_user.username == payload.username:
+    # If it's the user themselves. Strip the payload username the same way
+    # the register/write paths do (normalize_username): the endpoint is meant
+    # for the authenticated user, so " Admin " typed with padding must not
+    # fall through to the other-user branch and 403.
+    if current_user.username == normalize_username(payload.username):
         if not verify_password(payload.current_password, current_user.password_hash):
             raise HTTPException(
                 status_code=401,
@@ -526,13 +536,25 @@ def update_user(
         # without an email, matching update_profile's clear semantics.
         if isinstance(new_email, str):
             new_email = new_email.strip() or None
+        # Store and compare the canonical lowercase form (normalize_email in
+        # auth_helpers.py): two accounts differing only in email local-part
+        # capitalization are visually indistinguishable, so the admin edit
+        # must neither create such a twin nor allow stealing one's address.
+        new_email = normalize_email(new_email)
         if new_email is not None:
             validate_email_format(
                 new_email,
                 user=current_user,
                 accept_language=request.headers.get("accept-language"),
             )
-            if db.query(User).filter(User.email == new_email, User.id != user.id).first():
+            if (
+                db.query(User)
+                .filter(
+                    func.lower(User.email) == new_email,
+                    User.id != user.id,
+                )
+                .first()
+            ):
                 raise HTTPException(
                     status_code=400,
                     detail=get_request_text(request, "errors.auth.emailTaken", user=current_user),
@@ -544,10 +566,21 @@ def update_user(
             detail=get_text(user=current_user, key="errors.auth.activeMustBeBoolean"),
         )
 
-    # Allowed fields
+    # Allowed fields. display_name stores the local stripped value computed
+    # above (never the raw payload: the D9 normalization applies to every
+    # write path, and storing "  X  " would create a visual twin of "X").
+    # user_type needs no strip (membership in VALID_USER_TYPES is an exact
+    # match, so a padded value is rejected by that check) and is_active no
+    # strip (it is type-checked as a bool above).
     for key in ["display_name", "user_type", "email", "is_active"]:
         if key in payload:
-            setattr(user, key, new_email if key == "email" else payload[key])
+            if key == "display_name":
+                value = display_name
+            elif key == "email":
+                value = new_email
+            else:
+                value = payload[key]
+            setattr(user, key, value)
     db.add(user)
     try:
         db.flush()
@@ -768,6 +801,15 @@ def delete_user(
         )
     )
 
+    # A deleted account's content-safety log has no reader left: the event
+    # list endpoint 404s via verify_student_access once the student is gone.
+    # content_safety_events.user_id is a nullable FK without ON DELETE, so
+    # without this delete the whole DELETE FROM users fails on Postgres (and
+    # SQLite with foreign_keys=ON) the moment a reported student is removed.
+    db.execute(
+        delete(ContentSafetyEvent).where(ContentSafetyEvent.user_id == user_id)
+    )
+
     # Use a Core DELETE after dependents are handled so SQLAlchemy does not
     # synchronize already-loaded relationship collections by nulling required
     # foreign keys.
@@ -797,6 +839,11 @@ def admin_unlock_account(
 
     Removes account lockout after failed login attempts.
     """
+    # Canonicalize like the login flow: attempts are recorded (and looked up)
+    # under the stripped username, so unlocking " Admin " must target the same
+    # bucket that the failing logins incremented.
+    username = normalize_username(username)
+
     # Verify user exists
     target_user = db.query(User).filter(User.username == username).first()
     if not target_user:
@@ -850,10 +897,17 @@ def update_profile(
     # required here: null means "clear my optional email", while an omitted
     # field means "leave the existing email unchanged".
     if "email" in profile.model_fields_set:
-        if profile.email is not None:
+        # Normalize the canonical lowercase form before the duplicate check
+        # and the store (normalize_email in auth_helpers.py), so a user cannot
+        # claim "User@x.com" while another account already holds "user@x.com".
+        new_email = normalize_email(profile.email)
+        if new_email is not None:
             existing = (
                 db.query(User)
-                .filter(User.email == profile.email, User.id != current_user.id)
+                .filter(
+                    func.lower(User.email) == new_email,
+                    User.id != current_user.id,
+                )
                 .first()
             )
             if existing:
@@ -861,7 +915,7 @@ def update_profile(
                     status_code=400,
                     detail=get_text(user=current_user, key="errors.auth.emailInUse"),
                 )
-        current_user.email = profile.email
+        current_user.email = new_email
 
     try:
         db.flush()

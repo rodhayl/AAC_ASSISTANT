@@ -11,6 +11,7 @@ from typing import Any, ParamSpec
 from fastapi import HTTPException
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -138,6 +139,39 @@ def validate_email_format(
         )
 
 
+def normalize_username(username: str) -> str:
+    """Canonical form for every username READ path (login, unlock, ...).
+
+    Registration already strips on write (``UserBase._strip_user_name_fields``
+    in schemas.py), so reads must strip the same way: a padded login
+    (``" Admin "``) otherwise misses the stored ``"Admin"`` account, and each
+    padding variant would become its own lockout bucket (``"Admin"``,
+    ``" Admin "`` and ``"Admin "`` are three separate 5-attempt budgets).
+    Case is deliberately NOT folded here: username matching stays
+    case-sensitive by design (the D9 schema comment documents that decision;
+    D5 normalizes emails instead).
+    """
+    return username.strip()
+
+
+def normalize_email(email: str | None) -> str | None:
+    """Canonical stored/lookup form of an email address.
+
+    ``EmailStr`` strips surrounding whitespace and lowercases the domain but
+    preserves the local-part case (email-validator treats it as theoretically
+    significant per RFC 5321). In this application two accounts differing only
+    in local-part capitalization are visually indistinguishable — the UI and
+    lookups render and compare them the same way — so the canonical form folds
+    the WHOLE address to lowercase. Every write stores this form and every
+    lookup compares with ``func.lower(User.email)`` against it, so existing
+    mixed-case legacy rows still match whatever case the caller types.
+    """
+    if email is None:
+        return None
+    normalized = email.strip().lower()
+    return normalized or None
+
+
 def validate_password_strength(
     password: str,
     *,
@@ -184,7 +218,15 @@ def username_email_integrity_conflict(
                 user=user, accept_language=accept_language, key="errors.auth.usernameTaken"
             ),
         )
-    if email and db.query(User).filter(User.email == email).first() is not None:
+    # Emails are ASCII-only (the validated contract), so SQL ``lower`` is the
+    # full canonical fold on SQLite and Postgres alike: a concurrent
+    # registration of ``USER@x.com`` against a stored ``user@x.com`` reports
+    # the same email-taken conflict the pre-check would have produced.
+    normalized_email = normalize_email(email)
+    if normalized_email and (
+        db.query(User).filter(func.lower(User.email) == normalized_email).first()
+        is not None
+    ):
         return HTTPException(
             status_code=409,
             detail=get_text(
@@ -221,15 +263,20 @@ def ensure_username_email_available(
                 user=user, accept_language=accept_language, key="errors.auth.usernameTaken"
             ),
         )
-    if email:
-        existing_email = db.query(User).filter(User.email == email).first()
-        if existing_email:
-            raise HTTPException(
-                status_code=400,
-                detail=get_text(
-                    user=user, accept_language=accept_language, key="errors.auth.emailTaken"
-                ),
-            )
+    # Same canonical comparison as username_email_integrity_conflict: emails
+    # are ASCII-only and stored lowercased (see normalize_email), so a
+    # case-variant re-registration is caught here as a duplicate account.
+    normalized_email = normalize_email(email)
+    if normalized_email and (
+        db.query(User).filter(func.lower(User.email) == normalized_email).first()
+        is not None
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(
+                user=user, accept_language=accept_language, key="errors.auth.emailTaken"
+            ),
+        )
 
 
 def validate_preference_updates(
