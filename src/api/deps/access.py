@@ -73,18 +73,23 @@ def get_board_or_404(
     return board
 
 
-def require_board_view_access(
+def _board_relationship_granted(
     board: CommunicationBoard,
     current_user: User,
     db: Session,
-) -> CommunicationBoard:
-    """Require the same read access used by board detail and collaboration.
+) -> bool:
+    """True when ``current_user`` holds a real relationship to the board.
 
-    Board-scoped prediction and learning requests must not be able to use an
-    arbitrary board ID as an oracle for another user's private symbols.
+    The relationship rules shared by read and broadcast access: an admin or
+    the owner always qualifies; a student qualifies when assigned to the
+    board; a teacher qualifies when the board's owner is one of their
+    rostered students. The public-board shortcut is deliberately NOT here:
+    everyone may view a public board, but only a relationship holder may
+    broadcast edits, so the view helper adds ``board.is_public`` on top and
+    the collab-write helper does not.
     """
-    if current_user.user_type == "admin" or board.user_id == current_user.id or board.is_public:
-        return board
+    if current_user.user_type == "admin" or board.user_id == current_user.id:
+        return True
 
     if current_user.user_type == "student":
         assigned = (
@@ -96,7 +101,7 @@ def require_board_view_access(
             .first()
         )
         if assigned is not None:
-            return board
+            return True
 
     if current_user.user_type == "teacher":
         owner = db.query(User).filter(User.id == board.user_id).first()
@@ -110,7 +115,23 @@ def require_board_view_access(
                 .first()
             )
             if rostered is not None:
-                return board
+                return True
+
+    return False
+
+
+def require_board_view_access(
+    board: CommunicationBoard,
+    current_user: User,
+    db: Session,
+) -> CommunicationBoard:
+    """Require the same read access used by board detail and collaboration.
+
+    Board-scoped prediction and learning requests must not be able to use an
+    arbitrary board ID as an oracle for another user's private symbols.
+    """
+    if _board_relationship_granted(board, current_user, db) or board.is_public:
+        return board
 
     raise HTTPException(
         status_code=403,
@@ -140,40 +161,15 @@ def require_board_collab_write_access(
 ) -> CommunicationBoard:
     """Require collaboration (broadcast) access to a board.
 
-    Identical to :func:`require_board_view_access` except the public shortcut:
-    everyone may VIEW a public board, but only the owner, an admin, a rostered
-    teacher, or an assigned student may broadcast edits to it. Collab uses this
-    helper (plus the view helper) instead of re-implementing the access rules
-    inline, so the next permission correction lands in one place.
+    The relationship rules are shared with :func:`require_board_view_access`
+    via :func:`_board_relationship_granted`; the only difference is that this
+    helper omits the public shortcut, so everyone may VIEW a public board but
+    only the owner, an admin, a rostered teacher, or an assigned student may
+    broadcast edits to it. Keeping one copy of the rules means the next
+    permission correction lands in a single place.
     """
-    if current_user.user_type == "admin" or board.user_id == current_user.id:
+    if _board_relationship_granted(board, current_user, db):
         return board
-
-    if current_user.user_type == "student":
-        assigned = (
-            db.query(BoardAssignment.id)
-            .filter(
-                BoardAssignment.board_id == board.id,
-                BoardAssignment.student_id == current_user.id,
-            )
-            .first()
-        )
-        if assigned is not None:
-            return board
-
-    if current_user.user_type == "teacher":
-        owner = db.query(User).filter(User.id == board.user_id).first()
-        if owner is not None and owner.user_type == "student":
-            rostered = (
-                db.query(StudentTeacher.id)
-                .filter(
-                    StudentTeacher.teacher_id == current_user.id,
-                    StudentTeacher.student_id == owner.id,
-                )
-                .first()
-            )
-            if rostered is not None:
-                return board
 
     raise HTTPException(
         status_code=403,

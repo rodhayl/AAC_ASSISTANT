@@ -166,6 +166,46 @@ def test_admin_unlock_with_padded_username_unlocks(test_db_session, admin_token)
     assert login.status_code == 200, login.text
 
 
+def test_change_password_with_padded_username_succeeds(test_db_session):
+    """change_password strips the payload username like the login read path,
+    so typing " Admin " must target the authenticated user instead of falling
+    through to the other-user branch (403)."""
+    reg = client.post(
+        "/api/auth/register",
+        json={
+            "username": "padded_changepw_user",
+            "display_name": "Padded Change PW",
+            "password": _PASSWORD,
+        },
+    )
+    assert reg.status_code == 200, reg.text
+    login = client.post(
+        "/api/auth/token",
+        data={"username": "padded_changepw_user", "password": _PASSWORD},
+    )
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    changed = client.post(
+        "/api/auth/change-password",
+        json={
+            "username": "  padded_changepw_user  ",
+            "current_password": _PASSWORD,
+            "new_password": "NewTestPassword456",
+            "confirm_password": "NewTestPassword456",
+        },
+        headers=headers,
+    )
+    assert changed.status_code == 200, changed.text
+
+    # The new password works for the next login.
+    relogin = client.post(
+        "/api/auth/token",
+        data={"username": "padded_changepw_user", "password": "NewTestPassword456"},
+    )
+    assert relogin.status_code == 200, relogin.text
+
+
 def test_export_with_padded_username_resolves(test_db_session):
     """An export requested for " user " must resolve to the stored "user"
     account instead of 404ing on an exact-match lookup."""

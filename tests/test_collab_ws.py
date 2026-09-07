@@ -2,11 +2,15 @@ import uuid
 from contextlib import contextmanager, suppress
 
 import pytest
+from fastapi import HTTPException
+from fastapi import status as fastapi_status
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+import src.api.routers.collab as collab_module
 from src.aac_app.models import BoardAssignment, CommunicationBoard, StudentTeacher, User
 from src.aac_app.utils.jwt_utils import create_access_token
+from src.api.deps.access import require_board_view_access as real_view
 from src.api.main import app
 from src.api.routers.collab import ConnectionManager
 
@@ -720,3 +724,115 @@ def test_collab_ws_public_board_read_only_viewer(
         owner_ws.send_json({"op": "move", "symbol_id": 7})
         recv = viewer_ws.receive_json()
         assert recv["payload"]["symbol_id"] == 7
+
+
+def _make_collab_room(client, test_password, tag):
+    """Register a teacher, create a board and return (token, ws url)."""
+    username = f"{tag}_{uuid.uuid4().hex[:8]}"
+    reg_response = client.post(
+        "/api/auth/register",
+        json={
+            "username": username,
+            "password": test_password,
+            "display_name": "Collab Room",
+            "user_type": "teacher",
+        },
+    )
+    user_id = reg_response.json()["id"]
+    login_response = client.post(
+        "/api/auth/token", data={"username": username, "password": test_password}
+    )
+    token = login_response.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    board_response = client.post(
+        "/api/boards",
+        headers=headers,
+        params={"user_id": user_id},
+        json={"name": "Collab Room", "grid_rows": 3, "grid_cols": 4},
+    )
+    board_id = board_response.json()["id"]
+    return token, f"/api/collab/boards/{board_id}"
+
+
+def test_collab_ws_multibyte_payload_over_cap_closes_with_1009(
+    test_db_session, test_password, collab_client
+):
+    """The 256KB cap counts WIRE bytes, not str code points: a non-ASCII
+    payload of 200K chars is ~400KB encoded (2 bytes/char) and must be
+    refused with 1009 even though its char count is under 256K."""
+    client = collab_client
+    token, url = _make_collab_room(client, test_password, "ws_mb_over")
+    with (
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as sender,
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as observer,
+        finish_collab_connections(client, sender, observer),
+    ):
+        # 200_000 chars x 2 bytes = ~400KB on the wire: over 256KB even
+        # though len(str) == 200_000 is under 262_144 code points.
+        blob = "\u00e9" * 200_000  # "é"
+        assert len(blob) < 262_144  # would pass a char-count cap
+        sender.send_json({"op": "add", "blob": blob})
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            sender.receive_json()
+        assert exc_info.value.code == 1009
+        # The observer must never receive the giant multibyte payload.
+        observer.send_json({"op": "ping"})
+
+
+def test_collab_ws_multibyte_payload_under_cap_is_fanned_out_intact(
+    test_db_session, test_password, collab_client
+):
+    """A multibyte payload under the byte cap reaches peers byte-for-byte."""
+    client = collab_client
+    token, url = _make_collab_room(client, test_password, "ws_mb_ok")
+    with (
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as sender,
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as observer,
+        finish_collab_connections(client, sender, observer),
+    ):
+        # 50_000 chars x 2 bytes = 100KB on the wire: comfortably under the
+        # cap and must broadcast normally.
+        blob = "\u00e9" * 50_000
+        sender.send_json({"op": "add", "blob": blob})
+        recv = observer.receive_json()
+        assert recv["type"] == "board_change"
+        assert recv["payload"]["blob"] == blob
+
+
+def test_collab_ws_non_403_access_error_propagates_as_1011(
+    test_db_session, test_password, collab_client, monkeypatch
+):
+    """An HTTPException that is not the intentional 403 (e.g. a 500 from the
+    access helper) must terminate the socket with a server error, never
+    silently degrade to "denied" (1008) or read-only."""
+
+    def _boom(board, user, db):
+        raise HTTPException(
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="boom",
+        )
+
+    client = collab_client
+    token, url = _make_collab_room(client, test_password, "ws_except")
+
+    monkeypatch.setattr(collab_module, "require_board_view_access", _boom)
+    # The session handshake (and therefore the 1011 close) happens on
+    # ``__enter__``, so the connect must be used as a context manager here.
+    with (
+        pytest.raises(WebSocketDisconnect) as exc_info,
+        client.websocket_connect(url, subprotocols=["aac-auth", token]),
+    ):
+        pass
+    assert exc_info.value.code == 1011
+
+    # Same for the broadcast gate: the real view gate passes (the socket is
+    # the board owner), but a 500 from the write helper must propagate
+    # instead of silently demoting the owner to read-only.
+    monkeypatch.setattr(collab_module, "require_board_view_access", real_view)
+    monkeypatch.setattr(collab_module, "require_board_collab_write_access", _boom)
+    with (
+        pytest.raises(WebSocketDisconnect) as exc_info,
+        client.websocket_connect(url, subprotocols=["aac-auth", token]),
+    ):
+        pass
+    assert exc_info.value.code == 1011

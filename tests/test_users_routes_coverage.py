@@ -65,6 +65,28 @@ def test_update_current_user_profile(regular_user, user_token):
     assert response.json()["display_name"] == "Nuevo Nombre"
 
 
+def test_update_profile_rejects_non_ascii_email(regular_user, user_token):
+    """update_profile must enforce the same ASCII email contract as every
+    other email write (register, setup, admin-create, admin-edit). Pydantic's
+    EmailStr accepts 'Ñoño@example.com', but the case-insensitive duplicate
+    check lowercases with SQL (ASCII-only on SQLite), so a stored non-ASCII
+    address would silently evade the dedupe that the contract documents."""
+    response = client.put(
+        "/api/auth/profile",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"email": "Ñoño@example.com"},
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] != "errors.auth.emailInvalid"
+
+    # The rejected address was never stored.
+    me = client.get(
+        "/api/auth/me", headers={"Authorization": f"Bearer {user_token}"}
+    )
+    assert me.status_code == 200
+    assert me.json()["email"] != "Ñoño@example.com"
+
+
 def test_teacher_students_list_scoped_to_roster(
     teacher_user, student_user, test_db_session
 ):

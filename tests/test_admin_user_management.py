@@ -199,6 +199,50 @@ def test_update_user_validates_role_email_and_active_flag(setup_test_db, admin_t
     assert blank_name.json()["detail"] != "errors.auth.displayNameRequired"
 
 
+def test_update_user_rejects_non_string_display_name_and_email(
+    setup_test_db, admin_token
+):
+    """The admin edit accepts a raw dict, so non-string display_name/email
+    values must be clean 400s, never AttributeError 500s from calling
+    .strip()/normalize on them (user_type and is_active already type-check)."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post(
+        "/api/auth/admin/create-user",
+        json={
+            "username": "dict_types_student",
+            "password": "StudentPass123",
+            "confirm_password": "StudentPass123",
+            "display_name": "Dict Types",
+            "user_type": "student",
+            "email": "dict_types@example.com",
+        },
+        headers=headers,
+    )
+    assert created.status_code == 200, created.text
+    target_id = created.json()["id"]
+    url = f"/api/auth/users/{target_id}"
+
+    # int display_name -> 400, not 500
+    bad_name = client.put(url, json={"display_name": 123}, headers=headers)
+    assert bad_name.status_code == 400
+    # int email -> 400, not 500
+    bad_email = client.put(url, json={"email": 12345}, headers=headers)
+    assert bad_email.status_code == 400
+    # list email -> 400, not 500
+    list_email = client.put(url, json={"email": ["a@b.com"]}, headers=headers)
+    assert list_email.status_code == 400
+    # None display_name -> 400 (explicit null is not a valid name either)
+    null_name = client.put(url, json={"display_name": None}, headers=headers)
+    assert null_name.status_code == 400
+
+    # The row is untouched by the rejected payloads and still editable: a
+    # padded name stores stripped, and the email keeps its original value.
+    valid = client.put(url, json={"display_name": "  Padded Name  "}, headers=headers)
+    assert valid.status_code == 200, valid.text
+    assert valid.json()["display_name"] == "Padded Name"
+    assert valid.json()["email"] == "dict_types@example.com"
+
+
 def test_students_endpoint_paginates(setup_test_db, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
     student_ids = []

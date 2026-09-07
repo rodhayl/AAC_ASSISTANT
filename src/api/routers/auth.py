@@ -98,8 +98,12 @@ def initial_admin_setup(
 
     validate_password_strength(payload.password, accept_language=accept_language)
 
-    username = payload.username.strip() or "admin1"
-    display_name = payload.display_name.strip() or "Administrator"
+    # username/display_name arrive already normalized by the schema (see
+    # InitialAdminSetupRequest._setup_name_strip_or_default: strip, then the
+    # documented fallback to admin1/Administrator when empty). The route must
+    # not keep its own copy of that strip-or-default logic.
+    username = payload.username
+    display_name = payload.display_name
 
     if payload.email:
         validate_email_format(payload.email, accept_language=accept_language)

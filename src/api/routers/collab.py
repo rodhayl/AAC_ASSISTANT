@@ -145,7 +145,13 @@ async def board_channel(
         view_granted = True
         try:
             require_board_view_access(board, user, db)
-        except HTTPException:
+        except HTTPException as exc:
+            # Only the intentional 403 denial maps to "no view". Any other
+            # HTTPException (e.g. a 500 surfaced by the helpers or the
+            # localized-text lookup) must propagate instead of silently
+            # degrading to "denied"/read-only.
+            if exc.status_code != status.HTTP_403_FORBIDDEN:
+                raise
             view_granted = False
         if not view_granted:
             logger.warning(f"User {user.username} denied access to board {board_id}")
@@ -161,10 +167,14 @@ async def board_channel(
         write_granted = True
         try:
             require_board_collab_write_access(board, user, db)
-        except HTTPException:
-            # Only a public-board viewer without any write relationship lands
-            # here: view was granted above and the private-board relationships
-            # are exactly the write relationships.
+        except HTTPException as exc:
+            # Same rule as the view gate above: only the intentional 403 (a
+            # public-board viewer without any write relationship — view was
+            # granted above and the private-board relationships are exactly
+            # the write relationships) means read-only; anything else must
+            # propagate.
+            if exc.status_code != status.HTTP_403_FORBIDDEN:
+                raise
             write_granted = False
 
         # Mark the room registration before awaiting accept so cancellation in
@@ -206,9 +216,15 @@ async def board_channel(
 
                 # Bound the fan-out (see MAX_COLLAB_PAYLOAD_BYTES above): a
                 # message larger than the cap is refused with 1009 before any
-                # peer receives it.
+                # peer receives it. The cap is measured in WIRE bytes (what
+                # json.dumps(...).encode() actually delivers to every peer):
+                # a len() over the str counts code points, so a non-ASCII
+                # payload of 256K chars would pass this check and still
+                # arrive as ~0.5-1MB per peer.
                 payload_size = len(
-                    json.dumps(data, separators=(",", ":"), ensure_ascii=False)
+                    json.dumps(data, separators=(",", ":"), ensure_ascii=False).encode(
+                        "utf-8"
+                    )
                 )
                 if payload_size > MAX_COLLAB_PAYLOAD_BYTES:
                     logger.warning(

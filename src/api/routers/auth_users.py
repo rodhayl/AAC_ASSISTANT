@@ -521,21 +521,37 @@ def update_user(
 
     # Mirror the profile-update contract: a blank display name is rejected so
     # admins cannot accidentally leave a user with an invisible name.
-    if 'display_name' in payload:
-        display_name = (payload.get('display_name') or '').strip()
+    if "display_name" in payload:
+        # The raw-dict contract accepts arbitrary JSON; a non-string here
+        # (int/bool/list/...) must be a clean 400, never an AttributeError 500
+        # from calling .strip() on it (mirrors the type checks for user_type
+        # and is_active in this same endpoint).
+        if not isinstance(payload["display_name"], str):
+            raise HTTPException(
+                status_code=400,
+                detail=get_text(user=current_user, key="errors.auth.displayNameInvalid"),
+            )
+        display_name = payload["display_name"].strip()
         if not display_name:
             raise HTTPException(
                 status_code=400,
             detail=get_request_text(request, "errors.auth.displayNameRequired", user=current_user),
             )
 
-    new_email = payload.get('email')
+    new_email = payload.get("email")
+    if new_email is not None and not isinstance(new_email, str):
+        # Non-string email values (int/bool/list/...) must be a clean 400,
+        # never an AttributeError 500 inside normalize_email's .strip().
+        raise HTTPException(
+            status_code=400,
+            detail=get_text(user=current_user, key="errors.auth.emailInvalid"),
+        )
     if new_email is not None and new_email != user.email:
         # An empty string from the editor means "clear the optional email".
         # Normalize it to None so the row stores NULL like an account created
-        # without an email, matching update_profile's clear semantics.
-        if isinstance(new_email, str):
-            new_email = new_email.strip() or None
+        # without an email, matching update_profile's clear semantics. (The
+        # guard above already proved new_email is a str here when not None.)
+        new_email = new_email.strip() or None
         # Store and compare the canonical lowercase form (normalize_email in
         # auth_helpers.py): two accounts differing only in email local-part
         # capitalization are visually indistinguishable, so the admin edit
@@ -902,6 +918,14 @@ def update_profile(
         # claim "User@x.com" while another account already holds "user@x.com".
         new_email = normalize_email(profile.email)
         if new_email is not None:
+            # The other email writes (register, setup, admin-create, admin-edit)
+            # all run validate_email_format, which enforces the ASCII-only
+            # contract the lowercase dedupe relies on (func.lower is
+            # ASCII-only on SQLite, so a stored "Ñoño@x.com" would silently
+            # evade the case-insensitive duplicate check). Close this last
+            # write path: an email that passes pydantic's EmailStr but fails
+            # the API contract is a clean 400 here.
+            validate_email_format(new_email, user=current_user)
             existing = (
                 db.query(User)
                 .filter(

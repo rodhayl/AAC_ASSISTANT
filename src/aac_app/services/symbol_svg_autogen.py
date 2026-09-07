@@ -91,12 +91,6 @@ def _rate_limit_cooldown_seconds() -> float:
         return 30.0
 
 
-def _normalize_label(label: str) -> str:
-    # Canonical strip+casefold key shared with the catalog/import dedupe
-    # paths (normalize_symbol_label in runtime_translation.py).
-    return normalize_symbol_label(label)
-
-
 def _generate_sync_callable():
     """Return the provider's synchronous generator, or None when unavailable."""
     if _llm_provider_factory is None:
@@ -125,7 +119,9 @@ def _has_catalog_symbol(label: str) -> bool:
         escape_like_literal,
     )
 
-    normalized = _normalize_label(label)
+    # Canonical strip+casefold key shared with the catalog/import dedupe
+    # paths (normalize_symbol_label in runtime_translation.py).
+    normalized = normalize_symbol_label(label)
     if not normalized:
         return True  # Nothing to generate for empty labels.
     # A label may legitimately contain LIKE metacharacters; the existence
@@ -338,7 +334,7 @@ def ensure_symbol_generated(
     being generated, or whose provider just failed is skipped. Safe to call on
     every Smartbar keystroke.
     """
-    normalized = _normalize_label(label)
+    normalized = normalize_symbol_label(label)
     if not normalized or not (language or "").strip():
         return
     from src.aac_app.services.runtime_translation import normalize_language_code

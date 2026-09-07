@@ -9,6 +9,11 @@ apart.
 
 from __future__ import annotations
 
+from sqlalchemy import func
+
+from src.aac_app.models import Symbol
+from src.aac_app.services.runtime_translation import normalize_symbol_label
+
 # Labels that match these substrings are internal dev artifacts, not real
 # symbols. Reject them so they never reach the database or suggestions.
 BAD_LABEL_SUBSTRINGS: tuple[str, ...] = (
@@ -33,11 +38,6 @@ def find_symbol_by_normalized_label(db, label: str | None):
     new or needs Unicode folding) does a Python-side casefold scan of the
     label column run.
     """
-    from sqlalchemy import func
-
-    from src.aac_app.models import Symbol
-    from src.aac_app.services.runtime_translation import normalize_symbol_label
-
     normalized = normalize_symbol_label(label)
     if not normalized:
         return None
