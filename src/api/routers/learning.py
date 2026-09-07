@@ -345,7 +345,11 @@ def create_saved_topic(
         board = get_board_or_404(db, payload.board_id, current_user)
         require_board_view_access(board, current_user, db)
 
-    board_name = payload.board.strip()[:100]
+    board_name = payload.board.strip()
+    # SavedTopicCreate.board already caps at 100 (schemas.py) — the strip is
+    # the only normalization left; the old [:100] slice was unreachable
+    # because the schema rejects overlong board names before the handler
+    # runs (topic twin pattern).
     # SavedTopicCreate.topic already caps at 200 (schemas.py) — the strip is
     # the only normalization left; the old [:200] slice was unreachable
     # because the schema rejects overlong topics before the handler runs.

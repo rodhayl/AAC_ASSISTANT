@@ -473,7 +473,7 @@ class BoardBase(BaseModel):
     grid_rows: int | None = Field(4, ge=1, le=100)
     grid_cols: int | None = Field(5, ge=1, le=100)
     ai_enabled: bool = False
-    ai_provider: str | None = None
+    ai_provider: str | None = Field(None, max_length=50)  # CommunicationBoard.ai_provider String(50)
     ai_model: str | None = Field(None, max_length=100)  # CommunicationBoard.ai_model String(100)
     locale: str = Field("en", min_length=2, max_length=10)
     is_language_learning: bool = False
@@ -492,7 +492,7 @@ class BoardUpdate(BaseModel):
     grid_rows: int | None = Field(None, ge=1, le=100)
     grid_cols: int | None = Field(None, ge=1, le=100)
     ai_enabled: bool | None = None
-    ai_provider: str | None = None
+    ai_provider: str | None = Field(None, max_length=50)  # CommunicationBoard.ai_provider String(50)
     ai_model: str | None = Field(None, max_length=100)  # CommunicationBoard.ai_model String(100)
     locale: str | None = Field(None, min_length=2, max_length=10)
     is_language_learning: bool | None = None

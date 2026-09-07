@@ -2,6 +2,7 @@
 import asyncio
 import contextlib
 import json
+import math
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from loguru import logger
@@ -83,11 +84,22 @@ def _is_collab_move_payload(data: dict) -> bool:
     junk or forged dict (e.g. an ``add``/``ping`` payload, or a move without
     a usable position) is never amplified to every peer. bool is rejected
     (it is an int subclass and a JSON ``true`` must not become symbol id 1).
+
+    E6 tightened the shape: ``symbol_id`` must be a positive int (a forged
+    negative/zero id could never name a real placement), and ``x``/``y`` must
+    be FINITE numbers (a ``1e999`` float serializes to ``Infinity`` and must
+    not ride to every peer). Extra keys beyond ``op``/``symbol_id``/
+    ``position`` are IGNORED and broadcast as-is: the receiver dereferences
+    only the three fields above, so a faithful under-cap frame must not be
+    mangled or dropped for carrying inert fields — the only key with content
+    semantics (``label``) is vetted by the content gate before broadcast.
     """
     if data.get("op") != "move":
         return False
     symbol_id = data.get("symbol_id")
     if isinstance(symbol_id, bool) or not isinstance(symbol_id, int):
+        return False
+    if symbol_id <= 0:
         return False
     position = data.get("position")
     if not isinstance(position, dict):
@@ -95,6 +107,8 @@ def _is_collab_move_payload(data: dict) -> bool:
     for axis in ("x", "y"):
         value = position.get(axis)
         if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return False
+        if isinstance(value, float) and not math.isfinite(value):
             return False
     return True
 
@@ -290,16 +304,34 @@ async def board_channel(
                     )
                     continue
 
-                # Layer-1 content gate on board-change payloads that carry a
-                # free-text label. This layer vets ANY label-bearing dict
-                # (whatever its op) because it is the only enforcement point
-                # of the guardian ``block_social_messaging`` lock and the
-                # fail-closed net for text that could not be vetted; the
-                # vocabulary gate below then restricts what may actually fan
-                # out to the move op alone. Blocked labels are never fanned
-                # out to the room; the REST admission gates
-                # (get_or_create_symbol) are the authoritative DB guard, this
-                # protects every connected peer from forged/malformed input.
+                # Layer-2 vocabulary gate FIRST (E6/C1): only the ``move`` op
+                # with the exact shape the client receiver dereferences is
+                # broadcast. Anything else — ``add``/``ping``/unknown ops,
+                # malformed moves — is dropped here with the connection kept
+                # alive. Running this gate BEFORE any policy/DB work means a
+                # junk dict (e.g. ``{"op": "ping", "label": "<blocked>"}``)
+                # is dropped without paying a policy lookup or writing a
+                # content-safety row for a payload that would never be
+                # broadcast anyway (an attacker could otherwise fill the
+                # safety log without ever reaching a peer).
+                if not _is_collab_move_payload(data):
+                    logger.debug(
+                        "Dropping non-move collab payload from {} ({} bytes)",
+                        user.username,
+                        payload_size,
+                    )
+                    continue
+
+                # Layer-1 content gate (R2/E6): vets ONLY the will-broadcast
+                # moves that actually carry a non-blank free-text ``label``
+                # — the sole enforcement point of the guardian
+                # ``block_social_messaging`` lock and the fail-closed net for
+                # text that could not be vetted. (A label-less move has no
+                # text to vet.) Blocked labels are never fanned out to the
+                # room; the REST admission gates (get_or_create_symbol) are
+                # the authoritative DB guard, this protects every connected
+                # peer from forged input. Extra non-label keys ride along
+                # inertly (see _is_collab_move_payload).
                 # (data is a dict here — the dict gate above ran first.)
                 label_candidate = data.get("label")
                 if isinstance(label_candidate, str) and label_candidate.strip():
@@ -353,20 +385,6 @@ async def board_channel(
                             exc,
                         )
                         continue
-
-                # Layer-2 vocabulary gate (C1): only the ``move`` op with the
-                # exact shape the client receiver dereferences is broadcast.
-                # Anything else — ``add``/``ping``/unknown ops, malformed
-                # moves — is dropped here with the connection kept alive; the
-                # label content gate above already vetted any text it
-                # carried, so nothing unvetted can slip past this continue.
-                if not _is_collab_move_payload(data):
-                    logger.debug(
-                        "Dropping non-move collab payload from {} ({} bytes)",
-                        user.username,
-                        payload_size,
-                    )
-                    continue
 
                 message = {
                     "type": "board_change",

@@ -86,10 +86,10 @@ export const useBoardStore = create<BoardState>((set, get) => {
   fetchBoards: async (userId, name, forceRefresh = false, page = 1) => {
     const { lastFetchTime, boards, isFiltered, currentUserId } = get();
     const now = Date.now();
-    // Whitespace-only names mean "no filter" in every search UI: the board
-    // name LIKE filter strips internally, and the server treats a present
-    // whitespace-only ``name`` as a no-match ([]). Omit the param entirely so
-    // typing spaces never blanks the list the way a real query would.
+    // Whitespace-only names mean "no filter" (E5 contract): the server
+    // treats absent, empty and whitespace-only ``name`` identically — no
+    // filter, full list. Omit the param entirely so typing spaces keeps the
+    // unfiltered list; the response is identical either way.
     const trimmedName = name?.trim() || undefined;
 
     // For pagination (page > 1), we append. For page 1, we replace.

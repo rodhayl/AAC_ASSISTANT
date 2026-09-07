@@ -139,9 +139,8 @@ describe('Symbols page', () => {
 
     const searchInput = screen.getByPlaceholderText('searchSymbols');
     await user.type(searchInput, '   ');
-    // The backend strips a present whitespace-only ``search`` into a
-    // no-match ([]); the page must omit the param so typing spaces keeps the
-    // full library instead of blanking it.
+    // Blank means "no filter" (E5 contract): the page must omit the param so
+    // typing spaces keeps the full library instead of sending junk.
     await waitFor(() =>
       expect(api.get).toHaveBeenLastCalledWith('/boards/symbols', {
         params: { skip: 0, limit: 101 },

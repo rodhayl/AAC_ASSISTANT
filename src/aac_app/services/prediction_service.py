@@ -54,18 +54,24 @@ _TOPIC_CACHE_KEY_MAX_CHARS = 200
 
 
 def _tokenize_topic(topic: str) -> list[str]:
-    r"""Split a topic string into meaningful lowercase tokens (len >= 2).
+    r"""Split a topic string into meaningful casefolded tokens (len >= 2).
 
     Splits on any non-alphanumeric character (Unicode-aware via ``\W``)
     so accented words like "inteligencia" survive intact. The result is
     deduplicated (order-preserving) and capped at ``_TOPIC_TOKEN_MAX``
     unique tokens so the per-token LIKE-clause builder stays bounded.
+
+    Tokens use the canonical ``casefold()`` (E9 fold-parity): every sibling
+    path (topic buckets, dedupe, ranking ``score()``,
+    ``normalize_symbol_label``) folds with casefold, so ``STRASSE`` and
+    ``straße`` must tokenize identically here too — ``.lower()`` would split
+    the ß row out of the topic tier the way it did before.
     """
     import re
 
     tokens: list[str] = []
     for raw in re.split(r"\W+", topic, flags=re.UNICODE):
-        word = (raw or "").strip().lower()
+        word = (raw or "").strip().casefold()
         if len(word) < 2 or word in _TOPIC_STOPWORDS:
             continue
         tokens.append(word)
@@ -131,6 +137,16 @@ def _cached_topic_words(
         cached = _topics_word_cache.get(key)
         if cached is not None and now - cached[0] < _TOPIC_WORD_TTL_SECONDS:
             return cached[1]
+    # E9: an oversized normalized topic never invokes the LLM fetcher. The
+    # schema (NextSymbolRequest.topic max_length=200) makes this unreachable
+    # from HTTP, but a direct service caller bypassing it would otherwise pay
+    # an LLM call on MBs of text (cost/latency) only to discard the cache
+    # entry at the no-store guard below. The tokenized catalog tiers
+    # (suggest_topic) still answer locally for such topics — this skips only
+    # the LLM vocabulary supplement. The no-store guard below stays as a
+    # second line for topics that pass this bound.
+    if len(normalized_topic) > _TOPIC_CACHE_KEY_MAX_CHARS:
+        return ()
     try:
         words = fetcher(language, topic) or []
     except Exception as exc:

@@ -113,21 +113,26 @@ def get_symbol_categories(
     return [category for (category,) in categories]
 
 
-def _apply_symbol_search(query, search: str, db: Session):
+def _apply_symbol_search(query, search: str, db: Session, *, extra_filters=()):
     """Apply the existing keyword-plus-semantic symbol search to a query.
 
     The SQL LIKE clauses compare against ``func.lower(column)``, which is
     ASCII-only on SQLite (and SQL lower() never folds ``ß``/``İ`` anywhere):
     they cannot match stored rows whose casefold differs from their ASCII
-    lower (a stored ``straße`` never matches ``%strasse%``). When the LIKE
-    filter returns NOTHING, the shared unicode-recall net
-    (``unicode_recall_ids``) scans the same columns in Python and ORs the
-    found ids in — recall matters exactly when SQL shows nothing, which is
-    also what keeps the O(catalog) scan off the hot path (it fires only on
-    empty LIKE results, not on every keystroke). An "ASCII query fast path"
-    is deliberately absent: ``STRASSE`` (pure ASCII, casefold == lower)
-    still needs the scan to recall a stored ``straße``, because the fold gap
-    is in the STORED text — see the D7 regression test.
+    lower (a stored ``straße`` never matches ``%strasse%``). The shared
+    unicode-recall net (``unicode_recall_ids``) scans the same columns in
+    Python and ORs the found ids into the SAME query the LIKE filter builds
+    (E1): recall is a UNION that runs whenever the filter runs, because SQL
+    matching an ASCII row does not make a fold-only sibling disappear — see
+    the D7/E1 regression tests. The scan is bounded by the helper's caps and
+    scoped by ``extra_filters`` (the caller's equality pre-filters, E12b),
+    and the old empty-result existence probe is gone (E4): the caller issues
+    ONE filter fetch, never a probe-then-fetch double. An "ASCII query fast
+    path" is deliberately absent: ``STRASSE`` (pure ASCII, casefold ==
+    lower) still needs the scan to recall a stored ``straße``, because the
+    fold gap is in the STORED text. ``search`` must already be stripped and
+    non-blank (E5 no-filter contract) and the recall/scan/semantic failures
+    degrade to the SQL-only filter, never a 500.
     """
     s = contains_like_pattern(search)
     like_conditions: list = [
@@ -136,29 +141,22 @@ def _apply_symbol_search(query, search: str, db: Session):
         func.lower(Symbol.keywords).like(s, escape=LIKE_ESCAPE),
     ]
 
-    like_hit = (
-        query.filter(or_(*like_conditions))
-        .with_entities(Symbol.id)
-        .limit(1)
-        .first()
-        is not None
-    )
     conditions: list = [*like_conditions]
-    if not like_hit:
-        # The recall supplement must never break the search: a lookup error
-        # degrades to the SQL-only filter, exactly like the semantic branch.
-        try:
-            recall_ids = unicode_recall_ids(
-                db,
-                Symbol,
-                [Symbol.label, Symbol.description, Symbol.keywords],
-                search,
-            )
-            if recall_ids:
-                conditions.append(Symbol.id.in_(recall_ids))
-        except Exception as exc:
-            logger.warning(f"Canonical search supplement failed: {exc}")
-
+    # E1: the recall union runs on every search, not only when SQL shows
+    # nothing. The lookup error degrades to the SQL-only filter, exactly
+    # like the semantic branch.
+    try:
+        recall_ids = unicode_recall_ids(
+            db,
+            Symbol,
+            [Symbol.label, Symbol.description, Symbol.keywords],
+            search,
+            extra_filters=extra_filters,
+        )
+        if recall_ids:
+            conditions.append(Symbol.id.in_(recall_ids))
+    except Exception as exc:
+        logger.warning(f"Canonical search supplement failed: {exc}")
     try:
         from src.api.deps import get_vector_store
 
@@ -211,20 +209,30 @@ def get_symbols(
     """Get symbols with optional filters, ordered by order_index ASC"""
     from sqlalchemy import func
 
-    # W1 regression: contains_like_pattern strips internally and maps the
-    # empty string to "%%" (match-all), so a guard on the UNstripped value
-    # would let whitespace-only search/keywords through as a full-library
-    # query. Strip first and treat a whitespace-only term as a query for
-    # nothing (mirrors learning.py's strip-then-guard). An absent or empty
-    # param still means "no filter".
-    raw_search = search
-    search = raw_search.strip() if raw_search else None
-    if raw_search and not search:
-        return []
-    raw_keywords = keywords
-    keywords = raw_keywords.strip() if raw_keywords else None
-    if raw_keywords and not keywords:
-        return []
+    # E5 blank-input contract (one policy, documented in
+    # contains_like_pattern's docstring): an absent, empty, or whitespace-
+    # only term means NO FILTER — strip and let the guards below skip the
+    # filter, never return [] for blank and never feed "%%" to SQL. Padded
+    # real terms still match (D11 kept: the strip is the normalization).
+    search = search.strip() if search else None
+    keywords = keywords.strip() if keywords else None
+    # E7 (W1 sibling): category/language missed the strip-guard. Strip before
+    # the truthiness test so whitespace-only follows the same no-filter
+    # contract, and pass the stripped value into the equality/normalize
+    # calls so padded values match their stored rows like padded search does.
+    category = category.strip() if category else None
+    language = language.strip() if language else None
+
+    # Equality pre-filters shared by the main query AND the recall scans
+    # (E12b): a category/language-scoped search must not scan rows the outer
+    # query already excludes. The outer query ANDs the same filters again
+    # afterwards, so this only removes work, never changes results.
+    recall_extra_filters: list = []
+    if category:
+        recall_extra_filters.append(Symbol.category == category)
+    normalized_language = normalize_language_code(language) if language else None
+    if normalized_language:
+        recall_extra_filters.append(Symbol.language == normalized_language)
 
     usage_subq = (
         db.query(
@@ -239,43 +247,34 @@ def get_symbols(
     query = query.outerjoin(usage_subq, usage_subq.c.sid == Symbol.id)
     if category:
         query = query.filter(Symbol.category == category)
-    if language:
-        normalized_language = normalize_language_code(language)
-        if normalized_language:
-            query = query.filter(Symbol.language == normalized_language)
+    if normalized_language:
+        query = query.filter(Symbol.language == normalized_language)
     if search:
-        query = _apply_symbol_search(query, search, db)
+        query = _apply_symbol_search(
+            query, search, db, extra_filters=recall_extra_filters
+        )
     if keywords:
         # Standalone keyword filter (search above is absent): like the label
         # path, an all-caps keyword misses a stored fold-only value, so the
-        # shared unicode-recall net supplements the SQL filter when it finds
-        # nothing. U2: same helper, same recall, one degradation policy.
+        # shared unicode-recall net unions its ids in (E1/U2 — same helper,
+        # same bounded scan, one degradation policy; the probe is gone, E4).
         keyword_condition = func.lower(Symbol.keywords).like(
             contains_like_pattern(keywords), escape=LIKE_ESCAPE
         )
-        keyword_hit = (
-            query.filter(keyword_condition)
-            .with_entities(Symbol.id)
-            .limit(1)
-            .first()
-            is not None
-        )
-        if not keyword_hit:
-            try:
-                recall_ids = unicode_recall_ids(
-                    db, Symbol, [Symbol.keywords], keywords
-                )
-            except Exception as exc:
-                logger.warning(f"Keyword recall supplement failed: {exc}")
-                recall_ids = []
+        conditions: list = [keyword_condition]
+        try:
+            recall_ids = unicode_recall_ids(
+                db,
+                Symbol,
+                [Symbol.keywords],
+                keywords,
+                extra_filters=recall_extra_filters,
+            )
             if recall_ids:
-                query = query.filter(
-                    or_(keyword_condition, Symbol.id.in_(recall_ids))
-                )
-            else:
-                query = query.filter(keyword_condition)
-        else:
-            query = query.filter(keyword_condition)
+                conditions.append(Symbol.id.in_(recall_ids))
+        except Exception as exc:
+            logger.warning(f"Keyword recall supplement failed: {exc}")
+        query = query.filter(or_(*conditions))
     if usage == "in_use":
         query = query.filter(
             (usage_subq.c.use_count.is_not(None)) & (usage_subq.c.use_count > 0)

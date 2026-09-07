@@ -81,9 +81,9 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
       if (selectedCategory !== 'all') {
         params.category = selectedCategory;
       }
-      // Whitespace-only text means "no filter" (the backend strips search
-      // and treats a blank param as a no-match), so omit it rather than
-      // blanking the picker while the user types spaces.
+      // Whitespace-only text means "no filter" (E5 contract): the backend
+      // treats absent, empty and whitespace-only ``search`` identically. Omit
+      // the param so typing spaces keeps the unfiltered picker list.
       const trimmedTerm = searchTerm.trim();
       if (trimmedTerm) {
         params.search = trimmedTerm;

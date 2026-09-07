@@ -118,13 +118,31 @@ def contains_like_pattern(text: str) -> str:
     miss the exact label the catalog holds.
 
     NOTE the real contract: after the internal strip, an empty input maps to
-    ``"%%"`` — a match-all. Callers MUST strip their query text before the
-    truthiness guard and never feed this helper blank/whitespace text; a
-    whitespace-only query reaching SQL as ``"%%"`` would silently list the
-    whole table. Every search route (learning.py, symbols.py, boards.py)
-    strips before deciding whether to search at all.
+    ``"%%"`` — a match-all. This helper is deliberately NOT the blank-input
+    gate. The unified blank-input contract (E5) lives HERE so every search
+    route shares one policy: an ABSENT, empty, or whitespace-only query
+    parameter means NO FILTER — the route strips first and then simply skips
+    the search (it never returns a ``[]`` "query for nothing" and never
+    feeds blank text into this helper as a silent match-all). A
+    whitespace-only string must therefore never reach SQL as ``"%%"`` from a
+    route; direct callers of this helper that do not apply that gate get the
+    documented ``"%%"`` degenerate pattern.
     """
     return f"%{escape_like_literal(text.strip()).casefold()}%"
+
+
+# Bounds on the unicode-recall scan in unicode_recall_ids. The scan exists
+# because SQL LIKE (an ASCII-only ``lower()`` on SQLite) cannot fold stored
+# ``ß``/``İ`` text; without bounds, a table that keeps growing (the ARASAAC
+# auto-import alone seeds ~17k symbols today) would turn every recall into an
+# unbounded Python scan and an unbounded ``IN (...)`` list. Both caps sit FAR
+# above the current full catalog (~17k rows), so today's data is still fully
+# recallable with headroom; they exist to bound unbounded growth. Residual
+# miss risk is documented here like the payload byte caps: rows beyond the
+# scan cap, or matches past the id cap, are simply not recalled — the SQL
+# filter still matches whatever ASCII LIKE can see.
+_RECALL_MAX_SCAN_ROWS = 50_000
+_RECALL_MAX_IDS = 500
 
 
 def unicode_recall_ids(
@@ -132,6 +150,10 @@ def unicode_recall_ids(
     model,
     columns,
     text: str,
+    *,
+    extra_filters=(),
+    max_scan_rows: int = _RECALL_MAX_SCAN_ROWS,
+    max_ids: int = _RECALL_MAX_IDS,
 ) -> list[int]:
     """Return ids whose stored text casefolds-contains ``text``.
 
@@ -143,34 +165,46 @@ def unicode_recall_ids(
     the small id set whose casefolded text contains the casefolded query —
     the exact recall SQL cannot express.
 
-    Callers gate on their SQL filter returning NOTHING first (recall matters
-    only on empty results); this helper is then the O(catalog) fallback. An
-    "ASCII fast path" is deliberately NOT used: the fold gap lives in the
-    STORED text as well as the query, so an all-caps query (``STRASSE``)
-    against a stored ``straße`` has ``query.casefold() == query.lower()`` yet
-    still needs the scan (see the committed D7 test in
-    tests/test_prompt20_regressions.py). Any scan error must degrade to an
-    empty recall set at the call site, never a 500.
+    The recall is a UNION, not a fallback: search routes run it whenever they
+    apply a text filter (see ``_apply_symbol_search``/boards name/keywords),
+    because the fold gap lives in the STORED text as well as the query — an
+    all-caps query (``STRASSE``) against a stored ``straße`` has
+    ``query.casefold() == query.lower()`` yet still needs the scan (see the
+    committed D7 test in tests/test_prompt20_regressions.py), and an ASCII
+    row matching the LIKE does not make a fold-only sibling disappear. An
+    "empty-results-only" gate was tried and regressed exactly that case.
 
-    The scan is deliberately NOT row-capped: rows stream through
-    ``yield_per`` so memory stays bounded, and truncating at an arbitrary
-    row count would silently miss a fold-only match stored beyond it (the
-    ARASAAC auto-import alone seeds ~17k symbols). The cost is acceptable
-    because callers invoke this only after SQL showed nothing.
+    The scan is BOUNDED: rows stream through ``yield_per`` (bounded memory)
+    and iteration stops after ``max_scan_rows`` rows or ``max_ids`` matches
+    (see the constants above for the numbers and the residual miss risk).
+    ``extra_filters`` (SQLAlchemy conditions ANDed onto the scan query)
+    scope the scan to the same equality/RBAC pre-filters the caller's outer
+    query applies, so a category/language/user-scoped search never scans rows
+    the outer query would AND away afterwards. NULL columns never match — do
+    NOT pre-filter with ``IS NOT NULL`` per column: AND-ing them would drop
+    every row that leaves one of the searched columns empty (a label row
+    without a description). Any scan error must degrade to an empty recall
+    set at the call site, never a 500.
     """
     stripped = (text or "").strip()
     if not stripped:
         return []
     folded = stripped.casefold()
+    query = db.query(model.id, *columns)
+    for condition in extra_filters:
+        query = query.filter(condition)
     ids: list[int] = []
-    for row_id, *values in db.query(model.id, *columns).yield_per(500):
-        # Values are compared in Python (where the fold happens) so NULL
-        # columns simply never match — do NOT pre-filter with ``IS NOT NULL``
-        # per column: AND-ing them would drop every row that leaves one of
-        # the searched columns empty (a label row without a description).
+    for scanned, (row_id, *values) in enumerate(query.yield_per(500), start=1):
+        if scanned > max_scan_rows:
+            break
+        matched = False
         for value in values:
             if isinstance(value, str) and folded in value.casefold():
-                ids.append(row_id)
+                matched = True
+                break
+        if matched:
+            ids.append(row_id)
+            if len(ids) >= max_ids:
                 break
     return ids
 

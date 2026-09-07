@@ -25,6 +25,11 @@ from src.api.routers.board_helpers import SUPPORTED_AI_PROVIDERS, serialize_boar
 
 router = APIRouter()
 
+# E10: explicit allow-list for update_board's raw update dict (M1 idiom).
+# Derived from the schema so a field added to BoardUpdate is either a real
+# settable column (covered here) or a server-bug ValueError at runtime.
+_BOARD_UPDATE_SETTABLE_KEYS = frozenset(schemas.BoardUpdate.model_fields)
+
 
 @router.get("")
 @router.get("/")
@@ -45,88 +50,85 @@ def get_boards(
     - User: Can view own boards, public boards, or filter by specific user_id if that user's boards are public
     """
     try:
-        query = db.query(CommunicationBoard)
+        # E5 blank-input contract (one policy, documented in
+        # contains_like_pattern's docstring): an absent, empty, or
+        # whitespace-only name means NO FILTER — strip and let the guard
+        # below skip the name filter, never return [] and never feed "%%"
+        # to SQL. Padded real names still match (the strip is the
+        # normalization).
+        name = name.strip() if name else None
 
-        # W1 regression: contains_like_pattern strips internally and maps ""
-        # to "%%" (match-all), so a guard on the unstripped name would let
-        # whitespace-only through as a full-library query. Strip first; a
-        # whitespace-only name is a query for nothing. (An absent/empty param
-        # still means no filter.)
-        raw_name = name
-        name = raw_name.strip() if raw_name else None
-        if raw_name and not name:
-            return []
+        # E2: RBAC scoping FIRST. The name filter, its recall scan and the
+        # fetch below all restrict to the boards this user may see; scoping
+        # the recall scan with the same conditions means a visible fold-only
+        # board can never be hidden behind an invisible ASCII board (or vice
+        # versa) — and invisible boards are never scanned in the first place.
+        rbac_conditions: list = []
+        if current_user.user_type == "admin":
+            # Admin can see everything
+            if user_id:
+                rbac_conditions.append(CommunicationBoard.user_id == user_id)
+        elif user_id:
+            if user_id == current_user.id:
+                # Own boards
+                rbac_conditions.append(CommunicationBoard.user_id == current_user.id)
+            else:
+                # Other user's boards -> MUST be public
+                rbac_conditions.extend(
+                    [
+                        CommunicationBoard.user_id == user_id,
+                        CommunicationBoard.is_public.is_(True),
+                    ]
+                )
+        else:
+            # No user_id specified -> My boards OR Public boards
+            rbac_conditions.append(
+                or_(
+                    CommunicationBoard.user_id == current_user.id,
+                    CommunicationBoard.is_public.is_(True),
+                )
+            )
+
+        query = db.query(CommunicationBoard)
 
         # Filter by name if provided. The name is user text: escape LIKE
         # wildcards so searching for "%" lists only literal matches instead of
         # every board, and "a_b" does not match "axb".
-        name_condition = None
         if name:
             name_condition = CommunicationBoard.name.ilike(
                 contains_like_pattern(name), escape=LIKE_ESCAPE
             )
-            # U2: SQL ilike cannot see stored fold-only names (a stored
-            # "straße" never matches an all-caps query). Run the shared
-            # unicode-recall net only when NO stored board name matches via
-            # SQL — recall matters on empty results, and gating keeps the
-            # O(catalog) Python scan off the common (matching) path. RBAC
-            # filters still AND onto whatever the recall adds.
-            sql_hit = (
-                db.query(CommunicationBoard.id)
-                .filter(name_condition)
-                .limit(1)
-                .first()
-                is not None
-            )
-            if sql_hit:
-                query = query.filter(name_condition)
+            # E1/U2: SQL ilike cannot see stored fold-only names (a stored
+            # "straße" never matches an all-caps query), and an ASCII name
+            # match does not make a fold-only sibling disappear — so the
+            # shared unicode-recall net unions its ids in on EVERY name
+            # search (bounded by the helper caps, scoped by the RBAC
+            # conditions above; the old empty-result probe is gone, E4).
+            try:
+                recall_ids = unicode_recall_ids(
+                    db,
+                    CommunicationBoard,
+                    [CommunicationBoard.name],
+                    name,
+                    extra_filters=list(rbac_conditions),
+                )
+            except Exception as exc:
+                logger.warning(f"Board-name recall supplement failed: {exc}")
+                recall_ids = []
+            if recall_ids:
+                query = query.filter(
+                    or_(name_condition, CommunicationBoard.id.in_(recall_ids))
+                )
             else:
-                try:
-                    recall_ids = unicode_recall_ids(
-                        db, CommunicationBoard, [CommunicationBoard.name], name
-                    )
-                except Exception as exc:
-                    logger.warning(f"Board-name recall supplement failed: {exc}")
-                    recall_ids = []
-                if recall_ids:
-                    query = query.filter(
-                        or_(
-                            name_condition,
-                            CommunicationBoard.id.in_(recall_ids),
-                        )
-                    )
-                else:
-                    query = query.filter(name_condition)
+                query = query.filter(name_condition)
+
+        for condition in rbac_conditions:
+            query = query.filter(condition)
 
         # Eager load symbols
         query = query.options(
             selectinload(CommunicationBoard.symbols).joinedload(BoardSymbol.symbol)
         )
-
-        if current_user.user_type == "admin":
-            # Admin can see everything
-            if user_id:
-                query = query.filter(CommunicationBoard.user_id == user_id)
-        else:
-            # Regular user
-            if user_id:
-                if user_id == current_user.id:
-                    # Own boards
-                    query = query.filter(CommunicationBoard.user_id == current_user.id)
-                else:
-                    # Other user's boards -> MUST be public
-                    query = query.filter(
-                        CommunicationBoard.user_id == user_id,
-                        CommunicationBoard.is_public.is_(True),
-                    )
-            else:
-                # No user_id specified -> My boards OR Public boards
-                query = query.filter(
-                    or_(
-                        CommunicationBoard.user_id == current_user.id,
-                        CommunicationBoard.is_public.is_(True),
-                    )
-                )
 
         boards = query.offset(skip).limit(limit).all()
 
@@ -237,6 +239,17 @@ def update_board(
         update_data["ai_provider"] = None
         update_data["ai_model"] = None
 
+    # E10 (M1 idiom for boards): update_board's raw update dict is only safe
+    # to ``setattr`` while every BoardUpdate field maps 1:1 onto a writable
+    # CommunicationBoard column. A future schema field without a column (or a
+    # renamed column) must raise — a server bug, not a client error, so a
+    # ValueError like M1's settings allow-list — instead of silently becoming
+    # a dead attribute or a hijacked column.
+    unknown_keys = set(update_data) - _BOARD_UPDATE_SETTABLE_KEYS
+    if unknown_keys:
+        raise ValueError(
+            f"update_board cannot set unknown fields: {sorted(unknown_keys)}"
+        )
     for key, value in update_data.items():
         setattr(db_board, key, value)
 

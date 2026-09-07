@@ -157,11 +157,16 @@ def test_collab_ws_block_social_messaging(test_db_session, test_password, collab
         client.websocket_connect(url, subprotocols=["aac-auth", token]) as ws2,
         finish_collab_connections(client, ws1, ws2),
     ):
-        ws1.send_json({"op": "add", "label": "casa"})
+        # E6: the vocabulary gate runs BEFORE the label gate, so only a real
+        # label-bearing MOVE reaches the block_social_messaging lock (an
+        # ``add``/``ping`` with a label is dropped at the vocab gate with no
+        # policy work). Send a move carrying a label: it must be blocked and
+        # logged.
+        ws1.send_json(_move(symbol_id=1, label="casa"))
         # A follow-up MOVE from ws2 must be the FIRST message ws1 receives:
-        # if the labeled payload had passed the gate, the add would arrive
-        # before the move. (Pings are not a usable canary: the C1 vocabulary
-        # gate drops non-move ops, so only a valid move is broadcast.)
+        # if the labeled move had passed the gate, it would arrive before
+        # this one. (Pings are not a usable canary: the C1 vocabulary gate
+        # drops non-move ops, so only a valid move is broadcast.)
         ws2.send_json(_move(symbol_id=999))
         recv = ws1.receive_json()
         assert recv["type"] == "board_change"
@@ -878,8 +883,10 @@ def test_collab_ws_content_gate_error_drops_message_fail_closed(
         client.websocket_connect(url, subprotocols=["aac-auth", token]) as ws_b,
         finish_collab_connections(client, ws_a, ws_b),
     ):
-        # A labeled message whose gate check raises must be dropped.
-        ws_a.send_json({"op": "add", "label": "casa"})
+        # A labeled message whose gate check raises must be dropped. E6: the
+        # vocab gate runs first, so the label must ride a valid MOVE to
+        # exercise the fail-closed label gate at all.
+        ws_a.send_json(_move(symbol_id=1, label="casa"))
         # The peer's first message must be the NEXT normal broadcast (the
         # dropped label must never precede it) — a valid move, since pings
         # are not fanned out under the move-only vocabulary gate.
@@ -954,4 +961,107 @@ def test_collab_ws_non_dict_payload_is_dropped_and_sender_stays_usable(
         observer.send_json(_move(symbol_id=8))
         back = sender.receive_json()
         assert back["payload"]["op"] == "move"
+        assert back["payload"]["symbol_id"] == 8
+
+
+# --- E6: vocab gate first + tightened move shape -----------------------------
+
+
+def test_is_collab_move_payload_shape_contract():
+    """Unit pins of the E6-tightened move shape (pure predicate, no WS)."""
+    from src.api.routers.collab import _is_collab_move_payload
+
+    ok = {"op": "move", "symbol_id": 1, "position": {"x": 0, "y": 2}}
+    assert _is_collab_move_payload(ok) is True
+    # Extra keys ride along inertly (the receiver reads only op/symbol_id/
+    # position; the byte cap still bounds the frame and any label is vetted).
+    assert _is_collab_move_payload({**ok, "blob": "x"}) is True
+    assert _is_collab_move_payload({**ok, "label": "casa"}) is True
+    # Non-move ops are dropped.
+    assert _is_collab_move_payload({"op": "ping"}) is False
+    assert _is_collab_move_payload({"op": "add", "label": "casa"}) is False
+    # symbol_id must be a POSITIVE int: bool/str/float/zero/negative rejected.
+    assert _is_collab_move_payload({**ok, "symbol_id": True}) is False
+    assert _is_collab_move_payload({**ok, "symbol_id": "1"}) is False
+    assert _is_collab_move_payload({**ok, "symbol_id": 0}) is False
+    assert _is_collab_move_payload({**ok, "symbol_id": -5}) is False
+    # x/y must be finite numbers: bool rejected, non-finite floats rejected.
+    import math
+
+    assert _is_collab_move_payload({**ok, "position": {"x": True, "y": 0}}) is False
+    assert _is_collab_move_payload({**ok, "position": {"x": "a", "y": 0}}) is False
+    assert _is_collab_move_payload({"op": "move", "symbol_id": 1, "position": {"x": math.inf, "y": 0}}) is False
+    assert _is_collab_move_payload({"op": "move", "symbol_id": 1, "position": {"x": 1, "y": -math.inf}}) is False
+    assert _is_collab_move_payload({**ok, "position": {"x": 1, "y": 2.5}}) is True
+
+
+def test_collab_junk_ping_with_blocked_label_is_dropped_pre_db(
+    test_db_session, test_password, collab_client, monkeypatch
+):
+    """E6: the vocabulary gate runs BEFORE the label content gate, so a junk
+    non-move dict carrying a blocked label is dropped with ZERO policy
+    lookups and ZERO content-safety log writes (red before E6: the label gate
+    ran first, paying resolve_policy_for_user + log_event on a payload that
+    was then dropped as non-move — an attacker could fill the safety log
+    without ever broadcasting)."""
+    import src.aac_app.services.content_safety as content_safety
+
+    policy_calls = []
+    log_calls = []
+    original_resolve = content_safety.resolve_policy_for_user
+    original_log = content_safety.log_event
+
+    def counting_resolve(*args, **kwargs):
+        policy_calls.append(args)
+        return original_resolve(*args, **kwargs)
+
+    def counting_log(*args, **kwargs):
+        log_calls.append(args)
+        return original_log(*args, **kwargs)
+
+    monkeypatch.setattr(content_safety, "resolve_policy_for_user", counting_resolve)
+    monkeypatch.setattr(content_safety, "log_event", counting_log)
+
+    client = collab_client
+    token, url = _make_collab_room(client, test_password, "ws_e6_junk")
+    with (
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as sender,
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as observer,
+        finish_collab_connections(client, sender, observer),
+    ):
+        sender.send_json({"op": "ping", "label": "<blocked>"})
+        # A junk add with a label is equally pre-DB.
+        sender.send_json({"op": "add", "label": "<blocked>"})
+        # A label-less valid move (no label gate work at all) confirms the
+        # room still fans out normally after the junk.
+        sender.send_json(_move(symbol_id=5))
+        recv = observer.receive_json()
+        assert recv["payload"]["symbol_id"] == 5
+    # The junk dicts were dropped before any policy/DB work — zero policy
+    # lookups and zero content-safety log writes for them.
+    assert policy_calls == []
+    assert log_calls == []
+
+
+def test_collab_negative_symbol_id_move_is_dropped_sender_alive(
+    test_db_session, test_password, collab_client
+):
+    """E6: a forged move with a non-positive symbol_id is dropped (it could
+    never name a real placement) and the sender stays connected; the peer's
+    first message is the next valid move (red before E6: the -5 move was
+    broadcast)."""
+    client = collab_client
+    token, url = _make_collab_room(client, test_password, "ws_e6_neg")
+    with (
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as sender,
+        client.websocket_connect(url, subprotocols=["aac-auth", token]) as observer,
+        finish_collab_connections(client, sender, observer),
+    ):
+        sender.send_json({"op": "move", "symbol_id": -5, "position": {"x": 0, "y": 0}})
+        sender.send_json(_move(symbol_id=7))
+        first = observer.receive_json()
+        assert first["payload"]["symbol_id"] == 7
+        # Sender still usable.
+        observer.send_json(_move(symbol_id=8))
+        back = sender.receive_json()
         assert back["payload"]["symbol_id"] == 8

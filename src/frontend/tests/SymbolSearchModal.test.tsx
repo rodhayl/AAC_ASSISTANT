@@ -130,8 +130,8 @@ describe('SymbolSearchModal request lifecycle', () => {
     renderModal();
     const input = screen.getByPlaceholderText('Search for a symbol...');
 
-    // Typing spaces with no filter clears results and makes NO request: the
-    // backend strips a present whitespace-only search into a no-match ([]).
+    // Typing spaces with no filter makes NO request: blank means "no filter"
+    // (E5 contract), so the modal omits the param instead of sending it.
     fireEvent.change(input, { target: { value: '   ' } });
     await act(() => vi.advanceTimersByTimeAsync(200));
     await act(async () => { await Promise.resolve(); });

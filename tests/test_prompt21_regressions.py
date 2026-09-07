@@ -3,19 +3,26 @@
 (C1's websocket vocabulary tests live in tests/test_collab_ws.py — the D9
 ``add``-broadcast tests were rewritten there to the move-only contract.)
 
-- W1: whitespace-only symbol/keywords/board-name queries are a no-match,
-  never the ``%%`` match-all that D11's internal strip introduced.
+NOTE: PROMPT_22 (E1/E4/E5/E9) superseded three PROMPT_21 contracts, and the
+tests below were updated in place to the new ones:
+- W1 (blank input): PROMPT_21 pinned whitespace-only search/keywords/name as
+  a ``[]`` no-match; E5 unified the blank-input contract to NO FILTER (an
+  absent/empty/whitespace-only param behaves identically, full list) — the
+  whitespace tests now assert that unified contract.
+- U1 (recall gating): PROMPT_21 gated the recall scan on empty SQL results;
+  E1 showed SQL matching an ASCII row must still recall fold-only siblings,
+  so the scan now runs (bounded) on every search — the skip-on-hit test was
+  rewritten to assert the recall UNION on a SQL hit.
+- T1 (topic-word cache): oversized topics are now refused BEFORE the LLM
+  fetcher (E9) instead of being fetched and only refused at the store step.
+
+Remaining PROMPT_21 pins:
 - A1: analytics usage-log telemetry fields are capped at their column widths.
 - S1: multipart symbol label/category forms are capped at their columns.
-- U1: the unicode-recall scan is gated on empty SQL results (an "ASCII fast
-  path" would regress D7 — pure-ASCII queries still need the scan to recall
-  stored fold-only text, see test_symbol_search_finds_casefold_equivalent...).
 - U2: the keywords standalone filter and the boards name search use the same
   shared recall helper as the symbol label search.
 - L1: record_failed_attempt trims the lockout table exactly once, after the
   mutation.
-- T1: prediction topic/current_symbols are bounded; _tokenize_topic caps at
-  50 unique tokens; oversized topics are never stored as cache keys.
 - B1: board ai_model is bounded at the String(100) column on create+update.
 - R1: reset-password 404 for inactive accounts happens AFTER the permission
   block, so teachers probing inactive-unassigned students get the roster 403
@@ -109,50 +116,55 @@ def _symbol_search(token, params):
 
 def test_contains_like_pattern_whitespace_maps_to_match_all_pinned():
     # Unit pin of the helper's contract: after the internal strip the empty
-    # string maps to "%%". Search ROUTES must strip before their truthiness
-    # guard so whitespace-only input never reaches this helper as a match-all
-    # (W1 regression); this pin documents exactly what a caller must prevent.
+    # string maps to "%%". Search ROUTES apply the E5 blank-input contract
+    # (an absent/empty/whitespace-only query means NO FILTER — they strip and
+    # skip the search entirely), so whitespace never reaches this helper as a
+    # match-all from a route; direct callers that do not apply that gate get
+    # the documented degenerate pattern.
     assert contains_like_pattern("   ") == "%%"
     assert contains_like_pattern("") == "%%"
     assert contains_like_pattern("  casa  ") == "%casa%"
 
 
-def test_symbol_search_whitespace_only_returns_nothing(
+def test_symbol_search_blank_means_no_filter_unified_contract(
     admin_token, test_db_session
 ):
     test_db_session.add(
         Symbol(label="casa", category="noun", language="es", is_builtin=True)
     )
     test_db_session.commit()
-    # Whitespace-only search must NOT list the whole library.
-    resp = _symbol_search(
-        admin_token, {"search": "   ", "limit": 1000}
-    )
+    # E5 no-filter contract: absent, empty and whitespace-only search behave
+    # IDENTICALLY — the full list, never [] and never a match-all.
+    resp = _symbol_search(admin_token, {"limit": 1000})
     assert resp.status_code == 200
-    assert resp.json() == []
-    # Control: without the search param the row IS listed (guard is not
-    # swallowing the list itself).
-    resp = _symbol_search(admin_token, {})
-    assert resp.status_code == 200
-    assert {"casa"} <= {item["label"] for item in resp.json()}
+    full = {item["label"] for item in resp.json()}
+    assert "casa" in full
+    for blank in ("", "   "):
+        resp = _symbol_search(admin_token, {"search": blank, "limit": 1000})
+        assert resp.status_code == 200
+        assert {item["label"] for item in resp.json()} == full
     # Padded real term still matches (D11 kept).
     resp = _symbol_search(admin_token, {"search": "  casa  "})
     assert {item["label"] for item in resp.json()} == {"casa"}
 
 
-def test_symbol_keywords_whitespace_only_returns_nothing(
+def test_symbol_keywords_blank_means_no_filter_unified_contract(
     admin_token, test_db_session
 ):
     test_db_session.add(
         Symbol(label="perro", keywords="dog,mascota", language="es", is_builtin=True)
     )
     test_db_session.commit()
-    resp = _symbol_search(admin_token, {"keywords": "   "})
+    resp = _symbol_search(admin_token, {"limit": 1000})
     assert resp.status_code == 200
-    assert resp.json() == []
+    full = {item["label"] for item in resp.json()}
+    for blank in ("", "   "):
+        resp = _symbol_search(admin_token, {"keywords": blank, "limit": 1000})
+        assert resp.status_code == 200
+        assert {item["label"] for item in resp.json()} == full
 
 
-def test_boards_name_whitespace_only_returns_nothing(
+def test_boards_name_blank_means_no_filter_unified_contract(
     test_db_session, admin_token
 ):
     owner = User(
@@ -166,18 +178,22 @@ def test_boards_name_whitespace_only_returns_nothing(
     test_db_session.flush()
     test_db_session.add(CommunicationBoard(user_id=owner.id, name="Mi Tablero"))
     test_db_session.commit()
-    resp = client.get(
-        "/api/boards", params={"name": "   "}, headers=_auth(admin_token)
-    )
-    assert resp.status_code == 200
-    assert resp.json() == []
-    # Control + padded real name still matches.
     resp = client.get("/api/boards", headers=_auth(admin_token))
-    assert any(b["name"] == "Mi Tablero" for b in resp.json())
+    assert resp.status_code == 200
+    full = [b["name"] for b in resp.json()]
+    assert "Mi Tablero" in full
+    # E5: empty and whitespace-only name behave exactly like an absent one.
+    for blank in ("", "   "):
+        resp = client.get(
+            "/api/boards", params={"name": blank}, headers=_auth(admin_token)
+        )
+        assert resp.status_code == 200
+        assert [b["name"] for b in resp.json()] == full
+    # Padded real name still matches.
     resp = client.get(
         "/api/boards", params={"name": "  mi tablero  "}, headers=_auth(admin_token)
     )
-    assert any(b["name"] == "Mi Tablero" for b in resp.json())
+    assert [b["name"] for b in resp.json()] == ["Mi Tablero"]
 
 
 # --- A1: analytics telemetry fields bounded to their columns ---------------
@@ -296,12 +312,19 @@ def test_multipart_generate_svg_overlong_label_rejected(admin_user):
 # --- U1: recall scan gated on empty SQL results ------------------------------
 
 
-def test_symbol_search_ascii_sql_hit_skips_recall_scan(
+def test_symbol_search_sql_hit_still_unions_bounded_recall(
     admin_token, test_db_session, monkeypatch
 ):
     monkeypatch.setattr("src.api.deps.get_vector_store", lambda: _EmptyVectorStore())
-    test_db_session.add(
-        Symbol(label="casa", category="noun", language="es", is_builtin=True)
+    test_db_session.add_all(
+        [
+            Symbol(
+                label="strasse place", category="noun", language="de", is_builtin=True
+            ),
+            Symbol(
+                label="straße", category="noun", language="de", is_builtin=True
+            ),
+        ]
     )
     test_db_session.commit()
 
@@ -315,17 +338,13 @@ def test_symbol_search_ascii_sql_hit_skips_recall_scan(
         return original(*args, **kwargs)
 
     monkeypatch.setattr(symbols_module, "unicode_recall_ids", counting)
-    resp = _symbol_search(admin_token, {"search": "casa"})
+    resp = _symbol_search(admin_token, {"search": "STRASSE"})
     assert resp.status_code == 200
-    assert {i["label"] for i in resp.json()} == {"casa"}
-    # SQL found the row: the O(table) Python scan must NOT have run.
-    assert calls == []
-
-    # An ASCII query that SQL cannot see still runs the scan (U1's proposed
-    # "ASCII fast path" would wrongly skip this — D7 direction).
-    resp = _symbol_search(admin_token, {"search": "zzzz"})
-    assert resp.status_code == 200
-    assert resp.json() == []
+    # E1: SQL LIKE matches only 'strasse place' (ASCII lower() cannot fold
+    # the stored ß), yet the fold-only 'straße' must ALSO be returned — the
+    # recall union runs even when the SQL filter hits (PROMPT_21's
+    # empty-results-only gate regressed exactly this). The scan ran once.
+    assert {i["label"] for i in resp.json()} == {"strasse place", "straße"}
     assert len(calls) == 1
 
 
@@ -431,7 +450,7 @@ def test_tokenize_topic_caps_unique_tokens():
     assert len(tokens) <= _TOPIC_TOKEN_MAX
 
 
-def test_cached_topic_words_never_stores_oversized_key():
+def test_cached_topic_words_never_fetches_or_stores_oversized_key():
     from src.aac_app.services import prediction_service as ps
 
     calls = []
@@ -442,12 +461,16 @@ def test_cached_topic_words_never_stores_oversized_key():
 
     long_topic = "a" * 500
     result = ps._cached_topic_words("es", long_topic, fetcher)
-    assert result == ("uno", "dos")
-    assert calls == [long_topic]
-    # Not cached: the giant key must not live in the process cache.
+    # E9: an oversized topic never invokes the LLM fetcher (that call would
+    # be discarded at the no-store guard); the empty result means only the
+    # tokenized catalog tiers answer for such topics.
+    assert result == ()
+    assert calls == []
+    # Not cached: the giant key must not live in the process cache either.
     assert (("es", long_topic)) not in ps._topics_word_cache
-    # A normal-sized topic still caches.
+    # A normal-sized topic still fetches and caches.
     ps._cached_topic_words("es", "frutas", fetcher)
+    assert calls == ["frutas"]
     assert ("es", "frutas") in ps._topics_word_cache
 
 

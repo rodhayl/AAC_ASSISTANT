@@ -87,10 +87,10 @@ export function Symbols() {
       const params: Record<string, string | number> = { skip: page * pageSize, limit: pageSize + 1 };
       if (usage !== 'all') params.usage = usage;
       if (category !== 'all') params.category = category;
-      // A whitespace-only term means "no filter": the backend strips the
-      // LIKE pattern and treats a present blank ``search`` as a no-match
-      // ([]), so trim and omit the param to keep the full list visible
-      // instead of blanking it while the user types spaces.
+      // A whitespace-only term means "no filter" (E5 contract): the backend
+      // treats absent, empty and whitespace-only ``search`` identically. Trim
+      // and omit the param so typing spaces keeps the unfiltered list; the
+      // response is identical either way.
       const trimmedSearch = search.trim();
       if (trimmedSearch) params.search = trimmedSearch;
       if (sort !== 'default') params.sort = sort;

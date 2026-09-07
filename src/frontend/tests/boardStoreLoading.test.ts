@@ -135,9 +135,8 @@ describe('board store loading state', () => {
 
     await useBoardStore.getState().fetchBoards(10, '   ');
 
-    // The backend strips a present whitespace-only ``name`` into a no-match
-    // ([]); the store must omit the param so typing spaces keeps the full
-    // list and does not mark the list as filtered.
+    // Blank means "no filter" (E5 contract): the store must omit the param
+    // so typing spaces keeps the full list and does not mark it filtered.
     expect(api.get).toHaveBeenLastCalledWith('/boards/', {
       params: { user_id: 10, skip: 0, limit: 100 },
     });

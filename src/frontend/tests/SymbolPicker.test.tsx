@@ -117,9 +117,8 @@ describe('SymbolPicker request ordering', () => {
     fireEvent.change(screen.getByPlaceholderText('symbolPicker.searchPlaceholder'), {
       target: { value: '   ' },
     });
-    // The backend strips a present whitespace-only search into a no-match
-    // ([]); the picker must omit the param so typing spaces keeps the full
-    // list instead of blanking it.
+    // Blank means "no filter" (E5 contract): the picker must omit the param
+    // so typing spaces keeps the full list instead of requesting with junk.
     await waitFor(() => {
       const calls = api.get.mock.calls.filter((c) => c[0] === '/boards/symbols');
       expect(calls.length).toBeGreaterThan(1);
