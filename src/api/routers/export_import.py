@@ -297,11 +297,42 @@ def _export_symbol_id(symbol_data: dict[str, Any]) -> int | None:
     return symbol_id if type(symbol_id) is int else None
 
 
+def _link_name_key(link_id: Any, id_to_name: dict[int, str]) -> tuple[str, Any] | None:
+    """Comparable link identity across ID spaces: the target board's name.
+
+    Export files carry source IDs, the database carries local IDs; comparing
+    them raw never matches (retry imports would clone every linked board).
+    Resolving both sides to the target board's name makes them comparable.
+    Links that cannot be resolved in their own space (external references or
+    boards omitted from the export) collapse to a conservative "external"
+    marker instead of a name.
+    """
+    if link_id is None:
+        return None
+    name = id_to_name.get(link_id) if isinstance(link_id, int) else None
+    return ("name", name) if name is not None else ("external", None)
+
+
 def _board_content_matches(
     board: CommunicationBoard,
     board_data: dict[str, Any],
+    source_id_to_name: dict[int, str] | None = None,
+    local_id_to_name: dict[int, str] | None = None,
 ) -> bool:
-    """Return whether an owned board has the same exported content."""
+    """Return whether an owned board has the same exported content (including links).
+
+    Links are compared by the *name* of the target board, not raw IDs: after a
+    first import the stored ``linked_board_id`` is a local database ID while
+    ``board_data`` still carries source IDs from the export file, so a raw
+    comparison never matches and every retry of linked navigation clones
+    duplicates. Callers pass two maps so both sides can be resolved to the
+    target board's name: ``source_id_to_name`` (source ID -> exported name)
+    and ``local_id_to_name`` (local ID -> stored name, scoped to this user's
+    boards). Unresolvable links on either side collapse to a conservative
+    "external" marker and can only match each other.
+    """
+    source_id_to_name = source_id_to_name or {}
+    local_id_to_name = local_id_to_name or {}
     expected_symbols = sorted(
         [
             (
@@ -309,13 +340,10 @@ def _board_content_matches(
                 symbol.get("position_x") or 0,
                 symbol.get("position_y") or 0,
                 symbol.get("size") or 1,
-                (
-                    True
-                    if symbol.get("is_visible") is None
-                    else bool(symbol["is_visible"])
-                ),
+                (True if symbol.get("is_visible") is None else bool(symbol["is_visible"])),
                 symbol.get("custom_text"),
                 symbol.get("color"),
+                _link_name_key(symbol.get("linked_board_id"), source_id_to_name),
             )
             for symbol in board_data.get("symbols") or []
         ],
@@ -323,15 +351,7 @@ def _board_content_matches(
     )
     actual_symbols = sorted(
         [
-            (
-                symbol.symbol_id,
-                symbol.position_x or 0,
-                symbol.position_y or 0,
-                symbol.size or 1,
-                bool(symbol.is_visible),
-                symbol.custom_text,
-                symbol.color,
-            )
+            (symbol.symbol_id, symbol.position_x or 0, symbol.position_y or 0, symbol.size or 1, bool(symbol.is_visible), symbol.custom_text, symbol.color, _link_name_key(symbol.linked_board_id, local_id_to_name))
             for symbol in board.symbols or []
         ],
         key=repr,
@@ -347,10 +367,33 @@ def _board_content_matches(
     )
 
 
+def _user_board_name_map(db: Session, user: User) -> dict[int, str]:
+    """Map this user's local board IDs to names for link-aware matching."""
+    return {
+        board_id: name
+        for board_id, name in db.query(
+            CommunicationBoard.id, CommunicationBoard.name
+        )
+        .filter(CommunicationBoard.user_id == user.id)
+        .all()
+    }
+
+
+def _source_board_name_map(boards_data: list[dict[str, Any]]) -> dict[int, str]:
+    """Map export source board IDs to exported names for link-aware matching."""
+    return {
+        board_data["id"]: board_data["name"]
+        for board_data in boards_data
+        if isinstance(board_data.get("id"), int)
+        and isinstance(board_data.get("name"), str)
+    }
+
+
 def _find_matching_owned_board(
     db: Session,
     user: User,
     board_data: dict[str, Any],
+    source_id_to_name: dict[int, str] | None = None,
 ) -> CommunicationBoard | None:
     """Find an exact same-content board to make repeated imports idempotent.
 
@@ -369,8 +412,20 @@ def _find_matching_owned_board(
         )
         .all()
     )
+    if not candidates:
+        return None
+    local_names = _user_board_name_map(db, user)
+    source_names = (
+        source_id_to_name
+        if source_id_to_name is not None
+        else {board_data["id"]: board_data["name"] for board_data in [board_data] if isinstance(board_data.get("id"), int)}
+    )
     return next(
-        (board for board in candidates if _board_content_matches(board, board_data)),
+        (
+            board
+            for board in candidates
+            if _board_content_matches(board, board_data, source_names, local_names)
+        ),
         None,
     )
 
@@ -380,7 +435,7 @@ def _create_imported_board(
     user: User,
     board_data: dict[str, Any],
 ) -> CommunicationBoard:
-    """Create one imported board and its symbol placements."""
+    """Create one imported board and its symbol placements (links remapped in second pass)."""
     board = CommunicationBoard(
         user_id=user.id,
         name=board_data.get("name"),
@@ -397,27 +452,66 @@ def _create_imported_board(
         db.add(
             BoardSymbol(
                 board_id=board.id,
-                symbol_id=(symbol_data.get("symbol", {}) or {}).get("id")
-                or symbol_data.get("symbol_id"),
+                symbol_id=(symbol_data.get("symbol", {}) or {}).get("id") or symbol_data.get("symbol_id"),
                 position_x=symbol_data.get("position_x") or 0,
                 position_y=symbol_data.get("position_y") or 0,
                 size=symbol_data.get("size") or 1,
-                # Match the ORM default when importing older exports that
-                # omitted this optional placement field.
-                is_visible=(
-                    True
-                    if symbol_data.get("is_visible") is None
-                    else bool(symbol_data["is_visible"])
-                ),
+                is_visible=(True if symbol_data.get("is_visible") is None else bool(symbol_data["is_visible"])),
                 custom_text=symbol_data.get("custom_text"),
                 color=symbol_data.get("color"),
-                # linked_board_id is intentionally NOT restored: export IDs are
-                # not remapped to the imported boards, so a copied reference
-                # would point at an unrelated local board.
-                linked_board_id=None,
+                linked_board_id=None,  # remapped after all boards created
             )
         )
     return board
+
+
+def _remap_linked_boards(
+    db: Session,
+    imported: dict[int, CommunicationBoard],
+    boards_data: list[dict[str, Any]],
+) -> None:
+    """Second pass: remap linked_board_id among authorized imported boards.
+
+    A link whose source board is not part of this import (external or missing)
+    stays cleared rather than pointing at an unrelated local board. Cycles are
+    safe: the mapping is built before any link is written.
+    """
+    # The engine uses autoflush=False: placements created by this import are
+    # still pending in the session, so flush first or the DB queries below
+    # silently miss the last created board's rows (asymmetric remap bug).
+    db.flush()
+    for board_data in boards_data:
+        src_id = board_data.get("id")
+        if not isinstance(src_id, int) or src_id not in imported:
+            continue
+        board = imported[src_id]
+        for sym_data in board_data.get("symbols") or []:
+            src_link = sym_data.get("linked_board_id")
+            if not isinstance(src_link, int):
+                continue
+            target = imported.get(src_link)
+            if target is None:
+                continue
+            sym_id = _export_symbol_id(sym_data)
+            if sym_id is None:
+                continue
+            px = sym_data.get("position_x") or 0
+            py = sym_data.get("position_y") or 0
+            # Re-read placements from the DB: ``board.symbols`` may be a stale
+            # collection for boards that were matched (not created) this run.
+            placement = (
+                db.query(BoardSymbol)
+                .filter(
+                    BoardSymbol.board_id == board.id,
+                    BoardSymbol.symbol_id == sym_id,
+                    BoardSymbol.position_x == px,
+                    BoardSymbol.position_y == py,
+                )
+                .first()
+            )
+            if placement is not None:
+                placement.linked_board_id = target.id
+    db.flush()
 
 
 def _import_boards(
@@ -425,13 +519,15 @@ def _import_boards(
 ) -> dict[int, CommunicationBoard]:
     """Import owned boards and return source-ID to new-board mappings."""
     imported: dict[int, CommunicationBoard] = {}
+    source_names = _source_board_name_map(boards_data)
     for board_data in boards_data:
-        board = _find_matching_owned_board(db, user, board_data)
+        board = _find_matching_owned_board(db, user, board_data, source_names)
         if board is None:
             board = _create_imported_board(db, user, board_data)
         source_id = board_data.get("id")
         if isinstance(source_id, int):
             imported[source_id] = board
+    _remap_linked_boards(db, imported, boards_data)
     return imported
 
 
@@ -440,6 +536,7 @@ def _import_assigned_boards(
     user: User,
     assigned_boards_data: list[dict[str, Any]],
     imported_boards: dict[int, CommunicationBoard],
+    source_id_to_name: dict[int, str] | None = None,
 ) -> None:
     """Restore assigned boards without trusting unrelated ID collisions."""
     for board_data in assigned_boards_data:
@@ -458,10 +555,17 @@ def _import_assigned_boards(
                 )
                 .first()
             )
-            if candidate is not None and _board_content_matches(candidate, board_data):
+            if candidate is not None and _board_content_matches(
+                candidate,
+                board_data,
+                source_id_to_name,
+                _user_board_name_map(db, user),
+            ):
                 board = candidate
         if board is None:
-            board = _find_matching_owned_board(db, user, board_data)
+            board = _find_matching_owned_board(
+                db, user, board_data, source_id_to_name
+            )
         if board is None:
             board = _create_imported_board(db, user, board_data)
 
@@ -698,14 +802,18 @@ def export_data(
             )
             total_points += ach.points or 0
 
-    # Fetch learning history
+    # Fetch learning history (cap 100, document truncation)
+    total_learning = db.query(LearningSession).filter(LearningSession.user_id == user.id).count()
     learning_sessions = (
         db.query(LearningSession)
         .filter(LearningSession.user_id == user.id)
-        .order_by(LearningSession.started_at.desc())
+        # id desc as tiebreaker: sessions created in one transaction can
+        # share started_at, and the "latest 100" must be deterministic.
+        .order_by(LearningSession.started_at.desc(), LearningSession.id.desc())
         .limit(100)
         .all()
     )
+    truncated = total_learning > 100
 
     learning_history_data = []
     for session in learning_sessions:
@@ -732,6 +840,8 @@ def export_data(
         "meta": {
             "exported_at": datetime.now(UTC).isoformat(),
             "username": user.username,
+            "truncated": truncated,
+            "total_learning_sessions": total_learning,
         },
         "boards": boards_data,
         "assignedBoards": assigned_boards_data,
@@ -798,11 +908,13 @@ def import_data(
             ),
         )
 
-    # Checksum validation
+    # Checksum validation (include truncation fields for v2 exports that have them)
     base = {
         "meta": {
             "exported_at": meta.get("exported_at"),
             "username": meta.get("username"),
+            **({"truncated": meta["truncated"]} if "truncated" in meta else {}),
+            **({"total_learning_sessions": meta["total_learning_sessions"]} if "total_learning_sessions" in meta else {}),
         },
         "boards": data.get("boards") or [],
         "assignedBoards": data.get("assignedBoards") or [],
@@ -844,13 +956,21 @@ def import_data(
     )
 
     # Import data using helpers.
+    # Link-aware retry matching spans both sections, so the source-ID -> name
+    # map covers owned AND assigned boards from the export file.
+    all_board_data = list(base["boards"]) + list(base["assignedBoards"])
     imported_boards = _import_boards(db, user, base["boards"])
+    # Assigned boards can also carry navigation links among imported boards;
+    # remap them in the same second pass (only sources that were imported).
     _import_assigned_boards(
         db,
         user,
         base["assignedBoards"],
         imported_boards,
+        _source_board_name_map(all_board_data),
     )
+    if base["assignedBoards"]:
+        _remap_linked_boards(db, imported_boards, base["assignedBoards"])
     _import_achievements(
         db,
         user,

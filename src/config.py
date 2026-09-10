@@ -225,6 +225,26 @@ def _is_jwt_secret(value: str) -> bool:
     return value.strip() not in JWT_PLACEHOLDERS and len(value.strip()) >= 32
 
 
+def validate_effective_jwt_secret(secret: str) -> None:
+    """Validate the final effective JWT secret, especially in production.
+
+    Environment and dotenv precedence is already resolved by pydantic-settings;
+    this checks the actual value that will be used to sign tokens.
+    In production, rejects short/whitespace-only/placeholder secrets.
+    """
+    # Resolve the effective environment through the config helper so a
+    # dotenv-set ENVIRONMENT is honored, not just the process environment
+    # (environment > dotenv precedence is what pydantic-settings applies).
+    env_name = str(get("ENVIRONMENT", "development")).strip().casefold() or "development"
+    if env_name not in {"production", "prod"}:
+        return
+    stripped = secret.strip()
+    if stripped in JWT_PLACEHOLDERS or len(stripped) < 32:
+        raise ValueError(
+            "JWT_SECRET_KEY must be at least 32 characters and not a placeholder in production"
+        )
+
+
 def _env_key(line: str) -> str | None:
     """Return the key from a dotenv assignment, ignoring comments and blanks."""
     stripped = line.strip()

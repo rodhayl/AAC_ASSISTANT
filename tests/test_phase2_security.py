@@ -477,7 +477,7 @@ class TestEnvironmentEnforcement:
             import src.aac_app.utils.jwt_utils
 
             with pytest.raises(
-                ValueError, match="JWT_SECRET_KEY must be set to a secure value"
+                ValueError, match="JWT_SECRET_KEY must be at least 32 characters and not a placeholder in production"
             ):
                 importlib.reload(src.aac_app.utils.jwt_utils)
 

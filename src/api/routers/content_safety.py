@@ -79,10 +79,26 @@ def clear_safety_events(
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
-    """Clear the safety-event audit log."""
-    db.query(ContentSafetyEvent).delete()
+    """Clear the safety-event audit log.
+
+    Today's sentinel verdicts are preserved: each surface="sentinel" row is
+    also the strict-moderation daily cost meter, so deleting them would reset
+    the current day's LLM spend limit (F14)."""
+    from datetime import datetime
+
+    start_of_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    deleted = (
+        db.query(ContentSafetyEvent)
+        .filter(
+            ~(
+                (ContentSafetyEvent.surface == "sentinel")
+                & (ContentSafetyEvent.created_at >= start_of_day)
+            )
+        )
+        .delete(synchronize_session=False)
+    )
     db.commit()
-    logger.info("Content-safety events cleared by {}", current_user.username)
+    logger.info("Content-safety events cleared by {} ({} rows; today's sentinel rows preserved)", current_user.username, deleted)
 
 
 @router.delete("/ai-symbols")

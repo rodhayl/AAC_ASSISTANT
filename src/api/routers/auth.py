@@ -422,14 +422,14 @@ def logout(
 
 
 @router.post("/refresh")
-@conditional_limiter("30/minute")  # Max 30 refresh attempts per minute per IP
-def refresh_access_token(
+@conditional_limiter("30/minute")
+async def refresh_access_token(
     request: Request,
-    refresh_token: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Refresh endpoint to get a new access token using a refresh token.
+    Accepts refresh_token in JSON body (preferred) or query param (transitional).
 
     This allows users to get a new access token without re-authenticating,
     preventing session interruption for long-running sessions.
@@ -437,6 +437,19 @@ def refresh_access_token(
     Rate limited to 30 attempts per minute per IP.
     """
     accept_language = request.headers.get("accept-language")
+
+    # Resolve token from body (preferred) or transitional query param; body keeps secret out of URLs/logs.
+    refresh_token: str | None = None
+    try:
+        body = await request.json()
+        if isinstance(body, dict) and isinstance(body.get("refresh_token"), str):
+            refresh_token = body["refresh_token"]
+    except Exception:
+        pass
+    if not refresh_token:
+        refresh_token = request.query_params.get("refresh_token")
+    if not refresh_token or not isinstance(refresh_token, str) or len(refresh_token) > 5000:
+        raise HTTPException(status_code=400, detail="refresh_token required")
 
     # Decode and validate refresh token
     payload = decode_refresh_token(refresh_token)

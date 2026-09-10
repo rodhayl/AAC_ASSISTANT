@@ -257,3 +257,18 @@ def user_token(regular_user):
     """Create a valid JWT access token for the regular user."""
     from src.aac_app.utils.jwt_utils import create_access_token
     return create_access_token(data={"sub": regular_user.username, "user_id": regular_user.id, "user_type": regular_user.user_type})
+
+
+@pytest.fixture
+def collab_client(setup_test_db):
+    """TestClient with lifespan for collaboration WebSocket tests.
+
+    Shared by tests/test_collab_ws.py and tests/test_acceptance_gaps.py.
+    """
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        try:
+            yield client
+        finally:
+            client.portal.call(app.state.shutdown_event.set)

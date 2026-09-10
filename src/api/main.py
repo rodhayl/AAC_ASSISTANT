@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from src import config
 from src.aac_app import schema
@@ -358,6 +359,114 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# Global request-body bound (F11): reject oversized bodies before any framework
+# multipart/JSON parsing can spool them to disk. This is a pure ASGI middleware
+# wrapping the raw receive channel so the bound also applies to chunked bodies
+# (Starlette's request._stream attribute is ignored by request.stream(); a
+# BaseHTTPMiddleware dispatch that calls call_next(request) re-creates the
+# downstream request from the same scope/receive, so only receive-level wrapping
+# is reliable).
+MAX_REQUEST_BYTES = 12 * 1024 * 1024  # covers the 10 MB audio limit plus multipart overhead
+
+
+class _BodyTooLarge(Exception):
+    """Raised internally when accumulated body bytes exceed MAX_REQUEST_BYTES."""
+
+
+class _BoundedReceiveMiddleware:
+    """Enforce a hard byte ceiling on request bodies at the ASGI level."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope.get("method") in {"GET", "HEAD", "OPTIONS"}:
+            await self.app(scope, receive, send)
+            return
+
+        content_length = ""
+        for key, value in scope.get("headers") or []:
+            if key == b"content-length":
+                content_length = value.decode("latin-1", "ignore")
+                break
+        if content_length.strip().isdigit() and int(content_length) > MAX_REQUEST_BYTES:
+            response = JSONResponse(status_code=413, content={"detail": "Request body too large"})
+            await response(scope, receive, send)
+            return
+
+        received_total = 0
+        disconnected = False
+        overflowed = False
+        response_started = False
+
+        async def bounded_receive() -> Message:
+            nonlocal received_total, disconnected, overflowed
+            message = await receive()
+            if message["type"] == "http.request":
+                received_total += len(message.get("body", b""))
+                if received_total > MAX_REQUEST_BYTES:
+                    overflowed = True
+                    raise _BodyTooLarge()
+            elif message["type"] == "http.disconnect":
+                disconnected = True
+            return message
+
+        async def send_tracked(message: Message) -> None:
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+
+        async def send_413() -> None:
+            if response_started:
+                # The app already answered (best-effort frameworks may have
+                # started a response before the cap was hit); ASGI forbids a
+                # second response start, so leave the app's answer in place.
+                return
+            error_response = JSONResponse(
+                status_code=413, content={"detail": "Request body too large"}
+            )
+            await error_response(scope, receive, send_tracked)
+
+        async def run_app() -> None:
+            try:
+                await self.app(scope, bounded_receive, send_tracked)
+            except _BodyTooLarge:
+                # Bound the drain: a client that stops streaming must not keep
+                # this request alive forever. A few short bounded reads give a
+                # well-behaved client a chance to finish its body (so the 413
+                # is delivered cleanly); a stalled one gets the 413 anyway.
+                for _ in range(3):
+                    if disconnected:
+                        break
+                    try:
+                        message = await asyncio.wait_for(receive(), timeout=0.5)
+                    except TimeoutError:
+                        break
+                    if message["type"] == "http.disconnect":
+                        break
+                await send_413()
+
+        # Run the app in an internal task so a _BodyTooLarge escape hatch never
+        # propagates as an unhandled ASGI exception; on success this degrades
+        # to a normal pass-through.
+        app_task = asyncio.create_task(run_app())
+        try:
+            await app_task
+        except Exception:
+            if not app_task.done():
+                raise
+            app_task.cancel()
+            raise
+        # Guarantee the 413 even when the app swallowed the abort exception.
+        if overflowed:
+            await send_413()
+
+
+app.add_middleware(_BoundedReceiveMiddleware)
+
+
+
 
 @app.middleware("http")
 async def add_api_cache_control(request: Request, call_next):
@@ -384,74 +493,40 @@ async def root():
 @app.get("/ready")
 async def readiness_check():
     """
-    Readiness check endpoint.
-
-    Returns 200 only after database and provider initialization succeed.
-    Returns 503 while warming up, when the database is unavailable, or when
-    one or more providers failed to initialize.
-
-    This endpoint can be used by load balancers or the frontend to know
-    when the server is fully ready to handle requests.
+    Readiness: DB liveness + provider warmup.
+    Adds a cheap current DB probe (SELECT 1) with short timeout so runtime DB loss is reflected within one poll.
+    Provider credential validity is reflected via startup_state degradation; no paid generation is issued per poll.
     """
     startup_state = get_startup_state()
 
     if getattr(app.state, "database_startup_error", False):
-        return JSONResponse(
-            status_code=503,
-            content={
-                "ready": False,
-                "status": "database_unavailable",
-                "message": "Database initialization failed; server is not ready",
-            },
-        )
-
+        return JSONResponse(status_code=503, content={"ready": False, "status": "database_unavailable", "message": "Database initialization failed; server is not ready"})
     if not getattr(app.state, "database_ready", False):
-        return JSONResponse(
-            status_code=503,
-            content={
-                "ready": False,
-                "status": "database_initializing",
-                "message": "Database is still initializing",
-            },
-        )
+        return JSONResponse(status_code=503, content={"ready": False, "status": "database_initializing", "message": "Database is still initializing"})
+    # Current DB liveness probe (bounded, no secret)
+    try:
+        import asyncio as _asyncio
+
+        from sqlalchemy import text as _text
+
+        from src.aac_app.db import create_session_factory as _csf
+        def _probe():
+            s = _csf()()
+            try:
+                s.execute(_text("SELECT 1"))
+            finally:
+                s.close()
+        await _asyncio.wait_for(_asyncio.to_thread(_probe), timeout=2.0)
+    except Exception as _e:
+        logger.warning("Readiness DB probe failed: {}", _e)
+        return JSONResponse(status_code=503, content={"ready": False, "status": "database_unavailable", "message": "Database probe failed"})
 
     if not startup_state["initialized"]:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "ready": False,
-                "status": "warming_up",
-                "message": "Server is still initializing providers",
-                "providers": startup_state["providers_ready"],
-                "provider_metrics": startup_state.get("provider_metrics", {}),
-            },
-        )
-
-    # Check if all providers are ready
+        return JSONResponse(status_code=503, content={"ready": False, "status": "warming_up", "message": "Server is still initializing providers", "providers": startup_state["providers_ready"], "provider_metrics": startup_state.get("provider_metrics", {})})
     all_ready = all(startup_state["providers_ready"].values())
-
     if not all_ready:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "ready": False,
-                "status": "degraded",
-                "message": "Some providers failed to initialize",
-                "providers": startup_state["providers_ready"],
-                "errors": startup_state["errors"],
-                "startup_time_ms": startup_state["startup_time_ms"],
-                "provider_metrics": startup_state.get("provider_metrics", {}),
-            },
-        )
-
-    return {
-        "ready": True,
-        "status": "healthy",
-        "message": "All providers initialized and ready",
-        "providers": startup_state["providers_ready"],
-        "startup_time_ms": startup_state["startup_time_ms"],
-        "provider_metrics": startup_state.get("provider_metrics", {}),
-    }
+        return JSONResponse(status_code=503, content={"ready": False, "status": "degraded", "message": "Some providers failed to initialize", "providers": startup_state["providers_ready"], "errors": startup_state["errors"], "startup_time_ms": startup_state["startup_time_ms"], "provider_metrics": startup_state.get("provider_metrics", {})})
+    return {"ready": True, "status": "healthy", "message": "All providers initialized and ready", "providers": startup_state["providers_ready"], "startup_time_ms": startup_state["startup_time_ms"], "provider_metrics": startup_state.get("provider_metrics", {})}
 
 
 app.include_router(config_router.router)

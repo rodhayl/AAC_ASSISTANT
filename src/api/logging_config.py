@@ -3,6 +3,7 @@ Comprehensive logging configuration for AAC Assistant.
 Logs all requests, responses, errors, and warnings to both console and file.
 """
 
+import contextlib
 import os
 import sys
 import time
@@ -81,11 +82,60 @@ def _cleanup_old_logs(_logs: list[str] | None = None) -> None:
             continue
 
 
+def _is_production() -> bool:
+    """Production check through the config layer so dotenv-set ENVIRONMENT is
+    honored, not just the process environment (same precedence as config.get)."""
+    env_name = str(config.get("ENVIRONMENT", "development")).strip().casefold()
+    return env_name in {"production", "prod"}
+
+
+_REDACT_PATTERN = None
+
+
+def _redact_message(msg: str) -> str:
+    """Redact obvious secret assignments and truncate oversized content.
+
+    Applied to every sink via a patcher so a stray ``key=value`` in a log
+    message never reaches console or file sinks (F09). Length-truncation also
+    bounds accidental verbatim child-message capture in informational lines.
+    """
+    global _REDACT_PATTERN
+    import re as _re
+
+    if _REDACT_PATTERN is None:
+        _REDACT_PATTERN = _re.compile(
+            r"(?i)(groq_api_key|openrouter_api_key|api_key|authorization|password|token)\s*[:=]\s*\S+"
+        )
+    msg = _REDACT_PATTERN.sub(r"\1=***", msg)
+    if len(msg) > 2000:
+        msg = msg[:2000] + " ...[truncated]"
+    return msg
+
+
+def _redacting_patcher(record) -> None:
+    """Loguru core patcher: rewrite each record's message through _redact_message.
+
+    Loguru invokes the configure(patcher=...) callable with the record dict
+    itself before any sink renders it.
+    """
+    with contextlib.suppress(Exception):  # noqa: SIM105
+        record["message"] = _redact_message(record["message"])
+
+
 def setup_logging():
     """Configure loguru for comprehensive logging."""
     # Remove default handler
     logger.remove()
     _cleanup_old_logs()
+
+    is_prod = _is_production()
+    level = "INFO" if is_prod else "DEBUG"
+    diagnose = not is_prod
+
+    # Every sink routes messages through the redaction patcher (F09):
+    # credentials printed into a log line by any code path are masked before
+    # any sink renders them.
+    logger.configure(patcher=_redacting_patcher)
 
     # Console handler - colored output. Windowed PyInstaller processes expose
     # no stderr stream, so the file handlers below are the only sinks there.
@@ -94,21 +144,23 @@ def setup_logging():
         logger.add(
             console_stream,
             format=LOG_FORMAT,
-            level="DEBUG",
+            level=level,
             colorize=True,
-            backtrace=True,
-            diagnose=True,
+            backtrace=diagnose,
+            diagnose=diagnose,
         )
 
     # File handler - all logs. Retention is explicit rather than in-place
     # rotation, because every process writes to its own active file.
+    # Add rotation + redaction in prod.
     logger.add(
         LOG_FILE,
         format=LOG_FORMAT_FILE,
-        level="DEBUG",
+        level=level,
         retention=_cleanup_old_logs,
-        backtrace=True,
-        diagnose=True,
+        rotation="20 MB",
+        backtrace=diagnose,
+        diagnose=diagnose,
         enqueue=True,  # Thread-safe
     )
 
@@ -118,8 +170,9 @@ def setup_logging():
         format=LOG_FORMAT_FILE,
         level="WARNING",
         retention=_cleanup_old_logs,
-        backtrace=True,
-        diagnose=True,
+        rotation="20 MB",
+        backtrace=diagnose,
+        diagnose=diagnose,
         enqueue=True,
     )
 

@@ -21,8 +21,9 @@ teacher overrides are rejected for them.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
-import os
+import os as _os
 import re
 import threading
 import time
@@ -32,6 +33,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from loguru import logger
+from sqlalchemy.orm import Session
 
 from src import config
 
@@ -453,6 +455,40 @@ def check_text(policy: ContentPolicy, text: str | None) -> Verdict:
     )
 
 
+# Retention: cap the audit table at this many events. Today's sentinel rows
+# are never pruned because each one doubles as the strict-moderation daily
+# cost meter (_count_sentinel_today); trimming them would silently reset the
+# current day's LLM spend limit (F14). Module-level so tests can exercise the
+# real pruning path with a small cap.
+MAX_EVENTS = 10000
+
+
+def _prune_events(session: Session, max_events: int = MAX_EVENTS) -> None:
+    """Bound the safety-event table, preserving today's sentinel cost rows."""
+    from src.aac_app.models import ContentSafetyEvent
+
+    count = session.query(ContentSafetyEvent).count()
+    if count <= max_events:
+        return
+    to_delete = count - max_events
+    prunable = ~(
+        (ContentSafetyEvent.surface == "sentinel")
+        & (ContentSafetyEvent.created_at >= _today_start())
+    )
+    oldest_ids = [
+        r[0]
+        for r in session.query(ContentSafetyEvent.id)
+        .filter(prunable)
+        .order_by(ContentSafetyEvent.created_at.asc())
+        .limit(to_delete)
+        .all()
+    ]
+    if oldest_ids:
+        session.query(ContentSafetyEvent).filter(
+            ContentSafetyEvent.id.in_(oldest_ids)
+        ).delete(synchronize_session=False)
+
+
 def log_event(
     *,
     user_id: int | None,
@@ -461,11 +497,23 @@ def log_event(
     verdict: str = "blocked",
     matched: list[str] | None = None,
     detail: str | None = None,
-    db=None,
+    db=None,  # noqa: ARG001 Deprecated: accepted for call-site compatibility, never used.
 ) -> None:
-    """Persist one content-safety event. Best-effort: never raises."""
+    """Persist one content-safety event in a deliberate isolated transaction.
+
+    Best-effort: never raises. The event is always written through a
+    short-lived session owned by this function, so logging can never commit,
+    roll back, or otherwise disturb the caller's transaction (F14). ``db`` is
+    accepted for compatibility with existing call sites but deliberately
+    ignored: sharing the caller's session mixed transaction lifetimes with a
+    best-effort audit write.
+    """
+    # Retention is enforced through the module-level _prune_events helper.
     if surface not in SURFACES:
         surface = "chat"
+    # Bound detail to 200 chars and strip to avoid unbounded growth
+    if detail is not None:
+        detail = detail[:200]
     try:
         from src.aac_app.db import get_session
         from src.aac_app.models import ContentSafetyEvent
@@ -478,13 +526,20 @@ def log_event(
             matched=matched or [],
             detail=detail,
         )
-        if db is not None:
-            db.add(event)
-            db.commit()
-        else:
-            with get_session() as session:
-                session.add(event)
+        with get_session() as session:
+            session.add(event)
+            session.commit()
+            # Enforce retention best-effort inside the same isolated session.
+            # Today's sentinel rows are never pruned: each one is also the
+            # strict-moderation daily cost meter (_count_sentinel_today reads
+            # this table), so trimming them would silently reset the current
+            # day's LLM spend limit (F14).
+            try:
+                _prune_events(session)
                 session.commit()
+            except Exception:
+                with contextlib.suppress(Exception):
+                    session.rollback()
     except Exception as exc:
         logger.warning("Failed to log content-safety event: {}", exc)
 
@@ -513,14 +568,19 @@ def _sentinel_pacing_seconds() -> float:
         return 1.5
 
 
-def _count_sentinel_today(db=None) -> int:
-    """Count sentinel verdicts persisted today (each row = one LLM call)."""
+def _today_start():
+    """Local midnight: the shared boundary for the sentinel cost meter."""
     from datetime import datetime
 
+    return datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _count_sentinel_today(db=None) -> int:
+    """Count sentinel verdicts persisted today (each row = one LLM call)."""
     from src.aac_app.db import get_session
     from src.aac_app.models import ContentSafetyEvent
 
-    start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    start = _today_start()
     try:
         if db is not None:
             return (
@@ -575,8 +635,9 @@ async def moderate_output(
         return Verdict(allowed=True)
     cap = _sentinel_daily_cap()
     if cap >= 0 and _count_sentinel_today(db) >= cap:
-        logger.info("Sentinel daily cap ({}) reached; skipping moderation", cap)
-        return Verdict(allowed=True)
+        logger.info("Sentinel daily cap ({}) reached; strict requires blocking", cap)
+        # Cap exhausted is not an affirmative allowed verdict -> fail-closed for strict
+        return Verdict(allowed=False, matched_terms=("sentinel",))
     global _last_sentinel_call_at
     # Reserve the next call slot under the lock, then pace outside of it: this
     # coroutine runs on the event loop, so a blocking sleep here (or holding a
@@ -593,18 +654,31 @@ async def moderate_output(
         _last_sentinel_call_at = time.monotonic() + wait
     if wait:
         await asyncio.sleep(wait)
-    try:
-        raw = await generate(
-            prompt=SENTINEL_PROMPT.format(text=text[:600]),
-            temperature=0.0,
-            max_tokens=8,
-        )
-    except Exception as exc:
-        # Fail open on provider errors: never block a child's chat because
-        # the moderation service hiccuped.
-        logger.warning("Sentinel moderation unavailable: {}", exc)
-        return Verdict(allowed=True)
-    blocked = "blocked" in (raw or "").strip().lower()
+    # Strict: require affirmative verdict; moderate full text (chunked) fail-closed.
+    full_text = text or ""
+    chunks = [full_text[i:i+600] for i in range(0, max(len(full_text), 1), 600)] if full_text else [""]
+    blocked = False
+    for chunk in chunks:
+        try:
+            raw = await generate(
+                prompt=SENTINEL_PROMPT.format(text=chunk[:600]),
+                temperature=0.0,
+                max_tokens=8,
+            )
+        except Exception as exc:
+            logger.warning("Sentinel moderation unavailable (strict fail-closed): {}", exc)
+            # Fail-closed for strict: unsafe to claim allowed without verdict
+            blocked = True
+            break
+        normalized = (raw or "").strip().lower()
+        if "blocked" in normalized:
+            blocked = True
+            break
+        if "allowed" not in normalized:
+            # Empty/garbled/ambiguous -> fail-closed for strict
+            logger.warning("Sentinel returned ambiguous verdict; treating as blocked (strict)")
+            blocked = True
+            break
     log_event(
         user_id=user_id,
         surface="sentinel",
@@ -633,9 +707,9 @@ def purge_ai_symbols(db=None) -> int:
         for symbol in rows:
             if symbol.image_path:
                 with suppress(OSError):
-                    path = os.path.join("uploads", symbol.image_path.lstrip("/"))
-                    if os.path.exists(path):
-                        os.remove(path)
+                    path = _os.path.join("uploads", symbol.image_path.lstrip("/"))
+                    if _os.path.exists(path):
+                        _os.remove(path)
             session.delete(symbol)
             count += 1
         session.commit()

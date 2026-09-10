@@ -72,6 +72,21 @@ authorization, and data protection. It complements
 - Deletion of owned uploads verifies the resolved path stays inside the
   uploads directory (`remove_owned_upload`).
 - Default limits: 5 MB images, 10 MB audio.
+- **Request-body bound (before parsing):** `_BoundedReceiveMiddleware` in
+  `src/api/main.py` enforces a 12 MB ceiling on every HTTP request body at the
+  ASGI receive-channel level — before FastAPI/Starlette multipart or JSON
+  parsing can spool an oversized body to disk. Declared `Content-Length`
+  bodies above the cap are rejected with `413` without reading the body;
+  chunked bodies are counted as they stream and aborted at the cap.
+- **Reverse-proxy deployments:** the application-level bound above only sees
+  requests that reach Uvicorn. A reverse proxy in front of the server must
+  enforce the equivalent limit so oversized bodies are stopped at the edge:
+  - nginx: `client_max_body_size 12m;`
+  - Apache: `LimitRequestBody 12582912`
+  - Caddy: `request_body { max_size 12MB }`
+  Managed deployments that cannot configure the proxy must keep the backend
+  directly reachable only from the proxy and treat the 12 MB application
+  bound as the backstop, not the primary defense.
 
 ## 5. Network exposure
 

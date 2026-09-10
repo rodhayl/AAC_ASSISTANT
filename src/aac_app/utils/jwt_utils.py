@@ -21,27 +21,23 @@ JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 120  # 2 hours
 REFRESH_TOKEN_EXPIRE_DAYS = 7  # 7 days
 
-# Enforce secure secret in production
-if (
-    config.get("ENVIRONMENT", "development") == "production"
-    and JWT_SECRET_KEY == _INSECURE_DEFAULT_SECRET
-):
+# Validate effective secret via config helper (covers short/placeholder cases).
+try:
+    config.validate_effective_jwt_secret(JWT_SECRET_KEY)
+except ValueError as _e:
     raise ValueError(
-        "CRITICAL SECURITY ERROR: JWT_SECRET_KEY must be set to a secure value in production. "
+        "CRITICAL SECURITY ERROR: JWT_SECRET_KEY must be at least 32 characters and not a placeholder in production. "
         "Generate one with: python -c 'import secrets; print(secrets.token_hex(32))'"
-    )
+    ) from _e
 
 
 def _require_secure_secret() -> None:
-    """Refuse to mint tokens with the placeholder secret in production."""
-    if JWT_SECRET_KEY != _INSECURE_DEFAULT_SECRET:
-        return
-    logger.critical(
-        "JWT_SECRET_KEY is using default insecure value! Set JWT_SECRET_KEY environment variable."
-    )
-    # In production, this should raise an error. For development, we'll log a warning.
-    if config.get("ENVIRONMENT", "development") == "production":
-        raise ValueError("JWT_SECRET_KEY must be set in production environment")
+    """Refuse to mint tokens when the effective secret is invalid in production."""
+    try:
+        config.validate_effective_jwt_secret(JWT_SECRET_KEY)
+    except ValueError:
+        logger.critical("JWT_SECRET_KEY is invalid for production use")
+        raise ValueError("JWT_SECRET_KEY must be at least 32 characters and not a placeholder in production")
 
 
 def _encode_token(

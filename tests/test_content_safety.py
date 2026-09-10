@@ -236,7 +236,7 @@ def test_moderate_output_blocks_on_llm_verdict(test_db_session):
     assert event is not None and event.verdict == "blocked"
 
 
-def test_moderate_output_passes_and_fails_open(test_db_session, monkeypatch):
+def test_moderate_output_passes_and_fails_closed_strict(test_db_session, monkeypatch):
     from src.aac_app.services.content_safety import moderate_output
 
     async def generate(**kwargs):
@@ -248,14 +248,14 @@ def test_moderate_output_passes_and_fails_open(test_db_session, monkeypatch):
     )
     assert verdict.allowed
 
-    # Provider errors fail open: never block the child's chat.
+    # Provider errors fail CLOSED for strict: blocked when no affirmative verdict.
     async def broken(**kwargs):
         raise RuntimeError("provider down")
 
     verdict = asyncio.run(
         moderate_output(broken, policy, "texto", db=test_db_session)
     )
-    assert verdict.allowed
+    assert verdict.blocked
 
 
 def test_moderate_output_respects_daily_cap(test_db_session, monkeypatch):
@@ -276,7 +276,7 @@ def test_moderate_output_respects_daily_cap(test_db_session, monkeypatch):
     second = asyncio.run(
         safety.moderate_output(generate, policy, "texto 2", db=test_db_session)
     )
-    assert second.allowed and len(calls) == 1  # no second LLM call
+    assert second.blocked and len(calls) == 1  # cap exhausted => fail-closed, no second LLM call
 
 
 def test_learning_question_output_gate_blocks_blocked_question(

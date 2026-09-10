@@ -97,9 +97,12 @@ export const useAuthStore = create<AuthState>()(
         set(emptyAuthState());
       };
 
-      // Monotonic epoch for checkAuth: any newer session change (login,
-      // logout, another checkAuth) invalidates in-flight publishes.
+      // Monotonic epoch for checkAuth/refresh: any newer session change invalidates in-flight publishes.
       let checkAuthEpoch = 0;
+      // Per-token coalescing: each distinct refresh token gets its own
+      // in-flight promise. A single-slot variable would let a second token
+      // overwrite the first and prematurely clear it on settle.
+      const refreshInFlightByToken = new Map<string, Promise<boolean>>();
 
       return {
         user: null,
@@ -111,8 +114,8 @@ export const useAuthStore = create<AuthState>()(
         sessionExpiresAt: null,
 
       login: async (username: string, password: string) => {
-        // A new session invalidates any in-flight checkAuth fetch.
-        checkAuthEpoch += 1;
+        const loginEpoch = ++checkAuthEpoch;
+        const isStillCurrentLogin = () => loginEpoch === checkAuthEpoch;
         set({ isLoading: true, error: null });
         try {
           // Use OAuth2 token endpoint which returns JWT
@@ -142,6 +145,7 @@ export const useAuthStore = create<AuthState>()(
           const userResponse = await api.get(`/auth/users/${payload.user_id}`, {
             headers: { 'Authorization': `Bearer ${token}` }
           });
+          if (!isStillCurrentLogin()) return;
           const user = userResponse.data;
           const previousUser = get().user;
           if (previousUser && previousUser.id !== user.id && typeof window !== 'undefined') {
@@ -170,11 +174,12 @@ export const useAuthStore = create<AuthState>()(
       },
 
       setupAdmin: async (setupData: AuthSetupData) => {
-        // A new session invalidates any in-flight checkAuth fetch.
-        checkAuthEpoch += 1;
+        const setupEpoch = ++checkAuthEpoch;
+        const isStillCurrentSetup = () => setupEpoch === checkAuthEpoch;
         set({ isLoading: true, error: null });
         try {
           const response = await api.post('/auth/setup', setupData);
+          if (!isStillCurrentSetup()) return;
           const token = response.data.access_token;
           const refreshToken = response.data.refresh_token;
           const user = response.data.user;
@@ -280,35 +285,49 @@ export const useAuthStore = create<AuthState>()(
       },
       
       refreshAccessToken: async () => {
-        const { refreshToken } = get();
-        if (!refreshToken) return false;
-        
+        const capturedRefreshToken = get().refreshToken;
+        const capturedUserId = get().user?.id ?? null;
+        const generationAtStart = checkAuthEpoch;
+        if (!capturedRefreshToken) return false;
+        // Coalesce concurrent refreshes, but only for the SAME token:
+        // an in-flight refresh bound to another session's token must never
+        // be awaited by a new session (its result is discarded internally,
+        // and the new session needs its own request). Per-token map prevents
+        // a single-slot overwrite from clearing the wrong entry on settle.
+        const existing = refreshInFlightByToken.get(capturedRefreshToken);
+        if (existing) return existing;
+        const inFlight: Promise<boolean> = (async () => {
         try {
-          const response = await api.post('/auth/refresh', null, {
-            params: { refresh_token: refreshToken } // Some backends might want query param or body
-          });
+          const response = await api.post('/auth/refresh', { refresh_token: capturedRefreshToken });
           
           const newToken = response.data.access_token;
           if (newToken) {
+            // Discard stale success if session changed during the request
+            if (generationAtStart !== checkAuthEpoch || get().user?.id !== capturedUserId) return false;
+            // Also discard if refresh token was rotated/changed
+            if (get().refreshToken !== capturedRefreshToken) return false;
             const payload = decodeJwtPayload(newToken);
             const expiresAt = payload?.exp ? payload.exp * 1000 : Date.now() + 2 * 60 * 60 * 1000;
-            
-            set({ 
-              token: newToken, 
-              sessionExpiresAt: expiresAt 
-            });
+            set({ token: newToken, sessionExpiresAt: expiresAt });
             return true;
           }
           return false;
         } catch (error: unknown) {
-          // If offline, don't clear session, just return false (failed to refresh)
-          if (isOfflineError(error)) {
-            return false;
-          }
-          // Refresh failed
+          if (isOfflineError(error)) return false;
+          // Discard stale failure if session already changed
+          if (generationAtStart !== checkAuthEpoch || get().user?.id !== capturedUserId) return false;
+          if (get().refreshToken !== capturedRefreshToken) return false;
           clearSession();
           return false;
+        } finally {
+          // The map can only hold OUR entry for this token while we are in
+          // flight: concurrent callers coalesce on the entry above, and a new
+          // entry for the same token cannot be created until this delete runs.
+          refreshInFlightByToken.delete(capturedRefreshToken);
         }
+        })();
+        refreshInFlightByToken.set(capturedRefreshToken, inFlight);
+        return inFlight;
       }
       };
     },

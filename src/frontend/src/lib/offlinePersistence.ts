@@ -5,6 +5,37 @@ const CONFLICT_STORAGE_KEY = 'aac-assistant-offline-conflicts-v1'
 const MAX_PERSISTED_ITEMS = 100
 const MAX_PERSISTED_BYTES = 200_000
 const PERSISTED_METHODS = new Set(['post', 'put', 'patch', 'delete'])
+
+// Allowlist: only safe offline mutations (board edits, etc.) persist.
+const OFFLINE_ALLOWLIST_PREFIXES = ['/boards/'] as const
+const OFFLINE_BLOCKED_SUBSTRINGS = [
+  'reset-password', 'change-password', 'register', 'settings/ai',
+  'groq_api_key', 'openrouter_api_key', 'new_password', 'password',
+] as const
+const SENSITIVE_KEYS = new Set([
+  'password', 'new_password', 'confirm_password', 'current_password',
+  'groq_api_key', 'openrouter_api_key', 'api_key', 'secret',
+])
+const SENSITIVE_HEADER_SUBSTR = ['api-key', 'apikey', 'secret', 'password'] as const
+
+function isAllowlistedUrl(url: string | undefined): boolean {
+  if (!url) return false
+  const lower = url.toLowerCase()
+  if (OFFLINE_BLOCKED_SUBSTRINGS.some((s) => lower.includes(s))) return false
+  return OFFLINE_ALLOWLIST_PREFIXES.some((p) => lower.includes(p))
+}
+
+function containsSensitiveField(value: unknown): boolean {
+  if (value === null || value === undefined) return false
+  if (typeof value !== 'object') return false
+  try {
+    const str = JSON.stringify(value).toLowerCase()
+    for (const key of SENSITIVE_KEYS) {
+      if (str.includes(`"${key}"`)) return true
+    }
+  } catch { return false }
+  return false
+}
 let persistenceDisabled = false
 
 export interface PersistedOfflineQueueItem {
@@ -59,10 +90,28 @@ function sanitizeHeaders(headers: AxiosRequestConfig['headers']): Record<string,
   }
 
   return Object.entries(source).reduce<Record<string, string>>((result, [key, value]) => {
-    if (key.toLowerCase() === 'authorization') return result
+    const lowerKey = key.toLowerCase()
+    if (lowerKey === 'authorization') return result
+    if (SENSITIVE_HEADER_SUBSTR.some((s) => lowerKey.includes(s))) return result
     if (typeof value === 'string') result[key] = value
     return result
   }, {})
+}
+
+function sanitizeParams(params: unknown): unknown {
+  if (params === null || params === undefined) return params
+  if (typeof params !== 'object') return params
+  const obj = params as Record<string, unknown>
+  const cleaned: Record<string, unknown> = {}
+  let stripped = false
+  for (const [k, v] of Object.entries(obj)) {
+    if (SENSITIVE_KEYS.has(k.toLowerCase()) || SENSITIVE_HEADER_SUBSTR.some((s) => k.toLowerCase().includes(s))) {
+      stripped = true
+      continue
+    }
+    cleaned[k] = v
+  }
+  return stripped ? cleaned : params
 }
 
 export function removeAuthorizationHeader(config: AxiosRequestConfig): AxiosRequestConfig {
@@ -75,11 +124,14 @@ export function removeAuthorizationHeader(config: AxiosRequestConfig): AxiosRequ
 
 export function sanitizeOfflineConfig(config: AxiosRequestConfig): AxiosRequestConfig | null {
   if (!isPersistableJson(config.params) || !isPersistableJson(config.data)) return null
+  // Blocklist sensitive operations and non-allowlisted URLs
+  if (!isAllowlistedUrl(config.url)) return null
+  if (containsSensitiveField(config.data) || containsSensitiveField(config.params)) return null
   return {
     method: config.method,
     url: config.url,
     baseURL: config.baseURL,
-    params: config.params,
+    params: sanitizeParams(config.params),
     data: config.data,
     headers: sanitizeHeaders(config.headers),
   }

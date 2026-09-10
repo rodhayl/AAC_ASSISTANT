@@ -56,15 +56,6 @@ def finish_collab_connections(client, *websockets):
         drain_connections()
 
 
-@pytest.fixture
-def collab_client(setup_test_db):
-    with TestClient(app) as client:
-        try:
-            yield client
-        finally:
-            client.portal.call(app.state.shutdown_event.set)
-
-
 def test_connection_manager_removes_empty_rooms():
     manager = ConnectionManager()
     first = object()

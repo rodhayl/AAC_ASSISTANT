@@ -132,12 +132,15 @@ class OpenRouterProvider(BaseLLMProvider):
             )
 
             if response.status_code != 200:
+                # F09: log the status and error category, never the raw
+                # upstream body (it can echo prompt fragments or account
+                # details into logs).
                 logger.error(
-                    f"{type(self).__name__} API error: {response.status_code} - {response.text}"
+                    f"{type(self).__name__} API error: {response.status_code}"
                 )
                 if response.status_code == 429:
                     raise ProviderRateLimitError(
-                        f"{type(self).__name__} rate limited (429): {response.text[:300]}"
+                        f"{type(self).__name__} rate limited (429)"
                     )
                 raise Exception(
                     f"{type(self).__name__} API error: {response.status_code}"
@@ -152,7 +155,7 @@ class OpenRouterProvider(BaseLLMProvider):
             return content
 
         except Exception as e:
-            logger.error(f"{type(self).__name__} generation failed: {e}")
+            logger.error(f"{type(self).__name__} generation failed: {type(e).__name__}")
             raise
 
     def generate_sync(
@@ -226,12 +229,13 @@ class OpenRouterProvider(BaseLLMProvider):
             )
 
             if response.status_code != 200:
+                # F09: status/category only — see the async path comment.
                 logger.error(
-                    f"{type(self).__name__} API error: {response.status_code} - {response.text}"
+                    f"{type(self).__name__} API error: {response.status_code}"
                 )
                 if response.status_code == 429:
                     raise ProviderRateLimitError(
-                        f"{type(self).__name__} rate limited (429): {response.text[:300]}"
+                        f"{type(self).__name__} rate limited (429)"
                     )
                 raise Exception(
                     f"{type(self).__name__} API error: {response.status_code}"
@@ -246,7 +250,7 @@ class OpenRouterProvider(BaseLLMProvider):
             return content
 
         except Exception as e:
-            logger.error(f"{type(self).__name__} sync generation failed: {e}")
+            logger.error(f"{type(self).__name__} sync generation failed: {type(e).__name__}")
             raise
 
     async def get_available_models(self) -> dict[str, Any]:

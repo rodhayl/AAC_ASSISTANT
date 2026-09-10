@@ -82,7 +82,110 @@ jobs:
       - run: npm run verify:prod-build -- --freshness-only
       - run: npm run build:e2e
 
-  e2e-production:
+  e2e-production-gate:
+    runs-on: ubuntu-latest
+    env:
+      ENVIRONMENT: production
+      ALLOWED_ORIGINS: http://127.0.0.1:8086
+      JWT_SECRET_KEY: ci-e2e-prod-secret-key-with-at-least-32-characters-long
+      GROQ_API_KEY: ci-synthetic-groq-key
+      GROQ_MODEL: openai/gpt-oss-120b
+      BACKEND_HOST: 127.0.0.1
+      BACKEND_PORT: 8086
+      DATA_DIR: .ci-e2e-data
+      APP_VERSION: 2.0.0
+      # No AAC_SEED_SAMPLE_DATA in the production gate: demo users/boards must
+      # not exist in a production-mode deployment. Playwright credentials are
+      # provisioned through the authenticated admin API (auth.setup.ts), not
+      # by seeding.
+      AAC_SEED_SAMPLE_DATA: "false"
+      AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN: "true"
+      AAC_BOOTSTRAP_ADMIN_USERNAME: admin1
+      AAC_BOOTSTRAP_ADMIN_PASSWORD: Admin123
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:8086
+      E2E_ADMIN_USERNAME: admin1
+      E2E_ADMIN_PASSWORD: Admin123
+      E2E_STUDENT_USERNAME: student1
+      E2E_STUDENT_PASSWORD: Student123
+      E2E_TEACHER_USERNAME: teacher1
+      E2E_TEACHER_PASSWORD: Teacher123
+      E2E_PROVISION_VIA_API: "1"
+      AAC_ENABLE_SYMBOL_IMAGE_BACKFILL: "false"
+    defaults:
+      run:
+        working-directory: src/frontend
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
+      - uses: astral-sh/setup-uv@ae3b92d1bdb308a10adfe7b8f408e5cc8c30f3f6 # v6
+        with:
+          version: latest
+      - uses: actions/setup-python@8549b9f8f590ad24eab7482f36f6e1e24d34597b # v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@3d7870f6218881292d183093179901ae8dc2ef85 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: src/frontend/package-lock.json
+      - run: uv sync --locked --group dev
+        working-directory: .
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Start production backend
+        working-directory: .
+        run: |
+          rm -rf .ci-e2e-data
+          mkdir -p .ci-e2e-data
+          nohup uv run python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8086 > /tmp/aac-e2e-server.log 2>&1 &
+          SERVER_PID=$!
+          echo $SERVER_PID > /tmp/aac-e2e-server.pid
+          disown $SERVER_PID 2>/dev/null || true
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8086/api/health > /tmp/aac-e2e-health.json; then
+              cat /tmp/aac-e2e-health.json
+              test "$(python3 -c 'import json; print(json.load(open("/tmp/aac-e2e-health.json"))["version"])')" = "2.0.0"
+              # Production gate 1: /ready must be healthy (4/4 providers).
+              if curl --silent http://127.0.0.1:8086/ready | grep -q '"ready":true'; then echo "ready OK"; else cat /tmp/aac-e2e-server.log; echo "prod /ready not healthy"; exit 1; fi
+              # Production gate 2: Groq is the forced production provider —
+              # login as the bootstrap admin and confirm the provider list.
+              TOKEN=$(curl --silent --fail -X POST http://127.0.0.1:8086/api/auth/token \
+                -H 'Content-Type: application/x-www-form-urlencoded' \
+                --data-urlencode 'username=admin1' --data-urlencode 'password=Admin123' \
+                | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+              PROVIDER=$(curl --silent http://127.0.0.1:8086/api/providers/health -H "Authorization: Bearer $TOKEN" \
+                | python3 -c 'import json,sys; print(json.load(sys.stdin)["groq"]["configured"])')
+              test "$PROVIDER" = "True" || { echo "prod Groq provider not configured"; exit 1; }
+              # Production gate 3: rate limiting is ACTIVE in production —
+              # burst the login endpoint and expect a 429 after the per-IP cap.
+              RATE_CODE=$(for i in $(seq 1 15); do
+                curl --silent --output /dev/null --write-out '%{http_code}\n' -X POST http://127.0.0.1:8086/api/auth/token \
+                  -H 'Content-Type: application/x-www-form-urlencoded' \
+                  --data-urlencode 'username=nonexistent-user' --data-urlencode 'password=wrongpass'
+              done | sort | uniq -c)
+              echo "$RATE_CODE" | grep -q ' 429' || { echo "prod rate limiting not enforced: $RATE_CODE"; exit 1; }
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/aac-e2e-server.log
+          exit 1
+      - name: Verify production server and run Playwright
+        run: npm run verify:prod-build && npx playwright test --grep "smoke|auth"
+      - name: Dump backend log on failure
+        if: failure()
+        run: cat /tmp/aac-e2e-server.log || true
+        working-directory: .
+      - name: Stop production backend
+        if: always()
+        run: |
+          if [ -f /tmp/aac-e2e-server.pid ]; then
+            kill -9 "$(cat /tmp/aac-e2e-server.pid)" 2>/dev/null || true
+          fi
+          pkill -f "uvicorn src.api.main:app" 2>/dev/null || true
+        working-directory: .
+
+  e2e-production-compat:
     runs-on: ubuntu-latest
     env:
       ENVIRONMENT: test
@@ -129,7 +232,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - name: Start production backend
+      - name: Start test backend
         working-directory: .
         run: |
           rm -rf .ci-e2e-data
@@ -139,27 +242,20 @@ jobs:
           echo $SERVER_PID > /tmp/aac-e2e-server.pid
           disown $SERVER_PID 2>/dev/null || true
           for attempt in $(seq 1 60); do
-            if curl --fail --silent http://127.0.0.1:8086/api/health > /tmp/aac-e2e-health.json; then
-              cat /tmp/aac-e2e-health.json
-              test "$(python3 -c 'import json; print(json.load(open("/tmp/aac-e2e-health.json"))["version"])')" = "2.0.0"
-              exit 0
-            fi
+            if curl --fail --silent http://127.0.0.1:8086/api/health > /tmp/aac-e2e-health.json; then cat /tmp/aac-e2e-health.json; exit 0; fi
             sleep 1
           done
-          cat /tmp/aac-e2e-server.log
-          exit 1
-      - name: Verify production server and run Playwright
+          cat /tmp/aac-e2e-server.log; exit 1
+      - name: Run Playwright
         run: npm run verify:prod-build && npx playwright test
       - name: Dump backend log on failure
         if: failure()
         run: cat /tmp/aac-e2e-server.log || true
         working-directory: .
-      - name: Stop production backend
+      - name: Stop backend
         if: always()
         run: |
-          if [ -f /tmp/aac-e2e-server.pid ]; then
-            kill -9 "$(cat /tmp/aac-e2e-server.pid)" 2>/dev/null || true
-          fi
+          if [ -f /tmp/aac-e2e-server.pid ]; then kill -9 "$(cat /tmp/aac-e2e-server.pid)" 2>/dev/null || true; fi
           pkill -f "uvicorn src.api.main:app" 2>/dev/null || true
         working-directory: .
 
@@ -172,6 +268,7 @@ jobs:
       AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN: "true"
       AAC_BOOTSTRAP_ADMIN_USERNAME: admin1
       AAC_BOOTSTRAP_ADMIN_PASSWORD: Admin123
+      AAC_ASSISTANT_NO_BROWSER: "1"
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
       - uses: astral-sh/setup-uv@ae3b92d1bdb308a10adfe7b8f408e5cc8c30f3f6 # v6

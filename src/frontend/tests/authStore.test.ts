@@ -104,9 +104,7 @@ describe('auth session refresh robustness', () => {
 
     await useAuthStore.getState().checkAuth();
 
-    expect(post).toHaveBeenCalledWith('/auth/refresh', null, {
-      params: { refresh_token: 'valid-refresh-token' },
-    });
+    expect(post).toHaveBeenCalledWith('/auth/refresh', { refresh_token: 'valid-refresh-token' });
     expect(useAuthStore.getState()).toMatchObject({
       user,
       token: refreshedToken,
@@ -352,5 +350,163 @@ describe('auth session refresh robustness', () => {
 
     expect(useAuthStore.getState().user).toEqual(userB);
     expect(useAuthStore.getState().isAuthenticated).toBe(true);
+  });
+
+  it('sends the refresh token in the request body, not the URL', async () => {
+    seedSession('not-a-jwt');
+    const refreshedToken = makeJwt(Math.floor(Date.now() / 1000) + 7200);
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      data: { access_token: refreshedToken },
+    } as never);
+
+    await useAuthStore.getState().checkAuth();
+
+    expect(post).toHaveBeenCalledTimes(1);
+    const [url, body, config] = post.mock.calls[0];
+    expect(url).toBe('/auth/refresh');
+    expect(body).toEqual({ refresh_token: 'valid-refresh-token' });
+    // No query-string credential channel may be used.
+    expect(config?.params).toBeUndefined();
+  });
+
+  it('discards a deferred refresh success published after logout', async () => {
+    seedSession('not-a-jwt');
+    let resolveRefresh: ((value: { data: { access_token: string } }) => void) | undefined;
+    vi.spyOn(api, 'post').mockImplementation(
+      () => new Promise((resolve) => {
+        resolveRefresh = resolve;
+      }) as never,
+    );
+
+    const refreshPromise = useAuthStore.getState().refreshAccessToken();
+    expect(resolveRefresh).toBeDefined();
+
+    // Logout ends the session while the refresh request is in flight.
+    vi.spyOn(api, 'post').mockResolvedValue({ data: { ok: true } } as never);
+    await useAuthStore.getState().logout();
+
+    resolveRefresh!({ data: { access_token: makeJwt(Math.floor(Date.now() / 1000) + 7200) } });
+    expect(await refreshPromise).toBe(false);
+
+    expect(useAuthStore.getState().token).toBeNull();
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+
+  it('discards a deferred refresh success after a newer login wins', async () => {
+    const userA = { ...user, id: 7, username: 'user-a' };
+    const userB = { ...user, id: 8, username: 'user-b' };
+    seedSession('not-a-jwt');
+
+    let resolveStaleRefresh: ((value: { data: { access_token: string } }) => void) | undefined;
+    vi.spyOn(api, 'post').mockImplementation(
+      () => new Promise((resolve) => {
+        if (!resolveStaleRefresh) {
+          resolveStaleRefresh = resolve;
+        }
+        return new Promise<void>(() => {});
+      }) as never,
+    );
+
+    const staleRefresh = useAuthStore.getState().refreshAccessToken();
+    expect(resolveStaleRefresh).toBeDefined();
+
+    // User B logs in while A's refresh is still pending.
+    const tokenB = makeJwt(Math.floor(Date.now() / 1000) + 3600, userB.id);
+    vi.spyOn(api, 'post').mockResolvedValue({
+      data: { access_token: tokenB, refresh_token: 'refresh-b' },
+    } as never);
+    vi.spyOn(api, 'get').mockResolvedValue({ data: userB } as never);
+    await useAuthStore.getState().login(userB.username, 'password');
+
+    resolveStaleRefresh!({
+      data: { access_token: makeJwt(Math.floor(Date.now() / 1000) + 7200, userA.id) },
+    });
+    expect(await staleRefresh).toBe(false);
+
+    expect(useAuthStore.getState().user).toEqual(userB);
+    expect(useAuthStore.getState().token).toBe(tokenB);
+    expect(useAuthStore.getState().refreshToken).toBe('refresh-b');
+  });
+
+  it('does not clear a newer session when a stale refresh fails', async () => {
+    seedSession('not-a-jwt');
+    let rejectStaleRefresh: ((error: unknown) => void) | undefined;
+    vi.spyOn(api, 'post').mockImplementation(
+      () => new Promise((_resolve, reject) => {
+        if (!rejectStaleRefresh) {
+          rejectStaleRefresh = reject;
+        }
+        return new Promise<void>(() => {});
+      }) as never,
+    );
+
+    const staleRefresh = useAuthStore.getState().refreshAccessToken();
+    expect(rejectStaleRefresh).toBeDefined();
+
+    // A new login takes over before the stale refresh fails.
+    const userB = { ...user, id: 8, username: 'user-b' };
+    const tokenB = makeJwt(Math.floor(Date.now() / 1000) + 3600, userB.id);
+    vi.spyOn(api, 'post').mockResolvedValue({
+      data: { access_token: tokenB, refresh_token: 'refresh-b' },
+    } as never);
+    vi.spyOn(api, 'get').mockResolvedValue({ data: userB } as never);
+    await useAuthStore.getState().login(userB.username, 'password');
+
+    rejectStaleRefresh!({ response: { status: 401 } });
+    expect(await staleRefresh).toBe(false);
+
+    // The newer session must remain fully intact.
+    expect(useAuthStore.getState().user).toEqual(userB);
+    expect(useAuthStore.getState().token).toBe(tokenB);
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
+  });
+
+  it('coalesces simultaneous expired-token refreshes for the same session', async () => {
+    seedSession('not-a-jwt');
+    let refreshCalls = 0;
+    let releaseRefresh: (() => void) | undefined;
+    vi.spyOn(api, 'post').mockImplementation(
+      () => {
+        refreshCalls += 1;
+        return new Promise((resolve) => {
+          releaseRefresh = () => resolve({
+            data: { access_token: makeJwt(Math.floor(Date.now() / 1000) + 7200) },
+          });
+        }) as never;
+      },
+    );
+
+    const first = useAuthStore.getState().refreshAccessToken();
+    const second = useAuthStore.getState().refreshAccessToken();
+    const third = useAuthStore.getState().refreshAccessToken();
+
+    releaseRefresh?.();
+    // All callers share one in-flight HTTP request and resolve to the same
+    // (truthy) result. refreshAccessToken is an async function, so callers
+    // receive distinct wrapper promises even when the request is coalesced.
+    expect(refreshCalls).toBe(1);
+    expect(await Promise.all([first, second, third])).toEqual([true, true, true]);
+    expect(refreshCalls).toBe(1);
+  });
+
+  it('does not coalesce a refresh request from a different session token', async () => {
+    seedSession('not-a-jwt');
+    let refreshCalls = 0;
+    vi.spyOn(api, 'post').mockImplementation(
+      () => {
+        refreshCalls += 1;
+        return new Promise(() => {});
+      },
+    ) as never;
+
+    const first = useAuthStore.getState().refreshAccessToken();
+
+    // Another identity takes over with its own refresh token while the first
+    // request is still pending: the second caller must issue its own request
+    // instead of awaiting a result that will be discarded.
+    useAuthStore.setState({ refreshToken: 'other-session-token' });
+    const second = useAuthStore.getState().refreshAccessToken();
+    expect(second).not.toBe(first);
+    expect(refreshCalls).toBe(2);
   });
 });

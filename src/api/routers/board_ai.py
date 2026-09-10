@@ -1,3 +1,5 @@
+import os
+
 from fastapi import APIRouter, Body, Depends, HTTPException
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -328,7 +330,14 @@ def _resolve_provider_for_board(
     if not provider_type or not model_name:
         return None
     if provider_type == "groq":
-        api_key = get_setting_value("groq_api_key", "")
+        # Same precedence as deps/providers._effective_groq_key: DB setting >
+        # canonical config (.env) > process environment; never cross-provider.
+        api_key = (
+            get_setting_value("groq_api_key", "")
+            or (getattr(config, "GROQ_API_KEY", "") or "").strip()
+            or os.environ.get("GROQ_API_KEY", "")
+        )
+        api_key = (api_key or "").strip()
         if not api_key:
             return None
         return GroqProvider(api_key=api_key, model=model_name)

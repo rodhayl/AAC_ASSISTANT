@@ -386,11 +386,23 @@ def get_lmstudio_provider() -> LMStudioProvider:
     return provider
 
 
+def _effective_groq_key() -> str:
+    # Precedence: DB setting > config (.env) > process env; never cross-provider fallback.
+    db_key = _get_setting_value("groq_api_key", "")
+    if db_key:
+        return db_key
+    cfg = getattr(config, "GROQ_API_KEY", "") or ""
+    if cfg.strip():
+        return cfg.strip()
+    import os as _os
+    return (_os.getenv("GROQ_API_KEY") or "").strip()
+
+
 def get_groq_provider() -> GroqProvider:
     """Return the configured Groq provider singleton."""
     global _groq_provider
 
-    api_key = _get_setting_value("groq_api_key", "")
+    api_key = _effective_groq_key()
     model = _get_setting_value("groq_model", "")
     discarded: Any | None = None
 
@@ -399,7 +411,7 @@ def get_groq_provider() -> GroqProvider:
             logger.info("Initializing global GroqProvider")
             _groq_provider = GroqProvider(api_key=api_key, model=model)
         elif (
-            _groq_provider.api_key != api_key
+            (_groq_provider.api_key or "").strip() != api_key
             or _groq_provider._configured_model != model
         ):
             logger.info("Groq settings changed. Re-initializing provider.")

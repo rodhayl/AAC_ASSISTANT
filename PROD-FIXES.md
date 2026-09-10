@@ -159,6 +159,162 @@ Actual checks performed:
 
 The typecheck failure is an **environment/provisioning gap**, not proof that all reported TypeScript errors require source edits. First install authoritative locked dependencies in a suitable environment, then rerun typecheck/build before changing typings. Likewise, historic green counts in release docs are not validation of this audited commit.
 
+## Fixes pass — 2026-09-10
+
+Scope: address the first batch of production-readiness defects under AGENTS.md. Changes span security (F01, F02, F03, F09), reliability (F04, F06, F07, F11, F14), content safety (F08, F13), provider/collab correctness (F05, F10, F13), and deployment/observability (F12, F15, F16). No full test suite run (requires explicit authorization); no `.env`/DB/auth-artifact mutation; Windows behavior untouched per AGENTS.md.
+
+### F01 — production JWT secret validation — **fixed**
+
+- Root cause: production accepted any short/placeholder secret; check lived only in dotenv generation, not on the effective (env-over-dotenv) value.
+- Change: `src/config.py:validate_effective_jwt_secret` checks the resolved effective secret in production (≥32 chars, rejects placeholder/whitespace), using `config.get` so dotenv-set `ENVIRONMENT` is honored with env-over-dotenv precedence. `src/aac_app/utils/jwt_utils.py` calls it at import and before minting.
+- Evidence: isolated probe with synthetic `JWT_SECRET_KEY=tooshort` and `ENVIRONMENT=production` from dotenv rejects with `ValueError`; `process.env=production` overrides dotenv file; `development` stays permissive; valid 40-char production key accepted. `tests/test_phase2_security.py::test_production_rejects_default_jwt_secret` updated to current message and passes.
+
+### F02 — offline persistence secrets — **fixed**
+
+- Change: `src/frontend/src/lib/offlinePersistence.ts` switched to an explicit allowlist (`/boards/`) plus blocklist/sensitive-key detection; `sanitizeOfflineConfig` rejects secret-bearing or non-allowlisted mutations before persistence and on hydration, strips sensitive headers/params. Queue/conflict hydration re-validates via the same sanitizer.
+- Evidence: new `src/frontend/tests/offlinePersistence.test.ts` (9 tests) exercises `sanitizeOfflineConfig` directly against the real module — rejects password-reset, privileged user creation, `/settings/ai` with API key, secret payloads, secret-bearing params, and headers; preserves ordinary board edits via the allowlist. Existing `tests/api.test.ts` and `tests/offlineStore.test.ts` still pass.
+
+### F04 second-pass correction (2026-09-10) — coalescing keyed to token identity
+
+The first pass coalesced concurrent refreshes through a single in-flight slot. This pass replaced it with a per-token map (`refreshInFlightByToken`) so a newer session's token can never be coalesced into an older session's request and a settling refresh can never delete a newer session's entry. A self-referential `inFlight` read inside the IIFE's `finally` (TS2454 "used before being assigned", caught by full `tsc -b` with real deps installed) was removed: concurrent callers coalesce on the map entry, so the entry can only be our own while in flight and a plain keyed delete is provably equivalent.
+
+### F03 + F04 — refresh token transport and session overwrite — **fixed**
+
+- F03: `src/api/routers/auth.py:/refresh` now accepts the token from JSON body `{refresh_token}` (preferred, keeps the 7-day credential out of URLs/logs) with transitional query-param fallback; validates length and returns 400 when absent. `src/frontend/src/store/authStore.ts:refreshAccessToken` sends `{refresh_token}` in the body, never `params`.
+- F04: `refreshAccessToken` captures `generationAtStart`/`capturedRefreshToken`/`capturedUserId`, coalesces concurrent refreshes per-token (`refreshInFlight` + `refreshInFlightToken`), and discards stale success/failure after epoch or session change. `checkAuth` epoch guard already prevented stale `checkAuth` publishes.
+- Evidence: `src/frontend/tests/authStore.test.ts` grows to 18 tests covering body-not-URL, deferred success after logout, deferred success after newer login, stale failure after new login, coalescing for same session, and distinct tokens not coalesced. Backend refresh flows in `test_phase2_security.py` updated to handle transitional body param; all backend phase-2 security tests pass.
+
+### F05 — collaboration permissions revalidation — **addressed**
+
+- Change: `src/api/routers/collab.py` re-validates the token, account active state, and board view access on a bounded interval with a separate short-lived DB session (`create_session_factory`), covering idle receivers; expiry comparison via `exp` from the decoded token causes a policy-violation close when expired.
+
+### F06 — collaboration connections and slow peers — **fixed**
+
+- Change: `src/api/routers/collab.py:ConnectionManager` now caps room size (`MAX_ROOM_SIZE=50`) and bounds slow-peer sends (`SEND_TIMEOUT=3.0` via `asyncio.wait_for` per peer, gathered concurrently); the request-scoped DB session is closed before the long-lived socket loop so idle sockets do not exhaust the pool.
+
+### F07 — voice transcription async offload — **fixed**
+
+- Change: `src/aac_app/services/learning/responses.py:ResponseProcessingMixin` offloads `recognize_from_file` via `asyncio.to_thread` under a bounded `asyncio.Semaphore(2)`, so a slow transcription/model load cannot stall the event loop.
+
+### F08 — strict moderation fail-closed — **fixed**
+
+- Change: `src/aac_app/services/content_safety.py:moderate_output` now fails closed for strict policies: provider errors, empty/garbled/ambiguous verdicts, daily-cap exhaustion, and chunked full-text moderation all return `blocked` (with `"sentinel"` as `matched_terms`); only an explicit `allowed` verdict passes. Text is chunked in 600-char windows so unsafe suffixes are covered.
+- Evidence: `tests/test_content_safety.py` strict-open tests converted to strict-closed expectations (cap exhausted and provider errors block); run passes (44 tests).
+
+### F09 — logging redaction — **fixed**
+
+- Change: `src/api/logging_config.py` installs a Loguru core patcher (`_redact_message`/`_redacting_patcher`) masking `groq_api_key|openrouter_api_key|api_key|authorization|password|token` assignments before any sink, disables `diagnose`/`backtrace` and switches to `INFO` in production, and enables rotation (`20 MB`). `src/aac_app/providers/openrouter_provider.py` logs only status/category, not `response.text`; `src/aac_app/services/learning/responses.py` logs AAC transformation shape, not verbatim child messages.
+- Evidence: inline probe with a capturing sink verified `sk-supersecret123`/`hunter2` never appear after redaction while `key=***` is written.
+
+### F10 — Groq credential resolution — **fixed**
+
+- Change: `src/aac_app/providers/groq_provider.py` no longer calls `OpenRouterProvider.__init__`; it resolves only `GROQ_API_KEY` via `BaseLLMProvider`, never inheriting `OPENROUTER_API_KEY`. `src/api/deps/providers.py:_effective_groq_key` uses precedence DB → `config.GROQ_API_KEY` → `os.getenv("GROQ_API_KEY")` with trimmed comparison, preventing recreation on env-only configs. `src/api/routers/board_ai.py:_resolve_provider_for_board` also falls through DB → config → process env.
+
+### F11 — request body bounds before parsing — **fixed**
+
+- Change: `src/api/main.py:_BoundedReceiveMiddleware` (pure ASGI) enforces a 12 MB ceiling at the receive-channel level: declared `Content-Length` is rejected immediately; chunked bodies are bounded on the raw `receive` stream with `overflowed`/`response_started` tracking, a bounded drain, and a 413 guarantees even when the app swallows the abort. This applies before multipart parsing so oversized bodies cannot be spooled.
+- Evidence: isolated ASGI probe exercised three cases — declared-length oversized → 413 with no app consumption, chunked oversized → 413 with app aborted at the bound (~12.58 MB), normal body → 200 with 5 bytes. `src/api/main.py` compiles; no existing tests regressed.
+
+### F12 — active log rotation — **fixed**
+
+- Change: `src/api/logging_config.py:setup_logging` configures per-sink `rotation="20 MB"` while the per-process log files and age-based cleanup remain, so long-running processes do not grow unboundedly and concurrent processes do not race on a shared path.
+
+### F13 — export/import board links and history — **fixed** (two defects found by regression test in review pass)
+
+- Change: `src/api/routers/export_import.py` second-passes imported boards to remap `linked_board_id` among authorized imports (handling cycles/missing/external refs), and `_board_content_matches` now includes links so retry matching respects navigation.
+- Review-pass defect 1 (asymmetric remap): the engine uses `autoflush=False`, so placements created for the last imported board were still pending when the remap queries ran — one direction of a cyclic A→B→A link stayed `None`. `_remap_linked_boards` now flushes before its queries.
+- Review-pass defect 2 (retry clones linked boards): retry matching compared source-space link IDs from the export file against local DB IDs — never equal, so every re-import cloned linked boards. `_board_content_matches` now resolves both sides to the target board's *name* via `_source_board_name_map`/`_user_board_name_map` (scoped to the importing user), with unresolvable links collapsing to a conservative "external" marker.
+- Evidence: new `tests/test_export_link_remap.py` (7 tests): cyclic A/B remap both directions, external/missing links stay cleared (including forged links to unowned boards), retry import merges instead of cloning, assigned-board link remap, retention preserves today's sentinel meter, `_count_sentinel_today` only counts today.
+
+### F14 — safety log transaction ownership and retention — **fixed** (retention made testable in review pass)
+
+- Change: `src/aac_app/services/content_safety.py:log_event` now takes a deliberate isolated transaction via `get_session()` and ignores the caller's session entirely, so it can never commit or roll back the caller's transaction; it caps `detail` to 200 chars, enforces bounded table retention, and its preservation fix in `src/api/routers/content_safety.py:clear_safety_events` keeps today's `surface="sentinel"` rows (the daily cost meter) when clearing.
+- Review pass: retention moved from a function-local constant into module-level `MAX_EVENTS` + `_prune_events(session, max_events)` so the real pruning path is exercisable; `log_event` calls it inside its isolated session. `_prune_events` never deletes today's `sentinel` rows even when they alone exceed the cap (the cap is a hard bound but the meter is protected).
+- Evidence: isolated probe created a user, staged a `display_name` change, called `log_event(db=caller_session)`, and rolled back — the staged change was not committed, while the safety event persisted in its own transaction. `tests/test_export_link_remap.py` exercises `_prune_events` directly: with 6 rows (3 today-sentinel + 3 old chat) and cap 2, only the old chat rows are pruned, 3 sentinel rows remain, and `_count_sentinel_today` still returns 3.
+
+### F15 — CI production gate — **fixed**
+
+- Change: `.github/workflows/ci.yml` renamed `e2e-production` → `e2e-production-gate` with `ENVIRONMENT=production`, no `TESTING=1`, synthetic strong `JWT_SECRET_KEY`, `GROQ_API_KEY`, and `GROQ_MODEL`; polls `/ready` for `"ready":true`; scoping Playwright to `smoke|auth` for that gate. The existing test-mode E2E is preserved as `e2e-production-compat`. Windows packaging step sets `AAC_ASSISTANT_NO_BROWSER=1`.
+
+### F16 — readiness as current liveness — **fixed**
+
+- Change: `src/api/main.py:/ready` now runs a bounded `SELECT 1` via `create_session_factory` + `asyncio.wait_for(..., 2.0)` so runtime DB loss flips `503/database_unavailable` within one poll; provider degradation is surfaced from `get_startup_state()` without paid generations.
+
+### Validation this pass
+
+Environment note (2026-09-10 review pass): this checkout lives on an NTFS3 automount where metadata-heavy operations (npm installs, large deletions) are pathologically slow — `npm ci` hung 14+ minutes with zero output there, and one interrupted install left `node_modules` broken. The full frontend gate was therefore run from an identical ext4 mirror (`~/aac_fe_check`: same package.json/package-lock.json/tsconfigs/vitest+eslint configs, `src/`, `tests/`, `e2e/`, index.html) with `npm ci` completing in 2s; the repo's `node_modules` is now a symlink to that mirror. The earlier "typecheck clean via skipLibCheck" claim was replaced: with real deps installed, full `tsc -b` found a genuine TS2454 in authStore (fixed above); the remaining `src/pages/*` implicit-any diagnostics reported by the audit are pre-existing and untouched by this task.
+
+| Check | Outcome |
+| --- | --- |
+| Ruff `src tests scripts` | All checks passed |
+| `python -m compileall -q src scripts` | Passed |
+| Frontend vitest (102 suites, 852 tests) | 102 passed, 852 passed |
+| Backend focused run: `test_export_link_remap.py`, `test_content_safety.py`, `test_phase2_security.py`, `test_writes_durable_before_response.py` | 85 passed, 0 failures |
+| Frontend typecheck (`tsc -b --noEmit` with real deps) | Clean after fixing the authStore TS2454; no new diagnostics |
+| Frontend lint (`eslint src tests --max-warnings=0`) | Clean |
+| Frontend production build (`vite build`) | Succeeds (vendor chunks emitted) |
+| CI workflow validity (`yaml.safe_load` + env inspection) | `e2e-production-gate` production env verified: no TESTING, no demo seeding, `E2E_PROVISION_VIA_API=1`, synthetic keys; `e2e-production-compat` retains test-mode E2E |
+| `git diff --check` | Clean |
+| `offlinePersistence.test.ts` (real module) | 9 passed |
+| JWT prod probe (isolated via `load_settings(tmp)` with dotenv `ENVIRONMENT=production`) | Short key rejected; env-over-dotenv respected |
+| Request-body probe (ASGI, declared-length + chunked 12 MB+) | Declared 413/no app bytes; chunked 413/aborted at 12.58 MB |
+| Safety-log probe (isolated DB, synthetic user, staged change + `log_event(db=...)` + rollback) | Staged change not committed; event persisted |
+| Full suites / `verify_pr.py` | Not run — per AGENTS.md requires explicit authorization |
+| Live production smoke / Windows rehearsal / human beta | Still blocked (intentionally) — not executed this pass |
+
+## Acceptance-test and evidence pass — 2026-09-10 (second)
+
+### New acceptance regression coverage — `tests/test_acceptance_gaps.py` (9 tests, all passing)
+
+- **F05 (collab revalidation)**: three tests open a real WebSocket via TestClient, apply the security change in a **separate committed session** (deactivation, `security_version` bump, board-assignment removal), advance a controllable `time.monotonic` clock past the 60s revalidation interval, and assert the server closes the idle receiver with 1008. The clock test initially exposed that the test helper minted tokens without the `sec_ver` claim real logins carry — the helper now mirrors the auth router exactly. (A first attempt hung because the fake clock recursed into the patched `time.monotonic`; the real function is captured at import time.)
+- **F06**: (a) a `get_db` override wrapping the request session with a `close` spy proves the handler closes the request-scoped session **before** entering the socket loop while the socket remains registered in the room; (b) a stalled peer (`send_json` sleeping 30s) with `SEND_TIMEOUT=0.2` is reaped by `broadcast` while the healthy peer receives the message — broadcast returns long before the stalled send would.
+- **F07**: with the production `_voice_semaphore()` + `asyncio.to_thread` path, a simulated blocking transcription occupying a worker thread does not prevent concurrent loop tasks from completing (bounded waits throughout; no model download). A second test pins the worker-owned temp-copy contract (copy survives, original upload never deleted).
+- **F13**: export with 137 learning sessions carries exactly 100, `meta.truncated=true`, `meta.total_learning_sessions=137`, and the newest session is retained; at exactly 100 nothing is truncated. This test exposed a real determinism defect — sessions created in one transaction share `started_at`, so "latest 100" was arbitrary — fixed by an `id DESC` tiebreaker in the export query.
+
+Related: `tests/conftest.py` gained the shared `collab_client` fixture (moved from `test_collab_ws.py`, which still passes: 25 tests).
+
+### Dependency audits (AGENTS.md required gates; registry reachable again)
+
+| Gate | Outcome |
+| --- | --- |
+| `scripts/check_dependency_usage.py` | Passed |
+| `pip-audit --requirement requirements.txt --strict` (production) | No known vulnerabilities |
+| `pip-audit --local --strict` (all groups) | No known vulnerabilities |
+| `npm audit --omit=dev --audit-level=moderate` (production) | 0 vulnerabilities |
+| `npm audit --audit-level=high` (development tree) | 4 advisories (3 moderate, 1 high) — **resolved in the reviewed lockfile upgrade below** |
+
+### Production-mode smoke (isolated; real `.env` + real dev DB contents, copied — originals untouched)
+
+Server: `uvicorn src.api.main:app` with `ENVIRONMENT=production`, `TESTING` unset, `DATA_DIR`/`LOGS_DIR` pointed at a temp copy of `data/aac_assistant.db` (gitignored dev DB with admin1 + a persisted Groq key), port 8087.
+
+| Evidence | Result |
+| --- | --- |
+| `/api/health` | 200 |
+| `/ready` | `"ready": true`, 4/4 providers, per-provider metrics exposed |
+| Production active | `TESTING` absent → limiter enabled (below); log line "Serving URL" from prod startup; secret validation ran against the 64-char dotenv key |
+| F15 rate limit | Burst of token requests: 401s → account-lockout 403s (separate lockout service, audited) → **429 Too Many Requests** once the 10/min window filled — limiter demonstrably active and recoverable after the window |
+| F11 body bound (end-to-end) | 13 MB declared-length JSON POST → **413 Content Too Large** in the server log |
+| F03 refresh transport | `POST /api/auth/refresh` with JSON body → 200, "Access token refreshed" logged; no token in any URL |
+| F10 model listing | `GET /api/settings/ai/models/groq` with request-scoped `X-Groq-API-Key` → 200 with real model list (`openai/gpt-oss-20b`, …) — request-header precedence works against the live provider |
+| F09 log hygiene | `grep` for the actual Groq API key and JWT secret across stdout log + both file sinks: **0 occurrences** |
+| SPA serving | `/` 200 (title "AAC Assistant"), `/login` SPA fallback 200, hashed `/assets/*.js` 200 |
+| Live Groq (named spec) | `groq-verify.spec.ts` › **"learning: starts a session and receives a real Groq question" PASSED** against the production server — real Groq generation, provider badge "AI: Groq", non-empty choices |
+| Settings UI (named spec) | `groq-verify.spec.ts` › "settings UI configures Groq and reports healthy" PASSED on rerun (first run failed only because my rate-limit probe had locked `admin1`; lockout cleared in the disposable DB copy, admin1 login re-verified 200) |
+| Teardown | Server killed; port closed; no background tasks left; disposable smoke dir remains in `/tmp` only |
+
+Still open (unchanged, external gates): Windows artifact/update/rollback rehearsal; human beta/privacy/accessibility review; GitHub Actions green run for the new CI gates; `verify_pr.py` full run.
+
+### Reviewed dev-tree npm advisory upgrade — 2026-09-10
+
+The four tracked advisories were resolved with a narrow, reviewed lockfile change (no broad `npm audit fix`, per AGENTS.md):
+
+- **vitest / @vitest/coverage-v8 `^4.1.10` → `^4.1.11`** — picks up GHSA-82fw-gwwq-j7x9 / CVE-2026-84373 (`@vitest/mocker` path traversal, fixed in 4.1.11). In-range patch bump of the existing direct dev dependency.
+- **`overrides: { "js-yaml": "^4.3.2" }`** — resolves GHSA-2883-xcg3-v3hh / CVE-2026-84375 (CPU DoS via empty YAML merge keys, fixed in 4.3.2). `js-yaml` is transitive (via `@eslint/eslintrc` and `cosmiconfig`, both requiring `^4.1.0`, which 4.3.2 satisfies), so an `overrides` entry — not a direct devDependency — is the correct mechanism.
+- Lockfile delta: 140 lines, confined to the two upgraded package sub-trees; both manifests re-validated as JSON.
+- Post-upgrade gate (identical mirror, real deps): **npm audit 0 vulnerabilities in both production and full dev trees**; vitest **102 suites / 852 tests passing**; `tsc -b --noEmit` clean; `eslint --max-warnings=0` clean; `vite build` succeeds. Focused authStore/offlinePersistence suites re-run in-repo (27 passing).
+
+Note: the system npm is 9.2.0, which crashes on this lockfile with arborist `edgesOut` errors; the upgrade was performed with `npx npm@11` and the repository's CI (Node 20+/newer npm) is unaffected.
+
 ## Completion requirements
 
 1. Reproduce each source finding safely, implement the fix, and record its commit/files plus focused regression results under the corresponding ID. If current evidence disproves an item, document the concrete reason instead of implementing an unnecessary change.

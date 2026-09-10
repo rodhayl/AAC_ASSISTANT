@@ -1,8 +1,12 @@
 """Text, voice, and AAC symbol response processing."""
 
+import asyncio
 import contextlib
 import os
+import shutil
 import tempfile
+import threading
+import weakref
 from datetime import datetime
 
 from loguru import logger
@@ -20,6 +24,33 @@ from .questions import extract_json_object
 # Wrong attempts on the same question after which feedback may reveal the
 # full correct answer; earlier attempts get progressive hints only.
 REVEAL_ANSWER_ATTEMPT = 3
+
+# Bound on concurrent blocking transcriptions across the whole process (F07):
+# each holds a thread plus potentially a Whisper model, so a burst of voice
+# uploads must not spawn an unbounded number of workers. asyncio.Semaphore is
+# loop-bound, so instances on other loops (tests) get their own per-call
+# semaphore rather than sharing one.
+_VOICE_TRANSCRIPTION_LIMIT = 2
+_VOICE_SEMS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = (
+    weakref.WeakKeyDictionary()
+)
+_VOICE_SEMS_LOCK = threading.Lock()
+
+
+def _voice_semaphore() -> asyncio.Semaphore:
+    """Return the bounded transcription semaphore for the running loop."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None  # type: ignore[assignment]
+    if loop is None:
+        return asyncio.Semaphore(_VOICE_TRANSCRIPTION_LIMIT)
+    with _VOICE_SEMS_LOCK:
+        semaphore = _VOICE_SEMS.get(loop)
+        if semaphore is None:
+            semaphore = asyncio.Semaphore(_VOICE_TRANSCRIPTION_LIMIT)
+            _VOICE_SEMS[loop] = semaphore
+        return semaphore
 
 
 class ResponseProcessingMixin:
@@ -51,11 +82,39 @@ class ResponseProcessingMixin:
                 # default (the app is Spanish-first).
                 user_lang = self._get_user_language(session.user_id, db)
 
-                # If voice response, transcribe with local Whisper
+                # If voice response, transcribe with local Whisper (offloaded, bounded)
                 if is_voice and (audio_data or audio_path):
-                    student_response = self._transcribe_voice_response(
-                        audio_data, audio_path, language=user_lang
-                    )
+                    # Cancellation-safe file ownership: the caller-owned
+                    # audio_path (created by save_audio_upload) would be
+                    # deleted by the route's finally even if this task is
+                    # cancelled while the worker thread is still reading it.
+                    # Copy to a worker-owned temp file before offloading so
+                    # the worker's file cannot be removed under it.
+                    worker_audio_path = audio_path
+                    worker_audio_data = audio_data
+                    worker_temp_copy: str | None = None
+                    if audio_path is not None:
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                            try:
+                                with open(audio_path, "rb") as src:
+                                    shutil.copyfileobj(src, tmp)
+                            except Exception:
+                                with contextlib.suppress(Exception):
+                                    os.unlink(tmp.name)
+                                raise
+                            worker_temp_copy = tmp.name
+                        worker_audio_path = worker_temp_copy
+                        worker_audio_data = None
+                    try:
+                        async with _voice_semaphore():
+                            student_response = await asyncio.to_thread(
+                                self._transcribe_voice_response, worker_audio_data, worker_audio_path, user_lang
+                            )
+                    finally:
+                        if worker_temp_copy is not None:
+                            with contextlib.suppress(Exception):
+                                if os.path.exists(worker_temp_copy):
+                                    os.remove(worker_temp_copy)
                 elif is_voice and not audio_data:
                     return {"success": False, "error": "No audio data received."}
 
@@ -73,8 +132,13 @@ class ResponseProcessingMixin:
                     expansion_result = self.aac_expander.expand(
                         symbols, student_response, symbol_analysis
                     )
+                    # F09: child AAC utterances are never logged verbatim;
+                    # record only the transformation shape.
                     logger.info(
-                        f"AAC expansion: '{student_response}' -> '{expansion_result['expanded_text']}' (transformations: {expansion_result['transformations']})"
+                        "AAC expansion applied (input {} chars -> {} chars, transformations: {})",
+                        len(student_response),
+                        len(expansion_result["expanded_text"]),
+                        expansion_result["transformations"],
                     )
 
                     # Use expanded text for LLM processing if confidence is high
@@ -669,15 +733,7 @@ class ResponseProcessingMixin:
         audio_path: str | None,
         language: str = "es",
     ) -> str:
-        """Transcribe an audio response with local Whisper.
-
-        ``language`` is the session owner's UI language (``_get_user_language``
-        resolves it before the call) and is normalized to its base code so a
-        Spanish-speaking child is transcribed in Spanish instead of the
-        provider's English default. Unavailable or invalid speech raises
-        explicitly so callers cannot mistake an untranscribed upload for a
-        real student response.
-        """
+        """Transcribe an audio response with local Whisper."""
         logger.info("Transcribing voice response")
         temp_path: str | None = None
         try:
@@ -698,6 +754,7 @@ class ResponseProcessingMixin:
             transcription = self.speech.recognize_from_file(
                 temp_path, language=whisper_language
             )
+            # Caller owns temp file lifecycle: if we created it from bytes, it will be removed in finally; if audio_path was provided, caller cleans up.
             # Privacy: a child's spoken answer is never logged verbatim; only
             # its length is recorded (the audio_path is logged by the provider).
             logger.info("Voice transcription captured ({} chars)", len(transcription))
@@ -708,7 +765,7 @@ class ResponseProcessingMixin:
             logger.warning(f"Voice transcription failed: {transcribe_error}")
             raise RuntimeError("Voice transcription failed") from transcribe_error
         finally:
-            if temp_path and audio_path is None and os.path.exists(temp_path):
+            if temp_path and audio_path is None and temp_path and os.path.exists(temp_path):
                 with contextlib.suppress(Exception):
                     os.remove(temp_path)
 

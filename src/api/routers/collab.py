@@ -19,6 +19,9 @@ router = APIRouter(prefix="/api/collab", tags=["collab"])
 
 
 class ConnectionManager:
+    MAX_ROOM_SIZE = 50
+    SEND_TIMEOUT = 3.0
+
     def __init__(self):
         self.rooms: dict[int, set[WebSocket]] = {}
 
@@ -29,8 +32,14 @@ class ConnectionManager:
         subprotocol: str | None = None,
     ):
         await websocket.accept(subprotocol=subprotocol)
-        self.rooms.setdefault(board_id, set()).add(websocket)
+        room = self.rooms.setdefault(board_id, set())
+        if len(room) >= self.MAX_ROOM_SIZE:
+            with contextlib.suppress(Exception):
+                await websocket.close(code=status.WS_1013_TRY_AGAIN_LATER, reason="Room full")
+            return False
+        room.add(websocket)
         logger.info(f"WS connected to board {board_id}")
+        return True
 
     def disconnect(self, board_id: int, websocket: WebSocket):
         with contextlib.suppress(Exception):
@@ -45,18 +54,22 @@ class ConnectionManager:
     async def broadcast(
         self, board_id: int, message: dict, sender: WebSocket | None = None
     ):
+        coros = []
+        targets = []
         for ws in list(self.rooms.get(board_id, set())):
             if ws is sender:
                 continue
-            try:
-                await ws.send_json(message)
-            except Exception as exc:
-                logger.debug(
-                    "WebSocket send failed for board {}; disconnecting client: {}",
-                    board_id,
-                    exc,
-                )
+            targets.append(ws)
+            coros.append(ws.send_json(message))
+        if not coros:
+            return
+        results = await asyncio.gather(*[asyncio.wait_for(c, timeout=self.SEND_TIMEOUT) for c in coros], return_exceptions=True)
+        for ws, res in zip(targets, results, strict=False):
+            if isinstance(res, Exception):
+                logger.debug("WebSocket send failed for board {}; disconnecting client: {}", board_id, res)
                 self.disconnect(board_id, ws)
+                with contextlib.suppress(Exception):
+                    await ws.close(code=status.WS_1011_INTERNAL_ERROR)
 
 
 manager = ConnectionManager()
@@ -218,11 +231,35 @@ async def board_channel(
                 raise
             write_granted = False
 
+        # F06: release the request-scoped DB session (and its pooled
+        # connection) before entering the long-lived socket loop. The initial
+        # auth/permission reads are complete; holding this connection for the
+        # socket's lifetime would let idle sockets exhaust the engine pool.
+        # All in-loop DB work (revalidation, policy lookup, safety events)
+        # uses short-lived sessions instead. Detached ORM attributes read in
+        # the loop (user.id/username) were loaded above and remain accessible
+        # after close.
+        db.close()
+
         # Mark the room registration before awaiting accept so cancellation in
         # this tiny handoff window still triggers the outer cleanup path.
         connected = False
-        await manager.connect(board_id, websocket, subprotocol=auth_subprotocol)
+        ok = await manager.connect(board_id, websocket, subprotocol=auth_subprotocol)
+        if not ok:
+            return
         connected = True
+        # Store token expiry / user id for periodic revalidation (top-level imports avoid ruff I001)
+        import time as _time  # noqa: PLC0415
+
+        from src.aac_app.utils.jwt_utils import (  # noqa: PLC0415
+            decode_access_token as _decode_token,
+        )
+        initial_payload = _decode_token(auth_token) if auth_token else None
+        token_exp = (initial_payload or {}).get("exp", 0)
+        token_sec_ver = (initial_payload or {}).get("sec_ver")
+        token_iat = (initial_payload or {}).get("iat", 0)
+        auth_user_id = user.id
+        last_revalidate = _time.monotonic()
         shutdown_event = getattr(websocket.app.state, "shutdown_event", None)
         if not getattr(websocket.app.state, "lifespan_active", False):
             shutdown_event = None
@@ -230,30 +267,83 @@ async def board_channel(
             # Direct ASGI callers that do not run the application lifespan still
             # receive normal WebSocket behavior; production lifespan installs it.
             shutdown_event = asyncio.Event()
+        REVALIDATE_INTERVAL = 60.0
         try:
             while True:
+                # Revalidate before waiting, covering idle receivers
+                now_mono = _time.monotonic()
+                if now_mono - last_revalidate >= REVALIDATE_INTERVAL:
+                    last_revalidate = now_mono
+                    if token_exp and _time.time() > token_exp:
+                        with contextlib.suppress(Exception):
+                            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Token expired")
+                        return
+                    # Fresh DB revalidation with short-lived session
+                    try:
+                        from datetime import UTC as _UTC
+                        from datetime import datetime as _DT
+
+                        from src.aac_app.db import create_session_factory as _csf
+                        _db2 = _csf()()
+                        try:
+                            from src.aac_app.models import User as _U2
+                            fresh_user = _db2.query(_U2).filter(_U2.id == auth_user_id).first()
+                            if not fresh_user or not fresh_user.is_active:
+                                with contextlib.suppress(Exception):
+                                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Access revoked")
+                                return
+                            # Token revocation via security_version / credentials_changed_at (mirrors validate_token)
+                            if token_sec_ver is not None:
+                                if token_sec_ver != (fresh_user.security_version or 1):
+                                    with contextlib.suppress(Exception):
+                                        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Access revoked")
+                                    return
+                            elif fresh_user.credentials_changed_at is not None and (
+                                not token_iat
+                                or _DT.fromtimestamp(token_iat, _UTC).replace(tzinfo=None)
+                                < fresh_user.credentials_changed_at
+                            ):
+                                with contextlib.suppress(Exception):
+                                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Access revoked")
+                                return
+                            fresh_board = _db2.query(CommunicationBoard).filter(CommunicationBoard.id == board_id).first()
+                            if not fresh_board:
+                                with contextlib.suppress(Exception):
+                                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Board removed")
+                                return
+                            try:
+                                require_board_view_access(fresh_board, fresh_user, _db2)
+                            except HTTPException as _exc:
+                                if _exc.status_code == status.HTTP_403_FORBIDDEN:
+                                    with contextlib.suppress(Exception):
+                                        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Access revoked")
+                                    return
+                                raise
+                        finally:
+                            _db2.close()
+                    except Exception:
+                        pass
+                timeout = max(0.5, last_revalidate + REVALIDATE_INTERVAL - now_mono)
                 receive_task = asyncio.create_task(websocket.receive_json())
                 shutdown_task = asyncio.create_task(shutdown_event.wait())
+                revalidate_task = asyncio.create_task(asyncio.sleep(timeout))
                 try:
                     done, _ = await asyncio.wait(
-                        (receive_task, shutdown_task),
+                        (receive_task, shutdown_task, revalidate_task),
                         return_when=asyncio.FIRST_COMPLETED,
                     )
                     if shutdown_task in done:
                         with contextlib.suppress(Exception):
-                            await websocket.close(
-                                code=status.WS_1001_GOING_AWAY,
-                                reason="Server shutting down",
-                            )
+                            await websocket.close(code=status.WS_1001_GOING_AWAY, reason="Server shutting down")
                         return
+                    if revalidate_task in done and receive_task not in done:
+                        continue
                     data = receive_task.result()
                 finally:
-                    for task in (receive_task, shutdown_task):
+                    for task in (receive_task, shutdown_task, revalidate_task):
                         if not task.done():
                             task.cancel()
-                    await asyncio.gather(
-                        receive_task, shutdown_task, return_exceptions=True
-                    )
+                    await asyncio.gather(receive_task, shutdown_task, revalidate_task, return_exceptions=True)
 
                 # Bound the fan-out (see MAX_COLLAB_PAYLOAD_BYTES above): a
                 # message larger than the cap is refused with 1009 before any
@@ -344,8 +434,10 @@ async def board_channel(
                         )
 
                         # Per-student lock: a teacher/admin may disable collab
-                        # messaging entirely for this student.
-                        student_policy = resolve_policy_for_user(user.id, db=db)
+                        # messaging entirely for this student. Short-lived
+                        # session inside resolve_policy_for_user (request db
+                        # was closed before the socket loop, F06).
+                        student_policy = resolve_policy_for_user(user.id)
                         if student_policy.feature_blocked("block_social_messaging"):
                             log_event(
                                 user_id=user.id,
@@ -354,7 +446,6 @@ async def board_channel(
                                 verdict="blocked",
                                 matched=[],
                                 detail="feature_lock: block_social_messaging",
-                                db=db,
                             )
                             continue
 
@@ -366,13 +457,15 @@ async def board_channel(
                                 direction="output",
                                 verdict="blocked",
                                 matched=list(verdict.matched_terms),
-                                detail=f"collab label: {label_candidate[:200]}",
-                                db=db,
+                                detail="collab label blocked (content policy)",
                             )
+                            # F09: log the event category only — the label
+                            # itself is child communication and must not be
+                            # duplicated into logs.
                             logger.info(
-                                "Blocked collab label from {}: {!r}",
+                                "Blocked collab label from {} ({} chars) by content policy",
                                 user.username,
-                                label_candidate[:80],
+                                len(label_candidate),
                             )
                             continue
                     except Exception as exc:
