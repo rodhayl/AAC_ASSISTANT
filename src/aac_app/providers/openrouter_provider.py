@@ -15,9 +15,21 @@ from .base_provider import BaseLLMProvider, ProviderRateLimitError
 class OpenRouterProvider(BaseLLMProvider):
     """OpenRouter API provider for optional cloud LLM functionality"""
 
-    def __init__(self, api_key: str | None = None, model: str | None = None):
+    def _resolve_api_key(self, api_key: str | None) -> str | None:
+        """Resolve the OpenRouter API key (override point for Groq)."""
+        return api_key if api_key is not None else os.getenv("OPENROUTER_API_KEY")
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str | None = None,
+        _api_key_env: str | None = None,  # internal: Groq passes GROQ_API_KEY
+    ):
         super().__init__()
-        self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
+        if _api_key_env is not None:
+            self.api_key = api_key if api_key is not None else os.getenv(_api_key_env)
+        else:
+            self.api_key = self._resolve_api_key(api_key)
         self.base_url = "https://openrouter.ai/api/v1"
         # Keep the raw setting so singleton getters can distinguish an empty
         # configured value from the provider's resolved default model.

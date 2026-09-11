@@ -3,12 +3,18 @@ import asyncio
 import contextlib
 import json
 import math
+import time as _time  # top-level: one import per socket was wasteful (D4)
+from datetime import UTC as _UTC
+from datetime import datetime as _DT
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
+from src.aac_app.db import create_session_factory as _csf
 from src.aac_app.models import CommunicationBoard
+from src.aac_app.models import User as _User
+from src.aac_app.utils.jwt_utils import decode_access_token as _decode_token
 from src.api.deps import get_db, get_text, validate_active_token
 from src.api.deps.access import (
     require_board_collab_write_access,
@@ -248,51 +254,39 @@ async def board_channel(
         if not ok:
             return
         connected = True
-        # Store token expiry / user id for periodic revalidation (top-level imports avoid ruff I001)
-        import time as _time  # noqa: PLC0415
-
-        from src.aac_app.utils.jwt_utils import (  # noqa: PLC0415
-            decode_access_token as _decode_token,
-        )
         initial_payload = _decode_token(auth_token) if auth_token else None
         token_exp = (initial_payload or {}).get("exp", 0)
         token_sec_ver = (initial_payload or {}).get("sec_ver")
         token_iat = (initial_payload or {}).get("iat", 0)
         auth_user_id = user.id
         last_revalidate = _time.monotonic()
+        revalidate_failures = 0  # consecutive transient failures (D4)
+        REVALIDATE_MAX_FAILURES = 3
         shutdown_event = getattr(websocket.app.state, "shutdown_event", None)
         if not getattr(websocket.app.state, "lifespan_active", False):
             shutdown_event = None
         if shutdown_event is None:
-            # Direct ASGI callers that do not run the application lifespan still
-            # receive normal WebSocket behavior; production lifespan installs it.
             shutdown_event = asyncio.Event()
         REVALIDATE_INTERVAL = 60.0
         try:
             while True:
-                # Revalidate before waiting, covering idle receivers
+                # D4: cheap expiry check every iteration (no DB), not only every 60s.
+                if token_exp and _time.time() > token_exp:
+                    with contextlib.suppress(Exception):
+                        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Token expired")
+                    return
                 now_mono = _time.monotonic()
                 if now_mono - last_revalidate >= REVALIDATE_INTERVAL:
                     last_revalidate = now_mono
-                    if token_exp and _time.time() > token_exp:
-                        with contextlib.suppress(Exception):
-                            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Token expired")
-                        return
                     # Fresh DB revalidation with short-lived session
                     try:
-                        from datetime import UTC as _UTC
-                        from datetime import datetime as _DT
-
-                        from src.aac_app.db import create_session_factory as _csf
                         _db2 = _csf()()
                         try:
-                            from src.aac_app.models import User as _U2
-                            fresh_user = _db2.query(_U2).filter(_U2.id == auth_user_id).first()
+                            fresh_user = _db2.query(_User).filter(_User.id == auth_user_id).first()
                             if not fresh_user or not fresh_user.is_active:
                                 with contextlib.suppress(Exception):
                                     await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Access revoked")
                                 return
-                            # Token revocation via security_version / credentials_changed_at (mirrors validate_token)
                             if token_sec_ver is not None:
                                 if token_sec_ver != (fresh_user.security_version or 1):
                                     with contextlib.suppress(Exception):
@@ -318,11 +312,29 @@ async def board_channel(
                                     with contextlib.suppress(Exception):
                                         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Access revoked")
                                     return
-                                raise
+                                # Non-403 policy error: close 1011, do not swallow.
+                                logger.warning("Collab revalidation policy error: {}", _exc)
+                                with contextlib.suppress(Exception):
+                                    await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason="Policy error")
+                                return
                         finally:
                             _db2.close()
-                    except Exception:
-                        pass
+                        revalidate_failures = 0
+                    except HTTPException:
+                        raise
+                    except Exception as exc:
+                        revalidate_failures += 1
+                        logger.warning(
+                            "Collab revalidation transient failure {}/{}: {}",
+                            revalidate_failures,
+                            REVALIDATE_MAX_FAILURES,
+                            exc,
+                        )
+                        if revalidate_failures >= REVALIDATE_MAX_FAILURES:
+                            with contextlib.suppress(Exception):
+                                await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason="Revalidation failed")
+                            return
+                        # Keep socket alive for this attempt; next 60s cycle retries.
                 timeout = max(0.5, last_revalidate + REVALIDATE_INTERVAL - now_mono)
                 receive_task = asyncio.create_task(websocket.receive_json())
                 shutdown_task = asyncio.create_task(shutdown_event.wait())

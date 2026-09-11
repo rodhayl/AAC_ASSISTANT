@@ -6,28 +6,20 @@ reuses the OpenRouterProvider implementation and only overrides the endpoint,
 credential source, and default model.
 """
 
-import os
-
 from .openrouter_provider import OpenRouterProvider
 
 
 class GroqProvider(OpenRouterProvider):
     """Groq API provider for optional cloud LLM functionality."""
 
+    def _resolve_api_key(self, api_key: str | None) -> str | None:  # type: ignore[override]
+        import os as _os
+
+        return api_key if api_key is not None else _os.getenv("GROQ_API_KEY")
+
     def __init__(self, api_key: str | None = None, model: str | None = None):
-        # Never fall back to OPENROUTER_API_KEY; Groq uses only its own credential.
-        resolved = api_key if api_key is not None else os.getenv("GROQ_API_KEY")
-        # Bypass parent fallback: set directly without OPENROUTER lookup
-        from .base_provider import BaseLLMProvider
-        BaseLLMProvider.__init__(self)
-        import httpx as _httpx
-        self.api_key = resolved
+        super().__init__(api_key=api_key, model=model, _api_key_env="GROQ_API_KEY")
         self.base_url = "https://api.groq.com/openai/v1"
-        self._configured_model = model or ""
-        self.client = _httpx.AsyncClient(timeout=30.0)
-        self.sync_client = _httpx.Client(timeout=5.0)
-        self.default_model = model or "meta-llama/llama-3.1-8b-instruct"
-        self._model = self.default_model
 
     def is_configured(self) -> bool:
         """Groq is configured when an API key is present."""

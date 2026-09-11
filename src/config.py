@@ -178,6 +178,13 @@ class Settings(BaseSettings):
     AAC_NGRAM_REBUILD_INTERVAL_SECONDS: int = 3600
 
     # Optional deterministic passwords are intentionally unset by default.
+    # Transitional refresh query fallback (D5): when false (default in
+    # production) the refresh endpoint rejects query-param transport so the
+    # 7-day credential never appears in URLs/logs. Operators migrating old
+    # clients can set 1 temporarily; removal planned after next minor release.
+    AAC_REFRESH_ALLOW_QUERY_FALLBACK: bool = False
+
+    # Optional deterministic passwords are intentionally unset by default.
     AAC_SEED_DEFAULT_PASSWORD: str | None = None
     AAC_SEED_STUDENT1_PASSWORD: str | None = None
     AAC_SEED_TEACHER1_PASSWORD: str | None = None

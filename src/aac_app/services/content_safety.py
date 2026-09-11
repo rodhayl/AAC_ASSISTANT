@@ -462,6 +462,15 @@ def check_text(policy: ContentPolicy, text: str | None) -> Verdict:
 # real pruning path with a small cap.
 MAX_EVENTS = 10000
 
+# Throttle the per-event retention pass (D11): the collab label path can call
+# log_event on every blocked label, so an attacker could force a full-table
+# COUNT(*) on each request. Pruning stays correct but is bounded to at most
+# every N calls or every minute.
+_PRUNE_EVERY_N = 20
+_PRUNE_THROTTLE_SECONDS = 60.0
+_last_prune_monotonic = 0.0
+_prune_calls = 0
+
 
 def _prune_events(session: Session, max_events: int = MAX_EVENTS) -> None:
     """Bound the safety-event table, preserving today's sentinel cost rows."""
@@ -497,6 +506,7 @@ def log_event(
     verdict: str = "blocked",
     matched: list[str] | None = None,
     detail: str | None = None,
+    call_count: int = 1,
     db=None,  # noqa: ARG001 Deprecated: accepted for call-site compatibility, never used.
 ) -> None:
     """Persist one content-safety event in a deliberate isolated transaction.
@@ -525,21 +535,32 @@ def log_event(
             verdict=verdict,
             matched=matched or [],
             detail=detail,
+            call_count=max(1, int(call_count or 1)),
         )
         with get_session() as session:
             session.add(event)
             session.commit()
-            # Enforce retention best-effort inside the same isolated session.
-            # Today's sentinel rows are never pruned: each one is also the
-            # strict-moderation daily cost meter (_count_sentinel_today reads
-            # this table), so trimming them would silently reset the current
-            # day's LLM spend limit (F14).
-            try:
-                _prune_events(session)
-                session.commit()
-            except Exception:
-                with contextlib.suppress(Exception):
-                    session.rollback()
+            # Enforce retention best-effort inside the same isolated session,
+            # but throttled (D11): the collab label path can call this per
+            # blocked label, so an attacker could force a full-table COUNT(*)
+            # on each request. Direct callers of _prune_events (tests, admin
+            # endpoints) bypass the throttle; this gate only bounds the
+            # per-event amplification.
+            global _last_prune_monotonic, _prune_calls
+            _prune_calls += 1
+            now = time.monotonic()
+            should_prune = (
+                _prune_calls % _PRUNE_EVERY_N == 0
+                or now - _last_prune_monotonic >= _PRUNE_THROTTLE_SECONDS
+            )
+            if should_prune:
+                _last_prune_monotonic = now
+                try:
+                    _prune_events(session)
+                    session.commit()
+                except Exception:
+                    with contextlib.suppress(Exception):
+                        session.rollback()
     except Exception as exc:
         logger.warning("Failed to log content-safety event: {}", exc)
 
@@ -576,30 +597,34 @@ def _today_start():
 
 
 def _count_sentinel_today(db=None) -> int:
-    """Count sentinel verdicts persisted today (each row = one LLM call)."""
+    """Count sentinel LLM calls spent today (sum of call_count on sentinel rows)."""
+    from sqlalchemy import func as _func
+
     from src.aac_app.db import get_session
     from src.aac_app.models import ContentSafetyEvent
 
     start = _today_start()
     try:
         if db is not None:
-            return (
-                db.query(ContentSafetyEvent)
+            total = (
+                db.query(_func.coalesce(_func.sum(ContentSafetyEvent.call_count), 0))
                 .filter(
                     ContentSafetyEvent.surface == "sentinel",
                     ContentSafetyEvent.created_at >= start,
                 )
-                .count()
+                .scalar()
             )
+            return int(total or 0)
         with get_session() as session:
-            return (
-                session.query(ContentSafetyEvent)
+            total = (
+                session.query(_func.coalesce(_func.sum(ContentSafetyEvent.call_count), 0))
                 .filter(
                     ContentSafetyEvent.surface == "sentinel",
                     ContentSafetyEvent.created_at >= start,
                 )
-                .count()
+                .scalar()
             )
+            return int(total or 0)
     except Exception as exc:
         logger.warning("Could not count sentinel calls today: {}", exc)
         return 0
@@ -658,7 +683,9 @@ async def moderate_output(
     full_text = text or ""
     chunks = [full_text[i:i+600] for i in range(0, max(len(full_text), 1), 600)] if full_text else [""]
     blocked = False
+    spent = 0
     for chunk in chunks:
+        spent += 1
         try:
             raw = await generate(
                 prompt=SENTINEL_PROMPT.format(text=chunk[:600]),
@@ -686,7 +713,7 @@ async def moderate_output(
         verdict="blocked" if blocked else "passed",
         matched=["sentinel"] if blocked else [],
         detail=(text[:200] if blocked else None),
-        db=db,
+        call_count=spent,
     )
     return Verdict(allowed=not blocked, matched_terms=("sentinel",) if blocked else ())
 

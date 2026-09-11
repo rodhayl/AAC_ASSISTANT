@@ -4,7 +4,6 @@ from contextlib import contextmanager, suppress
 import pytest
 from fastapi import HTTPException
 from fastapi import status as fastapi_status
-from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 import src.api.routers.collab as collab_module

@@ -387,14 +387,21 @@ def get_lmstudio_provider() -> LMStudioProvider:
 
 
 def _effective_groq_key() -> str:
-    # Precedence: DB setting > config (.env) > process env; never cross-provider fallback.
-    db_key = _get_setting_value("groq_api_key", "")
+    """Effective Groq API key with one consistent precedence.
+
+    Order: DB setting > canonical config (.env) > process env.
+    A single stripped value is returned so callers do not re-strip or
+    compare trimmed-vs-untrimmed variants (D10: singleton thrash).
+    Never falls back to OPENROUTER_API_KEY.
+    """
+    db_key = (_get_setting_value("groq_api_key", "") or "").strip()
     if db_key:
         return db_key
-    cfg = getattr(config, "GROQ_API_KEY", "") or ""
-    if cfg.strip():
-        return cfg.strip()
+    cfg = (getattr(config, "GROQ_API_KEY", "") or "").strip()
+    if cfg:
+        return cfg
     import os as _os
+
     return (_os.getenv("GROQ_API_KEY") or "").strip()
 
 

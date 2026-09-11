@@ -84,37 +84,44 @@ class ResponseProcessingMixin:
 
                 # If voice response, transcribe with local Whisper (offloaded, bounded)
                 if is_voice and (audio_data or audio_path):
-                    # Cancellation-safe file ownership: the caller-owned
-                    # audio_path (created by save_audio_upload) would be
-                    # deleted by the route's finally even if this task is
-                    # cancelled while the worker thread is still reading it.
-                    # Copy to a worker-owned temp file before offloading so
-                    # the worker's file cannot be removed under it.
-                    worker_audio_path = audio_path
-                    worker_audio_data = audio_data
-                    worker_temp_copy: str | None = None
-                    if audio_path is not None:
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                    # D8: no synchronous I/O on the event loop. The file copy
+                    # (multi-MB) is deferred into the worker thread, inside the
+                    # semaphore-guarded to_thread section. The worker owns and
+                    # deletes its copy, keeping the cancellation-safety property
+                    # (caller-owned audio_path can be removed while the worker
+                    # still reads its copy).
+                    async with _voice_semaphore():
+                        def _transcribe_with_owned_copy() -> str:
+                            worker_path = audio_path
+                            worker_data = audio_data
+                            worker_temp_copy: str | None = None
                             try:
-                                with open(audio_path, "rb") as src:
-                                    shutil.copyfileobj(src, tmp)
-                            except Exception:
-                                with contextlib.suppress(Exception):
-                                    os.unlink(tmp.name)
-                                raise
-                            worker_temp_copy = tmp.name
-                        worker_audio_path = worker_temp_copy
-                        worker_audio_data = None
-                    try:
-                        async with _voice_semaphore():
-                            student_response = await asyncio.to_thread(
-                                self._transcribe_voice_response, worker_audio_data, worker_audio_path, user_lang
-                            )
-                    finally:
-                        if worker_temp_copy is not None:
-                            with contextlib.suppress(Exception):
-                                if os.path.exists(worker_temp_copy):
-                                    os.remove(worker_temp_copy)
+                                if audio_path is not None:
+                                    with tempfile.NamedTemporaryFile(
+                                        delete=False, suffix=".wav"
+                                    ) as tmp:
+                                        try:
+                                            with open(audio_path, "rb") as src:
+                                                shutil.copyfileobj(src, tmp)
+                                        except Exception:
+                                            with contextlib.suppress(Exception):
+                                                os.unlink(tmp.name)
+                                            raise
+                                        worker_temp_copy = tmp.name
+                                    worker_path = worker_temp_copy
+                                    worker_data = None
+                                return self._transcribe_voice_response(
+                                    worker_data, worker_path, user_lang
+                                )
+                            finally:
+                                if worker_temp_copy is not None:
+                                    with contextlib.suppress(Exception):
+                                        if os.path.exists(worker_temp_copy):
+                                            os.remove(worker_temp_copy)
+
+                        student_response = await asyncio.to_thread(
+                            _transcribe_with_owned_copy
+                        )
                 elif is_voice and not audio_data:
                     return {"success": False, "error": "No audio data received."}
 

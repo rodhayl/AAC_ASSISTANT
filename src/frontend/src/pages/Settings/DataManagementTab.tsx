@@ -41,8 +41,16 @@ export function DataManagementTab() {
       if (!Array.isArray(json.boards)) throw new Error(t('data.invalidExportBoards'));
       if (!Array.isArray(json.assignedBoards)) throw new Error(t('data.invalidExportAssignedBoards'));
       if (!Array.isArray(json.achievements)) throw new Error(t('data.invalidExportAchievements'));
-      await api.post('/data/import', json);
-      addToast(t('data.importSuccess'), 'success');
+      const result = await api.post('/data/import', json);
+      const body = (result.data ?? {}) as Record<string, unknown>;
+      // D7: surface whether the import's source export was truncated (100-session cap)
+      if (body.truncated) {
+        const total = body.total_learning_sessions;
+        const shown = body.learning_history;
+        addToast(t('data.importTruncated', { shown, total }), 'warning');
+      } else {
+        addToast(t('data.importSuccess'), 'success');
+      }
     } catch (error) {
       console.error('Failed to import data:', error);
       const errorMessage = error instanceof Error ? error.message : t('errors.unknownError');

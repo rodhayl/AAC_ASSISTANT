@@ -538,7 +538,14 @@ def _import_assigned_boards(
     imported_boards: dict[int, CommunicationBoard],
     source_id_to_name: dict[int, str] | None = None,
 ) -> None:
-    """Restore assigned boards without trusting unrelated ID collisions."""
+    """Restore assigned boards without trusting unrelated ID collisions.
+
+    Populates *imported_boards* with every resolved board (owned, found or
+    freshly created) so ``assigned↔assigned`` links remap correctly — the
+    second ``_remap_linked_boards`` call sees them as well (D6).
+    ``assigned_by`` is preserved from the payload when it names a real user;
+    otherwise the importer is recorded (self-assignment fallback).
+    """
     for board_data in assigned_boards_data:
         source_id = board_data.get("id")
         board = imported_boards.get(source_id) if isinstance(source_id, int) else None
@@ -569,6 +576,16 @@ def _import_assigned_boards(
         if board is None:
             board = _create_imported_board(db, user, board_data)
 
+        # Preserve the original assigner when the payload names a real user
+        raw_assigner = board_data.get("assigned_by")
+        effective_assigner = user.id
+        if (
+            isinstance(raw_assigner, int)
+            and raw_assigner > 0
+            and db.query(User.id).filter(User.id == raw_assigner).first() is not None
+        ):
+            effective_assigner = raw_assigner
+
         exists = (
             db.query(BoardAssignment)
             .filter(
@@ -582,9 +599,13 @@ def _import_assigned_boards(
                 BoardAssignment(
                     board_id=board.id,
                     student_id=user.id,
-                    assigned_by=user.id,
+                    assigned_by=effective_assigner,
                 )
             )
+
+        # Include every resolved board so assigned↔assigned links remap (D6).
+        if isinstance(source_id, int) and source_id not in imported_boards:
+            imported_boards[source_id] = board
 
 
 def _import_achievements(
@@ -986,4 +1007,21 @@ def import_data(
     # dependency teardown otherwise commits after the client sees the 200).
     db.commit()
 
-    return {"ok": True}
+    # D7: surface whether this recovery was sourced from a truncated export.
+    imported_boards_count = len(base["boards"]) + len(base["assignedBoards"])
+    imported_history_count = len(base["learningHistory"])
+    imported_symbols_count = sum(
+        len(b.get("symbols") or []) for b in list(base["boards"]) + list(base["assignedBoards"])
+    )
+    is_truncated = bool(meta.get("truncated"))
+    total_sessions = meta.get("total_learning_sessions")
+    result: dict[str, Any] = {
+        "ok": True,
+        "boards": imported_boards_count,
+        "symbols": imported_symbols_count,
+        "learning_history": imported_history_count,
+        "truncated": is_truncated,
+    }
+    if isinstance(total_sessions, int):
+        result["total_learning_sessions"] = total_sessions
+    return result

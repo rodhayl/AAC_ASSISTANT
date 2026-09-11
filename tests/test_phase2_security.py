@@ -189,8 +189,8 @@ class TestTokenRefreshMechanism:
         # Create refresh token
         refresh_token = create_refresh_token({"sub": user.username, "user_id": user.id})
 
-        # Call refresh endpoint
-        response = client.post(f"/api/auth/refresh?refresh_token={refresh_token}")
+        # Call refresh endpoint (body transport — query fallback is opt-in only)
+        response = client.post("/api/auth/refresh", json={"refresh_token": refresh_token})
 
         assert response.status_code == 200
         data = response.json()
@@ -224,8 +224,8 @@ class TestTokenRefreshMechanism:
             {"sub": user.username, "user_id": user.id, "user_type": user.user_type}
         )
 
-        # Try to use access token at refresh endpoint
-        response = client.post(f"/api/auth/refresh?refresh_token={access_token}")
+        # Try to use access token at refresh endpoint (body transport)
+        response = client.post("/api/auth/refresh", json={"refresh_token": access_token})
 
         assert response.status_code == 401
         assert "invalid or expired" in response.json()["detail"].lower()
@@ -295,7 +295,7 @@ class TestTokenRefreshMechanism:
             algorithm=JWT_ALGORITHM,
         )
 
-        response = client.post(f"/api/auth/refresh?refresh_token={expired_token}")
+        response = client.post("/api/auth/refresh", json={"refresh_token": expired_token})
 
         assert response.status_code == 401
         assert "invalid or expired" in response.json()["detail"].lower()
@@ -318,8 +318,8 @@ class TestTokenRefreshMechanism:
         # Create valid refresh token
         refresh_token = create_refresh_token({"sub": user.username, "user_id": user.id})
 
-        # Try to refresh
-        response = client.post(f"/api/auth/refresh?refresh_token={refresh_token}")
+        # Try to refresh (body transport)
+        response = client.post("/api/auth/refresh", json={"refresh_token": refresh_token})
 
         assert response.status_code == 403
         assert "inactive" in response.json()["detail"].lower()

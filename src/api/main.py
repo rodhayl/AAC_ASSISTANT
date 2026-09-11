@@ -398,6 +398,7 @@ class _BoundedReceiveMiddleware:
         disconnected = False
         overflowed = False
         response_started = False
+        substituted = False
 
         async def bounded_receive() -> Message:
             nonlocal received_total, disconnected, overflowed
@@ -411,22 +412,63 @@ class _BoundedReceiveMiddleware:
                 disconnected = True
             return message
 
+        async def send_413_response() -> None:
+            """Emit the 413 through the raw send channel (nothing sent yet)."""
+            error_response = JSONResponse(
+                status_code=413, content={"detail": "Request body too large"}
+            )
+            await error_response(scope, receive, send)
+
         async def send_tracked(message: Message) -> None:
-            nonlocal response_started
+            nonlocal response_started, substituted
+            if substituted:
+                # The app is emitting the body of a response that was already
+                # replaced with our 413; swallow it so the client can never
+                # observe the success the app tried to send.
+                return
+            if overflowed and message["type"] == "http.response.start":
+                # The app caught the receive-side abort and is about to answer
+                # with a success. The abort always happens before any response
+                # start, so nothing is on the wire yet and the oversized body
+                # gets the documented 413 instead of a fail-open 200.
+                substituted = True
+                logger.warning(
+                    "Request body exceeded {} bytes ({} received); "
+                    "replacing app response with 413",
+                    MAX_REQUEST_BYTES,
+                    received_total,
+                )
+                await send_413_response()
+                return
             if message["type"] == "http.response.start":
                 response_started = True
             await send(message)
 
-        async def send_413() -> None:
-            if response_started:
-                # The app already answered (best-effort frameworks may have
-                # started a response before the cap was hit); ASGI forbids a
-                # second response start, so leave the app's answer in place.
+        async def resolve_overflow() -> None:
+            """Resolve an overflow exactly once, with documented semantics.
+
+            * Nothing sent yet -> send the 413 (replacing whatever response the
+              app was about to write).
+            * Response already streaming -> abort the connection by raising.
+              ASGI forbids a second response start, and leaving a clean 200 in
+              place would present success for a body the cap rejected; an
+              aborted connection cannot be mistaken for a successful request.
+            """
+            nonlocal substituted
+            if not overflowed or substituted:
                 return
-            error_response = JSONResponse(
-                status_code=413, content={"detail": "Request body too large"}
+            if not response_started:
+                substituted = True
+                await send_413_response()
+                return
+            logger.warning(
+                "Request body exceeded {} bytes ({} received) after the app "
+                "started responding; aborting the connection instead of "
+                "presenting success",
+                MAX_REQUEST_BYTES,
+                received_total,
             )
-            await error_response(scope, receive, send_tracked)
+            raise _BodyTooLarge()
 
         async def run_app() -> None:
             try:
@@ -445,7 +487,7 @@ class _BoundedReceiveMiddleware:
                         break
                     if message["type"] == "http.disconnect":
                         break
-                await send_413()
+                await resolve_overflow()
 
         # Run the app in an internal task so a _BodyTooLarge escape hatch never
         # propagates as an unhandled ASGI exception; on success this degrades
@@ -453,14 +495,18 @@ class _BoundedReceiveMiddleware:
         app_task = asyncio.create_task(run_app())
         try:
             await app_task
+        except _BodyTooLarge:
+            # Deliberate connection abort: re-raise so the ASGI server closes
+            # the transport rather than delivering a clean response for a body
+            # the cap rejected.
+            raise
         except Exception:
             if not app_task.done():
                 raise
             app_task.cancel()
             raise
         # Guarantee the 413 even when the app swallowed the abort exception.
-        if overflowed:
-            await send_413()
+        await resolve_overflow()
 
 
 app.add_middleware(_BoundedReceiveMiddleware)

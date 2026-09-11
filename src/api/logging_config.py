@@ -89,24 +89,55 @@ def _is_production() -> bool:
     return env_name in {"production", "prod"}
 
 
-_REDACT_PATTERN = None
+_REDACT_PATTERNS: list = []  # compiled regexes, populated lazily
 
 
 def _redact_message(msg: str) -> str:
     """Redact obvious secret assignments and truncate oversized content.
 
-    Applied to every sink via a patcher so a stray ``key=value`` in a log
-    message never reaches console or file sinks (F09). Length-truncation also
-    bounds accidental verbatim child-message capture in informational lines.
+    Applied to every sink via a patcher so a stray secret in a log message
+    never reaches console or file sinks (F09). Covers three shapes:
+    * bare assignments ``key=value`` / ``key: value``
+    * JSON pairs ``"key": "value"`` (quoted key + quoted value)
+    * ``Bearer <token>`` and ``X-*-API-Key[:= ]value`` header forms.
+    Length-truncation also bounds accidental verbatim child-message capture.
     """
-    global _REDACT_PATTERN
+    global _REDACT_PATTERNS
     import re as _re
 
-    if _REDACT_PATTERN is None:
-        _REDACT_PATTERN = _re.compile(
-            r"(?i)(groq_api_key|openrouter_api_key|api_key|authorization|password|token)\s*[:=]\s*\S+"
-        )
-    msg = _REDACT_PATTERN.sub(r"\1=***", msg)
+    if not _REDACT_PATTERNS:
+        keys = r"groq_api_key|openrouter_api_key|api_key|authorization|password|token"
+        # Bare assignments should not double-mask an already handled
+        # "Authorization: Bearer <token>" header — Bearer is handled above.
+        keys_bare = r"groq_api_key|openrouter_api_key|api_key|password|token"
+        _REDACT_PATTERNS = [
+            # JSON quoted pair: "groq_api_key": "sk-..."
+            _re.compile(rf'(?i)(\"(?:{keys})\"\s*:\s*)\"[^\"]*\"'),
+            # Bearer token
+            _re.compile(r"(?i)(Bearer\s+)\S+"),
+            # X-*-API-Key header forms
+            _re.compile(r"(?i)(X-[A-Za-z0-9_-]*API-?Key\s*[:=]\s*)\S+"),
+            # Bare key=value / key: value (authorization excluded — Bearer covers it)
+            _re.compile(rf"(?i)(?:\"?({keys_bare})\"?\s*[:=]\s*)\S+"),
+        ]
+    # JSON "key": "value" pairs first — preserve key casing, mask only the value.
+    msg = _REDACT_PATTERNS[0].sub(r'\1"***"', msg)
+    msg = _REDACT_PATTERNS[1].sub(r"\1***", msg)
+    msg = _REDACT_PATTERNS[2].sub(r"\1***", msg)
+    # Bare key=value / key: value last. Per-match guard: a value already
+    # masked to "***" by an earlier pass must not be re-mangled (bare's \S+
+    # would otherwise turn '"groq_api_key": "***"' into '"groq_api_key"=***'
+    # or 'Bearer ***' into 'Bearer=*** ***'). Only bare assignments whose
+    # captured value still looks like a secret are masked; an already-masked
+    # message with an additional bare assignment (e.g. password=secret) is
+    # still redacted.
+    def _bare_repl(m: "_re.Match[str]") -> str:
+        # group(0) contains key+delim+value; if value is already *** leave it
+        if "***" in m.group(0):
+            return m.group(0)
+        return f"{m.group(1)}=***"
+
+    msg = _REDACT_PATTERNS[3].sub(_bare_repl, msg)
     if len(msg) > 2000:
         msg = msg[:2000] + " ...[truncated]"
     return msg

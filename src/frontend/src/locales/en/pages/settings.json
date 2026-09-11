@@ -91,6 +91,7 @@
     "exportFailed": "Failed to export data. Please try again later.",
     "importBoards": "Import Boards",
     "importSuccess": "Import completed successfully",
+    "importTruncated": "Import completed: the source export was truncated ({{shown}} of {{total}} learning sessions). Earlier sessions beyond the 100-item export cap were not imported.",
     "importFailed": "Import failed: ",
     "invalidExportMeta": "Invalid export: missing meta",
     "invalidExportBoards": "Invalid export: boards must be an array",

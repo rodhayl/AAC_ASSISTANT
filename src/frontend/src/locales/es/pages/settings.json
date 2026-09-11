@@ -91,6 +91,7 @@
     "exportFailed": "No se pudieron exportar los datos. Inténtalo de nuevo más tarde.",
     "importBoards": "Importar Tableros",
     "importSuccess": "Importación completada correctamente",
+    "importTruncated": "Importación completada: la exportación original estaba truncada ({{shown}} de {{total}} sesiones). Las sesiones anteriores por encima del límite de 100 no se importaron.",
     "importFailed": "Importación fallida: ",
     "invalidExportMeta": "Exportación no válida: falta meta",
     "invalidExportBoards": "Exportación no válida: los tableros deben ser un array",

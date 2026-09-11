@@ -168,7 +168,10 @@ export const useAuthStore = create<AuthState>()(
             error: null,
           });
         } catch (e: unknown) {
-          set({ error: extractError(e, i18n.t('common:errors.loginFailed')), isLoading: false });
+          // D12: stale login failure must not overwrite a newer session's error
+          if (isStillCurrentLogin()) {
+            set({ error: extractError(e, i18n.t('common:errors.loginFailed')), isLoading: false });
+          }
           throw e;
         }
       },
@@ -196,7 +199,10 @@ export const useAuthStore = create<AuthState>()(
             error: null,
           });
         } catch (e: unknown) {
-          set({ error: extractError(e, i18n.t('common:errors.setupFailed')), isLoading: false });
+          // D12: stale setup failure must not overwrite a newer session's error
+          if (isStillCurrentSetup()) {
+            set({ error: extractError(e, i18n.t('common:errors.setupFailed')), isLoading: false });
+          }
           throw e;
         }
       },

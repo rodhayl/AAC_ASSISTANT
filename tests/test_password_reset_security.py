@@ -55,7 +55,7 @@ def test_logout_revokes_existing_access_and_refresh_tokens(test_db_session):
     assert student.security_version == 2
     assert client.get("/api/auth/me", headers=headers).status_code == 401
     assert client.post(
-        f"/api/auth/refresh?refresh_token={refresh_token}"
+        "/api/auth/refresh", json={"refresh_token": refresh_token}
     ).status_code == 401
 
 
@@ -109,7 +109,7 @@ def test_logout_with_expired_access_token_still_revokes(test_db_session):
     test_db_session.refresh(student)
     assert student.security_version == 2
     assert client.post(
-        f"/api/auth/refresh?refresh_token={refresh_token}"
+        "/api/auth/refresh", json={"refresh_token": refresh_token}
     ).status_code == 401
 
 
@@ -215,10 +215,10 @@ def test_admin_password_reset_revokes_existing_access_and_refresh_tokens(
         "/api/auth/me", headers={"Authorization": f"Bearer {legacy_access_token}"}
     ).status_code == 401
     assert client.post(
-        f"/api/auth/refresh?refresh_token={refresh_token}"
+        "/api/auth/refresh", json={"refresh_token": refresh_token}
     ).status_code == 401
     assert client.post(
-        f"/api/auth/refresh?refresh_token={legacy_refresh_token}"
+        "/api/auth/refresh", json={"refresh_token": legacy_refresh_token}
     ).status_code == 401
 
 
@@ -340,7 +340,7 @@ def test_legacy_token_issued_same_second_as_credential_change_is_revoked(
         headers={"Authorization": f"Bearer {legacy_access_token}"},
     ).status_code == 401
     assert client.post(
-        f"/api/auth/refresh?refresh_token={legacy_refresh_token}"
+        "/api/auth/refresh", json={"refresh_token": legacy_refresh_token}
     ).status_code == 401
 
 

@@ -78,6 +78,7 @@ def _ensure_sqlite_columns(engine: Engine) -> None:
             ("learning_sessions", "board_id", "INTEGER"),
             ("saved_topics", "board_id", "INTEGER"),
             ("saved_topics", "created_by_user_id", "INTEGER"),
+            ("content_safety_events", "call_count", "INTEGER NOT NULL DEFAULT 1"),
         )
         for table, column, definition in columns:
             if table_exists(table) and not has_column(table, column):

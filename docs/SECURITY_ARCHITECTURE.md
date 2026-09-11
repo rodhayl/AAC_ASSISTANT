@@ -12,7 +12,11 @@ authorization, and data protection. It complements
 - **Password policy** requires at least 8 characters with uppercase, lowercase,
   and a digit (`password_strength_error`).
 - **Tokens** are signed JWTs. A separate short-lived access token and a
-  refresh token are issued by `POST /api/auth/token`.
+  refresh token are issued by `POST /api/auth/token`. Refresh tokens are
+  sent in the JSON body (`{refresh_token}`) so the 7-day credential never
+  appears in URLs/logs; a transitional query-param fallback exists only when
+  `AAC_REFRESH_ALLOW_QUERY_FALLBACK=1` is explicitly set (defaults to off in
+  production) and is deprecated — removal planned after the next minor release.
 - **JWT secret** is generated once (`secrets.token_hex(32)`) and persisted to
   `.env` by `ensure_jwt_secret`. A placeholder or empty value is never used.
 - **Session revocation** — every password mutation calls

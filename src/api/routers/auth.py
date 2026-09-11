@@ -438,8 +438,12 @@ async def refresh_access_token(
     """
     accept_language = request.headers.get("accept-language")
 
-    # Resolve token from body (preferred) or transitional query param; body keeps secret out of URLs/logs.
+    # Resolve token from JSON body (preferred). The query-param fallback is
+    # opt-in only (D5: AAC_REFRESH_ALLOW_QUERY_FALLBACK) and defaults to off
+    # in production so the 7-day credential never appears in URLs/logs.
+    # Removal planned after next minor release; see docs/SECURITY_ARCHITECTURE.md.
     refresh_token: str | None = None
+    query_fallback_used = False
     try:
         body = await request.json()
         if isinstance(body, dict) and isinstance(body.get("refresh_token"), str):
@@ -447,7 +451,26 @@ async def refresh_access_token(
     except Exception:
         pass
     if not refresh_token:
-        refresh_token = request.query_params.get("refresh_token")
+        candidate = request.query_params.get("refresh_token")
+        if candidate is not None:
+            allow_query = config.get_bool("AAC_REFRESH_ALLOW_QUERY_FALLBACK", False)
+            # Production defaults to off even if config is unset: absence of
+            # the flag must not silently re-enable URL transport.
+            is_prod = str(config.get("ENVIRONMENT", "development")).strip().casefold() in {
+                "production",
+                "prod",
+            }
+            if is_prod:
+                allow_query = bool(allow_query) and str(
+                    config.get("AAC_REFRESH_ALLOW_QUERY_FALLBACK", "")
+                ).strip().lower() in {"1", "true", "yes", "on"}
+            if not allow_query:
+                raise HTTPException(status_code=400, detail="refresh_token required")
+            logger.warning(
+                "Refresh via query param is deprecated and will be removed; use JSON body"
+            )
+            refresh_token = candidate
+            query_fallback_used = True
     if not refresh_token or not isinstance(refresh_token, str) or len(refresh_token) > 5000:
         raise HTTPException(status_code=400, detail="refresh_token required")
 
@@ -525,7 +548,12 @@ async def refresh_access_token(
         }
     )
 
-    logger.info(f"Access token refreshed for user '{user.username}' (id={user.id})")
+    logger.info(
+        "Access token refreshed for user '{}' (id={}) via {}",
+        user.username,
+        user.id,
+        "query" if query_fallback_used else "body",
+    )
     return {
         "access_token": new_access_token,
         "token_type": "bearer"

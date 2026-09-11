@@ -29,4 +29,8 @@ class ContentSafetyEvent(Base):
     # matched families/terms (normalized text snippets)
     matched = Column(JSON, default=list)
     detail = Column(Text, nullable=True)
+    # How many chunked LLM calls this sentinel row accounts for (D2: meter == spend).
+    # Non-sentinel rows keep 1; sentinel rows sum this column so one row can
+    # represent N chunk calls without row-count amplification.
+    call_count = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, default=func.now(), index=True)
