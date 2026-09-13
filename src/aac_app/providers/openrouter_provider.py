@@ -23,13 +23,9 @@ class OpenRouterProvider(BaseLLMProvider):
         self,
         api_key: str | None = None,
         model: str | None = None,
-        _api_key_env: str | None = None,  # internal: Groq passes GROQ_API_KEY
     ):
         super().__init__()
-        if _api_key_env is not None:
-            self.api_key = api_key if api_key is not None else os.getenv(_api_key_env)
-        else:
-            self.api_key = self._resolve_api_key(api_key)
+        self.api_key = self._resolve_api_key(api_key)
         self.base_url = "https://openrouter.ai/api/v1"
         # Keep the raw setting so singleton getters can distinguish an empty
         # configured value from the provider's resolved default model.

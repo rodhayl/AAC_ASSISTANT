@@ -43,12 +43,23 @@ export function DataManagementTab() {
       if (!Array.isArray(json.achievements)) throw new Error(t('data.invalidExportAchievements'));
       const result = await api.post('/data/import', json);
       const body = (result.data ?? {}) as Record<string, unknown>;
-      // D7: surface whether the import's source export was truncated (100-session cap)
-      if (body.truncated) {
-        const total = body.total_learning_sessions;
-        const shown = body.learning_history;
-        addToast(t('data.importTruncated', { shown, total }), 'warning');
+      // D7/Q1: report what the import actually added. `learning_history_added`
+      // is the outcome count; `learning_history` is the payload's input length
+      // and only remains as a fallback for older servers. A truncated source
+      // whose total is missing must not render "undefined", so it falls back to
+      // the plain success toast.
+      const total = body.total_learning_sessions;
+      // Prefer the outcome count; `learning_history` is the payload's input
+      // length and stays only as a fallback for older servers. `??` keeps a
+      // real 0 (an idempotent retry that added nothing) rather than treating
+      // it as absent.
+      const added = body.learning_history_added ?? body.learning_history;
+      const hasNumericTotal = typeof total === 'number' && Number.isFinite(total);
+      if (body.truncated && hasNumericTotal) {
+        addToast(t('data.importTruncated', { shown: added, total }), 'warning');
       } else {
+        // Truncated without a usable total (or untruncated): plain success
+        // toast rather than rendering "of undefined".
         addToast(t('data.importSuccess'), 'success');
       }
     } catch (error) {

@@ -26,7 +26,7 @@ vi.mock('../src/store/authStore', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, defaultValue?: string) => {
+    t: (key: string, arg?: string | Record<string, unknown>) => {
       const table: Record<string, string> = {
         'data.exportClient': 'Export My Data',
         'data.exportFailed': 'Failed to export data. Please try again later.',
@@ -36,6 +36,7 @@ vi.mock('react-i18next', () => ({
         'data.exportClientTitle': 'Export data',
         'data.importBoards': 'Import Boards',
         'data.importSuccess': 'Import completed successfully',
+        'data.importTruncated': 'Import incomplete: showing {{shown}} of {{total}} sessions',
         'data.importFailed': 'Import failed: ',
         'data.invalidExportMeta': 'Invalid export: missing meta',
         'data.invalidExportBoards': 'Invalid export: boards must be an array',
@@ -43,7 +44,13 @@ vi.mock('react-i18next', () => ({
         'data.invalidExportAchievements': 'Invalid export: achievements must be an array',
         'errors.unknownError': 'Unknown error',
       };
-      return table[key] ?? defaultValue ?? key;
+      let value = table[key] ?? (typeof arg === 'string' ? arg : key);
+      if (arg && typeof arg === 'object') {
+        for (const [name, replacement] of Object.entries(arg)) {
+          value = value.replace(`{{${name}}}`, String(replacement));
+        }
+      }
+      return value;
     },
   }),
 }));
@@ -168,6 +175,108 @@ describe('DataManagementTab', () => {
         'Import failed: Invalid export: boards must be an array',
         'error',
       ),
+    );
+  });
+
+  it('warns when the import source was a truncated export', async () => {
+    // D7/N9: a recovery import must not look complete when the export it came
+    // from only carried the latest 100 learning sessions.
+    post.mockResolvedValue({
+      data: {
+        ok: true,
+        truncated: true,
+        total_learning_sessions: 137,
+        learning_history: 100,
+      },
+    });
+    render(<DataManagementTab />);
+    const input = document.getElementById('import-boards-file') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: {
+        files: [
+          makeFile(
+            JSON.stringify({
+              meta: { version: 1 },
+              boards: [],
+              assignedBoards: [],
+              achievements: [],
+            }),
+          ),
+        ],
+      },
+    });
+
+    await waitFor(() =>
+      expect(addToast).toHaveBeenCalledWith(
+        'Import incomplete: showing 100 of 137 sessions',
+        'warning',
+      ),
+    );
+    expect(addToast).not.toHaveBeenCalledWith('Import completed successfully', 'success');
+  });
+
+  it('reports the sessions actually added, not the payload length (Q1)', async () => {
+    // An idempotent retry adds no rows while the file still carries 100
+    // sessions; the toast must not claim "showing 100 of 137".
+    post.mockResolvedValue({
+      data: {
+        ok: true,
+        truncated: true,
+        total_learning_sessions: 137,
+        learning_history: 100,
+        learning_history_added: 0,
+      },
+    });
+    render(<DataManagementTab />);
+    const input = document.getElementById('import-boards-file') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: {
+        files: [
+          makeFile(
+            JSON.stringify({
+              meta: { version: 1 },
+              boards: [],
+              assignedBoards: [],
+              achievements: [],
+            }),
+          ),
+        ],
+      },
+    });
+
+    await waitFor(() =>
+      expect(addToast).toHaveBeenCalledWith(
+        'Import incomplete: showing 0 of 137 sessions',
+        'warning',
+      ),
+    );
+  });
+
+  it('does not print "undefined" when a truncated source omits the total (Q1)', async () => {
+    post.mockResolvedValue({ data: { ok: true, truncated: true } });
+    render(<DataManagementTab />);
+    const input = document.getElementById('import-boards-file') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: {
+        files: [
+          makeFile(
+            JSON.stringify({
+              meta: { version: 1 },
+              boards: [],
+              assignedBoards: [],
+              achievements: [],
+            }),
+          ),
+        ],
+      },
+    });
+
+    await waitFor(() =>
+      expect(addToast).toHaveBeenCalledWith('Import completed successfully', 'success'),
+    );
+    expect(addToast).not.toHaveBeenCalledWith(
+      expect.stringContaining('undefined'),
+      'warning',
     );
   });
 

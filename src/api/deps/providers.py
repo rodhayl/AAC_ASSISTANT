@@ -386,7 +386,7 @@ def get_lmstudio_provider() -> LMStudioProvider:
     return provider
 
 
-def _effective_groq_key() -> str:
+def resolve_groq_api_key() -> str:
     """Effective Groq API key with one consistent precedence.
 
     Order: DB setting > canonical config (.env) > process env.
@@ -405,12 +405,31 @@ def _effective_groq_key() -> str:
     return (_os.getenv("GROQ_API_KEY") or "").strip()
 
 
+def resolve_groq_model() -> str:
+    """Effective Groq model with the same precedence as the API key.
+
+    Order: DB setting > canonical config (.env) > process env. An empty
+    result still means "not configured": warmup rejects it explicitly so a
+    misconfigured deployment reports degraded instead of silently generating
+    with an unverified model (F10/F16).
+    """
+    db_model = (_get_setting_value("groq_model", "") or "").strip()
+    if db_model:
+        return db_model
+    cfg = (getattr(config, "GROQ_MODEL", "") or "").strip()
+    if cfg:
+        return cfg
+    import os as _os
+
+    return (_os.getenv("GROQ_MODEL") or "").strip()
+
+
 def get_groq_provider() -> GroqProvider:
     """Return the configured Groq provider singleton."""
     global _groq_provider
 
-    api_key = _effective_groq_key()
-    model = _get_setting_value("groq_model", "")
+    api_key = resolve_groq_api_key()
+    model = resolve_groq_model()
     discarded: Any | None = None
 
     with _provider_lock:
@@ -760,7 +779,7 @@ def _init_llm_provider_sync() -> bool:
                         model=_get_setting_value("lmstudio_model", ""),
                     )
                 elif provider_type == "groq":
-                    configured_model = _get_setting_value("groq_model", "")
+                    configured_model = resolve_groq_model()
                     if not configured_model:
                         raise RuntimeError(
                             "Groq provider requires an explicitly configured model"

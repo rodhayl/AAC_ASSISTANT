@@ -119,6 +119,12 @@ class Settings(BaseSettings):
 
     JWT_SECRET_KEY: str = ""
 
+    # Transitional refresh query fallback (D5): when false (default in
+    # production) the refresh endpoint rejects query-param transport so the
+    # 7-day credential never appears in URLs/logs. Operators migrating old
+    # clients can set 1 temporarily; removal planned after next minor release.
+    AAC_REFRESH_ALLOW_QUERY_FALLBACK: bool = False
+
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     LMSTUDIO_BASE_URL: str = "http://localhost:1234/v1"
     AI_MAX_TOKENS: int = 1024
@@ -142,6 +148,12 @@ class Settings(BaseSettings):
     SENTINEL_PACING_SECONDS: float = 1.5
     OPENROUTER_API_KEY: str = ""
     GROQ_API_KEY: str = ""
+    # Production Groq model. Optional here: the persisted DB setting (admin UI
+    # or PUT /api/settings/ai) wins when set, then this canonical config value,
+    # then the process environment — the same precedence as GROQ_API_KEY. Left
+    # empty by default so a deployment that configures no model still fails
+    # closed at warmup instead of generating with an unverified default.
+    GROQ_MODEL: str = ""
 
     APP_NAME: str = "AAC Assistant"
     APP_VERSION: str = "2.0.0"
@@ -176,13 +188,6 @@ class Settings(BaseSettings):
     # model keeps learning from new usage without a restart. 0 disables the
     # periodic refresh (startup-only rebuild when the flag above is enabled).
     AAC_NGRAM_REBUILD_INTERVAL_SECONDS: int = 3600
-
-    # Optional deterministic passwords are intentionally unset by default.
-    # Transitional refresh query fallback (D5): when false (default in
-    # production) the refresh endpoint rejects query-param transport so the
-    # 7-day credential never appears in URLs/logs. Operators migrating old
-    # clients can set 1 temporarily; removal planned after next minor release.
-    AAC_REFRESH_ALLOW_QUERY_FALLBACK: bool = False
 
     # Optional deterministic passwords are intentionally unset by default.
     AAC_SEED_DEFAULT_PASSWORD: str | None = None
@@ -451,6 +456,18 @@ def get_bool(key: str, default: bool = False) -> bool:
     if isinstance(value, bool):
         return value
     return str(value).lower() in {"true", "1", "yes", "on"}
+
+
+def refresh_query_fallback_allowed() -> bool:
+    """Whether the retired query-param refresh transport may still be used.
+
+    Opt-in only (D5): the 7-day credential must never travel in a URL unless
+    the operator deliberately enables ``AAC_REFRESH_ALLOW_QUERY_FALLBACK``.
+    One rule for every environment — the previous production-only re-check
+    applied the same predicate to the same source and could not change the
+    outcome (Q3).
+    """
+    return get_bool("AAC_REFRESH_ALLOW_QUERY_FALLBACK", False)
 
 
 def get_bundled_path(relative_path: str) -> Path:

@@ -122,7 +122,10 @@ class ResponseProcessingMixin:
                         student_response = await asyncio.to_thread(
                             _transcribe_with_owned_copy
                         )
-                elif is_voice and not audio_data:
+                elif is_voice and not audio_data and not audio_path:
+                    # Q7: the guard must name both inputs — naming only
+                    # audio_data invited a future edit that would reject
+                    # path-only uploads, which the branch above accepts.
                     return {"success": False, "error": "No audio data received."}
 
                 # Symbol semantic analysis and expansion
@@ -205,7 +208,6 @@ class ResponseProcessingMixin:
                             verdict="redirected",
                             matched=list(input_verdict.matched_terms),
                             detail=student_response[:300],
-                            db=db,
                         )
                         block_reason = "blocked input"
                 if block_reason is not None:
@@ -524,7 +526,6 @@ class ResponseProcessingMixin:
                         verdict="redirected",
                         matched=list(output_verdict.matched_terms),
                         detail=feedback_message[:300],
-                        db=db,
                     )
                     try:
                         retry_raw = await self.llm.generate(

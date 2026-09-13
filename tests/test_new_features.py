@@ -1252,3 +1252,379 @@ def test_export_import_round_trip_preserves_content_and_replay_is_idempotent(
         .all()
     )
     assert len(assignments_after_replay) == 1
+
+
+def _signed_import_payload(base: dict) -> dict:
+    """Sign an import payload the way the export endpoint does (schema v2)."""
+    return {
+        **base,
+        "meta": {
+            **base["meta"],
+            "checksum_sha256": compute_checksum(base),
+            "schema_version": "2",
+        },
+    }
+
+
+def _import_board_payload(source_id: int, name: str) -> dict:
+    return {
+        "id": source_id,
+        "name": name,
+        "description": "d",
+        "category": "general",
+        "is_public": False,
+        "is_template": False,
+        "grid_rows": 2,
+        "grid_cols": 2,
+        "symbols": [],
+    }
+
+
+def test_import_reports_outcome_counts_not_input_lengths(client, test_db_session):
+    """N6: created/merged counts reflect actual rows; an idempotent retry that
+    merges everything reports boards_created=0 instead of the payload length."""
+    registration = client.post(
+        "/api/auth/register",
+        json={
+            "username": "count_importer",
+            "password": "CountImport123",
+            "display_name": "Count Importer",
+            "user_type": "student",
+        },
+    )
+    assert registration.status_code == 200, registration.text
+    headers = create_test_headers(
+        registration.json()["id"], "count_importer", "student"
+    )
+    base = {
+        "meta": {"exported_at": "2024-01-01T00:00:00Z", "username": "count_importer"},
+        "boards": [
+            _import_board_payload(701, "Count One"),
+            _import_board_payload(702, "Count Two"),
+        ],
+        "assignedBoards": [],
+        "achievements": [],
+        "totalPoints": 0,
+        "learningHistory": [],
+    }
+    payload = _signed_import_payload(base)
+
+    first = client.post("/api/data/import", json=payload, headers=headers)
+    assert first.status_code == 200, first.text
+    first_body = first.json()
+    assert first_body["boards_created"] == 2
+    assert first_body["boards_merged"] == 0
+    # Back-compat aliases still report the payload's input length.
+    assert first_body["boards"] == 2
+    # Q10: the counts are raw deltas, so the invariant must hold exactly —
+    # a retry that cloned rows would surface as created > inputs instead of
+    # being clamped into a plausible merge.
+    assert first_body["boards_created"] + first_body["boards_merged"] == 2
+
+    replay = client.post("/api/data/import", json=payload, headers=headers)
+    assert replay.status_code == 200, replay.text
+    replay_body = replay.json()
+    assert replay_body["boards_created"] == 0, replay_body
+    assert replay_body["boards_merged"] == 2, replay_body
+    assert replay_body["boards"] == 2
+    assert replay_body["boards_created"] + replay_body["boards_merged"] == 2
+    assert replay_body["symbols_added"] == 0, replay_body
+
+
+def _learning_history_entry() -> dict:
+    return {
+        "topic_name": "animals",
+        "purpose": "practice",
+        "status": "completed",
+        "comprehension_score": 0.5,
+        "questions_asked": 2,
+        "questions_answered": 1,
+        "correct_answers": 1,
+        "started_at": "2024-01-01T10:00:00",
+        "ended_at": "2024-01-01T10:05:00",
+    }
+
+
+def test_import_reports_truncated_export_source(client, test_db_session):
+    """D7: recovering from an export whose learning history was capped must
+    tell the user so — the import result carries the source's truncation
+    testimony instead of a bare ``{"ok": True}``."""
+    registration = client.post(
+        "/api/auth/register",
+        json={
+            "username": "trunc_importer",
+            "password": "TruncImport123",
+            "display_name": "Truncated Importer",
+            "user_type": "student",
+        },
+    )
+    assert registration.status_code == 200, registration.text
+    headers = create_test_headers(
+        registration.json()["id"], "trunc_importer", "student"
+    )
+    base = {
+        "meta": {
+            "exported_at": "2024-01-01T00:00:00Z",
+            "username": "trunc_importer",
+            "truncated": True,
+            "total_learning_sessions": 137,
+        },
+        "boards": [_import_board_payload(801, "Truncated One")],
+        "assignedBoards": [],
+        "achievements": [],
+        "totalPoints": 0,
+        "learningHistory": [_learning_history_entry()],
+    }
+    payload = _signed_import_payload(base)
+
+    response = client.post("/api/data/import", json=payload, headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["truncated"] is True, body
+    assert body["total_learning_sessions"] == 137, body
+    assert body["learning_history_added"] == 1, body
+
+    # An untruncated source reports truncated=False and omits the total.
+    untruncated_base = {
+        **base,
+        "meta": {
+            "exported_at": "2024-01-01T00:00:00Z",
+            "username": "trunc_importer",
+            "truncated": False,
+        },
+        "learningHistory": [],
+    }
+    untruncated = _signed_import_payload(untruncated_base)
+    second = client.post("/api/data/import", json=untruncated, headers=headers)
+    assert second.status_code == 200, second.text
+    second_body = second.json()
+    assert second_body["truncated"] is False, second_body
+    assert "total_learning_sessions" not in second_body, second_body
+
+
+def test_import_handles_invalid_assigned_by_shapes(client, test_db_session):
+    """N7: malformed ``assigned_by`` shapes are rejected before any write;
+    unusable scalars (bool/int-subclass, string, non-positive) fall back to the
+    importer instead of aborting a recovery import, and a real user id is
+    preserved on the restored assignment."""
+    # The assigner registers first so the importer is user id 2: a bool stored
+    # as ``1`` by the Integer column would silently become user 1 (a different
+    # account), which is exactly the N7 corruption this test guards against.
+    assigner_registration = client.post(
+        "/api/auth/register",
+        json={
+            "username": "assigner_user",
+            "password": "Assigner123",
+            "display_name": "Assigner User",
+            "user_type": "student",
+        },
+    )
+    assert assigner_registration.status_code == 200, assigner_registration.text
+    assigner_id = assigner_registration.json()["id"]
+
+    student_registration = client.post(
+        "/api/auth/register",
+        json={
+            "username": "assignee_user",
+            "password": "Assignee123",
+            "display_name": "Assignee User",
+            "user_type": "student",
+        },
+    )
+    assert student_registration.status_code == 200, student_registration.text
+    student_id = student_registration.json()["id"]
+    headers = create_test_headers(student_id, "assignee_user", "student")
+
+    assigned_board = {
+        **_import_board_payload(801, "Assigned Shapes"),
+        "assigned_by": assigner_id,
+    }
+    base = {
+        "meta": {"exported_at": "2024-01-01T00:00:00Z", "username": "assignee_user"},
+        "boards": [],
+        "assignedBoards": [assigned_board],
+        "achievements": [],
+        "totalPoints": 0,
+        "learningHistory": [],
+    }
+
+    # Malformed shapes are rejected before any write.
+    for bad in ({"id": 1}, [1], 1.5):
+        payload = _signed_import_payload(
+            {**base, "assignedBoards": [{**assigned_board, "assigned_by": bad}]}
+        )
+        response = client.post("/api/data/import", json=payload, headers=headers)
+        assert response.status_code == 400, (bad, response.text)
+    assert test_db_session.query(BoardAssignment).count() == 0
+
+    # Unusable scalar values must not store a bogus assigner: the import
+    # succeeds and the assignment falls back to the importer. A bool would
+    # otherwise be stored as user id 1 (the admin) by the Integer column.
+    for fallback_value in (True, False, "1", -5, 0):
+        payload = _signed_import_payload(
+            {
+                **base,
+                "assignedBoards": [
+                    {**assigned_board, "assigned_by": fallback_value}
+                ],
+            }
+        )
+        response = client.post("/api/data/import", json=payload, headers=headers)
+        assert response.status_code == 200, (fallback_value, response.text)
+        assignment = (
+            test_db_session.query(BoardAssignment)
+            .filter(BoardAssignment.student_id == student_id)
+            .one()
+        )
+        assert assignment.assigned_by == student_id, fallback_value
+
+    # Clear the fallback assignment so the valid-assigner import can prove the
+    # original assigner is restored (an existing assignment is never rewritten).
+    test_db_session.query(BoardAssignment).filter(
+        BoardAssignment.student_id == student_id
+    ).delete()
+    test_db_session.commit()
+
+    payload = _signed_import_payload(base)
+    response = client.post("/api/data/import", json=payload, headers=headers)
+    assert response.status_code == 200, response.text
+    assignment = (
+        test_db_session.query(BoardAssignment)
+        .filter(BoardAssignment.student_id == student_id)
+        .one()
+    )
+    assert assignment.assigned_by == assigner_id
+
+
+def _import_placement_payload(symbol_id: int, linked: int | None) -> dict:
+    return {
+        "symbol_id": symbol_id,
+        "position_x": 0,
+        "position_y": 0,
+        "size": 1,
+        "is_visible": True,
+        "custom_text": None,
+        "color": None,
+        "linked_board_id": linked,
+    }
+
+
+def _import_cross_section_boards(client, test_db_session, username: str):
+    """Import an owned board linked to an assigned-section board (and back)."""
+    registration = client.post(
+        "/api/auth/register",
+        json={
+            "username": username,
+            "password": "CrossLink123",
+            "display_name": username.title(),
+            "user_type": "student",
+        },
+    )
+    assert registration.status_code == 200, registration.text
+    user_id = registration.json()["id"]
+    symbol = Symbol(
+        label=f"{username}_symbol",
+        description="cross-section",
+        category="test",
+        keywords=username,
+    )
+    test_db_session.add(symbol)
+    test_db_session.commit()
+    test_db_session.refresh(symbol)
+
+    owned = _import_board_payload(901, f"{username} Owned")
+    owned["symbols"] = [_import_placement_payload(symbol.id, 902)]
+    assigned = _import_board_payload(902, f"{username} Assigned")
+    assigned["symbols"] = [_import_placement_payload(symbol.id, 901)]
+
+    base = {
+        "meta": {"exported_at": "2024-01-01T00:00:00Z", "username": username},
+        "boards": [owned],
+        "assignedBoards": [assigned],
+        "achievements": [],
+        "totalPoints": 0,
+        "learningHistory": [],
+    }
+    headers = create_test_headers(user_id, username, "student")
+    response = client.post(
+        "/api/data/import", json=_signed_import_payload(base), headers=headers
+    )
+    assert response.status_code == 200, response.text
+
+    boards = {
+        board.name: board
+        for board in test_db_session.query(CommunicationBoard)
+        .filter(CommunicationBoard.user_id == user_id)
+        .all()
+    }
+    assert set(boards) == {f"{username} Owned", f"{username} Assigned"}
+    return boards[f"{username} Owned"], boards[f"{username} Assigned"]
+
+
+def test_import_preserves_owned_to_assigned_links(client, test_db_session):
+    """N1: an owned board's link to a board that arrives in the assigned
+    section must survive — the first remap inside _import_boards cannot see
+    the assigned target yet, so import_data must re-run the combined pass."""
+    owned, assigned = _import_cross_section_boards(
+        client, test_db_session, "cross_owned_first"
+    )
+    test_db_session.refresh(owned)
+    test_db_session.refresh(assigned)
+
+    assert owned.symbols[0].linked_board_id == assigned.id, (
+        "owned board lost its link to the assigned-section board"
+    )
+    assert assigned.symbols[0].linked_board_id == owned.id
+
+
+def test_import_preserves_assigned_to_assigned_links(client, test_db_session):
+    """D6/N1: links between two assigned-section boards must remap too."""
+    registration = client.post(
+        "/api/auth/register",
+        json={
+            "username": "assigned_pair_user",
+            "password": "AssignedPair123",
+            "display_name": "Assigned Pair",
+            "user_type": "student",
+        },
+    )
+    assert registration.status_code == 200, registration.text
+    user_id = registration.json()["id"]
+    symbol = Symbol(
+        label="assigned_pair_symbol",
+        description="pair",
+        category="test",
+        keywords="pair",
+    )
+    test_db_session.add(symbol)
+    test_db_session.commit()
+    test_db_session.refresh(symbol)
+
+    first = _import_board_payload(921, "Pair First")
+    first["symbols"] = [_import_placement_payload(symbol.id, 922)]
+    second = _import_board_payload(922, "Pair Second")
+    second["symbols"] = [_import_placement_payload(symbol.id, 921)]
+    base = {
+        "meta": {"exported_at": "2024-01-01T00:00:00Z", "username": "assigned_pair_user"},
+        "boards": [],
+        "assignedBoards": [first, second],
+        "achievements": [],
+        "totalPoints": 0,
+        "learningHistory": [],
+    }
+    headers = create_test_headers(user_id, "assigned_pair_user", "student")
+    response = client.post(
+        "/api/data/import", json=_signed_import_payload(base), headers=headers
+    )
+    assert response.status_code == 200, response.text
+
+    boards = {
+        board.name: board
+        for board in test_db_session.query(CommunicationBoard)
+        .filter(CommunicationBoard.user_id == user_id)
+        .all()
+    }
+    test_db_session.refresh(boards["Pair First"])
+    test_db_session.refresh(boards["Pair Second"])
+    assert boards["Pair First"].symbols[0].linked_board_id == boards["Pair Second"].id
+    assert boards["Pair Second"].symbols[0].linked_board_id == boards["Pair First"].id

@@ -449,7 +449,6 @@ def report_message(
         verdict="reported",
         matched=[],
         detail=f"Student reported an AI message in session {session_id}",
-        db=db,
     )
     return {"success": True}
 

@@ -368,6 +368,12 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # is reliable).
 MAX_REQUEST_BYTES = 12 * 1024 * 1024  # covers the 10 MB audio limit plus multipart overhead
 
+# Bound the time a client may take to deliver the next body chunk (Q4). The
+# byte ceiling alone does not bound *time*: a slow-loris that trickles bytes
+# forever would hold a worker indefinitely. This is an inactivity (not total)
+# timeout, so a large legitimate upload on a slow link still completes.
+REQUEST_RECEIVE_INACTIVITY_TIMEOUT_SECONDS = 25.0
+
 
 class _BodyTooLarge(Exception):
     """Raised internally when accumulated body bytes exceed MAX_REQUEST_BYTES."""
@@ -399,10 +405,28 @@ class _BoundedReceiveMiddleware:
         overflowed = False
         response_started = False
         substituted = False
+        suppressed = False
 
         async def bounded_receive() -> Message:
             nonlocal received_total, disconnected, overflowed
-            message = await receive()
+            started_at = asyncio.get_running_loop().time()
+            try:
+                message = await asyncio.wait_for(
+                    receive(), timeout=REQUEST_RECEIVE_INACTIVITY_TIMEOUT_SECONDS
+                )
+            except TimeoutError:
+                # Same terminal semantics as a byte overflow: the request is
+                # abandoned through resolve_overflow (413 when nothing was sent,
+                # connection abort once a response started).
+                overflowed = True
+                logger.warning(
+                    "Request body stalled for {:.1f}s after {} bytes (limit {}s); "
+                    "abandoning the request",
+                    asyncio.get_running_loop().time() - started_at,
+                    received_total,
+                    REQUEST_RECEIVE_INACTIVITY_TIMEOUT_SECONDS,
+                )
+                raise _BodyTooLarge() from None
             if message["type"] == "http.request":
                 received_total += len(message.get("body", b""))
                 if received_total > MAX_REQUEST_BYTES:
@@ -420,25 +444,32 @@ class _BoundedReceiveMiddleware:
             await error_response(scope, receive, send)
 
         async def send_tracked(message: Message) -> None:
-            nonlocal response_started, substituted
-            if substituted:
-                # The app is emitting the body of a response that was already
-                # replaced with our 413; swallow it so the client can never
+            nonlocal response_started, substituted, suppressed
+            if substituted or suppressed:
+                # The app is emitting the rest of a response that was already
+                # replaced with our 413 (or suppressed because the oversized
+                # body was detected); swallow it so the client can never
                 # observe the success the app tried to send.
                 return
-            if overflowed and message["type"] == "http.response.start":
-                # The app caught the receive-side abort and is about to answer
-                # with a success. The abort always happens before any response
-                # start, so nothing is on the wire yet and the oversized body
-                # gets the documented 413 instead of a fail-open 200.
-                substituted = True
-                logger.warning(
-                    "Request body exceeded {} bytes ({} received); "
-                    "replacing app response with 413",
-                    MAX_REQUEST_BYTES,
-                    received_total,
-                )
-                await send_413_response()
+            if overflowed:
+                if message["type"] == "http.response.start":
+                    # The app caught the receive-side abort and answered with a
+                    # success. Nothing is on the wire yet, so the oversized
+                    # body gets the documented 413 instead of a fail-open 200.
+                    substituted = True
+                    logger.warning(
+                        "Request body exceeded {} bytes ({} received); "
+                        "replacing app response with 413",
+                        MAX_REQUEST_BYTES,
+                        received_total,
+                    )
+                    await send_413_response()
+                    return
+                # The app started responding before it consumed the oversized
+                # bytes. Drop the remaining body and let resolve_overflow abort
+                # the connection: forwarding it would deliver a complete 200
+                # for a body the cap rejected (N10).
+                suppressed = True
                 return
             if message["type"] == "http.response.start":
                 response_started = True
@@ -449,10 +480,11 @@ class _BoundedReceiveMiddleware:
 
             * Nothing sent yet -> send the 413 (replacing whatever response the
               app was about to write).
-            * Response already streaming -> abort the connection by raising.
-              ASGI forbids a second response start, and leaving a clean 200 in
-              place would present success for a body the cap rejected; an
-              aborted connection cannot be mistaken for a successful request.
+            * Response already started (or its body suppressed) -> abort the
+              connection by raising. ASGI forbids a second response start, and
+              leaving a clean 200 in place would present success for a body the
+              cap rejected; an aborted connection cannot be mistaken for a
+              successful request (N10).
             """
             nonlocal substituted
             if not overflowed or substituted:

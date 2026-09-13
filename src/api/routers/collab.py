@@ -91,6 +91,12 @@ manager = ConnectionManager()
 # capping amplification.
 MAX_COLLAB_PAYLOAD_BYTES = 256 * 1024
 
+# Periodic revalidation interval and failure threshold — module-level for
+# test configurability (acceptance tests monkeypatch the clock past this
+# interval) and to avoid per-socket re-definition (D4/N12).
+REVALIDATE_INTERVAL = 60.0
+REVALIDATE_MAX_FAILURES = 3
+
 
 def _is_collab_move_payload(data: dict) -> bool:
     """True when ``data`` is the one payload the product actually speaks.
@@ -261,13 +267,15 @@ async def board_channel(
         auth_user_id = user.id
         last_revalidate = _time.monotonic()
         revalidate_failures = 0  # consecutive transient failures (D4)
-        REVALIDATE_MAX_FAILURES = 3
+        # Fallback: when lifespan is inactive (tests), create a local shutdown event
         shutdown_event = getattr(websocket.app.state, "shutdown_event", None)
         if not getattr(websocket.app.state, "lifespan_active", False):
+            # No lifespan (test harness): ignore the app-state shutdown event
+            # and allocate a local one below, so tests never observe the
+            # production shutdown signal.
             shutdown_event = None
         if shutdown_event is None:
             shutdown_event = asyncio.Event()
-        REVALIDATE_INTERVAL = 60.0
         try:
             while True:
                 # D4: cheap expiry check every iteration (no DB), not only every 60s.
@@ -320,9 +328,9 @@ async def board_channel(
                         finally:
                             _db2.close()
                         revalidate_failures = 0
-                    except HTTPException:
-                        raise
                     except Exception as exc:
+                        # Transient DB/transport failure: tolerate a blip but never let a
+                        # potentially-revoked socket linger — close after K consecutive failures.
                         revalidate_failures += 1
                         logger.warning(
                             "Collab revalidation transient failure {}/{}: {}",

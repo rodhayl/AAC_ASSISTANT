@@ -509,4 +509,199 @@ describe('auth session refresh robustness', () => {
     expect(second).not.toBe(first);
     expect(refreshCalls).toBe(2);
   });
+
+  it('does not stamp a stale login failure onto a newer session (N5/D12)', async () => {
+    seedSession(makeJwt(Math.floor(Date.now() / 1000) + 3600));
+    const userB = { ...user, id: 8, username: 'user-b' };
+    let rejectStaleLogin: ((error: unknown) => void) | undefined;
+    vi.spyOn(api, 'post').mockImplementation((url: string) => {
+      if (url === '/auth/token' && !rejectStaleLogin) {
+        return new Promise((_resolve, reject) => {
+          rejectStaleLogin = reject;
+        }) as never;
+      }
+      const tokenB = makeJwt(Math.floor(Date.now() / 1000) + 3600, userB.id);
+      return Promise.resolve({
+        data: { access_token: tokenB, refresh_token: 'refresh-b' },
+      }) as never;
+    });
+    vi.spyOn(api, 'get').mockResolvedValue({ data: userB } as never);
+
+    const staleLogin = useAuthStore.getState().login('user-a', 'wrong');
+    expect(useAuthStore.getState().isLoading).toBe(true);
+
+    // A newer login wins while the stale attempt is still in flight.
+    await useAuthStore.getState().login(userB.username, 'password');
+    rejectStaleLogin!({ response: { status: 401 } });
+    await expect(staleLogin).rejects.toBeDefined();
+
+    // The newer session must keep its clean error state and spinner state.
+    expect(useAuthStore.getState().user).toEqual(userB);
+    expect(useAuthStore.getState().error).toBeNull();
+    expect(useAuthStore.getState().isLoading).toBe(false);
+  });
+
+  it('does not stamp a stale setup failure onto a newer session (N5/D12)', async () => {
+    seedSession(makeJwt(Math.floor(Date.now() / 1000) + 3600));
+    const admin = { ...user, id: 8, username: 'admin-b' };
+    let rejectStaleSetup: ((error: unknown) => void) | undefined;
+    vi.spyOn(api, 'post').mockImplementation((url: string) => {
+      if (url === '/auth/setup' && !rejectStaleSetup) {
+        return new Promise((_resolve, reject) => {
+          rejectStaleSetup = reject;
+        }) as never;
+      }
+      const token = makeJwt(Math.floor(Date.now() / 1000) + 3600, admin.id);
+      return Promise.resolve({
+        data: { access_token: token, refresh_token: 'refresh-b', user: admin },
+      }) as never;
+    });
+
+    vi.spyOn(api, 'get').mockResolvedValue({ data: admin } as never);
+    const staleSetup = useAuthStore.getState().setupAdmin({
+      username: admin.username,
+      password: 'StrongPass123',
+      display_name: admin.display_name,
+    } as never);
+    expect(useAuthStore.getState().isLoading).toBe(true);
+
+    await useAuthStore.getState().login(admin.username, 'password');
+    rejectStaleSetup!({ response: { status: 400 } });
+    await expect(staleSetup).rejects.toBeDefined();
+
+    expect(useAuthStore.getState().user).toEqual(admin);
+    expect(useAuthStore.getState().error).toBeNull();
+    expect(useAuthStore.getState().isLoading).toBe(false);
+  });
+
+  it('does not cancel an in-flight login when a registration starts (Q2)', async () => {
+    // register publishes no session state, so it must not bump the session
+    // epoch — incrementing it discarded the in-flight login's success publish.
+    const freshUser = { ...user, id: 9, username: 'fresh' };
+    const freshToken = makeJwt(Math.floor(Date.now() / 1000) + 3600, freshUser.id);
+    let resolveLogin: ((value: unknown) => void) | undefined;
+    let resolveRegister: ((value: unknown) => void) | undefined;
+    vi.spyOn(api, 'post').mockImplementation((url: string) => {
+      if (url === '/auth/token') {
+        return new Promise((resolve) => {
+          resolveLogin = resolve;
+        }) as never;
+      }
+      if (url === '/auth/register') {
+        return new Promise((resolve) => {
+          resolveRegister = resolve;
+        }) as never;
+      }
+      return Promise.resolve({ data: {} }) as never;
+    });
+    vi.spyOn(api, 'get').mockResolvedValue({ data: freshUser } as never);
+
+    const loginPromise = useAuthStore.getState().login('fresh', 'password');
+    const registerPromise = useAuthStore.getState().register({
+      username: 'fresh',
+      password: 'StrongPass123',
+      display_name: 'Fresh',
+    } as never);
+
+    resolveLogin!({ data: { access_token: freshToken, refresh_token: 'refresh-fresh' } });
+    await loginPromise;
+
+    // The login's success must survive the concurrent registration.
+    expect(useAuthStore.getState().token).toBe(freshToken);
+    expect(useAuthStore.getState().user).toEqual(freshUser);
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
+
+    // The registration settling later must not disturb the new session.
+    resolveRegister!({ data: { ok: true } });
+    await registerPromise;
+    expect(useAuthStore.getState().token).toBe(freshToken);
+    expect(useAuthStore.getState().error).toBeNull();
+  });
+
+  it('does not stamp a stale registration failure onto a newer session (Q2)', async () => {
+    let rejectRegister: ((error: unknown) => void) | undefined;
+    vi.spyOn(api, 'post').mockImplementation((url: string) => {
+      if (url === '/auth/register') {
+        return new Promise((_resolve, reject) => {
+          rejectRegister = reject;
+        }) as never;
+      }
+      return Promise.resolve({
+        data: {
+          access_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+          refresh_token: 'refresh-a',
+        },
+      }) as never;
+    });
+    vi.spyOn(api, 'get').mockResolvedValue({ data: user } as never);
+
+    const registerPromise = useAuthStore.getState().register({
+      username: 'new-user',
+      password: 'StrongPass123',
+      display_name: 'New User',
+    } as never);
+    expect(useAuthStore.getState().isLoading).toBe(true);
+
+    // A newer session wins while the registration is still in flight.
+    await useAuthStore.getState().login('tester', 'password');
+
+    rejectRegister!({ response: { status: 400 } });
+    await expect(registerPromise).rejects.toBeDefined();
+
+    expect(useAuthStore.getState().user).toEqual(user);
+    expect(useAuthStore.getState().error).toBeNull();
+    expect(useAuthStore.getState().isLoading).toBe(false);
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
+  });
+
+  it('does not leave the spinner stuck when logout interrupts a login (N5)', async () => {
+    seedSession(makeJwt(Math.floor(Date.now() / 1000) + 3600));
+    let rejectLogin: ((error: unknown) => void) | undefined;
+    vi.spyOn(api, 'post').mockImplementation((url: string) => {
+      if (url === '/auth/token') {
+        return new Promise((_resolve, reject) => {
+          rejectLogin = reject;
+        }) as never;
+      }
+      return Promise.resolve({ data: { ok: true } }) as never;
+    });
+
+    const loginPromise = useAuthStore.getState().login('tester', 'password');
+    expect(useAuthStore.getState().isLoading).toBe(true);
+
+    // Logout clears the session (and the spinner) while the login is pending.
+    await useAuthStore.getState().logout();
+    expect(useAuthStore.getState().isLoading).toBe(false);
+
+    rejectLogin!({ response: { status: 401 } });
+    await expect(loginPromise).rejects.toBeDefined();
+
+    expect(useAuthStore.getState().isLoading).toBe(false);
+    expect(useAuthStore.getState().error).toBeNull();
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+
+  it('clears the spinner when a non-loading checkAuth invalidates a failed login (N5)', async () => {
+    // checkAuth bumps the session epoch without owning the spinner; a stale
+    // login failure must still clear the spinner it started instead of
+    // leaving the UI loading forever.
+    seedSession(makeJwt(Math.floor(Date.now() / 1000) + 3600));
+    let rejectLogin: ((error: unknown) => void) | undefined;
+    vi.spyOn(api, 'post').mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectLogin = reject;
+        }) as never,
+    );
+
+    const loginPromise = useAuthStore.getState().login('tester', 'wrong');
+    expect(useAuthStore.getState().isLoading).toBe(true);
+
+    await useAuthStore.getState().checkAuth();
+    rejectLogin!({ response: { status: 401 } });
+    await expect(loginPromise).rejects.toBeDefined();
+
+    expect(useAuthStore.getState().isLoading).toBe(false);
+    expect(useAuthStore.getState().error).toBeNull();
+  });
 });

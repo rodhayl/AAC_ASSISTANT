@@ -194,10 +194,6 @@ class LocalSpeechProvider:
                 logger.warning("Transcription failed for {}: {}", audio_path, exc)
                 return ""
 
-    def transcribe(self, audio_path: str, language: str = "en") -> str:
-        """Compatibility alias for callers using the provider's generic verb."""
-        return self.recognize_from_file(audio_path, language=language)
-
     def get_available_models(self) -> dict[str, dict[str, str]]:
         """Return the supported faster-whisper model sizes."""
         return SUPPORTED_STT_MODELS.copy()

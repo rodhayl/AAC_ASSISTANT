@@ -74,7 +74,6 @@ Be very positive and encouraging. Keep it to 2-3 sentences."""
                         verdict="redirected",
                         matched=list(s_verdict.matched_terms),
                         detail=summary[:300],
-                        db=db,
                     )
                     try:
                         retry_raw = await self.llm.generate(

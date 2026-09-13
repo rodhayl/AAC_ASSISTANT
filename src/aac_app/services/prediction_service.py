@@ -672,7 +672,6 @@ class _PredictionContext:
                         verdict="blocked",
                         matched=list(verdict.matched_terms),
                         detail=f"topic word: {candidate[:200]}",
-                        db=self.db,
                     )
                 else:
                     filtered.append(candidate)
@@ -1030,7 +1029,6 @@ class _PredictionContext:
                     verdict="blocked",
                     matched=[],
                     detail="feature_lock: block_autogen_pictograms",
-                    db=self.db,
                 )
                 return
             if not self._is_svg_generation_enabled():
@@ -1045,7 +1043,6 @@ class _PredictionContext:
                         verdict="blocked",
                         matched=list(label_verdict.matched_terms),
                         detail=f"autogen label: {word[:200]}",
-                        db=self.db,
                     )
                     return
             ensure_symbol_generated(word, self.lang, context=self.topic or None)
@@ -1213,7 +1210,6 @@ class PredictionService:
                         direction="input",
                         verdict="blocked",
                         detail=f"feature_lock: block_custom_topics; topic: {topic[:120]}",
-                        db=db,
                     )
                 topic = None
                 topic_word_fetcher = None
@@ -1227,7 +1223,6 @@ class PredictionService:
                         verdict="redirected",
                         matched=list(topic_verdict.matched_terms),
                         detail=topic[:300],
-                        db=db,
                     )
                     topic = None
                     topic_word_fetcher = None

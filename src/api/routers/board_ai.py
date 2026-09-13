@@ -240,7 +240,6 @@ async def create_board(
                             verdict="blocked",
                             matched=list(label_verdict.matched_terms),
                             detail=f"generated label: {item.get('label', '')[:200]}",
-                            db=db,
                         )
                         continue
                     symbol_key = item["symbol_key"]
@@ -322,15 +321,19 @@ def _resolve_provider_for_board(
 
     if config.ENVIRONMENT.strip().casefold() == "production":
         provider_type = "groq"
-        model_name = get_setting_value("groq_model", "")
+        # One effective model resolution shared with warmup and the provider
+        # singleton (F10/D10): DB setting > canonical config > process env.
+        from src.api.deps.providers import resolve_groq_model
+
+        model_name = resolve_groq_model()
     elif model_name == "@primary":
         model_name = get_setting_value(f"{provider_type}_model", "")
     if not provider_type or not model_name:
         return None
     if provider_type == "groq":
-        from src.api.deps.providers import _effective_groq_key
+        from src.api.deps.providers import resolve_groq_api_key
 
-        api_key = _effective_groq_key()
+        api_key = resolve_groq_api_key()
         if not api_key:
             return None
         return GroqProvider(api_key=api_key, model=model_name)
@@ -411,7 +414,6 @@ async def generate_ai_suggestions(
             verdict="blocked",
             matched=list(probe_verdict.matched_terms),
             detail=probe[:300],
-            db=db,
         )
         raise HTTPException(
             status_code=403,
@@ -448,7 +450,6 @@ async def generate_ai_suggestions(
                     verdict="blocked",
                     matched=list(verdict.matched_terms),
                     detail=f"generated label: {label[:200]}",
-                    db=db,
                 )
                 continue
             safe_items.append(item)
@@ -512,7 +513,6 @@ def apply_ai_suggestion(
             verdict="blocked",
             matched=list(label_verdict.matched_terms),
             detail=f"applied label: {item.label[:200]}",
-            db=db,
         )
         raise HTTPException(
             status_code=403,

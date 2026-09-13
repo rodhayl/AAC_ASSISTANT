@@ -204,6 +204,136 @@ class TestTokenRefreshMechanism:
         assert payload["user_id"] == user.id
         assert payload["sub"] == user.username
 
+    @staticmethod
+    def _patch_refresh_transport(monkeypatch, *, environment: str, allow_query_value):
+        """Control the two config lookups the refresh endpoint consults (D5)."""
+        from src import config as config_module
+
+        real_get = config_module.get
+        real_get_bool = config_module.get_bool
+
+        def fake_get(key, default=None):
+            if key == "ENVIRONMENT":
+                return environment
+            if key == "AAC_REFRESH_ALLOW_QUERY_FALLBACK":
+                return allow_query_value
+            return real_get(key, default)
+
+        def fake_get_bool(key, default=False):
+            if key == "AAC_REFRESH_ALLOW_QUERY_FALLBACK":
+                return str(allow_query_value).strip().lower() in {
+                    "1",
+                    "true",
+                    "yes",
+                    "on",
+                }
+            return real_get_bool(key, default)
+
+        monkeypatch.setattr(config_module, "get", fake_get)
+        monkeypatch.setattr(config_module, "get_bool", fake_get_bool)
+
+    def test_refresh_query_transport_is_rejected_by_default(
+        self, client: TestClient, test_db_session: Session, monkeypatch
+    ):
+        """D5/F03: the 7-day credential is never accepted from a URL unless the
+        operator deliberately opts in; the body transport keeps working."""
+        user = User(
+            username="query_refresh_user",
+            display_name="Query Refresh User",
+            user_type="student",
+            password_hash=get_password_hash("UserPass123"),
+            is_active=True,
+        )
+        test_db_session.add(user)
+        test_db_session.commit()
+        refresh_token = create_refresh_token(
+            {"sub": user.username, "user_id": user.id}
+        )
+        self._patch_refresh_transport(
+            monkeypatch, environment="development", allow_query_value=""
+        )
+
+        queried = client.post(f"/api/auth/refresh?refresh_token={refresh_token}")
+        assert queried.status_code == 400, queried.text
+        assert "refresh_token" in queried.json()["detail"]
+
+        body = client.post(
+            "/api/auth/refresh", json={"refresh_token": refresh_token}
+        )
+        assert body.status_code == 200, body.text
+        assert "access_token" in body.json()
+
+    def test_refresh_query_transport_opt_in_logs_deprecation(
+        self, client: TestClient, test_db_session: Session, monkeypatch
+    ):
+        """During migration an operator can re-enable URL transport; it works
+        and emits a deprecation warning that never contains the token."""
+        from loguru import logger as loguru_logger
+
+        user = User(
+            username="query_refresh_optin",
+            display_name="Query Refresh Optin",
+            user_type="student",
+            password_hash=get_password_hash("UserPass123"),
+            is_active=True,
+        )
+        test_db_session.add(user)
+        test_db_session.commit()
+        refresh_token = create_refresh_token(
+            {"sub": user.username, "user_id": user.id}
+        )
+        self._patch_refresh_transport(
+            monkeypatch, environment="development", allow_query_value="1"
+        )
+
+        records: list[str] = []
+        sink_id = loguru_logger.add(
+            lambda message: records.append(message.record["message"]),
+            level="WARNING",
+        )
+        try:
+            response = client.post(
+                f"/api/auth/refresh?refresh_token={refresh_token}"
+            )
+        finally:
+            loguru_logger.remove(sink_id)
+
+        assert response.status_code == 200, response.text
+        deprecation = [r for r in records if "deprecated" in r.lower()]
+        assert deprecation, records
+        assert all(refresh_token not in r for r in records), "token leaked into logs"
+
+    def test_refresh_query_transport_fails_closed_in_production(
+        self, client: TestClient, test_db_session: Session, monkeypatch
+    ):
+        """Production ignores a fuzzy/absent flag value: absence of the opt-in
+        must not silently re-enable URL transport."""
+        user = User(
+            username="query_refresh_prod",
+            display_name="Query Refresh Prod",
+            user_type="student",
+            password_hash=get_password_hash("UserPass123"),
+            is_active=True,
+        )
+        test_db_session.add(user)
+        test_db_session.commit()
+        refresh_token = create_refresh_token(
+            {"sub": user.username, "user_id": user.id}
+        )
+
+        self._patch_refresh_transport(
+            monkeypatch, environment="production", allow_query_value=""
+        )
+        rejected = client.post(f"/api/auth/refresh?refresh_token={refresh_token}")
+        assert rejected.status_code == 400, rejected.text
+
+        # An explicit operator opt-in still works in production during migration.
+        self._patch_refresh_transport(
+            monkeypatch, environment="production", allow_query_value="1"
+        )
+        opted_in = client.post(f"/api/auth/refresh?refresh_token={refresh_token}")
+        assert opted_in.status_code == 200, opted_in.text
+
     def test_refresh_endpoint_rejects_access_token(
         self, client: TestClient, test_db_session: Session
     ):

@@ -468,12 +468,20 @@ MAX_EVENTS = 10000
 # every N calls or every minute.
 _PRUNE_EVERY_N = 20
 _PRUNE_THROTTLE_SECONDS = 60.0
-_last_prune_monotonic = 0.0
+# ``None`` means "no baseline recorded yet" (Q8): the first event of a process
+# records the window start instead of paying a full-table COUNT(*) on the very
+# first call (the old ``0.0`` sentinel made that scan unconditional).
+_last_prune_monotonic: float | None = None
 _prune_calls = 0
 
 
 def _prune_events(session: Session, max_events: int = MAX_EVENTS) -> None:
-    """Bound the safety-event table, preserving today's sentinel cost rows."""
+    """Bound the safety-event table, preserving today's sentinel cost rows.
+
+    Direct callers (tests, admin maintenance) always enforce the bound here;
+    ``log_event`` invokes this through the D11 throttle, which is the only
+    reason it is not called on every logged event.
+    """
     from src.aac_app.models import ContentSafetyEvent
 
     count = session.query(ContentSafetyEvent).count()
@@ -507,16 +515,19 @@ def log_event(
     matched: list[str] | None = None,
     detail: str | None = None,
     call_count: int = 1,
-    db=None,  # noqa: ARG001 Deprecated: accepted for call-site compatibility, never used.
 ) -> None:
     """Persist one content-safety event in a deliberate isolated transaction.
 
     Best-effort: never raises. The event is always written through a
     short-lived session owned by this function, so logging can never commit,
-    roll back, or otherwise disturb the caller's transaction (F14). ``db`` is
-    accepted for compatibility with existing call sites but deliberately
-    ignored: sharing the caller's session mixed transaction lifetimes with a
-    best-effort audit write.
+    roll back, or otherwise disturb the caller's transaction (F14). Callers
+    must not pass a session: sharing the caller's session mixed transaction
+    lifetimes with a best-effort audit write (the deprecated ``db`` kwarg was
+    removed once every production call site was cleaned up — N3).
+
+    Retention runs at most once every ``_PRUNE_EVERY_N`` calls or
+    ``_PRUNE_THROTTLE_SECONDS``; direct ``_prune_events`` calls bypass that
+    throttle and always enforce the bound.
     """
     # Retention is enforced through the module-level _prune_events helper.
     if surface not in SURFACES:
@@ -528,6 +539,13 @@ def log_event(
         from src.aac_app.db import get_session
         from src.aac_app.models import ContentSafetyEvent
 
+        # N12: coerce defensively — a non-numeric caller must not lose the event.
+        try:
+            _cc = int(call_count) if call_count is not None else 1
+        except (TypeError, ValueError):
+            _cc = 1
+        if _cc < 1:
+            _cc = 1
         event = ContentSafetyEvent(
             user_id=user_id,
             surface=surface,
@@ -535,7 +553,7 @@ def log_event(
             verdict=verdict,
             matched=matched or [],
             detail=detail,
-            call_count=max(1, int(call_count or 1)),
+            call_count=_cc,
         )
         with get_session() as session:
             session.add(event)
@@ -549,11 +567,15 @@ def log_event(
             global _last_prune_monotonic, _prune_calls
             _prune_calls += 1
             now = time.monotonic()
-            should_prune = (
+            if _last_prune_monotonic is None:
+                # Q8: first call of the process only records the window start;
+                # pruning waits for the throttle so a single log_event never
+                # pays an unconditional full-table COUNT(*).
+                _last_prune_monotonic = now
+            elif (
                 _prune_calls % _PRUNE_EVERY_N == 0
                 or now - _last_prune_monotonic >= _PRUNE_THROTTLE_SECONDS
-            )
-            if should_prune:
+            ):
                 _last_prune_monotonic = now
                 try:
                     _prune_events(session)
@@ -649,14 +671,28 @@ async def moderate_output(
 ) -> Verdict:
     """Layer-2 LLM moderation sentinel on generated chat output.
 
-    Only active for ``sentinel_moderation`` policies (strict level). Returns
-    an allowed verdict when the sentinel is off, the daily cap is exhausted,
-    the LLM is unavailable, or the message passes; a blocked verdict with the
-    matched term "sentinel" otherwise. Every spent call is recorded as a
-    surface="sentinel" audit event, so the admin log doubles as the cost
-    meter.
+    Only active for ``sentinel_moderation`` policies at ``strict`` level;
+    non-strict or sentinel-off policies are allowed through untouched.
+
+    For strict policies this fails **closed** (F08): the text is moderated in
+    600-char chunks and an affirmative ``allowed`` verdict is required for
+    every chunk. A provider error/timeout, an empty or ambiguous response, or
+    an exhausted daily cap produces a blocked verdict with the matched term
+    ``"sentinel"``, so generated text is never published unchecked.
+    Deterministic non-AI AAC communication is unaffected (this function only
+    gates generated output).
+
+    One audit event is written per ``moderate_output`` call; its ``call_count``
+    records how many chunk calls were actually spent, so the admin log doubles
+    as the daily cost meter (`_count_sentinel_today` sums it).
+
+    Blank output carries no content to moderate, so it is allowed without a
+    paid call, an audit row, or meter spend (Q9); it also cannot exhaust the
+    cap. Only non-blank text takes the fail-closed path.
     """
     if not (policy.sentinel_moderation and policy.level == "strict"):
+        return Verdict(allowed=True)
+    if not (text or "").strip():
         return Verdict(allowed=True)
     cap = _sentinel_daily_cap()
     if cap >= 0 and _count_sentinel_today(db) >= cap:

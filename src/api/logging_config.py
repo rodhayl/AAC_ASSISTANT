@@ -111,16 +111,25 @@ def _redact_message(msg: str) -> str:
         # "Authorization: Bearer <token>" header — Bearer is handled above.
         keys_bare = r"groq_api_key|openrouter_api_key|api_key|password|token"
         _REDACT_PATTERNS = [
-            # JSON quoted pair: "groq_api_key": "sk-..."
-            _re.compile(rf'(?i)(\"(?:{keys})\"\s*:\s*)\"[^\"]*\"'),
+            # Quoted pair with an unquoted-or-quoted scalar: JSON ``"key": "v"``
+            # and Python-repr ``'key': 'v'``, plus 123 / true / null. Must not
+            # consume trailing braces/commas so '{"token": 123}' keeps its '}'.
+            _re.compile(
+                rf"""(?i)(['\"](?:{keys})['\"]\s*:\s*)(?:'[^']*'|"[^"]*"|true|false|null|-?\d+(?:\.\d+)?)"""
+            ),
             # Bearer token
             _re.compile(r"(?i)(Bearer\s+)\S+"),
             # X-*-API-Key header forms
             _re.compile(r"(?i)(X-[A-Za-z0-9_-]*API-?Key\s*[:=]\s*)\S+"),
             # Bare key=value / key: value (authorization excluded — Bearer covers it)
-            _re.compile(rf"(?i)(?:\"?({keys_bare})\"?\s*[:=]\s*)\S+"),
+            _re.compile(rf"(?i)(['\"]?({keys_bare})['\"]?\s*[:=]\s*)(\S+)"),
+            # "password is <value>" copula shape — same guard semantics as bare.
+            # Covers the Spanish-first renderings too (`password es <value>`),
+            # since a translated log line must not leak a credential (Q11).
+            _re.compile(rf"(?i)(['\"]?({keys_bare})['\"]?\s+(?:is|es)\s+)(\S+)"),
         ]
-    # JSON "key": "value" pairs first — preserve key casing, mask only the value.
+    # JSON "key": value pairs first — preserve key casing, mask only the value.
+    # Unquoted numerics/booleans are quoted as "***" so the shape stays JSON-like.
     msg = _REDACT_PATTERNS[0].sub(r'\1"***"', msg)
     msg = _REDACT_PATTERNS[1].sub(r"\1***", msg)
     msg = _REDACT_PATTERNS[2].sub(r"\1***", msg)
@@ -130,14 +139,27 @@ def _redact_message(msg: str) -> str:
     # or 'Bearer ***' into 'Bearer=*** ***'). Only bare assignments whose
     # captured value still looks like a secret are masked; an already-masked
     # message with an additional bare assignment (e.g. password=secret) is
-    # still redacted.
+    # still redacted. Guard on exact value, not substring — a real secret
+    # containing "***" must still be masked. The bare \S+ also captures
+    # trailing JSON punctuation ('"***"}' / '"***",'); strip it before the
+    # exact check so a JSON-masked key is recognised as already handled.
     def _bare_repl(m: "_re.Match[str]") -> str:
-        # group(0) contains key+delim+value; if value is already *** leave it
-        if "***" in m.group(0):
+        try:
+            value = m.group(3) if m.lastindex and m.lastindex >= 3 else m.group(2)
+            prefix = m.group(1)
+        except IndexError:
             return m.group(0)
-        return f"{m.group(1)}=***"
+        # Strip surrounding quotes and trailing JSON punctuation (},],")
+        stripped = value.strip().lstrip("\"'").rstrip("\"',}];:")
+        if stripped == "***":
+            return m.group(0)
+        # Also handle already-quoted masked value '"***"' without trailing brace
+        if value.strip().strip("\"'") == "***":
+            return m.group(0)
+        return f"{prefix}***"
 
     msg = _REDACT_PATTERNS[3].sub(_bare_repl, msg)
+    msg = _REDACT_PATTERNS[4].sub(_bare_repl, msg)
     if len(msg) > 2000:
         msg = msg[:2000] + " ...[truncated]"
     return msg

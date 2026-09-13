@@ -394,7 +394,6 @@ def get_next_symbol_suggestions_post(
                     detail=(
                         f"feature_lock: block_custom_topics; topic: {effective_topic[:120]}"
                     ),
-                    db=db,
                 )
                 effective_topic = ""
             else:
@@ -407,7 +406,6 @@ def get_next_symbol_suggestions_post(
                         verdict="redirected",
                         matched=list(topic_verdict.matched_terms),
                         detail=effective_topic[:300],
-                        db=db,
                     )
                     effective_topic = ""
 

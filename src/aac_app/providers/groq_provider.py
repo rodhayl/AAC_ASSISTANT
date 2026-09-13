@@ -18,7 +18,7 @@ class GroqProvider(OpenRouterProvider):
         return api_key if api_key is not None else _os.getenv("GROQ_API_KEY")
 
     def __init__(self, api_key: str | None = None, model: str | None = None):
-        super().__init__(api_key=api_key, model=model, _api_key_env="GROQ_API_KEY")
+        super().__init__(api_key=api_key, model=model)
         self.base_url = "https://api.groq.com/openai/v1"
 
     def is_configured(self) -> bool:

@@ -211,6 +211,16 @@ def _validate_import_payload(
             ):
                 raise HTTPException(status_code=400, detail=invalid_detail)
 
+    # N7: ``assigned_by`` must be a scalar user id when present. Malformed
+    # shapes are rejected before any rows are staged; a scalar that does not
+    # name a real user (bool — an int subclass —, string, non-positive) is
+    # ignored by ``_import_assigned_boards`` and falls back to the importer so
+    # a signed recovery import is never rejected over assigner metadata.
+    for board in assigned_boards:
+        assigned_by = board.get("assigned_by")
+        if assigned_by is not None and isinstance(assigned_by, (dict, list, float)):
+            raise HTTPException(status_code=400, detail=invalid_detail)
+
     if symbol_count > _MAX_IMPORT_SYMBOLS:
         raise HTTPException(status_code=413, detail=too_large_detail)
 
@@ -577,10 +587,11 @@ def _import_assigned_boards(
             board = _create_imported_board(db, user, board_data)
 
         # Preserve the original assigner when the payload names a real user
+        # (bool is an int subclass — type(...) is int avoids storing True as user 1).
         raw_assigner = board_data.get("assigned_by")
         effective_assigner = user.id
         if (
-            isinstance(raw_assigner, int)
+            type(raw_assigner) is int
             and raw_assigner > 0
             and db.query(User.id).filter(User.id == raw_assigner).first() is not None
         ):
@@ -980,6 +991,23 @@ def import_data(
     # Link-aware retry matching spans both sections, so the source-ID -> name
     # map covers owned AND assigned boards from the export file.
     all_board_data = list(base["boards"]) + list(base["assignedBoards"])
+    # Snapshot counts before import so the result reports actual outcomes
+    # (created vs merged), not input lengths — a retry that merges everything
+    # must report boards_created=0 (N6).
+    _before_board_count = (
+        db.query(CommunicationBoard)
+        .filter(CommunicationBoard.user_id == user.id)
+        .count()
+    )
+    _before_symbol_count = (
+        db.query(BoardSymbol)
+        .join(CommunicationBoard, BoardSymbol.board_id == CommunicationBoard.id)
+        .filter(CommunicationBoard.user_id == user.id)
+        .count()
+    )
+    _before_learning_count = (
+        db.query(LearningSession).filter(LearningSession.user_id == user.id).count()
+    )
     imported_boards = _import_boards(db, user, base["boards"])
     # Assigned boards can also carry navigation links among imported boards;
     # remap them in the same second pass (only sources that were imported).
@@ -991,7 +1019,10 @@ def import_data(
         _source_board_name_map(all_board_data),
     )
     if base["assignedBoards"]:
-        _remap_linked_boards(db, imported_boards, base["assignedBoards"])
+        # N1: single combined pass once BOTH sections exist. The first remap
+        # inside _import_boards cannot resolve owned→assigned links (the
+        # assigned targets do not exist yet), so re-run over every source.
+        _remap_linked_boards(db, imported_boards, all_board_data)
     _import_achievements(
         db,
         user,
@@ -1007,19 +1038,46 @@ def import_data(
     # dependency teardown otherwise commits after the client sees the 200).
     db.commit()
 
-    # D7: surface whether this recovery was sourced from a truncated export.
-    imported_boards_count = len(base["boards"]) + len(base["assignedBoards"])
-    imported_history_count = len(base["learningHistory"])
-    imported_symbols_count = sum(
-        len(b.get("symbols") or []) for b in list(base["boards"]) + list(base["assignedBoards"])
+    # N6: counts report actual outcomes (created vs merged), not input lengths.
+    # Post-commit queries read the persisted rows, so no extra flush is needed.
+    _after_board_count = (
+        db.query(CommunicationBoard)
+        .filter(CommunicationBoard.user_id == user.id)
+        .count()
     )
+    _after_symbol_count = (
+        db.query(BoardSymbol)
+        .join(CommunicationBoard, BoardSymbol.board_id == CommunicationBoard.id)
+        .filter(CommunicationBoard.user_id == user.id)
+        .count()
+    )
+    _after_learning_count = (
+        db.query(LearningSession).filter(LearningSession.user_id == user.id).count()
+    )
+    _total_input_boards = len(base["boards"]) + len(base["assignedBoards"])
+    # Q10: raw deltas, deliberately unclamped. A retry that clones rows (the
+    # F13 defect class) must surface as created > inputs instead of being
+    # clamped into a plausible-looking lie; the API test asserts the invariant
+    # created + merged == inputs.
+    _boards_created = _after_board_count - _before_board_count
+    _boards_merged = _total_input_boards - _boards_created
+    _symbols_added = _after_symbol_count - _before_symbol_count
+    _learning_added = _after_learning_count - _before_learning_count
+    # D7: surface whether this recovery was sourced from a truncated export.
     is_truncated = bool(meta.get("truncated"))
     total_sessions = meta.get("total_learning_sessions")
+    input_symbols = sum(len(b.get("symbols") or []) for b in all_board_data)
     result: dict[str, Any] = {
         "ok": True,
-        "boards": imported_boards_count,
-        "symbols": imported_symbols_count,
-        "learning_history": imported_history_count,
+        # Back-compat aliases: input lengths (what the export file carried).
+        # The outcome fields below are authoritative for created/merged counts.
+        "boards": _total_input_boards,
+        "symbols": input_symbols,
+        "learning_history": len(base["learningHistory"]),
+        "boards_created": _boards_created,
+        "boards_merged": _boards_merged,
+        "symbols_added": _symbols_added,
+        "learning_history_added": _learning_added,
         "truncated": is_truncated,
     }
     if isinstance(total_sessions, int):

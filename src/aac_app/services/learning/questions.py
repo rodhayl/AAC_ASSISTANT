@@ -217,7 +217,6 @@ class QuestionGenerationMixin:
                         verdict="redirected",
                         matched=list(q_verdict.matched_terms),
                         detail=question_data["question"][:300],
-                        db=db,
                     )
                     # Language-neutral safe fallback: never persist a blocked
                     # question, always return a benign one.

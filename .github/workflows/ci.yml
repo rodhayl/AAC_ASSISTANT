@@ -101,10 +101,12 @@ jobs:
       AAC_SEED_SAMPLE_DATA: "false"
       AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN: "true"
       AAC_BOOTSTRAP_ADMIN_USERNAME: admin1
-      AAC_BOOTSTRAP_ADMIN_PASSWORD: Admin123
+      # Production rejects the development default ("Admin123"), so the gate
+      # must bootstrap with a unique non-default credential.
+      AAC_BOOTSTRAP_ADMIN_PASSWORD: CiProd-Gate-Admin1-2f7c
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:8086
       E2E_ADMIN_USERNAME: admin1
-      E2E_ADMIN_PASSWORD: Admin123
+      E2E_ADMIN_PASSWORD: CiProd-Gate-Admin1-2f7c
       E2E_STUDENT_USERNAME: student1
       E2E_STUDENT_PASSWORD: Student123
       E2E_TEACHER_USERNAME: teacher1
@@ -151,7 +153,7 @@ jobs:
               # login as the bootstrap admin and confirm the provider list.
               TOKEN=$(curl --silent --fail -X POST http://127.0.0.1:8086/api/auth/token \
                 -H 'Content-Type: application/x-www-form-urlencoded' \
-                --data-urlencode 'username=admin1' --data-urlencode 'password=Admin123' \
+                --data-urlencode 'username=admin1' --data-urlencode 'password=CiProd-Gate-Admin1-2f7c' \
                 | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
               PROVIDER=$(curl --silent http://127.0.0.1:8086/api/providers/health -H "Authorization: Bearer $TOKEN" \
                 | python3 -c 'import json,sys; print(json.load(sys.stdin)["groq"]["configured"])')

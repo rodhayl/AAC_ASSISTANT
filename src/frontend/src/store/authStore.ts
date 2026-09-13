@@ -77,6 +77,7 @@ export const useAuthStore = create<AuthState>()(
         token: null,
         refreshToken: null,
         isAuthenticated: false,
+        isLoading: false,
         sessionExpiresAt: null,
         error: null,
       });
@@ -99,6 +100,10 @@ export const useAuthStore = create<AuthState>()(
 
       // Monotonic epoch for checkAuth/refresh: any newer session change invalidates in-flight publishes.
       let checkAuthEpoch = 0;
+      // Epoch of the newest operation that owns the shared ``isLoading``
+      // spinner (login/setup/register). Lets a stale failure clear a spinner
+      // that only it started without stomping a newer operation's spinner (N5).
+      let loadingOwnerEpoch = 0;
       // Per-token coalescing: each distinct refresh token gets its own
       // in-flight promise. A single-slot variable would let a second token
       // overwrite the first and prematurely clear it on settle.
@@ -115,6 +120,7 @@ export const useAuthStore = create<AuthState>()(
 
       login: async (username: string, password: string) => {
         const loginEpoch = ++checkAuthEpoch;
+        loadingOwnerEpoch = loginEpoch;
         const isStillCurrentLogin = () => loginEpoch === checkAuthEpoch;
         set({ isLoading: true, error: null });
         try {
@@ -168,9 +174,14 @@ export const useAuthStore = create<AuthState>()(
             error: null,
           });
         } catch (e: unknown) {
-          // D12: stale login failure must not overwrite a newer session's error
+          // D12: stale login failure must not overwrite a newer session's error.
           if (isStillCurrentLogin()) {
             set({ error: extractError(e, i18n.t('common:errors.loginFailed')), isLoading: false });
+          } else if (loadingOwnerEpoch === loginEpoch) {
+            // A newer non-loading operation (checkAuth/refresh) bumped the
+            // epoch; this spinner is still the newest one, so clear it
+            // instead of leaving the UI stuck (N5).
+            set({ isLoading: false });
           }
           throw e;
         }
@@ -178,6 +189,7 @@ export const useAuthStore = create<AuthState>()(
 
       setupAdmin: async (setupData: AuthSetupData) => {
         const setupEpoch = ++checkAuthEpoch;
+        loadingOwnerEpoch = setupEpoch;
         const isStillCurrentSetup = () => setupEpoch === checkAuthEpoch;
         set({ isLoading: true, error: null });
         try {
@@ -199,21 +211,41 @@ export const useAuthStore = create<AuthState>()(
             error: null,
           });
         } catch (e: unknown) {
-          // D12: stale setup failure must not overwrite a newer session's error
+          // D12: stale setup failure must not overwrite a newer session's error.
           if (isStillCurrentSetup()) {
             set({ error: extractError(e, i18n.t('common:errors.setupFailed')), isLoading: false });
+          } else if (loadingOwnerEpoch === setupEpoch) {
+            // See login: clear our own spinner when no newer loading op owns it.
+            set({ isLoading: false });
           }
           throw e;
         }
       },
 
       register: async (userData: RegistrationData) => {
+        // register changes no session identity, so it must NOT bump the session
+        // epoch (Q2): doing so silently discarded an in-flight login's success
+        // publish. It still guards its own sets against newer session owners.
+        const registerEpoch = checkAuthEpoch;
+        const isStillCurrentRegister = () => registerEpoch === checkAuthEpoch;
+        loadingOwnerEpoch = registerEpoch;
         set({ isLoading: true, error: null });
         try {
           await api.post('/auth/register', userData);
-          set({ isLoading: false });
+          if (!isStillCurrentRegister()) return;
+          if (loadingOwnerEpoch === registerEpoch) set({ isLoading: false });
         } catch (error: unknown) {
-          set({ error: extractError(error, i18n.t('common:errors.registrationFailed')), isLoading: false });
+          // A late failure must not stamp registrationFailed over a newer
+          // session (same bug class as D12/N5).
+          if (isStillCurrentRegister()) {
+            set({
+              error: extractError(error, i18n.t('common:errors.registrationFailed')),
+              isLoading: false,
+            });
+          } else if (loadingOwnerEpoch === registerEpoch) {
+            // No newer loading op owns the spinner; clear our own.
+            set({ isLoading: false });
+          }
           throw error;
         }
       },

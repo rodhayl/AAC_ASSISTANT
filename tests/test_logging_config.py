@@ -8,6 +8,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -123,3 +125,69 @@ logger.remove()
     assert result.returncode == 0, result.stderr
     assert not old_log.exists()
     assert not old_error_log.exists()
+
+
+class TestRedactMessage:
+    """N2/D1: the log redactor must mask every known secret shape.
+
+    Provider error paths and request logs emit JSON bodies, ``Authorization``
+    headers and bare assignments; a missed shape means a real credential can
+    reach a log sink.
+    """
+
+    SECRET = "sk-supersecret123"
+
+    @staticmethod
+    def _redact(message: str) -> str:
+        from src.api.logging_config import _redact_message
+
+        return _redact_message(message)
+
+    @pytest.mark.parametrize(
+        "rendered",
+        [
+            '{"groq_api_key": "sk-supersecret123"}',
+            '{"openrouter_api_key":"sk-supersecret123"}',
+            "{'password': 'sk-supersecret123'}",
+            "X-Groq-API-Key: sk-supersecret123",
+            "X-Groq-API-Key=sk-supersecret123",
+            "Authorization: Bearer sk-supersecret123",
+            "groq_api_key=sk-supersecret123",
+            "api_key: sk-supersecret123",
+            "password is sk-supersecret123",
+        ],
+    )
+    def test_secret_shapes_are_masked(self, rendered: str) -> None:
+        redacted = self._redact(rendered)
+        assert self.SECRET not in redacted, redacted
+        assert "***" in redacted
+
+    def test_spanish_copula_is_masked(self) -> None:
+        """Q11: the app is Spanish-first, so a translated log line rendering
+        ``password es <value>`` must be masked like the English ``is`` form."""
+        redacted = self._redact("password es sk-supersecret123")
+        assert self.SECRET not in redacted, redacted
+        assert "***" in redacted
+
+    def test_secret_containing_asterisks_is_still_masked(self) -> None:
+        """A real secret that itself contains ``***`` must not bypass the
+        double-mask guard (the old substring check skipped it entirely)."""
+        redacted = self._redact("my password is foo***bar baz")
+        assert "foo***bar" not in redacted, redacted
+        assert "***" in redacted
+
+    def test_unquoted_json_scalars_keep_their_structure(self) -> None:
+        """Masking an unquoted JSON scalar must not eat the closing brace."""
+        redacted = self._redact('{"token": 12345678}')
+        assert "12345678" not in redacted, redacted
+        assert redacted.endswith("}"), redacted
+
+    def test_already_masked_values_are_not_double_masked(self) -> None:
+        once = self._redact('{"groq_api_key": "sk-supersecret123"}')
+        twice = self._redact(once)
+        assert twice == once, (once, twice)
+
+    def test_long_messages_stay_truncated(self) -> None:
+        redacted = self._redact("x" * 5000)
+        assert len(redacted) <= 2020
+        assert redacted.endswith("[truncated]")

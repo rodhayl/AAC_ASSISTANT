@@ -107,10 +107,14 @@ def test_achievement_permission_error_english_default(api_client, student_token)
 
 
 def test_refresh_token_error_is_spanish(api_client):
-    """An invalid refresh token is answered in the request language."""
+    """An invalid refresh token is answered in the request language.
+
+    The credential is sent in the JSON body (F03/D5); the retired query
+    transport is rejected before token validation.
+    """
     response = api_client.post(
         "/api/auth/refresh",
-        params={"refresh_token": "not-a-valid-token"},
+        json={"refresh_token": "not-a-valid-token"},
         headers={"Accept-Language": "es"},
     )
     assert response.status_code == 401

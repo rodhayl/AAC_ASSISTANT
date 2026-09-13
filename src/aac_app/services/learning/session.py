@@ -107,7 +107,6 @@ class SessionLifecycleMixin:
                             if blocked_by_lock
                             else topic[:300]
                         ),
-                        db=db,
                     )
                     return {
                         "success": False,

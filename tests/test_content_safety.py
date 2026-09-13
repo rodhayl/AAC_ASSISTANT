@@ -3,6 +3,7 @@ and enforcement across prediction, autogen, learning chat, boards, and the
 admin/teacher API surface."""
 
 import asyncio
+import uuid
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -256,6 +257,162 @@ def test_moderate_output_passes_and_fails_closed_strict(test_db_session, monkeyp
         moderate_output(broken, policy, "texto", db=test_db_session)
     )
     assert verdict.blocked
+
+
+def test_moderate_output_meter_charges_every_chunk_call(test_db_session, monkeypatch):
+    """D2/N2: a long strict text is moderated in 600-char chunks, and the cost
+    meter must equal the number of ``generate`` calls actually spent (one row
+    with ``call_count == spent``), so the daily cap bounds long-text spend."""
+    import src.aac_app.services.content_safety as safety
+    from src.aac_app.models import ContentSafetyEvent
+
+    calls: list[str] = []
+
+    async def generate(**kwargs):
+        calls.append(kwargs.get("prompt", ""))
+        return "ALLOWED"
+
+    policy = ContentPolicy(level="strict", sentinel_moderation=True)
+    text = "a" * 5000  # 9 chunks of 600
+    verdict = asyncio.run(
+        safety.moderate_output(generate, policy, text, db=test_db_session)
+    )
+
+    assert verdict.allowed
+    expected_calls = len(range(0, len(text), 600))
+    assert expected_calls == 9
+    assert len(calls) == expected_calls
+    rows = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.surface == "sentinel")
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].call_count == expected_calls
+    assert safety._count_sentinel_today(test_db_session) == expected_calls
+
+    # The cap now counts the real spend: a second long text is refused with no
+    # further LLM calls once the meter reaches the configured cap.
+    monkeypatch.setattr(safety, "_sentinel_daily_cap", lambda: expected_calls)
+    before = len(calls)
+    blocked = asyncio.run(
+        safety.moderate_output(generate, policy, text, db=test_db_session)
+    )
+    assert blocked.blocked
+    assert len(calls) == before
+
+
+def test_moderate_output_meter_counts_only_spent_calls_when_blocked(
+    test_db_session,
+):
+    """A blocked chunk ends moderation, and the meter records only the calls
+    that were actually spent (not all would-be chunks)."""
+    import src.aac_app.services.content_safety as safety
+    from src.aac_app.models import ContentSafetyEvent
+
+    calls: list[str] = []
+
+    async def generate(**kwargs):
+        calls.append(kwargs.get("prompt", ""))
+        return "BLOCKED" if len(calls) == 3 else "ALLOWED"
+
+    policy = ContentPolicy(level="strict", sentinel_moderation=True)
+    verdict = asyncio.run(
+        safety.moderate_output(generate, policy, "b" * 5000, db=test_db_session)
+    )
+
+    assert verdict.blocked
+    assert len(calls) == 3
+    row = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.surface == "sentinel")
+        .one()
+    )
+    assert row.call_count == 3
+    assert safety._count_sentinel_today(test_db_session) == 3
+
+
+def test_moderate_output_blank_text_costs_nothing(test_db_session):
+    """Q9: blank output needs no verdict — no paid call and no audit row, and
+    the daily meter is unchanged because nothing was spent. Non-blank text
+    still takes the full fail-closed path."""
+    import src.aac_app.services.content_safety as safety
+    from src.aac_app.models import ContentSafetyEvent
+
+    calls: list[str] = []
+
+    async def generate(**kwargs):
+        calls.append(kwargs.get("prompt", ""))
+        return "ALLOWED"
+
+    policy = ContentPolicy(level="strict", sentinel_moderation=True)
+    before_rows = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.surface == "sentinel")
+        .count()
+    )
+    before_meter = safety._count_sentinel_today(test_db_session)
+
+    for blank in ("", "   ", "\n\t "):
+        verdict = asyncio.run(
+            safety.moderate_output(generate, policy, blank, db=test_db_session)
+        )
+        assert verdict.allowed
+
+    assert calls == [], "blank text must not spend a moderation call"
+    assert (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.surface == "sentinel")
+        .count()
+    ) == before_rows
+    assert safety._count_sentinel_today(test_db_session) == before_meter
+
+    # A real (non-blank) text still costs exactly one chunk call.
+    asyncio.run(
+        safety.moderate_output(generate, policy, "texto normal", db=test_db_session)
+    )
+    assert len(calls) == 1
+
+
+def test_first_log_event_records_baseline_without_pruning(
+    test_db_session, monkeypatch
+):
+    """Q8: a fresh process must not run a full-table retention scan on its very
+    first event; the first call only starts the throttle window."""
+    import src.aac_app.services.content_safety as safety
+
+    pruned = {"n": 0}
+    real_prune = safety._prune_events
+
+    def counting_prune(*args, **kwargs):
+        pruned["n"] += 1
+        return real_prune(*args, **kwargs)
+
+    monkeypatch.setattr(safety, "_prune_events", counting_prune)
+    monkeypatch.setattr(safety, "_last_prune_monotonic", None)
+    monkeypatch.setattr(safety, "_prune_calls", 0)
+
+    safety.log_event(
+        user_id=None,
+        surface="chat",
+        direction="output",
+        verdict="blocked",
+        detail="baseline probe",
+    )
+    assert pruned["n"] == 0, "the first event of a process must not prune"
+    assert safety._prune_calls == 1
+    assert safety._last_prune_monotonic is not None
+
+    # The window is now open: the count throttle prunes on the Nth call.
+    for _ in range(safety._PRUNE_EVERY_N - 1):
+        safety.log_event(
+            user_id=None,
+            surface="chat",
+            direction="output",
+            verdict="blocked",
+            detail="baseline probe",
+        )
+    assert pruned["n"] == 1
 
 
 def test_moderate_output_respects_daily_cap(test_db_session, monkeypatch):
@@ -1149,6 +1306,174 @@ def test_admin_events_and_clear(test_db_session):
     )
     assert cleared.status_code == 204
     assert test_db_session.query(ContentSafetyEvent).count() == 0
+
+
+def test_log_event_retention_is_throttled_not_per_event(
+    test_db_session, monkeypatch
+):
+    """D11: a flood of events must not trigger a full-table retention scan per
+    event. Before the throttle each ``log_event`` ran COUNT(*)+DELETE, so a
+    blocked-label spammer could amplify DB work without bound."""
+    import time as _time_mod
+
+    import src.aac_app.services.content_safety as safety
+
+    prune_calls = {"n": 0}
+    real_prune = safety._prune_events
+
+    def counting_prune(*args, **kwargs):
+        prune_calls["n"] += 1
+        return real_prune(*args, **kwargs)
+
+    monkeypatch.setattr(safety, "_prune_events", counting_prune)
+    monkeypatch.setattr(safety, "_prune_calls", 0)
+    monkeypatch.setattr(safety, "_last_prune_monotonic", _time_mod.monotonic())
+
+    events = safety._PRUNE_EVERY_N * 3
+    for _ in range(events):
+        safety.log_event(
+            user_id=None,
+            surface="social",
+            direction="output",
+            verdict="blocked",
+            matched=[],
+            detail="retention throttle probe",
+        )
+
+    # 60 events must not be 60 retention scans; the count-based throttle
+    # allows at most one per _PRUNE_EVERY_N calls.
+    assert 0 < prune_calls["n"] <= 3, prune_calls
+
+
+def test_log_event_retention_queries_are_bounded_under_flood(
+    test_db_session, monkeypatch
+):
+    """D11: the actual retention SQL stays a small constant across a flood,
+    while every event is still persisted."""
+    import time as _time_mod
+
+    from sqlalchemy import event as sa_event
+
+    import src.aac_app.services.content_safety as safety
+    from src.aac_app.db import create_engine_instance
+
+    monkeypatch.setattr(safety, "_prune_calls", 0)
+    monkeypatch.setattr(safety, "_last_prune_monotonic", _time_mod.monotonic())
+
+    engine = create_engine_instance()
+    statements: list[str] = []
+
+    def _record(conn, cursor, statement, parameters, context, executemany):
+        if "content_safety_events" in statement:
+            statements.append(statement.lstrip().split()[0].upper())
+
+    sa_event.listen(engine, "before_cursor_execute", _record)
+    try:
+        events = safety._PRUNE_EVERY_N * 2
+        for _ in range(events):
+            safety.log_event(
+                user_id=None,
+                surface="social",
+                direction="output",
+                verdict="blocked",
+                matched=[],
+                detail="bounded query probe",
+            )
+    finally:
+        sa_event.remove(engine, "before_cursor_execute", _record)
+
+    writes = sum(1 for statement in statements if statement == "INSERT")
+    retention = sum(
+        1 for statement in statements if statement in {"SELECT", "DELETE"}
+    )
+    # Every event is still persisted...
+    assert writes >= safety._PRUNE_EVERY_N * 2 - 1, statements
+    # ...but retention (COUNT+DELETE) runs only on the throttled ticks, not
+    # once per event (pre-D11 this was ~2 statements per event).
+    assert retention <= 8, (retention, statements[:20])
+
+
+def test_log_event_prunes_again_after_the_throttle_window(
+    test_db_session, monkeypatch
+):
+    """D11: the count-based throttle must not starve retention forever — a
+    call outside ``_PRUNE_THROTTLE_SECONDS`` prunes even mid-batch."""
+    import time as _time_mod
+
+    import src.aac_app.services.content_safety as safety
+
+    prune_calls = {"n": 0}
+    real_prune = safety._prune_events
+
+    def counting_prune(*args, **kwargs):
+        prune_calls["n"] += 1
+        return real_prune(*args, **kwargs)
+
+    monkeypatch.setattr(safety, "_prune_events", counting_prune)
+    # Not a multiple of _PRUNE_EVERY_N, but the window has elapsed.
+    monkeypatch.setattr(safety, "_prune_calls", 1)
+    monkeypatch.setattr(
+        safety,
+        "_last_prune_monotonic",
+        _time_mod.monotonic() - safety._PRUNE_THROTTLE_SECONDS - 1.0,
+    )
+
+    safety.log_event(
+        user_id=None,
+        surface="social",
+        direction="output",
+        verdict="blocked",
+        matched=[],
+        detail="time window probe",
+    )
+
+    assert prune_calls["n"] == 1, prune_calls
+
+
+def test_log_event_has_no_session_parameter():
+    """N3: the compat ``db`` kwarg is gone. Re-adding it would silently
+    restore the mixed-transaction ownership contract F14 removed and let
+    callers stage safety rows on their own session again."""
+    import inspect
+
+    import src.aac_app.services.content_safety as safety
+
+    parameters = inspect.signature(safety.log_event).parameters
+    assert "db" not in parameters
+    assert "session" not in parameters
+    # Keyword-only: no positional argument can smuggle a session in either.
+    assert all(
+        parameter.kind is inspect.Parameter.KEYWORD_ONLY
+        for parameter in parameters.values()
+    ), parameters
+
+
+def test_log_event_never_loses_an_event_on_bad_call_count(test_db_session):
+    """N12: ``call_count`` is coerced defensively — a non-numeric caller must
+    not raise inside the best-effort log and silently drop the event."""
+    import src.aac_app.services.content_safety as safety
+
+    marker = f"bad-call-count-{uuid.uuid4().hex[:8]}"
+    for bad in ("not-a-number", None, 0, -3, 2.5):
+        safety.log_event(
+            user_id=None,
+            surface="chat",
+            direction="output",
+            verdict="blocked",
+            matched=[],
+            detail=marker,
+            call_count=bad,
+        )
+
+    rows = (
+        test_db_session.query(ContentSafetyEvent)
+        .filter(ContentSafetyEvent.detail == marker)
+        .all()
+    )
+    assert len(rows) == 5, rows
+    assert all(row.call_count >= 1 for row in rows), [
+        row.call_count for row in rows
+    ]
 
 
 def test_board_ai_autogen_filters_blocked_labels(

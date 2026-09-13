@@ -312,6 +312,9 @@ def test_auth_token_and_refresh_payloads_match_frontend_authstore(
     ``POST /auth/token``; ``refreshAccessToken`` reads ``access_token``
     (and nothing else) off ``POST /auth/refresh``. An added or renamed key
     is a silent frontend contract change.
+
+    F03/D5: the refresh credential travels in the JSON body (never the URL),
+    so this contract test uses the body transport the frontend emits.
     """
     from src.aac_app.services.auth_service import get_password_hash
 
@@ -336,7 +339,7 @@ def test_auth_token_and_refresh_payloads_match_frontend_authstore(
 
     refresh = client.post(
         "/api/auth/refresh",
-        params={"refresh_token": login_body["refresh_token"]},
+        json={"refresh_token": login_body["refresh_token"]},
     )
     assert refresh.status_code == 200, refresh.text
     # The frontend refresh handler consumes exactly access_token + token_type.

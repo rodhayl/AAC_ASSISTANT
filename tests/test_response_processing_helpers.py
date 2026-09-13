@@ -397,6 +397,40 @@ class _FullHarness(ResponseProcessingMixin):
 
 
 @pytest.mark.anyio
+async def test_voice_without_audio_is_rejected(
+    regular_user, test_db_session: Session, tmp_path
+) -> None:
+    """Q7: a voice turn with neither bytes nor a path is rejected before any
+    transcription, while a path-only upload must still transcribe — the guard
+    named only ``audio_data`` and would have rejected it."""
+    session = _question_session(test_db_session, regular_user.id)
+    speech = Mock()
+    speech.is_available.return_value = True
+    speech.recognize_from_file.return_value = "hola"
+    harness = _FullHarness(llm=Mock(), speech=speech)
+
+    rejected = await harness.process_response(
+        session_id=session.id,
+        student_response="",
+        is_voice=True,
+        db=test_db_session,
+    )
+    assert rejected == {"success": False, "error": "No audio data received."}
+    speech.recognize_from_file.assert_not_called()
+
+    clip = tmp_path / "answer.wav"
+    clip.write_bytes(b"RIFF....")
+    await harness.process_response(
+        session_id=session.id,
+        student_response="",
+        is_voice=True,
+        audio_path=str(clip),
+        db=test_db_session,
+    )
+    speech.recognize_from_file.assert_called_once()
+
+
+@pytest.mark.anyio
 async def test_process_response_logs_achievement_update_failure(
     regular_user, test_db_session: Session, monkeypatch, caplog
 ) -> None:

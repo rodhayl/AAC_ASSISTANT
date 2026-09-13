@@ -130,6 +130,47 @@ class TestStartupServesDuringWarmup:
             assert ready.status_code == 503
             assert ready.json()["status"] == "database_unavailable"
 
+    def test_ready_reports_database_loss_after_startup(self, monkeypatch):
+        """F16: a runtime DB failure after warmup must flip /ready to 503 with
+        the documented ``database_unavailable`` status within one poll, without
+        issuing a paid model call."""
+        import src.aac_app.db as app_db
+        from src.api.deps.providers import _startup_lock, _startup_state
+        from src.api.main import app
+
+        def healthy_warmup(timeout_seconds: float = 30.0):
+            with _startup_lock:
+                _startup_state["initialized"] = True
+                _startup_state["initializing"] = False
+                _startup_state["providers_ready"] = {
+                    "speech": True,
+                    "llm": True,
+                    "achievement": True,
+                    "vector_store": True,
+                }
+                _startup_state["errors"] = []
+                _startup_state["startup_time_ms"] = 10.0
+
+        monkeypatch.setattr("src.api.main.warmup_providers", healthy_warmup)
+        monkeypatch.setattr("src.api.main.index_all_symbols", lambda *a, **kw: None)
+
+        def broken_factory(*args, **kwargs):
+            raise RuntimeError("database connection lost")
+
+        with TestClient(app) as client:
+            for _ in range(100):
+                if client.get("/ready").status_code == 200:
+                    break
+                time.sleep(0.05)
+            assert client.get("/ready").status_code == 200
+
+            with monkeypatch.context() as probe_patch:
+                probe_patch.setattr(app_db, "create_session_factory", broken_factory)
+                ready = client.get("/ready")
+
+        assert ready.status_code == 503, ready.text
+        assert ready.json()["status"] == "database_unavailable"
+
     def test_ready_reports_degraded_when_a_provider_failed(self, monkeypatch):
         """Warmup completing with a failed provider yields 503 degraded, not healthy."""
         from src.api.deps.providers import _startup_lock, _startup_state

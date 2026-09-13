@@ -201,7 +201,7 @@ def mock_llm_provider():
 def mock_speech_provider():
     """Create a mock speech provider that doesn't require audio processing"""
     mock_speech = Mock()
-    mock_speech.transcribe = AsyncMock(return_value="transcribed text")
+    mock_speech.recognize_from_file = Mock(return_value="transcribed text")
     return mock_speech
 
 

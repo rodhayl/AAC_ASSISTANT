@@ -453,18 +453,9 @@ async def refresh_access_token(
     if not refresh_token:
         candidate = request.query_params.get("refresh_token")
         if candidate is not None:
-            allow_query = config.get_bool("AAC_REFRESH_ALLOW_QUERY_FALLBACK", False)
-            # Production defaults to off even if config is unset: absence of
-            # the flag must not silently re-enable URL transport.
-            is_prod = str(config.get("ENVIRONMENT", "development")).strip().casefold() in {
-                "production",
-                "prod",
-            }
-            if is_prod:
-                allow_query = bool(allow_query) and str(
-                    config.get("AAC_REFRESH_ALLOW_QUERY_FALLBACK", "")
-                ).strip().lower() in {"1", "true", "yes", "on"}
-            if not allow_query:
+            # Absence of the flag must not silently re-enable URL transport in
+            # any environment (Q3: one explicit-opt-in rule, one lookup).
+            if not config.refresh_query_fallback_allowed():
                 raise HTTPException(status_code=400, detail="refresh_token required")
             logger.warning(
                 "Refresh via query param is deprecated and will be removed; use JSON body"
