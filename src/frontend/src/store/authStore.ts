@@ -94,16 +94,26 @@ export const useAuthStore = create<AuthState>()(
       const clearSession = () => {
         // Invalidate any in-flight checkAuth publish for the ended session.
         checkAuthEpoch += 1;
+        // The session ended, so no in-flight loading op can still own the
+        // spinner; restart the count with the next session.
+        pendingLoadingOps = 0;
         notifySessionEnd();
         set(emptyAuthState());
       };
 
       // Monotonic epoch for checkAuth/refresh: any newer session change invalidates in-flight publishes.
       let checkAuthEpoch = 0;
-      // Epoch of the newest operation that owns the shared ``isLoading``
-      // spinner (login/setup/register). Lets a stale failure clear a spinner
-      // that only it started without stomping a newer operation's spinner (N5).
-      let loadingOwnerEpoch = 0;
+      // Count of loading operations (login/setup/register) in flight. The
+      // shared ``isLoading`` spinner stays true until the LAST one settles, so
+      // a stale op releases only its own contribution instead of leaving the
+      // UI stuck (N5) and never clears a newer op's spinner (Q2 — register
+      // deliberately shares the session epoch of an in-flight login, which an
+      // owner-token model aliased).
+      let pendingLoadingOps = 0;
+      const releaseSpinner = () => {
+        pendingLoadingOps = Math.max(0, pendingLoadingOps - 1);
+        if (pendingLoadingOps === 0) set({ isLoading: false });
+      };
       // Per-token coalescing: each distinct refresh token gets its own
       // in-flight promise. A single-slot variable would let a second token
       // overwrite the first and prematurely clear it on settle.
@@ -120,7 +130,7 @@ export const useAuthStore = create<AuthState>()(
 
       login: async (username: string, password: string) => {
         const loginEpoch = ++checkAuthEpoch;
-        loadingOwnerEpoch = loginEpoch;
+        pendingLoadingOps += 1;
         const isStillCurrentLogin = () => loginEpoch === checkAuthEpoch;
         set({ isLoading: true, error: null });
         try {
@@ -169,27 +179,25 @@ export const useAuthStore = create<AuthState>()(
             token,
             refreshToken,
             isAuthenticated: true,
-            isLoading: false,
             sessionExpiresAt: expiresAt,
             error: null,
           });
         } catch (e: unknown) {
           // D12: stale login failure must not overwrite a newer session's error.
           if (isStillCurrentLogin()) {
-            set({ error: extractError(e, i18n.t('common:errors.loginFailed')), isLoading: false });
-          } else if (loadingOwnerEpoch === loginEpoch) {
-            // A newer non-loading operation (checkAuth/refresh) bumped the
-            // epoch; this spinner is still the newest one, so clear it
-            // instead of leaving the UI stuck (N5).
-            set({ isLoading: false });
+            set({ error: extractError(e, i18n.t('common:errors.loginFailed')) });
           }
           throw e;
+        } finally {
+          // Release the spinner even when a stale success returned early, so a
+          // superseded login can never pin it (N5).
+          releaseSpinner();
         }
       },
 
       setupAdmin: async (setupData: AuthSetupData) => {
         const setupEpoch = ++checkAuthEpoch;
-        loadingOwnerEpoch = setupEpoch;
+        pendingLoadingOps += 1;
         const isStillCurrentSetup = () => setupEpoch === checkAuthEpoch;
         set({ isLoading: true, error: null });
         try {
@@ -206,19 +214,17 @@ export const useAuthStore = create<AuthState>()(
             token,
             refreshToken,
             isAuthenticated: true,
-            isLoading: false,
             sessionExpiresAt: expiresAt,
             error: null,
           });
         } catch (e: unknown) {
           // D12: stale setup failure must not overwrite a newer session's error.
           if (isStillCurrentSetup()) {
-            set({ error: extractError(e, i18n.t('common:errors.setupFailed')), isLoading: false });
-          } else if (loadingOwnerEpoch === setupEpoch) {
-            // See login: clear our own spinner when no newer loading op owns it.
-            set({ isLoading: false });
+            set({ error: extractError(e, i18n.t('common:errors.setupFailed')) });
           }
           throw e;
+        } finally {
+          releaseSpinner();
         }
       },
 
@@ -227,26 +233,22 @@ export const useAuthStore = create<AuthState>()(
         // epoch (Q2): doing so silently discarded an in-flight login's success
         // publish. It still guards its own sets against newer session owners.
         const registerEpoch = checkAuthEpoch;
+        pendingLoadingOps += 1;
         const isStillCurrentRegister = () => registerEpoch === checkAuthEpoch;
-        loadingOwnerEpoch = registerEpoch;
         set({ isLoading: true, error: null });
         try {
           await api.post('/auth/register', userData);
-          if (!isStillCurrentRegister()) return;
-          if (loadingOwnerEpoch === registerEpoch) set({ isLoading: false });
         } catch (error: unknown) {
           // A late failure must not stamp registrationFailed over a newer
           // session (same bug class as D12/N5).
           if (isStillCurrentRegister()) {
             set({
               error: extractError(error, i18n.t('common:errors.registrationFailed')),
-              isLoading: false,
             });
-          } else if (loadingOwnerEpoch === registerEpoch) {
-            // No newer loading op owns the spinner; clear our own.
-            set({ isLoading: false });
           }
           throw error;
+        } finally {
+          releaseSpinner();
         }
       },
 
@@ -256,6 +258,9 @@ export const useAuthStore = create<AuthState>()(
         // mutations and conflicts cannot leak into the next session, even
         // while the revocation request is still in flight.
         checkAuthEpoch += 1;
+        // A hung/abandoned loading op must not pin the spinner for the next
+        // session; the count restarts with the ended session.
+        pendingLoadingOps = 0;
         notifySessionEnd();
         if (token) {
           // Wait for server-side revocation to finish before flipping

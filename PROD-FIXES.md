@@ -767,7 +767,7 @@ baseline and passes after.
 | ID | Disposition | Files | Change | Evidence |
 | --- | --- | --- | --- | --- |
 | Q1 | **Fixed** | `src/frontend/src/pages/Settings/DataManagementTab.tsx` | Toast prefers the outcome key `learning_history_added` (`??` so a real 0 survives) and only renders the truncated warning when `total_learning_sessions` is numeric; otherwise the plain success toast — never "of undefined" | 2 new specs; both **fail on HEAD** (2 of 5 pre-fix failures) |
-| Q2 | **Fixed** | `src/frontend/src/store/authStore.ts` | `register` no longer bumps `checkAuthEpoch`; it captures the epoch and guards both its success-spinner and error sets against newer session owners | 2 new specs; both **fail on HEAD** |
+| Q2 | **Fixed** | `src/frontend/src/store/authStore.ts` | `register` no longer bumps `checkAuthEpoch`; it captures the epoch and guards its error set against newer session owners. The spinner is now a **pending-operation count** instead of an owner epoch: it clears only when the last in-flight op settles, so a stale op releases its own contribution (N5) and a settling registration can never hide an in-flight login's spinner | 3 new specs; all 3 **fail on HEAD** (the spinner spec fails on the intermediate owner-token shape too — pre-fix `1 failed / 24 passed` vs post-fix `25 passed`) |
 | Q3 | **Fixed** | `src/config.py` (`refresh_query_fallback_allowed()`), `src/api/routers/auth.py` | One plain helper implements "explicit opt-in only"; the dead production branch and the duplicated lookups are gone. `grep` shows exactly one call site | D5 matrix tests green unchanged |
 | Q4 | **Fixed** | `src/api/main.py` | `bounded_receive()` waits on `receive()` under a 25 s inactivity timeout; expiry resolves through the same overflow/abort path with a warning log carrying bytes + elapsed. Declared, chunked and stalled-mid-body shapes covered | stalled-body ASGI test (short injected timeout) aborts instead of hanging; 413 tests green |
 | Q5 | **Fixed** | `src/api/deps/providers.py` (`resolve_groq_api_key()`), `src/api/routers/board_ai.py` | Public resolver exported and used by both callers; no private cross-module import remains | repo-wide search: no `_effective_groq_key` reference outside its module; key-matrix + singleton tests green |
@@ -776,7 +776,8 @@ baseline and passes after.
 | Q8 | **Fixed** | `src/aac_app/services/content_safety.py` | Throttle state starts at `None`; the first `log_event` of a process only opens the window instead of paying an unconditional full-table `COUNT(*)` | instrumented test asserts 0 prune calls on the first event, 1 on the Nth; **fails on HEAD** |
 | Q9 | **Fixed** | `src/aac_app/services/content_safety.py::moderate_output` | Blank/whitespace output returns `Verdict(allowed=True)` with no `generate` call, no audit row and no meter spend; non-blank text keeps the full fail-closed path | counting-`generate` test: 0 calls / 0 rows for blank, 1 call for "texto normal"; **fails on HEAD** |
 | Q10 | **Fixed** | `src/api/routers/export_import.py` | Outcome counts are measured as raw deltas (`boards_created`, `boards_merged`, `symbols_added`, `learning_history_added`) so a retry reports what it actually wrote | retry test asserts `created+merged == boards seen`; **fails on HEAD** |
-| Q11 | **Fixed** | `src/api/logging_config.py::_redact_message` | Copula rule widened to `is|es` so the Spanish-first rendering `password es <valor>` is masked like the English form | new spec; **fails on HEAD** |
+| Q11 | **Fixed** | `src/api/logging_config.py::_redact_message` | Copula rule widened to `is|es` so the Spanish-first rendering `password es <valor>` is masked like the English form. Key-set scope documented in the pattern comment: only the copula is localized, the key set stays the identifiers that actually appear in log messages (evidence-based, per the instruction not to broaden keys without evidence) | new spec; **fails on HEAD** |
+| **R1** | **Fixed** (found during the §10 re-inspection) | `src/api/logging_config.py` (`_redact_exception`, `_redacting_patcher`) | **The F09 patcher only rewrote `record["message"]`.** Loguru renders `record["exception"]` separately, so an exception whose own text echoed a credential reached every sink verbatim. The patcher now substitutes a leak-free rebuilt exception (same type when constructible, else `RuntimeError` carrying the original type name); the live exception object the caller still handles is never mutated | live-sink subprocess probe: canary was present **1× in each sink file** pre-fix, **0** after, with `RuntimeError: provider failed …` / `ValueError: bad payload api_key=***` and the log context preserved; 4 new tests **fail on HEAD**, pass after |
 
 **Pre-fix baseline captured before the fixes** (HEAD production files restored, then restored byte-for-byte):
 backend — `test_moderate_output_blank_text_costs_nothing`, `test_first_log_event_records_baseline_without_pruning`,
@@ -786,10 +787,27 @@ Q7's test is a guard, not a discriminator (the pre-fix condition was already beh
 both-falsy inputs), and is documented as such rather than claimed as a fail-before.
 
 Validation after the pass: `ruff check src tests scripts` clean · `compileall -q src scripts` clean ·
-`git diff --check` clean · backend named files **252 passed** (`test_response_processing_helpers`,
-`test_acceptance_gaps`, `test_content_safety`, `test_new_features`, `test_phase2_security`,
-`test_groq_provider`, `test_logging_config`) · frontend `typecheck` 0 · `lint` 0 · Vitest
-`authStore` + `DataManagementTab` + `offlinePersistence` + `api` **73 passed**.
+`git diff --check` clean · backend named files **239 passed** across the 11 files §8 names
+(`test_logging_config`, `test_content_safety`, `test_new_features`, `test_export_link_remap`,
+`test_acceptance_gaps`, `test_phase2_security`, `test_groq_provider`, `test_collab_ws`,
+`test_password_reset_security`, `test_response_processing_helpers`, `test_startup_warmup`) ·
+frontend `typecheck` 0 · `lint` 0 · Vitest `authStore` + `DataManagementTab` + `offlinePersistence`
++ `api` **74 passed** · production build inside budget (396.7 kB JS / 450 kB, 139.8 kB CSS / 150 kB).
+
+### §10 final bug hunt and §11 re-verification
+
+Re-inspected every touched flow after the fixes; the results are recorded rather than assumed:
+
+| Re-check | Result |
+| --- | --- |
+| §4 table re-verified post-change | `log_event` signature has no `db`/`session` and is keyword-only (`PASS`); `_PredictionContext` still requires `db` (`PASS`); `_api_key_env` occurrences **0**; the three remaining `except HTTPException` sites in `collab.py` are each narrow and explicitly re-raise/close (the dead no-op re-raise is gone); `AAC_REFRESH_ALLOW_QUERY_FALLBACK` declared once and read by one helper |
+| Auth epoch interplay (register/login/checkAuth) | Found and fixed additional spinner aliasing beyond the Q2 row (see Q2): ownership-token model replaced by a pending-operation count; superseded ops release in `finally` so a hung or stale op can never pin the spinner |
+| Middleware timeout vs drain timeout | The bounded receive raises the same terminal `_BodyTooLarge` path as a byte overflow; the drain reads stay separately capped at 0.5 s × 3, so the timeout cannot extend the request |
+| Redactor pass ordering with the new copula | Direct probe: `password es`, `token es`, `password is`, JSON pair, `Bearer`, `X-*-API-Key`, bare `=`/`:` all masked; `status es ok` untouched; every case idempotent under a second pass; 2000-char bound intact |
+| Import arithmetic on partial failure | Single commit after all sections are staged; a failure raises before the post-commit counters run, so the deltas can never describe a rolled-back state |
+| Newly dead code / stale callers | No `loadingOwnerToken`/`loadingOwnerEpoch` left in `src`/`tests` (only the generated `coverage/` HTML, which is ignored); no dead private Groq alias; no temp probe files left behind; `git status` shows only the untracked `PROMPT_*.md` prompt artifacts |
+| Live-sink secret hygiene | The probe above (`R1`) is the evidence that the redactor covers the rendered exception, not just the message |
+| Cyclic links (§7) | Covered by the mutual-link cases: `test_import_preserves_owned_to_assigned_links` and `test_import_preserves_assigned_to_assigned_links` both assert the link in **both** directions; missing/external references stay cleared |
 
 ## Completion requirements
 

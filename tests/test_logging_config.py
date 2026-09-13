@@ -127,6 +127,98 @@ logger.remove()
     assert not old_error_log.exists()
 
 
+def test_redaction_covers_the_live_file_sink(tmp_path):
+    """F09 residual: the patcher only rewrote ``record["message"]``, so the
+    separately-rendered exception text carried a credential straight into the
+    console and file sinks. The live sinks must show the masked form while the
+    actionable context and the exception type survive.
+    """
+    worker_script = r"""
+import sys
+from loguru import logger
+import src.api.main
+
+CANARY = "sk-livesinkcanary9876"
+try:
+    raise RuntimeError(
+        f'provider failed: {{"groq_api_key": "{CANARY}"}} Authorization: Bearer {CANARY}'
+    )
+except RuntimeError:
+    logger.exception("upstream call failed")
+try:
+    raise ValueError(f"bad payload api_key={CANARY}")
+except ValueError:
+    logger.exception("validation failed")
+logger.info("token={}", CANARY)
+logger.complete()
+logger.remove()
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", worker_script],
+        cwd=REPO_ROOT,
+        env=_worker_environment(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    log_files = sorted(tmp_path.glob("*.log"))
+    assert log_files
+    contents = "\n".join(path.read_text(encoding="utf-8") for path in log_files)
+
+    # No sink — file or console — may carry the canary.
+    assert "sk-livesinkcanary9876" not in contents
+    assert "sk-livesinkcanary9876" not in result.stderr
+    # The masked form and the actionable context survive the substitution.
+    assert "RuntimeError: provider failed" in contents
+    assert '{"groq_api_key": "***"}' in contents
+    assert "Authorization: Bearer ***" in contents
+    assert "ValueError: bad payload api_key=***" in contents
+    assert "upstream call failed" in contents
+    assert "validation failed" in contents
+
+
+class TestRedactException:
+    """F09 residual: the exception about to be rendered must be redacted too."""
+
+    SECRET = "sk-supersecret123"
+
+    @staticmethod
+    def _redact(value: BaseException) -> BaseException:
+        from src.api.logging_config import _redact_exception
+
+        return _redact_exception(value)
+
+    def test_message_bearing_exception_is_rebuilt_redacted(self) -> None:
+        original = RuntimeError(f'provider said {{"groq_api_key": "{self.SECRET}"}}')
+        safe = self._redact(original)
+
+        assert isinstance(safe, RuntimeError)
+        assert self.SECRET not in str(safe)
+        assert "***" in str(safe)
+        # The live exception the caller may still handle is never mutated.
+        assert self.SECRET in str(original)
+
+    def test_exception_without_secrets_is_returned_unchanged(self) -> None:
+        original = ValueError("plain failure")
+
+        assert self._redact(original) is original
+
+    def test_exception_that_cannot_be_rebuilt_keeps_its_type_name(self) -> None:
+        class _NeedsExtraArgs(Exception):
+            def __init__(self, message: str, *, detail: str) -> None:  # noqa: D107
+                super().__init__(message)
+                self.detail = detail
+
+        original = _NeedsExtraArgs(f"api_key={self.SECRET}", detail="x")
+        safe = self._redact(original)
+
+        assert isinstance(safe, RuntimeError)
+        assert self.SECRET not in str(safe)
+        assert "_NeedsExtraArgs" in str(safe)
+
+
 class TestRedactMessage:
     """N2/D1: the log redactor must mask every known secret shape.
 

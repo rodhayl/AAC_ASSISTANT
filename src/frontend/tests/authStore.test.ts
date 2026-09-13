@@ -618,6 +618,47 @@ describe('auth session refresh robustness', () => {
     expect(useAuthStore.getState().error).toBeNull();
   });
 
+  it('keeps the login spinner while a concurrent registration settles (Q2)', async () => {
+    // A registration shares the login's session epoch, so the spinner must be
+    // tracked by its own token: settling the registration may not clear a
+    // spinner an in-flight login still owns.
+    const freshUser = { ...user, id: 11, username: 'spinner' };
+    const freshToken = makeJwt(Math.floor(Date.now() / 1000) + 3600, freshUser.id);
+    let resolveLogin: ((value: unknown) => void) | undefined;
+    let resolveRegister: ((value: unknown) => void) | undefined;
+    vi.spyOn(api, 'post').mockImplementation((url: string) => {
+      if (url === '/auth/token') {
+        return new Promise((resolve) => {
+          resolveLogin = resolve;
+        }) as never;
+      }
+      if (url === '/auth/register') {
+        return new Promise((resolve) => {
+          resolveRegister = resolve;
+        }) as never;
+      }
+      return Promise.resolve({ data: {} }) as never;
+    });
+    vi.spyOn(api, 'get').mockResolvedValue({ data: freshUser } as never);
+
+    const loginPromise = useAuthStore.getState().login('spinner', 'password');
+    const registerPromise = useAuthStore.getState().register({
+      username: 'spinner',
+      password: 'StrongPass123',
+      display_name: 'Spinner',
+    } as never);
+
+    // The registration resolves first; the login is still pending.
+    resolveRegister!({ data: { ok: true } });
+    await registerPromise;
+    expect(useAuthStore.getState().isLoading).toBe(true);
+
+    resolveLogin!({ data: { access_token: freshToken, refresh_token: 'refresh-spinner' } });
+    await loginPromise;
+    expect(useAuthStore.getState().isLoading).toBe(false);
+    expect(useAuthStore.getState().token).toBe(freshToken);
+  });
+
   it('does not stamp a stale registration failure onto a newer session (Q2)', async () => {
     let rejectRegister: ((error: unknown) => void) | undefined;
     vi.spyOn(api, 'post').mockImplementation((url: string) => {

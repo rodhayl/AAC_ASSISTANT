@@ -126,6 +126,10 @@ def _redact_message(msg: str) -> str:
             # "password is <value>" copula shape — same guard semantics as bare.
             # Covers the Spanish-first renderings too (`password es <value>`),
             # since a translated log line must not leak a credential (Q11).
+            # Scope: only the copula is localized. The key set stays the code
+            # identifiers that actually appear in log messages (English);
+            # localized UI copy is never logged, so a Spanish key spelling such
+            # as `contraseña` is out of scope by evidence, not an oversight.
             _re.compile(rf"(?i)(['\"]?({keys_bare})['\"]?\s+(?:is|es)\s+)(\S+)"),
         ]
     # JSON "key": value pairs first — preserve key casing, mask only the value.
@@ -165,14 +169,42 @@ def _redact_message(msg: str) -> str:
     return msg
 
 
+def _redact_exception(value: BaseException) -> BaseException:
+    """Return a leak-free stand-in for an exception about to be rendered.
+
+    ``record["exception"]`` is rendered separately from the message, so a
+    provider error that echoes a credential in its own text reached every sink
+    verbatim even with the message patched (F09 residual, found by the live-sink
+    canary probe). The live exception object is never mutated — the caller may
+    still be handling it — a redacted copy is substituted for rendering only.
+    """
+    rendered = str(value)
+    redacted = _redact_message(rendered)
+    if redacted == rendered:
+        return value
+    try:
+        return type(value)(redacted)
+    except Exception:
+        # Exceptions with required extra constructor args (JSONDecodeError,
+        # HTTPStatusError, ...) cannot be rebuilt from the message alone; keep
+        # the type name visible in the text instead of the raw message.
+        return RuntimeError(f"{type(value).__name__}: {redacted}")
+
+
 def _redacting_patcher(record) -> None:
-    """Loguru core patcher: rewrite each record's message through _redact_message.
+    """Loguru core patcher: redact the message and any rendered exception.
 
     Loguru invokes the configure(patcher=...) callable with the record dict
     itself before any sink renders it.
     """
     with contextlib.suppress(Exception):  # noqa: SIM105
         record["message"] = _redact_message(record["message"])
+    exception = record.get("exception")
+    if exception is not None:
+        with contextlib.suppress(Exception):  # noqa: SIM105
+            record["exception"] = exception._replace(
+                value=_redact_exception(exception.value)
+            )
 
 
 def setup_logging():
@@ -185,9 +217,9 @@ def setup_logging():
     level = "INFO" if is_prod else "DEBUG"
     diagnose = not is_prod
 
-    # Every sink routes messages through the redaction patcher (F09):
-    # credentials printed into a log line by any code path are masked before
-    # any sink renders them.
+    # Every sink routes records through the redaction patcher (F09): both the
+    # message and the separately-rendered exception text are masked before any
+    # sink renders them.
     logger.configure(patcher=_redacting_patcher)
 
     # Console handler - colored output. Windowed PyInstaller processes expose
