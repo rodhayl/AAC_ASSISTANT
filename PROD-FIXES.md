@@ -1631,3 +1631,26 @@ Two defects surfaced by the full backend suite were fixed before the passing run
 
 One i18n audit failure was also fixed: the `removeSymbolLabel` key orphaned by the B9 aria-label
 improvement (`removeSymbolNamed`) was deleted from both locales.
+
+## Production-mode smoke — 2026-09-15 (isolated, local)
+
+The CI `e2e-production-gate` recipe was replicated locally against an isolated temporary
+`DATA_DIR` (fresh DB, synthetic strong credentials, `ENVIRONMENT=production`, no `TESTING`,
+no demo seeding). All gates green:
+
+| Gate | Result |
+|---|---|
+| `GET /api/health` | 200, `version: 2.0.0` |
+| `GET /ready` (polled to completion) | `"ready":true` — 4/4 providers, ~3.0 s warmup |
+| Bootstrap admin token (`/api/auth/token`, form-data) | issued (257-char JWT) |
+| `/api/providers/health` | `groq.configured = True` (production Groq selection, F10/F15 semantics) |
+| Login rate-limit burst (15 requests) | 5×401 → 4×403 → **6×429** — limiting ACTIVE in production |
+| SPA root `/` | 200 |
+| Server-log leak scan | 0 hits for admin password, JWT secret, Groq key canaries (F09) |
+| F01 negative (`ENVIRONMENT=production` + 5-char `JWT_SECRET_KEY`) | import raises `CRITICAL SECURITY ERROR`, exit 1 |
+| Cleanup | server killed in the same invocation; temp `DATA_DIR` deleted |
+
+Combined with the passing `verify_pr.py` gate and the 2026-09-14 live-Groq E2E, this closes the
+last externally-executable release gate on this machine. Remaining open gates are those that
+require external systems or humans: Windows packaging/update/rollback rehearsal (Windows-only),
+GitHub Actions execution (remote runners), and human accessibility/privacy acceptance review.
