@@ -1156,14 +1156,14 @@ endpoints those flows call.
 
 | Line | Status |
 |---|---|
-| Live-GUI walk (§9) per flow | **OPEN** — no browser tool in this environment; substituted with 39/39 live-server `curl` checks (above) and stated as such |
-| No console errors on any walked flow | **OPEN** — requires the browser pass |
+| Live-GUI walk (§9) per flow | **DONE (2026-09-15 re-run)** — all six Chrome/CDP walks green against the current tree: walk1 auth/shell 37/37, walk2 boards 12/12, walk3 learning/symbols 12/12, walk4 settings/admin/offline 14/14, walk5 keyboard-a11y 8/8, walk6 first-run 5/5 (88/88 total) |
+| No console errors on any walked flow | **DONE (2026-09-15)** — `assertConsoleHygiene` now runs in every walk and fails on any console error, uncaught exception, or 5xx across all tabs; zero violations |
 | No known P1/P2 open | DONE — every Tier H–R item is fixed or explicitly bounded/documented; H48 now has exact size/SHA-256 verification. |
 | Failing-first evidence for every Tier H–R item | DONE for the items changed in this pass (see rows); the PROMPT_4 tiers carry their §4 verdicts |
 | Gates green (ruff, compileall, typecheck, lint, build in budget, named suites) | DONE |
-| No background runners/servers left | DONE — audited; port 8086/5176 closed |
+| No background runners/servers left | DONE — audited after every walk and smoke; no automation Chrome/uvicorn left running |
 | No `.env`/DB/auth-artifact mutation | DONE — temp dirs + synthetic credentials only |
-| External gates | **OPEN** by design: Windows packaging rehearsal, live Groq run, human beta/privacy review, live CI execution |
+| External gates | Live Groq run **DONE (2026-09-14, 2/2 specs)**; production-mode smoke **DONE (2026-09-15)**. Still open by design: Windows packaging rehearsal, live CI execution, human beta/privacy review |
 
 ---
 
@@ -1654,3 +1654,37 @@ Combined with the passing `verify_pr.py` gate and the 2026-09-14 live-Groq E2E, 
 last externally-executable release gate on this machine. Remaining open gates are those that
 require external systems or humans: Windows packaging/update/rollback rehearsal (Windows-only),
 GitHub Actions execution (remote runners), and human accessibility/privacy acceptance review.
+
+## Manual-QA checklist walkthrough — 2026-09-15 (Chrome/CDP live-GUI re-run)
+
+The §9 GUI harness (`tmp/gui/`, gitignored by design) was re-run end-to-end against the current
+committed tree. Before the re-run, four latent harness defects were fixed (all had produced
+false failures or false confidence in earlier runs):
+
+* **Intercept rules never fired:** `intercept()` stored a `RegExp`, but the `Fetch.requestPaused`
+  handler required `typeof match === 'function'` — RegExp is `'object'`, so every injected-failure
+  rule was silently discarded (the walk4 500-injection check had never actually exercised the
+  failure path). Rules now accept RegExp or predicate; injected failures also carry a realistic
+  `{detail: 'Internal server error'}` body, and the check asserts the banner surfaces it.
+* **Login input-wedge before submit:** `loginAs` only recovered after a successful login; a
+  pre-submit wedge timed out. It now retries once in a fresh tab on any login failure.
+* **Wrong ValidityState flag:** the register minlength check demanded `rangeUnderflow` (number
+  inputs only); text inputs set `tooShort` — the product was already rejecting short passwords.
+* **Stale UI assertions:** the Symbols page uses an inline edit form (pre-filled `#symbol-label`,
+  submit switches to "Guardar"), not a dialog; both edit checks now assert the real contract.
+  `run.sh` also clears the shared download dir per run (stale-file false positives).
+
+Results (each walk = isolated temp DATA_DIR backend + headless Chrome, killed in the same
+invocation; walk6 runs in `fresh` mode with no seeded users):
+
+| Walk | Checks | Console/5xx hygiene |
+|---|---|---|
+| walk1 auth/shell (roles, register, logout, silent refresh) | 37/37 | PASS |
+| walk2 boards (CRUD, duplicate, deep link, collab 2-tab) | 12/12 | PASS |
+| walk3 learning + symbols (session, 100-char topic, inline edit) | 12/12 | PASS |
+| walk4 settings/admin/offline (export/import, 500 injection, offline queue) | 14/14 | PASS |
+| walk5 keyboard a11y | 8/8 | PASS |
+| walk6 first-run setup (banned/mismatch/strong password, re-login) | 5/5 | PASS |
+
+This closes the two OPEN manual-QA lines (live-GUI walk per flow; console errors) with evidence
+from the real product UI. Human acceptance review remains, by definition, a human task.
