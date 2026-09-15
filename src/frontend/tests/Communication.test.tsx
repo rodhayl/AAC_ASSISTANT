@@ -364,6 +364,18 @@ const getTts = async () => (await import('../src/lib/tts')).tts as {
 };
 
 describe('Communication page', () => {
+  it('B8: cancels TTS when the page unmounts mid-speech', async () => {
+    vi.clearAllMocks();
+    hoisted.boardStore.boards = [makeBoard()];
+    hoisted.boardStore.currentBoard = makeBoard();
+
+    const { unmount } = renderCommunication();
+    const tts = await getTts();
+    tts.cancelAll.mockClear(); // ignore any mount-time calls
+
+    unmount();
+    expect(tts.cancelAll).toHaveBeenCalledTimes(1);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     hoisted.boardStore.boards = [makeBoard()];

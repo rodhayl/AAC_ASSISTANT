@@ -104,7 +104,8 @@
       "invalidToken": "Invalid token",
       "unauthorizedView": "Not authorized to view these notifications",
       "notFound": "Notification not found",
-      "userNotFound": "User not found"
+      "userNotFound": "User not found",
+      "tooManyStreams": "Too many open notification streams. Close another tab or wait a moment."
     },
     "arasaac": {
       "downloadFailed": "Failed to download image from ARASAAC",
@@ -117,6 +118,7 @@
       "templateNotFound": "Template '{{name}}' not found",
       "noProfileCreateFirst": "No profile exists for this student. Create one first.",
       "templateNotExist": "Template '{{name}}' does not exist. Use /templates to see available templates.",
+      "invalidOverrides": "Invalid template overrides: use known field paths with plain, non-empty values.",
       "profileExists": "Profile already exists for this student. Use PUT to update.",
       "noChanges": "No changes provided",
       "onlyAdminsDelete": "Only admins can delete guardian profiles",
@@ -253,6 +255,7 @@
     "providers": {
       "unsupportedSttModel": "Unsupported faster-whisper model.",
       "unsupportedVoice": "Unknown TTS voice. Pick one from the voice list.",
+      "unsupportedWarmupTarget": "Unsupported warm-up target. Use 'tts', 'speech', or 'vector'.",
       "voiceInstallWindowsOnly": "Automatic voice installation is only available on Windows.",
       "voiceInstallUnavailable": "Automatic voice installation is unavailable.",
       "voiceInstallFrozen": "The packaged Windows app cannot modify Python dependencies at runtime.",
@@ -302,6 +305,7 @@
     "cancelTitle": "Cancel editing"
   },
   "offline": {
+    "retryFailed": "Retry failed. The change is still pending.",
     "conflictsHint": "These requests failed after coming back online. You can retry or dismiss them.",
     "title": "Offline Conflicts ({{count}})",
     "clearAll": "Clear all conflicts",

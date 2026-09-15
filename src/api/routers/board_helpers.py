@@ -1,7 +1,30 @@
+from loguru import logger
+
 from src.aac_app.models import BoardSymbol, CommunicationBoard
 from src.aac_app.services.runtime_translation import translate_text as _translate_symbol_text
 
 SUPPORTED_AI_PROVIDERS = ("ollama", "openrouter", "lmstudio", "groq")
+
+
+def _translate_or_fallback(value: str | None, target_lang: str) -> str | None:
+    """Translate one label, degrading to the source text on failure.
+
+    ``translate_text`` raises ``RuntimeError`` when the translation endpoint
+    fails or its circuit breaker is open. Board reads are the core path of the
+    product, so an external outage must render the board untranslated rather
+    than fail every board request with a 500.
+    """
+    if not value:
+        return value
+    try:
+        return _translate_symbol_text(value, target_lang)
+    except RuntimeError as exc:
+        logger.warning(
+            "Translation to '{}' unavailable ({}); serving source text",
+            target_lang,
+            exc,
+        )
+        return value
 
 
 def _serialize_symbol(
@@ -17,8 +40,8 @@ def _serialize_symbol(
     symbol_label = sym.label if sym else None
 
     if target_lang and not is_language_learning:
-        custom_text = _translate_symbol_text(custom_text, target_lang)
-        symbol_label = _translate_symbol_text(symbol_label, target_lang)
+        custom_text = _translate_or_fallback(custom_text, target_lang)
+        symbol_label = _translate_or_fallback(symbol_label, target_lang)
 
     symbol_data = None
     if sym is not None:

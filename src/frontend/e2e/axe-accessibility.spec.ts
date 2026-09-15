@@ -71,9 +71,10 @@ test.describe('Automated Accessibility Scans (Axe Core)', () => {
       await page.goto('/learning');
       await expect(page.locator('main#main-content')).toBeVisible({ timeout: 10000 });
 
-      const startBtn = page.getByTestId('learning-session-start');
-      if (await startBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await startBtn.click();
+      // Sessions start from the topic picker (the old start button was removed).
+      const topicCard = page.locator('[data-testid^="topic-card-"]').first();
+      if (await topicCard.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await topicCard.click();
         await expect(page.getByTestId('learning-session-active')).toBeVisible({ timeout: 10000 });
       }
 

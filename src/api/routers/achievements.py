@@ -109,6 +109,8 @@ def get_criteria_types(
 @router.get("/", response_model=list[schemas.AchievementFullResponse])
 def list_all_achievements(
     request: Request,
+    skip: int = Query(0, ge=0, le=100_000),
+    limit: int = Query(500, ge=1, le=1000),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -120,9 +122,15 @@ def list_all_achievements(
         )
 
     session = db
+    # Bounded like the neighbouring leaderboard/users/notifications lists; an
+    # uncapped ``.all()`` grew linearly with the catalog (E2). Stable ordering
+    # by id so paging is deterministic.
     achievements = (
         session.query(Achievement)
         .filter(Achievement.is_active)
+        .order_by(Achievement.id)
+        .offset(skip)
+        .limit(limit)
         .all()
     )
     return [

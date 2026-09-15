@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { ensureDemoBoard } from './demo-fixture';
+
 /**
  * Automated portion of the supervised-pilot gate.
  *
@@ -147,13 +149,28 @@ test.describe('Pilot gate: logout revokes backend access', () => {
     await page.getByRole('button', { name: /sign out|cerrar sesión/i }).click();
     await expect(page).toHaveURL(/\/login(?:[/?#]|$)/);
 
-    const afterLogout = await page.request.get('/api/auth/me', { headers: authHeaders(token) });
-    expect(afterLogout.status()).toBe(401);
+    // Logout clears the local session synchronously and revokes the token
+    // best-effort (A16), so the UI has already landed on /login when the
+    // revocation request is still in flight. Poll until the token is rejected
+    // instead of asserting on the very first attempt.
+    await expect
+      .poll(
+        async () =>
+          (await page.request.get('/api/auth/me', { headers: authHeaders(token) })).status(),
+        { timeout: 15000, message: 'a token captured before logout must be rejected' },
+      )
+      .toBe(401);
   });
 });
 
 test.describe('Pilot gate: Student AAC communication', () => {
   test.use({ storageState: roleState.student });
+
+  // Build (or reuse) the assigned demo board through the API so this gate runs
+  // on a clean database too.
+  test.beforeEach(async ({ page }) => {
+    await ensureDemoBoard(page.request);
+  });
 
   test('builds, edits, clears, and rebuilds a phrase', async ({ page }) => {
     await openAssignedCommunicationBoard(page);

@@ -115,7 +115,7 @@ describe('board store loading state', () => {
 
     expect(api.get).toHaveBeenCalledTimes(2);
     expect(api.get).toHaveBeenLastCalledWith('/boards/', {
-      params: { user_id: 11, skip: 0, limit: 100 },
+      params: { user_id: 11, skip: 0, limit: 101 },
     });
   });
 
@@ -130,6 +130,25 @@ describe('board store loading state', () => {
     expect(api.get).toHaveBeenCalledTimes(4);
   });
 
+  it('derives hasMore from a one-ahead probe instead of a full page (D-d)', async () => {
+    // Exactly PAGE_SIZE rows: there is no next page, so the control must be
+    // disabled rather than triggering one extra empty fetch on the boundary.
+    vi.mocked(api.get).mockResolvedValue({
+      data: Array.from({ length: 100 }, (_, i) => ({ id: i + 1 })),
+    } as never);
+    await useBoardStore.getState().fetchBoards(10, undefined, true, 1);
+    expect(useBoardStore.getState().hasMore).toBe(false);
+
+    // One row past the boundary means there IS a next page, and the probe row
+    // is trimmed so page boundaries never overlap.
+    vi.mocked(api.get).mockResolvedValue({
+      data: Array.from({ length: 101 }, (_, i) => ({ id: i + 1 })),
+    } as never);
+    await useBoardStore.getState().fetchBoards(10, undefined, true, 1);
+    expect(useBoardStore.getState().hasMore).toBe(true);
+    expect(useBoardStore.getState().boards).toHaveLength(100);
+  });
+
   it('omits a whitespace-only board name from the list request', async () => {
     vi.mocked(api.get).mockResolvedValue({ data: [{ id: 1, name: 'Board' }] } as never);
 
@@ -138,7 +157,7 @@ describe('board store loading state', () => {
     // Blank means "no filter" (E5 contract): the store must omit the param
     // so typing spaces keeps the full list and does not mark it filtered.
     expect(api.get).toHaveBeenLastCalledWith('/boards/', {
-      params: { user_id: 10, skip: 0, limit: 100 },
+      params: { user_id: 10, skip: 0, limit: 101 },
     });
     expect(useBoardStore.getState().isFiltered).toBe(false);
     expect(useBoardStore.getState().boards).toEqual([{ id: 1, name: 'Board' }]);

@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 
+import { ensureDemoBoard } from './demo-fixture';
+
 // Dependency-free accessibility checks for the core AAC flow. These verify that
 // the primary input paths work without a pointer, which is a hard requirement
 // for users with motor impairments. They do not claim WCAG conformance.
@@ -19,6 +21,12 @@ function parseCssDurationsToMs(durationStr: string): number[] {
 
 test.describe('Accessibility: keyboard operation', () => {
   test.use({ storageState: 'playwright/.auth/student.json' });
+
+  // The board assertions below need an assigned demo board; build it through
+  // the API so the spec no longer depends on AAC_SEED_SAMPLE_DATA.
+  test.beforeEach(async ({ page }) => {
+    await ensureDemoBoard(page.request);
+  });
 
   async function openBoard(page: import('@playwright/test').Page) {
     await page.goto('/communication');

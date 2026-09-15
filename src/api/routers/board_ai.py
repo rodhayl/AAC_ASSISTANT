@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from loguru import logger
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,7 @@ from src.api.deps import (
     validate_board_position,
     validate_linked_board,
 )
+from src.api.routers.auth_helpers import conditional_limiter
 from src.api.routers.board_helpers import SUPPORTED_AI_PROVIDERS
 
 router = APIRouter()
@@ -34,6 +35,41 @@ router = APIRouter()
 def _is_valid_symbol_label(label: str) -> bool:
     """Return False for labels that are clearly internal paths or IDs."""
     return not label_looks_bad(label)
+
+
+def _bounded_generated_label(value: object) -> str | None:
+    """Return a storable generated label, or None when the item must be skipped.
+
+    Board-AI items are untrusted LLM output: ``Symbol.label`` /
+    ``BoardSymbol.custom_text`` are String(100) and ``label_looks_bad`` already
+    rejects anything longer than 50 characters, so an unusable label must drop
+    that one item (like a safety-blocked one) instead of raising a 400 that
+    aborts the whole board creation.
+    """
+    if not isinstance(value, str):
+        return None
+    candidate = value.strip()
+    if not candidate or label_looks_bad(candidate):
+        return None
+    return candidate[:100]
+
+
+def _bounded_color(value: object) -> str | None:
+    """Return a colour usable by ``BoardSymbol.color`` (String(20)) or None.
+
+    Accepts the documented hex forms (``#rgb``/``#rrggbb``/``#rrggbbaa``) and
+    drops anything longer than the column, so untrusted LLM output can neither
+    overflow the column nor smuggle an arbitrary string into the UI.
+    """
+    if not isinstance(value, str):
+        return None
+    candidate = value.strip()
+    if not candidate or len(candidate) > 20:
+        return None
+    if len(candidate) in (4, 7, 9) and candidate.startswith("#"):
+        return candidate if all(c in "0123456789abcdefABCDEF" for c in candidate[1:]) else None
+    # Named CSS colours are the only other documented input.
+    return candidate if candidate.replace("-", "").isalpha() else None
 
 
 def get_or_create_symbol(
@@ -110,7 +146,12 @@ def get_or_create_symbol(
 
 @router.post("", response_model=schemas.BoardResponse)
 @router.post("/", response_model=schemas.BoardResponse)
+# B7: this endpoint can fan out into LLM generation plus up to 100
+# get_or_create_symbol inserts and vector indexing — bounded like its AI
+# sibling below so a staff token cannot amplify CPU/DB/write-lock work.
+@conditional_limiter("10/minute")
 async def create_board(
+    request: Request,
     board: schemas.BoardCreate,
     user_id: int,
     current_user: User = Depends(get_current_active_user),
@@ -231,6 +272,21 @@ async def create_board(
 
                 gen_policy = _safety.resolve_policy_for_user(current_user.id, db)
                 for idx, item in enumerate(items):
+                    # LLM output is untrusted input: Symbol.label and
+                    # BoardSymbol.custom_text are String(100) and color is
+                    # String(20), while the generation schema only bounds the
+                    # *count* of items. Drop anything that cannot fit rather
+                    # than letting the insert fail (a 500 on SQLite leaves the
+                    # whole auto-fill transaction rolled back).
+                    bounded_label = _bounded_generated_label(item.get("label"))
+                    if bounded_label is None:
+                        logger.warning(
+                            "Skipping generated item with an unusable label: {!r}",
+                            item.get("label"),
+                        )
+                        continue
+                    item["label"] = bounded_label
+                    item["color"] = _bounded_color(item.get("color"))
                     label_verdict = _safety.check_text(gen_policy, item.get("label", ""))
                     if label_verdict.blocked:
                         _safety.log_event(
@@ -352,7 +408,9 @@ def _resolve_provider_for_board(
 
 
 @router.post("/{board_id}/ai/suggestions")
+@conditional_limiter("20/minute")
 async def generate_ai_suggestions(
+    request: Request,
     board_id: int,
     payload: schemas.AISuggestionsRequest | None = Body(None),
     current_user: User = Depends(get_current_active_user),

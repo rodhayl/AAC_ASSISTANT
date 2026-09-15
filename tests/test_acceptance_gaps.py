@@ -45,6 +45,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy.orm import sessionmaker
+from starlette.requests import Request
 from starlette.websockets import WebSocketDisconnect
 
 import src.api.routers.collab as collab_module
@@ -829,6 +830,15 @@ class TestVoiceOffload:
 # ---------------------------------------------------------------- F13
 
 
+def _direct_request() -> Request:
+    """A minimal ASGI Request for calling a route handler directly.
+
+    ``export_data`` now takes the request for request-scoped error text, so a
+    direct call must pass one (the handler only reads its headers on error).
+    """
+    return Request({"type": "http", "method": "GET", "path": "/", "headers": []})
+
+
 class TestLearningHistoryTruncation:
     def test_export_truncates_and_documents_over_100_sessions(
         self, test_db_session
@@ -856,7 +866,9 @@ class TestLearningHistoryTruncation:
             )
         db.commit()
 
-        payload = export_data(username=user.username, db=db, current_user=user)
+        payload = export_data(
+            _direct_request(), username=user.username, db=db, current_user=user
+        )
         meta = payload["meta"]
 
         assert meta["truncated"] is True
@@ -882,7 +894,9 @@ class TestLearningHistoryTruncation:
             )
         db.commit()
 
-        payload = export_data(username=user.username, db=db, current_user=user)
+        payload = export_data(
+            _direct_request(), username=user.username, db=db, current_user=user
+        )
         assert payload["meta"]["truncated"] is False
         assert payload["meta"]["total_learning_sessions"] == 100
         assert len(payload["learningHistory"]) == 100

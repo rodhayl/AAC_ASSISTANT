@@ -90,6 +90,14 @@ export function Boards() {
     setAssignLoading(false);
     setAssignError(null);
     setSelectedStudentId(null);
+    // B6: bulk selection and its dialog are account-scoped too. Overlapping
+    // global board ids manageable by the NEW account must never inherit a
+    // previous account's selection (or sit in a stale delete confirmation).
+    setSelectedBoardIds(new Set());
+    setBulkDeleteOpen(false);
+    setBulkDeleting(false);
+    setBulkDeleteError(null);
+    setDeleteBoardId(null);
     return () => {
       studentsRequestRef.current += 1;
     };
@@ -324,13 +332,29 @@ export function Boards() {
     return Array.from(uniqueBoards.values());
   }, [assignedBoards, boards, searchQuery]);
 
+  // Only boards the current user may manage can be selected/deleted in bulk:
+  // per-card actions gate on canManageBoard, but select-all used to include
+  // every visible board and the delete loop issued requests for unowned ones,
+  // surfacing as a generic bulk error (H39/H60).
+  const manageableBoards = useMemo(
+    () => boardsToShow.filter((board) => canManageBoard(user, board.user_id)),
+    [boardsToShow, user],
+  );
+
   const toggleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedBoardIds(new Set(boardsToShow.map(b => b.id)));
+      setSelectedBoardIds(new Set(manageableBoards.map(b => b.id)));
     } else {
       setSelectedBoardIds(new Set());
     }
   };
+
+  // B6: the checkbox reports state over the boards select-all actually
+  // controls (manageable ones). Comparing against all visible boards made the
+  // box permanently unchecked whenever an unowned board was on screen.
+  const allManageableSelected =
+    manageableBoards.length > 0 &&
+    manageableBoards.every((board) => selectedBoardIds.has(board.id));
 
   const handleForceRefresh = async () => {
     if (!user) return;
@@ -343,8 +367,13 @@ export function Boards() {
   };
 
   const confirmBulkDelete = async () => {
-    const ids = Array.from(selectedBoardIds);
-    if (ids.length === 0) return;
+    const manageableIds = new Set(manageableBoards.map((board) => board.id));
+    const ids = Array.from(selectedBoardIds).filter((id) => manageableIds.has(id));
+    if (ids.length === 0) {
+      setSelectedBoardIds(new Set());
+      setBulkDeleteOpen(false);
+      return;
+    }
 
     setBulkDeleting(true);
     setBulkDeleteError(null);
@@ -435,7 +464,7 @@ export function Boards() {
             name="select_all_boards"
             type="checkbox"
             aria-label={t('selectAll')}
-            checked={boardsToShow.length > 0 && selectedBoardIds.size === boardsToShow.length}
+            checked={allManageableSelected}
             onChange={(e) => toggleSelectAll(e.target.checked)}
             className="rounded border-border"
           />
@@ -592,7 +621,13 @@ export function Boards() {
                     )}
                     {user && (
                       <button
-                        onClick={() => duplicateBoard(board.id, user.id)}
+                        onClick={() => {
+                          // The store records the failure in `error` (rendered
+                          // below); swallow the rejection so a failed copy is
+                          // reported once instead of also surfacing as an
+                          // unhandled promise rejection.
+                          void duplicateBoard(board.id, user.id).catch(() => {});
+                        }}
                         className="p-2 text-muted-foreground hover:text-brand hover:bg-brand/20 rounded-lg transition-colors"
                         aria-label={t('duplicateBoard')}
                       >

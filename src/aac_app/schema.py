@@ -1,36 +1,87 @@
-"""Runtime schema creation and idempotent SQLite upgrades.
+"""Runtime schema creation and idempotent legacy upgrades.
 
-SQLite is the application's migration strategy.  ``ensure`` first creates
-missing tables from the ORM metadata, then applies additive column upgrades
-needed by databases created by older releases.
+``ensure`` first creates missing tables from the ORM metadata, then applies
+the additive column/index upgrades needed by databases created by older
+releases.  Discovery uses SQLAlchemy's dialect-portable inspector so a
+non-SQLite deployment does not silently skip every upgrade (only the
+constraint rebuilds that have no portable equivalent stay SQLite-specific).
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from loguru import logger
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.aac_app.db import create_engine_instance, create_tables
 
 
-def _ensure_sqlite_columns(engine: Engine) -> None:
-    """Apply additive column upgrades to an existing SQLite database."""
-    if engine.dialect.name != "sqlite":
-        return
+def _reflected_columns(inspector) -> dict[str, set[str]]:
+    """Column names per table, skipping tables this connection cannot reflect.
+
+    A sqlite-vec ``vec0`` table (``symbol_embeddings``) is only reflectable
+    when its extension module is loaded on the inspecting connection, which is
+    not the case during startup schema management. Letting that error escape
+    aborted *every* additive upgrade for any database that already had the
+    vector table, so an upgrading installation silently lost new columns and
+    then failed at runtime. Virtual tables have no ORM columns to migrate, so
+    skipping them is safe.
+    """
+    columns: dict[str, set[str]] = {}
+    for table in inspector.get_table_names():
+        try:
+            columns[table] = {
+                column["name"] for column in inspector.get_columns(table)
+            }
+        except SQLAlchemyError:
+            logger.debug("DB upgrade: cannot reflect table {}; skipping", table)
+    return columns
+
+
+def _reflected_indexes(inspector, tables: Iterable[str]) -> dict[str, set[str]]:
+    """Index names per table, skipping tables this connection cannot reflect."""
+    indexes: dict[str, set[str]] = {}
+    for table in tables:
+        try:
+            indexes[table] = {index["name"] for index in inspector.get_indexes(table)}
+        except SQLAlchemyError:
+            logger.debug("DB upgrade: cannot list indexes of {}; skipping", table)
+    return indexes
+
+
+def _table_columns(engine: Engine) -> dict[str, set[str]]:
+    """Column names per table, on any dialect.
+
+    The previous implementation read ``PRAGMA table_info`` / ``sqlite_master``
+    and early-returned for every other dialect, so a Postgres deployment
+    upgrading from an older release never received an additive column and
+    failed later at runtime.
+    """
+    return _reflected_columns(sa_inspect(engine))
+
+
+def _dialect_column_definition(dialect: str, definition: str) -> str:
+    """Translate a SQLite-flavoured column definition for other dialects."""
+    if dialect != "postgresql":
+        return definition
+    portable = definition.replace("DATETIME", "TIMESTAMP")
+    if portable.upper().startswith("BOOLEAN"):
+        portable = portable.replace("DEFAULT 1", "DEFAULT true").replace(
+            "DEFAULT 0", "DEFAULT false"
+        )
+    return portable
+
+
+def _ensure_additive_columns(engine: Engine) -> None:
+    """Apply additive column upgrades to an existing database."""
+    dialect = engine.dialect.name
+    available_columns = _table_columns(engine)
 
     with engine.begin() as connection:
-        def table_exists(table: str) -> bool:
-            row = connection.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table' AND name=:table"),
-                {"table": table},
-            ).fetchone()
-            return row is not None
-
-        def has_column(table: str, column: str) -> bool:
-            rows = connection.execute(text(f"PRAGMA table_info({table})")).fetchall()
-            return any(row[1] == column for row in rows)
-
         # ``create_all`` only creates missing tables; it deliberately does not
         # alter tables from an older installation. Keep every additive column
         # introduced after the original schema here, including nullable/default
@@ -79,15 +130,25 @@ def _ensure_sqlite_columns(engine: Engine) -> None:
             ("saved_topics", "board_id", "INTEGER"),
             ("saved_topics", "created_by_user_id", "INTEGER"),
             ("content_safety_events", "call_count", "INTEGER NOT NULL DEFAULT 1"),
+            ("learning_modes", "updated_at", "DATETIME"),
+            ("learning_modes", "auto_ask_enabled", "BOOLEAN DEFAULT 1"),
+            ("learning_sessions", "mode_key", "VARCHAR(50)"),
         )
         for table, column, definition in columns:
-            if table_exists(table) and not has_column(table, column):
-                logger.info("DB upgrade: adding {}.{}", table, column)
-                connection.execute(
-                    text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            table_columns = available_columns.get(table)
+            if table_columns is None or column in table_columns:
+                continue
+            logger.info("DB upgrade: adding {}.{}", table, column)
+            connection.execute(
+                text(
+                    f"ALTER TABLE {table} ADD COLUMN {column} "
+                    f"{_dialect_column_definition(dialect, definition)}"
                 )
+            )
+            table_columns.add(column)
 
-        if table_exists("saved_topics") and has_column("saved_topics", "created_by_user_id"):
+        # Data backfills. Plain SQL, so they run on every dialect.
+        if "created_by_user_id" in available_columns.get("saved_topics", set()):
             connection.execute(
                 text(
                     "UPDATE saved_topics SET created_by_user_id = user_id "
@@ -95,9 +156,7 @@ def _ensure_sqlite_columns(engine: Engine) -> None:
                 )
             )
 
-        if table_exists("learning_modes") and not has_column("learning_modes", "updated_at"):
-            logger.info("DB upgrade: adding learning_modes.updated_at")
-            connection.execute(text("ALTER TABLE learning_modes ADD COLUMN updated_at DATETIME"))
+        if "updated_at" in available_columns.get("learning_modes", set()):
             connection.execute(
                 text(
                     "UPDATE learning_modes SET updated_at = created_at "
@@ -105,27 +164,34 @@ def _ensure_sqlite_columns(engine: Engine) -> None:
                 )
             )
 
-        if table_exists("learning_sessions") and not has_column("learning_sessions", "mode_key"):
-            logger.info("DB upgrade: adding learning_sessions.mode_key")
-            connection.execute(text("ALTER TABLE learning_sessions ADD COLUMN mode_key VARCHAR(50)"))
 
-        if table_exists("learning_modes") and not has_column(
-            "learning_modes", "auto_ask_enabled"
-        ):
-            logger.info("DB upgrade: adding learning_modes.auto_ask_enabled")
-            connection.execute(
-                text("ALTER TABLE learning_modes ADD COLUMN auto_ask_enabled BOOLEAN DEFAULT 1")
-            )
+# Duplicate-row cleanups that must run before the matching unique index is
+# created. Shared by every dialect, unlike the SQLite-only table rebuilds.
+_UNIQUE_ROSTER_INVARIANTS = (
+    ("board_assignments", "uq_board_assignments_board_student", "board_id, student_id"),
+    ("student_teachers", "uq_student_teachers_student_teacher", "student_id, teacher_id"),
+    ("user_achievements", "uq_user_achievements_user_achievement", "user_id, achievement_id"),
+)
 
 
-def _ensure_sqlite_indexes(engine: Engine) -> None:
+def _create_index_prefix(dialect: str, *, unique: bool = False) -> str:
+    """``CREATE [UNIQUE] INDEX`` with the dialect's idempotency clause."""
+    prefix = "CREATE UNIQUE INDEX" if unique else "CREATE INDEX"
+    if dialect in {"sqlite", "postgresql"}:
+        return f"{prefix} IF NOT EXISTS"
+    return prefix
+
+
+def _ensure_indexes(engine: Engine) -> None:
     """Create indexes for confirmed ownership, join, and history queries.
 
     Index creation is additive and idempotent so it is safe for existing
-    SQLite databases and for repeated application startup.
+    databases on any dialect and for repeated application startup.
     """
-    if engine.dialect.name != "sqlite":
-        return
+    dialect = engine.dialect.name
+    inspector = sa_inspect(engine)
+    available_columns = _reflected_columns(inspector)
+    existing_indexes = _reflected_indexes(inspector, available_columns)
 
     indexes = (
         ("ix_communication_boards_user_public", "communication_boards", "user_id, is_public"),
@@ -195,119 +261,52 @@ def _ensure_sqlite_indexes(engine: Engine) -> None:
     )
 
     with engine.begin() as connection:
-        existing_tables = {
-            row[0]
-            for row in connection.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table'")
-            )
-        }
         for index_name, table_name, columns in indexes:
-            if table_name not in existing_tables:
+            table_columns = available_columns.get(table_name)
+            if table_columns is None:
                 continue
-            available_columns = {
-                row[1]
-                for row in connection.execute(text(f"PRAGMA table_info({table_name})"))
-            }
             requested_columns = {column.strip() for column in columns.split(",")}
-            if not requested_columns <= available_columns:
+            if not requested_columns <= table_columns:
                 logger.warning(
                     "Skipping index {} because {} is missing columns {}",
                     index_name,
                     table_name,
-                    sorted(requested_columns - available_columns),
+                    sorted(requested_columns - table_columns),
                 )
+                continue
+            if index_name in existing_indexes.get(table_name, set()):
                 continue
             connection.execute(
                 text(
-                    f"CREATE INDEX IF NOT EXISTS {index_name} "
+                    f"{_create_index_prefix(dialect)} {index_name} "
                     f"ON {table_name} ({columns})"
                 )
             )
 
-        if "board_assignments" in existing_tables:
-            assignment_columns = {
-                row[1]
-                for row in connection.execute(
-                    text("PRAGMA table_info(board_assignments)")
+        # Older databases allowed duplicate rows because these ORM uniqueness
+        # rules were introduced after the tables existed. Keep the earliest
+        # row (and its audit metadata), then enforce the invariant at the
+        # database boundary so concurrent writes cannot duplicate a pair.
+        for table_name, index_name, key_columns in _UNIQUE_ROSTER_INVARIANTS:
+            table_columns = available_columns.get(table_name, set())
+            required = {"id", *(column.strip() for column in key_columns.split(","))}
+            if not required <= table_columns:
+                continue
+            if index_name in existing_indexes.get(table_name, set()):
+                continue
+            column_list = ", ".join(column.strip() for column in key_columns.split(","))
+            connection.execute(
+                text(
+                    f"DELETE FROM {table_name} WHERE id NOT IN ("
+                    f"SELECT MIN(id) FROM {table_name} GROUP BY {column_list})"
                 )
-            }
-            if {"id", "board_id", "student_id"} <= assignment_columns:
-                # Older databases allowed duplicate assignments because the
-                # ORM uniqueness rule was introduced after the table existed.
-                # Keep the earliest row (and its audit metadata), then enforce
-                # the invariant at the database boundary for concurrent writes.
-                connection.execute(
-                    text(
-                        "DELETE FROM board_assignments "
-                        "WHERE id NOT IN ("
-                        "SELECT MIN(id) FROM board_assignments "
-                        "GROUP BY board_id, student_id"
-                        ")"
-                    )
+            )
+            connection.execute(
+                text(
+                    f"{_create_index_prefix(dialect, unique=True)} {index_name} "
+                    f"ON {table_name} ({column_list})"
                 )
-                connection.execute(
-                    text(
-                        "CREATE UNIQUE INDEX IF NOT EXISTS "
-                        "uq_board_assignments_board_student "
-                        "ON board_assignments (board_id, student_id)"
-                    )
-                )
-        if "student_teachers" in existing_tables:
-            student_teacher_columns = {
-                row[1]
-                for row in connection.execute(
-                    text("PRAGMA table_info(student_teachers)")
-                )
-            }
-            if {"id", "student_id", "teacher_id"} <= student_teacher_columns:
-                # Older databases allowed duplicate roster assignments. Keep
-                # the earliest row, then enforce the same invariant declared by
-                # the ORM so concurrent assignment requests cannot duplicate a
-                # student/teacher relationship.
-                connection.execute(
-                    text(
-                        "DELETE FROM student_teachers "
-                        "WHERE id NOT IN ("
-                        "SELECT MIN(id) FROM student_teachers "
-                        "GROUP BY student_id, teacher_id"
-                        ")"
-                    )
-                )
-                connection.execute(
-                    text(
-                        "CREATE UNIQUE INDEX IF NOT EXISTS "
-                        "uq_student_teachers_student_teacher "
-                        "ON student_teachers (student_id, teacher_id)"
-                    )
-                )
-        if "user_achievements" in existing_tables:
-            achievement_columns = {
-                row[1]
-                for row in connection.execute(
-                    text("PRAGMA table_info(user_achievements)")
-                )
-            }
-            if {"id", "user_id", "achievement_id"} <= achievement_columns:
-                # Older databases allowed duplicate award rows (double
-                # leaderboard points). Keep the earliest award, then enforce
-                # the same invariant declared by the ORM so concurrent award
-                # requests cannot duplicate a user/achievement pair.
-                connection.execute(
-                    text(
-                        "DELETE FROM user_achievements "
-                        "WHERE id NOT IN ("
-                        "SELECT MIN(id) FROM user_achievements "
-                        "GROUP BY user_id, achievement_id"
-                        ")"
-                    )
-                )
-                connection.execute(
-                    text(
-                        "CREATE UNIQUE INDEX IF NOT EXISTS "
-                        "uq_user_achievements_user_achievement "
-                        "ON user_achievements (user_id, achievement_id)"
-                    )
-                )
+            )
 
 
 def _ensure_foreign_key_actions(engine: Engine) -> None:
@@ -320,8 +319,20 @@ def _ensure_foreign_key_actions(engine: Engine) -> None:
     affected tables with the correct FK actions and performs a one-time
     cleanup of corrupted / duplicate symbols that accumulated under the old
     schema.
+
+    SQLite cannot ``ALTER TABLE ADD CONSTRAINT``, so the fix requires a table
+    rebuild for which no portable equivalent exists.  Non-SQLite deployments
+    get an explicit warning naming the constraints their migration tooling
+    must apply, instead of silently skipping the upgrade.
     """
     if engine.dialect.name != "sqlite":
+        logger.warning(
+            "Database dialect {} does not support the SQLite table-rebuild "
+            "migration for ON DELETE actions on board_symbols.symbol_id "
+            "(CASCADE) and symbol_usage_logs.symbol_id (SET NULL); apply them "
+            "with the deployment's migration tooling.",
+            engine.dialect.name,
+        )
         return
 
     with engine.begin() as connection:
@@ -667,8 +678,8 @@ def ensure(engine: Engine | None = None) -> Engine:
     """
     engine = engine or create_engine_instance()
     create_tables(engine)
-    _ensure_sqlite_columns(engine)
+    _ensure_additive_columns(engine)
     _widen_legacy_tts_voice(engine)
     _ensure_foreign_key_actions(engine)
-    _ensure_sqlite_indexes(engine)
+    _ensure_indexes(engine)
     return engine

@@ -269,12 +269,15 @@ export function GuardianProfileModal({ isOpen, onClose, student }: GuardianProfi
                             <div>
                                 <label className="block text-sm font-medium mb-1">{t('students:contentFilterLevel')}</label>
                                 <select
-                                    value={profile.safety_constraints?.content_filter_level || 'default'}
+                                    // Fall back to the empty option: 'default' has no
+                                    // matching <option>, so an unset value rendered as a
+                                    // blank select that misrepresented the safety posture.
+                                    value={profile.safety_constraints?.content_filter_level || ''}
                                     onChange={e => setProfile({
                                         ...profile,
                                         safety_constraints: {
                                             ...profile.safety_constraints,
-                                            content_filter_level: e.target.value === 'default' ? undefined : e.target.value
+                                            content_filter_level: e.target.value === '' ? undefined : e.target.value
                                         }
                                     })}
                                     className="w-full p-2 border border-border rounded-lg bg-surface-hover"

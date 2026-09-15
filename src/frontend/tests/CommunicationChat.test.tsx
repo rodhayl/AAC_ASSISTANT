@@ -277,6 +277,17 @@ describe('CommunicationChat', () => {
     expect(tts.enqueue).not.toHaveBeenCalled();
   });
 
+  it('exposes a named voice toggle that reflects its pressed state (G5)', () => {
+    const { unmount } = renderChat({}, 'Practice Board', false);
+    const off = screen.getByRole('button', { name: 'Voice Off' });
+    expect(off).toHaveAttribute('aria-pressed', 'false');
+    unmount();
+
+    renderChat({}, 'Practice Board', true);
+    const on = screen.getByRole('button', { name: 'Voice On' });
+    expect(on).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('cancels queued speech when the chat surface unmounts', async () => {
     const view = renderChat({
       currentSession: { session_id: 'sess-unmount-1' },

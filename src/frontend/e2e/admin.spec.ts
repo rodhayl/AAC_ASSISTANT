@@ -18,15 +18,18 @@ test.describe.serial('Admin Management', () => {
 
   test('should export server data from the admin settings', async ({ page }) => {
     await page.goto('/settings');
+    // The UI collapses the old "client" and "server" exports into one action:
+    // the server assembles the snapshot and the browser saves it as a JSON
+    // file named after the user (no "-server" suffix anymore).
     const exportButton = page.getByRole('button', {
-      name: /server export|exportar del servidor/i,
+      name: /export my data|exportar mis datos/i,
     });
     await expect(exportButton).toBeVisible();
 
     const downloadPromise = page.waitForEvent('download');
     await exportButton.click();
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toMatch(/^aac-data-.+-server\.json$/);
+    expect(download.suggestedFilename()).toMatch(/^aac-data-.+\.json$/);
   });
 
   test('should manage teachers', async ({ page }) => {

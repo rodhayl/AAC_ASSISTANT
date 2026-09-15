@@ -102,3 +102,44 @@ def test_startup_error_never_raises_when_all_candidates_are_unwritable(monkeypat
     monkeypatch.setattr(Path, "mkdir", always_fail)
 
     launcher._write_startup_error("preserve this diagnostic")
+
+
+def test_wait_for_server_aborts_when_the_server_thread_died():
+    """H16: a startup crash must not stall the launch for the full deadline.
+
+    ``run_server`` re-raises into a daemon thread; without a liveness check the
+    main thread kept polling a dead server for 30 seconds before surfacing the
+    already-written error log.
+    """
+    import time
+
+    launcher = _load_launcher()
+
+    started = time.monotonic()
+    answered = launcher._wait_for_server(
+        "http://127.0.0.1:1/",
+        timeout_seconds=30.0,
+        is_server_alive=lambda: False,
+    )
+    elapsed = time.monotonic() - started
+
+    assert answered is False
+    assert elapsed < 1.0, f"waited {elapsed:.2f}s instead of failing fast"
+
+
+def test_wait_for_server_still_times_out_for_a_live_but_unresponsive_thread():
+    """The liveness check must not change the timeout behavior itself."""
+    import time
+
+    launcher = _load_launcher()
+
+    started = time.monotonic()
+    answered = launcher._wait_for_server(
+        "http://127.0.0.1:1/",
+        timeout_seconds=0.6,
+        is_server_alive=lambda: True,
+    )
+    elapsed = time.monotonic() - started
+
+    assert answered is False
+    assert elapsed >= 0.5, f"returned after {elapsed:.2f}s without waiting"

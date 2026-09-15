@@ -6,6 +6,10 @@ export interface HoverSpeakProps {
   onMouseEnter: () => void;
   onMouseLeave: () => void;
   onMouseDown: () => void;
+  // Keyboard equivalent of hover: focus previews the label, blur cancels it,
+  // so the feature is not pointer-only (H64).
+  onFocus: () => void;
+  onBlur: () => void;
 }
 
 /**
@@ -39,22 +43,25 @@ export function useHoverSpeak() {
   const getHoverSpeakProps = useCallback(
     (text: string): HoverSpeakProps | Record<string, never> => {
       if (!enabled || !text.trim()) return {};
+      const schedule = () => {
+        cancel();
+        timerRef.current = setTimeout(() => {
+          timerRef.current = null;
+          // The hover-speak group replaces a still-queued or speaking
+          // preview: the pointer has moved on, so the previous word must
+          // never be chained before this one ("con" + "nosotros").
+          tts.enqueue(text, {
+            key: `hover-speak:${text.trim().toLowerCase()}`,
+            group: 'hover-speak',
+          });
+        }, delayMs);
+      };
       return {
-        onMouseEnter: () => {
-          cancel();
-          timerRef.current = setTimeout(() => {
-            timerRef.current = null;
-            // The hover-speak group replaces a still-queued or speaking
-            // preview: the pointer has moved on, so the previous word must
-            // never be chained before this one ("con" + "nosotros").
-            tts.enqueue(text, {
-              key: `hover-speak:${text.trim().toLowerCase()}`,
-              group: 'hover-speak',
-            });
-          }, delayMs);
-        },
+        onMouseEnter: schedule,
         onMouseLeave: cancel,
         onMouseDown: cancel,
+        onFocus: schedule,
+        onBlur: cancel,
       };
     },
     [enabled, delayMs, cancel],

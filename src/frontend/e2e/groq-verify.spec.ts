@@ -18,6 +18,53 @@ if (!GROQ_API_KEY) {
   throw new Error('E2E_GROQ_API_KEY is required to run this verification spec.');
 }
 
+type AiSettings = Record<string, unknown>;
+
+/** Read the persisted AI settings through the page's own session. */
+async function readAiSettings(page: Page): Promise<AiSettings> {
+  return page.evaluate(async () => {
+    const raw = localStorage.getItem('auth-storage');
+    const token = raw ? (JSON.parse(raw).state?.token as string) : '';
+    const res = await fetch('/api/settings/ai', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      throw new Error(`GET /api/settings/ai failed: HTTP ${res.status}`);
+    }
+    const body = await res.json();
+    return (body.settings ?? body) as Record<string, unknown>;
+  });
+}
+
+/**
+ * The verification run types a live paid key into the settings form, which
+ * auto-saves it. Restore the pre-run values afterwards (even when an
+ * assertion fails) so a shared or CI server never keeps the key.
+ */
+async function restoreAiSettings(page: Page, settings: AiSettings): Promise<void> {
+  const restorable: AiSettings = { ...settings };
+  delete restorable.can_edit;
+  for (const key of ['groq_api_key', 'openrouter_api_key']) {
+    // A masked value must never be written back over the real secret.
+    if (restorable[key] === '********') delete restorable[key];
+  }
+  await page.evaluate(async (payload) => {
+    const raw = localStorage.getItem('auth-storage');
+    const token = raw ? (JSON.parse(raw).state?.token as string) : '';
+    const res = await fetch('/api/settings/ai', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      throw new Error(`settings restore failed: HTTP ${res.status}`);
+    }
+  }, restorable);
+}
+
 async function loginAsAdmin(page: Page) {
   await page.goto('/login');
   await page.evaluate(() => {
@@ -39,8 +86,21 @@ async function loginAsAdmin(page: Page) {
 test.describe('Groq provider end-to-end', () => {
   test.use({ storageState: undefined });
 
+  // Captured by the settings test and restored in afterEach, which runs even
+  // when an assertion fails. A live paid key must never be left configured
+  // just because the spec stopped early.
+  let capturedSettings: AiSettings | null = null;
+
+  test.afterEach(async ({ page }) => {
+    const settings = capturedSettings;
+    capturedSettings = null;
+    if (!settings) return;
+    await restoreAiSettings(page, settings);
+  });
+
   test('settings UI configures Groq and reports healthy', async ({ page }) => {
     await loginAsAdmin(page);
+    capturedSettings = await readAiSettings(page);
 
     await page.goto('/settings');
     await expect(page.getByRole('heading', { name: /settings|ajustes/i })).toBeVisible();
@@ -89,16 +149,9 @@ test.describe('Groq provider end-to-end', () => {
       persisted = (putBody.settings ?? putBody) as Record<string, unknown>;
     } else {
       // No PUT happened (values already persisted); confirm by GET using the
-      // token the auth store keeps in localStorage.
-      const getResponse = await page.evaluate(async () => {
-        const raw = localStorage.getItem('auth-storage');
-        const token = raw ? (JSON.parse(raw).state?.token as string) : '';
-        const res = await fetch('/api/settings/ai', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        return res.json();
-      });
-      persisted = (getResponse.settings ?? getResponse) as Record<string, unknown>;
+      // token the auth store keeps in localStorage. A non-OK response is a
+      // failure, not an empty object to assert against.
+      persisted = await readAiSettings(page);
     }
     expect(persisted.provider).toBe('groq');
     expect(persisted.groq_model).toBe(GROQ_MODEL);
@@ -117,20 +170,37 @@ test.describe('Groq provider end-to-end', () => {
     await loginAsAdmin(page);
     await page.goto('/learning');
 
-    // Start a fresh session from the chat panel.
-    const startBtn = page.locator('[data-testid="learning-session-start"]');
-    await expect(startBtn).toBeVisible({ timeout: 15000 });
-    await startBtn.click();
+    // Sessions start from the student-facing topic picker (the older
+    // `learning-session-start` button was replaced by it).
+    const topicCard = page.locator('[data-testid^="topic-card-"]').first();
+    await expect(topicCard).toBeVisible({ timeout: 20000 });
 
     // The first adaptive question is auto-requested; wait for the real Groq
-    // response (reasoning model can take a while).
+    // response (a reasoning model can take a while).
+    const askResponse = page.waitForResponse(
+      (r) =>
+        r.request().method() === 'POST' &&
+        /\/api\/learning\/\d+\/ask$/.test(new URL(r.url()).pathname),
+      { timeout: 180000 },
+    );
+    await topicCard.click();
+
+    const response = await askResponse;
+    expect(response.status()).toBe(200);
+    const body = (await response.json()) as {
+      question_text?: string | null;
+      choices?: string[] | null;
+      provider_used?: string | null;
+    };
+    // The provider that actually served the question must be Groq, and the
+    // question must be real generated content rather than a fallback.
+    expect(body.provider_used).toBe('groq');
+    expect((body.question_text ?? '').trim().length).toBeGreaterThan(0);
+    expect((body.choices ?? []).length).toBeGreaterThan(0);
+
+    // A real question renders with non-empty choices in the UI.
     const questionCard = page.locator('[data-testid="question-card"]');
-    await expect(questionCard).toBeVisible({ timeout: 180000 });
-
-    // The question provider badge must read "Groq" (bilingual).
-    await expect(page.getByText(/AI:\s*Groq|IA:\s*Groq/)).toBeVisible({ timeout: 30000 });
-
-    // A real question has non-empty choices.
+    await expect(questionCard).toBeVisible({ timeout: 60000 });
     const choices = questionCard.locator('button[aria-label]');
     await expect(choices.first()).toBeVisible();
     expect(await choices.count()).toBeGreaterThan(0);

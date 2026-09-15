@@ -152,10 +152,17 @@ export function Navbar({ onMenuToggle, isSidebarOpen = false }: NavbarProps) {
         )}
 
         <div className="relative flex-shrink-0">
+          {/* The label announces the unread count (the dot alone conveys
+              nothing) and exposes the panel's expanded state (H45/H64). */}
           <button
             onClick={() => setOpen(v => !v)}
             className="p-2 text-muted-foreground hover:bg-surface-hover rounded-full relative transition-colors"
-            aria-label={t('notifications.title')}
+            aria-label={
+              unread > 0
+                ? `${t('notifications.title')} (${unread})`
+                : t('notifications.title')
+            }
+            aria-expanded={open}
             data-touch-target="true"
           >
             <Bell className="w-5 h-5" />

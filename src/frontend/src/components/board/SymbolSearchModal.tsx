@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { isAxiosError } from 'axios';
 import { X, Search, Loader2, Filter, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import api from '../../lib/api';
+import api, { extractError } from '../../lib/api';
 import { walkPages } from '../../lib/pagination';
 import { SymbolCard } from './SymbolCard';
 import type { BoardSymbol, Symbol } from '../../types';
@@ -32,7 +32,11 @@ interface SymbolSearchModalProps {
 // rosters and history with walkPages). Walking pages keeps the whole match
 // set reachable; walkPages stops on the first short page and hard-caps the
 // walk so a backend that never shrinks its pages cannot loop forever.
-const SEARCH_PAGE_SIZE = 1000;
+const SEARCH_PAGE_SIZE = 100;
+// Tiles rendered in the first batch. Matching thousands of symbols in one
+// render mounted every tile at once (G1); the rest stay reachable behind an
+// explicit "show more" instead of disappearing.
+const SEARCH_RENDER_BATCH = 60;
 
 const CATEGORIES = [
   'general',
@@ -59,6 +63,8 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
   const { t, i18n } = useTranslation('boards');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Symbol[]>([]);
+  const [visibleCount, setVisibleCount] = useState(SEARCH_RENDER_BATCH);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [category, setCategory] = useState<string>('');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('');
@@ -84,6 +90,8 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
       searchController.current = null;
       setIsLoading(false);
       setResults([]);
+      setSearchError(null);
+      setVisibleCount(SEARCH_RENDER_BATCH);
       return;
     }
 
@@ -121,6 +129,7 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
     const controller = new AbortController();
     searchController.current = controller;
     setIsLoading(true);
+    setSearchError(null);
     try {
       // Use server-side search and walk every matching page (see
       // SEARCH_PAGE_SIZE). walkPages validates each page with Array.isArray so
@@ -157,12 +166,16 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
 
       if (generation === searchGeneration.current) {
         setResults(symbols);
+        setVisibleCount(SEARCH_RENDER_BATCH);
       }
     } catch (error) {
       const isCancellation = isAxiosError(error) && error.code === 'ERR_CANCELED';
       if (generation === searchGeneration.current && !isCancellation) {
+        // A failed search must be visible, not indistinguishable from an
+        // empty result set (G2).
         console.error("Search failed", error);
         setResults([]);
+        setSearchError(extractError(error, t('searchFailed')));
       }
     } finally {
       if (generation === searchGeneration.current) {
@@ -309,14 +322,24 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 bg-muted  rounded-b-xl">
-          {results.length === 0 && !isLoading && query && (
+          {searchError && !isLoading && (
+            <div className="text-center text-destructive mt-10 space-y-2" role="alert">
+              <div>{searchError}</div>
+              <Button type="button" variant="outline" size="sm" onClick={() => void handleSearch()
+              }>
+                {t('retry')}
+              </Button>
+            </div>
+          )}
+
+          {!searchError && results.length === 0 && !isLoading && (query.trim() || category) && (
             <div className="text-center text-muted-foreground mt-10">
               {t('noResults')}
             </div>
           )}
 
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
-            {results.map((symbol) => {
+            {results.slice(0, visibleCount).map((symbol) => {
               const tempSymbol: BoardSymbol = {
                 id: -symbol.id,
                 symbol_id: symbol.id,
@@ -346,6 +369,18 @@ export function SymbolSearchModal({ isOpen, onClose, onSelectSymbol }: SymbolSea
               );
             })}
           </div>
+
+          {results.length > visibleCount && (
+            <div className="flex justify-center py-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setVisibleCount((count) => count + SEARCH_RENDER_BATCH)}
+              >
+                {t('showMoreResults', { count: results.length - visibleCount })}
+              </Button>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

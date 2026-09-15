@@ -29,10 +29,10 @@ Before merging any pull request into `main`:
    ```
    Ensures zero regressions against real FastAPI and SPA backend instances, including automated Axe Core accessibility scans (`e2e/axe-accessibility.spec.ts`) and the appearance/contrast suites (`e2e/appearance.spec.ts`, `e2e/contrast-audit.spec.ts`, `e2e/contrast-interactive.spec.ts`). The contrast specs render every route and interactive overlay in all four modes (light, dark, high-contrast, high-contrast-dark) and fail on any painted text below WCAG AA (4.5:1).
 
-   The server under `PLAYWRIGHT_BASE_URL` (default `http://127.0.0.1:8086`) must be started with sample seeding enabled **and** deterministic seed passwords that match `e2e/auth.setup.ts`, otherwise the seeded demo users receive random passwords and the auth setup fails. See `docs/test_scenarios/execute_all_scenarios.md` for the full startup recipe (`AAC_SEED_SAMPLE_DATA=true` plus `AAC_SEED_ADMIN1_PASSWORD`, `AAC_SEED_STUDENT1_PASSWORD`, and `AAC_SEED_TEACHER1_PASSWORD`), which mirrors the `e2e-production` CI job.
+   The server under `PLAYWRIGHT_BASE_URL` (default `http://127.0.0.1:8086`) can run with or without sample seeding. With `AAC_SEED_SAMPLE_DATA=true` the seed passwords must match `e2e/auth.setup.ts` (`AAC_SEED_ADMIN1_PASSWORD`, `AAC_SEED_STUDENT1_PASSWORD`, `AAC_SEED_TEACHER1_PASSWORD`), otherwise the seeded demo users receive random passwords and the auth setup fails; see `docs/test_scenarios/execute_all_scenarios.md` for the full recipe. With `AAC_SEED_SAMPLE_DATA=false`, start the server with `E2E_PROVISION_VIA_API=1` so `auth.setup.ts` provisions the student/teacher accounts through the admin API. Demo-board specs build what they need either way (see §1b).
 
 3. **CI Gate Completion:**
-   Confirm all required GitHub Actions jobs (`backend`, `frontend`, `packaging-windows`, `e2e-production`, `secret-scan`, `dependency-review`, `codeql`) pass 100% green on the pull request.
+   Confirm all required GitHub Actions jobs (`backend`, `frontend`, `packaging-windows`, `e2e-clean`, `e2e-production-gate`, `e2e-production-compat`, `secret-scan`, `dependency-review`, `codeql`) pass 100% green on the pull request.
 
 ---
 
@@ -57,7 +57,68 @@ browser E2E specs live in `src/frontend/e2e/`.
   `src/frontend/vitest.config.ts` on the application-only baseline
   (lines/statements ≥ 50%, functions ≥ 45%, branches ≥ 45%).
 - **E2E** (`src/frontend/e2e/`) runs against a real FastAPI + SPA backend
-  with sample seeding and deterministic seed passwords (see `auth.setup.ts`).
+  with sample seeding and deterministic seed passwords (see `auth.setup.ts`),
+  and (with `AAC_SEED_SAMPLE_DATA=false`) against a clean database where every
+  spec builds the demo data it needs through the API.
+
+### Which E2E specs need the demo board
+
+No spec requires seeded sample data. Specs that assert the demo board
+(`Comunicación General` / `General Communication Board`) call
+`ensureDemoBoard()` from `src/frontend/e2e/demo-fixture.ts` in their setup,
+which builds the same shape through the public API when it is missing and
+reuses the seeded board when it already exists (so the seeded
+`e2e-production-compat` job is unaffected):
+
+| Spec | Demo dependency |
+| --- | --- |
+| `accessibility.spec.ts` (2 tests) | demo board opens for the student |
+| `communication.spec.ts` (4 tests) | demo board + its symbols |
+| `pilot-gate.spec.ts` (2 tests) | demo board phrase building |
+| `board-assignment.spec.ts` | demo board assigned to `student1` |
+| `advanced.spec.ts` | a board exists to open the editor |
+| `learning-games.spec.ts` (symbol hunt) | demo board is playable (12 symbols) |
+| `learning-topics.spec.ts` | `Comunicación General` is a board option |
+| `students-lifecycle.spec.ts` | an assignment to unassign/re-assign |
+| `extended-features.spec.ts` | a symbol "in use" on the demo board |
+
+The fixture creates a 3x4 board named `Comunicación General` owned by the admin,
+filled with the first 12 catalog symbols (the same pick `seed.py` makes), and
+assigns it to the `E2E_STUDENT_*` account. `contrast-interactive.spec.ts` also
+calls the fixture, then resolves the board id through the API, so its four
+board-editor audits run on both data shapes (the null check that skips them
+remains only as a guard against an API-shape change). Everything is green on
+seeded and clean databases.
+
+Run the whole suite against either data shape:
+
+```bash
+# seeded suite (e2e-production-compat)
+npx playwright test
+# clean database (e2e-clean) — no filter, no skipped spec
+npx playwright test
+```
+
+The clean server needs `AAC_SEED_SAMPLE_DATA=false` plus
+`E2E_PROVISION_VIA_API=1`, because `auth.setup.ts` provisions the student/teacher
+accounts through the admin API when the demo users do not exist.
+
+### E2E isolation rules
+
+* **Never sign out a shared E2E account.** Logout revokes that account's access
+tokens server-side (pinned by `pilot-gate.spec.ts`), so logging out the
+`admin1` session invalidates `playwright/.auth/admin.json` and every later spec
+in the same run is redirected to `/login`. Use a disposable account
+(`session-and-board-lifecycle.spec.ts` creates `e2e_iso_admin_*`) instead.
+* **Do not fill forms by input index.** Adding a field (e.g. the confirm-password
+input) silently shifts the indices; target ids (`#create-student-password`) or
+labels instead.
+* **Do not scope to bare layout classes.** `.space-y-2` / `.last()` matches
+unrelated containers once the surrounding markup changes; use a `data-testid`
+on the container (`saved-topics-list`).
+* **Match labels bilingually.** The signed-in account's persisted UI language
+can override the `localStorage` hint, so use `/new board|nuevo tablero/i`
+patterns for user-visible controls.
 
 ---
 
@@ -66,7 +127,7 @@ browser E2E specs live in `src/frontend/e2e/`.
 When preparing an official semantic-versioned release (e.g. `v2.x.y`):
 
 1. **Version Alignment:**
-   - Confirm version constants in `pyproject.toml`, `src/config.py`, `src/frontend/src/config.ts`, `installer/installer.iss`, `.env.example`, and `docs/RELEASE_NOTES.md` are aligned.
+   - Confirm version constants in `pyproject.toml`, `src/config.py`, `src/frontend/src/config.ts`, `installer.iss` (repo root), `.env.example`, and `docs/RELEASE_NOTES.md` are aligned.
    - Verify alignment using test suite: `uv run pytest tests/test_config_pydantic.py`.
 
 2. **Documentation & Changelog:**

@@ -123,7 +123,10 @@ supplied for isolated tests, but normal deployments use SQLite at
   Studio, OpenRouter, and Groq) and the lazy faster-whisper speech provider.
   OpenRouter and Groq are OpenAI-compatible cloud APIs; their optional API
   keys can be configured in Settings → AI Provider or set via
-  `OPENROUTER_API_KEY` / `GROQ_API_KEY`. The source launcher prepares the Kokoro neural
+  `OPENROUTER_API_KEY` / `GROQ_API_KEY`. The Groq model follows the same
+  DB → config → env precedence (`GROQ_MODEL`; `openai/gpt-oss-120b` is the
+  reference model), and an empty model in production fails warmup closed so
+  `/ready` reports degraded. The source launcher prepares the Kokoro neural
   TTS runtime before starting; the browser remains an explicit alternative in
   Settings → Voice. Kokoro currently requires Python 3.13 because its release
   declares Python `<3.14` support; `start.sh` selects Python 3.13 automatically

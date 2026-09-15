@@ -86,54 +86,65 @@ def migrate_passwords(temp_password: str, skip_confirmation: bool = False) -> No
 
     try:
         with get_session() as db:
-            users = db.query(User).all()
+            # B11: stream in fixed-size batches instead of materializing the
+            # whole user table (O(N) ORM objects) so the operator script keeps
+            # bounded memory on large installs. The per-batch commit also
+            # releases SQLite's write lock between batches.
+            batch_size = 200
+            offset = 0
+            migrated_count = 0
+            total_count = 0
+            salt = bcrypt.gensalt()
+            new_hash = bcrypt.hashpw(temp_password.encode("utf-8"), salt).decode("utf-8")
+            while True:
+                users = db.query(User).order_by(User.id).offset(offset).limit(batch_size).all()
+                if not users:
+                    break
+                offset += batch_size
+                total_count += len(users)
+                for user in users:
+                    old_hash = user.password_hash
+                    if old_hash is None:
+                        logger.warning(
+                            f"Skipped user: {user.username} (null password_hash — "
+                            "run scripts/fix_null_passwords.py first)"
+                        )
+                        continue
+                    is_sha256 = len(old_hash) == 64 and all(
+                        c in "0123456789abcdef" for c in old_hash.lower()
+                    )
 
-            if not users:
+                    if is_sha256:
+                        user.password_hash = new_hash
+                        mark_credentials_changed(user)
+                        logger.info(
+                            f"Migrated user: {user.username} (id={user.id}, type={user.user_type})"
+                        )
+                        migrated_count += 1
+                    else:
+                        logger.info(
+                            f"Skipped user: {user.username} (already bcrypt or unknown format)"
+                        )
+                db.commit()
+
+            if total_count == 0:
                 logger.warning("No users found in database.")
                 return
 
-            logger.info(f"Found {len(users)} users to evaluate")
-            salt = bcrypt.gensalt()
-            new_hash = bcrypt.hashpw(temp_password.encode("utf-8"), salt).decode("utf-8")
-
-            migrated_count = 0
-            for user in users:
-                old_hash = user.password_hash
-                if old_hash is None:
-                    logger.warning(
-                        f"Skipped user: {user.username} (null password_hash — "
-                        "run scripts/fix_null_passwords.py first)"
-                    )
-                    continue
-                is_sha256 = len(old_hash) == 64 and all(
-                    c in "0123456789abcdef" for c in old_hash.lower()
-                )
-
-                if is_sha256:
-                    user.password_hash = new_hash
-                    mark_credentials_changed(user)
-                    logger.info(
-                        f"Migrated user: {user.username} (id={user.id}, type={user.user_type})"
-                    )
-                    migrated_count += 1
-                else:
-                    logger.info(
-                        f"Skipped user: {user.username} (already bcrypt or unknown format)"
-                    )
-
-            db.commit()
-
             logger.info("=" * 80)
             logger.info("Migration complete.")
-            logger.info(f"Total users: {len(users)}")
+            logger.info(f"Total users: {total_count}")
             logger.info(f"Migrated: {migrated_count}")
-            logger.info(f"Skipped: {len(users) - migrated_count}")
+            logger.info(f"Skipped: {total_count - migrated_count}")
             logger.warning("Temporary passwords must be changed after first login.")
             logger.info("=" * 80)
     except Exception as exc:
+        # Raise instead of exiting inside a library function: ``sys.exit``
+        # kills any importer (including the test suite) and made this
+        # path untestable.  ``main`` maps the exception to an exit code.
         logger.error(f"Migration failed: {exc}")
         logger.exception(exc)
-        sys.exit(1)
+        raise
 
 
 def verify_migration() -> None:
@@ -147,33 +158,41 @@ def verify_migration() -> None:
 
     try:
         with get_session() as db:
-            users = db.query(User).all()
-
+            # B11: stream the table in bounded batches instead of
+            # materializing every user row at once.
             bcrypt_count = 0
             sha256_count = 0
             other_count = 0
 
-            for user in users:
-                hash_value = user.password_hash
-                if hash_value is None:
-                    other_count += 1
-                    logger.warning(f"{user.username}: null password_hash")
-                elif hash_value.startswith(("$2a$", "$2b$", "$2y$")):
-                    bcrypt_count += 1
-                elif len(hash_value) == 64 and all(
-                    c in "0123456789abcdef" for c in hash_value.lower()
-                ):
-                    sha256_count += 1
-                    logger.warning(f"{user.username}: SHA-256 format (not migrated)")
-                else:
-                    other_count += 1
-                    logger.warning(f"{user.username}: unknown hash format")
+            batch_size = 200
+            offset = 0
+            while True:
+                users = db.query(User).order_by(User.id).offset(offset).limit(batch_size).all()
+                if not users:
+                    break
+                offset += batch_size
+                for user in users:
+                    hash_value = user.password_hash
+                    if hash_value is None:
+                        other_count += 1
+                        logger.warning(f"{user.username}: null password_hash")
+                    elif hash_value.startswith(("$2a$", "$2b$", "$2y$")):
+                        bcrypt_count += 1
+                    elif len(hash_value) == 64 and all(
+                        c in "0123456789abcdef" for c in hash_value.lower()
+                    ):
+                        sha256_count += 1
+                        logger.warning(f"{user.username}: SHA-256 format (not migrated)")
+                    else:
+                        other_count += 1
+                        logger.warning(f"{user.username}: unknown hash format")
 
             logger.info("=" * 80)
             logger.info("VERIFICATION RESULTS")
             logger.info(f"Bcrypt hashes: {bcrypt_count}")
             logger.info(f"SHA-256 hashes: {sha256_count}")
             logger.info(f"Other formats: {other_count}")
+            logger.info(f"Total users: {bcrypt_count + sha256_count + other_count}")
             if sha256_count == 0:
                 logger.info("All users are on bcrypt.")
             else:
@@ -181,7 +200,7 @@ def verify_migration() -> None:
             logger.info("=" * 80)
     except Exception as exc:
         logger.error(f"Verification failed: {exc}")
-        sys.exit(1)
+        raise
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -207,16 +226,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    if args.verify_only:
-        verify_migration()
-    else:
-        try:
-            temporary_password = _resolve_temp_password(args.temp_password)
-        except ValueError as exc:
-            logger.error(str(exc))
-            return 2
-        migrate_passwords(temporary_password, skip_confirmation=args.yes)
-        verify_migration()
+    try:
+        if args.verify_only:
+            verify_migration()
+        else:
+            try:
+                temporary_password = _resolve_temp_password(args.temp_password)
+            except ValueError as exc:
+                logger.error(str(exc))
+                return 2
+            migrate_passwords(temporary_password, skip_confirmation=args.yes)
+            verify_migration()
+    except Exception as exc:
+        logger.error(f"Password migration failed: {exc}")
+        return 1
     return 0
 
 

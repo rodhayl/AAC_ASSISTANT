@@ -48,14 +48,19 @@ export function useTopicPickerPool() {
   const currentLang = i18n?.language?.split('-')[0] || 'en';
   const symbolLanguage = currentLang === 'es' ? 'es' : 'en';
 
+  // Only the id and the staff flag are consumed by the effect below, so an
+  // unrelated `user` object replacement (settings save, token refresh) must
+  // not refetch the saved-topic list (H41/H63).
+  const userId = user?.id;
+  const canManageSavedTopics = isStaffUser({ user_type: user?.user_type });
+
   useEffect(() => {
     // Do not retain the previous account's saved topics while anonymous or
     // while the next account's request is in flight.
     setSavedTopics([]);
-    if (!user?.id) return;
+    if (!userId) return;
     let cancelled = false;
-    const canManage = isStaffUser(user);
-    void loadTopicsForUser(user.id, canManage)
+    void loadTopicsForUser(userId, canManageSavedTopics)
       .then((topics) => {
         if (!cancelled) setSavedTopics(topics);
       })
@@ -66,7 +71,7 @@ export function useTopicPickerPool() {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [userId, canManageSavedTopics]);
 
   useEffect(() => {
     topicPoolGenerationRef.current += 1;

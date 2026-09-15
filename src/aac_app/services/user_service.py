@@ -88,9 +88,17 @@ class UserService:
 
         return db_user
 
-    def reset_password(self, db: Session, user_id: int, new_password: str):
+    def reset_password(self, db: Session, user_id: int, new_password: str) -> bool:
+        """Replace a user's password and report whether a row was updated.
+
+        Returns ``False`` for an unknown ``user_id`` instead of silently
+        no-op'ing (the API route pre-checks, so this is the operator/script
+        contract: callers can tell "reset" from "nothing happened").
+        """
         user = db.query(User).filter(User.id == user_id).first()
-        if user:
-            user.password_hash = get_password_hash(new_password)
-            mark_credentials_changed(user)
-            db.flush()
+        if user is None:
+            return False
+        user.password_hash = get_password_hash(new_password)
+        mark_credentials_changed(user)
+        db.flush()
+        return True

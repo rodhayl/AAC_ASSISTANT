@@ -1,4 +1,5 @@
 import ipaddress
+import secrets
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -16,11 +17,15 @@ from src.aac_app.services.auth_service import (
 )
 from src.aac_app.services.credential_service import mark_credentials_changed
 from src.aac_app.services.lockout_service import lockout_service
+from src.aac_app.services.refresh_rotation_service import (
+    refresh_rotation_service,
+)
 from src.aac_app.utils.jwt_utils import (
     create_access_token,
     create_refresh_token,
     decode_access_token,
     decode_refresh_token,
+    refresh_token_expires_at,
 )
 from src.api import schemas
 from src.api.deps import get_db, get_request_text, get_text, oauth2_scheme
@@ -132,6 +137,11 @@ def initial_admin_setup(
         ) from exc
     db.refresh(admin)
 
+    # A pre-locked username (failed logins are recorded even for users that
+    # do not exist yet) must not make the brand-new admin account start out
+    # locked out of its own first login.
+    lockout_service.reset_attempts(db, admin.username)
+
     client_ip = request.client.host if request.client else "unknown"
     audit_service.log_account_created(
         db=db,
@@ -140,6 +150,16 @@ def initial_admin_setup(
         new_user_type="admin",
         created_by_username="initial-setup",
         ip_address=client_ip,
+    )
+    # The rotation ledger row is written in the same transaction as the
+    # account itself (H3), so the token minted below is immediately rotatable.
+    refresh_jti = secrets.token_hex(16)
+    refresh_rotation_service.record_issued(
+        db,
+        jti=refresh_jti,
+        family=refresh_jti,
+        user_id=admin.id,
+        expires_at=refresh_token_expires_at(),
     )
     db.commit()
 
@@ -156,7 +176,8 @@ def initial_admin_setup(
             "sub": admin.username,
             "user_id": admin.id,
             "sec_ver": admin.security_version or 1,
-        }
+        },
+        jti=refresh_jti,
     )
 
     logger.info("Initial administrator setup completed for username '{}'", admin.username)
@@ -337,13 +358,14 @@ def login_for_access_token(
         )
 
     if updated_password_hash:
+        # A routine Argon2 parameter upgrade rehashes the stored secret but is
+        # not a credential change: bumping `security_version` here revoked
+        # every other device's session on an ordinary login.  Revocation stays
+        # reserved for real credential changes (H29/H51).
         user.password_hash = updated_password_hash
-        mark_credentials_changed(user)
         db.add(user)
         db.flush()
-        # Commit before the token is issued: the token embeds the bumped
-        # security version, and a follow-up request would otherwise reject it
-        # against the still-uncommitted user row.
+        # Commit before the token is issued so the refreshed hash is durable.
         db.commit()
 
     # Login successful - reset failed attempts
@@ -361,6 +383,16 @@ def login_for_access_token(
     # trims the oldest rows beyond the cap in small batches so the table does
     # not grow monotonically forever.
     audit_service.purge_old_entries(db)
+    # The rotation ledger row (H3) joins this transaction so the whole login
+    # remains a single commit: minting the JWT itself needs no database work.
+    refresh_jti = secrets.token_hex(16)
+    refresh_rotation_service.record_issued(
+        db,
+        jti=refresh_jti,
+        family=refresh_jti,
+        user_id=user.id,
+        expires_at=refresh_token_expires_at(),
+    )
     # Commit the lockout reset and audit entry before issuing the token.
     # The request session holds SQLite's single write lock from its first
     # write until commit; deferring this to the get_db teardown kept the
@@ -385,7 +417,8 @@ def login_for_access_token(
             "sub": user.username,
             "user_id": user.id,
             "sec_ver": user.security_version or 1,
-        }
+        },
+        jti=refresh_jti,
     )
 
     logger.info(f"Token issued for user '{user.username}' (id={user.id}, type={user.user_type})")
@@ -417,6 +450,10 @@ def logout(
             if current_user:
                 mark_credentials_changed(current_user)
                 db.add(current_user)
+                # The rotation ledger rows belong to the sessions being
+                # revoked: leaving them behind would only serve a later
+                # replay attempt that sec_ver already rejects.
+                refresh_rotation_service.revoke_user(db, user_id=user_id)
                 db.commit()
     return {"ok": True}
 
@@ -529,6 +566,71 @@ async def refresh_access_token(
             detail=get_request_text(request, "errors.auth.accountInactive"),
         )
 
+    # H3/B1: single-use rotation, enforced for EVERY refresh token.
+    #
+    # Legacy transition rule (B1): tokens minted before rotation existed carry
+    # no ``jti`` and have no ledger row, and a ledger row can age out while its
+    # 7-day token is still valid. Such a token is exchanged exactly once: the
+    # mint below is paid for with a ``security_version`` bump, which invalidates
+    # the presented credential (and every other issued session) through the
+    # existing machinery — no parallel revocation store. A copy of that legacy
+    # token therefore fails its second use with 401 instead of minting forever.
+    # New tokens always carry a ledger-backed ``jti`` and rotate transparently.
+    presented_jti = payload.get("jti")
+    presented_family = payload.get("fam")
+    has_jti = isinstance(presented_jti, str) and bool(presented_jti)
+    rotation_state = (
+        refresh_rotation_service.status(db, jti=presented_jti, user_id=user.id)
+        if has_jti
+        else "unknown"
+    )
+    if rotation_state == "replay":
+        # Consumed long enough ago that this cannot be a duplicate in-flight
+        # exchange: the credential leaked and was replayed.
+        logger.warning(
+            "Refresh token replay detected for user {} (jti={})",
+            user.id,
+            presented_jti,
+        )
+        refresh_rotation_service.revoke_user(db, user_id=user.id)
+        mark_credentials_changed(user)
+        db.add(user)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=get_request_text(request, "errors.invalidRefreshToken"),
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if rotation_state in ("live", "reused"):
+        refresh_rotation_service.consume(db, jti=presented_jti, user_id=user.id)
+
+    new_jti = secrets.token_hex(16)
+    # B3: the family claim is validated, not just inherited. A chain member
+    # presenting a different family id is replay/confusion, handled like a
+    # replay; a legacy token (no fam) starts a new family at its successor.
+    if presented_family is not None and presented_family != presented_jti:
+        logger.warning(
+            "Refresh token family mismatch for user {} (jti={})",
+            user.id,
+            presented_jti,
+        )
+        refresh_rotation_service.revoke_user(db, user_id=user.id)
+        mark_credentials_changed(user)
+        db.add(user)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=get_request_text(request, "errors.invalidRefreshToken"),
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    new_family = presented_jti if has_jti else new_jti
+
+    if rotation_state == "unknown":
+        # One-time legacy/aged-out exchange: invalidate the presented token and
+        # every other live session so this grant cannot repeat (B1).
+        mark_credentials_changed(user)
+        db.add(user)
+
     # Issue new access token
     new_access_token = create_access_token(
         data={
@@ -538,6 +640,22 @@ async def refresh_access_token(
             "sec_ver": user.security_version or 1,
         }
     )
+    new_refresh_token = create_refresh_token(
+        data={
+            "sub": user.username,
+            "user_id": user.id,
+            "sec_ver": user.security_version or 1,
+        },
+        jti=new_jti,
+    )
+    refresh_rotation_service.record_issued(
+        db,
+        jti=new_jti,
+        family=new_family,
+        user_id=user.id,
+        expires_at=refresh_token_expires_at(),
+    )
+    db.commit()
 
     logger.info(
         "Access token refreshed for user '{}' (id={}) via {}",
@@ -547,6 +665,7 @@ async def refresh_access_token(
     )
     return {
         "access_token": new_access_token,
+        "refresh_token": new_refresh_token,
         "token_type": "bearer"
     }
 
@@ -613,6 +732,9 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
             db, user.username, email, accept_language=accept_language
         ) from exc
     db.refresh(new_user)
+
+    # Never inherit stale lockout rows recorded before this username existed.
+    lockout_service.reset_attempts(db, new_user.username)
 
     # Log successful account creation in the same request transaction.
     client_ip = request.client.host if request.client else "unknown"

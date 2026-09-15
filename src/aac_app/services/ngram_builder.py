@@ -104,6 +104,32 @@ def collect_usage_bigrams(
     bigrams: dict[str, dict[tuple[str, str], int]] = defaultdict(lambda: Counter())
 
     def scan(session: Session) -> None:
+        # Resolving each log's locale used to issue 1 + up to 2 queries per row
+        # inside one long transaction (F4). Preload the id -> language map once
+        # and memoize the label fallback, so a rebuild is 1 catalog read plus
+        # one query per DISTINCT unmatched label.
+        language_by_symbol_id: dict[int, str | None] = {
+            symbol_id: (normalize_language_code(language) or None)
+            if language
+            else None
+            for symbol_id, language in session.query(
+                Symbol.id, Symbol.language
+            ).yield_per(1000)
+        }
+        label_locale_cache: dict[str, str | None] = {}
+
+        def resolve_locale(log: SymbolUsageLog) -> str | None:
+            if log.symbol_id is not None:
+                mapped = language_by_symbol_id.get(log.symbol_id)
+                if mapped:
+                    return mapped
+            key = normalize_symbol_label(log.symbol_label)
+            if not key:
+                return None
+            if key not in label_locale_cache:
+                label_locale_cache[key] = _resolve_log_language(session, log)
+            return label_locale_cache[key]
+
         logs = (
             session.query(SymbolUsageLog)
             .order_by(
@@ -164,7 +190,7 @@ def collect_usage_bigrams(
                 current_sequence = []
                 current_locale = None
 
-            locale = _resolve_log_language(session, log)
+            locale = resolve_locale(log)
             if locale is None:
                 current_sequence = []
                 current_locale = None

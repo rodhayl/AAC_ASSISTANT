@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useAuthStore } from '../store/authStore';
-import { User, Lock, Loader2, ShieldAlert } from 'lucide-react';
+import { User, Lock, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import api from '../lib/api';
 import { Button } from '../components/ui/button';
@@ -12,7 +12,6 @@ import { FormLabel } from '@/components/ui/FormLabel';
 export function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [setupRequired, setSetupRequired] = useState(false);
   const login = useAuthStore(state => state.login);
   const isLoading = useAuthStore(state => state.isLoading);
   const error = useAuthStore(state => state.error);
@@ -23,8 +22,11 @@ export function Login() {
     let isMounted = true;
     api.get('/auth/setup-status')
       .then(res => {
+        // A first run redirects straight to /setup. The banner that used to be
+        // rendered here was unreachable (navigation happened in the same
+        // tick) and its link was a full page reload; the redirect is kept and
+        // the dead UI removed (H66).
         if (isMounted && res.data.setup_required) {
-          setSetupRequired(true);
           navigate('/setup', { replace: true });
         }
       })
@@ -61,21 +63,6 @@ export function Login() {
           <h1 className="text-3xl font-bold text-brand mb-2">{t('title')}</h1>
           <p className="text-muted-foreground">{t('subtitle')}</p>
         </div>
-
-        {setupRequired && (
-          <div className="bg-brand/10 border border-brand/20 rounded-lg p-3 mb-6 text-sm text-brand flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4 text-brand shrink-0" />
-              <span>{t('setupNotice')}</span>
-            </div>
-            <a
-              href="/setup"
-              className="ml-2 font-semibold underline text-brand hover:text-brand shrink-0"
-            >
-              {t('setupButton')}
-            </a>
-          </div>
-        )}
 
         {error && (<StatusMessage variant="error" className="mb-6">{error}</StatusMessage>
         )}

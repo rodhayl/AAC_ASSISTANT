@@ -176,7 +176,7 @@ class TestLinkedBoardRemap:
 class TestSentinelCostMeterPreservation:
     def test_retention_never_prunes_todays_sentinel_rows(self, test_db_session, monkeypatch):
         """The 10k retention pass must skip today's sentinel rows (cost meter)."""
-        today_start = safety._today_start()
+        today_start = safety.utc_day_start()
         # Today's sentinel rows (the cost meter)...
         for _ in range(3):
             test_db_session.add(
@@ -228,7 +228,7 @@ class TestSentinelCostMeterPreservation:
         """The cost meter counts only today's sentinel rows."""
         from datetime import timedelta
 
-        today_start = safety._today_start()
+        today_start = safety.utc_day_start()
         old = ContentSafetyEvent(
             user_id=None, surface="sentinel", direction="output", verdict="passed"
         )
@@ -256,7 +256,7 @@ class TestSentinelCostMeterPreservation:
         from src.api.main import app
         from tests.auth_helpers import create_test_token
 
-        today_start = safety._today_start()
+        today_start = safety.utc_day_start()
         old_chat = ContentSafetyEvent(
             user_id=None, surface="chat", direction="input", verdict="blocked"
         )

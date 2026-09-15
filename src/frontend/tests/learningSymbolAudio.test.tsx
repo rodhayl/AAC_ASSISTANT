@@ -555,9 +555,10 @@ describe('Learning symbol-first and audio-first flows', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByLabelText('removeSymbolLabel'));
+      // The remove label is parameterized with the symbol (H45/H64).
+      fireEvent.click(screen.getByLabelText('removeSymbolNamed'));
     });
-    expect(screen.queryByLabelText('removeSymbolLabel')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('removeSymbolNamed')).not.toBeInTheDocument();
 
     await act(async () => {
       fireEvent.click(hello);
@@ -565,7 +566,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     await act(async () => {
       fireEvent.click(screen.getByText('clear'));
     });
-    expect(screen.queryByLabelText('removeSymbolLabel')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('removeSymbolNamed')).not.toBeInTheDocument();
   });
 
   it('header: toggles voice input', async () => {

@@ -32,6 +32,11 @@ function makeJwt(exp: number, userId = 1) {
 describe('Setup Page', () => {
   beforeEach(() => {
     localStorage.clear();
+    // vi.fn() histories are not reset by restoreAllMocks(), so clear them
+    // explicitly: this suite asserts "no request was sent" in the
+    // default-password case.
+    vi.mocked(api.post).mockClear();
+    vi.mocked(api.get).mockClear();
     useAuthStore.setState({
       user: null,
       token: null,
@@ -170,6 +175,34 @@ describe('Setup Page', () => {
     fireEvent.submit(document.querySelector('form') as HTMLFormElement);
 
     expect((await screen.findAllByText(/no coinciden|do not match/i)).length).toBeGreaterThan(0);
+  });
+
+  it('rejects the development default password on submit (H2)', async () => {
+    render(
+      <MemoryRouter>
+        <Setup />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /crear cuenta de administrador|create administrator/i })).toBeInTheDocument();
+    });
+
+    // Admin123 satisfies every complexity rule, so only the default-password
+    // rule stands between an Enter-key submit and the API.
+    fireEvent.change(screen.getByLabelText(/^contraseña$|^password$/i), {
+      target: { value: 'Admin123' },
+    });
+    fireEvent.change(screen.getByLabelText(/confirmar contraseña|confirm password/i), {
+      target: { value: 'Admin123' },
+    });
+
+    fireEvent.submit(document.querySelector('form') as HTMLFormElement);
+
+    expect(
+      (await screen.findAllByText(/predeterminada|default password/i)).length,
+    ).toBeGreaterThan(0);
+    expect(api.post).not.toHaveBeenCalled();
   });
 
   it('shows a length error when the password is too weak', async () => {

@@ -32,6 +32,10 @@ def check_markdown_links(root: Path) -> bool:
 
     for md_file in md_files:
         content = md_file.read_text(encoding="utf-8")
+        # Fenced code blocks are full of illustrative markdown-looking text
+        # (example snippets, sample output); link-checking them produces
+        # false failures.  Strip them before scanning (H56).
+        content = re.sub(r"```[\s\S]*?```", "", content)
         links = re.findall(r"\[([^\]]+)\]\(([^)]+)\)", content)
         for text, target in links:
             if target.startswith(("http://", "https://", "file://", "#", "mailto:")):

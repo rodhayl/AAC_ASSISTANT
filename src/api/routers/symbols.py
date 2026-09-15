@@ -8,6 +8,7 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Request,
     UploadFile,
 )
 from loguru import logger
@@ -40,6 +41,7 @@ from src.api.deps import (
     validate_linked_board,
 )
 from src.api.file_uploads import read_image_upload, remove_owned_upload
+from src.api.routers.auth_helpers import conditional_limiter
 
 router = APIRouter()
 
@@ -191,7 +193,12 @@ def _apply_symbol_search(query, search: str, db: Session, *, extra_filters=()):
 
 
 @router.get("/symbols", response_model=list[schemas.SymbolResponse])
+# The catalog listing is the heaviest read path (limit up to 1000 rows plus a
+# semantic-search recall scan under the vector lock); cap the request rate so
+# one client cannot pin a worker with unbounded overlapping scans.
+@conditional_limiter("60/minute")
 def get_symbols(
+    request: Request,
     skip: int = Query(0, ge=0, le=100_000),
     limit: int = Query(100, ge=1, le=1000),
     # The search/keywords strings feed LIKE patterns and category feeds an
@@ -322,7 +329,11 @@ def get_symbols(
 
 
 @router.post("/symbols", response_model=schemas.SymbolResponse)
+# B7: staff mutation with file IO + indexing fan-out; bounded like the read
+# sibling above (60/minute).
+@conditional_limiter("20/minute")
 def create_symbol(
+    request: Request,
     symbol: schemas.SymbolCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_staff_user),
@@ -394,16 +405,25 @@ def reorder_symbols(
 
 
 @router.post("/symbols/upload", response_model=schemas.SymbolResponse)
+# B7: image write + optional indexing; bounded like the other symbol mutations.
+@conditional_limiter("20/minute")
 async def upload_symbol(
+    request: Request,
     # Column-bounded like the JSON sibling (SymbolBase.label max 100 /
     # category max 50): multipart params bypassed the schema sweep and a
     # 5 KB label would otherwise DataError 500 on Postgres at flush (SQLite
     # silently over-stores).
     label: str = Form(..., max_length=100),
-    description: str = Form(None),
+    # description/keywords are Symbol Text columns with no DB backstop, so the
+    # 10_000-char JSON bound (SymbolBase) is the only limit — enforce it on
+    # the multipart path too, where Form(None) accepted ~12 MB values.
+    description: str = Form(None, max_length=10_000),
     category: str = Form("general", max_length=50),
-    keywords: str = Form(None),
-    language: str = Form("en"),
+    keywords: str = Form(None, max_length=10_000),
+    # B11: bound like the JSON sibling (SymbolBase.language 2..10) so a
+    # multi-MB multipart value cannot be buffered to the ASGI cap before the
+    # normalizer discards it.
+    language: str = Form("en", min_length=2, max_length=10),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_staff_user),
@@ -447,15 +467,21 @@ async def upload_symbol(
 
 
 @router.post("/symbols/generate-svg", response_model=schemas.SymbolResponse)
+# B7: LLM-backed generation; bounded like the board-AI endpoints.
+@conditional_limiter("10/minute")
 def generate_svg_symbol(
+    request: Request,
     # Same column bounds as upload_symbol (Symbol.label String(100),
     # Symbol.category String(50)): the LLM path must not be the one entry
     # point that can overrun the columns.
     label: str = Form(..., max_length=100),
-    description: str = Form(None),
+    # Same Text-column bound as upload_symbol / SymbolBase (see above).
+    description: str = Form(None, max_length=10_000),
     category: str = Form("general", max_length=50),
-    keywords: str = Form(None),
-    language: str = Form("en"),
+    keywords: str = Form(None, max_length=10_000),
+    # B11: same multipart bound as upload_symbol (2..10, matching
+    # SymbolBase.language).
+    language: str = Form("en", min_length=2, max_length=10),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_staff_user),
 ):
@@ -672,6 +698,11 @@ def add_symbol_to_board(
             user_id, "vocabulary_size", float(count), db=db
         )
         AchievementSystem().check_achievements(user_id, db=db)
+        # Commit the award before responding (mirrors
+        # achievements.check_achievements): the dependency's teardown commit
+        # runs only after the response is sent, so an immediate progress
+        # re-read would race it and report the old value.
+        db.commit()
     except Exception as exc:
         # The symbol is already committed and returned; progress is a
         # best-effort update that must not fail the request.
@@ -745,9 +776,7 @@ def batch_update_board_symbols(
         ...,
         # The board editor saves a whole placement batch in one request. Grid
         # rows/cols cap at 100 each (10,000 theoretical cells), but a single
-        # save beyond a thousand placements is not a realistic flow and an
-        # unbounded list would let a client force one SELECT per entry (the
-        # loop below queries each placement individually).
+        # save beyond a thousand placements is not a realistic flow.
         max_length=1000,
     ),
     db: Session = Depends(get_db),
@@ -757,6 +786,25 @@ def batch_update_board_symbols(
     board = get_board_or_404(db, board_id, current_user)
     require_board_owner_or_admin(board, current_user)
 
+    # One bounded fetch into a dict instead of one SELECT per entry while
+    # holding SQLite's single write lock. Chunked at 500 so the placeholders
+    # stay under SQLite's variable limit; still O(1) queries for the 1000 cap.
+    placement_ids = [update_model.id for update_model in updates if update_model.id]
+    placements: dict[int, BoardSymbol] = {}
+    for start in range(0, len(placement_ids), 500):
+        chunk = placement_ids[start : start + 500]
+        placements.update(
+            {
+                row.id: row
+                for row in db.query(BoardSymbol)
+                .filter(
+                    BoardSymbol.board_id == board_id,
+                    BoardSymbol.id.in_(chunk),
+                )
+                .all()
+            }
+        )
+
     updated_count = 0
     for update_model in updates:
         update = update_model.model_dump(exclude_unset=True)
@@ -764,11 +812,7 @@ def batch_update_board_symbols(
         if not symbol_id:
             continue
 
-        db_board_symbol = (
-            db.query(BoardSymbol)
-            .filter(BoardSymbol.board_id == board_id, BoardSymbol.id == symbol_id)
-            .first()
-        )
+        db_board_symbol = placements.get(symbol_id)
 
         if db_board_symbol and _update_single_symbol(
             db_board_symbol,

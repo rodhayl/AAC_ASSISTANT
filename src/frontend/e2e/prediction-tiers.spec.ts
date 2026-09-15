@@ -5,6 +5,8 @@ import { test, expect } from '@playwright/test';
 // typing produces real predictions — not the tier logic itself, which is
 // already unit-tested deterministically.
 const KNOWN_SOURCES = new Set([
+  'topic',
+  'ai',
   'history',
   'general_model',
   'popular',
@@ -42,14 +44,14 @@ test.describe('Prediction tiers', () => {
     await page.goto('/learning');
 
     // Create this spec's own session instead of relying on one planted by
-    // another spec or by manual setup.
-    const startButton = page.getByTestId('learning-session-start');
-    await expect(startButton).toBeVisible({ timeout: 30000 });
+    // another spec or by manual setup. Sessions start from the topic picker.
+    const topicCard = page.locator('[data-testid^="topic-card-"]').first();
+    await expect(topicCard).toBeVisible({ timeout: 30000 });
     const startRequest = page.waitForRequest(
       (request) =>
         request.url().includes('/api/learning/start') && request.method() === 'POST',
     );
-    await startButton.click();
+    await topicCard.click();
     await startRequest;
     await expect(page.getByTestId('learning-session-active')).toBeVisible();
 

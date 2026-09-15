@@ -328,7 +328,10 @@ def test_assigned_board_query_budget_is_eager_for_many_symbols(
 
     assert response.status_code == 200, response.text
     assert len(response.json()) == 8
-    assert query_count() <= 4, f"assigned boards query budget exceeded: {query_count()}"
+    # Budget 5 (was 4): the staff path now runs verify_student_access, which
+    # distinguishes a missing student (404) from a real-but-unassigned one
+    # (200 []) — one constant extra lookup, still independent of board count.
+    assert query_count() <= 5, f"assigned boards query budget exceeded: {query_count()}"
 
 
 def test_next_symbol_query_budget_does_not_scale_with_transition_candidates(

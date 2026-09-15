@@ -84,9 +84,9 @@ def clear_safety_events(
     Today's sentinel verdicts are preserved: each surface="sentinel" row is
     also the strict-moderation daily cost meter, so deleting them would reset
     the current day's LLM spend limit (F14)."""
-    from datetime import datetime
-
-    start_of_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    # Same UTC boundary the cost meter counts from (A9); a local midnight
+    # would prune same-day sentinel rows on a non-UTC host.
+    start_of_day = safety.utc_day_start()
     deleted = (
         db.query(ContentSafetyEvent)
         .filter(

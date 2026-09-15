@@ -21,6 +21,7 @@ from .learning import (
     UserProgress,
 )
 from .notification import Notification
+from .refresh_token import RefreshTokenRecord
 from .settings import AppSettings
 from .symbol import Symbol
 from .user import StudentTeacher, User, UserSettings
@@ -44,6 +45,7 @@ __all__ = [
     "LearningSession",
     "LearningTask",
     "Notification",
+    "RefreshTokenRecord",
     "SavedTopic",
     "StudentTeacher",
     "Symbol",

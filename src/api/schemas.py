@@ -352,18 +352,24 @@ class SavedTopicResponse(BaseModel):
 class LearningModePreviewRequest(BaseModel):
     """Preview the exact LLM system prompt a learning mode would produce."""
 
-    mode_key: str | None = None
+    # Every field below is interpolated into the rendered system/user prompt,
+    # so each mirrors the bound of its persisted twin: mode_key matches
+    # LearningSessionStart.mode_key / LearningMode.key (50),
+    # prompt_instruction matches LearningModeBase (10k), sample_question
+    # matches AnswerSubmit.answer (10k), topic matches
+    # LearningSessionStart.topic (100) (E4).
+    mode_key: str | None = Field(None, min_length=1, max_length=50)
     # Raw instruction for modes that have not been saved yet; takes
     # precedence over a mode_key lookup when provided.
-    prompt_instruction: str | None = None
+    prompt_instruction: str | None = Field(None, max_length=10_000)
     # Optional student to preview against (uses their guardian profile).
-    student_id: int | None = None
+    student_id: int | None = Field(None, ge=1)
     # When provided, the response also includes the exact user message the
     # LLM would receive for this student's question ("Preview with sample
     # question").
-    sample_question: str | None = None
+    sample_question: str | None = Field(None, max_length=10_000)
     # Optional session topic used when rendering the sample-question message.
-    topic: str | None = None
+    topic: str | None = Field(None, max_length=100)
 
 class LearningModePreviewResponse(BaseModel):
     """Rendered system prompt with preview metadata."""
@@ -407,11 +413,14 @@ class SymbolResponse(SymbolBase):
 
 
 class SymbolUpdate(BaseModel):
+    # image_path/audio_path are deliberately absent: the generic update route
+    # must not be able to store an arbitrary path that bypasses
+    # _save_symbol_image's MIME/size validation and orphans the upload it
+    # replaces. Image changes go through POST /symbols/{id}/image, which
+    # validates and cleans up the old file.
     label: str | None = Field(None, min_length=1, max_length=100)
     description: str | None = Field(None, max_length=10_000)
     category: str | None = Field(None, min_length=1, max_length=50)
-    image_path: str | None = Field(None, max_length=255)  # Symbol.image_path String(255)
-    audio_path: str | None = Field(None, max_length=255)  # Symbol.audio_path String(255)
     keywords: str | None = Field(None, max_length=10_000)
     language: str | None = Field(None, min_length=2, max_length=10)
 
@@ -518,7 +527,11 @@ class AISuggestion(BaseModel):
 
 
 class AISuggestionsRequest(BaseModel):
-    refine_prompt: str | None = None
+    # Bounded like the sibling prompt-fed field (LearningSessionStart.purpose,
+    # max 10k): the value is interpolated into the generation prompt and the
+    # safety probe, so an unbounded string was a prompt-injection/cost surface
+    # (A13).
+    refine_prompt: str | None = Field(None, max_length=2000)
     regenerate: bool = False
     item_count: int | None = Field(None, ge=1, le=100)
 
@@ -736,7 +749,10 @@ class SymbolUsageItem(BaseModel):
 
 
 class SymbolUsageRequest(BaseModel):
-    symbols: list[SymbolUsageItem]
+    # One SymbolUsageLog insert per item, so the batch is capped like the
+    # sibling SymbolAnswerSubmit.symbols (max 100) instead of letting a single
+    # request enqueue unbounded rows (E3).
+    symbols: list[SymbolUsageItem] = Field(..., max_length=100)
     session_id: int | None = None
     # Column widths (semantic_intent String(20), context_topic String(100))
     # bound the optional telemetry strings the same way the item fields are.
@@ -761,22 +777,29 @@ class NextSymbolRequest(BaseModel):
 # --- Guardian Profile Schemas (Learning Companion Personality) ---
 
 
+# One bounded prompt-fed string used inside the guardian string lists below.
+# The guardian persona/style/forbidden/trigger values are joined verbatim into
+# the LLM system prompt, so both the item length and the list length must be
+# bounded (E4).
+PromptListItem = Annotated[str, Field(max_length=200)]
+
+
 class MedicalContextSchema(BaseModel):
     """Medical/accessibility context for a student (confidential)"""
 
-    diagnoses: list[str] | None = None
-    sensitivities: list[str] | None = None
-    accessibility_needs: list[str] | None = None
-    notes: str | None = None
+    diagnoses: list[PromptListItem] | None = Field(None, max_length=50)
+    sensitivities: list[PromptListItem] | None = Field(None, max_length=50)
+    accessibility_needs: list[PromptListItem] | None = Field(None, max_length=50)
+    notes: str | None = Field(None, max_length=10_000)
 
 
 class CommunicationStyleSchema(BaseModel):
     """Communication style preferences for the companion"""
 
-    tone: str | None = None  # encouraging, calm, playful, professional
-    complexity: str | None = None  # simple, moderate, advanced
-    sentence_length: str | None = None  # short, medium, long
-    vocabulary_level: str | None = None
+    tone: str | None = Field(None, max_length=50)  # encouraging, calm, playful, professional
+    complexity: str | None = Field(None, max_length=50)  # simple, moderate, advanced
+    sentence_length: str | None = Field(None, max_length=50)  # short, medium, long
+    vocabulary_level: str | None = Field(None, max_length=50)
     use_emojis: bool | None = None
     avoid_idioms: bool | None = None
     avoid_sarcasm: bool | None = None
@@ -787,9 +810,9 @@ class CommunicationStyleSchema(BaseModel):
 class SafetyConstraintsSchema(BaseModel):
     """Safety configuration for content filtering (Layer 1 + 2)."""
 
-    content_filter_level: str | None = None  # strict, standard, relaxed
-    forbidden_topics: list[str] | None = None
-    trigger_words: list[str] | None = None
+    content_filter_level: str | None = Field(None, max_length=20)  # strict, standard, relaxed
+    forbidden_topics: list[PromptListItem] | None = Field(None, max_length=100)
+    trigger_words: list[PromptListItem] | None = Field(None, max_length=100)
     # >=1 only: 0/negative feedback caps corrupt replies (a 0-length slice),
     # and the UI clears the cap with null/undefined.
     max_response_length: int | None = Field(None, ge=1)
@@ -812,11 +835,11 @@ class StudentSafetyCreate(SafetyConstraintsSchema):
 class CompanionPersonaSchema(BaseModel):
     """Companion persona customization"""
 
-    name: str | None = None
-    role: str | None = None
-    personality: list[str] | None = None
-    greeting_style: str | None = None  # consistent, varied
-    sign_off_style: str | None = None
+    name: str | None = Field(None, max_length=50)
+    role: str | None = Field(None, max_length=100)
+    personality: list[PromptListItem] | None = Field(None, max_length=50)
+    greeting_style: str | None = Field(None, max_length=50)  # consistent, varied
+    sign_off_style: str | None = Field(None, max_length=50)
 
 
 class GuardianProfileFields(BaseModel):
@@ -828,21 +851,25 @@ class GuardianProfileFields(BaseModel):
     communication_style: CommunicationStyleSchema | None = None
     safety_constraints: SafetyConstraintsSchema | None = None
     companion_persona: CompanionPersonaSchema | None = None
-    custom_instructions: str | None = None
-    private_notes: str | None = None
+    # Appended verbatim under "Special Instructions" in the system prompt.
+    custom_instructions: str | None = Field(None, max_length=10_000)
+    private_notes: str | None = Field(None, max_length=10_000)
 
 
 class GuardianProfileCreate(GuardianProfileFields):
     """Create a new guardian profile for a student"""
 
-    template_name: str = "default"
+    # Mirrors GuardianProfile.template_name String(100); the create path
+    # catches only IntegrityError, so an over-width value would surface as a
+    # Postgres DataError/500 instead of a clean 422 (E4).
+    template_name: str = Field("default", max_length=100)
 
 
 class GuardianProfileUpdate(GuardianProfileFields):
     """Update an existing guardian profile"""
 
-    template_name: str | None = None
-    change_reason: str | None = None  # For audit trail
+    template_name: str | None = Field(None, max_length=100)
+    change_reason: str | None = Field(None, max_length=500)  # For audit trail
 
 
 class GuardianProfileResponse(BaseModel):

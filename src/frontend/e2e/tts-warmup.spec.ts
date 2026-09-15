@@ -199,10 +199,11 @@ test.describe('TTS warm-up', () => {
 
     const warmupAt = requests.find((r) => r.url.includes('/providers/warmup'))!.at;
 
-    // Start a conversation; the mocked welcome arrives instantly.
-    const startBtn = page.locator('[data-testid="learning-session-start"]');
-    await expect(startBtn).toBeVisible({ timeout: 15000 });
-    await startBtn.click();
+    // Start a conversation from the topic picker; the mocked welcome arrives
+    // instantly.
+    const topicCard = page.locator('[data-testid^="topic-card-"]').first();
+    await expect(topicCard).toBeVisible({ timeout: 15000 });
+    await topicCard.click();
 
     // The conversation's first message is displayed...
     await expect(page.getByText(WELCOME_MESSAGE)).toBeVisible({ timeout: 15000 });

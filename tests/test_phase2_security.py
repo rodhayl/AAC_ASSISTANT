@@ -13,6 +13,7 @@ Phase 2 implementation: November 30, 2025
 
 import importlib
 import os
+import secrets as _secrets
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
@@ -23,7 +24,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.orm import Session
 
-from src.aac_app.models import User
+from src.aac_app.models import RefreshTokenRecord, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.aac_app.utils.jwt_utils import (
     JWT_ALGORITHM,
@@ -32,9 +33,31 @@ from src.aac_app.utils.jwt_utils import (
     create_refresh_token,
     decode_access_token,
     decode_refresh_token,
+    refresh_token_expires_at,
 )
 from src.api.main import app
 from tests.auth_helpers import create_test_headers
+
+
+def _mint_refresh(session, user) -> str:
+    """Mint a rotation-backed refresh token for ``user`` (B1 contract).
+
+    Every refresh token now carries a ledger ``jti``; tests that exercise the
+    refresh endpoint must record the row the production login writes.
+    """
+    jti = _secrets.token_hex(16)
+    session.add(
+        RefreshTokenRecord(
+            jti=jti,
+            family=jti,
+            user_id=user.id,
+            expires_at=refresh_token_expires_at(),
+        )
+    )
+    session.commit()
+    return create_refresh_token(
+        {"sub": user.username, "user_id": user.id}, jti=jti
+    )
 
 
 @pytest.fixture
@@ -187,7 +210,7 @@ class TestTokenRefreshMechanism:
         test_db_session.commit()
 
         # Create refresh token
-        refresh_token = create_refresh_token({"sub": user.username, "user_id": user.id})
+        refresh_token = _mint_refresh(test_db_session, user)
 
         # Call refresh endpoint (body transport — query fallback is opt-in only)
         response = client.post("/api/auth/refresh", json={"refresh_token": refresh_token})
@@ -246,9 +269,7 @@ class TestTokenRefreshMechanism:
         )
         test_db_session.add(user)
         test_db_session.commit()
-        refresh_token = create_refresh_token(
-            {"sub": user.username, "user_id": user.id}
-        )
+        refresh_token = _mint_refresh(test_db_session, user)
         self._patch_refresh_transport(
             monkeypatch, environment="development", allow_query_value=""
         )
@@ -279,9 +300,7 @@ class TestTokenRefreshMechanism:
         )
         test_db_session.add(user)
         test_db_session.commit()
-        refresh_token = create_refresh_token(
-            {"sub": user.username, "user_id": user.id}
-        )
+        refresh_token = _mint_refresh(test_db_session, user)
         self._patch_refresh_transport(
             monkeypatch, environment="development", allow_query_value="1"
         )
@@ -317,9 +336,7 @@ class TestTokenRefreshMechanism:
         )
         test_db_session.add(user)
         test_db_session.commit()
-        refresh_token = create_refresh_token(
-            {"sub": user.username, "user_id": user.id}
-        )
+        refresh_token = _mint_refresh(test_db_session, user)
 
         self._patch_refresh_transport(
             monkeypatch, environment="production", allow_query_value=""
@@ -374,7 +391,7 @@ class TestTokenRefreshMechanism:
         test_db_session.add(user)
         test_db_session.commit()
 
-        refresh_token = create_refresh_token({"sub": user.username, "user_id": user.id})
+        refresh_token = _mint_refresh(test_db_session, user)
         response = client.get(
             "/api/auth/preferences",
             headers={"Authorization": f"Bearer {refresh_token}"},
@@ -446,7 +463,7 @@ class TestTokenRefreshMechanism:
         test_db_session.commit()
 
         # Create valid refresh token
-        refresh_token = create_refresh_token({"sub": user.username, "user_id": user.id})
+        refresh_token = _mint_refresh(test_db_session, user)
 
         # Try to refresh (body transport)
         response = client.post("/api/auth/refresh", json={"refresh_token": refresh_token})
@@ -641,7 +658,9 @@ class TestEnvironmentEnforcement:
             jwt_utils = importlib.reload(src.aac_app.utils.jwt_utils)
             access = jwt_utils.create_access_token({"sub": "u1", "user_id": 1})
             assert access
-            refresh = jwt_utils.create_refresh_token({"sub": "u1", "user_id": 1})
+            refresh = jwt_utils.create_refresh_token(
+                {"sub": "u1", "user_id": 1}, jti="prod-secret-check-jti"
+            )
             assert refresh
 
         # Restore module state from the real test environment.

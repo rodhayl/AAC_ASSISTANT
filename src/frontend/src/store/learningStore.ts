@@ -184,6 +184,24 @@ function formatAssistantContent(content: string | undefined, includeReasoning: b
 // long enough for the student to see which answer was right.
 export const NEXT_QUESTION_REVEAL_DELAY_MS = 1500;
 
+// How many transcript entries the client keeps in memory (G1). The whole
+// conversation is persisted in the session's `conversation_history` and can be
+// reloaded from the backend, so a long session only needs the recent tail; a
+// hard window keeps renders and memory bounded instead of growing per turn
+// (only `providerHistory` was capped before).
+export const MAX_CLIENT_MESSAGES = 200;
+
+function windowMessages(
+  existing: LearningState['messages'],
+  ...added: LearningState['messages']
+): LearningState['messages'] {
+  if (added.length === 0) return existing;
+  const combined = [...existing, ...added];
+  return combined.length > MAX_CLIENT_MESSAGES
+    ? combined.slice(-MAX_CLIENT_MESSAGES)
+    : combined;
+}
+
 // Single pending auto-ask timer; replaced or cancelled when the student asks
 // for a question manually, starts/ends a session, or answers again.
 let nextQuestionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -322,13 +340,13 @@ export const useLearningStore = create<LearningState>((set, get) => {
         wrongChoices,
       },
       progressStats: mergeProgress(state.progressStats, result),
-      messages: [
-        ...state.messages,
+      messages: windowMessages(
+        state.messages,
         ...(userMessage
           ? [{ role: 'user' as const, content: userMessage, ...(symbolImages ? { symbolImages } : {}) }]
           : []),
         { role: 'assistant' as const, content: reply },
-      ],
+      ),
       isLoading: false,
     }));
 
@@ -504,7 +522,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
             ...(get().progressStats ?? {}),
             difficulty: question.difficulty ?? get().progressStats?.difficulty,
           },
-          messages: [...prev, { role: 'assistant' as const, content: formatAssistantContent(question.question_text || tLearning('learning:questionReady'), showReasoning) }],
+          messages: windowMessages(prev, { role: 'assistant' as const, content: formatAssistantContent(question.question_text || tLearning('learning:questionReady'), showReasoning) }),
           isLoading: false
         });
         if (question.provider_used) {
@@ -538,7 +556,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
     const requestId = ++answerRequestId;
     set({ isSubmittingAnswer: true, isLoading: true, error: null });
     set((state) => ({
-      messages: [...state.messages, { role: 'user' as const, content: answer }],
+      messages: windowMessages(state.messages, { role: 'user' as const, content: answer }),
     }));
     try {
       const response = await api.post<AnswerResponse & WithProvider>(`/learning/${sessionId}/answer`, {
@@ -556,6 +574,10 @@ export const useLearningStore = create<LearningState>((set, get) => {
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
       set({ error: extractError(error, tLearning('learning:errors.submitAnswerFailed')), isLoading: false, revealedAnswer: null });
+      // B5: same contract as submitSymbolAnswer (H38/H59) — rethrow so senders
+      // can tell a failed submit from a successful one and keep the composed
+      // answer for retry instead of discarding it.
+      throw error;
     } finally {
       set({ isSubmittingAnswer: false });
     }
@@ -585,6 +607,9 @@ export const useLearningStore = create<LearningState>((set, get) => {
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
       set({ error: extractError(error, tLearning('learning:errors.submitVoiceAnswerFailed')), isLoading: false, revealedAnswer: null });
+      // B5: same contract as submitSymbolAnswer (H38/H59) — rethrow so the
+      // recording/utterance survives a failed submit for retry.
+      throw error;
     } finally {
       set({ isSubmittingAnswer: false });
     }
@@ -599,7 +624,7 @@ export const useLearningStore = create<LearningState>((set, get) => {
     const userContent = userMessage || '[symbols]';
     const symbolImages = symbols.map((s) => ({ label: s.label, image_path: s.image_path, category: s.category }));
     set((state) => ({
-      messages: [...state.messages, { role: 'user' as const, content: userContent, symbolImages }],
+      messages: windowMessages(state.messages, { role: 'user' as const, content: userContent, symbolImages }),
     }));
     try {
       const response = await api.post<AnswerResponse & WithProvider>(`/learning/${sessionId}/answer/symbols`, {
@@ -619,6 +644,10 @@ export const useLearningStore = create<LearningState>((set, get) => {
     } catch (error: unknown) {
       if (!isCurrentOperationRequest(requestEpoch, requestId, answerRequestId, sessionId, get)) return;
       set({ error: extractError(error, tLearning('learning:errors.submitSymbolAnswerFailed')), isLoading: false, revealedAnswer: null });
+      // Rethrow so senders can tell a failed submit from a successful one:
+      // both call sites clear the composed utterance/strip and previously
+      // discarded it whenever the API call failed (H38/H59).
+      throw error;
     } finally {
       set({ isSubmittingAnswer: false });
     }
@@ -676,12 +705,14 @@ export const useLearningStore = create<LearningState>((set, get) => {
       // Walk every page so users with more sessions than one page are not
       // silently truncated; a short final page terminates the walk.
       const sessions = await walkPages<SessionHistoryItem>({
-        pageSize: 1000,
+        // Matches the server-side route cap (le=200); the walk still pages
+        // past it so long histories are not truncated.
+        pageSize: 200,
         fetchPage: async (skip) => {
           const response = await api.get<{ sessions: SessionHistoryItem[] }>(
             `/learning/history/${userId}`,
             {
-              params: { ...(skip > 0 ? { skip } : {}), limit: 1000 },
+              params: { ...(skip > 0 ? { skip } : {}), limit: 200 },
             },
           );
           return response.data.sessions || [];
@@ -748,7 +779,9 @@ export const useLearningStore = create<LearningState>((set, get) => {
           board_id: sessionData.board_id,
           welcome_message: messages[0]?.content || ''
         },
-        messages,
+        messages: messages.length > MAX_CLIENT_MESSAGES
+          ? messages.slice(-MAX_CLIENT_MESSAGES)
+          : messages,
         isLoading: false,
         // Loaded history was already spoken when it happened; replaying it
         // would read the whole past conversation aloud.

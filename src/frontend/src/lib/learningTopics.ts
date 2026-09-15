@@ -42,7 +42,13 @@ function loadLocalTopics(userId: number): SavedTopic[] {
           'id' in t &&
           typeof t.id === 'number' &&
           'topic' in t &&
-          typeof t.topic === 'string',
+          typeof t.topic === 'string' &&
+          // ``board`` must be a non-empty string: the saved-topic endpoint
+          // validates it, so a board-less legacy row would answer 422 and
+          // abort the whole migration queue on every mount (H62).
+          'board' in t &&
+          typeof t.board === 'string' &&
+          t.board.trim().length > 0,
       );
     }
   } catch {
@@ -78,7 +84,12 @@ export function migrateLocalTopicsToBackend(userId: number): Promise<void> {
 async function doMigrateLocalTopics(userId: number): Promise<void> {
   const storageKey = keyForUser(userId);
   const local = loadLocalTopics(userId);
-  if (local.length === 0) return;
+  if (local.length === 0) {
+    // Nothing migratable: clear the legacy key so an unmigratable row cannot
+    // make every mount re-run the migration.
+    localStorage.removeItem(storageKey);
+    return;
+  }
   try {
     for (const topic of local) {
       try {

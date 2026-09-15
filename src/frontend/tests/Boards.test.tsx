@@ -479,8 +479,72 @@ describe('Boards page management', () => {
     expect(await screen.findByRole('alert')).toBeInTheDocument();
   });
 
+  it('never selects or deletes boards the user cannot manage (H39/H60)', async () => {
+    // A teacher lists shared boards: one owned by them, one owned by another
+    // user. Select-all must skip the unowned board and the bulk delete must
+    // never issue a DELETE for it.
+    const foreign = { ...board, id: 2, name: 'Someone Else Board', user_id: 77 };
+    mockBoardList(board, foreign);
+    api.delete.mockResolvedValue({ data: {} });
+    renderBoards();
+    await screen.findByText('Morning Routine');
+
+    fireEvent.click(screen.getByLabelText('Select All'));
+    fireEvent.click(screen.getByRole('button', { name: /Delete Selected/ }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByText('Delete'));
+
+    await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/boards/1'));
+    expect(api.delete).not.toHaveBeenCalledWith('/boards/2');
+  });
+
+  it('B6: select-all reports an honest checked state with unowned boards visible', async () => {
+    // The checkbox reflects the boards select-all actually controls. With one
+    // owned and one foreign board visible, selecting all (manageable only)
+    // must still show the box as checked.
+    const foreign = { ...board, id: 2, name: 'Someone Else Board', user_id: 77 };
+    mockBoardList(board, foreign);
+    renderBoards();
+    await screen.findByText('Morning Routine');
+
+    const checkbox = screen.getByLabelText('Select All') as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+  });
+
+  it('B6: account switch clears stale selection and dialogs', async () => {
+    // Selection is account-scoped: after switching to another account the
+    // previous selection must not survive (overlapping global ids could
+    // otherwise be deleted without the new user selecting them).
+    mockBoardList(board);
+    api.delete.mockResolvedValue({ data: {} });
+    const { rerender } = renderBoards();
+    await screen.findByText('Morning Routine');
+
+    fireEvent.click(screen.getByLabelText('Select All'));
+    expect(screen.getByRole('button', { name: /Delete Selected/ })).toBeInTheDocument();
+
+    vi.mocked(useAuthStore).mockImplementation(
+      (selector?: (state: { user: typeof studentUser }) => unknown) =>
+        selector ? selector({ user: studentUser }) : { user: studentUser },
+    );
+    rerender(
+      <MemoryRouter>
+        <Boards />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Delete Selected/ })).not.toBeInTheDocument();
+    });
+  });
+
   it('refreshes the list and loads more pages', async () => {
-    const many = Array.from({ length: 100 }, (_, i) => ({ ...board, id: i + 1, name: `Board ${i + 1}` }));
+    // One row past the page boundary: the store requests ``PAGE_SIZE + 1`` as a
+    // one-ahead probe, so this is what a genuinely non-final page returns.
+    const many = Array.from({ length: 101 }, (_, i) => ({ ...board, id: i + 1, name: `Board ${i + 1}` }));
     mockBoardList(...many);
     useBoardStore.setState({ boards: [board], isListLoading: false, hasMore: true, page: 1 });
     renderBoards();
@@ -489,14 +553,14 @@ describe('Boards page management', () => {
     fireEvent.click(screen.getByTestId('force-refresh'));
     await waitFor(() =>
       expect(api.get).toHaveBeenCalledWith('/boards/', {
-        params: { user_id: 10, skip: 0, limit: 100 },
+        params: { user_id: 10, skip: 0, limit: 101 },
       }),
     );
 
     fireEvent.click(screen.getByText('Load More'));
     await waitFor(() =>
       expect(api.get).toHaveBeenCalledWith('/boards/', {
-        params: { user_id: 10, skip: 100, limit: 100 },
+        params: { user_id: 10, skip: 100, limit: 101 },
       }),
     );
   }, 20000);
@@ -513,7 +577,7 @@ describe('Boards page management', () => {
     fireEvent.click(screen.getByText('Retry'));
     await waitFor(() =>
       expect(api.get).toHaveBeenCalledWith('/boards/', {
-        params: { user_id: 10, skip: 0, limit: 100 },
+        params: { user_id: 10, skip: 0, limit: 101 },
       }),
     );
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());

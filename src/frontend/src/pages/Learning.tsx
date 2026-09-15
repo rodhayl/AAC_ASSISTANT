@@ -361,7 +361,13 @@ export function Learning() {
     }
     const answer = input;
     setInput('');
-    await answerAndContinue(answer);
+    try {
+      await answerAndContinue(answer);
+    } catch {
+      // B5: a failed submit must not discard the composed answer — restore it
+      // for retry. The store already surfaced the error.
+      setInput(answer);
+    }
   };
 
   // Manual request bypasses the auto-ask gate so teachers can still pull a
@@ -421,7 +427,12 @@ export function Learning() {
       const enrichedGloss = glossSymbolUtterance(symbolUtterance);
       const rawGloss = symbolUtterance.map((symbol) => symbol.label).join(' ');
       await submitSymbolAnswer(sessionId, symbolUtterance, enrichedGloss, rawGloss);
+      // Only clear the strip once the submit actually succeeded: clearing it
+      // on failure threw the composed utterance away with no way to retry.
       setSymbolUtterance([]);
+    } catch {
+      // The store already surfaced the failure in `error`; keeping the strip
+      // lets the user retry the same phrase.
     } finally {
       setIsStartingSession(false);
     }

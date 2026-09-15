@@ -6,7 +6,12 @@ Examples:
     python -m src.scripts.account_admin reset --username admin1 --password '123' --force
     python -m src.scripts.account_admin unlock --username teacher1
 
-The password may also be supplied through AAC_ADMIN_RESET_PASSWORD for reset.
+The password is read from AAC_ADMIN_RESET_PASSWORD or an interactive prompt;
+``--password`` still works but warns because argv leaks the secret into the
+process table and shell history.
+
+Reset also clears failed-login lockout rows so the new password can be used
+immediately, and warns when the account is deactivated.
 
 Reset enforces the same password-strength policy as the API routes: a weak
 password is refused with a clear message unless ``--force`` is passed (for
@@ -17,6 +22,8 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
+from getpass import getpass
 
 from sqlalchemy.orm import Session
 
@@ -53,7 +60,18 @@ def reset_password(
         return False
     user.password_hash = get_password_hash(new_password)
     mark_credentials_changed(user)
+    # A reset must actually restore access.  Leaving failed-login rows in
+    # place answers the next login with "account locked" even though the new
+    # password is correct (the API reset path clears them for the same
+    # reason); an inactive account stays disabled, so say so explicitly
+    # instead of letting the operator believe the account works again.
+    lockout_service.reset_attempts(session, username)
     session.commit()
+    if not user.is_active:
+        print(
+            f"Warning: {username!r} is deactivated; the password is reset but "
+            "logins remain rejected until the account is reactivated."
+        )
     return True
 
 
@@ -73,12 +91,30 @@ def check_account(session: Session, username: str) -> bool:
 
 
 def _password(value: str | None) -> str:
-    password = (value or os.environ.get("AAC_ADMIN_RESET_PASSWORD", "")).strip()
-    if not password:
-        raise SystemExit(
-            "Provide --password <new_password> or set AAC_ADMIN_RESET_PASSWORD."
+    """Resolve the new password, preferring sources that keep it off argv.
+
+    ``--password`` lands in the process table and shell history, so it is the
+    last resort and warns when used; the environment variable and an
+    interactive prompt (stdin) are preferred.
+    """
+    if value:
+        print(
+            "Warning: --password exposes the secret in the process table and "
+            "shell history; prefer AAC_ADMIN_RESET_PASSWORD or the interactive "
+            "prompt."
         )
-    return password
+        return value.strip()
+    password = os.environ.get("AAC_ADMIN_RESET_PASSWORD", "").strip()
+    if password:
+        return password
+    if sys.stdin is not None and sys.stdin.isatty():
+        password = getpass("New password: ").strip()
+        if password:
+            return password
+    raise SystemExit(
+        "Provide the new password via AAC_ADMIN_RESET_PASSWORD, the interactive "
+        "prompt, or (last resort, insecure) --password <new_password>."
+    )
 
 
 def main() -> int:

@@ -6,7 +6,7 @@ import unicodedata
 from datetime import datetime, timedelta
 
 from loguru import logger
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from ...models import CommunicationBoard, LearningPlan, LearningSession, LearningTask, User
 from ...services.achievement_system import AchievementSystem
@@ -115,9 +115,13 @@ class SessionLifecycleMixin:
                     }
 
                 # Create learning plan and task
+                # LearningPlan.name / LearningTask.name are String(100) while
+                # ``topic`` is validated to 100 characters, so the derived
+                # prefixes must not push the stored value over the column
+                # (SQLite over-stores silently, Postgres raises at flush).
                 plan = LearningPlan(
                     user_id=user_id,
-                    name=f"Learning: {topic}",
+                    name=f"Learning: {topic[:90]}",
                     description=purpose or f"Interactive learning session about {topic}",
                     difficulty=difficulty,
                 )
@@ -126,7 +130,7 @@ class SessionLifecycleMixin:
 
                 task = LearningTask(
                     plan_id=plan.id,
-                    name=f"Explore {topic}",
+                    name=f"Explore {topic[:92]}",
                     description=f"Learn about {topic} through interactive questions",
                     task_type="learning_companion",
                     status="in_progress",
@@ -187,11 +191,13 @@ class SessionLifecycleMixin:
                     "provider_used": self.provider_type,
                 }
 
-        except Exception as e:
-            logger.error(f"Failed to start learning session: {e}")
-            # Never echo the raw exception to the client (it can contain
-            # internals); the logger above keeps the full detail.
-            return {"success": False, "error": "Failed to start learning session"}
+        except Exception:
+            # Unexpected server failure (DB outage, provider error, ...): log the
+            # full detail and propagate so the route surfaces a 5xx the client
+            # can retry, instead of a 400 that reads as invalid input and hides
+            # the outage from monitoring. Domain failures return above.
+            logger.exception(f"Failed to start learning session for user {user_id}")
+            raise
 
     def _build_welcome_message(
         self,
@@ -337,9 +343,10 @@ class SessionLifecycleMixin:
                         reverse=True,
                     )[:8],
                 }
-        except Exception as e:
-            logger.error(f"Failed to build topic pool for user {user_id}: {e}")
-            return {"success": False, "error": "Failed to build topic pool"}
+        except Exception:
+            # Propagate unexpected failures as 5xx (see start_learning_session).
+            logger.exception(f"Failed to build topic pool for user {user_id}")
+            raise
 
     def _topic_purpose(self, db: Session, topic_name: str) -> str:
         """Most recent non-empty purpose for a topic (or '')."""
@@ -401,9 +408,10 @@ class SessionLifecycleMixin:
                     "conversation_history": history,
                 }
 
-        except Exception as e:
-            logger.error(f"Failed to get session progress: {e}")
-            return {"success": False, "error": "Failed to get session progress"}
+        except Exception:
+            # Propagate unexpected failures as 5xx (see start_learning_session).
+            logger.exception(f"Failed to get session progress for session {session_id}")
+            raise
 
     def get_user_history(
         self,
@@ -418,6 +426,10 @@ class SessionLifecycleMixin:
             with self._session_scope(db) as db:
                 sessions = (
                     db.query(LearningSession)
+                    # History serializes only scalars; defer the conversation
+                    # JSON so a deep page does not materialize up to 50 turns
+                    # per row just to throw them away.
+                    .options(defer(LearningSession.conversation_history))
                     .filter(LearningSession.user_id == user_id)
                     .order_by(LearningSession.started_at.desc())
                     .offset(max(skip, 0))
@@ -444,6 +456,7 @@ class SessionLifecycleMixin:
 
                 return {"success": True, "sessions": session_list}
 
-        except Exception as e:
-            logger.error(f"Failed to get user history: {e}")
-            return {"success": False, "error": "Failed to get user history"}
+        except Exception:
+            # Propagate unexpected failures as 5xx (see start_learning_session).
+            logger.exception(f"Failed to get user history for user {user_id}")
+            raise

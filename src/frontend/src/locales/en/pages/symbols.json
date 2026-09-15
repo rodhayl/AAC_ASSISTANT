@@ -47,6 +47,7 @@
   "failed": "Failed",
   "loadFailed": "Failed to load symbols",
   "updateFailed": "Failed to update symbol",
+  "imageUpdateFailed": "The details were saved, but the new image could not be uploaded.",
   "createFailed": "Failed to create symbol",
   "deleteFailed": "Failed to delete symbol",
   "arasaacSearchFailed": "Failed to search ARASAAC",

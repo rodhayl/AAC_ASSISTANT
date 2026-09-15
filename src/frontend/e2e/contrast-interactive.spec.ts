@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { auditContrast } from './contrast-audit';
+import { ensureDemoBoard } from './demo-fixture';
 
 /**
  * Interactive-surface contrast audit. The static route audit covers what is
@@ -10,6 +11,37 @@ import { auditContrast } from './contrast-audit';
  */
 const modes = ['light', 'dark', 'high-contrast', 'high-contrast-dark'] as const;
 type Mode = (typeof modes)[number];
+
+/**
+ * Resolve an editable board id through the signed-in admin's own session.
+ *
+ * The board editor needs a real board, and its id is not stable across
+ * databases (a seeded run has the demo board, a clean/production-shaped run
+ * has none) — the previous hardcoded `/boards/1` audited the 404 page there.
+ */
+async function firstBoardId(page: Page): Promise<number | null> {
+  return page.evaluate(async () => {
+    const raw = localStorage.getItem('auth-storage');
+    let token: string | undefined;
+    try {
+      token = raw ? ((JSON.parse(raw) as { state?: { token?: string } }).state?.token ?? undefined) : undefined;
+    } catch {
+      token = undefined;
+    }
+    const res = await fetch('/api/boards?limit=1', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as unknown;
+    const items = Array.isArray(body)
+      ? body
+      : ((body as { boards?: unknown[]; items?: unknown[] }).boards ??
+        (body as { items?: unknown[] }).items ??
+        []);
+    const first = items[0] as { id?: number } | undefined;
+    return typeof first?.id === 'number' ? first.id : null;
+  });
+}
 
 async function applyMode(page: Page, mode: Mode) {
   await page.evaluate((target: Mode) => {
@@ -45,7 +77,16 @@ test.describe('Contrast audit — interactive surfaces (WCAG AA)', () => {
     });
 
     test(`board editor toolbar+settings in ${mode}`, async ({ page }) => {
-      await page.goto('/boards/1', { waitUntil: 'load' });
+      // The board editor needs an editable board; build the demo board through
+      // the API when the database is clean instead of skipping the audit.
+      await ensureDemoBoard(page.request);
+      await page.goto('/', { waitUntil: 'load' });
+      const boardId = await firstBoardId(page);
+      // Defensive: the fixture above guarantees a board, so this only fires if
+      // the API shape changes.
+      test.skip(boardId === null, 'the account has no board to open');
+
+      await page.goto(`/boards/${boardId}`, { waitUntil: 'load' });
       await page.waitForTimeout(1200);
       await applyMode(page, mode);
       // The board-settings dialog trigger (aria-label varies by locale).

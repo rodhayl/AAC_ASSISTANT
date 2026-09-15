@@ -42,6 +42,11 @@ const IGNORED_DIRS = new Set([
   '.git',
   '.vite',
 ]);
+// Test-only FILES inside otherwise-built directories. Vite never bundles
+// `*.test.*`/`*.spec.*` sources, so touching one cannot make dist stale —
+// without this the guard failed on test-only edits and pushed people to
+// bypass it.
+const IGNORED_FILE_PATTERN = /(\.|_)(test|spec)\.[cm]?[jt]sx?$/;
 
 // Filesystem timestamps can round to the same second; a 1s grace avoids
 // false failures right after a build.
@@ -61,6 +66,7 @@ function newestMtimeMs(filePath) {
   let newest = 0;
   for (const entry of readdirSync(filePath, { withFileTypes: true })) {
     if (entry.isDirectory() && IGNORED_DIRS.has(entry.name)) continue;
+    if (!entry.isDirectory() && IGNORED_FILE_PATTERN.test(entry.name)) continue;
     newest = Math.max(newest, newestMtimeMs(path.join(filePath, entry.name)));
   }
   return newest;

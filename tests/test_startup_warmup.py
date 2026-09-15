@@ -227,6 +227,13 @@ class TestLifespanShutdown:
         monkeypatch.setattr("src.api.main.schema.ensure", lambda: None)
         monkeypatch.setattr("src.api.main.init_database", lambda ensure_schema=False: None)
         monkeypatch.setattr("src.api.main.asyncio.to_thread", blocking_to_thread)
+        # The symbol-index worker is skipped under pytest; this test needs it
+        # (and only it) to observe its cancellation. warmup_providers is not
+        # gated at all, so the expected started set stays the same.
+        monkeypatch.setattr(
+            "src.api.main._background_task_runnable",
+            lambda _app, label: label == "symbol indexing",
+        )
 
         async def exercise_lifespan():
             async with lifespan(app):
@@ -253,6 +260,11 @@ class TestLifespanShutdown:
         monkeypatch.setattr("src.api.main.warmup_providers", lambda timeout_seconds=30.0: None)
         monkeypatch.setattr(
             "src.api.main.config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS", 3
+        )
+        # Opt in to the real index worker (skipped under pytest by default).
+        monkeypatch.setattr(
+            "src.api.main._background_task_runnable",
+            lambda _app, label: label == "symbol indexing",
         )
 
         def hanging_index():
@@ -311,6 +323,204 @@ class TestLifespanShutdown:
         assert cleanup_calls
         budget = cleanup_calls[0]["timeout_seconds"]
         assert 0 < budget < configured_timeout
+
+
+class TestShutdownWorkerDrains:
+    """F3: the n-gram worker and scheduled downloads drain before return."""
+
+    def test_shutdown_waits_for_a_running_ngram_rebuild(self, monkeypatch):
+        from src.api.main import app, lifespan
+
+        worker_started = threading.Event()
+        worker_finished = threading.Event()
+        cleanup_calls: list[dict] = []
+        real_get_bool = __import__("src.config", fromlist=["config"]).get_bool
+
+        def fake_get_bool(key, default=False):
+            if key == "AAC_ENABLE_NGRAM_REBUILD":
+                return True
+            return real_get_bool(key, default)
+
+        def slow_rebuild(*_args, **_kwargs):
+            worker_started.set()
+            # Long enough that shutdown starts while this is still running.
+            time.sleep(0.4)
+            worker_finished.set()
+
+        async def fake_reset_providers_async(**kwargs):
+            cleanup_calls.append(kwargs)
+
+        monkeypatch.setattr("src.api.main.schema.ensure", lambda: None)
+        monkeypatch.setattr("src.api.main.init_database", lambda ensure_schema=False: None)
+        monkeypatch.setattr("src.api.main.warmup_providers", lambda timeout_seconds=30.0: None)
+        monkeypatch.setattr("src.api.main.index_all_symbols", lambda: None)
+        monkeypatch.setattr("src.api.main.config.get_bool", fake_get_bool)
+        monkeypatch.setattr("src.api.main.rebuild_ngram_models", slow_rebuild)
+        # Background tasks are skipped under pytest; this test needs the real
+        # worker so the shutdown handshake can be observed.
+        monkeypatch.setattr(
+            "src.api.main._background_task_runnable", lambda _app, _label: True
+        )
+        monkeypatch.setattr("src.api.main.reset_providers_async", fake_reset_providers_async)
+
+        async def exercise_lifespan():
+            async with lifespan(app):
+                deadline = asyncio.get_running_loop().time() + 2
+                while not worker_started.is_set():
+                    if asyncio.get_running_loop().time() >= deadline:
+                        raise AssertionError("n-gram rebuild worker did not start")
+                    await asyncio.sleep(0.01)
+            # Shutdown just ran while the synchronous worker was mid-rebuild.
+            assert worker_finished.is_set(), "shutdown returned mid-rebuild"
+
+        asyncio.run(exercise_lifespan())
+        assert cleanup_calls
+
+    def test_shutdown_drains_scheduled_symbol_image_downloads(self, monkeypatch):
+        from src.api.main import app, lifespan
+
+        seen_timeouts: list[float] = []
+
+        async def fake_cancel(timeout_seconds: float) -> bool:
+            seen_timeouts.append(timeout_seconds)
+            return True
+
+        async def fake_reset_providers_async(**_kwargs):
+            return None
+
+        monkeypatch.setattr("src.api.main.schema.ensure", lambda: None)
+        monkeypatch.setattr("src.api.main.init_database", lambda ensure_schema=False: None)
+        monkeypatch.setattr("src.api.main.warmup_providers", lambda timeout_seconds=30.0: None)
+        monkeypatch.setattr("src.api.main.index_all_symbols", lambda: None)
+        monkeypatch.setattr(
+            "src.api.main.config.BACKEND_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS", 3
+        )
+        monkeypatch.setattr(
+            "src.api.main.cancel_scheduled_symbol_image_downloads", fake_cancel
+        )
+        monkeypatch.setattr("src.api.main.reset_providers_async", fake_reset_providers_async)
+
+        async def exercise_lifespan():
+            async with lifespan(app):
+                await asyncio.sleep(0.01)
+
+        asyncio.run(exercise_lifespan())
+
+        assert seen_timeouts, "shutdown did not drain scheduled downloads"
+        # Inside the shutdown budget, and reserved before provider cleanup.
+        assert 0 < seen_timeouts[0] < 3
+
+    def test_cancelling_scheduled_downloads_awaits_the_tasks(self):
+        from src.aac_app.services import symbol_image_backfill as backfill
+
+        async def exercise():
+            started = asyncio.Event()
+
+            async def long_running() -> None:
+                started.set()
+                await asyncio.sleep(30)
+
+            task = asyncio.create_task(long_running(), name="symbol-image-download-test")
+            backfill._scheduled_tasks.add(task)
+            task.add_done_callback(backfill._scheduled_tasks.discard)
+            await started.wait()
+
+            drained = await backfill.cancel_scheduled_symbol_image_downloads(1.0)
+
+            assert task.done()
+            return drained
+
+        assert asyncio.run(exercise()) is True
+
+
+class TestCredentialsAndWarmupLocks:
+    """F7: credentialed CORS + no provider lock held across a model load.
+
+    Both halves were investigated on the pinned Starlette/providers code and
+    the reported defect could not be reproduced; these tests pin the verified
+    behaviour so a future change cannot silently regress it.
+    """
+
+    def test_credentialed_preflight_never_emits_a_wildcard(self):
+        """``allow_methods/headers=["*"]`` is resolved, not sent literally.
+
+        With ``allow_credentials=True`` a literal ``*`` would be rejected by
+        browsers. Starlette expands the method wildcard to the concrete method
+        set and echoes the requested headers, and ``resolve_allowed_origins``
+        refuses a wildcard origin outright.
+        """
+        from fastapi.testclient import TestClient
+
+        from src.api.main import app
+
+        response = TestClient(app).options(
+            "/api/health",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type,authorization",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+        assert response.headers["access-control-allow-credentials"] == "true"
+        allowed_methods = response.headers["access-control-allow-methods"]
+        assert "*" not in allowed_methods
+        assert "POST" in allowed_methods
+        assert response.headers["access-control-allow-headers"] == (
+            "content-type,authorization"
+        )
+
+    def test_speech_initializer_does_not_hold_the_provider_lock_while_loading(
+        self, monkeypatch
+    ):
+        """The (potentially slow) provider construction runs outside the lock."""
+        from src.api.deps import providers as providers_mod
+
+        lock_was_free: list[bool] = []
+
+        class RecordingSpeechProvider:
+            def __init__(self, **_kwargs):
+                acquired = providers_mod._provider_lock.acquire(blocking=False)
+                lock_was_free.append(acquired)
+                if acquired:
+                    providers_mod._provider_lock.release()
+
+            def is_available(self) -> bool:
+                return True
+
+        monkeypatch.setattr(providers_mod, "LocalSpeechProvider", RecordingSpeechProvider)
+        monkeypatch.setattr(providers_mod, "normalize_stt_model", lambda value: value)
+        monkeypatch.setattr(
+            providers_mod, "_get_setting_value", lambda _key, default="": default
+        )
+
+        assert providers_mod._init_speech_provider_sync() is True
+        assert lock_was_free == [True]
+
+    def test_vector_store_initializer_stays_lazy_under_the_locks(self, monkeypatch):
+        """The construction that runs under the locks loads no model."""
+        from src.api.deps import providers as providers_mod
+
+        seen_kwargs: list[dict] = []
+
+        class RecordingVectorStore:
+            def __init__(self, **kwargs):
+                seen_kwargs.append(kwargs)
+
+            def is_available(self) -> bool:
+                return True
+
+        monkeypatch.setattr(providers_mod, "LocalVectorStore", RecordingVectorStore)
+        monkeypatch.setattr(providers_mod, "_close_vector_store", lambda _store: None)
+
+        try:
+            assert providers_mod._init_vector_store_sync() is True
+        finally:
+            providers_mod._vector_store = None
+
+        assert seen_kwargs == [{"lazy_load": True}]
 
 
 class TestWarmupTimeoutCorrectness:

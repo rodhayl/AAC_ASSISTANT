@@ -369,6 +369,32 @@ describe('auth session refresh robustness', () => {
     expect(config?.params).toBeUndefined();
   });
 
+  it('persists the rotated refresh token from the refresh response (H3)', async () => {
+    seedSession('not-a-jwt');
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      data: {
+        access_token: makeJwt(Math.floor(Date.now() / 1000) + 7200),
+        refresh_token: 'rotated-refresh-token',
+      },
+    } as never);
+
+    expect(await useAuthStore.getState().refreshAccessToken()).toBe(true);
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(useAuthStore.getState().refreshToken).toBe('rotated-refresh-token');
+  });
+
+  it('keeps the current refresh token when the server does not rotate it', async () => {
+    seedSession('not-a-jwt');
+    vi.spyOn(api, 'post').mockResolvedValue({
+      data: { access_token: makeJwt(Math.floor(Date.now() / 1000) + 7200) },
+    } as never);
+
+    expect(await useAuthStore.getState().refreshAccessToken()).toBe(true);
+
+    expect(useAuthStore.getState().refreshToken).toBe('valid-refresh-token');
+  });
+
   it('discards a deferred refresh success published after logout', async () => {
     seedSession('not-a-jwt');
     let resolveRefresh: ((value: { data: { access_token: string } }) => void) | undefined;
@@ -745,4 +771,26 @@ describe('auth session refresh robustness', () => {
     expect(useAuthStore.getState().isLoading).toBe(false);
     expect(useAuthStore.getState().error).toBeNull();
   });
+
+  it('clears the persisted session before awaiting server revocation (A16)', async () => {
+    let releaseRevocation: () => void = () => {};
+    vi.spyOn(api, 'post').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseRevocation = () => resolve({ data: { ok: true } } as never);
+        }) as never,
+    );
+
+    const logoutPromise = useAuthStore.getState().logout();
+
+    // Revocation is still in flight, yet the persisted auth-storage is already
+    // cleared: a /login navigation that does not await logout cannot rehydrate
+    // the stale session.
+    expect(persistedState()).toMatchObject({ token: null, isAuthenticated: false });
+
+    releaseRevocation();
+    await logoutPromise;
+    expect(persistedState()).toMatchObject({ token: null, isAuthenticated: false });
+  });
+
 });

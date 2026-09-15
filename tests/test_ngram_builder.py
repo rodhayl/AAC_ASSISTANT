@@ -526,9 +526,13 @@ def test_lifespan_cancels_periodic_ngram_rebuild_on_shutdown(monkeypatch):
 
     calls: list[tuple[str, ...]] = []
 
-    async def fake_periodic(locales, interval_seconds=3600):
+    async def fake_periodic(locales, interval_seconds=3600, *, rebuild_fn=None):
         while True:
             calls.append(locales)
+            # Mirror the production call shape, including the shutdown-handshake
+            # wrapper the lifespan now injects as ``rebuild_fn`` (F3).
+            if rebuild_fn is not None:
+                await asyncio.to_thread(rebuild_fn, None, locales)
             await asyncio.sleep(interval_seconds)
 
     # Activate the periodic task; keep the other startup work inert so the

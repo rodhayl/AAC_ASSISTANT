@@ -1,11 +1,17 @@
 import { test, expect } from '@playwright/test';
 
+import { ensureDemoBoard } from './demo-fixture';
+
 test.describe('Extended Features', () => {
   
   test.describe('Symbol Management', () => {
     test.use({ storageState: 'playwright/.auth/admin.json' });
 
     test('should filter and sort real seeded symbols', async ({ page }) => {
+      // The "in use" filter needs a board that references the seeded symbols;
+      // the fixture builds one through the API (idempotent on seeded runs).
+      await ensureDemoBoard(page.request);
+
       // No API mocks: the symbol library is served by the production backend.
       await page.goto('/symbols');
       await expect(page.locator('.animate-spin')).not.toBeVisible({ timeout: 20000 });

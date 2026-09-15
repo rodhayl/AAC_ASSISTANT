@@ -9,6 +9,10 @@ import { formatDateTime } from '../lib/format';
 
 import { SectionTitle } from '@/components/ui/SectionTitle';
 
+// The dashboard activity list is a summary, not a log: the backend can return
+// up to 100 rows and rendering them all made the page heavy for no benefit.
+export const MAX_ACTIVITY_ITEMS = 10;
+
 export function Dashboard() {
   const user = useAuthStore((state) => state.user);
   const boards = useBoardStore((state) => state.boards);
@@ -21,15 +25,21 @@ export function Dashboard() {
   const isLoading = useDashboardStore((state) => state.isLoading);
   const { t } = useTranslation('dashboard');
 
+  // Depend on the consumed primitives, not the whole user object: the auth
+  // store replaces `user` on unrelated settings saves/refreshes, which used to
+  // re-run this effect (and refetch every dashboard source) every time (H41).
+  const userId = user?.id;
+  const userType = user?.user_type;
+
   useEffect(() => {
-    if (user) {
-      fetchBoards(user.id);
-      if (user.user_type === 'student') {
-        fetchAssignedBoards(user.id);
+    if (userId !== undefined) {
+      fetchBoards(userId);
+      if (userType === 'student') {
+        fetchAssignedBoards(userId);
       }
-      fetchDashboardData(user.id);
+      fetchDashboardData(userId);
     }
-  }, [user, fetchBoards, fetchAssignedBoards, fetchDashboardData]);
+  }, [userId, userType, fetchBoards, fetchAssignedBoards, fetchDashboardData]);
 
   return (
     <div className="space-y-8">
@@ -143,7 +153,7 @@ export function Dashboard() {
               ))}
             </div>
           ) : recentActivity.length > 0 ? (
-            recentActivity.map((activity, i) => (
+            recentActivity.slice(0, MAX_ACTIVITY_ITEMS).map((activity, i) => (
               <div key={i} className="p-4 hover:bg-surface-hover transition-colors flex items-center">
                 <div className="p-2 bg-muted rounded-lg mr-4">
                   <Clock className="w-4 h-4 text-muted-foreground" />

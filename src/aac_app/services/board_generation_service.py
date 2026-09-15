@@ -12,6 +12,21 @@ from .runtime_translation import normalize_symbol_label
 # Matches fenced code blocks (``` or ```json) wrapping provider output.
 _CODE_BLOCK_PATTERN = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```")
 
+# Token budget for one board-generation call.  ``item_count`` scales to 100
+# while the prompt demands an *exact* item count, so a fixed 1000-token budget
+# truncated every large grid and the exact-count check below always failed
+# (H31/H50).  Each item is a small JSON object (~40-60 tokens including the
+# separator) plus a fixed preamble, clamped to a provider-safe ceiling.
+_BASE_TOKEN_BUDGET = 600
+_TOKENS_PER_ITEM = 80
+_MAX_TOKEN_BUDGET = 8000
+
+
+def _token_budget(item_count: int) -> int:
+    """Return the max-token budget that can fit ``item_count`` board items."""
+    requested = _BASE_TOKEN_BUDGET + max(item_count, 0) * _TOKENS_PER_ITEM
+    return min(max(requested, 1000), _MAX_TOKEN_BUDGET)
+
 
 def _dedupe_items_by_label(items: list[dict[str, str]]) -> list[dict[str, str]]:
     seen: set[str] = set()
@@ -146,7 +161,10 @@ class BoardGenerationService:
         response = ""
         try:
             response = await self.llm.generate(
-                prompt=prompt, system=system_prompt, max_tokens=1000, temperature=0.7
+                prompt=prompt,
+                system=system_prompt,
+                max_tokens=_token_budget(item_count),
+                temperature=0.7,
             )
 
             # Normalize harmless presentation wrappers before strict validation.

@@ -22,6 +22,12 @@ interface NotificationsState {
   loadFromBackend: (userId: number) => Promise<void>
 }
 
+// Cap on retained notifications (G1): the session's SSE stream prepends every
+// event and the backend walk can return a user's whole backlog, so an unbounded
+// list grew for the life of the tab. Newest entries win; older ones remain
+// available from the server on the next load.
+export const MAX_NOTIFICATION_ITEMS = 500
+
 let loadGeneration = 0
 let activeUserId: number | null = null
 
@@ -33,11 +39,15 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
   add: (n) => {
     const id = Math.random().toString(36).slice(2)
     const item: NotificationItem = { id, title: n.title, message: n.message, read: false, createdAt: Date.now(), type: n.type }
-    set({ items: [item, ...get().items] })
+    set({ items: [item, ...get().items].slice(0, MAX_NOTIFICATION_ITEMS) })
   },
 
   markAsRead: async (id, sync = true) => {
-    // Update local state immediately
+    // Update local state immediately (optimistic), remembering the previous
+    // flag so a failed sync can be rolled back instead of silently
+    // resurrecting the notification as unread on the next reload (H44/H65).
+    const previous = get().items.find(i => i.id === id)
+    const wasRead = previous?.read ?? false
     set({ items: get().items.map(i => i.id === id ? { ...i, read: true } : i) })
 
     // Sync to backend if requested and id is numeric (from backend)
@@ -47,12 +57,17 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
         await api.put(`/notifications/${id}/read`)
       } catch (error) {
         console.error('Failed to sync read state:', error)
+        set({ items: get().items.map(i => i.id === id ? { ...i, read: wasRead } : i) })
       }
     }
   },
 
   markAllAsRead: async (sync = true) => {
-    // Update local state immediately
+    // Rollback snapshot: only the entries this call flipped are restored, so
+    // a concurrent SSE prepend is not clobbered.
+    const readBefore = new Set(
+      get().items.filter(i => i.read).map(i => i.id),
+    )
     set({ items: get().items.map(i => ({ ...i, read: true })) })
 
     // Sync to backend if requested
@@ -62,6 +77,11 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
         await api.put('/notifications/read-all')
       } catch (error) {
         console.error('Failed to sync read-all state:', error)
+        set({
+          items: get().items.map(i =>
+            readBefore.has(i.id) ? i : { ...i, read: false },
+          ),
+        })
       }
     }
   },
@@ -107,7 +127,7 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
       }))
 
       if (generation === loadGeneration && activeUserId === userId) {
-        set({ items, loaded: true })
+        set({ items: items.slice(0, MAX_NOTIFICATION_ITEMS), loaded: true })
       }
     } catch (error) {
       if (generation === loadGeneration && activeUserId === userId) {

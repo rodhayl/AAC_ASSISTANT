@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useAuthStore } from '../store/authStore';
 
 interface UseAccessibleInteractionProps {
@@ -56,6 +56,11 @@ export function useAccessibleInteraction({ onClick, disabled }: UseAccessibleInt
   }, [dwellTime, cancelDwell]);
 
   const handlePointerLeave = handlePointerUp;
+
+  // A dwell timer armed on a control that unmounts before the delay elapses
+  // (e.g. navigating via a linked board) must not fire a click with a stale
+  // event against a page the user already left.
+  useEffect(() => cancelDwell, [cancelDwell]);
 
   const handleClick = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     if (disabled) return;

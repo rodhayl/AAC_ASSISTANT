@@ -98,14 +98,28 @@ describe('notifications store read-state and load resilience', () => {
     expect(useNotificationsStore.getState().items[0].read).toBe(true);
   });
 
-  it('keeps the local read state when the backend sync fails', async () => {
+  it('rolls the local read state back when the backend sync fails (H44/H65)', async () => {
+    // The optimistic flag used to survive the failed PUT, so a reload
+    // resurrected the notification as unread with no signal to the user.
     vi.spyOn(api, 'put').mockRejectedValue(new Error('offline'));
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     useNotificationsStore.setState({ items: [item(1)] });
     await useNotificationsStore.getState().markAsRead(1);
 
-    expect(useNotificationsStore.getState().items[0].read).toBe(true);
+    expect(useNotificationsStore.getState().items[0].read).toBe(false);
+    expect(consoleSpy).toHaveBeenCalled();
+  });
+
+  it('restores only the unread items when mark-all sync fails (H44/H65)', async () => {
+    vi.spyOn(api, 'put').mockRejectedValue(new Error('offline'));
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    useNotificationsStore.setState({ items: [item(1), item(2, true)] });
+    await useNotificationsStore.getState().markAllAsRead();
+
+    const readState = useNotificationsStore.getState().items.map((i) => i.read);
+    expect(readState).toEqual([false, true]);
     expect(consoleSpy).toHaveBeenCalled();
   });
 

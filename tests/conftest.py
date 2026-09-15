@@ -6,6 +6,7 @@ This file ensures:
 2. Proper test isolation
 3. Consistent test environment
 """
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
@@ -82,7 +83,12 @@ def test_db_session(test_db_engine):
 
 @pytest.fixture(scope="function")
 def client(test_db_session):
-    """FastAPI test client bound to the function-scoped test database."""
+    """FastAPI test client bound to the function-scoped test database.
+
+    Runs the real ASGI lifespan (``with TestClient(...)``) so startup and
+    shutdown behavior — schema ensure, seeding, background-task handshakes —
+    is exercised exactly as in production (H24).
+    """
     from fastapi.testclient import TestClient
 
     def override_get_db():
@@ -92,16 +98,22 @@ def client(test_db_session):
             pass
 
     app.dependency_overrides[get_db] = override_get_db
-    yield TestClient(app)
+    with TestClient(app) as test_client:
+        try:
+            yield test_client
+        finally:
+            test_client.portal.call(app.state.shutdown_event.set)
     app.dependency_overrides.clear()
 
 
 @pytest.fixture(autouse=False)
-def setup_test_db(test_db_engine):
+def setup_test_db(test_db_engine, monkeypatch):
     """
     Configure FastAPI app to use test database.
     Use this fixture in test files that need API testing.
     """
+    from src.aac_app import db as db_module
+
     TestingSessionLocal = sessionmaker(
         autocommit=False,
         autoflush=False,
@@ -121,37 +133,21 @@ def setup_test_db(test_db_engine):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    # Patch get_session used by services to use the test session
-    from contextlib import contextmanager
-    from unittest.mock import patch
-
-    @contextmanager
-    def override_get_session_cm():
-        session = TestingSessionLocal()
-        try:
-            yield session
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
-
-    # Patch all modules that use get_session
-    patches = [
-        patch('src.aac_app.services.achievement_system.get_session', side_effect=override_get_session_cm),
-        patch('src.aac_app.services.symbol_analytics.get_session', side_effect=override_get_session_cm),
-        patch('src.aac_app.services.guardian_profile_service.get_session', side_effect=override_get_session_cm),
-        patch('src.api.deps.settings.get_session', side_effect=override_get_session_cm),
-    ]
-
-    for p in patches:
-        p.start()
+    # Point the process-wide DB resources at the test database.  Every service
+    # resolves ``get_session``/``create_session_factory`` through this module,
+    # so a single seam replaces the previous four per-call-site patches and
+    # reaches the services they missed (prediction, content safety, vector,
+    # n-gram, autogen, image backfill, seed).
+    monkeypatch.setattr(db_module, "_engine_instance", test_db_engine, raising=False)
+    monkeypatch.setattr(db_module, "_session_factory", TestingSessionLocal, raising=False)
+    monkeypatch.setattr(
+        db_module,
+        "_engine_url",
+        (os.environ.get("DATABASE_URL") or "").strip(),
+        raising=False,
+    )
 
     yield
-
-    for p in patches:
-        p.stop()
 
     app.dependency_overrides.clear()
 

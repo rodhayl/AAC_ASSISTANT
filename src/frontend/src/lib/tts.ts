@@ -16,6 +16,9 @@ interface EnqueueOptions {
 
 const NO_START_WATCHDOG_MS = 1_500
 const SPEAKING_WATCHDOG_MS = 15_000
+// Bounds for the per-key speech debounce map (G1).
+const MAX_DEBOUNCE_KEYS = 200
+const DEBOUNCE_KEY_TTL_MS = 60_000
 // Allow local synthesis enough time for a cold model load plus generation.
 const LOCAL_START_WINDOW_MS = 60_000
 const SILENT_AUDIO_DATA_URI =
@@ -331,11 +334,33 @@ class TTSQueue {
     const k = opts.key ?? text
     const last = this.lastSpokenAt.get(k) || 0
     if (now - last < this.debounceMs) return
-    this.lastSpokenAt.set(k, now)
+    this.rememberSpokenKey(k, now)
 
     if (opts.group) this.cancelGroup(opts.group)
     this.queue.push({ text, opts })
     this.processNext()
+  }
+
+  /**
+   * Remember when a key was last spoken for the debounce window, keeping the
+   * map bounded (G1). The map was appended per distinct key for the whole
+   * session, so a long session (or a symbol-heavy board id space) grew it
+   * without limit even though each entry is only useful for `debounceMs`.
+   */
+  private rememberSpokenKey(key: string | number, now: number) {
+    this.lastSpokenAt.set(key, now)
+    if (this.lastSpokenAt.size <= MAX_DEBOUNCE_KEYS) return
+    // Entries past the debounce window can never suppress a speak again.
+    for (const [storedKey, at] of this.lastSpokenAt) {
+      if (now - at > DEBOUNCE_KEY_TTL_MS) this.lastSpokenAt.delete(storedKey)
+    }
+    // Still over the cap (a burst of distinct keys inside the window): evict
+    // the least recently spoken entries first.
+    while (this.lastSpokenAt.size > MAX_DEBOUNCE_KEYS) {
+      const oldest = this.lastSpokenAt.keys().next()
+      if (oldest.done) break
+      this.lastSpokenAt.delete(oldest.value)
+    }
   }
 
   private processNext() {

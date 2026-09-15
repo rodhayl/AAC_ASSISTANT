@@ -47,7 +47,8 @@
     "createFailed": "Error al crear profesor",
     "deleteFailed": "Error al eliminar",
     "resetPasswordFailed": "Error al restablecer contraseña",
-    "passwordsDoNotMatch": "Las contraseñas no coinciden"
+    "passwordsDoNotMatch": "Las contraseñas no coinciden",
+    "reloadFailed": "Guardado, pero no se pudo actualizar la lista. Recarga la página para verla."
   },
   "actions": {
     "resetSelfTitle": "Usa Cambiar contraseña en Ajustes",

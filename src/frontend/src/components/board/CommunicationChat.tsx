@@ -129,7 +129,13 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
 
     const answer = input;
     setInput('');
-    await submitAnswer(activeSession.session_id, answer);
+    try {
+      await submitAnswer(activeSession.session_id, answer);
+    } catch {
+      // B5: restore the composed answer on failure — the store surfaced the
+      // error and the draft must survive for retry (mirrors Learning.tsx).
+      setInput(answer);
+    }
   };
 
   const {
@@ -175,6 +181,8 @@ export function CommunicationChat({ voiceEnabled, onVoiceToggle, boardId, boardN
             voiceEnabled ? 'bg-brand/10 text-brand' : 'bg-muted text-muted-foreground',
           )}
           title={voiceEnabled ? t('voiceOn') : t('voiceOff')}
+          aria-label={voiceEnabled ? t('voiceOn') : t('voiceOff')}
+          aria-pressed={voiceEnabled}
         >
           <Volume2 className={cn('w-4 h-4', !voiceEnabled && 'opacity-50')} />
         </button>

@@ -20,6 +20,7 @@ from src.aac_app.models import (
     LearningSession,
     LearningTask,
     Notification,
+    RefreshTokenRecord,
     SavedTopic,
     StudentTeacher,
     SymbolUsageLog,
@@ -160,6 +161,11 @@ def admin_create_user(
             user=current_user,
         ) from exc
     db.refresh(new_user)
+
+    # Clear any lockout rows recorded against this username before the
+    # account existed, so a pre-locked name cannot hand the new user an
+    # immediately-locked account.
+    lockout_service.reset_attempts(db, new_user.username)
 
     # Log admin action and account creation; the request dependency commits
     # the user and its audit entries atomically after the handler returns.
@@ -837,6 +843,14 @@ def delete_user(
         )
     )
 
+    # B2: the rotation ledger references users.id without an ON DELETE rule, so
+    # the account DELETE fails with an FK IntegrityError the moment the user
+    # ever logged in or refreshed. Drop their ledger rows in the same
+    # transaction (revocation is moot — the account is going away).
+    db.execute(
+        delete(RefreshTokenRecord).where(RefreshTokenRecord.user_id == user_id)
+    )
+
     # A deleted account's content-safety log has no reader left: the event
     # list endpoint 404s via verify_student_access once the student is gone.
     # content_safety_events.user_id is a nullable FK without ON DELETE, so
@@ -866,7 +880,11 @@ def delete_user(
 @router.post("/admin/unlock-account")
 def admin_unlock_account(
     request: Request,
-    username: str,
+    # Every other username input caps at USERNAME_MAX_LENGTH; an unbounded
+    # query param reached the WHERE/audit paths (E5).
+    username: str = Query(
+        ..., min_length=1, max_length=schemas.USERNAME_MAX_LENGTH
+    ),
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):

@@ -1,8 +1,47 @@
 """Regression tests for runtime schema creation and legacy upgrades."""
 
+import sqlite3
+
+import pytest
 from sqlalchemy import create_engine, inspect, text
 
 from src.aac_app import schema
+
+
+def test_schema_ensure_upgrades_databases_with_the_vector_table(tmp_path):
+    """A legacy DB holding the sqlite-vec table still receives every upgrade.
+
+    ``symbol_embeddings`` is a ``vec0`` virtual table, so SQLAlchemy can only
+    reflect it when the extension module is loaded on the inspecting
+    connection. Startup schema management does not load it, and the resulting
+    ``no such module: vec0`` error used to abort *all* additive upgrades: the
+    database kept its old columns while the ORM queried the new ones, so the
+    whole app failed at runtime (e.g. 500 on every user-settings read).
+    """
+    sqlite_vec = pytest.importorskip("sqlite_vec")
+    db_path = tmp_path / "legacy-with-vector.db"
+
+    raw = sqlite3.connect(db_path)
+    try:
+        raw.enable_load_extension(True)
+        sqlite_vec.load(raw)
+        raw.execute(
+            "CREATE VIRTUAL TABLE symbol_embeddings USING vec0(embedding float[384])"
+        )
+        # Legacy table missing every column added after the original schema.
+        raw.execute(
+            "CREATE TABLE user_settings (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL)"
+        )
+        raw.commit()
+    finally:
+        raw.close()
+
+    engine = create_engine(f"sqlite:///{db_path}")
+    schema.ensure(engine)
+
+    with engine.connect() as connection:
+        columns = {row[1] for row in connection.execute(text("PRAGMA table_info(user_settings)"))}
+    assert {"tts_local_speed", "tts_provider", "default_learning_mode"} <= columns
 
 
 def test_schema_ensure_upgrades_legacy_sqlite_without_losing_data():

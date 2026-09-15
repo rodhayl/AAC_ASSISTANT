@@ -88,13 +88,29 @@ class _Subscriber:
 _subscribers: dict[int, set[_Subscriber]] = {}
 _subscriber_lock = RLock()
 
+# One client normally holds a single stream, and a reconnect can overlap the
+# dying one briefly. Beyond that the only growth mode is an abusive client
+# opening streams until the process runs out of file descriptors: each stream
+# costs a queue and a task set, and every published notification is fanned out
+# to all of them. Cap it like the collaboration rooms cap their members.
+MAX_STREAMS_PER_USER = 5
 
-def subscribe(user_id: int) -> _SubscriberQueue:
-    """Register an SSE queue for a user and return it to the stream."""
+
+def subscribe(user_id: int) -> _SubscriberQueue | None:
+    """Register an SSE queue for a user, or ``None`` past the per-user cap.
+
+    Returns ``None`` instead of raising so the caller can answer with a real
+    HTTP status before any response body has been produced.
+    """
     loop = asyncio.get_running_loop()
     queue = _SubscriberQueue()
     with _subscriber_lock:
-        _subscribers.setdefault(user_id, set()).add(_Subscriber(queue, loop))
+        subscribers = _subscribers.setdefault(user_id, set())
+        if len(subscribers) >= MAX_STREAMS_PER_USER:
+            if not subscribers:
+                _subscribers.pop(user_id, None)
+            return None
+        subscribers.add(_Subscriber(queue, loop))
     return queue
 
 

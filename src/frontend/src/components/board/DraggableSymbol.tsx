@@ -15,9 +15,11 @@ interface DraggableSymbolProps {
   isOverlay?: boolean;
   onRemove?: (id: number) => void;
   onEdit?: (symbol: BoardSymbol) => void;
+  /** This placement's position came from a collaborator, not this user (A17). */
+  remoteMoved?: boolean;
 }
 
-function DraggableSymbolInner({ boardSymbol, isOverlay, onRemove, onEdit }: DraggableSymbolProps) {
+function DraggableSymbolInner({ boardSymbol, isOverlay, onRemove, onEdit, remoteMoved }: DraggableSymbolProps) {
   const user = useAuthStore(state => state.user);
   const { t } = useTranslation('boards');
   const categoryStyle = getCategoryStyle(boardSymbol.symbol?.category);
@@ -65,8 +67,13 @@ function DraggableSymbolInner({ boardSymbol, isOverlay, onRemove, onEdit }: Drag
         categoryStyle.border,
         categoryStyle.hoverBorder,
         'hover:shadow-md',
+        // Remote-presence indication: a collaborator moved this placement, and
+        // its position is not yet part of this user's own unsaved edits (A17).
+        remoteMoved && 'ring-2 ring-brand/60 ring-offset-1 ring-offset-surface',
         isOverlay && 'z-50 scale-105 cursor-grabbing shadow-xl',
       )}
+      aria-label={remoteMoved ? t('remoteMoved') : undefined}
+      data-remote-moved={remoteMoved ? 'true' : undefined}
     >
       <div className={cn('absolute top-2 left-2 h-2.5 w-2.5 rounded-full opacity-80', categoryStyle.dot)} aria-hidden="true" />
       {!isOverlay && (

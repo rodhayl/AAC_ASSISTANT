@@ -22,7 +22,13 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from src.aac_app.models import BoardSymbol, CommunicationBoard, Symbol, User
+from src.aac_app.models import (
+    BoardSymbol,
+    CommunicationBoard,
+    SavedTopic,
+    Symbol,
+    User,
+)
 from src.aac_app.services.auth_service import get_password_hash
 from src.api.main import app
 from src.api.routers.board_helpers import serialize_board
@@ -50,6 +56,49 @@ def _make_board_with_symbol(db, admin: User) -> tuple[CommunicationBoard, BoardS
     db.refresh(board)
     db.refresh(placement)
     return board, placement
+
+
+def test_board_update_allow_list_tracks_the_real_writable_columns():
+    """D-a: the update guard is derived from columns, not from the schema.
+
+    A schema-derived allow-list can never fire (the update dict is built from
+    that same schema), so a field without a matching column would silently
+    become a dead attribute instead of raising.
+    """
+    from src.api import schemas
+    from src.api.routers.boards import _BOARD_UPDATE_SETTABLE_KEYS
+
+    writable_columns = {
+        column.name for column in CommunicationBoard.__table__.columns
+    } - {"id", "user_id", "created_at", "updated_at"}
+
+    assert writable_columns == _BOARD_UPDATE_SETTABLE_KEYS
+    # Every current BoardUpdate field maps onto a real column; a future field
+    # that does not will fail this assertion and make the guard fire.
+    assert set(schemas.BoardUpdate.model_fields) <= _BOARD_UPDATE_SETTABLE_KEYS
+
+
+def test_delete_board_nulls_saved_topic_references(test_db_session, admin_user):
+    """D-b: deleting a board must not leave SavedTopic pointing at it."""
+    board, _placement = _make_board_with_symbol(test_db_session, admin_user)
+    topic = SavedTopic(
+        user_id=admin_user.id,
+        board="Contract Board",
+        board_id=board.id,
+        topic="Contracts",
+        created_by=admin_user.username,
+        created_by_user_id=admin_user.id,
+    )
+    test_db_session.add(topic)
+    test_db_session.commit()
+    test_db_session.refresh(topic)
+
+    headers = create_test_headers(admin_user.id, admin_user.username, "admin")
+    response = client.delete(f"/api/boards/{board.id}", headers=headers)
+    assert response.status_code == 200, response.text
+
+    test_db_session.refresh(topic)
+    assert topic.board_id is None
 
 
 def test_serialize_board_symbol_is_never_null(test_db_session, admin_user):
@@ -342,9 +391,12 @@ def test_auth_token_and_refresh_payloads_match_frontend_authstore(
         json={"refresh_token": login_body["refresh_token"]},
     )
     assert refresh.status_code == 200, refresh.text
-    # The frontend refresh handler consumes exactly access_token + token_type.
-    assert set(refresh.json()) == {"access_token", "token_type"}
+    # The frontend refresh handler consumes access_token + token_type and
+    # persists the rotated refresh_token (H3: refresh tokens are single-use,
+    # so the successor must replace the spent one in the store).
+    assert set(refresh.json()) == {"access_token", "token_type", "refresh_token"}
     assert refresh.json()["token_type"] == "bearer"
+    assert refresh.json()["refresh_token"] != login_body["refresh_token"]
 
 
 def test_board_ai_suggestions_contract_matches_frontend_type(

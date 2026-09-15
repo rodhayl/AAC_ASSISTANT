@@ -5,7 +5,7 @@ import sys
 import threading
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from loguru import logger
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -40,6 +40,7 @@ from src.api.deps import (
     invalidate_setting,
 )
 from src.api.deps import providers as provider_deps
+from src.api.routers.auth_helpers import conditional_limiter
 
 router = APIRouter(prefix="/api/providers", tags=["providers"])
 _voice_install_lock = threading.Lock()
@@ -245,7 +246,11 @@ class TTSSynthesizeRequest(BaseModel):
     """Payload for the local neural TTS synthesizer endpoint."""
 
     text: str = Field(..., min_length=1, max_length=2000, description="Text to speak")
-    lang: str = Field("es", description="Language code, e.g. 'es' or 'en'")
+    # Same 2–10 bound as every other language field (schemas.py): an oversized
+    # value would otherwise flow verbatim into engine args and logs (E5).
+    lang: str = Field(
+        "es", min_length=2, max_length=10, description="Language code, e.g. 'es' or 'en'"
+    )
     voice: str = Field(
         "default",
         description="'default', 'female', 'male', or a specific Kokoro voice name "
@@ -260,7 +265,9 @@ class TTSSynthesizeRequest(BaseModel):
 
 
 @router.post("/tts/synthesize")
+@conditional_limiter("60/minute")
 def tts_synthesize(
+    request: Request,
     payload: TTSSynthesizeRequest,
     current_user: User = Depends(get_current_active_user),
 ):
@@ -322,6 +329,7 @@ class WarmupRequest(BaseModel):
 
     targets: list[str] = Field(
         default_factory=lambda: ["tts", "speech", "vector"],
+        max_length=3,
         description=(
             "Models to pre-load: 'tts' (Kokoro), 'speech' (faster-whisper), "
             "and/or 'vector' (fastembed semantic index)"
@@ -329,8 +337,15 @@ class WarmupRequest(BaseModel):
     )
 
 
+# The only warm-up targets that exist; an unknown value used to be silently
+# ignored (a typo returned `{}` with a 200), which hides a caller bug (E5).
+WARMUP_TARGETS = frozenset({"tts", "speech", "vector"})
+
+
 @router.post("/warmup")
+@conditional_limiter("5/minute")
 def warmup_models(
+    request: Request,
     payload: WarmupRequest | None = None,
     current_user: User = Depends(get_current_active_user),
 ):
@@ -346,6 +361,12 @@ def warmup_models(
     event loop) while models load, and it stays out of server startup.
     """
     targets = payload.targets if payload is not None else ["tts", "speech", "vector"]
+    unknown = sorted({target for target in targets if target not in WARMUP_TARGETS})
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=get_text(user=current_user, key="errors.providers.unsupportedWarmupTarget"),
+        )
     results: dict[str, dict[str, object]] = {}
 
     if "tts" in targets:

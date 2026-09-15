@@ -15,6 +15,27 @@ from src.aac_app.models import Symbol
 from src.aac_app.services.runtime_translation import normalize_symbol_label
 
 
+def _request():
+    """Minimal Request for direct handler calls (slowapi needs the param)."""
+    from starlette.requests import Request
+
+    return Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/api/arasaac/import",
+            "raw_path": b"/api/arasaac/import",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 51000),
+            "server": ("testserver", 80),
+            "root_path": "",
+        }
+    )
+
+
 def test_normalize_symbol_label_is_single_canonical_fold():
     """strip + casefold handles the diverging lower()/casefold() cases."""
     assert normalize_symbol_label("  straße  ") == normalize_symbol_label("STRASSE")
@@ -93,6 +114,7 @@ def test_arasaac_import_dedupes_non_ascii_labels(
     )
     result = asyncio.run(
         arasaac.import_arasaac_symbol(
+            _request(),
             payload,
             db=test_db_session,
             current_user=user,

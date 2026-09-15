@@ -233,7 +233,8 @@ describe('learning store history walk', () => {
       ([url]) => url === '/learning/history/1',
     );
     expect(historyCalls).toHaveLength(3);
-    expect(historyCalls[1][1]).toMatchObject({ params: { skip: 1000, limit: 1000 } });
+    // The client page size matches the server-side route cap (le=200).
+    expect(historyCalls[1][1]).toMatchObject({ params: { skip: 1000, limit: 200 } });
     expect(useLearningStore.getState().sessionHistory).toHaveLength(2001);
   });
 });

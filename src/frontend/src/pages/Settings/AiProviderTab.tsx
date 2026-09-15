@@ -21,6 +21,9 @@ export function AiProviderTab() {
   const groqModels = useSettingsStore((state) => state.groqModels)
   const loading = useSettingsStore((state) => state.loading)
   const error = useSettingsStore((state) => state.error)
+  // Per-provider model-list failure (A18); the shared `error` only covers the
+  // settings resource now.
+  const modelError = useSettingsStore((state) => state.modelError)
   const fetchAISettings = useSettingsStore((state) => state.fetchAISettings)
   const updateAISettings = useSettingsStore((state) => state.updateAISettings)
   const fetchOllamaModels = useSettingsStore((state) => state.fetchOllamaModels)
@@ -330,6 +333,12 @@ export function AiProviderTab() {
           <StatusMessage variant="error" className="flex items-center">
             <AlertCircle className="w-5 h-5 mr-2" />
             {error}
+          </StatusMessage>
+        )}
+        {modelError[currentAiProvider] && (
+          <StatusMessage variant="error" className="flex items-center">
+            <AlertCircle className="w-5 h-5 mr-2" />
+            {modelError[currentAiProvider]}
           </StatusMessage>
         )}
         <div>

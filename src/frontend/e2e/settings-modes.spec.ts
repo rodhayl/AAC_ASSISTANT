@@ -134,9 +134,10 @@ test.describe('Learning Modes Settings', () => {
       });
 
       await page.goto('/learning');
-      const startButton = page.getByTestId('learning-session-start');
-      await expect(startButton).toBeVisible();
-      await startButton.click();
+      // Sessions start from the topic picker (the old start button was removed).
+      const topicCard = page.locator('[data-testid^="topic-card-"]').first();
+      await expect(topicCard).toBeVisible();
+      await topicCard.click();
       await expect(page.getByTestId('learning-session-active')).toBeVisible();
       expect(startPayload?.mode_key).toBe(temporaryModeKey);
     } finally {

@@ -10,7 +10,13 @@ import i18n, { ensureLocale } from './i18n/index'
 // The default locale (es) is bundled; the detected secondary locale (en) is
 // code-split. Wait for it before the first render so English users never see
 // a Spanish flash of unstyled content.
-await ensureLocale(i18n.language || 'es')
+// Never let a failed chunk fetch blank the app: the bundled Spanish fallback
+// still renders, so mount anyway and keep the failure in the console.
+try {
+  await ensureLocale(i18n.language || 'es')
+} catch (error) {
+  console.error('Failed to load the requested locale; using the bundled default', error)
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

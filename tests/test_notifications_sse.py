@@ -450,3 +450,71 @@ def test_achievement_notification_is_discarded_when_transaction_rolls_back(
         .count()
         == 0
     )
+
+
+def test_notification_streams_are_capped_per_user(
+    setup_test_db, regular_user, user_token
+):
+    """H9: one user cannot open unbounded concurrent SSE streams.
+
+    Each stream costs a queue plus two tasks and receives a copy of every
+    published notification, so an unchecked client can exhaust file
+    descriptors and memory. The cap answers a real 429 (before any stream
+    body), and disconnecting frees the slot again.
+    """
+    from src.aac_app.services.notification_events import MAX_STREAMS_PER_USER
+
+    async def exercise():
+        streams = [_ASGIStream(user_token) for _ in range(MAX_STREAMS_PER_USER)]
+        try:
+            for stream in streams:
+                assert (
+                    await asyncio.wait_for(stream.next_body(), timeout=1)
+                    == b"data: {}\n\n"
+                )
+
+            overflow = _ASGIStream(user_token)
+            try:
+                response_start = await asyncio.wait_for(
+                    overflow.messages.get(), timeout=1
+                )
+                assert response_start["type"] == "http.response.start"
+                assert response_start["status"] == 429
+            finally:
+                await overflow.close()
+        finally:
+            for stream in streams:
+                await stream.close()
+
+    asyncio.run(exercise())
+
+    # Every disconnected stream released its slot.
+    assert regular_user.id not in notification_events._subscribers
+
+
+def test_subscribe_refuses_past_the_per_user_cap():
+    from src.aac_app.services.notification_events import (
+        MAX_STREAMS_PER_USER,
+        subscribe,
+        unsubscribe,
+    )
+
+    async def exercise():
+        queues = []
+        try:
+            for _ in range(MAX_STREAMS_PER_USER):
+                queue = subscribe(4242)
+                assert queue is not None
+                queues.append(queue)
+            assert subscribe(4242) is None
+            # A different user is unaffected by this user's cap.
+            other = subscribe(4343)
+            assert other is not None
+            unsubscribe(4343, other)
+        finally:
+            for queue in queues:
+                unsubscribe(4242, queue)
+        # Slots freed: the user can subscribe again.
+        assert subscribe(4242) is not None
+
+    asyncio.run(exercise())

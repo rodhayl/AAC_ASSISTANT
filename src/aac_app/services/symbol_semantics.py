@@ -96,8 +96,10 @@ class SymbolSemantics:
             }
 
         # Extract categories and labels
-        categories = [s.get("category", "general") for s in symbols]
-        labels = [s.get("label", "").lower() for s in symbols]
+        # ``or ""`` matters: a default only applies to an ABSENT key, so an
+        # explicit ``None`` label used to crash on ``.lower()`` (500).
+        categories = [s.get("category") or "general" for s in symbols]
+        labels = [str(s.get("label") or "").lower() for s in symbols]
 
         # Map categories to semantic roles
         semantic_roles = []

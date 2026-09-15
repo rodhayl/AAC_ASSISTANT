@@ -33,10 +33,9 @@ class TestHealthAPI:
 
     def test_api_versions_are_consistent(self):
         health_version = client.get("/api/health").json()["version"]
-        config_version = client.get("/api/config").json()["app_version"]
         openapi_version = client.get("/openapi.json").json()["info"]["version"]
 
-        assert health_version == config_version == openapi_version == config.APP_VERSION
+        assert health_version == openapi_version == config.APP_VERSION
 
 
 class TestAuthAPI:

@@ -97,15 +97,17 @@ class AchievementSystem:
                 Achievement.is_active.is_(True),
                 Achievement.criteria_type.is_not(None),
                 Achievement.criteria_value.is_not(None),
+                # The user-scoped rows are filtered in SQL rather than by
+                # loading every custom achievement and discarding the rows
+                # that belong to other students.
+                or_(
+                    Achievement.target_user_id.is_(None),
+                    Achievement.target_user_id == user_id,
+                ),
             )
             .all()
         )
         for achievement in custom_automatic:
-            if (
-                achievement.target_user_id is not None
-                and achievement.target_user_id != user_id
-            ):
-                continue
             if self._check_db_achievement_criteria(
                 user_id, achievement, stats, session
             ) and self._award_db_achievement(user_id, achievement, session):

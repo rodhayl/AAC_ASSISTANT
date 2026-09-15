@@ -4,12 +4,18 @@
   "username": "Usuario",
   "password": "Contraseña",
   "displayName": "Nombre para mostrar",
+  "confirmPassword": "Confirmar contraseña",
+  "errors": {
+    "passwordTooShort": "La contraseña debe tener al menos 8 caracteres.",
+    "passwordMismatch": "Las contraseñas no coinciden."
+  },
   "teacherNote": "Las cuentas de profesor deben ser creadas por un administrador.",
   "create": "Crear Cuenta",
   "back": "Volver al inicio de sesión",
   "placeholders": {
     "username": "Ingresa un usuario",
     "password": "Ingresa una contraseña",
+    "confirmPassword": "Repite la contraseña",
     "displayName": "Tu nombre"
   }
 }

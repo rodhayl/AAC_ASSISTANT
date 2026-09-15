@@ -16,34 +16,47 @@ export function SettingsManager() {
   const setLocalVoice = useTTSStore((state) => state.setLocalVoice);
   const setLocalSpeed = useTTSStore((state) => state.setLocalSpeed);
 
+  // Depend on the consumed values, not the whole `settings` object: the auth
+  // store replaces that object on every profile refresh, which re-applied the
+  // locale and re-fired the backend model warmup each time (H41).
+  const settings = user?.settings;
+  const hasSettings = settings !== undefined;
+  const darkModeSetting = settings?.dark_mode;
+  const highContrastSetting = settings?.high_contrast;
+  const uiLanguageSetting = settings?.ui_language;
+  const ttsVoiceSetting = settings?.tts_voice;
+  const ttsProviderSetting = settings?.tts_provider;
+  const ttsLocalVoiceSetting = settings?.tts_local_voice;
+  const ttsLocalSpeedSetting = settings?.tts_local_speed;
+
   useEffect(() => {
-    if (user?.settings) {
+    if (hasSettings) {
       // Apply appearance flags (the store owns the `dark` / `high-contrast`
       // document classes). Absent legacy fields fall back to the current
       // local appearance instead of forcing light mode.
-      if (user.settings.dark_mode !== undefined) {
-        setDarkMode(user.settings.dark_mode);
+      if (darkModeSetting !== undefined) {
+        setDarkMode(darkModeSetting);
       }
-      if (user.settings.high_contrast !== undefined) {
-        setHighContrast(user.settings.high_contrast);
+      if (highContrastSetting !== undefined) {
+        setHighContrast(highContrastSetting);
       }
 
       // Apply Locale (normalize legacy short codes so the switcher select
       // matches regardless of how the value was persisted)
-      if (user.settings.ui_language) {
-        setLocale(normalizeUILanguage(user.settings.ui_language));
+      if (uiLanguageSetting) {
+        setLocale(normalizeUILanguage(uiLanguageSetting));
       }
-      
+
       // Apply TTS Voice
-      if (user.settings.tts_voice) {
-          setSelectedVoice(user.settings.tts_voice);
+      if (ttsVoiceSetting) {
+        setSelectedVoice(ttsVoiceSetting);
       }
-      setTTSProvider(user.settings.tts_provider === 'browser' ? 'browser' : 'kokoro');
-      if (user.settings.tts_local_voice) {
-        setLocalVoice(user.settings.tts_local_voice);
+      setTTSProvider(ttsProviderSetting === 'browser' ? 'browser' : 'kokoro');
+      if (ttsLocalVoiceSetting) {
+        setLocalVoice(ttsLocalVoiceSetting);
       }
-      if (user.settings.tts_local_speed !== undefined) {
-        setLocalSpeed(user.settings.tts_local_speed);
+      if (ttsLocalSpeedSetting !== undefined) {
+        setLocalSpeed(ttsLocalSpeedSetting);
       }
       // Warm every lazy model (browser voice list, capability check, and the
       // backend Kokoro + faster-whisper models) in one batched background
@@ -51,7 +64,23 @@ export function SettingsManager() {
       // in a conversation are not delayed.
       warmup();
     }
-  }, [user?.settings, setLocale, setDarkMode, setHighContrast, setSelectedVoice, setTTSProvider, setLocalVoice, setLocalSpeed]);
+  }, [
+    hasSettings,
+    darkModeSetting,
+    highContrastSetting,
+    uiLanguageSetting,
+    ttsVoiceSetting,
+    ttsProviderSetting,
+    ttsLocalVoiceSetting,
+    ttsLocalSpeedSetting,
+    setLocale,
+    setDarkMode,
+    setHighContrast,
+    setSelectedVoice,
+    setTTSProvider,
+    setLocalVoice,
+    setLocalSpeed,
+  ]);
 
   return null;
 }

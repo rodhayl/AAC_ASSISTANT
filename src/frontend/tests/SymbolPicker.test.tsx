@@ -216,4 +216,60 @@ describe('SymbolPicker pagination walk', () => {
     expect(symbolCalls).toHaveLength(3);
     expect(symbolCalls[1][1]).toMatchObject({ params: { skip: 1000, limit: 1000 } });
   });
+
+  it('surfaces a failed symbol load instead of showing an empty catalog (D-c)', async () => {
+    api.get.mockImplementation((url: string) => {
+      if (url === '/boards/symbols/categories') return Promise.resolve({ data: [] });
+      return Promise.reject(new Error('catalog offline'));
+    });
+
+    render(
+      <SymbolPicker
+        isOpen
+        onClose={vi.fn()}
+        onSelect={vi.fn()}
+        position={{ x: 0, y: 0 }}
+      />,
+    );
+
+    // A failure must not render identically to "no symbols found".
+    const alert = await screen.findByRole('alert');
+    expect(alert).toBeInTheDocument();
+    expect(screen.queryByText('symbolPicker.noSymbolsFound')).not.toBeInTheDocument();
+
+    // The retry control re-issues the walk and recovers.
+    api.get.mockImplementation((url: string) => {
+      if (url === '/boards/symbols/categories') return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: [{ id: 1, label: 'Recovered' }] });
+    });
+    fireEvent.click(screen.getByText('retry'));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(screen.getByText('Recovered')).toBeInTheDocument();
+  });
+  it('ignores non-string categories from the endpoint (H21)', async () => {
+    api.get.mockImplementation((url: string) => {
+      if (url === '/boards/symbols/categories') {
+        // The contract is list[str]; a malformed payload must not break the
+        // filter or render non-string options.
+        return Promise.resolve({ data: ['general', 42, null, { name: 'x' }] });
+      }
+      if (url === '/boards/symbols') return Promise.resolve({ data: [symbol(1, 'Casa')] });
+      return Promise.resolve({ data: [] });
+    });
+
+    render(
+      <SymbolPicker
+        isOpen
+        onClose={vi.fn()}
+        onSelect={vi.fn()}
+        position={{ x: 0, y: 0 }}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText('Casa')).toBeInTheDocument());
+
+    // The picker still renders and only exposes the valid category button.
+    expect(screen.queryByText('42')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'categories.general' })).toBeInTheDocument();
+  });
 });

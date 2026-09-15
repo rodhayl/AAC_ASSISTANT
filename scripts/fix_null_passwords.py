@@ -8,9 +8,10 @@ This script:
 
 Run this after updating the schema to ensure no users have null passwords.
 
-DESTRUCTIVE by default: users with a null password_hash are DELETED unless
-``--dry-run`` is passed for a report-only preview. An interactive
-confirmation is required unless ``--yes`` is given.
+NON-DESTRUCTIVE by default: users with a null password_hash get an impossible
+hash (they cannot log in until a password reset) and are left in the database.
+Deletion requires the explicit ``--delete`` flag, and then an interactive
+confirmation unless ``--yes`` is given. ``--dry-run`` reports without writing.
 """
 
 import argparse
@@ -105,10 +106,27 @@ def main(argv=None):
     """Main migration function"""
     parser = argparse.ArgumentParser(
         description=(
-            "Fix users whose password_hash is NULL. "
-            "DESTRUCTIVE: deletes those users by default."
+            "Fix users whose password_hash is NULL. Non-destructive by "
+            "default (disable login); pass --delete to remove them."
         )
     )
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument(
+        "--disable-login",
+        dest="delete_invalid",
+        action="store_false",
+        help=(
+            "Set an impossible password hash so the account cannot log in "
+            "until a password reset (default)"
+        ),
+    )
+    action.add_argument(
+        "--delete",
+        dest="delete_invalid",
+        action="store_true",
+        help="DESTRUCTIVE: delete the affected user rows",
+    )
+    parser.set_defaults(delete_invalid=False)
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -117,7 +135,7 @@ def main(argv=None):
     parser.add_argument(
         "--yes",
         action="store_true",
-        help="Skip the interactive confirmation prompt",
+        help="Skip the interactive confirmation prompt (only used with --delete)",
     )
     args = parser.parse_args(argv)
 
@@ -126,16 +144,22 @@ def main(argv=None):
     print("=" * 60)
 
     try:
-        if not args.dry_run and not args.yes:
+        if args.delete_invalid and not args.dry_run and not args.yes:
             response = input(
-                "Users with a null password_hash will be DELETED. Continue? (yes/no): "
+                "--delete removes users with a null password_hash. Continue? (yes/no): "
             ).strip().lower()
             if response not in ("y", "yes"):
                 print("Aborted; no changes written.")
                 return 1
 
-        # Fix null password hashes (delete invalid users)
-        fix_null_password_hashes(delete_invalid=True, dry_run=args.dry_run)
+        if args.delete_invalid:
+            print("Mode: DELETE affected users (--delete).")
+        else:
+            print("Mode: disable login for affected users (default).")
+
+        fix_null_password_hashes(
+            delete_invalid=args.delete_invalid, dry_run=args.dry_run
+        )
 
         if args.dry_run:
             print("\nDry run complete; database left untouched.")

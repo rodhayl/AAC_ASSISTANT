@@ -46,7 +46,11 @@ class SPAStaticFiles(StaticFiles):
     def _not_found_response(self, path: str):
         """Return the correct response when a static path does not exist."""
         normalized_path = path.replace("\\", "/").lstrip("/")
-        if normalized_path == "api" or normalized_path.startswith("api/"):
+        # Case-insensitive: "/API/..." is still an API path, and serving the
+        # SPA shell for it turns a routing mistake into a confusing HTML 200
+        # instead of the JSON 404 a client can act on.
+        lowered_path = normalized_path.casefold()
+        if lowered_path == "api" or lowered_path.startswith("api/"):
             return JSONResponse(content={"detail": "Not Found"}, status_code=404)
 
         index_path = Path(self.directory) / "index.html"

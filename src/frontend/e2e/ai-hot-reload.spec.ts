@@ -11,13 +11,15 @@ test.describe('AI Configuration Hot Reload', () => {
     const saveBtn = page.locator('button').filter({ hasText: /save|guardar/i }).last();
     await saveBtn.click();
     
-    // 2. Start a learning session
+    // 2. Start a learning session from the topic picker (the page-level start
+    // button was removed; without a session the message below was never sent,
+    // which made the final assertion pass vacuously).
     await page.goto('/learning');
-    const startBtn = page.getByRole('button', { name: /start|comenzar|practice/i });
-    if (await startBtn.isVisible()) {
-        await startBtn.click();
-    }
-    
+    const topicCard = page.locator('[data-testid^="topic-card-"]').first();
+    await expect(topicCard).toBeVisible({ timeout: 15000 });
+    await topicCard.click();
+    await expect(page.getByTestId('learning-session-active')).toBeVisible({ timeout: 15000 });
+
     // Send a message
     const input = page.getByPlaceholder(/type|escribe/i).last();
     await input.fill('Hello check provider');
@@ -35,29 +37,20 @@ test.describe('AI Configuration Hot Reload', () => {
     
     await saveBtn.click();
     
-    // 4. Go back to Learning
+    // 4. Go back to Learning (the in-flight session is resumed, so the chat
+    // input is available without starting another session).
     await page.goto('/learning');
-    if (await startBtn.isVisible()) {
-        await startBtn.click();
-    }
-    
+    await expect(input).toBeVisible({ timeout: 15000 });
+
     // Send a message
     await input.fill('Hello test hot reload');
     await page.locator('button[type="submit"]').first().click();
     
-    // 5. Verify behavior
-    // The input not clearing means the submission is failing or pending.
-    // If the provider changed to OpenRouter (with fake key), it should fail.
-    // The fact that it's NOT clearing the input suggests the error handling is keeping the text there (good UX) or it's hanging.
-    // If we were still on Ollama, it would succeed and clear.
-    // So: Input NOT clearing is actually evidence that the configuration CHANGED to the broken one!
-    
-    // Let's assert that an error message appears OR input remains populated (failure).
-    // If it succeeded (cleared), that would mean it fell back to Ollama or the fake key worked (impossible).
-    
-    // Check for error toast again, maybe the text is different?
-    // Or check that input value is still there.
-    await expect(input).not.toBeEmpty();
+    // 5. Verify behavior: the hot-reloaded provider is the broken one, so the
+    // send must surface a failure (the chat panel renders errors as role=alert)
+    // and must not silently succeed. Asserting only "the input still has text"
+    // passed even when no request was sent at all.
+    await expect(page.getByRole('alert')).toBeVisible({ timeout: 30000 });
     
     // Cleanup: Revert to Ollama
     await page.goto('/settings');

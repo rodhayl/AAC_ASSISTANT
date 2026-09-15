@@ -173,6 +173,7 @@ export function Symbols() {
 
   const submitEdit = async () => {
     setCreating(true);
+    setError(null);
     try {
       await api.put(`/boards/symbols/${editingId}`, {
         label: form.label,
@@ -180,15 +181,29 @@ export function Symbols() {
         category: form.category,
         keywords: form.keywords
       });
-      if (newFile) {
+    } catch (e: unknown) {
+      setError(extractError(e, t('updateFailed')));
+      setCreating(false);
+      return;
+    }
+    // The image is a separate step: reporting it with the metadata PUT made a
+    // failed upload look like a failed edit even though the edit persisted
+    // (inviting a retry that would re-save the same metadata).
+    if (newFile) {
+      try {
         const fd = new FormData();
         fd.append('file', newFile);
         await api.post(`/boards/symbols/${editingId}/image`, fd);
+      } catch (e: unknown) {
+        setError(extractError(e, t('imageUpdateFailed')));
+        await fetchSymbols();
+        setCreating(false);
+        return;
       }
+    }
+    try {
       resetForm();
       await fetchSymbols();
-    } catch (e: unknown) {
-      setError(extractError(e, t('updateFailed')));
     } finally {
       setCreating(false);
     }

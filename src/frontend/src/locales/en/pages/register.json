@@ -4,12 +4,18 @@
   "username": "Username",
   "password": "Password",
   "displayName": "Display Name",
+  "confirmPassword": "Confirm password",
+  "errors": {
+    "passwordTooShort": "Password must be at least 8 characters.",
+    "passwordMismatch": "The passwords do not match."
+  },
   "teacherNote": "Teacher accounts must be created by an administrator.",
   "create": "Create Account",
   "back": "Back to login",
   "placeholders": {
     "username": "Enter a username",
     "password": "Enter a password",
+    "confirmPassword": "Repeat the password",
     "displayName": "Your name"
   }
 }

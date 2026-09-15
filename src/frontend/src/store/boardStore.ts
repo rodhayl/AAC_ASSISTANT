@@ -66,6 +66,21 @@ export const useBoardStore = create<BoardState>((set, get) => {
 
   const isCurrentMutation = (context: number) => context === mutationContext;
 
+  /**
+   * Reload every page currently held in state, replacing page 1 and appending
+   * the rest. Used after a mutation so pagination survives it instead of
+   * collapsing to page 1 (D-d).
+   */
+  const refetchLoadedPages = async (
+    userId: number | undefined,
+    name: string | undefined,
+  ): Promise<void> => {
+    const loadedPages = Math.max(get().page, 1);
+    for (let page = 1; page <= loadedPages; page += 1) {
+      await get().fetchBoards(userId, name, true, page);
+    }
+  };
+
   return {
   boards: [],
   assignedBoards: [],
@@ -111,16 +126,21 @@ export const useBoardStore = create<BoardState>((set, get) => {
         // Keep every request on the same fixed page boundary. A refresh must
         // replace page one rather than requesting a larger first page; otherwise
         // a later page request starts at offset 100 and repeatedly re-fetches
-        // items already present in state.
-        const limit = PAGE_SIZE;
+        // items already present in state. The requested limit is one row over
+        // the boundary so ``hasMore`` is exact instead of inferred from
+        // ``length === limit`` (D-d): an exactly-full last page used to keep
+        // the "More" control enabled and cost an extra empty fetch.
+        const limit = PAGE_SIZE + 1;
         params.skip = (page - 1) * PAGE_SIZE;
         
         params.limit = limit;
         
         const response = await api.get<Board[]>('/boards/', { params });
-        const newBoards = response.data;
-        
-        const hasMore = newBoards.length === limit;
+        const rows = Array.isArray(response.data) ? response.data : [];
+        const hasMore = rows.length > PAGE_SIZE;
+        // Trim the probe row so page boundaries stay PAGE_SIZE-aligned and no
+        // item is ever duplicated between pages.
+        const newBoards = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
 
         if (requestId !== boardsRequestSequence) return;
         // This is the newest list request, so any other in-flight list request
@@ -201,7 +221,9 @@ export const useBoardStore = create<BoardState>((set, get) => {
       });
       if (!isCurrentMutation(context)) return;
       const { currentUserId, currentSearchQuery } = get();
-      await get().fetchBoards(currentUserId, currentSearchQuery, true, 1);
+      // Reload every loaded page (not just page 1) so creating a board does
+      // not collapse a paginated list the user is browsing (D-d).
+      await refetchLoadedPages(currentUserId, currentSearchQuery);
       finishMutation(context);
     } catch (error: unknown) {
       finishMutation(context, extractError(error, 'Failed to create board'));
@@ -239,8 +261,10 @@ export const useBoardStore = create<BoardState>((set, get) => {
         finishMutation(context);
       } else {
         const { currentUserId, currentSearchQuery } = get();
-        // Always refresh page 1 to handle pagination gaps correctly
-        await get().fetchBoards(currentUserId, currentSearchQuery, true, 1);
+        // Reload every page currently in state. Refreshing only page 1 dropped
+        // pages 2+ that the user had already loaded (D-d); deleting an item
+        // must not collapse their list back to the first page.
+        await refetchLoadedPages(currentUserId, currentSearchQuery);
         if (!isCurrentMutation(context)) return;
         finishMutation(context);
       }
@@ -252,6 +276,21 @@ export const useBoardStore = create<BoardState>((set, get) => {
 
   duplicateBoard: async (id, userId) => {
     const context = beginMutation();
+    // The new board's id once it exists, so a mid-copy failure or a stale
+    // mutation (token/logout/board switch) can remove the half-duplicated
+    // board instead of leaving it for manual deletion (H57 + B4).
+    let newBoardId: number | null = null;
+    // Best-effort removal of a partial copy. Cancellation must not surface as
+    // an error (the newer mutation owns the UI state), so cleanup failures are
+    // only logged.
+    const discardPartialCopy = async () => {
+      if (newBoardId === null) return;
+      try {
+        await api.delete(`/boards/${newBoardId}`);
+      } catch (cleanupError) {
+        console.error('Failed to clean up a partially duplicated board', cleanupError);
+      }
+    };
     try {
       if (apiOffline.isOffline()) {
         throw new Error(
@@ -276,8 +315,15 @@ export const useBoardStore = create<BoardState>((set, get) => {
         is_language_learning: base.is_language_learning ?? false,
         ai_enabled: false
       }, { params: { user_id: userId } });
-      if (!isCurrentMutation(context)) return;
+      // Capture the id before any stale check: the board exists server-side
+      // the moment the POST resolves, so every later exit must be able to
+      // remove it (B4).
+      newBoardId = createRes.data.id;
       const newBoard = createRes.data;
+      if (!isCurrentMutation(context)) {
+        await discardPartialCopy();
+        return;
+      }
       // A copied symbol keeps its folder link only when the new owner can
       // actually view the target board. Resolving every link before the first
       // symbol POST prevents a mid-way 403 from orphaning a partial copy, and
@@ -285,7 +331,10 @@ export const useBoardStore = create<BoardState>((set, get) => {
       // boards deleted since the source board was built).
       const effectiveLinkedIds = new Map<number, number | null>();
       for (const s of base.symbols || []) {
-        if (!isCurrentMutation(context)) return;
+        if (!isCurrentMutation(context)) {
+          await discardPartialCopy();
+          return;
+        }
         if (s.linked_board_id == null) {
           effectiveLinkedIds.set(s.id, null);
           continue;
@@ -294,15 +343,24 @@ export const useBoardStore = create<BoardState>((set, get) => {
           await api.get(`/boards/${s.linked_board_id}`, {
             params: { skip_translation: true },
           });
-          if (!isCurrentMutation(context)) return;
+          if (!isCurrentMutation(context)) {
+            await discardPartialCopy();
+            return;
+          }
           effectiveLinkedIds.set(s.id, s.linked_board_id);
         } catch {
-          if (!isCurrentMutation(context)) return;
+          if (!isCurrentMutation(context)) {
+            await discardPartialCopy();
+            return;
+          }
           effectiveLinkedIds.set(s.id, null);
         }
       }
       for (const s of base.symbols || []) {
-        if (!isCurrentMutation(context)) return;
+        if (!isCurrentMutation(context)) {
+          await discardPartialCopy();
+          return;
+        }
         await api.post(`/boards/${newBoard.id}/symbols`, {
           symbol_id: s.symbol?.id ?? s.symbol_id,
           position_x: s.position_x,
@@ -314,19 +372,34 @@ export const useBoardStore = create<BoardState>((set, get) => {
           linked_board_id: effectiveLinkedIds.get(s.id) ?? null
         });
       }
-      if (base.ai_enabled) {
-        if (!isCurrentMutation(context)) return;
+      // Only restore AI settings the source board can actually supply: the API
+      // rejects `ai_enabled` without a provider and model, and seeded/template
+      // boards legitimately have AI enabled with no provider configured. A
+      // missing setting must not fail the whole copy (the duplicate keeps AI
+      // off, everything else is preserved).
+      if (base.ai_enabled && base.ai_provider && base.ai_model) {
+        if (!isCurrentMutation(context)) {
+          await discardPartialCopy();
+          return;
+        }
         await api.put(`/boards/${newBoard.id}`, {
           ai_enabled: true,
           ai_provider: base.ai_provider,
           ai_model: base.ai_model
         });
       }
-      if (!isCurrentMutation(context)) return;
-      await get().fetchBoards(userId, get().currentSearchQuery, true, 1);
-      if (!isCurrentMutation(context)) return;
+      if (!isCurrentMutation(context)) {
+        await discardPartialCopy();
+        return;
+      }
+      await refetchLoadedPages(userId, get().currentSearchQuery);
+      if (!isCurrentMutation(context)) {
+        await discardPartialCopy();
+        return;
+      }
       finishMutation(context);
     } catch (e: unknown) {
+      await discardPartialCopy();
       finishMutation(context, extractError(e, 'Failed to duplicate board'));
       throw e;
     }

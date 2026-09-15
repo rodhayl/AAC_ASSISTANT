@@ -7,7 +7,7 @@ Provides REST endpoints for symbol usage analytics and insights.
 import json
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from loguru import logger
 from sqlalchemy.orm import Session
 
@@ -31,6 +31,7 @@ from src.api.deps import (
     get_text,
     require_board_view_access,
 )
+from src.api.routers.auth_helpers import conditional_limiter
 from src.api.schemas import NextSymbolRequest, SymbolUsageRequest
 
 router = APIRouter()
@@ -202,8 +203,10 @@ from src.aac_app.services.prediction_service import prediction_service
 
 
 @router.post("/next-symbol", response_model=list[dict])
+@conditional_limiter("120/minute")
 def get_next_symbol_suggestions_post(
-    request: NextSymbolRequest,
+    request: Request,
+    payload: NextSymbolRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -216,15 +219,15 @@ def get_next_symbol_suggestions_post(
     stalls unrelated requests (boards, SPA assets, etc.).
     """
     try:
-        current_symbols = request.current_symbols
-        limit = request.limit
-        intent = request.intent  # general, pronouns, verbs, articles, nouns, places
-        offset = request.offset
+        current_symbols = payload.current_symbols
+        limit = payload.limit
+        intent = payload.intent  # general, pronouns, verbs, articles, nouns, places
+        offset = payload.offset
 
         logger.info(f"Suggestions request: user={current_user.id}, intent={intent}, limit={limit}, offset={offset}")
 
-        if request.board_id is not None:
-            board = get_board_or_404(db, request.board_id, current_user)
+        if payload.board_id is not None:
+            board = get_board_or_404(db, payload.board_id, current_user)
             require_board_view_access(board, current_user, db)
 
         # Parse current symbols
@@ -248,9 +251,9 @@ def get_next_symbol_suggestions_post(
 
                 def build_query(board_scoped: bool):
                     q = db.query(Symbol).filter(Symbol.label.isnot(None))
-                    if board_scoped and request.board_id is not None:
+                    if board_scoped and payload.board_id is not None:
                         q = q.join(BoardSymbol, BoardSymbol.symbol_id == Symbol.id).filter(
-                            BoardSymbol.board_id == request.board_id,
+                            BoardSymbol.board_id == payload.board_id,
                             BoardSymbol.is_visible == True,  # noqa: E712
                         )
                     return q
@@ -345,7 +348,7 @@ def get_next_symbol_suggestions_post(
                 # A board-scoped intent must never silently fall back to the
                 # global symbol catalog: that is how unrelated suggestions
                 # escaped into Learning when a board lacked that category.
-                board_scopes = [request.board_id is not None]
+                board_scopes = [payload.board_id is not None]
                 for strict in strict_passes:
                     for board_scoped in board_scopes:
                         query = build_query(board_scoped)
@@ -361,10 +364,10 @@ def get_next_symbol_suggestions_post(
                 logger.error(f"Database error in intent query: {db_err}")
                 # Fall back to general suggestion only when no board context
                 # was requested. A scoped request must not leak global items.
-                if request.board_id is not None:
+                if payload.board_id is not None:
                     return []
 
-            if request.board_id is not None:
+            if payload.board_id is not None:
                 return []
 
         # Get unified suggestions from PredictionService. When a topic is set
@@ -383,7 +386,7 @@ def get_next_symbol_suggestions_post(
         )
 
         content_policy = resolve_policy_for_user(current_user.id, db)
-        effective_topic = request.topic
+        effective_topic = payload.topic
         if effective_topic and effective_topic.strip():
             if content_policy.feature_blocked("block_custom_topics"):
                 log_event(
@@ -419,7 +422,7 @@ def get_next_symbol_suggestions_post(
             limit=limit,
             language=user_lang,
             offset=offset,
-            board_id=request.board_id,
+            board_id=payload.board_id,
             topic=effective_topic,
             db=db,
             topic_word_fetcher=topic_word_fetcher,

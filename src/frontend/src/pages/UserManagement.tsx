@@ -308,11 +308,18 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
         email: newEmail || undefined,
         user_type: role,
       })
-      await loadUsers()
       if (!mutation.isCurrent()) return
       clearCreateForm()
       setCreateModalOpen(false)
       addToast(t('success.created'), 'success')
+      // Refresh the roster *after* reporting success, in its own try: nesting
+      // it in the create try turned a failed reload into a "create failed"
+      // error for an account that was actually created (inviting duplicates).
+      try {
+        await loadUsers()
+      } catch {
+        addToast(t('errors.reloadFailed'), 'error')
+      }
     } catch (createError: unknown) {
       if (mutation.isCurrent()) {
         setError(extractError(createError, t('errors.createFailed')))

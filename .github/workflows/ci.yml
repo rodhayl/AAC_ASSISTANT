@@ -48,6 +48,11 @@ jobs:
       - run: uv run python scripts/audit_codebase.py
       - run: uv run python scripts/check_dependency_usage.py
       - run: uv run pip-audit --requirement requirements.txt --strict --progress-spinner off
+      # requirements.txt is exported without extras, so it does not contain the
+      # shipped voice stack (faster-whisper/kokoro). Export and audit the
+      # production dependency set WITH the extras the release ships.
+      - run: uv export --locked --no-dev --extra voice --extra tts --format requirements-txt --output-file /tmp/aac-prod-voice-requirements.txt >/dev/null
+      - run: uv run pip-audit --requirement /tmp/aac-prod-voice-requirements.txt --strict --progress-spinner off
       - run: uv export --locked --all-groups --format requirements-txt --output-file /tmp/aac-all-requirements.txt >/dev/null
       - run: uv run pip-audit --requirement /tmp/aac-all-requirements.txt --strict --progress-spinner off
       - run: uv run python -m compileall -q src scripts
@@ -107,10 +112,14 @@ jobs:
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:8086
       E2E_ADMIN_USERNAME: admin1
       E2E_ADMIN_PASSWORD: CiProd-Gate-Admin1-2f7c
+      # Synthetic, non-default credentials: SECURITY_ARCHITECTURE forbids demo
+      # passwords outside explicit test environments, and this job runs with
+      # ENVIRONMENT=production (the create-user path only enforces strength,
+      # so nothing else would reject Student123/Teacher123 here).
       E2E_STUDENT_USERNAME: student1
-      E2E_STUDENT_PASSWORD: Student123
+      E2E_STUDENT_PASSWORD: CiProd-Gate-Student1-7d41
       E2E_TEACHER_USERNAME: teacher1
-      E2E_TEACHER_PASSWORD: Teacher123
+      E2E_TEACHER_PASSWORD: CiProd-Gate-Teacher1-5c92
       E2E_PROVISION_VIA_API: "1"
       AAC_ENABLE_SYMBOL_IMAGE_BACKFILL: "false"
     defaults:
@@ -184,6 +193,94 @@ jobs:
           if [ -f /tmp/aac-e2e-server.pid ]; then
             kill -9 "$(cat /tmp/aac-e2e-server.pid)" 2>/dev/null || true
           fi
+          pkill -f "uvicorn src.api.main:app" 2>/dev/null || true
+        working-directory: .
+
+  # Clean-database coverage: the same unseeded server shape as the production
+  # gate (no demo users/boards; Playwright accounts are provisioned through the
+  # admin API), running the **whole** suite instead of only `smoke|auth`. Specs
+  # that assert the demo board build it themselves through the API
+  # (src/frontend/e2e/demo-fixture.ts), so nothing is filtered out here. The
+  # seeded compat job below cannot see defects that only appear when the
+  # database has no demo data — skipped additive migrations, dead selectors, and
+  # session/isolation bugs — which is exactly what this job pins.
+  e2e-clean:
+    runs-on: ubuntu-latest
+    env:
+      # Test mode (not production): the production-mode gates (forced Groq
+      # provider, /ready, rate limiting, secure cookies) are already covered by
+      # e2e-production-gate; this job exists to exercise the clean data shape.
+      ENVIRONMENT: test
+      TESTING: "1"
+      ALLOWED_ORIGINS: http://127.0.0.1:8086
+      JWT_SECRET_KEY: ci-e2e-clean-secret-key-with-at-least-32-characters
+      BACKEND_HOST: 127.0.0.1
+      BACKEND_PORT: 8086
+      DATA_DIR: .ci-e2e-data
+      APP_VERSION: 2.0.0
+      # No AAC_SEED_SAMPLE_DATA: demo users/boards must not exist. Specs that
+      # assert the demo board create it themselves through the API (see
+      # src/frontend/e2e/demo-fixture.ts), so no spec is skipped.
+      AAC_SEED_SAMPLE_DATA: "false"
+      AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN: "true"
+      AAC_BOOTSTRAP_ADMIN_USERNAME: admin1
+      AAC_BOOTSTRAP_ADMIN_PASSWORD: Admin123
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:8086
+      E2E_ADMIN_USERNAME: admin1
+      E2E_ADMIN_PASSWORD: Admin123
+      E2E_STUDENT_USERNAME: student1
+      E2E_STUDENT_PASSWORD: Student123
+      E2E_TEACHER_USERNAME: teacher1
+      E2E_TEACHER_PASSWORD: Teacher123
+      # The demo users do not exist here, so auth.setup.ts provisions them
+      # through the authenticated admin API before their own setup steps run.
+      E2E_PROVISION_VIA_API: "1"
+      AAC_ENABLE_SYMBOL_IMAGE_BACKFILL: "false"
+    defaults:
+      run:
+        working-directory: src/frontend
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
+      - uses: astral-sh/setup-uv@ae3b92d1bdb308a10adfe7b8f408e5cc8c30f3f6 # v6
+        with:
+          version: latest
+      - uses: actions/setup-python@8549b9f8f590ad24eab7482f36f6e1e24d34597b # v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@3d7870f6218881292d183093179901ae8dc2ef85 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: src/frontend/package-lock.json
+      - run: uv sync --locked --group dev
+        working-directory: .
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Start clean backend
+        working-directory: .
+        run: |
+          rm -rf .ci-e2e-data
+          mkdir -p .ci-e2e-data
+          nohup uv run python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8086 > /tmp/aac-e2e-server.log 2>&1 &
+          SERVER_PID=$!
+          echo $SERVER_PID > /tmp/aac-e2e-server.pid
+          disown $SERVER_PID 2>/dev/null || true
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8086/api/health > /tmp/aac-e2e-health.json; then cat /tmp/aac-e2e-health.json; exit 0; fi
+            sleep 1
+          done
+          cat /tmp/aac-e2e-server.log; exit 1
+      - name: Run Playwright (unseeded, full suite)
+        run: npm run verify:prod-build && npx playwright test
+      - name: Dump backend log on failure
+        if: failure()
+        run: cat /tmp/aac-e2e-server.log || true
+        working-directory: .
+      - name: Stop backend
+        if: always()
+        run: |
+          if [ -f /tmp/aac-e2e-server.pid ]; then kill -9 "$(cat /tmp/aac-e2e-server.pid)" 2>/dev/null || true; fi
           pkill -f "uvicorn src.api.main:app" 2>/dev/null || true
         working-directory: .
 
@@ -266,6 +363,9 @@ jobs:
     env:
       APP_VERSION: 2.0.0
       ENVIRONMENT: test
+      # Deliberately no TESTING=1: this job runs an install/smoke check, not
+      # pytest, and the rate limiter must stay active (backend tests opt out
+      # via TESTING=1; packaging smoke does not).
       JWT_SECRET_KEY: ci-package-secret-key-with-at-least-32-characters
       AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN: "true"
       AAC_BOOTSTRAP_ADMIN_USERNAME: admin1

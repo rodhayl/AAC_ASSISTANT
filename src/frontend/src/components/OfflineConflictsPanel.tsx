@@ -1,7 +1,8 @@
 import { AlertTriangle, RefreshCw, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useOfflineStore } from '../store/offlineStore'
-import api, { apiOffline } from '../lib/api'
+import { useAuthStore } from '../store/authStore'
+import { apiOffline, extractError } from '../lib/api'
 import { formatTime } from '../lib/format'
 import { IconButton } from './ui/icon-button'
 import { StatusMessage } from './ui/StatusMessage'
@@ -12,6 +13,8 @@ export function OfflineConflictsPanel() {
   const removeConflict = useOfflineStore((state) => state.removeConflict)
   const clearConflicts = useOfflineStore((state) => state.clearConflicts)
   const incrementRetry = useOfflineStore((state) => state.incrementRetry)
+  const updateConflictError = useOfflineStore((state) => state.updateConflictError)
+  const currentUserId = useAuthStore((state) => state.user?.id)
 
   if (conflicts.length === 0) return null
 
@@ -19,17 +22,25 @@ export function OfflineConflictsPanel() {
     const conflict = conflicts.find(c => c.id === conflictId)
     if (!conflict) return
 
-    if (apiOffline.isOffline()) {
-      return
-    }
+    // A conflict minted for another session must never be replayed as this
+    // one, and there is nothing to retry while still offline (A6).
+    if (conflict.userId !== undefined && conflict.userId !== currentUserId) return
+    if (apiOffline.isOffline()) return
 
     incrementRetry(conflictId)
 
     try {
-      await api.request(conflict.config)
+      // Sent through the replay path: a 401 then stays a visible conflict
+      // instead of logging the user out and redirecting to /login.
+      await apiOffline.retryConflict(conflict.config)
       removeConflict(conflictId)
     } catch (error: unknown) {
-      console.error('Retry failed:', error)
+      // Surface the failure on the conflict entry; the retry count alone made
+      // a failed retry indistinguishable from a successful one (A6).
+      updateConflictError(
+        conflictId,
+        extractError(error, t('offline.retryFailed')),
+      )
     }
   }
 

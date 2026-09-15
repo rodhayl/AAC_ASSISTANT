@@ -104,7 +104,8 @@
       "invalidToken": "Token inválido",
       "unauthorizedView": "No autorizado para ver estas notificaciones",
       "notFound": "Notificación no encontrada",
-      "userNotFound": "Usuario no encontrado"
+      "userNotFound": "Usuario no encontrado",
+      "tooManyStreams": "Demasiadas conexiones de notificaciones abiertas. Cierra otra pestaña o espera un momento."
     },
     "arasaac": {
       "downloadFailed": "Error al descargar imagen de ARASAAC",
@@ -117,6 +118,7 @@
       "templateNotFound": "Plantilla '{{name}}' no encontrada",
       "noProfileCreateFirst": "No existe perfil para este estudiante. Crea uno primero.",
       "templateNotExist": "La plantilla '{{name}}' no existe. Usa /templates para ver las plantillas disponibles.",
+      "invalidOverrides": "Ajustes de plantilla no válidos: usa rutas de campo conocidas con valores simples.",
       "profileExists": "Ya existe un perfil para este estudiante. Usa PUT para actualizar.",
       "noChanges": "No se proporcionaron cambios",
       "onlyAdminsDelete": "Solo los administradores pueden eliminar perfiles de tutor",
@@ -253,6 +255,7 @@
     "providers": {
       "unsupportedSttModel": "Modelo de faster-whisper no compatible.",
       "unsupportedVoice": "Voz TTS desconocida. Elige una de la lista de voces.",
+      "unsupportedWarmupTarget": "Objetivo de precalentamiento no compatible. Usa 'tts', 'speech' o 'vector'.",
       "voiceInstallWindowsOnly": "La instalación automática de voz solo está disponible en Windows.",
       "voiceInstallUnavailable": "La instalación automática de voz no está disponible.",
       "voiceInstallFrozen": "La aplicación de Windows empaquetada no puede modificar las dependencias de Python durante la ejecución.",
@@ -302,6 +305,7 @@
     "cancelTitle": "Cancelar edición"
   },
   "offline": {
+    "retryFailed": "El reintento falló. El cambio sigue pendiente.",
     "conflictsHint": "Estas solicitudes fallaron al volver a estar en línea. Puedes reintentarlas o descartarlas.",
     "title": "Conflictos sin conexión ({{count}})",
     "clearAll": "Limpiar todos los conflictos",

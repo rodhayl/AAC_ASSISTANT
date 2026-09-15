@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.aac_app.models import StudentTeacher, User
+from src.aac_app.services.lockout_service import lockout_service
 from src.aac_app.services.user_service import UserService
 from src.api.deps import (
     STAFF_USER_TYPES,
@@ -15,6 +16,7 @@ from src.api.deps import (
 )
 from src.api.routers.auth_helpers import (
     apply_student_safety_at_creation,
+    conditional_limiter,
     ensure_username_email_available,
     normalize_email,
     username_email_integrity_conflict,
@@ -111,6 +113,10 @@ def create_student(
 
     try:
         created = user_service.create_user(db, user)
+        # Clear lockout rows recorded against this username before it existed
+        # (failed logins are tracked even for unknown usernames), so a
+        # pre-locked name cannot produce an immediately-locked account.
+        lockout_service.reset_attempts(db, created.username)
         # Optional one-step safety configuration: age, filter level, forbidden
         # topics/words and feature gates land in the guardian profile inside
         # the same transaction as the user row (teacher lock rules still
@@ -277,6 +283,10 @@ def unassign_student(
 
 
 @router.post("/reset-password")
+# Same budget as /auth/change-password: a compromised staff token must not be
+# able to churn passwords (each reset bumps sec_ver and revokes the victim's
+# sessions) without limit.
+@conditional_limiter("10/hour")
 def reset_user_password(
     request: Request,
     data: ResetPasswordRequest,
@@ -358,6 +368,12 @@ def reset_user_password(
 
     # Reset password
     user_service.reset_password(db, target_user_id, data.new_password)
+    # A locked-out account (5 failed logins -> 15-minute lock) must be usable
+    # again immediately after a staff reset: leaving the lockout rows in place
+    # answers the very next login with 403 "account locked" even though the
+    # password is correct, and the documented recovery is a separate admin
+    # action nobody knows to take.
+    lockout_service.reset_attempts(db, user.username)
     # Commit before responding so a login with the new password (which
     # follows this response in the UI flow) cannot read the old hash.
     db.commit()

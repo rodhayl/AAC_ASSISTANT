@@ -2,7 +2,7 @@ import asyncio
 import json
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -55,8 +55,16 @@ async def notifications_stream(
         db.close()
 
 
+    # Claim the stream slot before returning a response: past the per-user cap
+    # this is a real 429, not a stream that dies on its first frame.
+    queue = subscribe(user_id)
+    if queue is None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=get_text(key="errors.notifications.tooManyStreams"),
+        )
+
     async def event_generator():
-        queue = subscribe(user_id)
         shutdown_event = getattr(request.app.state, "shutdown_event", None)
         if not getattr(request.app.state, "lifespan_active", False):
             shutdown_event = None

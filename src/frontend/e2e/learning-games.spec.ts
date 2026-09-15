@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 
+import { ensureDemoBoard } from './demo-fixture';
+
 test.describe('Learning', () => {
   test.use({ storageState: 'playwright/.auth/admin.json' });
 
@@ -100,9 +102,10 @@ test.describe('Learning', () => {
       });
     });
 
-    const startButton = page.getByTestId('learning-session-start');
-    await expect(startButton).toBeVisible();
-    await startButton.click();
+    // Sessions start from the topic picker (the old start button was removed).
+    const topicCard = page.locator('[data-testid^="topic-card-"]').first();
+    await expect(topicCard).toBeVisible();
+    await topicCard.click();
     await expect(page.getByTestId('learning-session-active')).toBeVisible();
     expect(startRequests).toBe(1);
 
@@ -113,7 +116,7 @@ test.describe('Learning', () => {
 
     await expect(page.getByTestId('session-summary-modal')).toBeVisible();
     await expect(page.getByTestId('learning-session-active')).not.toBeVisible();
-    await expect(page.getByTestId('learning-session-start')).toBeVisible();
+    await expect(page.locator('[data-testid^="topic-card-"]').first()).toBeVisible();
     await expect(page.locator('[role="log"]')).not.toContainText('E2E welcome');
 
     // Keep the page mounted long enough to catch a delayed auto-start or a
@@ -134,11 +137,11 @@ test.describe('Learning', () => {
     // Wait for the session state to settle before submitting. The input can
     // render while the initial session request is still in flight; checking
     // only input visibility can otherwise submit with no active session.
-    const startBtn = page.getByTestId('learning-session-start');
+    const topicCard = page.locator('[data-testid^="topic-card-"]').first();
     const endBtn = page.getByTestId('learning-session-active');
     if (!(await endBtn.isVisible())) {
-      await expect(startBtn).toBeVisible({ timeout: 15000 });
-      await startBtn.click();
+      await expect(topicCard).toBeVisible({ timeout: 15000 });
+      await topicCard.click();
     }
     await expect(endBtn).toBeVisible({ timeout: 15000 });
 
@@ -212,8 +215,14 @@ test.describe('Learning', () => {
   });
 });
 
+// Symbol hunt needs a playable board (12 symbols); the fixture builds it
+// through the API, so no seeded sample data is required.
 test.describe('Games', () => {
   test.use({ storageState: 'playwright/.auth/admin.json' });
+
+  test.beforeEach(async ({ page }) => {
+    await ensureDemoBoard(page.request);
+  });
 
   test('should play symbol hunt', async ({ page }) => {
     await page.goto('/symbol-hunt');

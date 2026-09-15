@@ -47,7 +47,8 @@
     "createFailed": "Failed to create teacher",
     "deleteFailed": "Failed to delete",
     "resetPasswordFailed": "Failed to reset password",
-    "passwordsDoNotMatch": "Passwords do not match"
+    "passwordsDoNotMatch": "Passwords do not match",
+    "reloadFailed": "Saved, but the list could not be refreshed. Reload the page to see it."
   },
   "actions": {
     "resetSelfTitle": "Use Change Password in Settings",

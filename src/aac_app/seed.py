@@ -299,13 +299,24 @@ DEFAULT_LEARNING_MODES = [
 
 
 def _create_default_learning_modes(session: Session) -> None:
-    """Seed the system learning modes when none exist (idempotent)."""
-    existing = (
-        session.query(LearningMode).filter(LearningMode.created_by.is_(None)).first()
-    )
-    if existing is not None:
-        return
+    """Seed the default system learning modes (idempotent, completes partial sets).
+
+    Seeding used to short-circuit when *any* system row (``created_by IS NULL``)
+    existed, so a database with a subset of the defaults never gained the
+    missing modes and sessions referencing their ``mode_key`` failed
+    validation forever. Each default key is now created when absent; existing
+    rows are left untouched, so a rerun neither duplicates nor overwrites them.
+    """
+    existing_keys = {
+        key
+        for (key,) in session.query(LearningMode.key)
+        .filter(LearningMode.created_by.is_(None))
+        .all()
+    }
+    created = 0
     for mode in DEFAULT_LEARNING_MODES:
+        if mode["key"] in existing_keys:
+            continue
         session.add(
             LearningMode(
                 name=mode["name"],
@@ -317,7 +328,9 @@ def _create_default_learning_modes(session: Session) -> None:
                 created_by=None,
             )
         )
-    logger.info("Seeded %d default learning modes", len(DEFAULT_LEARNING_MODES))
+        created += 1
+    if created:
+        logger.info("Seeded %d default learning modes", created)
 
 
 def _create_sample_symbols(session: Session) -> None:

@@ -23,6 +23,10 @@ import { getBoardPlayabilityStatus } from './boardEditorUtils';
 import { LoadingState } from '../components/ui/LoadingState';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
+// Bounded-parallel board clears: one awaited round trip per symbol made
+// clearing a full board N sequential requests (G4).
+const CLEAR_DELETE_CONCURRENCY = 5;
+
 export function BoardEditor() {
   const { t } = useTranslation('boards');
   const { id } = useParams<{ id: string }>();
@@ -105,6 +109,7 @@ export function BoardEditor() {
     activeSymbol,
     editingSymbol,
     hasChanges,
+    remoteMovedIds,
     setHasChanges,
     setEditingSymbol,
     clearOverrides,
@@ -329,17 +334,38 @@ export function BoardEditor() {
   const clearBoard = useCallback(async () => {
     if (!currentBoard || !currentBoard.symbols?.length) return;
     const requestContext = editorContextKey;
+    const placements = [...currentBoard.symbols];
     setClearLoading(true);
     try {
-      for (const s of currentBoard.symbols) {
+      let failure: unknown = null;
+      // Bounded-parallel deletes: one awaited round trip per symbol made
+      // clearing a full board N sequential requests (G4).
+      for (let start = 0; start < placements.length; start += CLEAR_DELETE_CONCURRENCY) {
         if (editorContextKeyRef.current !== requestContext) return;
-        await deleteBoardSymbol(currentBoard.id, s.id);
+        const results = await Promise.allSettled(
+          placements
+            .slice(start, start + CLEAR_DELETE_CONCURRENCY)
+            .map((placement) => deleteBoardSymbol(currentBoard.id, placement.id)),
+        );
+        const rejected = results.find((result) => result.status === 'rejected');
+        if (rejected && rejected.status === 'rejected') {
+          failure = rejected.reason;
+          break;
+        }
       }
+
       if (editorContextKeyRef.current !== requestContext) return;
+      // Resync with the server on success AND after a partial failure, so a
+      // half-cleared board never leaves the grid showing deleted placements.
       await fetchBoard(currentBoard.id, true);
       if (editorContextKeyRef.current !== requestContext) return;
+
+      if (failure) {
+        addToast(extractError(failure, t('failedToClearBoard')), 'error');
+      } else {
+        setClearDialogOpen(false);
+      }
       setHasChanges(true);
-      setClearDialogOpen(false);
     } catch (e: unknown) {
       if (editorContextKeyRef.current !== requestContext) return;
       // Toast (not the AI panel error) so the failure is visible even on
@@ -436,6 +462,7 @@ export function BoardEditor() {
         rows={rows}
         cols={cols}
         symbols={localSymbols}
+        remoteMovedIds={remoteMovedIds}
         activeSymbol={activeSymbol}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}

@@ -67,6 +67,14 @@ export function Setup() {
       return;
     }
 
+    // The checklist below greys out the submit button for the documented
+    // default password, but an Enter-key submit (or any other caller) would
+    // still reach setupAdmin with it. Enforce the same rule on submit.
+    if (!notDefault) {
+      setLocalError(t('errors.defaultPasswordForbidden'));
+      return;
+    }
+
     try {
       await setupAdmin({
         username: username.trim(),

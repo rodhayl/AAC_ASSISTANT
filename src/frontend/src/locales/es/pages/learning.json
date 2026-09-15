@@ -143,7 +143,7 @@
   "editSymbolMessage": "Editar mensaje de símbolos",
   "collapseSidebar": "Contraer panel lateral",
   "expandSidebar": "Expandir panel lateral",
-  "removeSymbolLabel": "Eliminar símbolo",
+  "removeSymbolNamed": "Eliminar símbolo: {{label}}",
   "audioMessage": "Mensaje de audio",
   "questionReady": "Pregunta lista",
   "chooseAnswer": "Elige una respuesta",

@@ -74,6 +74,13 @@ _last_llm_call_at = 0.0
 
 _RETRY_COOLDOWN_SECONDS = 5 * 60
 
+# ``Symbol.label`` is ``String(100)``.  A background autogen label longer than
+# that can never be persisted (the insert fails at flush on strict backends and
+# the write is silently lost), so over-long topic words are skipped up front
+# instead of being scheduled and failing later (H27).  ``tests/test_tier_lm_hardening``
+# pins this constant against the model column so the two cannot drift.
+MAX_SYMBOL_LABEL_LENGTH = 100
+
 
 def _pacing_seconds() -> float:
     """Minimum gap between consecutive LLM calls (0 disables pacing)."""
@@ -132,6 +139,67 @@ def _has_catalog_symbol(label: str) -> bool:
         return find_symbol_by_normalized_label(session, label) is not None
 
 
+# Bounded inline retries for vector indexing, then a requeue.  A symbol the
+# vector store failed to index is invisible to semantic search, so a warn-only
+# log left it broken until the next full repair (H32).  Ids that exhausted the
+# retries are re-attempted on the next autogen request instead.
+_INDEX_ATTEMPTS = 3
+_INDEX_RETRY_DELAY_SECONDS = 0.5
+_pending_reindex: set[int] = set()
+
+
+def _index_symbol_with_retries(symbol, label: str) -> bool:
+    """Index ``symbol``, retrying transient failures a few times."""
+    from src.aac_app.services.vector_utils import index_symbol
+
+    for attempt in range(_INDEX_ATTEMPTS):
+        try:
+            index_symbol(symbol)
+            return True
+        except Exception as exc:
+            if attempt == _INDEX_ATTEMPTS - 1:
+                logger.warning(
+                    "Auto-generated symbol for {!r} saved but indexing failed "
+                    "after {} attempts: {}",
+                    label,
+                    _INDEX_ATTEMPTS,
+                    exc,
+                )
+                return False
+            time.sleep(_INDEX_RETRY_DELAY_SECONDS * (attempt + 1))
+    return False
+
+
+def _reindex_pending() -> None:
+    """Retry indexing symbols whose earlier attempts failed (H32).
+
+    Cheap no-op while nothing is pending, so the Smartbar fast path is
+    unaffected; a successful retry removes the id permanently.
+    """
+    with _lock:
+        pending = sorted(_pending_reindex)
+    if not pending:
+        return
+    from src.aac_app.db import get_session
+    from src.aac_app.models import Symbol
+
+    for symbol_id in pending:
+        try:
+            with get_session() as session:
+                symbol = session.get(Symbol, symbol_id)
+                label = symbol.label if symbol is not None else str(symbol_id)
+            if symbol is None:
+                with _lock:
+                    _pending_reindex.discard(symbol_id)
+                continue
+            if _index_symbol_with_retries(symbol, label):
+                with _lock:
+                    _pending_reindex.discard(symbol_id)
+                logger.info("Re-indexed auto-generated symbol {!r}", label)
+        except Exception as exc:
+            logger.warning("Re-index of symbol {} failed: {}", symbol_id, exc)
+
+
 def _persist_generated_symbol(label: str, language: str, svg_text: str) -> None:
     """Write the image file (PNG when rasterization works, else SVG), create
     the Symbol row, and index it."""
@@ -140,7 +208,6 @@ def _persist_generated_symbol(label: str, language: str, svg_text: str) -> None:
     from src.aac_app.services.svg_symbol_generator import (
         write_generated_symbol_image,
     )
-    from src.aac_app.services.vector_utils import index_symbol
 
     uploads_dir = config.UPLOADS_DIR / "symbols"
     public_path = write_generated_symbol_image(svg_text, uploads_dir)
@@ -170,13 +237,13 @@ def _persist_generated_symbol(label: str, language: str, svg_text: str) -> None:
         raise RuntimeError(f"Failed to persist auto-generated symbol for {label!r}")
 
     invalidate_generated_today_cache()
-    try:
-        index_symbol(symbol)
-    except Exception as exc:
-        logger.warning(
-            "Auto-generated symbol for {!r} saved but indexing failed: {}",
-            label,
-            exc,
+    if not _index_symbol_with_retries(symbol, label):
+        # Already persisted but unsearchable: requeue the indexing so a later
+        # autogen request repairs it instead of waiting for a full repair.
+        with _lock:
+            _pending_reindex.add(symbol.id)
+        raise RuntimeError(
+            f"Auto-generated symbol for {label!r} was saved but could not be indexed"
         )
 
 
@@ -328,8 +395,20 @@ def ensure_symbol_generated(
     being generated, or whose provider just failed is skipped. Safe to call on
     every Smartbar keystroke.
     """
+    _reindex_pending()
     normalized = normalize_symbol_label(label)
     if not normalized or not (language or "").strip():
+        return
+    # Keep the original (display) casing for storage; the casefolded form is
+    # only the dedup key.  Storing the normalized form displayed "Casa" as
+    # "casa" and the generated pictogram description reused that casing (H28).
+    display_label = (label or "").strip() or normalized
+    if len(display_label) > MAX_SYMBOL_LABEL_LENGTH:
+        logger.info(
+            "Skip auto-generating {!r}: label exceeds the {} char catalog bound",
+            display_label[:60],
+            MAX_SYMBOL_LABEL_LENGTH,
+        )
         return
     from src.aac_app.services.runtime_translation import normalize_language_code
 
@@ -361,7 +440,7 @@ def ensure_symbol_generated(
 
     thread = threading.Thread(
         target=_generate_in_background,
-        args=(key, normalized, language, context),
+        args=(key, display_label, language, context),
         name=f"svg-autogen-{normalized[:24]}",
         daemon=True,
     )

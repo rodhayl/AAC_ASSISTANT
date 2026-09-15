@@ -342,3 +342,32 @@ def schedule_symbol_image_download(symbol_ids: list[int] | None = None) -> None:
     task = asyncio.create_task(_run(), name="symbol-image-download")
     _scheduled_tasks.add(task)
     task.add_done_callback(_scheduled_tasks.discard)
+
+
+async def cancel_scheduled_symbol_image_downloads(timeout_seconds: float) -> bool:
+    """Cancel and drain in-flight scheduled downloads within the budget.
+
+    ``schedule_symbol_image_download`` fires tasks that hold DB sessions,
+    httpx clients and partial files. They live outside the ASGI startup-task
+    set, so shutdown used to return while a download was still writing
+    (F3). Returns True when every tracked task finished inside the budget.
+
+    Downloads that ran on a short-lived daemon thread instead (no running
+    loop) cannot be cancelled; they only exist for sync handlers and are
+    bounded by their own request timeouts.
+    """
+    pending = [task for task in _scheduled_tasks if not task.done()]
+    if not pending:
+        return True
+    for task in pending:
+        task.cancel()
+    done, still_pending = await asyncio.wait(
+        pending, timeout=max(timeout_seconds, 0.0)
+    )
+    if still_pending:
+        logger.warning(
+            "{} scheduled symbol image download(s) did not stop within the "
+            "shutdown budget",
+            len(still_pending),
+        )
+    return not still_pending and all(task.done() for task in done)

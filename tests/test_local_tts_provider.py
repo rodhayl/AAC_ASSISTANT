@@ -109,6 +109,71 @@ def test_failed_model_download_preserves_existing_file_and_cleans_temp(
     assert list(directory.glob(".*.tmp")) == []
 
 
+def test_kokoro_assets_require_pinned_size_and_sha256(monkeypatch, tmp_path):
+    """H48: a same-sized tamper is rejected before numpy/ONNX loading."""
+    import hashlib
+
+    from src.aac_app.providers import local_tts_provider as mod
+
+    filename = mod.KOKORO_VOICES_FILENAME
+    good = b"valid synthetic voices archive"
+    monkeypatch.setattr(
+        mod,
+        "_KOKORO_ASSET_INTEGRITY",
+        {
+            filename: (len(good), hashlib.sha256(good).hexdigest()),
+        },
+    )
+    path = tmp_path / filename
+    path.write_bytes(good)
+    assert mod._file_matches_integrity(path) is True
+
+    path.write_bytes(b"tampered synthetic voices data")
+    assert mod._file_matches_integrity(path) is False
+
+    path.write_bytes(good[:-1])
+    assert mod._file_matches_integrity(path) is False
+
+
+def test_kokoro_download_rejects_unpinned_payload_before_replace(
+    monkeypatch, tmp_path
+):
+    """H48: a truncated download cannot replace the existing cached asset."""
+    import hashlib
+    import urllib.request
+
+    from src.aac_app.providers import local_tts_provider as mod
+
+    directory = tmp_path / "kokoro"
+    directory.mkdir()
+    filename = mod.KOKORO_MODEL_FILENAME
+    previous = b"old valid asset"
+    destination = directory / filename
+    destination.write_bytes(previous)
+    expected = b"new valid synthetic asset"
+    monkeypatch.setattr(
+        mod,
+        "_KOKORO_ASSET_INTEGRITY",
+        {filename: (len(expected), hashlib.sha256(expected).hexdigest())},
+    )
+    monkeypatch.setattr(mod, "kokoro_model_dir", lambda: directory)
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _size):
+            return expected[:-1]
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *_a, **_k: Response())
+    assert mod.download_kokoro_model() is False
+    assert destination.read_bytes() == previous
+    assert not list(directory.glob(".*.tmp"))
+
+
 def test_provider_reports_unavailable_without_dependency(monkeypatch):
     """Without kokoro-onnx the provider must degrade cleanly (no import crash)."""
     from src.aac_app.providers import local_tts_provider as mod

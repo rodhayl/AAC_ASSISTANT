@@ -366,7 +366,12 @@ class GuardianProfileService:
         return self.template_manager.build_system_prompt(profile)
 
     def list_students_with_profiles(
-        self, teacher_id: int | None = None, db: Session | None = None
+        self,
+        teacher_id: int | None = None,
+        *,
+        skip: int = 0,
+        limit: int = 500,
+        db: Session | None = None,
     ) -> list[dict]:
         """
         List all students that have guardian profiles.
@@ -410,7 +415,10 @@ class GuardianProfileService:
                     )
                 )
 
-            query = query.order_by(User.id)
+            # Bounded page (E2): the roster grew linearly and was fully
+            # materialized on every request. User.id ordering keeps paging
+            # stable and deterministic.
+            query = query.order_by(User.id).offset(max(skip, 0)).limit(limit)
             result = []
             for student, profile in query.all():
                 result.append(

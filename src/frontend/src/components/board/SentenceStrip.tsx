@@ -37,6 +37,7 @@ function SortableSymbol({ symbol, index, onRemove, onSpeakItem }: {
   onSpeakItem?: (text: string) => void
 }) {
   const categoryStyle = getCategoryStyle(symbol.symbol?.category);
+  const { t } = useTranslation('boards');
   const {
     attributes,
     listeners,
@@ -52,6 +53,8 @@ function SortableSymbol({ symbol, index, onRemove, onSpeakItem }: {
     opacity: isDragging ? 0.5 : 1,
   };
 
+  const chipLabel = symbol.custom_text || symbol.symbol.label;
+
   return (
     <div
       ref={setNodeRef}
@@ -60,22 +63,39 @@ function SortableSymbol({ symbol, index, onRemove, onSpeakItem }: {
       {...listeners}
       data-testid="sentence-chip"
       className="flex-shrink-0 flex flex-col items-center bg-surface border border-border rounded-lg p-1.5 min-w-[4rem] relative group cursor-grab active:cursor-grabbing hover:border-brand transition-colors"
+      // B9: the chip is operable keyboard-only/AT — button semantics announce
+      // it and Enter/Space speak the item, matching the pointer behavior.
+      role="button"
+      tabIndex={0}
+      aria-label={chipLabel}
       onClick={() => {
         // If we are dragging, don't trigger speak
-        if (!isDragging) onSpeakItem?.(symbol.custom_text || symbol.symbol.label);
+        if (!isDragging) onSpeakItem?.(chipLabel);
+      }}
+      onKeyDown={(e) => {
+        if (isDragging) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSpeakItem?.(chipLabel);
+        }
       }}
     >
       <div className={`absolute top-1 left-1 w-2 h-2 rounded-full ${categoryStyle.dot} opacity-80`} aria-hidden="true" />
       <button
+        type="button"
         onClick={(e) => {
           e.stopPropagation();
           onRemove(index);
         }}
-        // Use pointer-events-auto to ensure click is captured even with dnd listeners
-        className="absolute -top-2 -right-2 bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-300 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm z-10 cursor-pointer"
         onPointerDown={(e) => e.stopPropagation()} // Prevent drag start on close button
+        // B9: the remove control is identifiable by name, parameterized with
+        // the symbol label like the utterance-chip pattern (H45).
+        aria-label={t('removeSymbolNamed', { label: chipLabel })}
+        title={t('removeSymbolNamed', { label: chipLabel })}
+        // Use pointer-events-auto to ensure click is captured even with dnd listeners
+        className="absolute -top-2 -right-2 bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-300 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm z-10 cursor-pointer focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-brand"
       >
-        <X className="w-3 h-3" />
+        <X className="w-3 h-3" aria-hidden="true" />
       </button>
       <div className="w-8 h-8 mb-1 pointer-events-none">
         <SymbolImage

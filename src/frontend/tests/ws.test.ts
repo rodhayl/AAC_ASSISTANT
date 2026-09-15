@@ -95,6 +95,28 @@ describe('createWSClient reconnect lifecycle', () => {
     expect(socket.send).not.toHaveBeenCalled();
   });
 
+  it('hands the pending queue to a replacement client when close keeps it (A7)', () => {
+    const shared: unknown[] = [];
+    const first = createWSClient('ws://example.test', {}, undefined, { queue: shared });
+    const firstSocket = MockWebSocket.instances[0];
+    // Not OPEN: the move is queued instead of sent.
+    firstSocket.readyState = 0;
+    first.send({ op: 'move', symbol_id: 9, position: { x: 1, y: 2 } });
+
+    first.close({ clearQueue: false });
+    expect(shared).toHaveLength(1);
+
+    // The replacement client (rotated credential) reuses the same store and
+    // flushes the queued move once its socket opens.
+    const second = createWSClient('ws://example.test', {}, undefined, { queue: shared });
+    const secondSocket = MockWebSocket.instances[1];
+    secondSocket.onopen?.();
+    expect(secondSocket.send).toHaveBeenCalledWith(
+      JSON.stringify({ op: 'move', symbol_id: 9, position: { x: 1, y: 2 } }),
+    );
+    second.close();
+  });
+
   it('drops the oldest payload once the offline queue overflows', () => {
     const client = createWSClient('ws://example.test');
     const socket = MockWebSocket.instances[0];

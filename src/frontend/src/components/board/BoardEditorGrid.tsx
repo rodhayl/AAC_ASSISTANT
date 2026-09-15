@@ -16,6 +16,8 @@ interface BoardEditorGridProps {
   rows: number;
   cols: number;
   symbols: BoardSymbol[];
+  /** Placement ids whose current position came from a collaborator (A17). */
+  remoteMovedIds?: number[];
   activeSymbol: BoardSymbol | null;
   onDragStart: (event: DragStartEvent) => void;
   onDragEnd: (event: DragEndEvent) => void;
@@ -28,6 +30,7 @@ export function BoardEditorGrid({
   rows,
   cols,
   symbols,
+  remoteMovedIds,
   activeSymbol,
   onDragStart,
   onDragEnd,
@@ -61,6 +64,7 @@ export function BoardEditorGrid({
                   {symbol && (
                     <DraggableSymbol
                       boardSymbol={symbol}
+                      remoteMoved={remoteMovedIds?.includes(symbol.id)}
                       onRemove={onRemoveSymbol}
                       onEdit={onEditSymbol}
                     />

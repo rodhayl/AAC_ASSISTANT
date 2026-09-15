@@ -6,7 +6,7 @@ import threading
 import unicodedata
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -28,8 +28,34 @@ from src.api.deps import (
     get_text as get_shared_text,
 )
 from src.api.file_uploads import DEFAULT_MAX_AUDIO_BYTES, save_audio_upload
+from src.api.routers.auth_helpers import conditional_limiter
 
 router = APIRouter()
+
+
+def _raise_service_failure(
+    result: dict[str, Any],
+    current_user: User,
+    *,
+    not_found: bool = False,
+) -> None:
+    """Map a service *domain* failure result to its HTTP status.
+
+    Only expected domain outcomes reach here (validation → 400, missing →
+    404, safety → 403); unexpected exceptions now propagate out of the
+    service as 5xx so clients retry and monitoring sees the outage instead of
+    a client-error status. One helper keeps the four learning routes' mapping
+    identical (A8).
+    """
+    if result.get("safety_blocked"):
+        raise HTTPException(
+            status_code=403,
+            detail=get_text(current_user, "errors.safety.blockedTopic"),
+        )
+    raise HTTPException(
+        status_code=404 if not_found else 400,
+        detail=result.get("error", get_text(current_user, "errors.unknownError")),
+    )
 
 
 # Serializes create_saved_topic's fold-based duplicate check + insert (see
@@ -188,15 +214,7 @@ def start_session(
     )
 
     if not result["success"]:
-        if result.get("safety_blocked"):
-            raise HTTPException(
-                status_code=403,
-                detail=get_text(current_user, "errors.safety.blockedTopic"),
-            )
-        raise HTTPException(
-            status_code=400,
-            detail=result.get("error", get_text(current_user, "errors.unknownError")),
-        )
+        _raise_service_failure(result, current_user)
 
     return result
 
@@ -226,10 +244,7 @@ def get_learning_topics(
     result = service.get_topic_pool(user_id, db=db)
 
     if not result["success"]:
-        raise HTTPException(
-            status_code=400,
-            detail=result.get("error", get_text(current_user, "errors.unknownError")),
-        )
+        _raise_service_failure(result, current_user)
 
     return result
 
@@ -454,9 +469,14 @@ def report_message(
 
 
 @router.post("/{session_id}/ask", response_model=schemas.QuestionResponse)
+@conditional_limiter("30/minute")
 async def ask_question(
+    request: Request,
     session_id: int,
-    difficulty: str | None = None,
+    # Validated against the same band the session-start schema accepts: the
+    # value is interpolated into the generation prompt, so an arbitrary string
+    # was both a prompt-injection surface and unvalidated persisted data (A5).
+    difficulty: schemas.DifficultyBand | None = Query(None),
     service: LearningCompanionService = Depends(get_learning_service),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -484,7 +504,9 @@ async def ask_question(
 
 
 @router.post("/{session_id}/answer", response_model=schemas.AnswerResponse)
+@conditional_limiter("60/minute")
 async def submit_answer(
+    request: Request,
     session_id: int,
     answer_data: schemas.AnswerSubmit,
     service: LearningCompanionService = Depends(get_learning_service),
@@ -517,7 +539,9 @@ async def submit_answer(
 
 
 @router.post("/{session_id}/answer/voice", response_model=schemas.AnswerResponse)
+@conditional_limiter("30/minute")
 async def submit_voice_answer(
+    request: Request,
     session_id: int,
     file: UploadFile = File(...),
     service: LearningCompanionService = Depends(get_learning_service),
@@ -576,7 +600,9 @@ async def submit_voice_answer(
 
 
 @router.post("/{session_id}/answer/symbols", response_model=schemas.AnswerResponse)
+@conditional_limiter("60/minute")
 async def submit_symbol_answer(
+    request: Request,
     session_id: int,
     payload: schemas.SymbolAnswerSubmit,
     service: LearningCompanionService = Depends(get_learning_service),
@@ -672,10 +698,7 @@ def get_progress(
     result = service.get_session_progress(session_id, db=db)
 
     if not result["success"]:
-        raise HTTPException(
-            status_code=404,
-            detail=result.get("error", get_text(current_user, "errors.unknownError")),
-        )
+        _raise_service_failure(result, current_user, not_found=True)
 
     return result
 
@@ -684,7 +707,7 @@ def get_progress(
 def get_history(
     user_id: int,
     skip: int = Query(0, ge=0, le=100_000),
-    limit: int = Query(10, ge=1, le=1000),
+    limit: int = Query(10, ge=1, le=200),
     service: LearningCompanionService = Depends(get_learning_service),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -701,9 +724,6 @@ def get_history(
     result = service.get_user_history(user_id, limit, skip=skip, db=db)
 
     if not result["success"]:
-        raise HTTPException(
-            status_code=400,
-            detail=result.get("error", get_text(current_user, "errors.unknownError")),
-        )
+        _raise_service_failure(result, current_user)
 
     return {"sessions": result["sessions"]}

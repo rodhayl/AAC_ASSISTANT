@@ -147,6 +147,49 @@ async def save_audio_upload(
         raise
 
 
+def validate_image_bytes(
+    content: bytes,
+    *,
+    max_bytes: int = DEFAULT_MAX_IMAGE_BYTES,
+    invalid_type_detail: str,
+    too_large_detail: str,
+    max_pixels: int = 25_000_000,
+) -> str:
+    """Apply the upload image policy to already-buffered bytes.
+
+    The single home of the size + decode + format allowlist used by every
+    image that reaches the uploads directory, including bytes fetched from a
+    third party (ARASAAC) rather than sent through a multipart form.
+
+    Returns the safe normalized suffix for the detected format.
+    """
+    if len(content) > max_bytes:
+        raise HTTPException(status_code=413, detail=too_large_detail)
+    try:
+        with Image.open(io.BytesIO(content)) as image:
+            image.verify()
+            if image.width * image.height > max_pixels:
+                raise HTTPException(status_code=413, detail=too_large_detail)
+            image_format = (image.format or "").lower()
+    except HTTPException:
+        raise
+    except (DecompressionBombError, UnidentifiedImageError, OSError, SyntaxError, ValueError) as exc:
+        status_code = 413 if isinstance(exc, DecompressionBombError) else 400
+        raise HTTPException(status_code=status_code, detail=too_large_detail if status_code == 413 else invalid_type_detail) from exc
+
+    extension_by_format = {
+        "jpeg": ".jpg",
+        "png": ".png",
+        "gif": ".gif",
+        "webp": ".webp",
+        "bmp": ".bmp",
+    }
+    suffix = extension_by_format.get(image_format)
+    if suffix is None:
+        raise HTTPException(status_code=400, detail=invalid_type_detail)
+    return suffix
+
+
 async def read_image_upload(
     upload: UploadFile,
     *,
@@ -163,26 +206,13 @@ async def read_image_upload(
         too_large_detail=too_large_detail,
         empty_detail=empty_detail,
     )
-    try:
-        with Image.open(io.BytesIO(content)) as image:
-            image.verify()
-            if image.width * image.height > max_pixels:
-                raise HTTPException(status_code=413, detail=too_large_detail)
-            image_format = (image.format or "").lower()
-    except (DecompressionBombError, UnidentifiedImageError, OSError, SyntaxError, ValueError) as exc:
-        status_code = 413 if isinstance(exc, DecompressionBombError) else 400
-        raise HTTPException(status_code=status_code, detail=too_large_detail if status_code == 413 else invalid_type_detail) from exc
-
-    extension_by_format = {
-        "jpeg": ".jpg",
-        "png": ".png",
-        "gif": ".gif",
-        "webp": ".webp",
-        "bmp": ".bmp",
-    }
-    suffix = extension_by_format.get(image_format)
-    if suffix is None:
-        raise HTTPException(status_code=400, detail=invalid_type_detail)
+    suffix = validate_image_bytes(
+        content,
+        max_bytes=max_bytes,
+        invalid_type_detail=invalid_type_detail,
+        too_large_detail=too_large_detail,
+        max_pixels=max_pixels,
+    )
     return content, suffix
 
 

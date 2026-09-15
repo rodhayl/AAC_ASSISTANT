@@ -6,6 +6,12 @@ REM Pass --dev explicitly to run uvicorn plus the Vite development server.
 setlocal
 cd /d "%~dp0"
 
+REM kokoro-onnx currently supports Python 3.13, but its package metadata excludes
+REM Python 3.14. Pin the launcher to the compatible interpreter (same as
+REM start.sh) so the local neural voice is installed instead of silently
+REM falling back to browser TTS on a 3.14-resolving checkout.
+set "VOICE_PYTHON_VERSION=3.13"
+
 set "UV_CMD="
 call :resolve_uv
 if not defined UV_CMD (
@@ -16,7 +22,15 @@ if not defined UV_CMD (
 )
 if not defined UV_CMD (
     if exist "%~dp0.venv\Scripts\python.exe" (
-        echo uv is unavailable; using the existing Python environment.
+        REM Offline fallback: the existing environment must already be on the
+        REM interpreter that supports the voice stack.
+        "%~dp0.venv\Scripts\python.exe" -c "import sys; raise SystemExit(sys.version_info[:2] != (3, 13))"
+        if errorlevel 1 (
+            echo ERROR: the existing .venv is not Python %VOICE_PYTHON_VERSION%, which is required for Kokoro.
+            echo Install uv or recreate the environment with: uv sync --python %VOICE_PYTHON_VERSION% --extra tts
+            exit /b 1
+        )
+        echo uv is unavailable; using the existing Python %VOICE_PYTHON_VERSION% environment.
         call "%~dp0.venv\Scripts\python.exe" -m scripts.ensure_voice_runtime
         if errorlevel 1 (
             echo ERROR: voice runtime preparation failed.
@@ -40,22 +54,22 @@ if not errorlevel 1 (
     if not errorlevel 2 set "UV_SYNC_ARGS=--group dev --extra voice --extra tts"
 )
 
-echo Creating or updating the Python environment and installing dependencies...
-call "%UV_CMD%" sync %UV_SYNC_ARGS%
+echo Creating or updating the Python %VOICE_PYTHON_VERSION% environment and installing dependencies...
+call "%UV_CMD%" sync --python %VOICE_PYTHON_VERSION% %UV_SYNC_ARGS%
 if errorlevel 1 (
     echo ERROR: uv sync failed.
     exit /b 1
 )
 
 echo Preparing voice dependencies and Kokoro model...
-call "%UV_CMD%" run --no-sync python -m scripts.ensure_voice_runtime
+call "%UV_CMD%" run --python %VOICE_PYTHON_VERSION% --no-sync python -m scripts.ensure_voice_runtime
 if errorlevel 1 (
     echo ERROR: voice runtime preparation failed.
     exit /b 1
 )
 
 echo Starting AAC Assistant...
-call "%UV_CMD%" run --no-sync python -m scripts.start_server %*
+call "%UV_CMD%" run --python %VOICE_PYTHON_VERSION% --no-sync python -m scripts.start_server %*
 exit /b %errorlevel%
 
 :resolve_uv

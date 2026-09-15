@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 
+import { ensureDemoBoard } from './demo-fixture';
+
 // Targeted e2e for the account-scoped Students surface:
 // - the roster renders through the shared walkPages helper (paginated
 //   student-summaries endpoint, short final page terminates the walk);
@@ -11,8 +13,14 @@ import { test, expect } from '@playwright/test';
 //   (create/update are the 200 paths; the 409 race is DB-level and covered
 //   by tests/test_guardian_profiles.py).
 
+// The assignment step needs the demo board assigned to student1; the fixture
+// builds it through the API, so no seeded sample data is required.
 test.describe('Students lifecycle', () => {
   test.use({ storageState: 'playwright/.auth/admin.json' });
+
+  test.beforeEach(async ({ page }) => {
+    await ensureDemoBoard(page.request);
+  });
 
   test('loads the roster and drives the assign + guardian modals', async ({ page }) => {
     await page.goto('/students');

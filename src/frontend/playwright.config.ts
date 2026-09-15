@@ -30,9 +30,13 @@ export default defineConfig({
     { name: 'setup', testMatch: /.*\.setup\.ts/ },
     {
       name: 'chromium',
-      use: { 
+      // No project-level storageState on purpose: every spec must opt into the
+      // role it exercises (test.use({ storageState: 'playwright/.auth/<role>.json' })),
+      // or into no session at all for anonymous flows. A project-wide default
+      // silently ran role-gated specs as that one user, which both hides
+      // privilege bugs and fails specs that need another role.
+      use: {
         ...devices['Desktop Chrome'],
-        storageState: 'playwright/.auth/student.json',
       },
       dependencies: ['setup'],
     },

@@ -244,6 +244,10 @@ export function useVoiceRecorder({
         recordingUserIdRef.current = null;
         setHasRecording(false);
       }
+    } catch {
+      // B5: submitVoiceAnswer rethrows on failure (same contract as the symbol
+      // path). Swallow here — the store already surfaced the error — so the
+      // recording is kept and the button's promise chain stays rejection-free.
     } finally {
       sendInFlightRef.current = false;
     }

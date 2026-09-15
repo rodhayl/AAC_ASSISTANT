@@ -9,10 +9,19 @@ apart.
 
 from __future__ import annotations
 
+from loguru import logger
 from sqlalchemy import func
 
 from src.aac_app.models import Symbol
 from src.aac_app.services.runtime_translation import normalize_symbol_label
+
+# Bound on the Python casefold dedupe scan below: rows stream through
+# ``yield_per`` (flat memory) and the loop stops after this many rows so one
+# genuinely new label cannot materialize the whole catalog in-request (F4).
+# Same magnitude as unicode_recall_ids' scan cap; residual miss risk is the
+# same documented trade-off (extreme catalogs may create a duplicate).
+_LABEL_SCAN_MAX_ROWS = 50_000
+_LABEL_SCAN_BATCH = 1000
 
 # Labels that match these substrings are internal dev artifacts, not real
 # symbols. Reject them so they never reach the database or suggestions.
@@ -48,9 +57,21 @@ def find_symbol_by_normalized_label(db, label: str | None):
     )
     if existing is not None:
         return existing
-    for row in db.query(Symbol.id, Symbol.label).filter(Symbol.label.isnot(None)):
+    for scanned, row in enumerate(
+        db.query(Symbol.id, Symbol.label)
+        .filter(Symbol.label.isnot(None))
+        .order_by(Symbol.id)
+        .yield_per(_LABEL_SCAN_BATCH)
+    ):
         if normalize_symbol_label(row.label) == normalized:
             return db.get(Symbol, row.id)
+        if scanned + 1 >= _LABEL_SCAN_MAX_ROWS:
+            logger.warning(
+                "Unicode label-dedupe scan hit its {} row cap; a symbol beyond "
+                "the cap may not be matched",
+                _LABEL_SCAN_MAX_ROWS,
+            )
+            break
     return None
 
 

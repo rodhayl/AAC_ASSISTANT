@@ -20,6 +20,7 @@ from src.aac_app.models import (
     UserAchievement,
 )
 from src.api.deps import get_current_active_user, get_db, get_text
+from src.api.routers.auth_helpers import conditional_limiter
 from src.api.routers.board_helpers import serialize_export_board
 
 router = APIRouter()
@@ -245,7 +246,11 @@ def _validate_import_payload(
             raise HTTPException(status_code=400, detail=invalid_detail)
 
     for record in history:
-        for key, maximum in (("topic_name", 200), ("topic", 200), ("purpose", 10000), ("status", 50)):
+        # Bounds mirror the LearningSession columns (topic_name String(100),
+        # status String(20)); over-width values would otherwise survive SQLite's
+        # silent over-storage and raise DataError on Postgres at commit, rolling
+        # back the entire recovery import as a 500.
+        for key, maximum in (("topic_name", 100), ("topic", 100), ("purpose", 10000), ("status", 20)):
             if not optional_text(record.get(key), maximum):
                 raise HTTPException(status_code=400, detail=invalid_detail)
         for key in (
@@ -670,6 +675,12 @@ def _import_achievements(
             ) from exc
 
         if not existing_ua:
+            # ``null()`` is required, not incidental: the column declares
+            # ``default=func.now()``, so passing ``None`` makes SQLAlchemy apply
+            # that default and a legacy achievement without a timestamp would be
+            # stored as "now" instead of NULL (pinned by
+            # tests/test_new_features.py::test_import_preserves_achievement_
+            # earned_at_and_rejects_invalid_timestamp).
             db.add(
                 UserAchievement(
                     user_id=user.id,
@@ -751,7 +762,12 @@ def _import_learning_history(
 
 
 @router.get("/api/data/export")
+# A full export walks every board, achievement and learning session of a
+# user; rate limit it so a staff/student token cannot be used to run
+# unbounded overlapping exports.
+@conditional_limiter("10/hour")
 def export_data(
+    request: Request,
     username: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -814,7 +830,10 @@ def export_data(
 
     # Fetch achievements
     user_achievements = (
-        db.query(UserAchievement).filter(UserAchievement.user_id == user.id).all()
+        db.query(UserAchievement)
+        .options(selectinload(UserAchievement.achievement))
+        .filter(UserAchievement.user_id == user.id)
+        .all()
     )
     achievements_data = []
     total_points = 0
@@ -915,7 +934,11 @@ def export_data(
         }
     },
 )
+# B7: import is the write-side twin of the 10/hour export budget — an atomic
+# multi-table commit over up to 1000 boards / 10k symbols / a 10 MB body.
+@conditional_limiter("10/hour")
 def import_data(
+    request: Request,
     data: dict[str, Any] = Depends(_read_import_payload),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),

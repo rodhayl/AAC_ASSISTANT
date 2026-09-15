@@ -88,12 +88,15 @@ function PlayRedirect() {
 }
 
 function RootLayout() {
+  // The shell itself (settings manager, toaster) can throw too, and a crash
+  // there unmounted the whole router with no fallback (G3). The boundary lives
+  // inside the router so its useNavigate() keeps working.
   return (
-    <>
+    <ErrorBoundary>
       <SettingsManager />
       <AppToaster />
       <Outlet />
-    </>
+    </ErrorBoundary>
   );
 }
 

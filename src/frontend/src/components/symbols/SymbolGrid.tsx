@@ -43,10 +43,13 @@ export function SymbolGrid({
                 )}
               </div>
               <div className="flex gap-2">
+                {/* The neighbouring buttons are labelled; this checkbox had
+                    no accessible name at all (H45/H64). */}
                 <input
                   type="checkbox"
                   checked={selectedIds.has(sym.id)}
                   onChange={(e) => onToggleSelection(sym.id, e.target.checked)}
+                  aria-label={sym.label}
                 />
                 <Button variant="outline" size="sm" onClick={() => onEdit(sym)}>
                   <Edit className="w-4 h-4 mr-1" /> {t('edit')}

@@ -7,6 +7,37 @@ import { test, expect, type Page } from '@playwright/test';
 // 2. board lifecycle: create -> appears in the list -> delete -> disappears
 //    and a direct authenticated GET of its id returns 404.
 
+/**
+ * Create a throwaway admin account through the real admin API.
+ *
+ * Logging out revokes the account's access tokens server-side (see
+ * pilot-gate.spec.ts), so the isolation test must never sign out the shared
+ * admin1 session: doing so invalidated `playwright/.auth/admin.json` and every
+ * later spec in the same run was redirected to /login.
+ */
+async function createDisposableAdmin(request: import('@playwright/test').APIRequestContext) {
+  const login = await request.post('/api/auth/token', {
+    form: { username: 'admin1', password: process.env.E2E_ADMIN_PASSWORD || 'Admin123' },
+  });
+  if (!login.ok()) throw new Error(`admin login failed: HTTP ${login.status()}`);
+  const { access_token: token } = await login.json();
+
+  const username = `e2e_iso_admin_${Date.now()}`;
+  const password = 'IsoAdmin123!';
+  const created = await request.post('/api/auth/admin/create-user', {
+    headers: { Authorization: `Bearer ${token}` },
+    data: {
+      username,
+      password,
+      confirm_password: password,
+      display_name: 'E2E Isolation Admin',
+      user_type: 'admin',
+    },
+  });
+  if (!created.ok()) throw new Error(`admin provisioning failed: HTTP ${created.status()}`);
+  return { username, password };
+}
+
 async function loginAs(page: Page, username: string, password: string) {
   await page.goto('/login');
   // Force English so the assertions match the en locale regardless of the
@@ -29,35 +60,39 @@ test.describe('Session isolation and board lifecycle', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
   test('login-logout-login shows only the new user\u2019s session', async ({ page }) => {
-    await loginAs(page, 'admin1', 'Admin123');
+    const admin = await createDisposableAdmin(page.request);
+    await loginAs(page, admin.username, admin.password);
 
     // Admin-only nav link proves whose session is active.
-    await expect(page.getByRole('link', { name: 'Admins' })).toBeVisible();
+    await expect(page.getByRole('link', { name: /admins|administradores/i })).toBeVisible();
 
     await page.getByRole('button', { name: /sign out|cerrar/i }).click();
     await expect(page).toHaveURL(/\/login/, { timeout: 15000 });
 
     // Second user: student1. The student roster is account-scoped; the UI
-    // must reflect student1, never admin1's links or identity.
+    // must reflect student1, never the previous (admin) identity.
     await loginAs(page, 'student1', 'Student123');
 
-    await expect(page.getByRole('link', { name: 'Admins' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: /admins|administradores/i })).toHaveCount(0);
     const body = await page.locator('body').innerText();
-    expect(body).not.toContain('admin1');
+    expect(body).not.toContain(admin.username);
   });
 
   test('board create appears in list, delete removes it and direct GET returns 404', async ({ page }) => {
     await loginAs(page, 'admin1', 'Admin123');
 
     await page.goto('/boards');
-    await expect(page.getByRole('button', { name: 'New Board' })).toBeVisible({ timeout: 20000 });
+    // Labels are localized (and the account's persisted UI language can win
+    // over the localStorage hint), so match both locales.
+    const newBoardBtn = page.getByRole('button', { name: /new board|nuevo tablero/i });
+    await expect(newBoardBtn).toBeVisible({ timeout: 20000 });
 
-    await page.getByRole('button', { name: 'New Board' }).click();
+    await newBoardBtn.click();
     await page.locator('#new-board-name').fill('E2E Lifecycle Board');
     const createResponse = page.waitForResponse(
       (res) => res.url().includes('/api/boards') && res.request().method() === 'POST',
     );
-    await page.getByRole('button', { name: 'Create Board' }).click();
+    await page.getByRole('button', { name: /create board|crear tablero/i }).click();
     const created = await createResponse;
     const boardId = (await created.json()) as { id: number };
     expect(boardId.id).toBeGreaterThan(0);
@@ -67,8 +102,8 @@ test.describe('Session isolation and board lifecycle', () => {
     await expect(card).toBeVisible({ timeout: 15000 });
 
     // Delete through the card's Delete button + confirm dialog.
-    await card.getByRole('button', { name: 'Delete' }).click();
-    await page.getByRole('button', { name: 'Delete' }).last().click();
+    await card.getByRole('button', { name: /delete|eliminar/i }).click();
+    await page.getByRole('button', { name: /delete|eliminar/i }).last().click();
     await expect(page.locator('div.bg-surface', { hasText: 'E2E Lifecycle Board' })).toHaveCount(0, {
       timeout: 15000,
     });

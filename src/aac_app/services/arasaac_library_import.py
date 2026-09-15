@@ -174,12 +174,15 @@ async def import_arasaac_library(locale: str = "es") -> dict[str, int]:
                             )
                             categories = entry.get("categories") or []
                             meaning = (entry.get("keywords") or [{}])[0].get("meaning")
+                            # Mirror the single-import bounds (category 50,
+                            # keywords 10k): upstream strings are unbounded and
+                            # an over-width category fails the batch commit.
                             db.add(
                                 Symbol(
                                     label=label,
                                     description=meaning or None,
-                                    category=categories[0] if categories else "general",
-                                    keywords=all_keywords or None,
+                                    category=(categories[0] if categories else "general")[:50],
+                                    keywords=(all_keywords[:10_000] if all_keywords else None),
                                     language=locale,
                                     image_path=f"/uploads/symbols/{path.name}",
                                     is_builtin=False,

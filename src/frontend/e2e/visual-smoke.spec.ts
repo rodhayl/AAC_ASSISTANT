@@ -1,6 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
 import { auditContrast } from './contrast-audit';
 
+// Roles are opt-in per spec (the config has no project-wide storageState):
+// these routes are all student-visible.
+test.use({ storageState: 'playwright/.auth/student.json' });
+
 const routes = [
   { name: 'dashboard', path: '/' },
   { name: 'communication', path: '/communication' },

@@ -238,15 +238,17 @@ export function Students() {
   const handleAssignBoard = async (boardId: number) => {
     // Only rendered inside the assign modal, which requires a selected student.
     const studentId = selectedStudent!.id
-    const contextId = availableBoardsRequestRef.current
     const requestId = ++assignMutationRequestRef.current
     setAssignLoading(true)
     try {
       await api.post(`/boards/${boardId}/assign`, { student_id: studentId })
-      if (
-        contextId !== availableBoardsRequestRef.current ||
-        requestId !== assignMutationRequestRef.current
-      ) {
+      if (requestId !== assignMutationRequestRef.current) {
+        // The assignment was applied server-side; keep the modal open so the
+        // user sees the refreshed list rather than closing silently and
+        // retrying (which used to answer with a 409). Reporting the applied
+        // result is tied to this mutation's own id, not to the boards-list
+        // request that happened to be in flight (H62).
+        void loadStudents()
         return
       }
       const board = availableBoards.find((candidate) => candidate.id === boardId)
@@ -265,17 +267,11 @@ export function Students() {
       closeAssignModal()
       addToast(t('success.boardAssigned'), 'success')
     } catch (e: unknown) {
-      if (
-        contextId === availableBoardsRequestRef.current &&
-        requestId === assignMutationRequestRef.current
-      ) {
+      if (requestId === assignMutationRequestRef.current) {
         setError(extractError(e, t('errors.assignFailed')))
       }
     } finally {
-      if (
-        contextId === availableBoardsRequestRef.current &&
-        requestId === assignMutationRequestRef.current
-      ) {
+      if (requestId === assignMutationRequestRef.current) {
         setAssignLoading(false)
       }
     }
@@ -379,7 +375,10 @@ export function Students() {
     setCreateLoading(true)
     setError(null)
 
-    if (user?.user_type === 'admin' && newPassword !== confirmPassword) {
+    // Applies to every creator, not just admins: a teacher who mistypes the
+    // password creates an account nobody can log into, which then needs a
+    // separate admin reset to recover.
+    if (newPassword !== confirmPassword) {
       setError(t('errors.passwordsDoNotMatch'))
       setCreateLoading(false)
       return
@@ -793,20 +792,18 @@ export function Students() {
                       />
                     </div>
 
-                    {user?.user_type === 'admin' && (
-                      <div>
-                        <FormLabel htmlFor="create-student-confirm-password">{t('labels.confirmPassword')}</FormLabel>
-                        <input
-                          id="create-student-confirm-password"
-                          type="password"
-                          value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
-                          required
-                          minLength={8}
-                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
-                        />
-                      </div>
-                    )}
+                    <div>
+                      <FormLabel htmlFor="create-student-confirm-password">{t('labels.confirmPassword')}</FormLabel>
+                      <input
+                        id="create-student-confirm-password"
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        required
+                        minLength={8}
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
+                      />
+                    </div>
 
                     <div className="rounded-lg border border-border p-3">
                       <button

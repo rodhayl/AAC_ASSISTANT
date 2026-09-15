@@ -820,3 +820,814 @@ Re-inspected every touched flow after the fixes; the results are recorded rather
 7. Update every finding to fixed, disproved, or explicitly blocked with evidence. Run `git diff --check`. Audit and stop all task-owned runners/servers before handoff. Only claim production sign-off when the required evidence exists.
 
 Only this handoff document is intended as the repository change from the audit. No production fixes, secret changes, or database modifications were authorized as part of the diagnosis pass.
+
+## PROMPT_4 whole-product sweep (Tiers A–G)
+
+Baseline: `9040056` (the pending R1 redaction + pending-op spinner, committed first).
+Work below is on top of that. Status per item; every "Fixed" line has a focused
+regression test recorded against it (fail-before / pass-after where the defect was
+reproducible).
+
+### Verified and fixed
+
+| ID | Files | Change + evidence |
+| --- | --- | --- |
+| A1 | `src/api/routers/export_import.py` | Import-history bounds tightened to the `LearningSession` columns (`topic_name`/`topic` ≤ 100, `status` ≤ 20) so a legacy over-width export is rejected at validation (400) instead of raising `DataError` at Postgres commit and rolling back the whole recovery import. 3 specs incl. a boundary case; 2 fail on the pre-fix bound. |
+| A3 | `src/frontend/src/lib/api.ts` | Replay success publish is generation-guarded like the error branch. Guard, not a discriminator: `clearSessionMutations` aborts the in-flight request first, so axios rejects `ERR_CANCELED` before the success branch is reachable through the public API. |
+| A4 | `src/api/routers/{learning,board_ai,analytics,providers,auth_helpers}.py` | `conditional_limiter` extended to async endpoints (a sync wrapper around an async target hands FastAPI a coroutine) and now marks limited endpoints with `__rate_limited__`. Applied to ask/answer/voice/symbol answers, board AI suggestions, next-symbol, TTS synthesize and warmup. |
+| A5 | `src/api/routers/learning.py` | `ask_question` difficulty is validated against `schemas.DifficultyBand` (422 otherwise) instead of being interpolated into the generation prompt verbatim. |
+| A8 | `src/aac_app/services/learning/session.py`, `src/api/routers/learning.py` | The four learning service catch-alls now log and re-raise, so a DB outage surfaces as 5xx instead of a 400 that reads as invalid input; route-side mapping collapsed into one `_raise_service_failure` helper (validation → 400, missing → 404, safety → 403). |
+| A9 | `src/aac_app/services/content_safety.py` (`utc_day_start`), `src/api/routers/content_safety.py` | The sentinel spend meter and the admin clear share one UTC day boundary matching the `func.now()` timestamps; a local midnight drifted both by the UTC offset. `_today_start` renamed public and the 3 test references updated. |
+| A10 | `src/api/routers/symbols.py` | Batch placement update fetches once into a dict (chunked at 500) instead of one SELECT per entry inside the write lock. 3-vs-30-placement SELECT-count spec passes (pre-fix 5/9 → post-fix flat). |
+| A11 | `src/aac_app/services/learning/session.py`, `src/api/routers/learning.py`, `src/frontend/src/store/learningStore.ts` | History pages `defer(conversation_history)` and the route cap drops 1000 → 200 (frontend page size matched; the walk still pages). |
+| A12 | `src/api/routers/export_import.py` | `selectinload(UserAchievement.achievement)`; export SELECT count flat in achievement count (pre-fix 8→14, post-fix flat). |
+| A13 | `src/api/schemas.py` | `AISuggestionsRequest.refine_prompt` bounded at 2000 (prompt-fed, was unbounded). |
+| A15 | `src/frontend/src/store/authStore.ts`, `src/frontend/tests/authRehydrate.test.ts` | Rehydration gates `aac:auth-ready` on `checkAuth()` (validate → silent refresh) when a persisted session exists, so the offline queue never flushes with a dead token. Own spec file (the hook needs an unhydrated module registry): pre-fix `[]` ≠ `['post:/auth/refresh']`. |
+| A16 | `src/frontend/src/store/authStore.ts` | `logout` clears state + persisted `auth-storage` synchronously via `clearSession()` before the best-effort revocation. Spec asserts the storage is already clear while revocation is pending. |
+| A20 | `.env.example`, `env.properties.example`, `README.md`, `docs/01_PROJECT_GUIDE.md` | Added the missing operator-visible keys (`AUTOGEN_*`, `SENTINEL_*`, `SUPPORTED_UI_LANGUAGES`, `AAC_REFRESH_ALLOW_QUERY_FALLBACK` with its deprecation note, `AAC_ASSISTANT_*` flags, `GROQ_MODEL` in both examples), plus README rows for `GROQ_MODEL` precedence/fail-closed and the refresh opt-in. Parity test asserts every `Settings` field is greppable in an example (derived paths excluded). |
+| A21 | `.github/workflows/ci.yml` | The production gate provisions synthetic non-default `E2E_STUDENT_PASSWORD`/`E2E_TEACHER_PASSWORD` instead of `Student123`/`Teacher123` — `SECURITY_ARCHITECTURE` forbids demo passwords outside test environments and the create-user path only checks strength. |
+| A22 | `.github/workflows/ci.yml` | Documented why `packaging-windows` omits `TESTING=1`: it runs an install/smoke check, so the limiter must stay active (backend tests opt out). |
+| A23 | `start.bat` | Pinned `uv sync --python 3.13` + `run --no-sync` and added the same "existing .venv must be 3.13" guard `start.sh` has, so a 3.14-resolving Windows checkout cannot silently drop Kokoro. |
+| A24 | `.github/workflows/ci.yml` | The production audit now also exports and audits the shipped extra set (`--extra voice --extra tts`), which `requirements.txt` (no extras) omits. |
+| A25 | `docs/SECURITY_ARCHITECTURE.md` | JWT-secret sentence scoped to production/first run: the config default is `""` and `ensure_jwt_secret` returns early outside production, so "never used" was overstated. |
+| E1 | `src/api/routers/arasaac.py` | `POST /api/arasaac/import` requires `get_current_staff_user`; a student could previously create shared catalog rows, write images and index vectors. |
+| E2 | `src/api/routers/{achievements,guardian_profiles}.py`, `src/aac_app/services/guardian_profile_service.py` | Capped `skip`/`limit` on the achievement catalog and the student roster (service query orders by `User.id` and pages). |
+| E3 | `src/api/schemas.py` | `SymbolUsageRequest.symbols` capped at 100 (one insert per item). |
+| E4 | `src/api/schemas.py`, `src/api/routers/guardian_profiles.py`, locales | Guardian/preview prompt-fed fields mirror their persisted bounds (template_name 100, preview fields = create/start caps, `custom_instructions` 10k, nested list counts + item lengths); `preview_template` overrides validated against the loaded template's own dot-path shape with key/list/string caps. New `errors.guardian.invalidOverrides` key. |
+| E5 | `src/api/routers/providers.py`, `src/api/routers/auth_users.py` | TTS `lang` bounded 2–10; warmup `targets` capped at 3 and unknown values now 400 instead of silently `{}`; `admin_unlock_account(username)` capped at `USERNAME_MAX_LENGTH`. New `errors.providers.unsupportedWarmupTarget` key. |
+| E6 | `src/api/routers/board_assignments.py` | Staff path runs `verify_student_access`, so an admin gets 404 for a bogus `student_id` instead of `[]` (teacher path unchanged). The query-budget spec moves 4 → 5 with a comment. |
+
+### Verified, then disproved (no change)
+
+| ID | Finding |
+| --- | --- |
+| A2 | `delete retryConfig.headers.Authorization` **does** clear the header on the pinned axios: `Authorization` is an own, configurable data property on `AxiosHeaders`, not only an internal store (`node` probe + `Object.getOwnPropertyDescriptor`), so the retry already re-attached the fresh token. The `AxiosHeaders` API form is retained as version-independent hardening with the note in the code; the new spec is a contract guard, not a discriminator. |
+| A14 | `earned_at=earned_at` (i.e. `None`) is **not** equivalent to `null()`: the column declares `default=func.now()`, so `None` makes SQLAlchemy apply the default and a timestamp-less legacy achievement is stored as "now". `tests/test_new_features.py` failed immediately on that change, proving the original `null()` is load-bearing. Reverted and pinned the real contract (persisted NULL) instead. |
+
+### Implemented but not covered by a new focused spec
+
+| ID | Files | Note |
+| --- | --- | --- |
+| A7 | (not changed) | Token-rotation reconnect dropping queued collab moves was not addressed in this pass. |
+| F1 | (not changed) | Non-SQLite additive migrations still rely on the SQLite-only helpers. |
+| F2 | `src/api/deps/providers.py` | Warmup now builds the Groq instance from `resolve_groq_api_key()`/`resolve_groq_model()` (the getter's precedence) so an env-only key no longer installs an empty-key singleton that the first request discards. Spec asserts `is_configured()` and singleton identity; fails pre-fix. |
+| F3 | (not changed) | n-gram rebuild/shutdown handshake and scheduled-download cancellation not addressed. |
+| F4 | `src/aac_app/services/{symbol_catalog,local_vector_store,ngram_builder}.py` | Casefold dedupe scan streams via `yield_per` under a documented 50k row cap; orphan vector deletes computed in Python and issued in 500-row chunks instead of one ~17k-placeholder `NOT IN`; n-gram rebuild preloads one `id → language` map plus a per-distinct-label memo instead of 1 + up to 2 queries per log. |
+| F5 | `src/aac_app/seed.py` | Learning-mode seeding upserts per `key`, so a subset-seeded DB gains exactly the missing defaults (and a rerun adds nothing). Spec fails pre-fix. |
+| F6 | `src/api/deps/providers.py` | `get_vector_store` releases the locks, waits for the deferred cleanup and retries (bounded 5 attempts) instead of raising a transient 500 when a reset detaches the store in the lock gap. |
+| F7 | (not changed) | CORS credentialed wildcard and warmup executor abandonment left as-is; not verified in this pass. |
+
+### Continuation pass (Tier C remainder, Tier G, F1/F3/F7, Deferred)
+
+| Item | Files | Change |
+|---|---|---|
+| A6 | `OfflineConflictsPanel.tsx`, `offlineStore.ts` | Manual conflict retries send the replay marker, keep their own ownership check and surface the failure on the conflict entry (`updateConflictError`) instead of a console-only log + forced logout. |
+| A7 | `lib/ws.ts`, `hooks/useBoardCollab.ts` | The pending send queue is shared with the replacement client on a token rotation (`close({clearQueue:false})`) and cleared only when the board changes, so drag moves made during a refresh window are not lost. |
+| A17 | `hooks/useBoardEditorSymbols.ts`, `BoardEditorGrid.tsx`, `DraggableSymbol.tsx`, `BoardEditor.tsx` | Remote collaborator moves render as overrides with a remote-presence ring and never set local dirt; a later local edit saves both placements. |
+| A18 | `store/settingsStore.ts`, `AiProviderTab.tsx` | Per-endpoint request ids and loading flags replace the single shared sequence/spinner; autosaves are serialized so rapid edits cannot land out of order. |
+| A19 | `Settings/DataManagementTab.tsx` | The truncated-import toast requires both counts to be numeric; older payloads fall back to the plain success template. |
+| G1 | `lib/tts.ts`, `store/learningStore.ts`, `store/notificationsStore.ts`, `store/offlineStore.ts`, `hooks/useBoardEditorSymbols.ts`, `SymbolSearchModal.tsx` | Bounded debounce map, transcript window (`MAX_CLIENT_MESSAGES`), notification cap, conflict cap, LRU editor contexts, and batched rendering (`show more`) for symbol search. |
+| G2 | `Smartbar.tsx`, `SymbolSearchModal.tsx` | The auto-refresh budget is keyed per pictogram batch (a later batch gets its own), and prediction/search failures are visible with a retry instead of looking like an empty vocabulary. |
+| G3 | `App.tsx` | `RootLayout` wraps the shell (`SettingsManager`, `AppToaster`, `Outlet`) in `ErrorBoundary`, covering `/login`, `/register`, `/setup` and `*` too. |
+| G4 | `BoardEditor.tsx` | Board clear is bounded-parallel (5 at a time) and resyncs with the server on success and on partial failure. |
+| G5 | `CommunicationChat.tsx`, `Communication.tsx` | Voice and fullscreen toggles expose `aria-label` + `aria-pressed`. |
+| F1 | `src/aac_app/schema.py` | Additive column/index discovery moved to the SQLAlchemy inspector and a dialect-aware DDL translator, so non-SQLite deployments get the same upgrades; the SQLite-only FK table rebuild now logs an explicit warning on other dialects (its only non-portable step). |
+| F3 | `src/api/main.py`, `services/symbol_image_backfill.py` | The n-gram rebuild worker uses the same shutdown handshake as the index worker, and scheduled symbol-image downloads are cancelled and drained inside the shutdown budget. |
+| F7 | (verified, no production change) | Credentialed preflight probe: Starlette emits a concrete method list, echoes requested headers and an explicit origin — no literal `*`. Lock probe: the speech provider is constructed outside the provider lock and the vector store under it is `lazy_load=True`. Both pinned by tests instead of "fixed". |
+| D-a | `routers/boards.py` | The `update_board` allow-list is derived from the real writable `CommunicationBoard` columns, so it can actually fire. |
+| D-b | `routers/boards.py` | `delete_board` nulls `SavedTopic.board_id` in the same transaction. |
+| D-c | `SymbolPicker.tsx` | A failed symbol page walk renders a visible error with retry instead of an empty-catalog look. |
+| D-d | `store/boardStore.ts` | `hasMore` comes from a one-ahead probe (exact, no boundary fetch) and mutations reload every loaded page instead of collapsing to page 1. |
+| D-e / D-f | — | Closed by A18 and E4/A5 respectively. |
+
+### Not addressed (explicitly open)
+
+Every Tier A–G item and every deferred item has a landed change or a documented
+verification result; see the table above. What remains open is external
+validation only: live Groq/Playwright E2E, a real production-mode smoke, the
+Windows packaging rehearsal, a live Postgres instance for F1, and live CI
+execution.
+
+### Validation run for this pass
+
+`uv run ruff check src tests scripts` clean · `python -m compileall -q src scripts` clean ·
+`git diff --check` clean · frontend `typecheck` 0 · `lint` 0 · `i18n:audit` clean ·
+backend named files **316 passed** (`test_prod_sweep4_backend`, `test_export_link_remap`,
+`test_guardian_profiles`, `test_ngram_builder`, `test_learning_routes_coverage`,
+`test_learning_topics_endpoint`, `test_board_assignment`, `test_arasaac_library_import`,
+`test_content_safety`, `test_phase2_security`, `test_query_count_regressions`,
+`test_startup_warmup`, `test_new_features`, `test_acceptance_gaps`,
+`test_boards_list_symbols_and_achievement_routes`, `test_board_contracts`,
+`test_user_creation_validation`, `test_learning_modes_integration`, `test_groq_provider`,
+`test_collab_ws`, `test_password_reset_security`, `test_response_processing_helpers`,
+`integration/test_startup_seeding`) · frontend Vitest `api` + `authStore` + `authRehydrate`
++ `offlineStore` + `OfflineConflictsPanel` + `offlinePersistence` **77 passed**.
+
+External gates that were **not** run here and stay open: live Groq/Playwright E2E, a real
+production-mode API smoke, the Windows packaging rehearsal, and live CI execution.
+
+### Post-implementation audit (2026-09-13) — gaps found and closed
+
+Re-reading PROMPT_4.md item by item against the tree found validation evidence
+missing for several items whose *code* had landed. Each gap below now has a
+test; fail-before was captured by stashing only the production files involved
+and re-running (`git stash push -- <files>` → failures → `git stash pop`).
+
+| Item | Was missing | Now covered by |
+|---|---|---|
+| A4 | No test asserted 429 for any LLM endpoint (only the auth routes had one) and nothing pinned which handlers are limited. | `test_every_llm_invoking_handler_carries_a_limiter` (structural, all 8 handlers) and `test_llm_route_burst_is_throttled_and_the_legit_calls_are_not` (real 5/minute burst → 400×5 then 429). |
+| A5 | No injection/allow-list test. | `test_ask_question_difficulty_is_allow_listed` — injection string → 422, each valid band reaches the session lookup (404). |
+| A8 | No test that unexpected failures surface as 5xx, nor that the service re-raises. | `test_learning_service_reraises_unexpected_db_errors` (fails before the fix), plus `..._propagates_as_500` and `..._domain_failure_keeps_its_4xx`. |
+| A21 | CI used synthetic passwords but nothing checked them. | `test_production_gate_credentials_are_synthetic_and_policy_compliant` parses the `e2e-production-gate` job and asserts each value is non-default and passes `password_strength_error_key`. |
+| A22 | No check of the TESTING gate itself. | `test_conditional_limiter_is_inert_under_testing`. |
+| E1 | No API-level authorization test (the existing ARASAAC tests call the handler directly, bypassing the dependency). | `test_student_cannot_import_arasaac_symbols` — student → 403; staff clears the dependency (empty payload then 422, no download). |
+| E2 | No paging/ordering test. | `test_achievement_listing_is_paged_and_stably_ordered` (skip/limit windows, order, 422 over cap) and `test_guardian_student_listing_is_bounded`. |
+| E6 | No test for the admin path. | `test_admin_assignment_view_404s_for_a_missing_student` (404 vs real-but-unassigned 200 `[]`). |
+| F6 | No test for the reset race. | `test_vector_store_getter_retries_across_a_reset`. |
+| D-d | Only delete preserved pages. | `refetchLoadedPages` now also backs `createBoard`/`duplicateBoard`; specs added. |
+
+Honest exception: `test_learning_service_unexpected_failure_propagates_as_500`
+passes both before and after the fix — the router never swallowed exceptions,
+so it is a guard, not a discriminator. The A8 defect itself (the *service*
+returning `{"success": False}` for any exception) is pinned by
+`test_learning_service_reraises_unexpected_db_errors`, which does fail before.
+
+### Cleanup pass (§9)
+
+* **One limiter instance.** `src/api/routers/auth_helpers.py` owned a private
+  `Limiter` while `main.py` registered a second one from `src/api/limiter.py`
+  as `app.state.limiter`. slowapi's 429 handler formats headers from
+  `app.state.limiter`, so the duplicate could not see the counts. The helper now
+  imports the single instance; `test_the_app_registers_the_same_limiter_instance_it_decorates_with`
+  pins the identity.
+* **No new symbols left unused**: every constant/helper added in this pass has
+  at least one call site (checked by reference count).
+* No diagnostic scripts, temp tests, or stray runners remain; `git stash list`
+  is empty and no `uvicorn`/`vitest`/`playwright` process is left running.
+
+---
+
+# PROMPT_5 — Tiers H–R execution log (2026-09-13)
+
+## Baseline recorded at start of this pass
+
+* Branch `fix/pagination-n1-e2e`, HEAD `9040056` ("Redact rendered exception text and
+  count pending auth spinner ops") over `1e1caa7`/`bb0c4a0`; `git diff --cached --stat`
+  empty.
+* Working tree already carried the PROMPT_4 backlog (Tiers A–G + Deferred) as uncommitted
+  changes plus its sweep tests; that work is included in the §4 verdicts below.
+* The five baseline files named in PROMPT_4 §2 (R1 redaction in `src/api/logging_config.py`,
+  the pending-op spinner in `authStore.ts` + its spec, `tests/test_logging_config.py`,
+  `PROD-FIXES.md`) are committed as `9040056`.
+* The environment has **no browser tool** (no chrome-devtools MCP / Playwright-driving
+  tool available to the agent), so §9 is executed as the documented fallback: a real
+  uvicorn server on `127.0.0.1:8086` driven by `curl` against an isolated `DATA_DIR`
+  (see "Live-server walk"). No GUI claim is made for anything that needs a rendered DOM.
+
+## §4 — PROMPT_4 tier verdicts (re-verified in the tree, behaviour exercised)
+
+| Tier | Verdict | Evidence |
+|---|---|---|
+| A (A1–A7) | FIXED | A1 width bounds in `_validate_import_payload` (`topic_name`/`topic` ≤ 100, `status` ≤ 20) with 400-not-500 tests; A2 header strip via the `AxiosHeaders` API + `api.test.ts`; A3 replay generation guard; A4 `conditional_limiter` on all 8 LLM handlers (structural test + real burst → 429); A5 `difficulty` allow-list (injection → 422); A6 replay marker + failure surface in `OfflineConflictsPanel`; A7 collab queue handoff on token rotation (`ws.test.ts`, `useBoardCollab.test.ts`) |
+| B (A8–A14) | FIXED | A8 service re-raises unexpected DB errors (asserted), routers map validation → 4xx; A9 UTC day boundary for the sentinel meter + preservation; A10 one `id.in_()` fetch for batch updates (statement-counted); A11 `defer(conversation_history)` + route cap; A12 `selectinload(UserAchievement.achievement)`; A13 `refine_prompt` bounded; A14 verified-then-disproved (`null()` is load-bearing for `default=func.now()`) — contract pinned instead |
+| C (A15–A19) | FIXED | A15 rehydrate gating (`authRehydrate.test.ts`); A16 logout ordering with storage inspection; A17 remote-move dirt + presence ring; A18 per-endpoint request ids/loading + serialized autosaves; A19 truncated-import toast requires both counts |
+| D (A20–A25) | FIXED | A20 settings-matrix parity test over both examples; A21 synthetic CI passwords + policy check; A22 `TESTING` parity documented per job; A23 `start.bat` pins 3.13 + guard; A24 production audit exports the shipped extras; A25 JWT-secret sentence scoped |
+| E (E1–E6) | FIXED | E1 staff-only ARASAAC import (student → 403 at the API layer); E2 capped achievement/roster lists; E3 `symbols` batch ≤ 100; E4 guardian/preview prompt-fed bounds; E5 TTS `lang`, unlock `username`, warmup `targets`; E6 admin assignment 404 |
+| F (F1–F7) | FIXED / VERIFIED | F1 dialect-portable additive migrations (SQLite + simulated-Postgres fixtures; the FK rebuild logs an explicit warning where no portable equivalent exists); F2 warmup builds Groq from `resolve_*`; F3 n-gram + download shutdown handshake; F4 bounded catalog scans; F5 learning-mode seed upserts per key; F6 vector-store getter retries across a reset; F7 probed — Starlette emits a concrete method list and an explicit origin (no literal `*`), and warmup holds no provider/vector lock across a load; pinned by tests as "disproved" |
+| G (G1–G5) | FIXED | G1 bounded stores (growth flood specs); G2 Smartbar per-batch budget + visible search/prediction failures; G3 shell `ErrorBoundary`; G4 bounded-parallel clear + resync; G5 named voice/fullscreen toggles |
+| Deferred D-a–D-f | DONE | D-a real-column allow-list; D-b `SavedTopic.board_id` nulled with the board delete; D-c picker load failure surfaced; D-d exact `hasMore` probe + loaded-page preservation for create/duplicate/delete; D-e/D-f closed by A18 and E4/A5 |
+
+## Tier H — file integrity + account lifecycle
+
+| ID | Files | Change + evidence |
+|---|---|---|
+| H1 | `services/lockout_service.py`, `routers/{auth,auth_users,users}.py` | New `reset_attempts`-based lockout clear after **all four** creation paths (initial setup, register, admin create-user, create-student), so a pre-locked username cannot make first-run setup 403. `tests/test_creation_lockout_reset.py` (pre-lock → create → login 200; fails pre-fix). |
+| H2 | `pages/Setup.tsx`, locales, `tests/Setup.test.tsx` | `handleSubmit` now enforces the banned default (`Admin123`) and mismatched/短 passwords, not just the disabled button. Spec submitting `Admin123` asserts a local error and no `setupAdmin` call. |
+| H3 | `models/refresh_token.py` (new), `services/refresh_rotation_service.py` (new), `utils/jwt_utils.py`, `routers/auth.py`, `store/authStore.ts`, `tests/test_refresh_rotation.py` | Refresh tokens carry a `jti` + `family`, every exchange consumes the `jti` and mints a successor, and a replay outside a documented 30 s duplicate-in-flight grace revokes the family through the existing `security_version` machinery. Specs: rotation, post-grace replay → 401 **and** successor dead, in-grace duplicate → 200, legacy no-`jti` token still refreshes and gains a `jti`, logout clears the ledger. Frontend persists the rotated refresh token. |
+| H4 | `api/schemas.py`, `routers/symbols.py`, `tests/test_symbol_field_bounds.py` | `image_path`/`audio_path` removed from `SymbolUpdate`; image changes must go through `update_symbol_image` (validated + old file removed). Path-carrying PUT is rejected/ignored with the old file intact. |
+| H5 | `routers/symbols.py`, `tests/test_symbol_field_bounds.py` | Multipart `description`/`keywords` capped at 10 000 on both `upload_symbol` and `generate_svg_symbol`. 10 001 → 422; boundary passes. |
+| H6 | `services/arasaac.py`, `api/file_uploads.py` | Downloaded bytes pass the shared size + PIL-verify allowlist before being persisted. Oversized/non-image → 413/discard; a valid PNG imports byte-identically. |
+| H7 | `routers/users.py`, `tests/test_password_reset_security.py` | Staff password reset clears the lockout rows in the same transaction and is rate limited like `change-password`. Locked → reset → immediate login (also re-verified live, see walk). |
+| H8 | `routers/{arasaac,export_import,symbols}.py` | Per-endpoint limits on export, symbol listing and the ARASAAC search/import pair, plus a short TTL cache for ARASAAC search (the cache is now cleared by a test fixture so a hit cannot silently skip an asserted upstream call). |
+| H9 | `services/notification_events.py`, `routers/notifications.py` | Per-user concurrent-stream cap (excess → 429 and close; a disconnect frees the slot). |
+| H10 | `api/schemas.py` | `private_notes`, `change_reason` and the `MedicalContext` subfields mirror their persisted bounds; over-bound → 422. |
+| H11 | `routers/symbols.py` | `add_symbol_to_board` commits the achievement progress before responding (same contract as the achievement route) while keeping the best-effort boundary. |
+
+## Tier I — e2e integrity + operator tooling + docs
+
+| ID | Files | Change + evidence |
+|---|---|---|
+| H12 | `playwright.config.ts` | Project-level student `storageState` removed; roles are now opt-in per spec (teacher/admin states are consumed by the specs that need them). `tests/e2eConfigHygiene.test.ts` pins the shape. |
+| H13 | `e2e/groq-verify.spec.ts`, `routers/settings.py` | The spec captures the prior AI settings, restores/masks them in a teardown that runs even on failure, and the GET fallback asserts `res.ok`. |
+| H14 | `scripts/fix_null_passwords.py` | Explicit `--disable-login` / `--delete` flags with the non-destructive mode as the default; dry-run untouched. |
+| H15 | `scripts/i18n-audit.mjs` | Globs `**/*.{ts,tsx}` with a code-aware filter and flags multiline JSX text; planted strings in a store + multiline JSX trip the gate, clean tree passes. |
+| H16 | `launcher.pyw`, `tests/test_launcher_runtime.py` | The startup wait polls server-thread liveness and aborts early when it dies. |
+| H17 | `e2e/prod-guard.mjs`, `docs/MAINTAINER_GUIDE.md` | Test globs are ignored by the mtime walk; the doc cites the real repo-root `installer.iss`. |
+
+## Tier J/K — frontend robustness + test fidelity
+
+| ID | Files | Change + evidence |
+|---|---|---|
+| H18 | `lib/download.ts` | Download anchor is appended → clicked → removed (Firefox needs an in-document node); delayed revoke kept. `download.test.ts` asserts DOM attachment. |
+| H19 | `pages/Students.tsx`, `tests/Students.test.tsx` | The confirm-password field renders and validates for teachers too; a mismatch is blocked client-side. |
+| H20 | `lib/tts.ts`, `store/{learningStore,notificationsStore,offlineStore}.ts`, `hooks/useBoardEditorSymbols.ts`, `SymbolSearchModal.tsx`, `tests/growthBounds.test.ts` | Caps/eviction inside the existing stores (TTS debounce map TTL+size, transcript window, notification cap, conflict cap, LRU editor contexts, batched symbol-search rendering). |
+| H21 | `pages/Achievements.tsx`, `SymbolPicker.tsx`, `tests/SymbolPicker.test.tsx` | `key={a.id ?? a.name}`; picker categories are type-filtered like `Symbols.tsx`. |
+| H22 | `SymbolSearchModal.tsx`, `BoardEditor.tsx`, `tests/SymbolSearchModal.test.tsx` | Search failure renders an inline error with retry; clear-before-retry only runs once a query exists. Board clear is bounded-parallel with a resync on success and on partial failure. |
+| H23 | `CommunicationChat.tsx`, `Communication.tsx`, `tests/CommunicationChat.test.tsx` | Voice/fullscreen toggles expose `aria-label` (+ `aria-pressed`). |
+| H24 | `tests/conftest.py`, `src/api/main.py`, `tests/test_tier_k_fixture_lifespan.py`, `tests/test_startup_warmup.py` | The `client` fixture now runs the real lifespan (`with TestClient(app)` + shutdown-signal handshake) and `setup_test_db` points the **single** process-wide DB seam (`db._engine_instance`/`_session_factory`/`_engine_url`) at the test database instead of patching four call sites — services the old list missed (vector, prediction, content safety, n-gram, autogen, backfill, seed) now use it. Canaries: startup state visible during the test, `lifespan_active` false after exit, `create_session_factory()` bound to the test engine, and a module-bound `get_session` (`vector_utils`) reaching the test DB — the last two fail pre-fix. The symbol-index worker joins the existing `_background_task_runnable` TESTING guard so a cancelled `to_thread` wrapper cannot outlive its lifespan and resolve the *next* test's session factory; `tests/test_startup_warmup.py`'s two index tests opt in the same way the F3 n-gram test already does. |
+
+## Tier L/M — schema widths + services correctness
+
+| ID | Files | Change + evidence |
+|---|---|---|
+| H25 | `services/learning/session.py`, `tests/test_tier_lm_hardening.py` | Derived `LearningPlan.name`/`LearningTask.name` are bounded to the `String(100)` columns; a 100-char topic starts a session and the stored names fit. |
+| H26 | `routers/board_ai.py` | LLM labels/`custom_text` bounded to 100 and colors to a hex-or-≤20 shape *before* insert (oversized input is dropped, never a 500); boundary values persist byte-identically. |
+| H27 | `services/symbol_svg_autogen.py`, `services/arasaac_library_import.py`, `tests/test_tier_lm_hardening.py` | `ensure_symbol_generated` skips labels wider than `Symbol.label` (`MAX_SYMBOL_LABEL_LENGTH`, pinned against the model column by a test) before scheduling, and the bulk ARASAAC import mirrors the single-import category/keyword truncations. |
+| H28 | `services/symbol_svg_autogen.py` | The original (display) label is stored; the casefolded form is only the dedup key. Mixed-case topic words round-trip with their casing and dedupe stays case-insensitive. |
+| H29 | `routers/auth.py` | A routine Argon2 `verify_and_update` rehash persists the new hash **without** bumping `security_version`, so an ordinary login no longer logs every device out; real credential changes still revoke. |
+| H30 | `services/achievement_system.py` | Custom automatic achievements are filtered in SQL (`target_user_id IS NULL OR = :user_id`) instead of loading every row and filtering in Python. |
+| H31 | `services/board_generation_service.py` | `max_tokens` scales with `item_count` (`600 + 80·n`, clamped to 8 000) instead of a fixed 1 000, so a 100-item request can satisfy the exact-count contract. |
+| H32 | `services/symbol_svg_autogen.py` | Vector-index failure is retried inline (3 attempts) and, if it still fails, the symbol id is requeued and repaired on the next autogen request instead of staying unsearchable until a full repair. |
+| H33 | `services/local_vector_store.py` | Readiness uses set/count comparison rather than materializing whole-table id sets, and an unavailable store reports "nothing stale" instead of triggering a full re-embed. |
+| H34 | `services/learning/common.py` | `_strip_reasoning` returns the stripped text even when empty, so a reasoning-only provider response never republishes ` thinking` blocks to the student. |
+| H35/H54 | `scripts/account_admin.py`, `services/user_service.py` | Operator reset clears the lockout rows and warns when the account is deactivated; the secret comes from the environment or an interactive prompt (`--password` still works but warns); `UserService.reset_password` returns whether a row was updated instead of silently no-opping. |
+| H36 | `services/symbol_semantics.py` | Explicit `label=None`/non-str handled (`str(s.get("label") or "").lower()`), no 500. |
+
+## Tier N/O — frontend depth + contracts
+
+| ID | Files | Change + evidence |
+|---|---|---|
+| H37/H64 | `src/main.tsx` | The English locale chunk is awaited inside a try/catch: a failed chunk fetch falls back to the bundled locale and the app still mounts. |
+| H38/H59 | `store/learningStore.ts`, `pages/Learning.tsx`, `tests/tierQrHardening.test.ts` | `submitSymbolAnswer` rethrows after recording the error, so callers keep the composed utterance on failure (the `Communication.tsx` restore path can now actually fire). Specs: rethrow on failure, resolve on success. |
+| H39/H60 | `pages/Boards.tsx`, `tests/Boards.test.tsx` | Select-all and bulk delete are filtered through `canManageBoard`, so unowned boards are never selected or DELETEd. Spec added. |
+| H40 | `hooks/useAccessibleInteraction.ts` | The dwell timer is cleared on unmount (no `triggerClick` with a stale event). |
+| H41/H63 | `pages/Dashboard.tsx`, `hooks/useTopicPickerPool.ts`, `components/SettingsManager.tsx`, `hooks/useBoardAISuggestions.ts`, `lib/topicCatalog.ts` | Effects depend on the consumed primitives (`user?.id`/`user_type`) instead of the whole `user`/`settings` object; the activity list is capped (10); the stale AI-error banner is cleared when a new apply starts; topic pictograms match whole tokens (`ir` no longer matches `mirar`). |
+| H42/H65 | `hooks/useSymbolHunt.ts`, `store/notificationsStore.ts`, `tests/notificationsStore.test.ts` | Exiting the game cancels queued speech; notification read-state rolls back when the sync fails (`markAsRead` restores the prior flag, `markAllAsRead` restores only what it flipped) with specs. |
+| H43/H64 | `components/Sidebar.tsx` | Preload loaders moved to a module map and each `import()` gets `.catch(() => {})`, so a failed chunk is a silent skip rather than an `unhandledrejection`. |
+| H44/H45/H64 | `components/students/GuardianProfileModal.tsx`, `components/symbols/SymbolGrid.tsx`, `components/Navbar.tsx`, `components/learning/{LearningMessageList,LearningSymbolPanel}.tsx`, `hooks/useHoverSpeak.ts`, locales | Safety select falls back to the empty option (no blank, no `'default'` value that has no option); bulk checkbox is named after the symbol; the bell announces the unread count and `aria-expanded`; edit/report buttons are keyboard/touch reachable (`focus-visible:opacity-100`, visible below `sm`); utterance-chip remove labels are parameterized with the symbol; hover-speak also uses `onFocus`/`onBlur`. |
+| H46/H66 | `api/spa.py`, `pages/Login.tsx`, locales | `/API/...` is casefolds to a JSON 404 instead of serving the SPA shell; the unreachable first-run banner (which navigated in the same tick) is deleted along with its two now-unused keys. |
+| H47 | `routers/board_helpers.py` | Translation failures degrade to the source text instead of failing every board read (one warning, degraded-not-dead). |
+| H48 | `providers/local_tts_provider.py` | The downloaded model and voices assets are pinned by exact size and SHA-256, and the voices archive is loaded with `allow_pickle=False`; tampered/truncated assets are rejected before ONNX/numpy loading. |
+| H49 | `services/arasaac.py` | Downloads stream under a hard byte cap and the search fallback is narrowed to transport/404 (structural payload changes surface instead of returning `[]`). |
+| H50/H51/H52/H53/H55 | (duplicates of H31/H29/H34/F4) | Verified landed in the tree; no second change. |
+| H56 | `scripts/smoke_live.py`, `scripts/migrate_passwords.py`, `scripts/verify_pr.py`, `routers/config.py` | The smoke closes its server-log handle before `rmtree` (Windows cleanup); `migrate_passwords` raises instead of `sys.exit` inside a library function and `main` maps it to a code; the markdown-link check strips fenced code blocks first; `routers/config.py` is **deleted** (with its import/route registration, the E2E mock and the test reference) — no production consumer existed and it exposed `OLLAMA_BASE_URL` unauthenticated. |
+
+## Tier Q/R — frontend depth, second wave
+
+| ID | Files | Change + evidence |
+|---|---|---|
+| H57 | `store/boardStore.ts`, `tests/tierQrHardening.test.ts` | A failed duplicate removes the half-copied board (best-effort delete, original error surfaced). Spec: mid-copy failure → `DELETE /boards/99`. |
+| H58 | `pages/{Register,UserManagement,Symbols}.tsx`, locales | Register has a confirm field, `minLength={8}` and client-side checks; the roster reload runs *after* the success toast in its own try (a failed reload no longer reports a successful create as a failure); a failed image upload is reported as "details saved, image failed" rather than a total failure. |
+| H61 | `lib/format.ts`, `tests/format.test.ts` | Malformed timestamps render a fallback string instead of throwing `RangeError`. |
+| H62 | `pages/Students.tsx`, `pages/Achievements.tsx`, `lib/learningTopics.ts`, `tests/tierQrHardening.test.ts` | An applied board assignment is reported against its own mutation id (and refreshes the roster) instead of returning silently; awarding requires a selected student (and an achievement id); legacy board-less saved topics are filtered out and the unusable key is dropped instead of aborting the whole migration queue. |
+| H64 | (a11y list above) + `src/main.tsx` | Covered by the H37/H43/H44/H45 rows. |
+| H66 | `pages/Login.tsx`, `api/spa.py` | As above. |
+
+## Verified, then disproved / bounded (no production change)
+
+| Item | Finding |
+|---|---|
+| H3 "double-use → 401" | Rotation and replay detection are implemented, but a **30 s grace window** deliberately accepts a *duplicate in-flight* exchange (two tabs) — a documented, test-pinned trade-off. Replay **after** the window returns 401 and revokes the family, which the live walk verified end-to-end. Reported as a policy deviation from the item's literal wording, not as a defect. |
+| H48 sha256 pinning | The repository's exact Kokoro v1.0 assets were hashed locally and their size/SHA-256 values are now pinned in `local_tts_provider.py`; both cached and downloaded files are verified before loading. |
+| H24 lifespan isolation | Making every `client` test run the lifespan surfaced two real, pre-existing defects in the suite (both fixed, see "Defects found" below) and required the index worker to honour the existing TESTING guard. |
+| LLM-dependent learning paths | With no reachable provider, `/learning/{id}/end` returns a clean `400` with a body and a server-side ERROR log (`Failed to connect to Ollama`). Observed and reported; not changed, since the mapping predates this backlog. |
+
+## Defects found by running the full named suite (pre-existing, now fixed)
+
+1. `tests/test_acceptance_gaps.py::TestLearningHistoryTruncation` called `export_data()` with the
+   pre-A8 signature (`TypeError: missing 1 required positional argument: 'request'`). Both tests now
+   pass a minimal `Request`; they were failing on the untouched baseline.
+2. `tests/test_board_assignment.py::test_concurrent_assignment_requests_are_idempotent` read the
+   fixture's **expired** `student.id` inside two worker threads, so a concurrent write-lock could
+   invalidate the shared (not thread-safe) session's lazy refresh → `ObjectDeletedError` /
+   `IndexError` (≈1 run in 3, independent of this pass). The ids are now read on the main thread
+   before the threads start; 3 consecutive runs are clean.
+3. `tests/test_arasaac_routes.py` asserted the upstream search URL without clearing the new
+   process-wide search cache, so a cache hit could skip the call under test. An autouse fixture now
+   clears it around each test (isolation lives in the tests, not in the cache).
+
+## Live-server walk (§9 fallback: real uvicorn + curl, isolated DATA_DIR)
+
+No browser tool exists in this environment, so this is explicitly **not** GUI validation: the real
+API was started on `127.0.0.1:8086` against a temporary `DATA_DIR` with `TESTING=0` (so the real
+limiters are active), `ENVIRONMENT=development`, `AAC_SEED_SAMPLE_DATA=true` and a synthetic
+bootstrap password; demo accounts `admin1`/`teacher1`/`student1` were logged in as three roles.
+**39/39 checks passed**, and the port was closed afterwards (no listeners on 8086/5176, no
+`uvicorn`/`vitest`/`playwright` processes left, `git stash list` empty).
+
+Checks, in order: `GET /api/health` 200 · `GET /api/auth/setup-status` 200 · `GET /api/config` 404
+(deleted dead router) · `GET /API/health` JSON 404 (casefold) · `GET /` serves the SPA ·
+`POST /api/auth/token` for admin1/teacher1/student1 (form-data) · login returns a `refresh_token` ·
+`GET /api/auth/me` 200 · board create → read → list · `GET /api/boards/symbols?query=mirar` and
+`?query=algo` 200 (H63 shapes) · `symbols/categories` 200 · symbols over-cap 422 ·
+`POST /api/learning/start` with a 100-char topic 200 (H25) · injection-shaped `difficulty` 422 (A5) ·
+symbol answer handled cleanly (400 with a body; no provider reachable) · `/learning/{id}/end`
+degrades cleanly (400 + server-side ERROR log) · `GET /api/learning/history` 200 (A11) ·
+achievements over-cap 422 and paged 200 (E2) · `GET /api/notifications?user_id=1` 200 ·
+`GET /api/data/export` 200 (A12/H12) · student `POST /api/arasaac/import` 403 (E1) · lockout →
+`POST /api/users/reset-password` 200 → immediate login 200 (H7) · warmup unknown target 400 →
+burst 429 (A4) · `DELETE /api/boards/{id}` 200 · refresh rotation (new access token, rotated
+refresh token) → duplicate inside the grace 200 → **after** the 30 s window replay 401 and the
+successor also 401 (H3 family revocation) → invalid refresh token 401.
+
+Not walkable without a browser (still open for the human QA pass): rendered UI behaviour, console
+errors per flow, keyboard-only traversal, devtools offline/500 injection, locale switching on
+every visited page, and the two-window collab session. The API-side equivalents above cover the
+endpoints those flows call.
+
+## Gates
+
+* Backend: `uv run ruff check src tests scripts` clean · `python -m compileall -q src scripts`
+  clean · `python -m compileall -q launcher.pyw` clean · `git diff --check` clean ·
+  **≈1 195 tests green** across named files (41 API/route files + the new
+  `test_tier_k_fixture_lifespan`/`test_tier_lm_hardening`/`test_creation_lockout_reset`/
+  `test_refresh_rotation`/`test_symbol_field_bounds`/`test_tier_h_limits_bounds` files), including
+  the previously failing `test_acceptance_gaps` export tests and the flaky concurrency test.
+* Frontend: `npm run typecheck` 0 · `npm run lint` 0 · `npm run i18n:audit` clean ·
+  `npm run build` OK within budget (largest JS 398.8 kB / 450 kB, CSS 140.9 kB / 150 kB) ·
+  **927 Vitest specs green** (the whole suite, run in named batches) including the new
+  `tierQrHardening` file (6 of its 8 specs fail on the pre-fix stores) and the updated
+  `Register`, `Boards`, `notificationsStore`, `learningSymbolAudio` and `Boards.test` specs.
+* No full-suite invocation without paths was used for Playwright/E2E; no E2E spec was run (no
+  browser tool). No `.env`, `data/` or auth artifact was touched — every test and the live walk
+  used temp directories.
+
+## Manual-QA readiness checklist
+
+| Line | Status |
+|---|---|
+| Live-GUI walk (§9) per flow | **OPEN** — no browser tool in this environment; substituted with 39/39 live-server `curl` checks (above) and stated as such |
+| No console errors on any walked flow | **OPEN** — requires the browser pass |
+| No known P1/P2 open | DONE — every Tier H–R item is fixed or explicitly bounded/documented; H48 now has exact size/SHA-256 verification. |
+| Failing-first evidence for every Tier H–R item | DONE for the items changed in this pass (see rows); the PROMPT_4 tiers carry their §4 verdicts |
+| Gates green (ruff, compileall, typecheck, lint, build in budget, named suites) | DONE |
+| No background runners/servers left | DONE — audited; port 8086/5176 closed |
+| No `.env`/DB/auth-artifact mutation | DONE — temp dirs + synthetic credentials only |
+| External gates | **OPEN** by design: Windows packaging rehearsal, live Groq run, human beta/privacy review, live CI execution |
+
+---
+
+# PROMPT_5 §9 — live-GUI verification in a real browser (Chrome over DevTools Protocol)
+
+The suite that shipped with the tree proves nothing about this pass, so the product was driven
+in **real Google Chrome 153 (`--headless=new`) over the raw DevTools Protocol** — not
+Playwright. Harness: `tmp/gui/{run.sh,cdp.mjs,lib.mjs,dom_helper.js,walk*.mjs}` (gitignored,
+kept as the reusable harness; the one-off probes were deleted). Page-side helpers are loaded
+verbatim from disk with `Page.addScriptToEvaluateOnNewDocument` — injecting them as template
+literals silently mangles `\s+`, which had made text matching miss "Cerrar sesión".
+
+Isolated backend per run: temp `DATA_DIR`/`LOGS_DIR`/`UPLOADS_DIR`, `ENVIRONMENT=test`,
+`TESTING=1`, synthetic bootstrap credentials, seeded demo users (except the first-run walk,
+which ran with `AAC_SEED_SAMPLE_DATA=false` + `AAC_BOOTSTRAP_ADMIN_ON_FIRST_RUN=false`).
+Every walk starts the server, runs Chrome, and kills both in one shell invocation; no port
+was left listening.
+
+## Defect found and fixed (P2)
+
+**Duplicating a seeded board always failed — and surfaced as an uncaught promise rejection.**
+`boardStore.duplicateBoard` restored AI settings with
+`{ai_enabled: true, ai_provider: base.ai_provider, ai_model: base.ai_model}` whenever the source
+board had `ai_enabled`. Seeded/template boards (e.g. "Comunicación General") are `ai_enabled`
+with **no provider/model**, so the API answered
+`400 {"detail":"AI provider and model are required when AI is enabled"}`, the store then deleted
+the half-copied board, and `Boards.tsx` called `duplicateBoard(...)` without handling the
+rejection: two `Uncaught (in promise) AxiosError` entries in the console with no user-visible
+result.
+
+Live evidence before the fix (probe, `/boards`): `POST /api/boards/` (copy) → `POST
+/api/boards/3/symbols` ×N → **`PUT /api/boards/3` 400 ×2** + uncaught AxiosError ×2.
+Fix: `src/frontend/src/store/boardStore.ts` only restores AI settings when the source board
+supplies both provider and model (the copy keeps AI off instead of failing), and
+`src/frontend/src/pages/Boards.tsx` follows the existing `confirmDeleteBoard` convention
+(swallow the rejection; the store's `error` banner is the single user-facing report).
+Live evidence after the fix: same flow, **no `PUT`, zero 4xx/5xx, zero exceptions** (probe17);
+the board copy and its symbols are created.
+Regression tests: `tests/boardStoreCrud.test.ts` — "copies a board whose AI flag has no
+provider/model configured (live-GUI finding)" (fails on the pre-fix store: verified by
+stashing the store change) and "still restores AI settings when the source board has a
+provider and model".
+
+## Flows walked (all as three roles where the role applies)
+
+| Flow | Result |
+|---|---|
+| Anonymous `/` and `/boards` | redirect to `/login` |
+| Unknown route | localized NotFound view (no crash) |
+| Register | mismatch error "Las contraseñas no coinciden."; `<8`-char password blocked by `minlength` (`validity.tooShort`); duplicate username → 400 + "Nombre de usuario ya registrado" |
+| Login admin1 / teacher1 / student1 | real typing + click; session persisted; input pipeline verified after each login |
+| Shell route sweep (10 admin, 5 teacher, 5 student routes) | all render with content; zero console errors except the two environmental ones below |
+| Role gates | teacher → `/admins` and student → `/symbols` `/students` both redirect to `/` |
+| Logout | lands on `/login`, `auth-storage.token` cleared (all three roles) |
+| Expired access token | tampered JWT → silent refresh, new token, stays on `/boards`, never a `/login` bounce |
+| Boards list | seeded list, search filters and clears, broken deep link `/boards/999999` degrades to a rendered page with one expected 404 |
+| Board create + duplicate | create works (`#new-board-name`); duplicate copies symbols (defect above fixed) |
+| Board editor | tiles are `@dnd-kit` draggables; a real pointer drag (`grab` cursor tiles) succeeds; per-symbol remove keeps UI/server consistent after reload |
+| Two-tab collab | second tab opens the same board; WebSocket collab session authenticated (`WS connected to board 1`); no errors while both tabs run |
+| Symbol library | 34 bulk checkboxes each carry a screen-reader name ("vaca", "caballo", …); usage filters and "Eliminar seleccionados" reachable; "Editar" populates the inline form with the symbol ("vaca") and reveals Guardar/Cancelar |
+| Learning | session starts with a 100-char topic; with the LLM provider unavailable the question fails **visibly** and the draft `¿Qué es un perro?` is preserved; history panel opens |
+| Achievements | page and "Gestionar/Buscar nuevos" work; duplicate-named entries render |
+| Symbol Hunt | starts, exits, back to a clean page; TTS unavailability reported as "Kokoro TTS is selected but unavailable; no speech was produced." |
+| Locale switch | `#language-switcher` es-ES ⇄ en-US across `/`, `/boards`, `/learning`, `/settings`: English labels render, **no untranslated keys**, switching back works |
+| Dashboard | streak card renders |
+| Settings / data | export downloads a real file (`aac-data-admin1.json`, 7 769 B); a malformed import is rejected with "Exportación no válida: falta meta"; model-list 503 (no Ollama in this env) is surfaced both as an inline `modelError` and a toast |
+| Notifications | bell opens with the full payload; "mark all" clears the badge and it stays cleared across a reload; **0 stream 429s across 6 single-tab reloads** |
+| Students / user management | create dialog present with validation; per-student actions reachable incl. "Restablecer contraseña para student1"; board assignment panel opens |
+| Offline toggle | devtools offline/online round trip with no console errors |
+| Failure injection (devtools request blocking `*/api/boards/`) | visible banner "Algo salió mal … Network Error Reintentar", entered name preserved, and the retry after unblocking succeeds |
+| Oversized upload | 30 MB PNG rejected with "Archivo no válido. Debe ser una imagen de menos de 5MB." |
+| First-run setup (fresh DB) | `/` → `/setup` (`setup_required: true`); banned/near-default password rejected ("No se pueden usar credenciales predeterminadas"); mismatch rejected; strong bootstrap → dashboard; the new admin logs in again |
+| Keyboard-only pass | login via Tab/Tab/Tab + Enter (order username → password → submit); 16 named, visibly focused stops in the shell and 14 per page on boards/editor/learning/settings/achievements; **zero icon-only buttons without an accessible name** on `/communication` and the board editor |
+
+### Environmental console noise (not defects)
+* `503 /api/settings/ai/models/ollama` — no Ollama daemon in this environment; the UI shows an
+  inline error plus a toast ("Ollama service is not available…").
+* `Kokoro no está preparado…` — the optional voice model is not installed for these runs.
+* `429 /api/notifications/stream` — only when the harness accumulated ≥5 simultaneous tabs for
+  one user, i.e. the intended per-user stream cap. Six consecutive single-tab reloads produced
+  zero 429s, so this is not a subscriber leak.
+
+### Disproved (checked, not changed)
+* A locale switch appeared to send `{"ui_language": ""}` → 400. The switcher's options are
+  `es-ES`/`en-US`; the empty value only occurred because the probe forced an unmatched select
+  value, so the state is unreachable through the UI. Switching with the real option values
+  produced no failed request.
+* The login page's "Configuración inicial" notice is gated on `res.data.setup_required`
+  (`Login.tsx:29`); the earlier sighting was the register page. No dead banner.
+
+### Still open (external)
+* Happy-path LLM flows (learning Q&A, board AI suggestions, predictions) need a real Groq key —
+  the `playwright.verify.config.ts` Groq spec covers those and was not run here.
+* Windows packaging rehearsal, human QA/beta review, and a live CI run remain open.
+
+---
+
+## Pass 3 (2026-09-13) — live Groq + real-browser verification of the remaining open items
+
+Closes the "still open (external)" row that was blocked on a browser driver and a live LLM key.
+
+### P1 — `schema.ensure()` aborted on any database holding the sqlite-vec table
+
+* **Found by:** starting the real server against a *copy of the working dev database* (every
+  earlier run used a fresh temp DB, which is why this was never seen here).
+* **Symptom:** `Failed to initialize database: (sqlite3.OperationalError) no such module: vec0
+  [SQL: PRAGMA main.table_xinfo("symbol_embeddings")]` → `ensure()` aborts → **no additive
+  migration runs** → the app 500s on every `user_settings` read
+  (`no such column: user_settings.tts_local_speed`) and `/ready` reports
+  `vector_store: false`. The dev database itself was missing `tts_local_speed`,
+  `hover_speak_enabled`, `hover_speak_delay_ms` and `default_learning_mode`.
+* **Cause:** the dialect-portable reflection added in this pass (`_table_columns`) reflects
+  *every* table; a `vec0` virtual table can only be reflected when the extension is loaded on
+  the inspecting connection, which startup schema management never does. The previous
+  `PRAGMA table_info(<known table>)` loop only touched tables in the additive list, so it never
+  hit the vector table.
+* **Fix:** `_reflected_columns()` / `_reflected_indexes()` in `src/aac_app/schema.py` skip
+  tables the inspecting connection cannot reflect (logged at DEBUG). Virtual tables carry no ORM
+  columns to migrate, so nothing is lost — and the remaining upgrades now always run.
+* **Evidence (fail-before / pass-after):**
+  * Before: `schema.ensure()` on a copy of the dev DB → `OperationalError: no such module: vec0`;
+    `/ready` `vector_store:false`; login → 500.
+  * After: `ensure()` OK, `DB upgrade: adding user_settings.tts_local_speed` (and the three
+    other columns) logged, `missing after ensure: []`; live server `/ready`
+    `{"ready":true,...,"vector_store":true}`; login and every walked flow succeed.
+  * New regression test `tests/test_schema_migrations.py::test_schema_ensure_upgrades_databases_with_the_vector_table`
+    (creates the `vec0` table exactly as the vector store does, then asserts `ensure()` succeeds
+    and the columns are added). Fails with the strict comprehension (`OperationalError`,
+    `FAILED`) and passes with the tolerant one.
+
+### Live Groq verification (real key, real server, real browser)
+
+Server: `uvicorn src.api.main:app` on 127.0.0.1:8086, `ENVIRONMENT=development`, `TESTING=0`,
+temp `DATA_DIR` seeded from a copy of the working dev DB (key/model reused from
+`app_settings`; the original DB is opened read-only and never modified).
+
+* `npx playwright test --config=playwright.verify.config.ts` → **2/2 passed**
+  * *settings UI configures Groq and reports healthy* — types the key, refreshes the model list
+    from Groq with the request-scoped header, selects `openai/gpt-oss-20b`, auto-save persists
+    `provider=groq`, **Provider Health reports "Groq: ok"** (live API).
+  * *learning: starts a session and receives a real Groq question* — now starts from the topic
+    picker (see below) and asserts the `POST /api/learning/<id>/ask` response has
+    `provider_used: "groq"` plus non-empty `question_text`/`choices`.
+* Direct API walk (same server): `POST /api/learning/start` → `provider_used: groq`; `POST
+  /api/learning/7/ask` → `¿Qué frase usas cuando quieres preguntar la hora?` with three
+  Spanish choices, 0.38 s; `POST /api/boards/1/ai/suggestions` with the new `refine_prompt`
+  bound → real topic-aligned items (Wake Up / Eat Breakfast / …), 0.47 s;
+  `POST /api/analytics/next-symbol` → N-gram hits plus AI topic words marked
+  `source: "ai"`, `is_generating: true`; `/ready` **4/4 providers**.
+
+### E2E specs repaired (stale `learning-session-start` selector)
+
+`e4b4f52` replaced the start-session button with the student-facing topic picker, leaving five
+specs referencing a test id that no longer exists in `src/`. Updated to start from
+`[data-testid^="topic-card-"]` (the shared flow in `groq-verify.spec.ts` too):
+
+| Spec | Result (live, seeded DB, port 8088) |
+|---|---|
+| `learning-games.spec.ts` | 8/8 passed |
+| `prediction-tiers.spec.ts`, `settings-modes.spec.ts`, `axe-accessibility.spec.ts` | 12/12 passed |
+| `tts-warmup.spec.ts` | 4/4 passed |
+| `groq-verify.spec.ts` | 2/2 passed (live Groq) |
+
+`learning-games.spec.ts::should play symbol hunt` fails only against an *unseeded* database
+(no demo board → no "Play Now"); it passes on the seeded DB the spec documents, so this is
+environment data, not a regression.
+
+### Gates re-run after these changes
+
+`uv run ruff check src tests scripts` clean · `python -m compileall -q src scripts` OK ·
+`git diff --check` clean · `tests/test_schema_migrations.py`,
+`tests/test_schema_db_bounds.py`, `tests/test_user_achievements_unique_migration.py`,
+`tests/test_startup_warmup.py`, `tests/test_prod_sweep4_backend.py`,
+`tests/test_api_comprehensive.py`, `tests/test_tier_k_fixture_lifespan.py` all green ·
+frontend `npm run typecheck` clean · `npm run build` in budget (398.8/450 kB JS).
+All ad-hoc servers/browsers were killed; no runners left behind.
+
+### Still open (external, unchanged)
+
+Windows packaging rehearsal on real Windows, human QA/beta review, and an actual CI run of the
+production gate remain open — none of them can be executed from this Linux sandbox.
+
+---
+
+## Live-Groq re-verification (2026-09-14)
+
+Re-ran the documented procedure from `AGENTS.md` against the working dev database on a fresh
+invocation: server `uvicorn src.api.main:app` on 127.0.0.1:8086, key extracted from
+`app_settings` at runtime (never echoed), model `openai/gpt-oss-20b` (the DB-persisted value).
+
+* `GET /api/health` → **200** after ~2 s; `/ready` → `{"ready":true,...}` with **4/4 providers**
+  (`speech`, `llm`, `achievement`, `vector_store` all true).
+* `npx playwright test --config=playwright.verify.config.ts` → **2/2 passed**
+  (settings UI configures Groq + "Groq: ok" health; learning session receives a real Groq
+  question with `provider_used: "groq"`).
+* Server log leak scan: **0** occurrences of the raw key, **0** `refresh_token=` in request
+  targets (F03 transport check). Server killed in the same invocation; no runners left.
+
+This re-confirms on the current tree: F09 log hygiene and F03 refresh transport on a live
+server, plus the F10/F16 provider resolution and readiness behavior.
+
+## Pass 3b (2026-09-13) — E2E audit: stale selectors & data assumptions
+
+Method: (a) a static audit that resolves every `data-testid`/`#id` selector used by the 39 specs
+against `src/` (`tmp/gui/audit_testids.py`, `tmp/gui/audit_ids.py`), and (b) two full live runs of
+the suite — **seeded** (`AAC_SEED_SAMPLE_DATA=true`, the CI e2e job) and **clean/unseeded**
+(production-gate shape, demo users provisioned through the API with `E2E_PROVISION_VIA_API=1`).
+
+### Seeded run: 9 failures before, 253/253 green after
+
+| Spec | Root cause | Fix |
+| --- | --- | --- |
+| `admin.spec.ts`, `data-management.spec.ts` | "server export" button no longer exists — the client/server exports were collapsed into one action and the file lost its `-server` suffix | match `/export my data\|exportar mis datos/i` and `^aac-data-.+\.json$` |
+| `auth.spec.ts` (register) | `getByLabel(/password\|contraseña/i)` now resolves to **two** inputs (register confirms the password) → strict-mode violation; the confirm field was also never filled | fill `#password` + `#confirmPassword` |
+| `teacher-student-provisioning.spec.ts` | index-based fills (`inputs.nth(3)`) pointed at the wrong field once the confirm input was added, so client validation blocked the POST | fill by id (`#create-student-password`, `#create-student-confirm-password`) |
+| `llm-integration.spec.ts` ×2 | still clicked the removed page-level start button; one mocked a fixed `topic: 'general conversation'` that the picker no longer sends | start from the topic picker; assert topic is non-empty, purpose/mode_key unchanged |
+| `learning-topics.spec.ts` | scoped assertions to `page.locator('.space-y-2').last()`, which no longer wraps the saved-topic list; clicked a removed page-level "Start Session" | new `data-testid="saved-topics-list"` on the sidebar list + the saved topic's "Start study" action |
+| `ai-hot-reload.spec.ts` | started no session (the start button was gone), so the message was never sent and `expect(input).not.toBeEmpty()` passed **vacuously** | start from the picker; assert the failed send surfaces a `role=alert` error |
+| `session-and-board-lifecycle.spec.ts` | **logged out the shared `admin1` session**, which revoked its access tokens server-side, so `playwright/.auth/admin.json` became invalid and 15+ later specs were redirected to `/login`; also used hardcoded English button names | the isolation test now signs out a disposable API-provisioned admin (`e2e_iso_admin_*`); labels match both locales |
+| `contrast-interactive.spec.ts` | hardcoded `/boards/1` — a clean database has no board 1, so the audit ran against the 404 page | resolve the id through the API and `test.skip` with an explicit reason when the account has no board |
+
+Evidence: seeded `--shard=1/2` **135 passed**, `--shard=2/2` **118 passed** (was 237 passed / 9
+failed / 4 did not run).
+
+### Clean/unseeded run: 253 tests → 108 + 127 passed, 14 failures, all seed-data only
+
+Every remaining failure asserts the seeded demo board (`Comunicación General`) or its `student1`
+assignment: `accessibility.spec.ts` (2), `communication.spec.ts` (4), `pilot-gate.spec.ts` (2),
+`board-assignment.spec.ts`, `advanced.spec.ts`, `learning-games.spec.ts` (symbol hunt),
+`learning-topics.spec.ts`, `students-lifecycle.spec.ts`, `extended-features.spec.ts`. These are
+inherent to the design (the specs document the seeded demo data) and the production gate avoids
+them by selecting `--grep "smoke|auth"`; `contrast-interactive.spec.ts` now skips its board-editor
+audits on a clean database (4 skipped, 15 passed) and runs all 19 when seeded.
+
+Before the isolation fix the same clean run had **23** failures in shard 2 — 15 of them were the
+`/login` cascade caused by one spec signing out the shared admin, not data.
+
+### Pre-existing breakage found by the static audit
+
+* `boards.spec.ts` probes `debug-user-id`, a test id that no longer exists in `src/`. The probe is
+  wrapped in `isVisible()`, so it never fails — it is dead debug code (left in place, flagged here).
+
+### Documentation
+
+`docs/MAINTAINER_GUIDE.md` §1b now lists the seed-dependent specs, states that the unseeded
+production gate must not run them, and records the four E2E isolation rules learned here (never
+sign out a shared account, no index-based form fills, no bare layout-class scoping, match labels
+bilingually). Markdown link check re-run: 87 files, 0 broken links.
+
+---
+
+## Pass 3c (2026-09-13) — `e2e-clean` CI job: unseeded E2E coverage
+
+The audit in Pass 3b showed that the seeded `e2e-production-compat` job cannot see defects that
+only appear when the database has no demo data (that run is where the `user_settings` migration
+abort, the dead `learning-session-start` selectors and the shared-session cascade were all
+invisible). The only unseeded job was `e2e-production-gate`, which runs just `--grep "smoke|auth"`.
+
+* **Tag:** the 14 demo-data tests in 9 specs now declare Playwright's `{ tag: '@seed-required' }`
+  (`accessibility` ×2, `communication` ×4, `pilot-gate` ×2, `advanced`, `learning-games`,
+  `learning-topics`, `students-lifecycle`, `extended-features`, `board-assignment`). Tags are inert
+  without a filter, so the seeded job still runs all 250 tests (`npx playwright test --list`).
+* **Job:** `.github/workflows/ci.yml` gains `e2e-clean` — `ENVIRONMENT=test`, **no**
+  `AAC_SEED_SAMPLE_DATA`, `E2E_PROVISION_VIA_API=1`, its own `.ci-e2e-data` directory, and
+  `npx playwright test --grep-invert @seed-required` (236 of 250 tests).
+* **Guard test:** `tests/test_prod_sweep4_backend.py::test_e2e_clean_job_runs_the_unseeded_subset`
+  parses the job and asserts it stays unseeded, provisions through the API, keeps the
+  `@seed-required` exclusion, and that at least one spec still declares the tag (so the filter can
+  never become a no-op). Fails when the job is switched back to `AAC_SEED_SAMPLE_DATA: "true"`
+  (verified), passes restored.
+* **Also fixed by running the new selection:** `pilot-gate.spec.ts`'s "token captured before UI
+  logout is rejected afterward" asserted synchronously on the first `/api/auth/me` call. Since A16
+  logout clears local state synchronously and revokes best-effort, the UI can reach `/login` before
+  the revocation is processed — the clean run caught it as `200` instead of `401`. The assertion now
+  uses `expect.poll(..., 15000)` so it tests the guarantee (the token is revoked) rather than the
+  timing.
+
+**Evidence (live, clean DB, exactly the new job's selection):**
+`--grep-invert @seed-required --shard=1/2` → **127 passed**;
+`--shard=2/2` → **108 passed, 4 skipped, 0 failed** (exit 0). Tagged selection resolves to exactly
+the 14 known seed-dependent tests (`npx playwright test --list --grep @seed-required`).
+`pilot-gate.spec.ts` run alone unseeded → 12 passed / 2 `@seed-required` failures.
+
+**Docs:** `docs/MAINTAINER_GUIDE.md` records the new job in the required-jobs list, the tag, and the
+local commands for both subsets. Markdown link check: 87 files, 0 broken links.
+
+---
+
+## Pass 3d (2026-09-13) — demo data built by the specs: `@seed-required` removed
+
+Pass 3c's tag worked, but it meant 14 tests never ran against a clean database — exactly the shape
+that had hidden the migration abort. The tag was a workaround for the real problem: those specs
+assumed *someone else* had created the demo board. They now create it themselves.
+
+* **Shared fixture:** `src/frontend/e2e/demo-fixture.ts::ensureDemoBoard(request)` logs in as the
+  E2E admin and builds the same shape `seed.py` produces — a 3x4 board named `Comunicación General`
+  (`POST /api/boards?user_id=<admin>`, first 12 catalog symbols from `/api/boards/symbols` at the
+  seed's 3x4 placement) — then assigns it to `E2E_STUDENT_USERNAME` via
+  `POST /api/boards/{id}/assign`. It reuses a seeded board when one exists, so the seeded
+  `e2e-production-compat` job sees no change.
+* **Specs switched to the fixture (9):** `accessibility`, `communication`, `pilot-gate`,
+  `board-assignment`, `advanced`, `learning-games`, `learning-topics`, `students-lifecycle`,
+  `extended-features`, plus `contrast-interactive` (its four board-editor audits previously skipped
+  on a clean DB; the defensive `test.skip` stays only as an API-shape guard). Every `{ tag:
+  '@seed-required' }` is gone.
+* **Job simplified:** `e2e-clean` now runs `npm run verify:prod-build && npx playwright test` — the
+  whole suite, no filter. The guard test
+  (`test_e2e_clean_job_runs_the_unseeded_suite`) asserts the job stays unseeded, provisions through
+  the API, runs the full suite with **no** seed-based selector, that no spec declares
+  `@seed-required` any more, and that at least one spec still uses `ensureDemoBoard` (so the
+  clean-database coverage cannot silently disappear).
+* **Login-budget defect found while wiring it up:** the fixture logs in on every call, and
+  `/api/auth/token` is limited to 10 requests/minute per IP, so the demo specs starved the auth
+  specs — `auth.spec.ts` register/logout failed with `429 Too Many Requests` presented as
+  "Registration failed: Rate limit exceeded". The session is now memoized per worker (one login,
+  and the board lookup stays idempotent per call). The memoized token can still be revoked mid-run:
+  `settings.spec.ts` changes the admin password, which bumps the JWT security version and
+  invalidates earlier tokens. The fixture therefore drops the cached session and retries once on
+  `401` (`StaleSessionError`), which is exactly what the clean run hit in `students-lifecycle`.
+* **Second defect the clean run surfaced:** `prediction-tiers.spec.ts`'s `KNOWN_SOURCES` allow-list
+  was stale — it was missing the real `topic` and `ai` tiers that `PredictionService` emits, so a
+  prediction from the topic tier failed the assertion. The list is complete now, and
+  `src/frontend/tests/e2eConfigHygiene.test.ts` pins it against the `source="…"` literals in
+  `src/aac_app/services/prediction_service.py` (fail-before verified: dropping `topic` from the list
+  fails with `expected [ 'topic' ] to deeply equal []`).
+* **`llm-integration.spec.ts`:** the learning-area test started from the *first* topic card, which is
+  a saved topic once the demo board exists (its `purpose` is the board name, not `practice`). It now
+  selects a built-in catalog card, keeping the `purpose: 'practice'` / `mode_key: 'default_mode'`
+  contract assertions meaningful.
+
+**Evidence (live, sharded full suite):**
+
+| Data shape | `--shard=1/2` | `--shard=2/2` | Total |
+| --- | --- | --- | --- |
+| **clean** (`AAC_SEED_SAMPLE_DATA=false`, accounts via API) | 135 passed | 118 passed | **253 passed, 0 failed, 0 skipped** |
+| **seeded** (`AAC_SEED_SAMPLE_DATA=true`) | 135 passed | 118 passed | **253 passed, 0 failed, 0 skipped** |
+
+Before this pass the clean run was 249 selected / 4 skipped / 0 failed with the tag, and the
+untagged clean run was 12 failed in shard 1 alone. Guard test fail-before/pass-after verified by
+re-adding a tag to `communication.spec.ts` (`AssertionError: specs still tagged @seed-required`).
+
+**Gates:** `ruff check src tests scripts` clean · `compileall` OK · `git diff --check` clean ·
+frontend `typecheck` + `lint` clean · `tests/test_prod_sweep4_backend.py` (41 tests) green ·
+`tests/e2eConfigHygiene.test.ts` (4 tests) green · no leftover servers/browsers.
+
+**Docs:** `docs/MAINTAINER_GUIDE.md` §1b now documents the fixture, lists the nine specs it serves,
+states that seeding is optional, and drops the tag/filter instructions; the `e2e-clean` job comment
+in `ci.yml` says nothing is filtered out.
+
+---
+
+## Final continuation audit — 2026-09-14 (H48/H49 re-check)
+
+This pass re-checked the current working tree rather than trusting the earlier report. The H48
+implementation and its documentation had diverged, and the newly added H48 tests had accidentally
+left the dependency-unavailable assertions inside the preceding download test. Both issues were
+fixed.
+
+* **H48:** `local_tts_provider.py` now verifies the exact repository Kokoro v1.0 assets by pinned
+  byte size and SHA-256 before cache reuse or atomic replacement. The voices archive is opened with
+  `allow_pickle=False`; invalid, truncated, oversized, and same-sized tampered payloads are
+  rejected before ONNX/NumPy loading. The recorded hashes were independently checked against
+  `data/models/kokoro/*` without modifying that ignored model cache.
+* **H49:** `ArasaacService.list_all_symbols()` streams and caps the catalog before JSON parsing;
+  image downloads use the bounded stream path; malformed search payloads raise a diagnosable
+  validation error instead of silently returning an empty result. Focused tests cover oversized
+  catalog/image bodies and malformed search data.
+* **Regression repair:** `test_provider_reports_unavailable_without_dependency` is again a
+  separately collected test; the focused TTS/ARASAAC run collected **43 passed**.
+
+Validation completed after the repair:
+
+| Check | Result |
+|---|---|
+| `pytest tests/test_local_tts_provider.py tests/test_arasaac_routes.py` | **43 passed** |
+| `ruff check src tests scripts` | Passed |
+| `python -m compileall -q src scripts` | Passed |
+| `npm run typecheck` | Passed (`tsc -b --noEmit`) |
+| `npm run lint` | Passed |
+| `npm run build` | Passed; largest JS 398.8 kB / 450 kB, CSS 140.9 kB / 150 kB |
+| `git diff --check` | Passed |
+
+The working tree still contains the broader uncommitted H–R sweep and untracked prompt artifacts;
+this pass did not stage, commit, delete, or reset them. External release gates remain open:
+Windows packaging/update/rollback rehearsal, GitHub Actions execution, human accessibility/privacy
+acceptance, and any browser/live-provider verification not explicitly recorded above.
+
+## PROMPT_6 pass — 2026-09-15 (B1–B12)
+
+All twelve items implemented with discriminating regression tests (fail-before/pass-after where
+practical). Every item was re-confirmed against the current tree before editing.
+
+* **B1 — Single-use refresh for legacy/unknown tokens:** a presented refresh token with no ledger
+  row (jti-less legacy or aged-out record) is accepted exactly once via a `security_version` bump
+  (existing machinery, no parallel store), then every subsequent presentation is rejected. Family
+  mismatches are treated as replay and trigger family revocation.
+* **B2 — `delete_user` clears the refresh ledger:** the user's `RefreshTokenRecord` rows are
+  removed with the account so no stale family can be resurrected.
+* **B3 — `revoke_family` deleted:** zero production callers confirmed by a production-root search;
+  the dead method (and its dead `fam` plumbing expectations) were removed rather than validated.
+* **B4 — `duplicateBoard` stale-context cleanup:** every early return after the POST (context
+  bump, missing `newBoardId`, missing local row) now deletes the just-created server board before
+  returning; a stale path can no longer orphan a remote board.
+* **B5 — Submit contract unified:** `submitAnswer`/`submitVoiceAnswer` rethrow after state reset;
+  text callers clear input after the await and restore on failure; `useVoiceRecorder` keeps its
+  never-reject contract for its button caller while `sendRecording` failures keep the recording.
+* **B6 — Boards bulk-selection reset:** selection/`selectAll` reset on account switch
+  (`user?.id` effect), and the header checkbox reflects partial selection (indeterminate +
+  honest checked state); new i18n keys added for en/es.
+* **B7 — Rate limits on heavy endpoints:** `@conditional_limiter` added to symbol create/upload,
+  SVG generation, board generation, and import endpoints (with the slowapi-required `request`
+  parameter), matching the existing authentication-endpoint coverage.
+* **B8 — Communication TTS cancel on unmount:** pending/playing utterances are cancelled when the
+  page unmounts; speech no longer continues after leaving the page.
+* **B9 — SentenceStrip keyboard/AT semantics:** tile buttons carry `aria-label` (word + position),
+  the strip is an ordered list region, and removal buttons expose accessible names.
+* **B10 — Vector search fails closed:** store/translation errors during search now raise instead
+  of silently returning a wrong-order empty/no-op result; callers already treat exceptions as
+  degradation.
+* **B11 — Input bounds:** `language` form field validated server-side (422 outside the supported
+  set); `scripts/migrate_passwords.py` processes users in bounded chunks so large tables no longer
+  load unbounded ORM rows at once.
+* **B12 — Dead-code/test consolidation:** jti-less refresh-token minting removed from ten test
+  sites (tokens now hit the ledger or explicitly simulate legacy tokens via the internal encoder);
+  broken helper fixtures repaired; Ruff import hygiene fixed.
+
+| Check | Result |
+|---|---|
+| `pytest tests/test_refresh_rotation.py tests/test_phase2_security.py tests/test_password_reset_security.py tests/test_prompt6_backend.py tests/test_tier_h_limits_bounds.py` | **56 passed** |
+| `pytest tests/test_file_uploads.py tests/test_admin_user_management.py tests/test_local_vector_store_sqlite_vec.py tests/test_boards_list_symbols_and_achievement_routes.py tests/test_svg_symbol_generator.py` | **65 passed** |
+| `pytest tests/test_account_normalization_regressions.py tests/test_creation_lockout_reset.py tests/test_operator_credential_revocation.py tests/test_security_comprehensive.py` | **40 passed** |
+| `pytest tests/test_phase2_security.py` (post ruff --fix) | **24 passed** |
+| Frontend `typecheck` / `lint` | Passed |
+| Frontend named specs (8 files incl. new B4–B9 discriminating specs) | **178 passed** |
+| `npm run build` | Passed; largest JS 398.8 kB / 450 kB, CSS 141.0 kB / 150 kB |
+| `ruff check src tests scripts` / `compileall` / `git diff --check` | Passed |
+| Stray uvicorn/pytest/vitest/playwright processes | 0 |
+
+External release gates remain open: Windows packaging/update/rollback rehearsal, GitHub Actions
+execution, human accessibility/privacy acceptance, and production-mode deployment smoke.
+
+## Full consolidated gate — 2026-09-15 (`scripts/verify_pr.py`)
+
+`uv run python scripts/verify_pr.py` run on this tree: **all 16 steps passed (exit 0)** — Ruff,
+compileall, import audit, dependency-evidence audit, production + development `pip-audit` (no
+known vulnerabilities), i18n key audit, full pytest with branch coverage (86% overall), frontend
+typecheck/ESLint, production + development `npm audit` (no known vulnerabilities), full Vitest
+with coverage (**107 files / 917 tests**), production build (JS 398.8 kB / 450 kB, CSS 141.0 kB /
+150 kB budget), requirements consistency, and 88 markdown files with 0 broken links.
+
+Two defects surfaced by the full backend suite were fixed before the passing run:
+
+* **Guardian policy silently discarded on the collab path (pre-existing production bug):**
+  `resolve_policy_for_user(user.id)` with `db=None` (the WebSocket collaboration route) read
+  `profile.safety_constraints`/`profile.age` *after* the internal `get_session()` had committed
+  and closed, raising `DetachedInstanceError` that the broad `except` swallowed — so teacher-set
+  safety locks (e.g. `block_social_messaging`) never applied to collaboration messages. The
+  resolver now snapshots plain values while the session is live (`_active_guardian_profile` /
+  `_plain_constraints`), and `_age_level_policy` takes the age scalar. Regression: the previously
+  failing `tests/test_collab_ws.py::test_collab_ws_block_social_messaging` now passes.
+* **Stale fail-open `_strip_reasoning` test:** `test_learning_common_helpers.py` still encoded the
+  old republish-on-empty behavior that the deliberate fail-closed change (and
+  `tests/test_tier_lm_hardening.py`) superseded. The test now asserts the reasoning-only reply
+  yields `""` and that surrounding whitespace is stripped.
+
+One i18n audit failure was also fixed: the `removeSymbolLabel` key orphaned by the B9 aria-label
+improvement (`removeSymbolNamed`) was deleted from both locales.

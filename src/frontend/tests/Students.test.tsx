@@ -146,6 +146,7 @@ describe('Students page', () => {
     await user.type(screen.getByLabelText('Username *'), 'new_student');
     await user.type(screen.getByLabelText('Display Name *'), 'New Student');
     await user.type(screen.getByLabelText('Password *'), 'StudentPass123');
+    await user.type(screen.getByLabelText('Confirm Password'), 'StudentPass123');
     await user.click(screen.getByText('Create Student'));
 
     await waitFor(() =>
@@ -173,6 +174,26 @@ describe('Students page', () => {
     await user.type(screen.getByLabelText('Display Name *'), 'New Student');
     await user.type(screen.getByLabelText('Password *'), 'StudentPass123');
     await user.type(screen.getByLabelText('Confirm Password'), 'Different123');
+    await user.click(screen.getByText('Create Student'));
+
+    await waitFor(() =>
+      expect(screen.getAllByText('Passwords do not match').length).toBeGreaterThan(0),
+    );
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('rejects a password mismatch for a teacher-created student (H19)', async () => {
+    const user = userEvent.setup();
+    render(<Students />);
+    await screen.findByText('Leo');
+
+    await user.click(screen.getByRole('button', { name: /create/i }));
+    await user.type(screen.getByLabelText('Username *'), 'new_student');
+    await user.type(screen.getByLabelText('Display Name *'), 'New Student');
+    await user.type(screen.getByLabelText('Password *'), 'StudentPass123');
+    await user.type(screen.getByLabelText('Confirm Password'), 'StudentPass123');
+    // A teacher typo used to create an un-loggable account silently.
+    await user.type(screen.getByLabelText('Confirm Password'), 'StudentPass124');
     await user.click(screen.getByText('Create Student'));
 
     await waitFor(() =>
@@ -360,6 +381,7 @@ describe('Students page', () => {
     await user.type(screen.getByLabelText('Username *'), 'safe_student');
     await user.type(screen.getByLabelText('Display Name *'), 'Safe Student');
     await user.type(screen.getByLabelText('Password *'), 'StudentPass123');
+    await user.type(screen.getByLabelText('Confirm Password'), 'StudentPass123');
 
     await user.click(screen.getByText('Safety configuration (optional)'));
     const section = await screen.findByTestId('create-safety-section');
@@ -458,6 +480,7 @@ describe('Students page', () => {
     await user.type(screen.getByLabelText('Username *'), 'plain_safe');
     await user.type(screen.getByLabelText('Display Name *'), 'Plain Safe');
     await user.type(screen.getByLabelText('Password *'), 'StudentPass123');
+    await user.type(screen.getByLabelText('Confirm Password'), 'StudentPass123');
     await user.click(screen.getByText('Safety configuration (optional)'));
     await screen.findByTestId('create-safety-section');
 
@@ -686,6 +709,7 @@ describe('Students page', () => {
     await user.type(screen.getByLabelText('Username *'), 'new_student');
     await user.type(screen.getByLabelText('Display Name *'), 'New Student');
     await user.type(screen.getByLabelText('Password *'), 'StudentPass123');
+    await user.type(screen.getByLabelText('Confirm Password'), 'StudentPass123');
     await user.click(screen.getByText('Create Student'));
 
     expect((await screen.findAllByText('Failed to create student')).length).toBeGreaterThan(0);
@@ -701,6 +725,7 @@ describe('Students page', () => {
     await user.type(screen.getByLabelText('Username *'), 'new_student');
     await user.type(screen.getByLabelText('Display Name *'), 'New Student');
     await user.type(screen.getByLabelText('Password *'), 'StudentPass123');
+    await user.type(screen.getByLabelText('Confirm Password'), 'StudentPass123');
     await user.click(screen.getByText('Create Student'));
 
     expect((await screen.findAllByText('Failed to create student')).length).toBeGreaterThan(0);

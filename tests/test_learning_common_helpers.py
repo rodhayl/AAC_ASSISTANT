@@ -42,9 +42,17 @@ def test_strip_reasoning_uses_last_marker():
     assert _strip_reasoning(raw) == "second"
 
 
-def test_strip_reasoning_returns_original_when_stripped_empty():
+def test_strip_reasoning_reasoning_only_yields_empty():
+    # A reasoning-only reply must not be republished (fail-closed): the
+    # stripped result is empty so callers treat the turn as lacking an answer
+    # instead of showing the child the think blocks.
     raw = "<think>only thinking</think>"
-    assert _strip_reasoning(raw) == raw
+    assert _strip_reasoning(raw) == ""
+    assert "think" not in _strip_reasoning("<think>secret</think>")
+
+
+def test_strip_reasoning_strips_surrounding_whitespace():
+    assert _strip_reasoning("  <think>x</think> The answer.  ") == "The answer."
 
 
 # ---------------------------------------------------------------------------

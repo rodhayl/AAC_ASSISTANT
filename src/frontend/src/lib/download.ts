@@ -15,8 +15,18 @@ export function downloadJson(data: unknown, filename: string): void {
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
+  // Firefox only honours a synthetic click on a node that is in the document
+  // (and requires it to still be connected while the navigation is queued),
+  // so attach, click, then detach on the next tick rather than clicking a
+  // detached anchor that silently does nothing.
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
   anchor.click();
-  // Let the browser consume the blob URL before releasing it. Immediate
-  // revocation can cancel downloads in browsers that start navigation lazily.
-  setTimeout(() => URL.revokeObjectURL(url), 100);
+  setTimeout(() => {
+    anchor.remove();
+    // Let the browser consume the blob URL before releasing it. Immediate
+    // revocation can cancel downloads in browsers that start navigation
+    // lazily.
+    URL.revokeObjectURL(url);
+  }, 100);
 }

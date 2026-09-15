@@ -40,6 +40,7 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadLabel, setUploadLabel] = useState('');
   const [uploadCategory, setUploadCategory] = useState('general');
@@ -64,11 +65,14 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
     };
   }, [previewUrl]);
 
-  // Fetch categories once on open
+  // Fetch categories once on open. The endpoint contract is list[str]; drop
+  // anything else so the filter never renders a non-string option
+  // (Symbols.tsx applies the same validation).
   useEffect(() => {
     if (isOpen) {
-      api.get<string[]>('/boards/symbols/categories').then(res => {
-        setCategories(['all', ...res.data]);
+      api.get<unknown>('/boards/symbols/categories').then(res => {
+        const list = Array.isArray(res.data) ? res.data : [];
+        setCategories(['all', ...list.filter((c): c is string => typeof c === 'string')]);
       }).catch(err => console.error("Failed to fetch categories", err));
     }
   }, [isOpen]);
@@ -104,9 +108,15 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
       });
       if (requestId !== symbolRequestIdRef.current) return;
       setSymbols(symbols);
+      setLoadError(null);
     } catch (error) {
       if (requestId === symbolRequestIdRef.current) {
+        // A failed page walk used to be console-only, so a truncated/failed
+        // catalog rendered exactly like a genuinely empty one (D-c). Store the
+        // raw error and translate at render time so this callback keeps its
+        // stable identity.
         console.error('Failed to fetch symbols:', error);
+        setLoadError(error);
       }
     } finally {
       if (requestId === symbolRequestIdRef.current) {
@@ -419,7 +429,16 @@ export function SymbolPicker({ isOpen, onClose, onSelect, position }: SymbolPick
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
-          {isLoading ? (
+          {loadError && !isLoading ? (
+            <div className="text-center py-12 space-y-3" role="alert">
+              <p className="text-destructive">
+                {extractError(loadError, t('symbolPicker.loadFailed'))}
+              </p>
+              <Button variant="outline" size="sm" onClick={() => void fetchSymbols()}>
+                {t('retry')}
+              </Button>
+            </div>
+          ) : isLoading ? (
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand"></div>
             </div>

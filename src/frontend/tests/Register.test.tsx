@@ -29,9 +29,12 @@ vi.mock('react-i18next', () => ({
         subtitle: 'Join as a student',
         username: 'Username',
         password: 'Password',
+        confirmPassword: 'Confirm password',
         displayName: 'Display name',
         create: 'Create account',
         back: 'Back to login',
+        'errors.passwordTooShort': 'Password must be at least 8 characters.',
+        'errors.passwordMismatch': 'The passwords do not match.',
       };
       return table[key] ?? defaultValue ?? key;
     },
@@ -54,6 +57,9 @@ describe('Register page', () => {
       target: { value: 'new_student' },
     });
     fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'StudentPass123' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirm password'), {
       target: { value: 'StudentPass123' },
     });
     fireEvent.change(screen.getByLabelText('Display name'), {
@@ -82,6 +88,9 @@ describe('Register page', () => {
     fireEvent.change(screen.getByLabelText('Password'), {
       target: { value: 'StudentPass123' },
     });
+    fireEvent.change(screen.getByLabelText('Confirm password'), {
+      target: { value: 'StudentPass123' },
+    });
     fireEvent.change(screen.getByLabelText('Display name'), {
       target: { value: 'Taken' },
     });
@@ -89,6 +98,50 @@ describe('Register page', () => {
 
     await waitFor(() => expect(register).toHaveBeenCalled());
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('blocks a mistyped confirmation client-side (H58)', async () => {
+    render(<Register />);
+
+    fireEvent.change(screen.getByLabelText('Username'), {
+      target: { value: 'typo_user' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'StudentPass123' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirm password'), {
+      target: { value: 'StudentPass124' },
+    });
+    fireEvent.change(screen.getByLabelText('Display name'), {
+      target: { value: 'Typo User' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(await screen.findByText('The passwords do not match.')).toBeInTheDocument();
+    expect(register).not.toHaveBeenCalled();
+  });
+
+  it('blocks a too-short password client-side (H58)', async () => {
+    render(<Register />);
+
+    fireEvent.change(screen.getByLabelText('Username'), {
+      target: { value: 'short_user' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'Ab1' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirm password'), {
+      target: { value: 'Ab1' },
+    });
+    fireEvent.change(screen.getByLabelText('Display name'), {
+      target: { value: 'Short User' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(
+      await screen.findByText('Password must be at least 8 characters.'),
+    ).toBeInTheDocument();
+    expect(register).not.toHaveBeenCalled();
   });
 
   it('shows the store error message and disables the submit while loading', () => {

@@ -1,10 +1,17 @@
 import { test, expect } from '@playwright/test';
 
+import { ensureDemoBoard } from './demo-fixture';
+
 // Board assignment (teacher/admin assigning a board to a student) had backend
 // coverage but no GUI e2e. This spec exercises the full cycle in the Students
-// view: unassign the seeded board, then re-assign it through the modal.
+// view: unassign the demo board, then re-assign it through the modal. The board
+// is built through the API by the fixture, so no seeded sample data is needed.
 test.describe('Board Assignment', () => {
   test.use({ storageState: 'playwright/.auth/admin.json' });
+
+  test.beforeEach(async ({ page }) => {
+    await ensureDemoBoard(page.request);
+  });
 
   test('unassigns and re-assigns a board for a student', async ({ page }) => {
     await page.goto('/students');

@@ -5,6 +5,8 @@ import api from '../src/lib/api';
 
 vi.mock('../src/lib/api', () => ({
   default: { get: vi.fn() },
+  extractError: (error: unknown, fallback: string) =>
+    error instanceof Error ? error.message : fallback,
 }));
 
 vi.mock('react-i18next', () => ({
@@ -198,8 +200,8 @@ describe('SymbolSearchModal pagination walk', () => {
         // Mirror the backend contract: one request is capped at the requested
         // limit, and the walk must continue until a short page arrives.
         const skip = config?.params?.skip ?? 0;
-        if (skip === 0) return Promise.resolve({ data: page(0, 1000) });
-        return Promise.resolve({ data: page(1000, 5) });
+        if (skip === 0) return Promise.resolve({ data: page(0, 100) });
+        return Promise.resolve({ data: page(100, 5) });
       },
     );
 
@@ -209,19 +211,28 @@ describe('SymbolSearchModal pagination walk', () => {
     fireEvent.change(input, { target: { value: 'sym' } });
     fireEvent.submit(form);
 
-    // A row beyond the first full 1000-item page must still be reachable: the
-    // previous single-request implementation stopped at the first page and no
-    // 'has more' signal ever surfaced the remaining results.
+    // A row beyond the first full page must remain reachable: a single-request
+    // implementation stopped at the first page and no 'has more' signal ever
+    // surfaced the remaining results.
     await waitFor(
       () => {
-        expect(screen.getByText('Symbol 1005')).toBeInTheDocument();
+        const symbolCalls = vi.mocked(api.get).mock.calls.filter(
+          ([url]) => url === '/boards/symbols',
+        );
+        expect(symbolCalls).toHaveLength(2);
       },
       { timeout: 15000 },
     );
     const symbolCalls = vi.mocked(api.get).mock.calls.filter(
       ([url]) => url === '/boards/symbols',
     );
-    expect(symbolCalls).toHaveLength(2);
-    expect(symbolCalls[1][1]).toMatchObject({ params: { skip: 1000, limit: 1000 } });
+    expect(symbolCalls[1][1]).toMatchObject({ params: { skip: 100, limit: 100 } });
+
+    // The walk keeps the whole match set, but the grid renders it in batches
+    // (G1): the tail arrives through the explicit "show more" control rather
+    // than mounting every tile on the first paint.
+    expect(screen.queryByText('Symbol 105')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /show \d+ more/i }));
+    expect(screen.getByText('Symbol 105')).toBeInTheDocument();
   });
 });

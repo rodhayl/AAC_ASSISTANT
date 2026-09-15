@@ -304,6 +304,12 @@ export function Achievements() {
 
   const handleAward = async () => {
     const contextKey = userContextKey
+    // Only the button's `disabled` state guarded this: any other caller (or a
+    // future programmatic trigger) would POST `user_id: null` (H62).
+    if (selectedStudentId === null || awardingAchievementId === null) {
+      setError(t('errors.selectStudentFirst'))
+      return
+    }
     try {
       await api.post(`/achievements/${awardingAchievementId}/award`, { user_id: selectedStudentId })
       if (!isCurrentContext(contextKey)) return
@@ -472,7 +478,9 @@ export function Achievements() {
             const isUnlocked = !!a.earned_at;
             return (
               <div
-                key={a.name}
+                // The id is the stable identity; the name is editable in the
+                // management table, so two rows can share one after a rename.
+                key={a.id ?? a.name}
                 className={`bg-surface rounded-xl shadow-sm border border-border p-6 relative overflow-hidden transition-all ${!isUnlocked ? 'opacity-70 grayscale' : ''}`}
               >
                 {!isUnlocked && (
@@ -673,17 +681,21 @@ export function Achievements() {
                   </div>
                 ) : (
                   filteredStudents.map(s => (
-                    <div
+                    // A real button: a div with onClick is invisible to keyboard
+                    // and assistive-tech users (H64).
+                    <button
                       key={s.id}
+                      type="button"
                       onClick={() => setSelectedStudentId(s.id)}
-                      className={`p-3 cursor-pointer flex justify-between items-center hover:bg-brand/20 transition-colors ${selectedStudentId === s.id ? 'bg-brand/10' : ''}`}
+                      aria-pressed={selectedStudentId === s.id}
+                      className={`w-full text-left p-3 cursor-pointer flex justify-between items-center hover:bg-brand/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand transition-colors ${selectedStudentId === s.id ? 'bg-brand/10' : ''}`}
                     >
                       <div>
                         <div className="font-medium text-foreground">{s.display_name}</div>
                         <div className="text-xs text-muted-foreground">@{s.username}</div>
                       </div>
                       {selectedStudentId === s.id && <CheckCircle className="w-4 h-4 text-brand" />}
-                    </div>
+                    </button>
                   ))
                 )}
               </div>

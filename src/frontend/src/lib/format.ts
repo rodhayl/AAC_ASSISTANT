@@ -24,6 +24,12 @@ function format(
   options: Intl.DateTimeFormatOptions,
 ): string {
   const date = value instanceof Date ? value : new Date(value)
+  // Intl.format throws a RangeError on an invalid date, which would take down
+  // the whole view for one malformed server timestamp. Fall back to the raw
+  // value so a bad row renders as-is instead of crashing the page.
+  if (Number.isNaN(date.getTime())) {
+    return typeof value === 'string' ? value : ''
+  }
   return new Intl.DateTimeFormat(getLocale(), options).format(date)
 }
 

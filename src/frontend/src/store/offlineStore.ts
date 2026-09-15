@@ -17,6 +17,11 @@ export interface OfflineConflict {
   retryCount: number
 }
 
+// Cap on retained conflicts (G1): the store persists every entry to
+// localStorage, so an unbounded list from a long offline session would grow the
+// stored JSON without limit. Newest entries win.
+export const MAX_STORED_CONFLICTS = 50
+
 interface OfflineState {
   conflicts: OfflineConflict[]
   addConflict: (config: AxiosRequestConfig, error: string, userId?: number) => void
@@ -24,6 +29,7 @@ interface OfflineState {
   clearConflicts: () => void
   discardForeignConflicts: (userId: number) => void
   incrementRetry: (id: string) => void
+  updateConflictError: (id: string, error: string) => void
 }
 
 function conflictRequestKey(config: AxiosRequestConfig): string | null {
@@ -69,7 +75,7 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
       timestamp: Date.now(),
       retryCount: 0,
     }
-    const conflicts = [...get().conflicts, conflict]
+    const conflicts = [...get().conflicts, conflict].slice(-MAX_STORED_CONFLICTS)
     set({ conflicts })
     persistConflicts(conflicts)
   },
@@ -98,6 +104,16 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
       conflict.id === id
         ? { ...conflict, retryCount: conflict.retryCount + 1 }
         : conflict,
+    )
+    set({ conflicts })
+    persistConflicts(conflicts)
+  },
+
+  updateConflictError: (id, error) => {
+    // A manual retry that fails must say so on the conflict itself; a
+    // console-only failure left the entry looking untouched (A6).
+    const conflicts = get().conflicts.map((conflict) =>
+      conflict.id === id ? { ...conflict, error, timestamp: Date.now() } : conflict,
     )
     set({ conflicts })
     persistConflicts(conflicts)

@@ -212,7 +212,12 @@ class AccountLockoutService:
     @staticmethod
     def reset_attempts(db: Session, username: str):
         """
-        Reset failed attempt count after successful login.
+        Delete every failed-attempt record for a username.
+
+        Used after a successful login and after account creation: an attacker
+        can pre-lock a not-yet-existing username (login records attempts for
+        unknown users), so a freshly created account would otherwise inherit
+        those rows and start out locked.
 
         Args:
             db: Database session
@@ -225,7 +230,7 @@ class AccountLockoutService:
         db.flush()
 
         logger.info(
-            f"Reset failed login attempts for '{username}' after successful login"
+            f"Reset failed login attempts for '{username}'"
         )
 
     @staticmethod

@@ -52,7 +52,12 @@ vi.mock('../src/components/common/SymbolImage', () => ({
 // Mock react-i18next
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => key === 'tapSymbolsToSpeak' ? 'Tap symbols to create a sentence...' : key,
+    t: (key: string, opts?: { label?: string }) =>
+      key === 'tapSymbolsToSpeak'
+        ? 'Tap symbols to create a sentence...'
+        : key === 'removeSymbolNamed' && opts?.label
+          ? `Remove symbol: ${opts.label}`
+          : key,
   }),
 }));
 
@@ -236,5 +241,36 @@ describe('SentenceStrip', () => {
     renderStrip([apple], { onAskAI });
     fireEvent.click(screen.getByTestId('sentence-ask-ai'));
     expect(onAskAI).toHaveBeenCalledTimes(1);
+  });
+
+  it('B9: chips are keyboard-operable buttons that speak on Enter/Space', () => {
+    const onSpeakItem = vi.fn();
+    renderStrip([apple, banana], { onSpeakItem });
+
+    const chips = screen.getAllByTestId('sentence-chip');
+    expect(chips[0]).toHaveAttribute('role', 'button');
+    expect(chips[0]).toHaveAttribute('tabindex', '0');
+    expect(chips[0]).toHaveAttribute('aria-label', 'apple');
+
+    fireEvent.keyDown(chips[0], { key: 'Enter' });
+    expect(onSpeakItem).toHaveBeenCalledWith('apple');
+    fireEvent.keyDown(chips[1], { key: ' ' });
+    expect(onSpeakItem).toHaveBeenCalledWith('banana');
+    // Other keys do not trigger speech.
+    fireEvent.keyDown(chips[0], { key: 'a' });
+    expect(onSpeakItem).toHaveBeenCalledTimes(2);
+  });
+
+  it('B9: the remove control is a labeled button naming the symbol', () => {
+    const onRemove = vi.fn();
+    renderStrip([apple, banana], { onRemove });
+
+    const removeApple = screen.getByRole('button', { name: 'Remove symbol: apple' });
+    fireEvent.click(removeApple);
+    expect(onRemove).toHaveBeenCalledWith(0);
+
+    const removeBanana = screen.getByRole('button', { name: 'Remove symbol: banana' });
+    fireEvent.click(removeBanana);
+    expect(onRemove).toHaveBeenCalledWith(1);
   });
 });

@@ -13,6 +13,10 @@ const FIRST_RUN_URL = `http://127.0.0.1:${FIRST_RUN_PORT}`;
 
 let server: ChildProcess | null = null;
 
+// First-run onboarding must run without any persisted session (the config no
+// longer provides one), so the anonymous state is declared explicitly.
+test.use({ storageState: { cookies: [], origins: [] } });
+
 function projectRoot(): string {
   // Playwright runs from src/frontend; the repo root is two levels up.
   return path.resolve(process.cwd(), '..', '..');

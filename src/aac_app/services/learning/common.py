@@ -60,7 +60,10 @@ def _strip_reasoning(text: str) -> str:
             cleaned = cleaned[idx + len(marker) :].strip()
             break
 
-    return cleaned.strip() or text
+    # Never fall back to the raw text: when the model returned reasoning only,
+    # the stripped result is empty and republishing ``text`` would show the
+    # student the think blocks this function exists to remove.
+    return cleaned.strip()
 
 
 class AACPromptProfile:

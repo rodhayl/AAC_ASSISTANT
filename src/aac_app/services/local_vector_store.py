@@ -39,6 +39,9 @@ METADATA_TABLE = "symbol_embedding_metadata"
 STATE_TABLE = "symbol_embedding_state"
 DEFAULT_DISTANCE_THRESHOLD = 1.15
 
+# Bound on the per-statement orphan-delete parameter list (F4).
+_ORPHAN_DELETE_BATCH = 500
+
 
 FASTEMBED_AVAILABLE = module_available("fastembed")
 SQLITE_VEC_AVAILABLE = module_available("sqlite_vec")
@@ -296,20 +299,23 @@ class LocalVectorStore:
                     )
                 ).first()
                 if symbols_table:
-                    symbol_ids = {
-                        int(row[0]) for row in connection.execute(text("SELECT id FROM symbols"))
-                    }
-                    vector_ids = {
-                        int(row[0])
-                        for row in connection.execute(text(f"SELECT rowid FROM {VECTOR_TABLE}"))
-                    }
-                    metadata_ids = {
-                        int(row[0])
-                        for row in connection.execute(
-                            text(f"SELECT symbol_id FROM {METADATA_TABLE}")
+                    # Compare the three id sets inside SQLite instead of
+                    # materializing them in Python: a readiness check must not
+                    # allocate three whole-table sets on every call.
+                    mismatch = connection.execute(
+                        text(
+                            "SELECT 1 FROM symbols "
+                            f"WHERE id NOT IN (SELECT rowid FROM {VECTOR_TABLE}) "
+                            f"UNION ALL SELECT 1 FROM {VECTOR_TABLE} "
+                            "WHERE rowid NOT IN (SELECT id FROM symbols) "
+                            f"UNION ALL SELECT 1 FROM {METADATA_TABLE} "
+                            "WHERE symbol_id NOT IN (SELECT id FROM symbols) "
+                            f"UNION ALL SELECT 1 FROM {VECTOR_TABLE} "
+                            f"WHERE rowid NOT IN (SELECT symbol_id FROM {METADATA_TABLE}) "
+                            "LIMIT 1"
                         )
-                    }
-                    return symbol_ids == vector_ids == metadata_ids
+                    ).first()
+                    return mismatch is None
                 return True
         except Exception as exc:
             logger.warning("Could not read vector-store metadata: {}", exc)
@@ -320,7 +326,14 @@ class LocalVectorStore:
         if not expected_texts:
             return set()
         if not self._ensure_schema():
-            return set(expected_texts)
+            # The schema (or its metadata) is unavailable: report "nothing to
+            # repair" instead of the entire input. Returning every id made a
+            # broken sqlite-vec look like a fully stale catalog and triggered a
+            # full re-embed on a store that cannot accept writes anyway.
+            logger.warning(
+                "Vector store unavailable; skipping stale-symbol detection"
+            )
+            return set()
         try:
             with self._get_engine().connect() as connection:
                 vector_ids = {
@@ -342,8 +355,12 @@ class LocalVectorStore:
                 if symbol_id not in vector_ids or metadata.get(symbol_id) != expected_text
             }
         except Exception as exc:
+            # B10: an inspection failure must not fail open into "everything is
+            # stale" — that amplified a transient error into a full-catalog
+            # re-embed attempt. Report "nothing to repair" (log + retry later),
+            # matching the unavailable-schema branch above.
             logger.warning("Could not inspect stale symbol embeddings: {}", exc)
-            return set(expected_texts)
+            return set()
 
     def remove_orphaned_symbols(self, symbol_ids: set[int]) -> None:
         """Remove vector rows that no longer have a symbol record."""
@@ -352,27 +369,41 @@ class LocalVectorStore:
         try:
             with self._get_engine().begin() as connection:
                 if symbol_ids:
-                    placeholders = ", ".join(
-                        f":symbol_{index}" for index in range(len(symbol_ids))
-                    )
-                    parameters = {
-                        f"symbol_{index}": symbol_id
-                        for index, symbol_id in enumerate(sorted(symbol_ids))
-                    }
-                    connection.execute(
-                        text(
-                            f"DELETE FROM {VECTOR_TABLE} "
-                            f"WHERE rowid NOT IN ({placeholders})"
-                        ),
-                        parameters,
-                    )
-                    connection.execute(
-                        text(
-                            f"DELETE FROM {METADATA_TABLE} "
-                            f"WHERE symbol_id NOT IN ({placeholders})"
-                        ),
-                        parameters,
-                    )
+                    # Compute the orphan set in Python and delete it in bounded
+                    # chunks. A single NOT IN carried one bind parameter per
+                    # catalog row (~17k for the ARASAAC-seeded catalog), which
+                    # is both slow and near SQLite's variable limit (F4).
+                    keep = set(symbol_ids)
+                    orphaned = [
+                        int(row[0])
+                        for row in connection.execute(
+                            text(f"SELECT rowid FROM {VECTOR_TABLE}")
+                        )
+                        if int(row[0]) not in keep
+                    ]
+                    for start in range(0, len(orphaned), _ORPHAN_DELETE_BATCH):
+                        chunk = orphaned[start : start + _ORPHAN_DELETE_BATCH]
+                        placeholders = ", ".join(
+                            f":orphan_{index}" for index in range(len(chunk))
+                        )
+                        parameters = {
+                            f"orphan_{index}": symbol_id
+                            for index, symbol_id in enumerate(chunk)
+                        }
+                        connection.execute(
+                            text(
+                                f"DELETE FROM {VECTOR_TABLE} "
+                                f"WHERE rowid IN ({placeholders})"
+                            ),
+                            parameters,
+                        )
+                        connection.execute(
+                            text(
+                                f"DELETE FROM {METADATA_TABLE} "
+                                f"WHERE symbol_id IN ({placeholders})"
+                            ),
+                            parameters,
+                        )
                 else:
                     connection.execute(text(f"DELETE FROM {VECTOR_TABLE}"))
                     connection.execute(text(f"DELETE FROM {METADATA_TABLE}"))

@@ -30,6 +30,7 @@ import time
 import unicodedata
 from contextlib import suppress
 from dataclasses import dataclass, field
+from datetime import UTC
 from typing import Any
 
 from loguru import logger
@@ -309,30 +310,25 @@ def resolve_policy_for_user(user_id: int | None, db=None) -> ContentPolicy:
         from src.aac_app.db import get_session
         from src.aac_app.models import GuardianProfile
 
+        # Snapshot the plain values while the owning session is live. Reading
+        # ORM attributes after ``get_session()`` has committed and closed (the
+        # ``db is None`` callers, e.g. the collaboration socket path) touches a
+        # detached, expired instance, raises DetachedInstanceError, and used to
+        # silently discard the student's guardian overrides in favor of the
+        # global policy.
         if db is None:
             with get_session() as session:
-                profile = (
-                    session.query(GuardianProfile)
-                    .filter(
-                        GuardianProfile.user_id == user_id,
-                        GuardianProfile.is_active.is_(True),
-                    )
-                    .first()
-                )
+                profile = _active_guardian_profile(session, GuardianProfile, user_id)
+                safety = _plain_constraints(profile)
+                age = profile.age if profile is not None else None
         else:
-            profile = (
-                db.query(GuardianProfile)
-                .filter(
-                    GuardianProfile.user_id == user_id,
-                    GuardianProfile.is_active.is_(True),
-                )
-                .first()
-            )
-        if profile is None or not profile.safety_constraints:
+            profile = _active_guardian_profile(db, GuardianProfile, user_id)
+            safety = _plain_constraints(profile)
+            age = profile.age if profile is not None else None
+        if safety is None:
             # Age-based default when the teacher has not set a level: younger
             # students get a stricter floor than the admin global default.
-            return _age_level_policy(profile, global_policy)
-        safety = profile.safety_constraints or {}
+            return _age_level_policy(age, global_policy)
     except Exception as exc:
         logger.warning("Could not resolve per-student content policy: {}", exc)
         return global_policy
@@ -340,8 +336,8 @@ def resolve_policy_for_user(user_id: int | None, db=None) -> ContentPolicy:
     explicit_level = safety.get("content_filter_level")
     if explicit_level in VALID_LEVELS:
         level = explicit_level
-    elif profile is not None and profile.age is not None:
-        level = default_level_for_age(profile.age)
+    elif age is not None:
+        level = default_level_for_age(age)
     else:
         level = global_policy.level
 
@@ -376,13 +372,33 @@ def resolve_policy_for_user(user_id: int | None, db=None) -> ContentPolicy:
     )
 
 
-def _age_level_policy(profile, global_policy: ContentPolicy) -> ContentPolicy:
-    """Policy for a profile without teacher-set constraints: the admin global
+def _active_guardian_profile(session: Session, model, user_id: int):
+    """Fetch the student's active guardian profile on the given session."""
+    return (
+        session.query(model)
+        .filter(
+            model.user_id == user_id,
+            model.is_active.is_(True),
+        )
+        .first()
+    )
+
+
+def _plain_constraints(profile) -> dict | None:
+    """Snapshot ``safety_constraints`` as a plain dict so it stays readable
+    after the owning session is closed."""
+    if profile is None or not profile.safety_constraints:
+        return None
+    return dict(profile.safety_constraints)
+
+
+def _age_level_policy(age: int | None, global_policy: ContentPolicy) -> ContentPolicy:
+    """Policy for a student without teacher-set constraints: the admin global
     policy, with the level raised to the student's age-based default when the
     admin level is looser (age floor, never a looser override)."""
     level = global_policy.level
-    if profile is not None and profile.age is not None:
-        age_level = default_level_for_age(profile.age)
+    if age is not None:
+        age_level = default_level_for_age(age)
         # A student's age floor only ever tightens, never loosens.
         if LEVELS.index(age_level) < LEVELS.index(level):
             level = age_level
@@ -490,7 +506,7 @@ def _prune_events(session: Session, max_events: int = MAX_EVENTS) -> None:
     to_delete = count - max_events
     prunable = ~(
         (ContentSafetyEvent.surface == "sentinel")
-        & (ContentSafetyEvent.created_at >= _today_start())
+        & (ContentSafetyEvent.created_at >= utc_day_start())
     )
     oldest_ids = [
         r[0]
@@ -611,11 +627,20 @@ def _sentinel_pacing_seconds() -> float:
         return 1.5
 
 
-def _today_start():
-    """Local midnight: the shared boundary for the sentinel cost meter."""
+def utc_day_start():
+    """UTC midnight: the shared boundary for the sentinel cost meter.
+
+    ``ContentSafetyEvent.created_at`` defaults to ``func.now()`` (the database
+    clock — UTC on SQLite), so a server-local midnight drifted the meter by the
+    UTC offset near midnight: the cap could under/over-count and the admin
+    clear could prune same-day sentinel rows. Naive UTC keeps the comparison
+    identical on SQLite (naive ISO strings) and on a UTC-session Postgres.
+    """
     from datetime import datetime
 
-    return datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    return datetime.now(UTC).replace(
+        tzinfo=None, hour=0, minute=0, second=0, microsecond=0
+    )
 
 
 def _count_sentinel_today(db=None) -> int:
@@ -625,7 +650,7 @@ def _count_sentinel_today(db=None) -> int:
     from src.aac_app.db import get_session
     from src.aac_app.models import ContentSafetyEvent
 
-    start = _today_start()
+    start = utc_day_start()
     try:
         if db is not None:
             total = (

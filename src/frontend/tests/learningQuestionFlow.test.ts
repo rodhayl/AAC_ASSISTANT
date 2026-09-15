@@ -794,11 +794,15 @@ describe('learningStore resilience and history reconstruction', () => {
     expect(state.isLoading).toBe(false);
   });
 
-  it('submitAnswer rejection sets an error when the request is current', async () => {
+  it('submitAnswer rejection sets an error and rethrows when the request is current', async () => {
     useLearningStore.setState({ currentSession: { session_id: 7, success: true } });
     post.mockRejectedValue({ response: { data: { message: 'server down' } } });
 
-    await useLearningStore.getState().submitAnswer(7, 'Cat');
+    // B5: the store surfaces the error AND rethrows (submitSymbolAnswer
+    // contract) so senders can preserve the composed answer for retry.
+    await expect(useLearningStore.getState().submitAnswer(7, 'Cat')).rejects.toMatchObject({
+      response: { data: { message: 'server down' } },
+    });
 
     const state = useLearningStore.getState();
     expect(state.error).toBe('server down');
@@ -852,8 +856,9 @@ describe('learningStore resilience and history reconstruction', () => {
       undefined,
       expect.anything(),
     );
-    // The history walk requests the first page with the maximum page size.
-    expect(get).toHaveBeenCalledWith('/learning/history/42', { params: { limit: 1000 } });
+    // The history walk requests the first page at the server-side route cap
+    // (le=200) and walks further pages from there.
+    expect(get).toHaveBeenCalledWith('/learning/history/42', { params: { limit: 200 } });
   });
 
   it('fetchSessionHistory failure clears the loading flag', async () => {

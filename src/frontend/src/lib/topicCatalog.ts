@@ -73,7 +73,12 @@ function symbolMatchesTerm(symbol: LearningSymbolItem, term: string): boolean {
   const needle = normalizeTopic(term);
   if (!needle) return false;
   const haystack = normalizeTopic(`${symbol.label} ${symbol.keywords ?? ''} ${symbol.category ?? ''}`);
-  return haystack.includes(needle);
+  // Whole-token match, not a substring: the Spanish term "ir" (go) matched
+  // "mirar", so topic cards picked the wrong pictograms (H63). Padding the
+  // separator-normalized text on both sides gives the same boundary semantics
+  // for single- and multi-word terms.
+  const padded = ` ${haystack.replace(/[^a-z0-9]+/g, ' ').trim()} `;
+  return padded.includes(` ${needle.replace(/\s+/g, ' ')} `);
 }
 
 /**

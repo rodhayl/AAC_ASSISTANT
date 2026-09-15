@@ -71,3 +71,40 @@ describe('useBoardEditorSymbols context isolation', () => {
     expect(result.current.localSymbols[0]).toMatchObject({ position_x: 1, position_y: 1 });
   });
 });
+
+describe('useBoardEditorSymbols remote collaborator moves (A17)', () => {
+  it('shows a remote position without claiming the change as local dirt', () => {
+    const board = makeBoard(1, makeSymbol(1, 'Apple'));
+    const { result } = renderHook(() =>
+      useBoardEditorSymbols({ currentBoard: board, userId: 1 }),
+    );
+
+    act(() => {
+      result.current.handleRemoteMove(1, { x: 1, y: 1 });
+    });
+
+    // Position is visible...
+    expect(result.current.localSymbols[0]).toMatchObject({ position_x: 1, position_y: 1 });
+    expect(result.current.remoteMovedIds).toEqual([1]);
+    // ...but a remote-only change must not enable Save on its own.
+    expect(result.current.hasChanges).toBe(false);
+  });
+
+  it('persists both the remote and the local placement after a local edit', () => {
+    const board = makeBoard(1, makeSymbol(1, 'Apple'));
+    const { result } = renderHook(() =>
+      useBoardEditorSymbols({ currentBoard: board, userId: 1 }),
+    );
+
+    act(() => {
+      result.current.handleRemoteMove(1, { x: 1, y: 0 });
+    });
+    act(() => {
+      result.current.handleDragEnd(1, { x: 1, y: 1 }, vi.fn());
+    });
+
+    // The positions Save serializes carry both changes.
+    expect(result.current.hasChanges).toBe(true);
+    expect(result.current.localSymbols[0]).toMatchObject({ position_x: 1, position_y: 1 });
+  });
+});

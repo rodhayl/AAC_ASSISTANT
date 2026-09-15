@@ -49,6 +49,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from typing import IO
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 STARTUP_TIMEOUT_SECONDS = 120.0
@@ -148,6 +149,7 @@ def main(argv: list[str] | None = None) -> int:
     base_url = f"http://127.0.0.1:{port}"
     log_path = Path(smoke_dir) / "server.log"
     server: subprocess.Popen | None = None
+    log_file: IO[str] | None = None
     try:
         # Bootstrap the throwaway database (schema + admin user) exactly like
         # scripts/start_server.py does before launching uvicorn.
@@ -285,8 +287,10 @@ def main(argv: list[str] | None = None) -> int:
             except subprocess.TimeoutExpired:
                 server.kill()
                 server.wait(timeout=10)
-        if server is not None:
-            log_file = None
+        # Close the log handle before deleting the temp dir: on Windows an
+        # open handle makes rmtree fail silently and leaks the descriptor.
+        if log_file is not None:
+            log_file.close()
         if args.keep_tempdir:
             print(f"tempdir kept for debugging: {smoke_dir}")
         else:

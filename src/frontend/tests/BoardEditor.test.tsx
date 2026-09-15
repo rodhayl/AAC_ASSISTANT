@@ -403,6 +403,22 @@ describe('BoardEditor page', () => {
     });
   });
 
+  it('resyncs the grid after a partial clear failure (G4)', async () => {
+    // First delete succeeds, second rejects: the board is now half-cleared
+    // server-side and the grid must not keep showing the deleted placements.
+    hoisted.board.deleteBoardSymbol
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('clear fail'));
+    renderEditor();
+    fireEvent.click(screen.getByRole('button', { name: 'clear-board' }));
+    fireEvent.click(screen.getByRole('button', { name: 'confirm-clear' }));
+
+    await waitFor(() => {
+      expect(hoisted.toast.addToast).toHaveBeenCalledWith('failedToClearBoard', 'error');
+      expect(hoisted.board.fetchBoard).toHaveBeenCalled();
+    });
+  });
+
   it('saves board settings with the resolved AI provider', async () => {
     renderEditor();
     fireEvent.click(screen.getByRole('button', { name: 'open-settings' }));

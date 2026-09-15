@@ -1,7 +1,7 @@
 import contextlib
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from loguru import logger
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -13,7 +13,14 @@ from src.aac_app.services.runtime_translation import normalize_language_code
 from src.aac_app.services.symbol_catalog import find_symbol_by_normalized_label
 from src.aac_app.services.vector_utils import index_symbol
 from src.api import schemas
-from src.api.deps import get_current_active_user, get_db, get_text
+from src.api.deps import (
+    get_current_active_user,
+    get_current_staff_user,
+    get_db,
+    get_text,
+)
+from src.api.file_uploads import validate_image_bytes
+from src.api.routers.auth_helpers import conditional_limiter
 
 router = APIRouter()
 
@@ -35,7 +42,11 @@ class ImportArasaacRequest(BaseModel):
 
 
 @router.get("/search", response_model=list[ArasaacSymbol])
+# Every call is an upstream egress to a third-party API; cap the rate (a
+# repeated query is answered from the service's short-lived cache instead).
+@conditional_limiter("30/minute")
 async def search_arasaac(
+    request: Request,
     # The query is interpolated into the upstream ARASAAC URL and its own
     # search; bound like the other search params (200, same as
     # list_saved_topics) so a giant string cannot build a pathological
@@ -89,10 +100,15 @@ async def search_arasaac(
 
 
 @router.post("/import", response_model=schemas.SymbolResponse)
+@conditional_limiter("20/minute")
 async def import_arasaac_symbol(
+    request: Request,
     payload: ImportArasaacRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    # Creating a shared ``Symbol`` row, writing a PNG into UPLOADS_DIR/symbols
+    # and indexing it grows the global catalog; that is a staff action, like
+    # every other symbol create/upload endpoint in symbols.py (E1).
+    current_user: User = Depends(get_current_staff_user),
 ):
     """
     Import a symbol from ARASAAC into the local library.
@@ -156,6 +172,19 @@ async def import_arasaac_symbol(
                 status_code=404,
                 detail=get_text(user=current_user, key="errors.arasaac.downloadFailed"),
             )
+
+        # The upstream bytes are written into /uploads and served from there,
+        # so they pass the same size + decode + format allowlist as a direct
+        # file upload (H6): an oversized body, a decompression bomb, or an
+        # HTML error page renamed to .png never lands in the catalog.
+        download_failed = get_text(
+            user=current_user, key="errors.arasaac.downloadFailed"
+        )
+        validate_image_bytes(
+            image_content,
+            invalid_type_detail=download_failed,
+            too_large_detail=download_failed,
+        )
 
         # Save image locally
         uploads_dir = config.UPLOADS_DIR / "symbols"

@@ -1,15 +1,23 @@
 import { test, expect } from '@playwright/test';
 
+import { ensureDemoBoard } from './demo-fixture';
+
 // Real-backend verification of the core AAC flow (no page.route mocks).
-// A student opens the seeded "Comunicación General" board (auto-assigned by
-// the sample seed) and drives the full sentence-building lifecycle, so symbol
-// selection -> sentence construction -> reordering/backspace/clear/speak are
-// exercised end-to-end against the production API.
+// A student opens the "Comunicación General" board (built by the demo fixture
+// and assigned to student1) and drives the full sentence-building lifecycle, so
+// symbol selection -> sentence construction -> reordering/backspace/clear/speak
+// are exercised end-to-end against the production API.
 //
 // The app localizes symbol labels to the student's UI language (e.g. Spanish),
 // so tests read the rendered labels instead of hardcoding English.
 test.describe('Communication', () => {
   test.use({ storageState: 'playwright/.auth/student.json' });
+
+  // Build/assign the demo board through the API instead of requiring seeded
+  // sample data (idempotent, so a seeded database is reused as-is).
+  test.beforeEach(async ({ page }) => {
+    await ensureDemoBoard(page.request);
+  });
 
   const symbolLabel = (label: string) => `Add ${label} to sentence`;
 

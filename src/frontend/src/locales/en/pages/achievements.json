@@ -75,6 +75,7 @@
     "updateFailed": "Failed to update achievement",
     "deleteFailed": "Failed to delete achievement",
     "awardFailed": "Failed to award achievement",
+    "selectStudentFirst": "Select a student first.",
     "managementLoadFailed": "Some management data could not be loaded. Please try again."
   }
 }

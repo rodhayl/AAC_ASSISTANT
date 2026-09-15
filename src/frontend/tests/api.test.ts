@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AxiosHeaders } from 'axios';
 import api, { apiOffline, extractError, isAuthFlowEndpoint } from '../src/lib/api';
 import type { User } from '../src/types';
 import { useAuthStore } from '../src/store/authStore';
@@ -211,7 +212,9 @@ describe('auth response handling', () => {
     });
 
     // The expired bearer header must be stripped so the request interceptor
-    // can attach the freshly refreshed token.
+    // can attach the freshly refreshed token. On the pinned axios the old
+    // `delete headers.Authorization` already achieved this, so this is a
+    // guard on the contract rather than a discriminator for A2.
     expect(retriedAuthorization).toBeUndefined();
     expect(refreshAccessToken).toHaveBeenCalledOnce();
     expect(adapter).toHaveBeenCalledTimes(2);
@@ -726,5 +729,102 @@ describe('auth response handling', () => {
       setItemFailure.mockRestore();
       removeItemFailure.mockRestore();
     }
+  });
+
+  it('attaches the refreshed token when the retried headers are AxiosHeaders (A2)', async () => {
+    const logout = vi.fn();
+    // A JWT whose only claim is an expiry in the past, so the interceptor's
+    // local check allows the refresh-and-retry path.
+    const expiredJwt = `x.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 60 }))}.y`;
+    let currentToken = expiredJwt;
+    const refreshAccessToken = vi.fn().mockImplementation(async () => {
+      currentToken = 'fresh-token';
+      return true;
+    });
+    const state = useAuthStore.getState();
+    const mockState = { ...state, logout, refreshAccessToken };
+    Object.defineProperty(mockState, 'token', { get: () => currentToken });
+    vi.spyOn(useAuthStore, 'getState').mockReturnValue(mockState);
+
+    let calls = 0;
+    let retriedAuthorization: unknown;
+    const adapter = vi.fn().mockImplementation((config) => {
+      calls += 1;
+      if (calls === 1) {
+        return Promise.reject({ config, response: { status: 401 } });
+      }
+      retriedAuthorization =
+        config.headers?.Authorization ?? config.headers?.authorization;
+      return Promise.resolve({
+        data: {},
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    });
+
+    await api.request({
+      url: '/boards/1',
+      method: 'get',
+      headers: new AxiosHeaders({ Authorization: 'Bearer expired-token' }),
+      adapter,
+    });
+
+    // A2 hardening contract: the retried request carries the refreshed token
+    // even though the failed request's headers are an AxiosHeaders instance.
+    // (Guard, not a discriminator: pre-fix code also stripped the header on
+    // the pinned axios — see the A2 note in src/lib/api.ts.)
+    expect(retriedAuthorization).toBe('Bearer fresh-token');
+    expect(adapter).toHaveBeenCalledTimes(2);
+  });
+
+  // A3 guard: the corruption window needs the stale replay's promise to settle
+  // before the generation bump. clearSessionMutations aborts the in-flight
+  // request first, so axios rejects with ERR_CANCELED and the success branch is
+  // unreachable through the public API; this pins the invariant for adapters
+  // that ignore AbortSignal.
+  it('does not shift the next session queue when a replay settles after logout (A3)', async () => {
+    authenticateOfflineTestUser();
+    let resolveReplay: (value: unknown) => void = () => {};
+    const adapter = vi.fn().mockImplementation(
+      () => new Promise((resolve) => { resolveReplay = resolve; }),
+    );
+
+    window.dispatchEvent(new Event('offline'));
+    await expect(
+      api.request({
+        url: '/boards/1',
+        method: 'post',
+        data: { name: 'Old session' },
+        adapter,
+      }),
+    ).rejects.toMatchObject({ code: 'ERR_OFFLINE' });
+
+    window.dispatchEvent(new Event('online'));
+    await vi.waitFor(() => expect(adapter).toHaveBeenCalledOnce());
+
+    // The session ends mid-replay, then the next session queues its own
+    // mutation before the stale replay settles.
+    window.dispatchEvent(new Event('aac:auth-context-changed'));
+    useAuthStore.setState({
+      user: { ...testUser, id: 2, username: 'other-user' },
+      token: 'other-token',
+    });
+    window.dispatchEvent(new Event('offline'));
+    await expect(
+      api.request({
+        url: '/boards/2',
+        method: 'post',
+        data: { name: 'New session' },
+        adapter,
+      }),
+    ).rejects.toMatchObject({ code: 'ERR_OFFLINE' });
+    expect(readOfflineQueue().map((item) => item.config.url)).toEqual(['/boards/2']);
+
+    // The stale replay now succeeds; it must not shift the new session's item.
+    resolveReplay({ data: {}, status: 200, statusText: 'OK', headers: {}, config: {} });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(readOfflineQueue().map((item) => item.config.url)).toEqual(['/boards/2']);
   });
 });

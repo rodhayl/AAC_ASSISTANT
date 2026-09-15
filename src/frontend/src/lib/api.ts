@@ -1,4 +1,4 @@
-import axios, { AxiosHeaders } from 'axios';
+import axios, { AxiosHeaders, type RawAxiosHeaders } from 'axios';
 import type { AxiosRequestConfig } from 'axios';
 import { getAuthState } from './authState';
 import {
@@ -237,6 +237,14 @@ async function flushQueue() {
         signal: controller.signal,
         [OFFLINE_REPLAY]: true,
       } as OfflineReplayConfig);
+      // Guard the success publish exactly like the error branch below. A3:
+      // if a logout / auth-context change bumps the generation between this
+      // request settling and this line running, an unconditional shift would
+      // remove whatever is now at queue[0] — i.e. the new session's item.
+      // (In practice clearSessionMutations also aborts the in-flight request,
+      // so axios rejects it first; this keeps the invariant true for any
+      // adapter that ignores AbortSignal.)
+      if (generation !== replayGeneration) return;
       queue.shift();
       persistQueue();
     } catch (error) {
@@ -444,8 +452,25 @@ api.interceptors.response.use(
               [RETRIED_AFTER_REFRESH]: true,
             };
             if (retryConfig.headers) {
-              delete retryConfig.headers.Authorization;
-              delete retryConfig.headers.authorization;
+              // Strip the expired header through the AxiosHeaders API and set
+              // the refreshed token explicitly, instead of relying on the
+              // request interceptor to notice the header is gone. (A2's
+              // original premise — that `delete obj.Prop` cannot clear an
+              // AxiosHeaders store — is disproved on the pinned axios:
+              // `Authorization` is an own configurable property there. This
+              // form is version-independent and makes the retry explicit.)
+              // The cast only satisfies axios' overload: the request
+              // interceptor has already normalized headers to AxiosHeaders.
+              const retryHeaders = AxiosHeaders.from(
+                (retryConfig.headers ?? {}) as unknown as RawAxiosHeaders,
+              );
+              retryHeaders.delete('Authorization');
+              retryHeaders.delete('authorization');
+              const freshToken = getAuthState().token;
+              if (freshToken) {
+                retryHeaders.set('Authorization', `Bearer ${freshToken}`);
+              }
+              retryConfig.headers = retryHeaders;
             }
             return api.request(retryConfig);
           }
@@ -470,4 +495,10 @@ export default api;
 export const apiOffline = {
   isOffline: () => offline,
   resumeQueue: resumeOfflineQueue,
+  // Re-send one conflicted request through the replay path (A6). The replay
+  // marker keeps an expired-token 401 as a visible conflict instead of
+  // triggering the global logout redirect, and it keeps the mutation out of
+  // the offline queue when the connection drops again mid-retry.
+  retryConflict: (config: AxiosRequestConfig) =>
+    api.request({ ...config, [OFFLINE_REPLAY]: true } as OfflineReplayConfig),
 };

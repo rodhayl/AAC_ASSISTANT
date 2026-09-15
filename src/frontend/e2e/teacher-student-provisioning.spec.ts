@@ -14,10 +14,13 @@ test.describe('Teacher student provisioning', () => {
     await expect(dialog).toBeVisible();
     await expect(dialog.getByLabel(/username/i)).toBeVisible();
     await expect(dialog.getByLabel(/display name/i)).toBeVisible();
-    const inputs = dialog.locator('input');
-    await inputs.nth(0).fill(username);
-    await inputs.nth(1).fill('E2E Teacher Student');
-    await inputs.nth(3).fill('TeacherCreated123');
+    // Target the fields by id: index-based fills silently pointed at the wrong
+    // input once the form gained its confirm-password field, and the client
+    // validation then blocked the request entirely.
+    await dialog.locator('#create-student-username').fill(username);
+    await dialog.locator('#create-student-display-name').fill('E2E Teacher Student');
+    await dialog.locator('#create-student-password').fill('TeacherCreated123');
+    await dialog.locator('#create-student-confirm-password').fill('TeacherCreated123');
     const createResponsePromise = page.waitForResponse(
       (response) =>
         response.url().includes('/api/users/students') &&

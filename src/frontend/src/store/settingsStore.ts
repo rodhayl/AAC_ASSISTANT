@@ -3,6 +3,8 @@ import api, { extractError } from '../lib/api';
 import i18n from '../i18n/index';
 
 export type AiProviderId = 'ollama' | 'openrouter' | 'lmstudio' | 'groq';
+/** The four endpoints that expose a model list. */
+export type ModelEndpointId = AiProviderId;
 
 export interface AISettings {
   provider: AiProviderId;
@@ -42,14 +44,33 @@ function tSettings(key: string): string {
   return i18n.isInitialized ? i18n.t(key) : key;
 }
 
+const MODEL_ENDPOINTS: ModelEndpointId[] = ['ollama', 'openrouter', 'lmstudio', 'groq'];
+
+function emptyPerEndpoint<T>(value: T): Record<ModelEndpointId, T> {
+  return {
+    ollama: value,
+    openrouter: value,
+    lmstudio: value,
+    groq: value,
+  };
+}
+
 interface SettingsState {
   aiSettings: AISettings | null;
   ollamaModels: OllamaModel[];
   openRouterModels: OpenRouterModel[];
   lmStudioModels: OpenRouterModel[];
   groqModels: OpenRouterModel[];
+  /** Loading state for the AI *settings* resource only (GET/PUT /settings/ai). */
   loading: boolean;
   error: string | null;
+  /**
+   * Per-endpoint model-list state (A18). A single shared sequence/spinner let
+   * one provider's fetch invalidate another's (the losing list stayed `[]`) and
+   * made a model fetch block the settings spinner.
+   */
+  modelLoading: Record<ModelEndpointId, boolean>;
+  modelError: Record<ModelEndpointId, string | null>;
 
   // Actions
   fetchAISettings: () => Promise<void>;
@@ -60,41 +81,69 @@ interface SettingsState {
   fetchGroqModels: (apiKey?: string) => Promise<void>;
 }
 
-let modelRequestSequence = 0;
+// One sequence per endpoint: a newer request only invalidates requests to the
+// *same* endpoint.
+let modelRequestSequences: Record<ModelEndpointId, number> = emptyPerEndpoint(0);
 let settingsRequestSequence = 0;
 let updateRequestSequence = 0;
+// Serializes overlapping autosaves so two rapid edits cannot land out of order
+// (A18). Each update waits for the previous one to settle.
+let updateChain: Promise<unknown> = Promise.resolve();
 
-export const useSettingsStore = create<SettingsState>((set, get) => {
-
+export const useSettingsStore = create<SettingsState>((set) => {
   // The four model-fetch actions share one load-and-store shape; only the
-  // endpoint, element type, and failure message differ. A newer request wins
-  // so an older response cannot replace a list fetched with newer credentials
-  // or clear its loading/error state while it is still in flight. The list is
-  // typed per endpoint and guarded at runtime: a missing/non-array ``models``
-  // payload becomes an empty list (never ``undefined``), so consumers calling
-  // ``.find``/``.length`` on the stored list cannot crash on a shape drift.
-  // Returns the fetched list (possibly empty) or null when the result is
-  // stale (a newer request owns the state) or the request failed (error
-  // already stored).
+  // endpoint, element type, and failure message differ. A newer request for the
+  // same endpoint wins. The list is typed per endpoint and guarded at runtime: a
+  // missing/non-array ``models`` payload becomes an empty list (never
+  // ``undefined``), so consumers calling ``.find``/``.length`` on the stored
+  // list cannot crash on a shape drift. The publish is skipped entirely when a
+  // newer request for the same endpoint already owns the state.
   const fetchModelList = async <T>(
+    id: ModelEndpointId,
     endpoint: string,
     failureMessage: string,
-    headers?: Record<string, string>
-  ): Promise<T[] | null> => {
-    const requestId = ++modelRequestSequence;
-    set({ loading: true, error: null });
+    publish: (models: T[]) => void,
+    headers?: Record<string, string>,
+  ): Promise<void> => {
+    const requestId = ++modelRequestSequences[id];
+    set((state) => ({
+      modelLoading: { ...state.modelLoading, [id]: true },
+      modelError: { ...state.modelError, [id]: null },
+    }));
     try {
       const response = headers
         ? await api.get<{ models?: T[] }>(endpoint, { headers })
         : await api.get<{ models?: T[] }>(endpoint);
-      if (requestId !== modelRequestSequence) return null;
+      if (requestId !== modelRequestSequences[id]) return;
       const models = response.data?.models;
-      return Array.isArray(models) ? models : [];
+      publish(Array.isArray(models) ? models : []);
+      set((state) => ({ modelLoading: { ...state.modelLoading, [id]: false } }));
     } catch (error: unknown) {
-      if (requestId !== modelRequestSequence) return null;
-      const message = extractError(error, failureMessage);
+      if (requestId !== modelRequestSequences[id]) return;
+      set((state) => ({
+        modelLoading: { ...state.modelLoading, [id]: false },
+        modelError: { ...state.modelError, [id]: extractError(error, failureMessage) },
+      }));
+    }
+  };
+
+  const doUpdateAISettings = async (settings: Partial<AISettings>) => {
+    const requestId = ++updateRequestSequence;
+    set({ loading: true, error: null });
+    try {
+      await api.put('/settings/ai', settings);
+      // Re-read the canonical values in this same operation and settle the
+      // spinner here: relying on the inner fetchAISettings to clear it left
+      // ``loading`` stuck whenever that fetch early-returned as stale (A18).
+      const fetchId = ++settingsRequestSequence;
+      const response = await api.get('/settings/ai');
+      if (fetchId !== settingsRequestSequence) return;
+      set({ aiSettings: response.data, loading: false, error: null });
+    } catch (error: unknown) {
+      if (requestId !== updateRequestSequence) return;
+      const message = extractError(error, tSettings('settings:ai.updateFailed'));
       set({ error: message, loading: false });
-      return null;
+      throw error;
     }
   };
 
@@ -106,6 +155,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
     groqModels: [],
     loading: false,
     error: null,
+    modelLoading: emptyPerEndpoint(false),
+    modelError: emptyPerEndpoint<string | null>(null),
 
     fetchAISettings: async () => {
       const requestId = ++settingsRequestSequence;
@@ -122,57 +173,55 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
     },
 
     updateAISettings: async (settings: Partial<AISettings>) => {
-      const requestId = ++updateRequestSequence;
-      set({ loading: true, error: null });
-      try {
-        await api.put('/settings/ai', settings);
-        await get().fetchAISettings();
-      } catch (error: unknown) {
-        if (requestId !== updateRequestSequence) return;
-        const message = extractError(error, tSettings('settings:ai.updateFailed'));
-        set({ error: message, loading: false });
-        throw error;
-      }
+      // Serialize autosaves: a 500 ms debounce plus an unguarded PUT let two
+      // rapid edits reach the server out of order (A18).
+      const run = updateChain.then(() => doUpdateAISettings(settings));
+      updateChain = run.catch(() => undefined);
+      return run;
     },
 
     fetchOllamaModels: async () => {
-      const models = await fetchModelList<OllamaModel>(
+      await fetchModelList<OllamaModel>(
+        'ollama',
         '/settings/ai/models/ollama',
         tSettings('settings:ai.fetchOllamaFailed'),
+        (models) => set({ ollamaModels: models }),
       );
-      if (models !== null) set({ ollamaModels: models, loading: false });
     },
 
     fetchOpenRouterModels: async (apiKey?: string) => {
       const headers = apiKey?.trim()
         ? { 'X-OpenRouter-API-Key': apiKey.trim() }
         : undefined;
-      const models = await fetchModelList<OpenRouterModel>(
+      await fetchModelList<OpenRouterModel>(
+        'openrouter',
         '/settings/ai/models/openrouter',
         tSettings('settings:ai.fetchOpenRouterFailed'),
+        (models) => set({ openRouterModels: models }),
         headers,
       );
-      if (models !== null) set({ openRouterModels: models, loading: false });
     },
 
     fetchLmStudioModels: async () => {
-      const models = await fetchModelList<OpenRouterModel>(
+      await fetchModelList<OpenRouterModel>(
+        'lmstudio',
         '/settings/ai/models/lmstudio',
         tSettings('settings:ai.fetchLmStudioFailed'),
+        (models) => set({ lmStudioModels: models }),
       );
-      if (models !== null) set({ lmStudioModels: models, loading: false });
     },
 
     fetchGroqModels: async (apiKey?: string) => {
       const headers = apiKey?.trim()
         ? { 'X-Groq-API-Key': apiKey.trim() }
         : undefined;
-      const models = await fetchModelList<OpenRouterModel>(
+      await fetchModelList<OpenRouterModel>(
+        'groq',
         '/settings/ai/models/groq',
         tSettings('settings:ai.fetchGroqFailed'),
+        (models) => set({ groqModels: models }),
         headers,
       );
-      if (models !== null) set({ groqModels: models, loading: false });
     },
   };
 });
@@ -181,7 +230,8 @@ if (typeof window !== 'undefined') {
   const resetForAuthContextChange = () => {
     settingsRequestSequence += 1;
     updateRequestSequence += 1;
-    modelRequestSequence += 1;
+    modelRequestSequences = emptyPerEndpoint(0);
+    updateChain = Promise.resolve();
     useSettingsStore.setState({
       aiSettings: null,
       ollamaModels: [],
@@ -190,8 +240,12 @@ if (typeof window !== 'undefined') {
       groqModels: [],
       loading: false,
       error: null,
+      modelLoading: emptyPerEndpoint(false),
+      modelError: emptyPerEndpoint<string | null>(null),
     });
   };
   window.addEventListener('aac:auth-logout', resetForAuthContextChange);
   window.addEventListener('aac:auth-context-changed', resetForAuthContextChange);
 }
+
+export { MODEL_ENDPOINTS };

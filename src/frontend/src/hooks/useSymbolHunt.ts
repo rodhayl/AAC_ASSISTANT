@@ -237,6 +237,9 @@ export function useSymbolHunt({ addToast }: UseSymbolHuntOptions) {
     if (nextState === 'selecting') {
       invalidateGeneration();
       clearTimers();
+      // Leaving the game for board-select must silence queued instructions
+      // immediately, not only when the page unmounts.
+      tts.cancelAll();
     }
     setGameState(nextState);
   }, [clearTimers, invalidateGeneration]);

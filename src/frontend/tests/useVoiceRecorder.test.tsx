@@ -231,6 +231,40 @@ describe('useVoiceRecorder lifecycle', () => {
     expect(result.current.hasRecording).toBe(false);
   });
 
+  it('B5: keeps the recording when the submit fails and never rejects the button chain', async () => {
+    const stream = makeStream();
+    const options = makeOptions();
+    options.submitVoiceAnswer.mockRejectedValue(new Error('server down'));
+    vi.stubGlobal('navigator', {
+      mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+    });
+    const { result } = renderHook(() => useVoiceRecorder(options));
+
+    await act(async () => {
+      await result.current.startRecording();
+    });
+    const recorder = FakeMediaRecorder.instances[0];
+    act(() => recorder.ondataavailable?.({ data: new Blob(['audio'], { type: 'audio/webm' }) }));
+    act(() => result.current.stopRecording());
+    act(() => recorder.finishStop());
+
+    // The hook swallows the store's rethrow: the recorder UI must stay
+    // rejection-free while the recording survives for retry.
+    await act(async () => {
+      await result.current.sendRecording();
+    });
+    expect(options.submitVoiceAnswer).toHaveBeenCalledTimes(1);
+    expect(result.current.hasRecording).toBe(true);
+
+    // A retry after recovery succeeds and clears the recording.
+    options.submitVoiceAnswer.mockResolvedValue(undefined);
+    await act(async () => {
+      await result.current.sendRecording();
+    });
+    expect(options.submitVoiceAnswer).toHaveBeenCalledTimes(2);
+    expect(result.current.hasRecording).toBe(false);
+  });
+
   it('releases the microphone and ignores a late stop after unmount', async () => {
     const stream = makeStream();
     vi.stubGlobal('navigator', {

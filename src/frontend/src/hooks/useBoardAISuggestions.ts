@@ -128,6 +128,10 @@ export function useBoardAISuggestions({
       generation === suggestionGeneration.current &&
       applyController.current === controller &&
       !controller.signal.aborted;
+    // Clear the previous failure banner when a new apply starts, matching the
+    // apply-all path; otherwise a stale error stays on screen after a retry
+    // that succeeded (H63).
+    setAiError(null);
     setApplyId(item.label);
     try {
       const api = (await import('../lib/api')).default;

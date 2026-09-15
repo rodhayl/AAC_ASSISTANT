@@ -16,6 +16,7 @@ Spanish voices included in the v1.0 voice pack: ``ef_dora`` (female),
 
 from __future__ import annotations
 
+import hashlib
 import io
 import os
 import tempfile
@@ -37,6 +38,22 @@ KOKORO_VOICES_URL = (
 )
 KOKORO_MODEL_FILENAME = "kokoro-v1.0.onnx"
 KOKORO_VOICES_FILENAME = "voices-v1.0.bin"
+
+# Integrity pins for the exact release assets above. The files are fetched from
+# a remote mirror before being passed to ONNX/numpy, so a size-only check is not
+# sufficient: a malicious replacement must fail before either loader sees it.
+# These values are for the immutable model-files-v1.0 release and are kept in
+# source so a fresh install does not trust a mutable local cache.
+_KOKORO_ASSET_INTEGRITY: dict[str, tuple[int, str]] = {
+    KOKORO_MODEL_FILENAME: (
+        325_532_387,
+        "7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5",
+    ),
+    KOKORO_VOICES_FILENAME: (
+        28_214_398,
+        "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d",
+    ),
+}
 
 # Pause phonemes prepended at speed > 1 so the model's initial-generation
 # corruption lands on silence instead of the first word. Only used on the
@@ -174,6 +191,47 @@ def _voice_info_from_name(name: str) -> dict | None:
     }
 
 
+def _file_matches_integrity(path: Path) -> bool:
+    """Return whether a downloaded Kokoro asset matches its release pin."""
+    try:
+        expected = _KOKORO_ASSET_INTEGRITY.get(path.name)
+        if expected is None:
+            return False
+        expected_size, expected_sha256 = expected
+        if not path.is_file() or path.stat().st_size != expected_size:
+            return False
+        digest = hashlib.sha256()
+        with path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest() == expected_sha256
+    except (AttributeError, OSError, TypeError) as exc:
+        logger.debug("Kokoro asset failed integrity check: {}", exc)
+        return False
+
+
+def _voices_file_valid(path: Path) -> bool:
+    """Return whether ``path`` is a readable, pickle-free voices archive.
+
+    The voices pack is a numpy ``.npz`` of float arrays.  Loading it with
+    ``allow_pickle=False`` means a tampered/mislabeled mirror cannot execute
+    code at catalog-read time, and a truncated download fails this check
+    instead of passing a size-only gate and breaking later at synthesis
+    (H48).  Upstream publishes no sha256 for these assets, so this structural
+    check plus the size floor is the strongest pin available.
+    """
+    try:
+        if not _file_matches_integrity(path):
+            return False
+        import numpy as np
+
+        with np.load(path, allow_pickle=False) as data:
+            return bool(data.files)
+    except Exception as exc:  # pragma: no cover - environment dependent
+        logger.debug("Kokoro voices archive failed validation: {}", exc)
+        return False
+
+
 def _pack_voice_names() -> list[str] | None:
     """Return the voice keys stored in the downloaded pack, or None."""
     try:
@@ -181,7 +239,7 @@ def _pack_voice_names() -> list[str] | None:
             return None
         import numpy as np
 
-        with np.load(kokoro_voices_path(), allow_pickle=True) as data:
+        with np.load(kokoro_voices_path(), allow_pickle=False) as data:
             return sorted(data.files)
     except Exception as exc:  # pragma: no cover - environment dependent
         logger.debug("Failed to load Kokoro voice catalog: {}", exc)
@@ -312,15 +370,15 @@ def kokoro_voices_path() -> Path:
 
 
 def model_files_present() -> bool:
-    """Return whether both model files exist and look valid (non-empty)."""
+    """Return whether both model files exist and are structurally valid.
+
+    The ONNX model is checked by size (parsing it needs onnxruntime, which is
+    the thing it is needed for); the voices archive is fully validated.
+    """
     try:
         model = kokoro_model_path()
-        voices = kokoro_voices_path()
-        return (
-            model.is_file()
-            and model.stat().st_size > 1_000_000
-            and voices.is_file()
-            and voices.stat().st_size > 1_000_000
+        return _file_matches_integrity(model) and _voices_file_valid(
+            kokoro_voices_path()
         )
     except OSError as exc:
         # Optional model caches may be on removable or restricted storage;
@@ -340,8 +398,15 @@ def download_kokoro_model() -> bool:
         (KOKORO_MODEL_URL, directory / KOKORO_MODEL_FILENAME),
         (KOKORO_VOICES_URL, directory / KOKORO_VOICES_FILENAME),
     )
+    def _is_usable(path: Path) -> bool:
+        if path.name == KOKORO_VOICES_FILENAME:
+            return _voices_file_valid(path)
+        return _file_matches_integrity(path)
+
     for url, dest in targets:
-        if dest.is_file() and dest.stat().st_size > 1_000_000:
+        # Re-validate a cached file instead of trusting its size: a truncated
+        # voices archive used to be accepted here and only fail at load.
+        if _is_usable(dest):
             logger.info("Kokoro model file already present: {}", dest.name)
             continue
         logger.info("Downloading Kokoro model file {} -> {}", url.split("/")[-1], dest)
@@ -358,12 +423,23 @@ def download_kokoro_model() -> bool:
                 delete=False,
             ) as out:
                 temporary_path = Path(out.name)
+                digest = hashlib.sha256()
+                expected_size = _KOKORO_ASSET_INTEGRITY[dest.name][0]
+                total = 0
                 with urllib.request.urlopen(url, timeout=600) as response:
                     while True:
                         chunk = response.read(1024 * 512)
                         if not chunk:
                             break
+                        total += len(chunk)
+                        if total > expected_size:
+                            raise ValueError(
+                                f"Downloaded {dest.name} exceeds its pinned size"
+                            )
+                        digest.update(chunk)
                         out.write(chunk)
+                if total != expected_size or digest.hexdigest() != _KOKORO_ASSET_INTEGRITY[dest.name][1]:
+                    raise ValueError(f"Downloaded {dest.name} failed its integrity check")
                 out.flush()
                 os.fsync(out.fileno())
             os.replace(temporary_path, dest)

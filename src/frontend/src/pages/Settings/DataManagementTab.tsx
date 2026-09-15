@@ -55,7 +55,11 @@ export function DataManagementTab() {
       // it as absent.
       const added = body.learning_history_added ?? body.learning_history;
       const hasNumericTotal = typeof total === 'number' && Number.isFinite(total);
-      if (body.truncated && hasNumericTotal) {
+      // Both counts must be numeric for the truncated template: an older
+      // payload can carry `total` without any "added" count (Q1 wired only the
+      // total), and interpolating that renders "of undefined" (A19).
+      const hasNumericAdded = typeof added === 'number' && Number.isFinite(added);
+      if (body.truncated && hasNumericTotal && hasNumericAdded) {
         addToast(t('data.importTruncated', { shown: added, total }), 'warning');
       } else {
         // Truncated without a usable total (or untruncated): plain success

@@ -24,11 +24,14 @@ def get_assigned_boards(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    # Students may view only their own assignments. Teachers are limited to
-    # their explicit roster.
-    if current_user.user_type == "teacher":
+    # Students may view only their own assignments. Staff are limited to the
+    # explicit roster rules in verify_student_access, which also tells a
+    # missing student (404) apart from a real-but-unassigned one (200 []) —
+    # the admin path previously skipped the lookup and returned [] for a
+    # nonexistent student_id (E6).
+    if current_user.user_type in STAFF_USER_TYPES:
         verify_student_access(student_id, current_user, db)
-    elif current_user.user_type != "admin" and current_user.id != student_id:
+    elif current_user.id != student_id:
         raise HTTPException(
             status_code=403,
             detail=get_text(

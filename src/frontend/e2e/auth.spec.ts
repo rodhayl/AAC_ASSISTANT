@@ -27,7 +27,11 @@ test.describe('Authentication', () => {
       await page.goto('/register');
       await page.getByLabel(/username|usuario/i).fill(username);
       await page.getByLabel(/display name|nombre/i).fill(displayName);
-      await page.getByLabel(/password|contraseña/i).fill(password);
+      // The registration form confirms the password (a single mistyped field
+      // used to create an unusable account), so both inputs must be filled and
+      // the bare /password|contraseña/ label matches two fields (strict mode).
+      await page.locator('#password').fill(password);
+      await page.locator('#confirmPassword').fill(password);
       await page.locator('button[type="submit"]').click();
 
       try {

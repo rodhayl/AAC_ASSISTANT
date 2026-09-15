@@ -11,6 +11,8 @@ import { FormLabel } from '@/components/ui/FormLabel';
 export function Register() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [localError, setLocalError] = useState<string | null>(null)
   const [displayName, setDisplayName] = useState('')
   const register = useAuthStore((state) => state.register)
   const isLoading = useAuthStore((state) => state.isLoading)
@@ -20,6 +22,18 @@ export function Register() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setLocalError(null)
+    // A typo in the single password field used to create an account nobody
+    // can log into (students have no self-service reset) — the students/users
+    // management forms already confirm and bound the length (H58).
+    if (password.length < 8) {
+      setLocalError(t('errors.passwordTooShort'))
+      return
+    }
+    if (password !== confirmPassword) {
+      setLocalError(t('errors.passwordMismatch'))
+      return
+    }
     try {
       await register({
         username,
@@ -41,8 +55,8 @@ export function Register() {
           <p className="text-muted-foreground">{t('subtitle')}</p>
         </div>
 
-        {error && (
-          <StatusMessage variant="error" className="mb-6">{error}</StatusMessage>
+        {(localError || error) && (
+          <StatusMessage variant="error" className="mb-6">{localError || error}</StatusMessage>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -79,6 +93,27 @@ export function Register() {
                 className="block w-full pl-10 pr-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
                 placeholder={t('placeholders.password')}
                 required
+                minLength={8}
+                autoComplete="new-password"
+              />
+            </div>
+          </div>
+
+          <div>
+            <FormLabel htmlFor="confirmPassword" className="mb-2">{t('confirmPassword')}</FormLabel>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Lock className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <input
+                id="confirmPassword"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="block w-full pl-10 pr-3 py-2 border border-border rounded-lg focus:ring-brand focus:border-brand bg-surface text-foreground"
+                placeholder={t('placeholders.confirmPassword')}
+                required
+                minLength={8}
                 autoComplete="new-password"
               />
             </div>

@@ -7,6 +7,8 @@ vi.mock('../src/lib/api', () => ({
   default: {
     post: vi.fn(),
   },
+  extractError: (error: unknown, fallback: string) =>
+    error instanceof Error ? error.message : fallback,
 }));
 
 // Hover-to-speak is covered independently; keep these rendering tests
@@ -234,6 +236,65 @@ describe('Smartbar', () => {
     expect(screen.queryByTestId('smartbar-generating-tile')).not.toBeInTheDocument();
     const image = screen.getByAltText('singulares');
     expect(image).toHaveAttribute('src', '/uploads/symbols/x.png');
+  });
+});
+
+describe('Smartbar generation batches and failures (G2)', () => {
+  const pendingWord = (label: string, id: number) => ({
+    symbol_id: id,
+    label,
+    category: null,
+    image_path: null,
+    confidence: 0.7,
+    source: 'ai',
+    is_text_only: true,
+    is_generating: true,
+  });
+
+  it('gives a later pictogram batch its own auto-refresh budget', async () => {
+    vi.useFakeTimers();
+    const postMock = vi.mocked(api.post);
+    postMock.mockResolvedValue({ data: [pendingWord('primera', -2)] });
+
+    const { rerender } = render(<Smartbar currentSentence={[]} onSelectSymbol={vi.fn()} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByTestId('smartbar-generating-tile')).toBeInTheDocument();
+
+    // Drain the first batch's poll budget (SMARTBAR_AUTOREFRESH_MAX = 12).
+    for (let i = 0; i < 13; i++) {
+      await act(async () => { vi.advanceTimersByTime(4000); });
+      await act(async () => { await Promise.resolve(); });
+    }
+    const exhaustedCalls = postMock.mock.calls.length;
+    await act(async () => { vi.advanceTimersByTime(12000); });
+    await act(async () => { await Promise.resolve(); });
+    expect(postMock.mock.calls.length).toBe(exhaustedCalls);
+
+    // A new sentence yields a new pending batch. It must auto-refresh again
+    // instead of inheriting the exhausted counter and sticking on a spinner.
+    postMock.mockResolvedValue({ data: [pendingWord('segunda', -3)] });
+    rerender(<Smartbar currentSentence={word('otra')} onSelectSymbol={vi.fn()} />);
+    await act(async () => { vi.advanceTimersByTime(300); });
+    await act(async () => { await Promise.resolve(); });
+    const afterNewBatch = postMock.mock.calls.length;
+    await act(async () => { vi.advanceTimersByTime(4000); });
+    await act(async () => { await Promise.resolve(); });
+    expect(postMock.mock.calls.length).toBeGreaterThan(afterNewBatch);
+  });
+
+  it('surfaces a prediction failure instead of an empty vocabulary', async () => {
+    vi.mocked(api.post).mockRejectedValue(new Error('prediction offline'));
+
+    render(<Smartbar currentSentence={[]} onSelectSymbol={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(screen.getByRole('alert')).toHaveTextContent('prediction offline');
+
+    // Retry must re-issue the request and recover the normal empty state.
+    vi.mocked(api.post).mockResolvedValue({ data: [] });
+    fireEvent.click(screen.getByRole('button', { name: 'retry' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(screen.getByText('noSuggestions')).toBeInTheDocument();
   });
 });
 

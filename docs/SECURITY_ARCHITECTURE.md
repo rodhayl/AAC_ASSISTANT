@@ -18,7 +18,12 @@ authorization, and data protection. It complements
   `AAC_REFRESH_ALLOW_QUERY_FALLBACK=1` is explicitly set (defaults to off in
   production) and is deprecated — removal planned after the next minor release.
 - **JWT secret** is generated once (`secrets.token_hex(32)`) and persisted to
-  `.env` by `ensure_jwt_secret`. A placeholder or empty value is never used.
+  `.env` by `ensure_jwt_secret`. The default in `src/config.py` is an empty
+  string, and outside production `ensure_jwt_secret` returns early when the
+  configured value is already unique and non-placeholder — so the guarantee is
+  scoped precisely: in production and on first run, a placeholder
+  (`CHANGE_ME_…`) or empty value is always replaced by a generated secret and
+  is never used to sign tokens.
 - **Session revocation** — every password mutation calls
   `mark_credentials_changed`, which bumps `security_version` and records
   `credentials_changed_at`. Access tokens carry the version and issuance time;

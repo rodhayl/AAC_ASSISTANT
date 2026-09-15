@@ -209,7 +209,13 @@ export function Communication() {
     };
     setIsSpeaking(tts.getStatus() === 'speaking');
     const unsubscribe = tts.onStatusChange(updateStatus);
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      // B8: navigating away mid-speech previously left the singleton queue
+      // speaking with stale page state (isSpeaking rehydrated as "speaking" on
+      // remount). Mirror the hunt/learning paths and silence on exit.
+      tts.cancelAll();
+    };
   }, []);
 
   // Handle fullscreen
@@ -545,6 +551,8 @@ export function Communication() {
               onClick={toggleFullscreen}
               className="p-2 hover:bg-surface-hover rounded-lg text-muted-foreground transition-colors"
               title={isFullscreen ? t('exitFullscreen') : t('enterFullscreen')}
+              aria-label={isFullscreen ? t('exitFullscreen') : t('enterFullscreen')}
+              aria-pressed={isFullscreen}
             >
               {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
             </button>
@@ -877,6 +885,8 @@ export function Communication() {
               onClick={toggleFullscreen}
               className="p-2 hover:bg-surface-hover rounded-lg text-muted-foreground transition-colors"
               title={isFullscreen ? t('exitFullscreen') : t('enterFullscreen')}
+              aria-label={isFullscreen ? t('exitFullscreen') : t('enterFullscreen')}
+              aria-pressed={isFullscreen}
             >
               {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
             </button>

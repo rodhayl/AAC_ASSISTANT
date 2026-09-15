@@ -1,9 +1,14 @@
 import { test, expect } from '@playwright/test';
 
+import { ensureDemoBoard } from './demo-fixture';
+
+// The board picker needs the demo board to exist; the fixture builds it through
+// the API, so no seeded sample data is required.
 test.describe('Learning Page - Boards and Topics', () => {
     test.use({ storageState: 'playwright/.auth/admin.json' });
 
     test.beforeEach(async ({ page }) => {
+        await ensureDemoBoard(page.request);
         // Only LLM-backed question generation is mocked. Boards, learning
         // modes, history, and session persistence all hit the real backend.
         await page.route('**/api/learning/*/ask', async route => {
@@ -48,7 +53,9 @@ test.describe('Learning Page - Boards and Topics', () => {
         await saveBtn.click();
 
         // The saved topic lists the translated topic and the real board name.
-        const listArea = page.locator('.space-y-2').last();
+        // Scope to the sidebar list: the page has other, unrelated stacked
+        // containers, so a bare `.space-y-2` match pointed at the wrong one.
+        const listArea = page.getByTestId('saved-topics-list');
         await expect(listArea.getByText(/Daily Routines|Rutinas Diarias/i).first()).toBeVisible();
     await expect(listArea.getByText('Comunicación General').first()).toBeVisible();
 
@@ -70,7 +77,11 @@ test.describe('Learning Page - Boards and Topics', () => {
         await expect(listArea.getByText('My Custom Context').first()).toBeVisible();
 
         // --- Start a real session (DB-backed; no LLM call until the auto-ask) ---
-        const startBtn = page.getByRole('button', { name: /Start Session|Iniciar sesión/i });
+        // Saved topics start from their own "Start study" action; the page-level
+        // start button was replaced by the topic picker.
+        const startBtn = listArea
+            .getByRole('button', { name: /Start study|Comenzar estudio|Start Session|Iniciar sesión/i })
+            .first();
         await expect(startBtn).toBeVisible();
         const startRequest = page.waitForRequest((request) =>
             request.url().includes('/api/learning/start') && request.method() === 'POST',

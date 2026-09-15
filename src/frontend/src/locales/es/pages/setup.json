@@ -23,6 +23,7 @@
   "errors": {
     "passwordMismatch": "Las contraseñas no coinciden",
     "passwordTooShort": "La contraseña debe tener al menos 8 caracteres",
+    "defaultPasswordForbidden": "La contraseña predeterminada de desarrollo no está permitida para la configuración del administrador.",
     "statusCheckFailed": "No se pudo verificar el estado de configuración. Aun así puedes continuar, pero es posible que el servidor ya esté configurado."
   }
 }

@@ -3,7 +3,13 @@ from loguru import logger
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
-from src.aac_app.models import BoardAssignment, BoardSymbol, CommunicationBoard, User
+from src.aac_app.models import (
+    BoardAssignment,
+    BoardSymbol,
+    CommunicationBoard,
+    SavedTopic,
+    User,
+)
 from src.aac_app.services.runtime_translation import (
     LIKE_ESCAPE,
     contains_like_pattern,
@@ -26,9 +32,13 @@ from src.api.routers.board_helpers import SUPPORTED_AI_PROVIDERS, serialize_boar
 router = APIRouter()
 
 # E10: explicit allow-list for update_board's raw update dict (M1 idiom).
-# Derived from the schema so a field added to BoardUpdate is either a real
-# settable column (covered here) or a server-bug ValueError at runtime.
-_BOARD_UPDATE_SETTABLE_KEYS = frozenset(schemas.BoardUpdate.model_fields)
+# Derived from the real board columns, NOT from BoardUpdate's own fields: a
+# schema-only allow-list can never fire, because the update dict is built from
+# that very schema, so a field without a matching column would silently become
+# a dead attribute (D-a).
+_BOARD_UPDATE_SETTABLE_KEYS = frozenset(
+    column.name for column in CommunicationBoard.__table__.columns
+) - {"id", "user_id", "created_at", "updated_at"}
 
 
 @router.get("")
@@ -276,6 +286,12 @@ def delete_board(
     # nullable references before deleting the target board.
     db.query(BoardSymbol).filter(BoardSymbol.linked_board_id == board_id).update(
         {BoardSymbol.linked_board_id: None}, synchronize_session=False
+    )
+    # ``SavedTopic.board_id`` is a plain nullable Integer with no FK, so the
+    # database would not clear it: the topic would survive but point at a
+    # deleted board. Null it in the same transaction (D-b).
+    db.query(SavedTopic).filter(SavedTopic.board_id == board_id).update(
+        {SavedTopic.board_id: None}, synchronize_session=False
     )
 
     db.delete(db_board)

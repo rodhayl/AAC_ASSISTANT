@@ -242,6 +242,8 @@ Process environment variables take precedence over the file. Key settings:
 | `AAC_BOOTSTRAP_ADMIN_PASSWORD` | `Admin123` (local example) | Bootstrap password for the local first run; change it immediately after login. Use a unique strong password in shared or production deployments. |
 | `OPENROUTER_API_KEY` | *(empty)* | Optional OpenRouter API key; enables the OpenRouter cloud provider as a fallback when no key is stored in the settings UI. |
 | `GROQ_API_KEY` | *(empty)* | Optional Groq API key; enables the Groq cloud provider as a fallback when no key is stored in the settings UI. |
+| `GROQ_MODEL` | *(empty)* | Production Groq model. Precedence: settings UI (DB) → config/`.env` → process env. Empty with `ENVIRONMENT=production` makes warmup fail closed (`/ready` reports degraded) instead of generating with an unverified model. |
+| `AAC_REFRESH_ALLOW_QUERY_FALLBACK` | `false` | **Deprecated** legacy opt-in that lets the refresh endpoint accept the token as a query parameter. Keep false: old clients receive `400` unless it is temporarily enabled during migration. |
 
 See `docs/01_PROJECT_GUIDE.md` for the full reference.
 

@@ -158,18 +158,31 @@ def decode_refresh_token(token: str) -> dict[str, Any] | None:
     return _decode_token(token, expected_type="refresh")
 
 
-def create_refresh_token(data: dict[str, Any]) -> str:
+def refresh_token_expires_at() -> datetime:
+    """Naive-UTC expiry of a refresh token minted now (matches the DB clock)."""
+    return (datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)).replace(
+        tzinfo=None
+    )
+
+
+def create_refresh_token(data: dict[str, Any], *, jti: str) -> str:
     """
     Create a JWT refresh token with longer expiration.
 
     Args:
         data: Dictionary of claims to encode (e.g., {"sub": username, "user_id": id})
+        jti: Unique id of this token, required. B1: every refresh token rotates
+            through the ledger, so a token without an id cannot exist anymore —
+            the ``fam`` claim (the chain's birth jti) is derived from it.
 
     Returns:
         Encoded JWT refresh token as a string
     """
     _require_secure_secret()
 
+    if not jti:
+        raise ValueError("refresh tokens must carry a jti (single-use rotation)")
+    data = {**data, "jti": jti, "fam": jti}
     expire = datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     encoded_jwt = _encode_token(data, token_type="refresh", expire=expire)
     logger.debug(

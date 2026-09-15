@@ -13,6 +13,7 @@ import traceback
 import urllib.error
 import urllib.request
 import webbrowser
+from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path
 
@@ -142,10 +143,23 @@ def _open_browser(url: str) -> None:
         webbrowser.open(url)
 
 
-def _wait_for_server(url: str, timeout_seconds: float = 30.0) -> bool:
-    """Wait until the local production server accepts HTTP requests."""
+def _wait_for_server(
+    url: str,
+    timeout_seconds: float = 30.0,
+    *,
+    is_server_alive: Callable[[], bool] | None = None,
+) -> bool:
+    """Wait until the local production server accepts HTTP requests.
+
+    ``is_server_alive`` lets the caller abort immediately when the server
+    thread has already died: a startup crash otherwise left the user staring
+    at an unresponsive launch for the full 30-second deadline before the
+    error log was reported.
+    """
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
+        if is_server_alive is not None and not is_server_alive():
+            return False
         try:
             with urllib.request.urlopen(url, timeout=2) as response:
                 if response.status == 200:
@@ -192,11 +206,15 @@ def main() -> int:
     server_thread = threading.Thread(target=run_server, name="aac-uvicorn", daemon=True)
     server_thread.start()
 
-    if not _wait_for_server(url):
-        _write_startup_error(
-            f"Server did not answer {url} within 30 seconds. "
-            f"Server thread alive: {server_thread.is_alive()}"
-        )
+    if not _wait_for_server(url, is_server_alive=server_thread.is_alive):
+        if server_thread.is_alive():
+            reason = f"Server did not answer {url} within 30 seconds."
+        else:
+            reason = (
+                f"Server thread exited before answering {url}; see the startup "
+                "error log for the traceback."
+            )
+        _write_startup_error(f"{reason} Server thread alive: {server_thread.is_alive()}")
         server.should_exit = True
         server_thread.join(timeout=5)
         _stop_shutdown_watcher(shutdown_watcher)

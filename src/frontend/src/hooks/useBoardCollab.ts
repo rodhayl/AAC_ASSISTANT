@@ -26,10 +26,24 @@ export function useBoardCollab({
 }: UseBoardCollabOptions) {
   const clientRef = useRef<ReturnType<typeof createWSClient> | null>(null);
   const remoteMoveRef = useRef(onRemoteMove);
+  // Shared across client instances so a token rotation (which forces a new
+  // socket with the rotated credential) does not drop moves queued while the
+  // old socket was down (A7).
+  const pendingMovesRef = useRef<unknown[]>([]);
 
   useEffect(() => {
     remoteMoveRef.current = onRemoteMove;
   }, [onRemoteMove]);
+
+  // A different board must never flush the previous board's queued moves.
+  // The ref is only ever mutated (never reassigned), so capturing the array
+  // itself is safe and keeps the cleanup off the mutable ref accessor.
+  useEffect(() => {
+    const pendingMoves = pendingMovesRef.current;
+    return () => {
+      pendingMoves.length = 0;
+    };
+  }, [boardId]);
 
   useEffect(() => {
     if (!boardId || !token) return;
@@ -48,11 +62,11 @@ export function useBoardCollab({
           remoteMoveRef.current?.(payload.symbol_id, payload.position);
         }
       },
-    }, ['aac-auth', token]);
+    }, ['aac-auth', token], { queue: pendingMovesRef.current });
     clientRef.current = client;
 
     return () => {
-      client.close();
+      client.close({ clearQueue: false });
       if (clientRef.current === client) {
         clientRef.current = null;
       }

@@ -254,28 +254,24 @@ export const useAuthStore = create<AuthState>()(
 
       logout: async () => {
         const token = get().token;
-        // Clear session-scoped feature state synchronously so offline
-        // mutations and conflicts cannot leak into the next session, even
-        // while the revocation request is still in flight.
-        checkAuthEpoch += 1;
-        // A hung/abandoned loading op must not pin the spinner for the next
-        // session; the count restarts with the ended session.
-        pendingLoadingOps = 0;
-        notifySessionEnd();
+        // Clear the session (state + persisted auth-storage) synchronously
+        // BEFORE the best-effort revocation. The 401 handler navigates to
+        // /login without awaiting logout, so a still-persisted auth-storage
+        // would let the login page rehydrate the stale session (A16).
+        // clearSession also invalidates in-flight work and notifies the
+        // offline queue, so nothing leaks into the next session.
+        clearSession();
         if (token) {
-          // Wait for server-side revocation to finish before flipping
-          // isAuthenticated, so a token captured before logout is rejected by
-          // the time the UI reaches the login screen. Revocation is
-          // best-effort: a failure still clears the local session.
+          // Revocation stays best-effort: a failure leaves the local session
+          // cleared.
           try {
             await api.post('/auth/logout', null, {
               headers: { Authorization: `Bearer ${token}` },
             });
           } catch {
-            // Ignore revocation errors; local session is still cleared below.
+            // Ignore revocation errors; the local session is already cleared.
           }
         }
-        set(emptyAuthState());
       },
 
       checkAuth: async () => {
@@ -351,7 +347,18 @@ export const useAuthStore = create<AuthState>()(
             if (get().refreshToken !== capturedRefreshToken) return false;
             const payload = decodeJwtPayload(newToken);
             const expiresAt = payload?.exp ? payload.exp * 1000 : Date.now() + 2 * 60 * 60 * 1000;
-            set({ token: newToken, sessionExpiresAt: expiresAt });
+            // H3: the server rotates the refresh token on every exchange, so
+            // the successor must replace the consumed one (otherwise the next
+            // refresh presents a spent token and is treated as a replay).
+            const rotatedRefreshToken = response.data.refresh_token;
+            set({
+              token: newToken,
+              refreshToken:
+                typeof rotatedRefreshToken === 'string' && rotatedRefreshToken
+                  ? rotatedRefreshToken
+                  : capturedRefreshToken,
+              sessionExpiresAt: expiresAt,
+            });
             return true;
           }
           return false;
@@ -383,10 +390,24 @@ export const useAuthStore = create<AuthState>()(
         isAuthenticated: state.isAuthenticated,
         sessionExpiresAt: state.sessionExpiresAt
       }),
-      onRehydrateStorage: () => () => {
-        if (typeof window !== 'undefined') {
+      onRehydrateStorage: () => (state) => {
+        if (typeof window === 'undefined') return;
+        const hasSession = Boolean(state?.isAuthenticated && state?.user?.id);
+        if (!hasSession) {
           window.dispatchEvent(new Event('aac:auth-ready'));
+          return;
         }
+        // A15: validate (and silently refresh) the persisted session before the
+        // offline queue flushes with the stored token. A reload with an expired
+        // access token would otherwise replay every queued mutation with the
+        // dead token, turning each into a manual conflict instead of a silent
+        // refresh-and-retry.
+        void useAuthStore
+          .getState()
+          .checkAuth()
+          .finally(() => {
+            window.dispatchEvent(new Event('aac:auth-ready'));
+          });
       },
     }
   )

@@ -10,6 +10,23 @@ interface SidebarProps {
   onNavigate?: () => void;
 }
 
+// Route -> lazy page chunk, warmed on hover so navigation feels instant.
+// Kept at module scope so the hover handler stays a one-liner and every
+// loader is attached a rejection handler (H43/H64).
+const PRELOADABLE_PAGES: Record<string, () => Promise<unknown>> = {
+  '/': () => import('../pages/Dashboard'),
+  '/communication': () => import('../pages/Communication'),
+  '/boards': () => import('../pages/Boards'),
+  '/symbols': () => import('../pages/Symbols'),
+  '/learning': () => import('../pages/Learning'),
+  '/symbol-hunt': () => import('../pages/SymbolHunt'),
+  '/achievements': () => import('../pages/Achievements'),
+  '/students': () => import('../pages/Students'),
+  '/teachers': () => import('../pages/UserManagement'),
+  '/admins': () => import('../pages/UserManagement'),
+  '/settings': () => import('../pages/Settings'),
+};
+
 export function Sidebar({ className, isOpen = true, onNavigate }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -71,20 +88,11 @@ export function Sidebar({ className, isOpen = true, onNavigate }: SidebarProps) 
               )}
               onClick={() => onNavigate?.()}
               onMouseEnter={() => {
-                try {
-                  if (link.href === '/boards') import('../pages/Boards')
-                  else if (link.href === '/communication') import('../pages/Communication')
-                  else if (link.href === '/symbols') import('../pages/Symbols')
-                  else if (link.href === '/learning') import('../pages/Learning')
-                  else if (link.href === '/symbol-hunt') import('../pages/SymbolHunt')
-                  else if (link.href === '/achievements') import('../pages/Achievements')
-                  else if (link.href === '/students') import('../pages/Students')
-                  else if (link.href === '/teachers' || link.href === '/admins') import('../pages/UserManagement')
-                  else if (link.href === '/settings') import('../pages/Settings')
-                  else if (link.href === '/') import('../pages/Dashboard')
-                } catch {
-                  // Preload failures are non-critical; navigation still works.
-                }
+                // Attach a rejection handler to the import promise itself: the
+                // previous `try/catch` around a bare `import()` could never
+                // see an async chunk failure, which surfaced as an
+                // unhandledrejection instead of the intended silent skip.
+                void PRELOADABLE_PAGES[link.href]?.().catch(() => {});
               }}
             >
               <Icon className="w-5 h-5" />

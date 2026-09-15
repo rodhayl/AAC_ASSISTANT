@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Sparkles, Brain, Type, User, Play, FileText, Plus, MapPin, ChevronLeft, ChevronRight } from 'lucide-react';
-import api from '../../lib/api';
+import api, { extractError } from '../../lib/api';
 import { isCancelledError } from '../../lib/httpErrors';
 import { SymbolImage } from '../common/SymbolImage';
 import { useHoverSpeak } from '../../hooks/useHoverSpeak';
@@ -56,9 +56,17 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId, topic }: Sm
   const [debouncedSentence, setDebouncedSentence] = useState(currentSentence);
   const [refreshKey, setRefreshKey] = useState(0);
   const [generatingSuggestion, setGeneratingSuggestion] = useState(false);
+  // Holds the raw failure so the effect does not need `t` (a translating
+  // dep would re-run the fetch on every render under some i18n setups).
+  const [predictionError, setPredictionError] = useState<unknown>(null);
   const suggestionsContainerRef = useRef<HTMLDivElement>(null);
   const silentRefreshRef = useRef(false);
   const autoRefreshCountRef = useRef(0);
+  // Identity of the pictogram-generation batch the auto-refresh counter
+  // belongs to (G2). The counter was never reset, so a later batch inherited
+  // the exhausted budget and stuck on spinner tiles. A different pending-label
+  // set is a new batch and gets its own budget.
+  const generatingBatchRef = useRef<string | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
@@ -126,6 +134,7 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId, topic }: Sm
     const fetchSuggestions = async () => {
       if (!isSilentRefresh) setIsLoading(true);
       try {
+        setPredictionError(null);
         const labels = debouncedSentence
           .map(s => s.custom_text || s.symbol.label)
           .join(',');
@@ -158,12 +167,31 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId, topic }: Sm
           const pending = Array.isArray(response.data) && response.data.some(
             (s: Suggestion) => s.is_text_only && s.is_generating
           );
-          if (offset === 0) setGeneratingSuggestion(Boolean(pending));
+          if (offset === 0) {
+            const batchKey = pending
+              ? response.data
+                  .filter((s: Suggestion) => s.is_text_only && s.is_generating)
+                  .map((s: Suggestion) => s.label.trim().toLowerCase())
+                  .sort()
+                  .join('|')
+              : null;
+            if (batchKey !== generatingBatchRef.current) {
+              generatingBatchRef.current = batchKey;
+              autoRefreshCountRef.current = 0;
+            }
+            setGeneratingSuggestion(Boolean(pending));
+          }
         }
       } catch (error) {
         if (active && !isCancelledError(error)) {
+          // A failed prediction must be distinguishable from an empty
+          // vocabulary (G2) so the user can retry. Subtle: a silent refresh
+          // that fails leaves the existing tiles in place.
           console.error('Failed to fetch suggestions:', error);
-          if (offset === 0) setSuggestions([]);
+          if (offset === 0) {
+            setSuggestions([]);
+            if (!isSilentRefresh) setPredictionError(error);
+          }
         }
       } finally {
         if (active && !isSilentRefresh) setIsLoading(false);
@@ -479,6 +507,17 @@ export function Smartbar({ currentSentence, onSelectSymbol, boardId, topic }: Sm
               <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </button>
           )}
+        </div>
+      ) : predictionError ? (
+        <div className="flex items-center justify-center gap-2 py-2 text-xs text-destructive" role="alert">
+          <span>{extractError(predictionError, t('suggestionsFailed'))}</span>
+          <button
+            type="button"
+            onClick={() => setRefreshKey(key => key + 1)}
+            className="underline underline-offset-2 font-medium"
+          >
+            {t('retry')}
+          </button>
         </div>
       ) : (
         <div className="text-center py-2 text-muted-foreground text-xs">

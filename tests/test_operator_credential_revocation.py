@@ -268,3 +268,36 @@ def test_account_admin_reset_password_rejects_weak_password_unless_forced(op_db)
         _assert_revoked(session, user.id, previous_version=1)
     finally:
         session.close()
+
+
+def test_null_password_repair_defaults_to_non_destructive(legacy_null_password_db):
+    """H14: the destructive path requires an explicit --delete flag.
+
+    ``main()`` used to hardcode ``delete_invalid=True``, so an operator
+    following the recovery runbook irreversibly deleted the affected users.
+    """
+    import scripts.fix_null_passwords as fix_null_passwords
+
+    parser_defaults = {}
+    original = fix_null_passwords.fix_null_password_hashes
+
+    def capture(delete_invalid=False, dry_run=False):
+        parser_defaults["delete_invalid"] = delete_invalid
+        parser_defaults["dry_run"] = dry_run
+        return True
+
+    fix_null_passwords.fix_null_password_hashes = capture
+    try:
+        # Default invocation: no flags at all.
+        assert fix_null_passwords.main(["--dry-run"]) == 0
+        assert parser_defaults == {"delete_invalid": False, "dry_run": True}
+
+        parser_defaults.clear()
+        assert fix_null_passwords.main(["--delete", "--dry-run", "--yes"]) == 0
+        assert parser_defaults["delete_invalid"] is True
+
+        parser_defaults.clear()
+        assert fix_null_passwords.main(["--disable-login", "--dry-run"]) == 0
+        assert parser_defaults["delete_invalid"] is False
+    finally:
+        fix_null_passwords.fix_null_password_hashes = original

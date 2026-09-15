@@ -47,6 +47,7 @@
   "failed": "Error",
   "loadFailed": "Error al cargar símbolos",
   "updateFailed": "Error al actualizar símbolo",
+  "imageUpdateFailed": "Los detalles se guardaron, pero no se pudo subir la nueva imagen.",
   "createFailed": "Error al crear símbolo",
   "deleteFailed": "Error al eliminar símbolo",
   "arasaacSearchFailed": "Error al buscar en ARASAAC",

@@ -75,6 +75,7 @@
     "updateFailed": "No se pudo actualizar el logro",
     "deleteFailed": "No se pudo eliminar el logro",
     "awardFailed": "No se pudo otorgar el logro",
+    "selectStudentFirst": "Selecciona primero un estudiante.",
     "managementLoadFailed": "No se pudieron cargar algunos datos de gestión. Inténtalo de nuevo."
   }
 }

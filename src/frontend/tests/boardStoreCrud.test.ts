@@ -100,6 +100,45 @@ describe('board store CRUD', () => {
     expect(useBoardStore.getState().currentBoard).toBeNull();
   });
 
+  it('preserves loaded pages when a board is deleted (D-d)', async () => {
+    // Two pages were loaded before the delete; refreshing only page 1 would
+    // collapse the user's list back to the first page.
+    useBoardStore.setState({
+      boards: [board],
+      currentBoard: board,
+      page: 2,
+      currentUserId: 9,
+      currentSearchQuery: '',
+    });
+    (api.delete as ReturnType<typeof vi.fn>).mockResolvedValue({});
+    (api.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [board] });
+
+    await useBoardStore.getState().deleteBoard(1);
+
+    const listCalls = (api.get as ReturnType<typeof vi.fn>).mock.calls.filter(
+      ([url]) => url === '/boards/',
+    );
+    expect(listCalls.map(([, config]) => config?.params?.skip)).toEqual([0, 100]);
+  });
+
+  it('preserves loaded pages when a board is created (D-d)', async () => {
+    useBoardStore.setState({
+      boards: [board],
+      page: 2,
+      currentUserId: 9,
+      currentSearchQuery: '',
+    });
+    (api.post as ReturnType<typeof vi.fn>).mockResolvedValue({ data: {} });
+    (api.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [board] });
+
+    await useBoardStore.getState().createBoard({ name: 'New' }, 9);
+
+    const listCalls = (api.get as ReturnType<typeof vi.fn>).mock.calls.filter(
+      ([url]) => url === '/boards/',
+    );
+    expect(listCalls.map(([, config]) => config?.params?.skip)).toEqual([0, 100]);
+  });
+
   it('duplicates a board including its symbols', async () => {
     const source = {
       ...board,
@@ -134,6 +173,59 @@ describe('board store CRUD', () => {
       '/boards/2/symbols',
       expect.objectContaining({ symbol_id: 10, position_x: 0, position_y: 1 }),
     );
+  });
+
+  it('copies a board whose AI flag has no provider/model configured (live-GUI finding)', async () => {
+    // Seeded/template boards are created with ai_enabled but without a provider
+    // or model. Restoring those settings used to send `{ai_enabled: true,
+    // ai_provider: null, ai_model: null}`, which the API rejects with 400 -> the
+    // whole copy failed and the rejection surfaced unhandled in the browser.
+    const source = {
+      ...board,
+      ai_enabled: true,
+      ai_provider: null,
+      ai_model: null,
+      symbols: [],
+    };
+    const copy = { ...board, id: 2, name: 'My Board (Copy)' };
+    (api.get as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ data: source })
+      .mockResolvedValueOnce({ data: [copy] });
+    (api.post as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ data: copy });
+
+    await useBoardStore.getState().duplicateBoard(1, 7);
+
+    expect(api.post).toHaveBeenCalledWith(
+      '/boards/',
+      expect.objectContaining({ ai_enabled: false }),
+      { params: { user_id: 7 } },
+    );
+    // The AI restore is skipped entirely when the source cannot supply it.
+    expect(api.put).not.toHaveBeenCalledWith('/boards/2', expect.anything());
+  });
+
+  it('still restores AI settings when the source board has a provider and model', async () => {
+    const source = {
+      ...board,
+      ai_enabled: true,
+      ai_provider: 'groq',
+      ai_model: 'openai/gpt-oss-120b',
+      symbols: [],
+    };
+    const copy = { ...board, id: 2, name: 'My Board (Copy)' };
+    (api.get as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ data: source })
+      .mockResolvedValueOnce({ data: [copy] });
+    (api.post as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ data: copy });
+    (api.put as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ data: copy });
+
+    await useBoardStore.getState().duplicateBoard(1, 7);
+
+    expect(api.put).toHaveBeenCalledWith('/boards/2', {
+      ai_enabled: true,
+      ai_provider: 'groq',
+      ai_model: 'openai/gpt-oss-120b',
+    });
   });
 
   it('drops links to boards the new owner cannot view instead of failing mid-copy', async () => {
@@ -186,6 +278,50 @@ describe('board store CRUD', () => {
     expect(api.get).toHaveBeenCalledWith('/boards/99', {
       params: { skip_translation: true },
     });
+  });
+
+  it('B4: removes the created board when the mutation goes stale after creation', async () => {
+    // The mutation context is invalidated while the copy is in flight (token
+    // refresh, logout, board switch — anything that calls store.reset()). The
+    // board already exists server-side at that point, so every stale exit must
+    // remove it instead of returning and leaving an orphan half-duplicate.
+    const source = {
+      ...board,
+      symbols: [
+        {
+          symbol: { id: 10 },
+          position_x: 0,
+          position_y: 0,
+          size: 1,
+          is_visible: true,
+        },
+      ],
+    };
+    const copy = { ...board, id: 2, name: 'My Board (Copy)' };
+    (api.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ data: source });
+    (api.delete as ReturnType<typeof vi.fn>).mockResolvedValueOnce({});
+
+    // Invalidate the context the moment board creation resolves: the deferred
+    // reset runs after the POST but before the copy loop continues.
+    const deferredReset = new Promise<void>((resolve) => setTimeout(resolve, 0));
+    (api.post as ReturnType<typeof vi.fn>).mockImplementationOnce(async (url: string) => {
+      if (url === '/boards/') {
+        await deferredReset;
+        useBoardStore.getState().reset();
+      }
+      return { data: copy };
+    });
+
+    await expect(useBoardStore.getState().duplicateBoard(1, 7)).resolves.toBeUndefined();
+
+    // The stale-context exit removed the freshly created board instead of
+    // leaving it orphaned.
+    expect(api.delete).toHaveBeenCalledWith('/boards/2');
+    // And no symbol was copied onto the doomed board.
+    expect(api.post).not.toHaveBeenCalledWith(
+      '/boards/2/symbols',
+      expect.anything(),
+    );
   });
 
   it('adds a symbol to the current board when it is the modified board', async () => {

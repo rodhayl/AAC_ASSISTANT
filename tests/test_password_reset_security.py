@@ -4,17 +4,46 @@ import jwt
 import pytest
 from fastapi.testclient import TestClient
 
-from src.aac_app.models import User
+from src.aac_app.models import RefreshTokenRecord, User
 from src.aac_app.services.auth_service import get_password_hash
 from src.aac_app.utils import jwt_utils
 from src.aac_app.utils.jwt_utils import (
     create_access_token,
     create_refresh_token,
+    refresh_token_expires_at,
 )
 from src.api.main import app
 from tests.auth_helpers import create_test_headers
 
 client = TestClient(app)
+
+
+def _mint_refresh(session, user) -> str:
+    """Mint a rotation-backed refresh token for ``user`` (B1 contract)."""
+    import secrets
+
+    jti = secrets.token_hex(16)
+    session.add(
+        RefreshTokenRecord(
+            jti=jti,
+            family=jti,
+            user_id=user.id,
+            expires_at=refresh_token_expires_at(),
+        )
+    )
+    session.commit()
+    return create_refresh_token(
+        {"sub": user.username, "user_id": user.id}, jti=jti
+    )
+
+
+def _legacy_refresh_token(username: str, user_id: int) -> str:
+    """A pre-rotation refresh token: valid signature, no ``jti``/``fam`` claim."""
+    return jwt_utils._encode_token(
+        {"sub": username, "user_id": user_id, "sec_ver": 1},
+        token_type="refresh",
+        expire=datetime.now(UTC) + timedelta(days=7),
+    )
 
 
 @pytest.mark.usefixtures("setup_test_db")
@@ -38,13 +67,7 @@ def test_logout_revokes_existing_access_and_refresh_tokens(test_db_session):
             "sec_ver": student.security_version,
         }
     )
-    refresh_token = create_refresh_token(
-        {
-            "sub": student.username,
-            "user_id": student.id,
-            "sec_ver": student.security_version,
-        }
-    )
+    refresh_token = _mint_refresh(test_db_session, student)
     headers = {"Authorization": f"Bearer {access_token}"}
 
     response = client.post("/api/auth/logout", headers=headers)
@@ -91,13 +114,7 @@ def test_logout_with_expired_access_token_still_revokes(test_db_session):
         jwt_utils.JWT_SECRET_KEY,
         algorithm=jwt_utils.JWT_ALGORITHM,
     )
-    refresh_token = create_refresh_token(
-        {
-            "sub": student.username,
-            "user_id": student.id,
-            "sec_ver": student.security_version,
-        }
-    )
+    refresh_token = _mint_refresh(test_db_session, student)
 
     response = client.post(
         "/api/auth/logout",
@@ -190,12 +207,8 @@ def test_admin_password_reset_revokes_existing_access_and_refresh_tokens(
     legacy_access_token = create_access_token(
         {"sub": student.username, "user_id": student.id, "user_type": student.user_type}
     )
-    legacy_refresh_token = create_refresh_token(
-        {"sub": student.username, "user_id": student.id}
-    )
-    refresh_token = create_refresh_token(
-        {"sub": student.username, "user_id": student.id, "sec_ver": student.security_version}
-    )
+    legacy_refresh_token = _legacy_refresh_token(student.username, student.id)
+    refresh_token = _mint_refresh(test_db_session, student)
     admin_headers = create_test_headers(admin_user.id, admin_user.username, "admin")
 
     response = client.post(
@@ -388,3 +401,65 @@ def test_legacy_token_issued_on_credential_change_second_boundary_stays_valid(
         "/api/auth/me",
         headers={"Authorization": f"Bearer {legacy_access_token}"},
     ).status_code == 200
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_admin_reset_unlocks_a_locked_out_account(test_db_session, admin_user):
+    """H7: a staff reset must restore access immediately.
+
+    Five failed logins lock the account for 15 minutes. Bumping the password
+    without clearing the lockout rows leaves the student answering 403
+    "account locked" with a correct, freshly set password — the recovery the
+    UI actually offers (a reset) does not recover anything.
+    """
+    from src.aac_app.services.lockout_service import AccountLockoutService
+
+    student = User(
+        username="locked_reset_target",
+        display_name="Locked Reset Target",
+        user_type="student",
+        password_hash=get_password_hash("OldPass123"),
+        is_active=True,
+    )
+    test_db_session.add(student)
+    test_db_session.commit()
+    test_db_session.refresh(student)
+
+    for _ in range(AccountLockoutService.MAX_ATTEMPTS):
+        AccountLockoutService.record_failed_attempt(
+            test_db_session, student.username, "10.0.0.4"
+        )
+    test_db_session.commit()
+    locked, _until = AccountLockoutService.is_locked(
+        test_db_session, student.username
+    )
+    assert locked is True
+
+    # Precondition: the correct old password is refused while locked.
+    assert (
+        client.post(
+            "/api/auth/token",
+            data={"username": student.username, "password": "OldPass123"},
+        ).status_code
+        == 403
+    )
+
+    response = client.post(
+        "/api/users/reset-password",
+        json={"user_id": student.id, "new_password": "NewPass123"},
+        headers=create_test_headers(admin_user.id, admin_user.username, "admin"),
+    )
+    assert response.status_code == 200, response.text
+
+    login = client.post(
+        "/api/auth/token",
+        data={"username": student.username, "password": "NewPass123"},
+    )
+    assert login.status_code == 200, login.text
+
+
+def test_reset_password_route_is_rate_limited():
+    """H7: the reset route carries the same 10/hour budget as change-password."""
+    from src.api.routers.users import reset_user_password
+
+    assert getattr(reset_user_password, "__rate_limited__", False) is True

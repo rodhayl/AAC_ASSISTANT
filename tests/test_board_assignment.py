@@ -125,10 +125,18 @@ def test_concurrent_assignment_requests_are_idempotent(
     test_db_session.commit()
     test_db_session.refresh(board)
 
+    # Read every id on the main thread before spawning the workers: the
+    # fixture's commit expired these attributes, and two worker threads
+    # lazily refreshing the same (not thread-safe) Session raced into a
+    # spurious ObjectDeletedError when one connection was invalidated by the
+    # other's write lock.
+    board_id = board.id
+    student_id = student.id
+
     def assign():
         return client.post(
-            f"/api/boards/{board.id}/assign",
-            json={"student_id": student.id},
+            f"/api/boards/{board_id}/assign",
+            json={"student_id": student_id},
             headers=teacher_headers,
         )
 
@@ -138,7 +146,7 @@ def test_concurrent_assignment_requests_are_idempotent(
     assert [response.status_code for response in responses] == [200, 200]
     assert (
         test_db_session.query(BoardAssignment)
-        .filter_by(board_id=board.id, student_id=student.id)
+        .filter_by(board_id=board_id, student_id=student_id)
         .count()
         == 1
     )

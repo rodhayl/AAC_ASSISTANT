@@ -6,19 +6,6 @@ test.describe('LLM Integration (Mocked)', () => {
   test.beforeEach(async ({ page }) => {
     // Define routes FIRST to ensure they are active
     
-    // Mock Config
-    await page.route('**/api/config', async route => {
-         await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({
-                backend_port: 8090,
-                frontend_port: 5176,
-                ollama_base_url: 'http://localhost:11434'
-            })
-        });
-    });
-
     // Mock Auth Me
     await page.route('**/api/auth/me', async route => {
         await route.fulfill({
@@ -192,17 +179,14 @@ test.describe('LLM Integration (Mocked)', () => {
     });
 
     await page.goto('/learning');
-    
-    // Start session if not already (the broad mock handles /start)
-    // Match regardless of current UI language.
-    const startButton = page.getByRole('button', { name: /start session|iniciar sesi[oó]n|comenzar|practice/i }).first();
-    try {
-        await startButton.click({ timeout: 5000 });
-        await expect(startButton).toBeHidden();
-    } catch {
-        // Session already started, or button not present.
-    }
-    
+
+    // Sessions start from the student-facing topic picker (the old start
+    // button was removed); the broad /start and /ask mocks cover the request.
+    const topicCard = page.locator('[data-testid^="topic-card-"]').first();
+    await expect(topicCard).toBeVisible({ timeout: 15000 });
+    await topicCard.click();
+    await expect(page.getByTestId('learning-session-active')).toBeVisible({ timeout: 15000 });
+
     // Wait for chat interface and for the automatic first question to finish
     // before exercising the answer error path.
     const answerInput = page.locator('input[type="text"]');
@@ -241,10 +225,12 @@ test.describe('LLM Integration (Mocked)', () => {
         }
         if (url.includes('/start')) {
                  const postData = route.request().postDataJSON();
-                 console.log('Start Session Payload:', postData);                 // This test starts the same general-conversation activity as
-                 // the UI's "New conversation" action. Keep the request contract
-                 // explicit without emitting a misleading diagnostic warning.
-                 expect(postData.topic).toBe('general conversation');
+                 console.log('Start Session Payload:', postData);
+                 // The topic now comes from the topic picker (its pool is
+                 // shuffled, so the exact topic varies) while the mode selection
+                 // and purpose stay explicit parts of the request contract.
+                 expect(typeof postData.topic).toBe('string');
+                 expect((postData.topic as string).length).toBeGreaterThan(0);
                  expect(postData.purpose).toBe('practice');
                  expect(postData.mode_key).toBe('default_mode');
                  
@@ -314,13 +300,17 @@ test.describe('LLM Integration (Mocked)', () => {
 
     await modeSelect.selectOption({ index: 0 });
 
-    // Start session
-    const startBtn = page.getByRole('button', { name: /start session|comenzar|iniciar/i });
-    await expect(startBtn).toBeVisible({ timeout: 5000 });
-    await startBtn.click();
-    
-    // Wait for session to start (e.g., input becomes enabled or start button disappears)
-    await expect(startBtn).toBeHidden({ timeout: 5000 });
+    // Start session from the topic picker (the page-level start button was
+    // removed); a session must exist before the answer path is exercised.
+    // Prefer a built-in catalog topic: saved topics (`topic-card-saved-*`) send
+    // their board name as the purpose, while the catalog contract asserted
+    // below is `purpose: 'practice'`.
+    const topicCard = page
+      .locator('[data-testid^="topic-card-"]:not([data-testid^="topic-card-saved-"])')
+      .first();
+    await expect(topicCard).toBeVisible({ timeout: 15000 });
+    await topicCard.click();
+    await expect(page.getByTestId('learning-session-active')).toBeVisible({ timeout: 15000 });
 
     // Verify that the request to /start included the correct topic (derived from mode name)
     // We already handled the request in the route handler, but we can't easily assert on it there inside the loop.

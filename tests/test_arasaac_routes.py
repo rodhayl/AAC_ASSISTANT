@@ -1,11 +1,56 @@
 import asyncio
+import io
 
 import pytest
 from fastapi import HTTPException
+from PIL import Image
 
 from src import config
 from src.aac_app.models import Symbol, User, UserSettings
+from src.aac_app.services.arasaac import clear_search_cache
 from src.api.routers import arasaac
+
+
+@pytest.fixture(autouse=True)
+def _empty_arasaac_search_cache():
+    """The search cache is process-wide; a hit would skip the upstream call a
+    test asserts on (isolation belongs in the tests, not in the cache)."""
+    clear_search_cache()
+    yield
+    clear_search_cache()
+
+
+def _request():
+    """A minimal Request for direct handler calls.
+
+    ``conditional_limiter`` (slowapi) requires an endpoint parameter named
+    ``request``; FastAPI injects it at runtime, and the direct calls in this
+    module must supply one explicitly.
+    """
+    from starlette.requests import Request
+
+    return Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/api/arasaac/import",
+            "raw_path": b"/api/arasaac/import",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 51000),
+            "server": ("testserver", 80),
+            "root_path": "",
+        }
+    )
+
+
+def _png_bytes() -> bytes:
+    """A real (tiny) PNG: downloaded bytes now pass the upload image policy."""
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2), "white").save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def test_arasaac_search_percent_encodes_query_in_url():
@@ -135,6 +180,7 @@ def test_arasaac_import_preserves_missing_image_status_and_closes_client(
     with pytest.raises(HTTPException) as error:
         asyncio.run(
             arasaac.import_arasaac_symbol(
+                _request(),
                 payload,
                 db=test_db_session,
                 current_user=user,
@@ -172,7 +218,7 @@ def test_arasaac_import_links_to_existing_symbol_by_casefolded_label(
         async def download_symbol_image(self, arasaac_id: int) -> bytes:
             nonlocal downloaded
             downloaded = True
-            return b"image-bytes"
+            return _png_bytes()
 
         async def close(self):
             return None
@@ -184,6 +230,7 @@ def test_arasaac_import_links_to_existing_symbol_by_casefolded_label(
     )
     result = asyncio.run(
         arasaac.import_arasaac_symbol(
+            _request(),
             payload,
             db=test_db_session,
             current_user=user,
@@ -212,7 +259,7 @@ def test_arasaac_import_keeps_file_when_optional_indexing_fails(
     class FakeArasaacService:
         async def download_symbol_image(self, arasaac_id: int) -> bytes:
             assert arasaac_id == 456
-            return b"image-bytes"
+            return _png_bytes()
 
         async def close(self):
             return None
@@ -225,6 +272,7 @@ def test_arasaac_import_keeps_file_when_optional_indexing_fails(
     payload = arasaac.ImportArasaacRequest(arasaac_id=456, label="cleanup")
     result = asyncio.run(
         arasaac.import_arasaac_symbol(
+            _request(),
             payload,
             db=test_db_session,
             current_user=user,
@@ -256,7 +304,7 @@ def test_arasaac_import_normalizes_ui_language_to_base_code(
 
     class FakeArasaacService:
         async def download_symbol_image(self, arasaac_id: int) -> bytes:
-            return b"image-bytes"
+            return _png_bytes()
 
         async def close(self):
             return None
@@ -270,6 +318,7 @@ def test_arasaac_import_normalizes_ui_language_to_base_code(
     )
     result = asyncio.run(
         arasaac.import_arasaac_symbol(
+            _request(),
             payload,
             db=test_db_session,
             current_user=user,
@@ -319,7 +368,7 @@ def test_arasaac_search_without_locale_uses_ui_language(
 
     monkeypatch.setattr(arasaac, "ArasaacService", FakeArasaacService)
 
-    asyncio.run(arasaac.search_arasaac(q="pan", locale=None, current_user=user))
+    asyncio.run(arasaac.search_arasaac(_request(), q="pan", locale=None, current_user=user))
 
     # en-US normalizes to its base code, matching the import path.
     assert captured == {"query": "pan", "locale": "en"}
@@ -357,7 +406,7 @@ def test_arasaac_search_explicit_locale_wins_over_ui_language(
     monkeypatch.setattr(arasaac, "ArasaacService", FakeArasaacService)
 
     asyncio.run(
-        arasaac.search_arasaac(q="pain", locale="fr", current_user=user)
+        arasaac.search_arasaac(_request(), q="pain", locale="fr", current_user=user)
     )
     assert captured == {"locale": "fr"}
 
@@ -390,8 +439,36 @@ def test_arasaac_search_without_locale_or_settings_defaults_to_es(
 
     monkeypatch.setattr(arasaac, "ArasaacService", FakeArasaacService)
 
-    asyncio.run(arasaac.search_arasaac(q="pan", locale=None, current_user=user))
+    asyncio.run(arasaac.search_arasaac(_request(), q="pan", locale=None, current_user=user))
     assert captured == {"locale": "es"}
+
+
+
+def test_arasaac_search_malformed_payload_is_not_reported_as_empty(monkeypatch):
+    """A changed upstream response must surface a diagnosable failure."""
+    from src.aac_app.services.arasaac import ArasaacService
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return [{"keywords": [{"keyword": "pan"}]}]  # missing _id
+
+    class FakeClient:
+        async def get(self, _url):
+            return FakeResponse()
+
+        async def aclose(self):
+            return None
+
+    service = ArasaacService()
+    service.client = FakeClient()
+    try:
+        with pytest.raises(ValueError, match="malformed data"):
+            asyncio.run(service.search_symbols("pan", "es"))
+    finally:
+        asyncio.run(service.close())
 
 
 def test_arasaac_search_rejects_oversized_query(test_db_session, client):
@@ -517,6 +594,7 @@ def test_arasaac_import_rejects_label_blocked_by_global_policy(
     with pytest.raises(HTTPException) as error:
         asyncio.run(
             arasaac.import_arasaac_symbol(
+                _request(),
                 payload,
                 db=test_db_session,
                 current_user=user,
@@ -563,7 +641,7 @@ def test_arasaac_import_allows_label_that_passes_global_policy(
     class FakeArasaacService:
         async def download_symbol_image(self, arasaac_id: int) -> bytes:
             assert arasaac_id == 2
-            return b"image-bytes"
+            return _png_bytes()
 
         async def close(self):
             return None
@@ -575,6 +653,7 @@ def test_arasaac_import_allows_label_that_passes_global_policy(
     )
     result = asyncio.run(
         arasaac.import_arasaac_symbol(
+            _request(),
             payload,
             db=test_db_session,
             current_user=user,
@@ -584,3 +663,166 @@ def test_arasaac_import_allows_label_that_passes_global_policy(
     assert result.label == "pan"
     assert test_db_session.query(Symbol).filter(Symbol.label == "pan").count() == 1
     assert list((tmp_path / "symbols").glob("*.png")) != []
+
+
+def _import_payload_route(monkeypatch, tmp_path, image_bytes, *, arasaac_id=42):
+    """Drive import_arasaac_symbol with a fake downloader returning bytes."""
+    monkeypatch.setattr(arasaac, "index_symbol", lambda _symbol: None)
+    monkeypatch.setattr(config, "UPLOADS_DIR", tmp_path)
+    monkeypatch.setattr(arasaac, "get_text", lambda **_kwargs: "download failed")
+
+    class FakeArasaacService:
+        async def download_symbol_image(self, _arasaac_id: int) -> bytes:
+            return image_bytes
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(arasaac, "ArasaacService", FakeArasaacService)
+    return arasaac.ImportArasaacRequest(arasaac_id=arasaac_id, label="h6probe")
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_arasaac_import_rejects_non_image_payload(
+    test_db_session, monkeypatch, tmp_path
+):
+    """H6: upstream bytes that are not a decodable image never reach /uploads."""
+    user = User(
+        username="arasaac_nonimage_user",
+        display_name="ARASAAC Non Image User",
+        user_type="student",
+        password_hash="unused",
+        is_active=True,
+    )
+    test_db_session.add(user)
+    test_db_session.commit()
+    test_db_session.refresh(user)
+
+    payload = _import_payload_route(
+        monkeypatch, tmp_path, b"<html>not a pictogram</html>"
+    )
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            arasaac.import_arasaac_symbol(
+                _request(),
+                payload, db=test_db_session, current_user=user
+            )
+        )
+
+    assert error.value.status_code == 400
+    assert list((tmp_path / "symbols").glob("*.png")) == []
+    assert test_db_session.query(Symbol).filter(Symbol.label == "h6probe").count() == 0
+
+
+@pytest.mark.usefixtures("setup_test_db")
+def test_arasaac_import_rejects_oversize_payload(test_db_session, monkeypatch, tmp_path):
+    """H6: an oversized upstream body is rejected with a 413, not written."""
+    from src.api.file_uploads import DEFAULT_MAX_IMAGE_BYTES
+
+    user = User(
+        username="arasaac_oversize_user",
+        display_name="ARASAAC Oversize User",
+        user_type="student",
+        password_hash="unused",
+        is_active=True,
+    )
+    test_db_session.add(user)
+    test_db_session.commit()
+    test_db_session.refresh(user)
+
+    oversize = _png_bytes() + b"\x00" * (DEFAULT_MAX_IMAGE_BYTES + 1)
+    payload = _import_payload_route(monkeypatch, tmp_path, oversize, arasaac_id=43)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            arasaac.import_arasaac_symbol(
+                _request(),
+                payload, db=test_db_session, current_user=user
+            )
+        )
+
+    assert error.value.status_code == 413
+    assert list((tmp_path / "symbols").glob("*.png")) == []
+
+
+def test_arasaac_catalog_body_is_bounded_before_json_parse(monkeypatch):
+    """H49: the bulk catalog cannot allocate an unbounded upstream body."""
+    import src.aac_app.services.arasaac as arasaac_service
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self):
+            yield b"x" * arasaac_service.MAX_CATALOG_BYTES
+            yield b"one byte too many"
+
+    class FakeStream:
+        async def __aenter__(self):
+            return FakeResponse()
+
+        async def __aexit__(self, *args):
+            return False
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def stream(self, _method, _url):
+            return FakeStream()
+
+        async def __aenter__(self):
+            return self
+
+        async def aclose(self):
+            return None
+
+        async def __aexit__(self, *args):
+            return False
+
+    monkeypatch.setattr(arasaac_service.httpx, "AsyncClient", FakeClient)
+    service = arasaac_service.ArasaacService()
+    try:
+        with pytest.raises(ValueError, match="catalog exceeds"):
+            asyncio.run(service.list_all_symbols("es"))
+    finally:
+        asyncio.run(service.close())
+
+
+def test_arasaac_download_body_is_bounded(monkeypatch):
+    """H49: the download streams and aborts past MAX_DOWNLOAD_BYTES."""
+    from src.aac_app.services.arasaac import MAX_DOWNLOAD_BYTES, ArasaacService
+
+    class FakeResponse:
+        status_code = 200
+
+        async def aiter_bytes(self):
+            yield b"x" * MAX_DOWNLOAD_BYTES
+            yield b"one byte too many"
+
+    class FakeStream:
+        async def __aenter__(self):
+            return FakeResponse()
+
+        async def __aexit__(self, *args):
+            return False
+
+    class FakeClient:
+        def stream(self, _method, _url):
+            return FakeStream()
+
+        async def aclose(self):
+            return None
+
+    service = ArasaacService()
+    service.client = FakeClient()
+    try:
+        assert (
+            asyncio.run(
+                service._download_bounded("https://static.arasaac.org/pictograms/1/1_2500.png")
+            )
+            is None
+        )
+    finally:
+        asyncio.run(service.close())

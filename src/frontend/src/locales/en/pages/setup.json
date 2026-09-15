@@ -23,6 +23,7 @@
   "errors": {
     "passwordMismatch": "Passwords do not match",
     "passwordTooShort": "Password must be at least 8 characters",
+    "defaultPasswordForbidden": "The development default password is not permitted for administrator setup.",
     "statusCheckFailed": "Could not verify setup status. You can still continue, but the server may already be configured."
   }
 }

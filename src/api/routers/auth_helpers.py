@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 import re
 from collections.abc import Callable
@@ -9,8 +10,6 @@ from functools import wraps
 from typing import Any, ParamSpec
 
 from fastapi import HTTPException
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -20,13 +19,17 @@ from src.aac_app.models import User, UserSettings
 from src.aac_app.services.auth_service import password_strength_error_key
 from src.api import schemas
 from src.api.deps import get_text
+from src.api.limiter import limiter as _limiter_instance
 
 # Shared with the guardian-profiles router. guardian_profiles imports only
 # src.api.deps + services (never auth_helpers), so this is acyclic.
 from src.api.routers.guardian_profiles import enforce_locked_safety_fields
 
 _P = ParamSpec("_P")
-_limiter_instance = Limiter(key_func=get_remote_address)
+# ``conditional_limiter`` decorates the functions slowapi counts, and
+# ``main.py`` registers this same instance as ``app.state.limiter`` (the 429
+# handler formats its headers from it). One instance, so the handler never
+# reads counters from a limiter that did not see the request.
 
 
 def apply_student_safety_at_creation(
@@ -101,10 +104,29 @@ def apply_student_safety_at_creation(
 
 
 def conditional_limiter(rate: str) -> Callable[[Callable[_P, Any]], Callable[_P, Any]]:
-    """Apply rate limiting in production while keeping tests deterministic."""
+    """Apply rate limiting in production while keeping tests deterministic.
+
+    Handles both sync and async endpoints: slowapi's own wrapper is a
+    coroutine function when the target is, so the env gate must preserve that
+    shape (a sync wrapper around an async target would hand FastAPI a
+    coroutine as the response). Decorated endpoints are marked with
+    ``__rate_limited__`` so coverage can assert a whole endpoint class is
+    behind a limiter.
+    """
 
     def decorator(func: Callable[_P, Any]) -> Callable[_P, Any]:
         limited_func = _limiter_instance.limit(rate)(func)
+
+        if inspect.iscoroutinefunction(func):
+
+            @wraps(func)
+            async def async_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> Any:
+                if os.getenv("TESTING", "0") == "1":
+                    return await func(*args, **kwargs)
+                return await limited_func(*args, **kwargs)
+
+            async_wrapper.__rate_limited__ = True  # type: ignore[attr-defined]
+            return async_wrapper
 
         @wraps(func)
         def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> Any:
@@ -112,6 +134,7 @@ def conditional_limiter(rate: str) -> Callable[[Callable[_P, Any]], Callable[_P,
                 return func(*args, **kwargs)
             return limited_func(*args, **kwargs)
 
+        wrapper.__rate_limited__ = True  # type: ignore[attr-defined]
         return wrapper
 
     return decorator

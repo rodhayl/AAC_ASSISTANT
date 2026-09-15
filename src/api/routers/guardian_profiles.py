@@ -73,6 +73,69 @@ def enforce_locked_safety_fields(
     return safety
 
 
+# The template preview deep-merges a client dict into the prompt profile via
+# ``_apply_dot_overrides``. Bound its shape so a request cannot push deeply
+# nested or oversized content into the rendered system prompt (E4).
+_MAX_OVERRIDE_KEYS = 50
+_MAX_OVERRIDE_LIST = 100
+_MAX_OVERRIDE_STRING = 2000
+_MAX_OVERRIDE_LIST_ITEM = 200
+
+
+def _override_paths(profile: dict, prefix: str = "") -> set[str]:
+    """Every dot path a template accepts as an override (depth ≤ 2).
+
+    Derived from the loaded template itself, so the allow-list is exactly the
+    strict profile schema the prompt is built from.
+    """
+    paths: set[str] = set()
+    for key, value in profile.items():
+        path = f"{prefix}{key}"
+        paths.add(path)
+        if isinstance(value, dict) and not prefix:
+            paths |= _override_paths(value, f"{path}.")
+    return paths
+
+
+def _validate_template_overrides(
+    overrides: dict | None, template: dict, current_user: User
+) -> dict | None:
+    """Reject override payloads that do not match the strict template shape."""
+    if overrides is None:
+        return None
+
+    def invalid() -> HTTPException:
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=get_text(user=current_user, key="errors.guardian.invalidOverrides"),
+        )
+
+    if not isinstance(overrides, dict) or len(overrides) > _MAX_OVERRIDE_KEYS:
+        raise invalid()
+    allowed = _override_paths(template)
+    for key, value in overrides.items():
+        if not isinstance(key, str) or key not in allowed:
+            raise invalid()
+        if isinstance(value, str):
+            if len(value) > _MAX_OVERRIDE_STRING:
+                raise invalid()
+        elif isinstance(value, (bool, int, float)):
+            continue
+        elif isinstance(value, list):
+            if len(value) > _MAX_OVERRIDE_LIST or any(
+                not isinstance(item, (str, bool, int, float)) for item in value
+            ):
+                raise invalid()
+            if any(
+                isinstance(item, str) and len(item) > _MAX_OVERRIDE_LIST_ITEM
+                for item in value
+            ):
+                raise invalid()
+        else:
+            raise invalid()
+    return overrides
+
+
 def _collect_profile_changes(
     profile_data, *, skip_falsy: bool, current_user: User
 ) -> dict:
@@ -191,6 +254,9 @@ def preview_template(
             ),
         )
 
+    overrides = _validate_template_overrides(
+        overrides, template_manager.get_template(template_name), current_user
+    )
     prompt = guardian_service.preview_system_prompt(
         template_name=template_name, overrides=overrides
     )
@@ -203,6 +269,8 @@ def preview_template(
 
 @router.get("/students", response_model=list[schemas.StudentWithProfileInfo])
 def list_students_with_profiles(
+    skip: int = Query(0, ge=0, le=100_000),
+    limit: int = Query(500, ge=1, le=2000),
     current_user: User = Depends(get_current_teacher_or_admin),
     db: Session = Depends(get_db),
 ):
@@ -219,7 +287,7 @@ def list_students_with_profiles(
         teacher_id = current_user.id
 
     students = guardian_service.list_students_with_profiles(
-        teacher_id=teacher_id, db=db
+        teacher_id=teacher_id, skip=skip, limit=limit, db=db
     )
     return students
 

@@ -266,7 +266,7 @@ export function BoardsAndTopicsSidebar({
                             </div>
                         </div>
                     )}
-                    <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                    <div className="flex-1 overflow-y-auto p-3 space-y-3" data-testid="saved-topics-list">
                         {visibleSavedTopics.length === 0 ? (
                             <div className="text-sm text-muted-foreground text-center py-4">{t('noSavedTopics')}</div>
                         ) : teacherGroups ? (

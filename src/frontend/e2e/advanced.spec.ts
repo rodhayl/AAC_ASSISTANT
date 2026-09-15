@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 
+import { ensureDemoBoard } from './demo-fixture';
+
 test.describe('Advanced Scenarios', () => {
   test.use({ storageState: 'playwright/.auth/admin.json' });
 
@@ -102,6 +104,9 @@ test.describe('Advanced Scenarios', () => {
   });
 
   test('should handle offline conflicts', async ({ page }) => {
+    // The editor needs a board with symbols; the fixture builds one through
+    // the API so this test no longer requires seeded sample data.
+    await ensureDemoBoard(page.request);
 
     // 0. Go to boards page FIRST (while online)
     await page.goto('/boards');

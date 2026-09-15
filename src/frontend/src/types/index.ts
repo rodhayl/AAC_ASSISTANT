@@ -112,6 +112,9 @@ export interface Board {
   is_language_learning?: boolean;
 }
 export interface Achievement {
+  // Present on management/full payloads; the student list may omit it, which
+  // is why React keys fall back to the name.
+  id?: number;
   name: string;
   description: string;
   category: string;

@@ -10,13 +10,23 @@ export type WSHandlers = {
 // recent state (e.g. the last board move) for the reconnect flush.
 const WS_QUEUE_MAXSIZE = 100;
 
+export type WSClientOptions = {
+  /**
+   * Backing store for payloads queued while the socket is not OPEN. Callers
+   * that recreate the client for a new credential can pass the same array so
+   * the pending payloads survive the swap (A7); it defaults to a fresh array.
+   */
+  queue?: unknown[]
+}
+
 export function createWSClient(
   url: string,
   handlers: WSHandlers = {},
   protocols?: string | string[],
+  options: WSClientOptions = {},
 ) {
   let socket: WebSocket | null = null
-  const queue: unknown[] = []
+  const queue: unknown[] = options.queue ?? []
   let retries = 0
   let closed = false
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -84,15 +94,19 @@ export function createWSClient(
         queue.push(payload)
       }
     },
-    close: () => {
+    close: (closeOptions: { clearQueue?: boolean } = {}) => {
       closed = true
       if (reconnectTimer !== null) {
         clearTimeout(reconnectTimer)
         reconnectTimer = null
       }
-      queue.length = 0
+      // Credential-rotation reconnects hand the queue to the replacement
+      // client, so they must not empty it here (A7).
+      if (closeOptions.clearQueue !== false) queue.length = 0
       try { socket?.close() } catch { /* close failed */ }
       socket = null
-    }
+    },
+    /** Payloads still waiting for a socket, for callers reusing the queue. */
+    pending: () => queue
   }
 }

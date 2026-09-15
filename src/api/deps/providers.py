@@ -640,23 +640,29 @@ def get_vector_store() -> LocalVectorStore:
     # Wait only outside the operation/provider locks. Deferred cleanup needs
     # both locks before it can signal completion; waiting while holding either
     # lock would deadlock the cleanup worker.
-    if not _vector_store_lock_owned():
+    owns_lock = _vector_store_lock_owned()
+    if not owns_lock:
         _wait_for_deferred_vector_store_cleanup()
 
-    with vector_store_operation_lock, _provider_lock:
-        if _vector_store is not None:
-            return _vector_store
-        if _deferred_vector_store_events:
-            # A detached store is still being closed by another reset. The
-            # outer wait normally handles this; keep the guard for a reset that
-            # begins between that wait and lock acquisition.
-            raise RuntimeError(
-                "Cannot create a replacement vector store while a detached "
-                "instance awaits lock release"
-            )
-        logger.info("Initializing global LocalVectorStore")
-        _vector_store = LocalVectorStore()
-        return _vector_store
+    for _attempt in range(5):
+        with vector_store_operation_lock, _provider_lock:
+            if _vector_store is not None:
+                return _vector_store
+            if not _deferred_vector_store_events:
+                logger.info("Initializing global LocalVectorStore")
+                _vector_store = LocalVectorStore()
+                return _vector_store
+        # A reset began between the wait and lock acquisition, detaching the
+        # store. Release both locks, wait for that cleanup, then retry instead
+        # of failing an in-flight search with a transient 500 (F6).
+        if owns_lock:
+            break
+        _wait_for_deferred_vector_store_cleanup()
+
+    raise RuntimeError(
+        "Cannot create a replacement vector store while a detached "
+        "instance awaits lock release"
+    )
 
 
 def _get_llm_settings() -> tuple[int, float]:
@@ -785,8 +791,12 @@ def _init_llm_provider_sync() -> bool:
                             "Groq provider requires an explicitly configured model"
                         )
                     discarded_llm = _groq_provider
+                    # Same resolvers as get_groq_provider: a raw DB-only read
+                    # here installed an empty-key instance when the key came
+                    # from config/env, which the first getter call then
+                    # discarded and rebuilt (F2 client churn on cold start).
                     _groq_provider = GroqProvider(
-                        api_key=_get_setting_value("groq_api_key", ""),
+                        api_key=resolve_groq_api_key(),
                         model=configured_model,
                     )
                 else:

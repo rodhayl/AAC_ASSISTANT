@@ -114,7 +114,7 @@ export function LearningMessageList({
                     label={t('editSymbols')}
                     aria-label={t('editSymbolMessage')}
                     onClick={() => onEditMessage(index)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-surface/20 rounded"
+                    className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity p-1 hover:bg-surface/20 rounded"
                   >
                     <Edit className="w-3 h-3" />
                   </IconButton>
@@ -126,7 +126,7 @@ export function LearningMessageList({
                     title={t('reportTitle')}
                     disabled={reported.has(index)}
                     onClick={() => { void reportMessage(index); }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-surface/20 rounded"
+                    className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity p-1 hover:bg-surface/20 rounded"
                   >
                     <Flag className="w-3 h-3" />
                   </IconButton>

@@ -25,6 +25,13 @@ const settingsState = vi.hoisted(() => ({
   groqModels: [],
   loading: false,
   error: null as string | null,
+  modelLoading: { ollama: false, openrouter: false, lmstudio: false, groq: false },
+  modelError: {
+    ollama: null as string | null,
+    openrouter: null as string | null,
+    lmstudio: null as string | null,
+    groq: null as string | null,
+  },
   fetchAISettings: vi.fn(),
   updateAISettings: vi.fn(),
   fetchOllamaModels: vi.fn(),

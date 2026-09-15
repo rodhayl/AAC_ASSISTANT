@@ -17,10 +17,16 @@ from src import config
 from src.aac_app import schema
 from src.aac_app.seed import init_database
 from src.aac_app.services.arasaac_library_import import import_arasaac_library_if_needed
-from src.aac_app.services.ngram_builder import run_periodic_ngram_rebuild
+from src.aac_app.services.ngram_builder import (
+    rebuild_ngram_models,
+    run_periodic_ngram_rebuild,
+)
 from src.aac_app.services.prediction_service import prediction_service
 from src.aac_app.services.runtime_translation import normalize_language_code
-from src.aac_app.services.symbol_image_backfill import backfill_missing_symbol_images
+from src.aac_app.services.symbol_image_backfill import (
+    backfill_missing_symbol_images,
+    cancel_scheduled_symbol_image_downloads,
+)
 from src.aac_app.services.vector_utils import index_all_symbols
 from src.api.deps import (
     get_startup_state,
@@ -52,7 +58,6 @@ from src.api.routers import (
     symbols,
     users,
 )
-from src.api.routers import config as config_router
 from src.api.spa import ImmutableStaticFiles, SPAStaticFiles, resolve_frontend_directory
 
 
@@ -121,6 +126,11 @@ async def lifespan(app: FastAPI):
     index_finished = threading.Event()
     index_started = threading.Event()
     shutdown_started = threading.Event()
+    # Same handshake for the periodic n-gram rebuild: cancelling its
+    # asyncio.to_thread wrapper does not stop the synchronous worker, which
+    # keeps rewriting n-gram files and popping cached prediction models (F3).
+    ngram_started = threading.Event()
+    ngram_finished = threading.Event()
 
     def run_index() -> None:
         index_started.set()
@@ -136,6 +146,15 @@ async def lifespan(app: FastAPI):
 
     async def index_symbols_in_background() -> None:
         try:
+            # Same prelude as the other optional startup workers. Besides
+            # skipping needless work, this keeps the DB-touching index thread
+            # out of the test process: a cancelled to_thread wrapper can
+            # outlive its lifespan, and the thread would then resolve the
+            # *next* test's session factory (cross-test contamination).
+            # Tests that exercise indexing call it directly or opt in by
+            # overriding _background_task_runnable.
+            if not _background_task_runnable(app, "symbol indexing"):
+                return
             await asyncio.to_thread(run_index)
         except asyncio.CancelledError:
             raise
@@ -211,8 +230,25 @@ async def lifespan(app: FastAPI):
             interval = config.get_int(
                 "AAC_NGRAM_REBUILD_INTERVAL_SECONDS", 3600
             )
+
+            def guarded_ngram_rebuild(*args, **kwargs) -> None:
+                """One rebuild, bracketed by the shutdown handshake.
+
+                ``ngram_finished`` is cleared before the shutdown check so a
+                shutdown that races the start of an iteration still waits for
+                the worker instead of seeing a stale "finished" signal.
+                """
+                ngram_finished.clear()
+                ngram_started.set()
+                try:
+                    if shutdown_started.is_set():
+                        return
+                    rebuild_ngram_models(*args, **kwargs)
+                finally:
+                    ngram_finished.set()
+
             await run_periodic_ngram_rebuild(
-                locales, interval_seconds=interval
+                locales, interval_seconds=interval, rebuild_fn=guarded_ngram_rebuild
             )
         except asyncio.CancelledError:
             raise
@@ -316,6 +352,28 @@ async def lifespan(app: FastAPI):
         # observes shutdown_started and exits without touching the store.
         if not index_started.is_set():
             index_finished.set()
+        # Same for the n-gram worker: nothing to wait for if it never started.
+        if not ngram_started.is_set():
+            ngram_finished.set()
+
+        # Scheduled symbol-image downloads live outside the startup task set.
+        # Cancel and drain them before the providers (and their httpx clients)
+        # are closed, so shutdown cannot return mid-download (F3).
+        await cancel_scheduled_symbol_image_downloads(
+            max(shutdown_deadline - asyncio.get_running_loop().time(), 0.0)
+        )
+
+        # Wait for the n-gram rebuild worker within the same budget: a late
+        # rebuild would mutate model files and the prediction cache after the
+        # server has stopped serving requests.
+        while not ngram_finished.is_set():
+            remaining = shutdown_deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                logger.warning(
+                    "N-gram rebuild worker still running; continuing shutdown"
+                )
+                break
+            await asyncio.sleep(min(remaining, 0.05))
 
         # A cancelled to_thread wrapper can return while its synchronous index
         # worker is still running. Wait within the same shutdown budget before
@@ -607,7 +665,6 @@ async def readiness_check():
     return {"ready": True, "status": "healthy", "message": "All providers initialized and ready", "providers": startup_state["providers_ready"], "startup_time_ms": startup_state["startup_time_ms"], "provider_metrics": startup_state.get("provider_metrics", {})}
 
 
-app.include_router(config_router.router)
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(auth_users.router, prefix="/api/auth", tags=["auth"])
 app.include_router(auth_preferences.router, prefix="/api/auth", tags=["auth"])
