@@ -73,6 +73,35 @@ UPLOADS_DIR=uploads
 read-only installations should point all three settings at writable locations
 outside the application directory. The complete key-by-key configuration
 reference is in the root [README](../README.md) configuration table.
+
+### ARASAAC image maintenance flags
+
+The symbol library stores metadata (label, category, keywords) independently
+of images. Symbols created from the sample seed, board AI generation, or the
+symbol API start with no image; pictograms come from ARASAAC only through
+explicit channels. Two opt-in startup flags fill that gap automatically:
+
+- `AAC_ENABLE_SYMBOL_IMAGE_BACKFILL=true` runs a bounded batch at startup
+  (`AAC_SYMBOL_IMAGE_BACKFILL_LIMIT`, default 100) that searches ARASAAC for
+  each symbol still missing an image, downloads its pictogram into the uploads
+  directory, and reuses an already-downloaded image when two symbols resolve
+  to the same pictogram. While the server runs, new symbols created through
+  the symbols API and board AI enqueue the same background download. The run
+  is skipped under `TESTING=1` and repeated at every startup only while
+  symbols remain without an image, so a failed download retries on the next
+  restart.
+- `AAC_ENABLE_ARASAAC_LIBRARY_IMPORT=true` performs a one-time bulk import of
+  the full ARASAAC catalog for each locale in `AAC_ARASAAC_LIBRARY_LOCALES`
+  (default `es,en`): thousands of downloads taking several minutes, recorded
+  under `arasaac_library_imported_<locale>` in `app_settings` so later
+  startups skip it. Use it to pre-populate a large offline library; leave it
+  off for offline or metered installations.
+
+Both flags make external HTTPS requests to `arasaac.org` at startup and are
+`false` by default; CI and E2E scripts pin them to `false` for determinism.
+Symbols can always be imaged manually instead: upload a file from the Symbols
+page or import pictograms from the built-in ARASAAC search, neither of which
+requires these flags.
 `TESTING=1` is an operational environment variable for automated validation;
 it disables request rate limiting. `AAC_ASSISTANT_NO_BROWSER=1` is the
 headless validation/managed-launch flag and prevents the frozen launcher from
