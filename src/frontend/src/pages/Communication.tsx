@@ -52,6 +52,7 @@ export function Communication() {
   const page = useBoardStore((state) => state.page);
   const user = useAuthStore((state) => state.user);
   const submitSymbolAnswer = useLearningStore((state) => state.submitSymbolAnswer);
+  const submitAnswer = useLearningStore((state) => state.submitAnswer);
   const startSession = useLearningStore((state) => state.startSession);
   const resetSession = useLearningStore((state) => state.resetSession);
   const currentSession = useLearningStore((state) => state.currentSession);
@@ -284,9 +285,7 @@ export function Communication() {
       }],
       context_topic: "communication"
     }).catch(err => console.error('Failed to log usage:', err));
-  }, [activeBoardId, voiceEnabled, user?.settings?.ignore_repeats]);
-
-  const handleSpeakSentence = useCallback(async () => {
+  }, [activeBoardId, voiceEnabled, user?.settings?.ignore_repeats]);  const handleSpeakSentence = useCallback(async () => {
     if (sentence.length === 0) return;
 
     // 1. Speak the sentence if voice enabled
@@ -309,6 +308,12 @@ export function Communication() {
       console.error('Failed to log usage:', err);
     }
   }, [sentence, voiceEnabled]);
+
+  // Stop the in-progress sentence utterance: the play button becomes a stop
+  // button while speaking so a too-long/too-fast sentence can be silenced.
+  const handleStopSpeaking = useCallback(() => {
+    tts.cancelAll();
+  }, []);
 
   const handleSendToChat = useCallback(async () => {
     if (sentence.length === 0 || isChatLoading) return;
@@ -501,6 +506,49 @@ export function Communication() {
     }
   }, [voiceEnabled]);
 
+  // Typed phrases (keyboard overlay) reach the AI chat as real user messages:
+  // ensure a session exists for the active context, submit the text, open the
+  // chat panel, and speak it. Rejecting keeps the overlay's draft for retry
+  // (the toast for the failure is surfaced here, the overlay keeps the text).
+  const handleSendTextToChat = useCallback(async (text: string) => {
+    if (!user) return;
+
+    let activeSession = currentSession;
+    if (!activeSession) {
+      try {
+        const boardTopic = currentBoard?.name?.trim() || t('topics.general');
+        await startSession({
+          topic: boardTopic,
+          difficulty: 'basic',
+          purpose: 'communication board',
+          board_id: currentBoard?.id,
+          mode_key: defaultLearningModeKey,
+        }, user.id);
+        activeSession = useLearningStore.getState().currentSession;
+      } catch (e) {
+        console.error('Failed to start session for typed message', e);
+        addToast(t('common:sessionStartFailed'), 'error');
+        throw e;
+      }
+    }
+    if (!activeSession) throw new Error('no active session');
+
+    setIsChatOpen(true);
+    if (voiceEnabled) {
+      // Stop anything queued first so the user hears their own phrase, not a
+      // stale utterance, followed by the assistant reply.
+      tts.cancelAll();
+      tts.enqueue(text);
+    }
+    try {
+      await submitAnswer(activeSession.session_id, text);
+    } catch (err) {
+      console.error('Failed to send typed message to chat:', err);
+      addToast(t('common:sendToChatFailed'), 'error');
+      throw err;
+    }
+  }, [addToast, currentBoard, currentSession, defaultLearningModeKey, startSession, submitAnswer, t, user, voiceEnabled]);
+
   const availableBoards = useMemo(() => {
     // Students can have personal boards as well as assigned boards. Showing
     // only one collection made assigned boards disappear whenever the student
@@ -566,6 +614,7 @@ export function Communication() {
               onClear={handleClearSentence}
               onBackspace={handleBackspaceSentence}
               onSpeak={handleSpeakSentence}
+              onStopSpeaking={handleStopSpeaking}
               onSpeakItem={handleSpeakText}
               onReorder={handleReorder}
               onAskAI={handleSendToChat}
@@ -640,6 +689,7 @@ export function Communication() {
           isOpen={isKeyboardOpen}
           onClose={() => setIsKeyboardOpen(false)}
           onSpeak={handleSpeakText}
+          onSendToChat={handleSendTextToChat}
         />
 
         <PartnerOverlay
@@ -901,6 +951,7 @@ export function Communication() {
             onClear={handleClearSentence}
             onBackspace={handleBackspaceSentence}
             onSpeak={handleSpeakSentence}
+            onStopSpeaking={handleStopSpeaking}
             onSpeakItem={handleSpeakText}
             onReorder={handleReorder}
             onAskAI={handleSendToChat}
@@ -975,6 +1026,7 @@ export function Communication() {
         isOpen={isKeyboardOpen}
         onClose={() => setIsKeyboardOpen(false)}
         onSpeak={handleSpeakText}
+        onSendToChat={handleSendTextToChat}
       />
 
       <PartnerOverlay

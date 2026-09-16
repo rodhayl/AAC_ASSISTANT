@@ -192,9 +192,30 @@ describe('SentenceStrip', () => {
     expect(screen.getByTestId('sentence-speak')).toBeDisabled();
   });
 
-  it('disables the Speak button when isSpeaking is true', () => {
+  it('legacy callers: the Speak button stays disabled while speaking when no stop handler is given', () => {
     renderStrip([apple], { isSpeaking: true });
     expect(screen.getByTestId('sentence-speak')).toBeDisabled();
+  });
+
+  it('the speaking button becomes a stop button that calls onStopSpeaking', () => {
+    const onStopSpeaking = vi.fn();
+    renderStrip([apple], { isSpeaking: true, onStopSpeaking });
+
+    const button = screen.getByTestId('sentence-speak');
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveAttribute('aria-label', 'stopSpeaking');
+    fireEvent.click(button);
+    expect(onStopSpeaking).toHaveBeenCalledTimes(1);
+  });
+
+  it('the idle button keeps the speak label and calls onSpeak', () => {
+    const onSpeak = vi.fn();
+    renderStrip([apple], { onSpeak, onStopSpeaking: vi.fn() });
+
+    const button = screen.getByTestId('sentence-speak');
+    expect(button).toHaveAttribute('aria-label', 'speakSentence');
+    fireEvent.click(button);
+    expect(onSpeak).toHaveBeenCalledTimes(1);
   });
 
   it('enables the Speak button when symbols are present', () => {

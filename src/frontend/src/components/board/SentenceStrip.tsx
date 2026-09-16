@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { Play, Delete, Trash2, X, Volume2, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Play, Square, Delete, Trash2, X, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react';
 import { IconButton } from '../ui/icon-button';
 import type { BoardSymbol } from '../../types';
 import { useTranslation } from 'react-i18next';
@@ -24,6 +24,12 @@ interface SentenceStripProps {
   onClear: () => void;
   onBackspace?: () => void;
   onSpeak: () => void;
+  /**
+   * Stop the in-progress utterance. Provided whenever the utterance is
+   * cancelable: the play button becomes a stop button while `isSpeaking` is
+   * true, so a too-long/too-fast sentence can always be silenced.
+   */
+  onStopSpeaking?: () => void;
   onSpeakItem?: (text: string) => void;
   onReorder?: (fromIndex: number, toIndex: number) => void;
   onAskAI?: () => void;
@@ -116,6 +122,7 @@ export const SentenceStrip = memo(function SentenceStrip({
   onClear,
   onBackspace,
   onSpeak,
+  onStopSpeaking,
   onSpeakItem,
   onReorder,
   onAskAI,
@@ -326,21 +333,31 @@ export const SentenceStrip = memo(function SentenceStrip({
             </button>
 
             <button
-              onClick={onSpeak}
-              disabled={symbols.length === 0 || isSpeaking}
+              onClick={() => {
+                if (isSpeaking) {
+                  if (onStopSpeaking) onStopSpeaking();
+                  return;
+                }
+                onSpeak();
+              }}
+              // While speaking, the same button becomes STOP so a too-long or
+              // too-fast utterance can always be silenced (it used to be
+              // disabled, offering no way to stop). Without a stop handler
+              // (legacy callers) the disabled-while-speaking behavior is kept.
+              disabled={symbols.length === 0 || (isSpeaking && !onStopSpeaking)}
               data-testid="sentence-speak"
-              className={`
-                p-3 rounded-xl text-white shadow-sm transition-all transform active:scale-95
+              className={
+                `p-3 rounded-xl text-white shadow-sm transition-all transform active:scale-95
                 ${isSpeaking
                   ? 'bg-brand/70 cursor-wait'
                   : 'bg-brand hover:bg-brand/80 hover:shadow-md'
                 }
                 ${symbols.length === 0 ? 'opacity-50 cursor-not-allowed bg-muted-foreground' : ''}
               `}
-              aria-label={t('speakSentence')}
+              aria-label={isSpeaking && onStopSpeaking ? t('stopSpeaking') : t('speakSentence')}
             >
               {isSpeaking ? (
-                <Volume2 className="w-6 h-6 animate-pulse" />
+                <Square className="w-6 h-6 fill-current" />
               ) : (
                 <Play className="w-6 h-6 fill-current" />
               )}

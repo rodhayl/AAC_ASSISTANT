@@ -239,6 +239,8 @@
   "pressEnterToSpeak": "Press Enter to speak",
   "clear": "Clear",
   "speak": "Speak",
+  "sendToChat": "Send to chat",
+  "stopSpeaking": "Stop speaking",
   "listening": "Listening to partner...",
   "paused": "Paused",
   "speechNotAvailable": "Speech recognition is not available.",

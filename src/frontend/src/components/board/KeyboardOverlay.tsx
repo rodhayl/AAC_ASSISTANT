@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Volume2, History, Sparkles } from 'lucide-react';
+import { X, Volume2, History, Sparkles, MessageSquare } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../ui/button';
 import {
@@ -12,6 +12,12 @@ interface KeyboardOverlayProps {
   isOpen: boolean;
   onClose: () => void;
   onSpeak: (text: string) => void;
+  /**
+   * Send the typed text to the AI chat as the user's message (Communication
+   * page only). Resolves when the send was accepted; rejecting keeps the
+   * draft for retry. Without it only the speak action is rendered.
+   */
+  onSendToChat?: (text: string) => Promise<void> | void;
 }
 
 // Simple trie-based or frequency-based word prediction could go here.
@@ -28,7 +34,7 @@ const COMMON_WORDS: Record<string, string[]> = {
   ],
 };
 
-export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayProps) {
+export function KeyboardOverlay({ isOpen, onClose, onSpeak, onSendToChat }: KeyboardOverlayProps) {
   const { t, i18n } = useTranslation('boards');
   const [text, setText] = useState('');
   const [history, setHistory] = useState<string[]>(() => {
@@ -82,6 +88,29 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
         // history still works for this session.
       }
     }
+  };
+
+  // Send the typed text to the AI chat as a user message. The draft is kept
+  // when the send fails so the phrase is never lost (the parent surfaces the
+  // failure); on success the overlay closes so the message is visible in the
+  // now-open chat panel.
+  const handleSendToChat = async () => {
+    const value = text.trim();
+    if (!value || !onSendToChat) return;
+    try {
+      await onSendToChat(value);
+    } catch {
+      return;
+    }
+    const newHistory = [value, ...history.filter(h => h !== value)].slice(0, 10);
+    setHistory(newHistory);
+    try {
+      localStorage.setItem('aac_phrase_history', JSON.stringify(newHistory));
+    } catch {
+      // Storage may be unavailable; the in-memory history still works.
+    }
+    setText('');
+    onClose();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -191,6 +220,18 @@ export function KeyboardOverlay({ isOpen, onClose, onSpeak }: KeyboardOverlayPro
                     >
                         {t('clear')}
                     </button>
+                    {onSendToChat && (
+                        <Button
+                            onClick={handleSendToChat}
+                            disabled={!text.trim()}
+                            variant="outline"
+                            className="flex-1 sm:flex-none gap-2 px-4 font-bold active:scale-95"
+                            data-touch-target="true"
+                        >
+                            <MessageSquare className="w-4 h-4" />
+                            {t('sendToChat')}
+                        </Button>
+                    )}
                     <Button
                         onClick={handleSpeak}
                         disabled={!text.trim()}

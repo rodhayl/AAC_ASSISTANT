@@ -34,6 +34,7 @@ const hoisted = vi.hoisted(() => {
   };
   const learning = {
     submitSymbolAnswer: vi.fn(),
+    submitAnswer: vi.fn(),
     startSession: vi.fn(),
     resetSession: vi.fn(),
     currentSession: null as { session_id: string } | null,
@@ -233,14 +234,18 @@ vi.mock('../src/components/board/CommunicationToolbar', () => ({
 }));
 
 vi.mock('../src/components/board/KeyboardOverlay', () => ({
-  KeyboardOverlay: ({ isOpen, onClose, onSpeak }: {
+  KeyboardOverlay: ({ isOpen, onClose, onSpeak, onSendToChat }: {
     isOpen: boolean;
     onClose: () => void;
     onSpeak: (t: string) => void;
+    onSendToChat?: (t: string) => Promise<void> | void;
   }) => (
     <div>
       {isOpen && <span>keyboard-overlay-open</span>}
       <button onClick={() => onSpeak('keyboard text')}>keyboard-speak</button>
+      {onSendToChat && (
+        <button onClick={() => void onSendToChat('typed message')}>keyboard-send-to-chat</button>
+      )}
       <button onClick={onClose}>keyboard-close</button>
     </div>
   ),
@@ -392,6 +397,8 @@ describe('Communication page', () => {
     hoisted.learning.isLoading = false;
     hoisted.learning.startSession.mockReset();
     hoisted.learning.submitSymbolAnswer.mockReset();
+    hoisted.learning.submitAnswer.mockReset();
+    hoisted.learning.submitAnswer.mockResolvedValue({});
     hoisted.api.post.mockResolvedValue({ data: { success: true } });
     hoisted.api.get.mockResolvedValue({ data: [] });
     hoisted.api.put.mockResolvedValue({ data: {} });
@@ -733,6 +740,38 @@ describe('Communication page', () => {
           expect.any(String),
           expect.any(String),
         );
+      });
+    });
+
+    it('sends typed keyboard text to the chat as a user message', async () => {
+      hoisted.learning.currentSession = { session_id: 'existing' };
+      renderCommunication();
+      fireEvent.click(screen.getByRole('button', { name: /Morning Routine/i }));
+      fireEvent.click(screen.getByRole('button', { name: 'toolbar-keyboard' }));
+      expect(screen.getByText('keyboard-overlay-open')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'keyboard-send-to-chat' }));
+
+      await waitFor(() => {
+        expect(hoisted.learning.submitAnswer).toHaveBeenCalledWith('existing', 'typed message');
+      });
+      expect(hoisted.learning.startSession).not.toHaveBeenCalled();
+      const tts = await getTts();
+      expect(tts.enqueue).toHaveBeenCalledWith('typed message');
+    });
+
+    it('starts a session before sending typed text to the chat', async () => {
+      hoisted.learning.startSession.mockImplementation(async () => {
+        hoisted.learning.currentSession = { session_id: 'new-session' };
+      });
+      renderCommunication();
+      fireEvent.click(screen.getByRole('button', { name: /Morning Routine/i }));
+      fireEvent.click(screen.getByRole('button', { name: 'toolbar-keyboard' }));
+      fireEvent.click(screen.getByRole('button', { name: 'keyboard-send-to-chat' }));
+
+      await waitFor(() => {
+        expect(hoisted.learning.startSession).toHaveBeenCalled();
+        expect(hoisted.learning.submitAnswer).toHaveBeenCalledWith('new-session', 'typed message');
       });
     });
 

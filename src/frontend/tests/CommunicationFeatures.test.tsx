@@ -21,6 +21,7 @@ vi.mock('lucide-react', () => ({
   HelpCircle: () => <div data-testid="icon-help-circle" />,
   AlertTriangle: () => <div data-testid="icon-alert-triangle" />,
   Play: () => <div data-testid="icon-play" />,
+  Square: () => <div data-testid="icon-square" />,
   Delete: () => <div data-testid="icon-delete" />,
   Trash2: () => <div data-testid="icon-trash2" />,
   X: () => <div data-testid="icon-x" />,
@@ -203,15 +204,16 @@ describe('SentenceStrip', () => {
     // Click the first 'Hello' which is the symbol card
     fireEvent.click(screen.getAllByText('Hello')[0].closest('div')!);
     expect(onSpeakItem).toHaveBeenCalledWith('Hello');
-  });
-
-  it('disables and pulses the speak button while speaking', () => {
+  });  it('toggles the speak button between play and stop while speaking', () => {
+    const onSpeak = vi.fn();
+    const onStopSpeaking = vi.fn();
     const { rerender } = render(
       <SentenceStrip
         symbols={[mockSymbol]}
-        onRemove={vi.fn()}
-        onClear={vi.fn()}
-        onSpeak={vi.fn()}
+        onRemove={vi.fn()} 
+        onClear={vi.fn()} 
+        onSpeak={onSpeak} 
+        onStopSpeaking={onStopSpeaking}
         isSpeaking={false}
       />
     );
@@ -225,25 +227,31 @@ describe('SentenceStrip', () => {
         symbols={[mockSymbol]}
         onRemove={vi.fn()}
         onClear={vi.fn()}
-        onSpeak={vi.fn()}
+        onSpeak={onSpeak}
+        onStopSpeaking={onStopSpeaking}
         isSpeaking={true}
       />
     );
 
-    expect(speakButton).toBeDisabled();
-    expect(screen.getByTestId('icon-volume2')).toBeInTheDocument();
+    // While speaking the same button is a live STOP control (no longer
+    // disabled), so a too-long utterance can always be silenced.
+    expect(screen.getByTestId('icon-square')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('stopSpeaking'));
+    expect(onStopSpeaking).toHaveBeenCalledTimes(1);
+    expect(onSpeak).not.toHaveBeenCalled();
 
     rerender(
       <SentenceStrip
         symbols={[mockSymbol]}
         onRemove={vi.fn()}
         onClear={vi.fn()}
-        onSpeak={vi.fn()}
+        onSpeak={onSpeak}
+        onStopSpeaking={onStopSpeaking}
         isSpeaking={false}
       />
     );
 
-    expect(speakButton).not.toBeDisabled();
+    expect(screen.getByLabelText('Speak sentence')).not.toBeDisabled();
     expect(screen.getByTestId('icon-play')).toBeInTheDocument();
   });
 
