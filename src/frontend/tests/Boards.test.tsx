@@ -182,11 +182,11 @@ describe('Boards page management', () => {
     });
   };
 
-  it('shows a spinner while the board list is loading', async () => {
+  it('shows layout skeletons while the board list is loading', async () => {
     useBoardStore.setState({ isListLoading: true });
     renderBoards();
 
-    expect(document.querySelector('.animate-spin')).toBeInTheDocument();
+    expect(document.querySelector('.animate-pulse')).toBeInTheDocument();
     await waitFor(() => expect(api.get).toHaveBeenCalled());
   });
 
@@ -194,7 +194,8 @@ describe('Boards page management', () => {
     renderBoards();
     await screen.findByText('Communication Boards');
 
-    fireEvent.click(screen.getByText('New Board'));
+    // The header and the empty-state CTA share the label; the header one wins.
+    fireEvent.click(screen.getAllByText('New Board')[0]);
     fireEvent.change(screen.getByLabelText('Board Name'), { target: { value: 'Colors' } });
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Learn colors' } });
     fireEvent.click(screen.getByText('Create Board'));
@@ -229,7 +230,7 @@ describe('Boards page management', () => {
     renderBoards();
     await screen.findByText('Communication Boards');
 
-    fireEvent.click(screen.getByText('New Board'));
+    fireEvent.click(screen.getAllByText('New Board')[0]);
     fireEvent.change(screen.getByLabelText('Board Name'), { target: { value: 'Bilingual' } });
     fireEvent.click(screen.getByLabelText('Language Learning Board'));
     fireEvent.click(screen.getByLabelText('Enable AI-Powered Symbol Suggestions'));
@@ -260,7 +261,7 @@ describe('Boards page management', () => {
     renderBoards();
     await screen.findByText('Communication Boards');
 
-    fireEvent.click(screen.getByText('New Board'));
+    fireEvent.click(screen.getAllByText('New Board')[0]);
     fireEvent.change(screen.getByLabelText('Board Name'), { target: { value: 'AI Board' } });
     fireEvent.click(screen.getByLabelText('Enable AI-Powered Symbol Suggestions'));
 
@@ -658,7 +659,7 @@ describe('Boards page management', () => {
     renderBoards();
     await screen.findByText('Morning Routine');
 
-    fireEvent.click(screen.getByText('New Board'));
+    fireEvent.click(screen.getAllByText('New Board')[0]);
     expect(screen.getByText('Create New Board')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Cancel'));
     expect(screen.queryByText('Create New Board')).not.toBeInTheDocument();
@@ -701,7 +702,8 @@ describe('Boards page management', () => {
   it('ignores an empty board name on submit', async () => {
     renderBoards();
     await screen.findByText('Communication Boards');
-    fireEvent.click(screen.getByText('New Board'));
+    // The header and the empty-state CTA share the label; the header one wins.
+    fireEvent.click(screen.getAllByText('New Board')[0]);
 
     fireEvent.submit(document.querySelector('form') as HTMLFormElement);
 

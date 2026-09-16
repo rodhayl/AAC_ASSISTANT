@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router';
 import { useLearningStore } from '../store/learningStore';
 import { useAuthStore } from '../store/authStore';
 import { useBoardStore } from '../store/boardStore';
@@ -7,6 +8,7 @@ import api from '../lib/api';
 import { glossSymbolUtterance } from '../lib/gloss';
 import { tts } from '../lib/tts';
 import { useToastStore } from '../store/toastStore';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { BoardsAndTopicsSidebar } from '../components/learning/BoardsAndTopicsSidebar';
 import { LearningChatPanel } from '../components/learning/LearningChatPanel';
 import { LearningHistoryPanel } from '../components/learning/LearningHistoryPanel';
@@ -60,6 +62,7 @@ export function Learning() {
   const fetchBoards = useBoardStore((state) => state.fetchBoards);
   const fetchAssignedBoards = useBoardStore((state) => state.fetchAssignedBoards);
   const { t, i18n } = useTranslation('learning');
+  usePageTitle(t('title'));
   const currentLang = i18n.language?.split('-')[0] || 'en';
   const modeTranslationRef = useRef(t);
   modeTranslationRef.current = t;
@@ -78,6 +81,9 @@ export function Learning() {
   modesContextRef.current = modesContext;
   const symbolLanguage = currentLang === 'es' ? 'es' : 'en';
 
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkSessionId = searchParams.get('session');
+  const deepLinkHandledRef = useRef<number | null>(null);
   const [input, setInput] = useState('');
   const [voiceEnabled, setVoiceEnabled] = useState(user?.settings?.voice_mode_enabled ?? true);
   const [showHistory, setShowHistory] = useState(false);
@@ -387,6 +393,26 @@ export function Learning() {
     await loadSession(sessionId);
     setShowHistory(false);
   };
+
+  // Deep link (?session=N, e.g. from the Dashboard activity list): load that
+  // conversation once per URL value, then clean the param so a refresh or
+  // navigation does not resurrect an ended session. A missing session (404,
+  // other user's session) falls back to the topic picker via loadSession's
+  // normal error path.
+  useEffect(() => {
+    if (!deepLinkSessionId) return;
+    const sessionId = Number.parseInt(deepLinkSessionId, 10);
+    if (!Number.isFinite(sessionId) || sessionId <= 0) {
+      setSearchParams({}, { replace: true });
+      return;
+    }
+    if (deepLinkHandledRef.current === sessionId) return;
+    deepLinkHandledRef.current = sessionId;
+    setSearchParams({}, { replace: true });
+    void loadSession(sessionId).catch(() => {
+      addToast(t('errors.sessionNotFound'), 'error');
+    });
+  }, [deepLinkSessionId, loadSession, setSearchParams, addToast, t]);
 
   const sendSymbolUtterance = async () => {
     // The send button is disabled whenever the utterance is empty, loading is

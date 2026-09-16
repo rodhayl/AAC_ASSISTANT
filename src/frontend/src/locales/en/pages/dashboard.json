@@ -1,4 +1,5 @@
 {
+  "title": "Dashboard",
   "hero": {
     "welcome": "Welcome back, {{name}}!",
     "subtitle": "Ready to continue your learning journey?"
@@ -30,6 +31,7 @@
   "activity": {
     "recent": "Recent Activity",
     "none": "No recent activity",
-    "practiced": "Practiced \"{{topic}}\""
+    "practiced": "Practiced \"{{topic}}\"",
+    "openSession": "Open this learning session"
   }
 }

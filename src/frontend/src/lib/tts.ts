@@ -294,6 +294,22 @@ class TTSQueue {
     return this.status
   }
 
+  /**
+   * Whether the currently selected TTS engine can produce speech at all.
+   * Returns `false` only when speech is impossible (the selected Kokoro
+   * engine probed as unavailable, or the browser lacks speech synthesis);
+   * an unprobed capability returns `null` so callers never warn about a
+   * probe that has not resolved yet.
+   */
+  canSpeak(): boolean | null {
+    if (typeof window === 'undefined') return false
+    const { ttsProvider, localTTSAvailable } = useTTSStore.getState()
+    if (ttsProvider === 'kokoro') {
+      return capabilityChecked ? localTTSAvailable : null
+    }
+    return 'speechSynthesis' in window
+  }
+
   private setStatus(s: Status) {
     this.status = s
     for (const l of this.listeners) l(s)

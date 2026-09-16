@@ -31,7 +31,9 @@
     "alpha": "A-Z"
   },
   "deleteSelected": "Delete Selected",
-  "noSymbols": "No symbols found.",
+  "noSymbols": "No symbols yet",
+  "noSymbolsHint": "Create the first library symbol or import pictograms from ARASAAC.",
+  "noSymbolsFound": "No symbols match the applied filters.",
   "inUse": "In use",
   "previous": "Previous",
   "next": "Next",

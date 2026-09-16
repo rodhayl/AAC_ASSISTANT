@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useToastStore } from '../store/toastStore';
+import { usePageTitle } from '../hooks/usePageTitle';
 import type { BoardSymbol } from '../types';
 import { SymbolCard } from '../components/board/SymbolCard';
 import { useSymbolHunt } from '../hooks/useSymbolHunt';
@@ -11,6 +12,7 @@ import { SectionTitle } from '@/components/ui/SectionTitle';
 
 export function SymbolHunt() {
   const { t } = useTranslation('games');
+  usePageTitle(t('symbolHunt.title'));
   const addToast = useToastStore((state) => state.addToast);
   const {
     playableBoards,

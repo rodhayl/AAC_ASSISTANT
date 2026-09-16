@@ -31,7 +31,9 @@
     "alpha": "A-Z"
   },
   "deleteSelected": "Eliminar seleccionados",
-  "noSymbols": "No se encontraron símbolos.",
+  "noSymbols": "Aún no hay símbolos",
+  "noSymbolsHint": "Crea el primer símbolo de la biblioteca o importa pictogramas de ARASAAC.",
+  "noSymbolsFound": "Ningún símbolo coincide con los filtros aplicados.",
   "inUse": "En uso",
   "previous": "Anterior",
   "next": "Siguiente",

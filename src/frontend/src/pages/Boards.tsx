@@ -23,6 +23,9 @@ import { formatDate } from '../lib/format';
 
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { StatusMessage } from '../components/ui/StatusMessage';
+import { EmptyState } from '../components/ui/EmptyState';
+import { Skeleton } from '../components/ui/Skeleton';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 import { FormLabel } from '@/components/ui/FormLabel';
 import { SectionTitle } from '@/components/ui/SectionTitle';
@@ -45,6 +48,7 @@ export function Boards() {
   const fetchAISettings = useSettingsStore((state) => state.fetchAISettings);
   const { t, i18n } = useTranslation('boards');
   const { t: tError } = useTranslation('error');
+  usePageTitle(t('title'));
 
   const [isCreating, setIsCreating] = useState(false);
   const [creatingBoard, setCreatingBoard] = useState(false);
@@ -400,8 +404,18 @@ export function Boards() {
 
   if (isListLoading && boards.length === 0) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand" />
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
+            <p className="text-muted-foreground mt-1">{t('subtitle')}</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-56" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -710,6 +724,14 @@ export function Boards() {
           </div>
         ))}
       </div>
+      {boardsToShow.length === 0 && (
+        <EmptyState
+          icon={<LayoutGrid className="w-8 h-8 text-muted-foreground" />}
+          title={boards.length === 0 ? t('noBoards') : t('noBoardsFound')}
+          description={boards.length === 0 ? t('noBoardsHint') : undefined}
+          action={boards.length === 0 ? { label: t('newBoard'), onClick: () => setIsCreating(true) } : undefined}
+        />
+      )}
     </div>
   );
 }

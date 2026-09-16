@@ -18,6 +18,9 @@ import { ResetPasswordModal } from '../components/common/ResetPasswordModal'
 import { GuardianProfileModal } from '../components/students/GuardianProfileModal'
 import { ChevronDown, Sparkles, Volume2 } from 'lucide-react'
 import { LoadingState } from '../components/ui/LoadingState'
+import { EmptyState } from '../components/ui/EmptyState'
+import { Skeleton } from '../components/ui/Skeleton'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { useToastStore } from '../store/toastStore'
 import { FormLabel } from '@/components/ui/FormLabel'
 import { Button } from '../components/ui/button';
@@ -64,6 +67,7 @@ export function Students() {
   const user = useAuthStore((state) => state.user)
   const addToast = useToastStore((state) => state.addToast)
   const { t } = useTranslation(['students', 'settings'])
+  usePageTitle(t('students:title'))
   const [students, setStudents] = useState<StudentBoardSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -515,7 +519,11 @@ export function Students() {
       )}
 
       {loading ? (
-        <LoadingState label={t('loading')} />
+        <div className="glass-panel rounded-xl overflow-hidden p-4 space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
       ) : (
         <div className="glass-panel rounded-xl overflow-hidden">
           <table className="min-w-full divide-y divide-border">
@@ -610,7 +618,12 @@ export function Students() {
           </table >
           {
             students.length === 0 && (
-              <div className="p-6 text-center text-muted-foreground">{t('noStudents')}</div>
+              <EmptyState
+                icon={<Sparkles className="w-8 h-8 text-muted-foreground" />}
+                title={t('noStudents')}
+                description={t('noStudentsHint')}
+                action={{ label: t('create'), onClick: () => { setCreateModalOpen(true); setError(null); } }}
+              />
             )
           }
           {

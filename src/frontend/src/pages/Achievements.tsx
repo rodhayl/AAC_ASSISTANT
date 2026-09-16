@@ -6,6 +6,7 @@ import { walkPages } from '../lib/pagination'
 import { canManageBoard, isStaffUser } from '../lib/roles'
 import type { Achievement, AchievementFull, User } from '../types'
 import { useTranslation } from 'react-i18next'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { Button } from '../components/ui/button';
 import { StatusMessage } from '../components/ui/StatusMessage';
 import { IconButton } from '../components/ui/icon-button';
@@ -70,6 +71,7 @@ export function Achievements() {
   const [dataContextKey, setDataContextKey] = useState<string | null>(null)
   const [managementContextKey, setManagementContextKey] = useState<string | null>(null)
   const { t } = useTranslation('achievements')
+  usePageTitle(t('title'))
 
   const userContextKey = `${user?.id ?? 'anonymous'}:${user?.user_type ?? 'anonymous'}`
   userContextRef.current = userContextKey

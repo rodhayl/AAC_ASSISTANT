@@ -2,12 +2,14 @@ import { useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useBoardStore } from '../store/boardStore';
 import { useDashboardStore } from '../store/dashboardStore';
-import { LayoutGrid, Trophy, Star, Clock } from 'lucide-react';
+import { LayoutGrid, Trophy, Star, Activity, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { formatDateTime } from '../lib/format';
 
 import { SectionTitle } from '@/components/ui/SectionTitle';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
 // The dashboard activity list is a summary, not a log: the backend can return
 // up to 100 rows and rendering them all made the page heavy for no benefit.
@@ -24,7 +26,7 @@ export function Dashboard() {
   const fetchDashboardData = useDashboardStore((state) => state.fetchDashboardData);
   const isLoading = useDashboardStore((state) => state.isLoading);
   const { t } = useTranslation('dashboard');
-
+  usePageTitle(t('title'));
   // Depend on the consumed primitives, not the whole user object: the auth
   // store replaces `user` on unrelated settings saves/refreshes, which used to
   // re-run this effect (and refetch every dashboard source) every time (H41).
@@ -118,7 +120,7 @@ export function Dashboard() {
           {isLoading ? (
             <div className="p-6 grid grid-cols-1 gap-3">
               {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="h-12 bg-muted animate-pulse rounded" />
+                <Skeleton key={i} className="h-12" />
               ))}
             </div>
           ) : assignedBoards.length > 0 ? (
@@ -149,22 +151,28 @@ export function Dashboard() {
           {isLoading ? (
             <div className="p-6 grid grid-cols-1 gap-3">
               {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-10 bg-muted animate-pulse rounded" />
+                <Skeleton key={i} className="h-10" />
               ))}
             </div>
           ) : recentActivity.length > 0 ? (
             recentActivity.slice(0, MAX_ACTIVITY_ITEMS).map((activity, i) => (
-              <div key={i} className="p-4 hover:bg-surface-hover transition-colors flex items-center">
+              <Link
+                key={`${activity.timestamp}-${i}`}
+                to={`/learning?session=${encodeURIComponent(activity.session_id)}`}
+                className="p-4 hover:bg-surface-hover transition-colors flex items-center"
+                title={t('activity.openSession')}
+              >
                 <div className="p-2 bg-muted rounded-lg mr-4">
-                  <Clock className="w-4 h-4 text-muted-foreground" />
+                  <Activity className="w-4 h-4 text-muted-foreground" />
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-foreground">{t('activity.practiced', { topic: activity.topic })}</p>
                   <p className="text-xs text-muted-foreground">
                     {formatDateTime(activity.timestamp)}
                   </p>
                 </div>
-              </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0 ml-2" aria-hidden="true" />
+              </Link>
             ))
           ) : (
             <div className="p-8 text-center text-muted-foreground">{t('activity.none')}</div>

@@ -12,9 +12,12 @@ interface ActivityItem {
   type: string;
   topic: string;
   timestamp: string;
+  /** Learning session id so the Dashboard can deep-link into the exact conversation. */
+  session_id: number;
 }
 
 interface LearningHistoryItem {
+  id: number;
   topic: string;
   created_at: string;
 }
@@ -95,7 +98,9 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       const recentActivity: ActivityItem[] = learningHistory.map((session) => ({
         type: 'learning',
         topic: session.topic,
-        timestamp: session.created_at
+        timestamp: session.created_at,
+        // The history endpoint serializes the primary key as `id`.
+        session_id: session.id
       }));
 
       if (requestId !== dashboardRequestId) return;

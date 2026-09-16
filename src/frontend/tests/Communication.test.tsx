@@ -41,9 +41,9 @@ const hoisted = vi.hoisted(() => {
     isLoading: false,
   };
   const ttsHandlers: {
-    cb: ((s: 'idle' | 'speaking') => void) | null;
+    cbs: Array<(s: 'idle' | 'speaking') => void>;
     status: 'idle' | 'speaking';
-  } = { cb: null, status: 'idle' };
+  } = { cbs: [], status: 'idle' };
   const api = { get: vi.fn(), post: vi.fn(), put: vi.fn() };
   return { boardStore, auth, learning, ttsHandlers, api, addToast: vi.fn() };
 });
@@ -90,14 +90,15 @@ vi.mock('../src/lib/api', () => ({
 vi.mock('../src/lib/tts', () => ({
   tts: {
     onStatusChange: vi.fn((cb: (s: 'idle' | 'speaking') => void) => {
-      hoisted.ttsHandlers.cb = cb;
+      hoisted.ttsHandlers.cbs.push(cb);
       return () => {
-        hoisted.ttsHandlers.cb = null;
+        hoisted.ttsHandlers.cbs = hoisted.ttsHandlers.cbs.filter((x) => x !== cb);
       };
     }),
     getStatus: vi.fn(() => hoisted.ttsHandlers.status),
     enqueue: vi.fn(),
     cancelAll: vi.fn(),
+    canSpeak: vi.fn(() => null),
   },
 }));
 
@@ -437,7 +438,7 @@ describe('Communication page', () => {
       hoisted.boardStore.boards = [];
       hoisted.boardStore.isListLoading = true;
       renderCommunication();
-      expect(document.querySelector('.animate-spin')).toBeInTheDocument();
+      expect(document.querySelector('.animate-pulse')).toBeInTheDocument();
     });
 
     it('loads more boards when pagination is available', () => {
@@ -781,7 +782,7 @@ describe('Communication page', () => {
       expect(screen.queryByText('is-speaking')).not.toBeInTheDocument();
 
       act(() => {
-        hoisted.ttsHandlers.cb?.('speaking');
+        hoisted.ttsHandlers.cbs.forEach((cb) => cb('speaking'));
       });
       expect(screen.getByText('is-speaking')).toBeInTheDocument();
     });
@@ -801,7 +802,7 @@ describe('Communication page', () => {
 
       // The queue later reports idle; the page follows and the control unlocks.
       act(() => {
-        hoisted.ttsHandlers.cb?.('idle');
+        hoisted.ttsHandlers.cbs.forEach((cb) => cb('idle'));
       });
       expect(screen.queryByText('is-speaking')).not.toBeInTheDocument();
     });

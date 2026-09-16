@@ -1,4 +1,5 @@
 {
+  "title": "Panel",
   "hero": {
     "welcome": "¡Bienvenido de nuevo, {{name}}!",
     "subtitle": "¿Listo para continuar tu aprendizaje?"
@@ -30,6 +31,7 @@
   "activity": {
     "recent": "Actividad Reciente",
     "none": "Sin actividad reciente",
-    "practiced": "Practicaste \"{{topic}}\""
+    "practiced": "Practicaste \"{{topic}}\"",
+    "openSession": "Abrir esta sesión de aprendizaje"
   }
 }

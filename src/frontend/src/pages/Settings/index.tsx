@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
 import { isStaffUser } from '../../lib/roles';
+import { usePageTitle } from '../../hooks/usePageTitle';
 import { usePreferences } from './usePreferences';
 import { AiProviderTab } from './AiProviderTab';
 import { AppearanceTab } from './AppearanceTab';
@@ -28,6 +29,7 @@ const sectionAnchors: Array<{ id: SectionId; labelKey: string; staffOnly?: boole
 export function Settings() {
   const user = useAuthStore(state => state.user);
   const { t } = useTranslation('settings');
+  usePageTitle(t('title'));
   const [activeSection, setActiveSection] = useState<SectionId>('profile');
   const preferences = usePreferences();
   const isAdmin = user?.user_type === 'admin';

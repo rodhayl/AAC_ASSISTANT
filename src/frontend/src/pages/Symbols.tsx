@@ -11,6 +11,9 @@ import { useTranslation } from 'react-i18next';
 import { ARASAAC_CATEGORY, DEFAULT_SYMBOL_CATEGORIES } from '../lib/symbolCategories';
 import { isValidImageFile, MAX_IMAGE_FILE_BYTES } from '../lib/download';
 import { SymbolImage } from '../components/common/SymbolImage';
+import { EmptyState } from '../components/ui/EmptyState';
+import { Skeleton } from '../components/ui/Skeleton';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { useToastStore } from '../store/toastStore';
 
 import { SectionTitle } from '@/components/ui/SectionTitle';
@@ -35,6 +38,10 @@ export function Symbols() {
   const [usage, setUsage] = useState<UsageFilter>('all');
   const [sort, setSort] = useState('default');
   const [category, setCategory] = useState('all');
+  // An empty result with active filters means "nothing matches the search",
+  // not "the library is empty": the CTA then stays hidden (symbols.json
+  // noResults) and only the library-empty case offers the create action.
+  const hasActiveFilters = search.trim() !== '' || usage !== 'all' || category !== 'all';
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({ label: '', description: '', category: 'general', keywords: '' });
   const [newFile, setNewFile] = useState<File | null>(null);
@@ -75,6 +82,7 @@ export function Symbols() {
   const [isSearchingArasaac, setIsSearchingArasaac] = useState(false);
   const [importingId, setImportingId] = useState<number | null>(null);
   const { t, i18n } = useTranslation('symbols');
+  usePageTitle(t('title'));
   const addToast = useToastStore((state) => state.addToast);
 
   const fetchSymbols = useCallback(async () => {
@@ -651,13 +659,18 @@ export function Symbols() {
         </div>
 
         {isLoading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <Skeleton key={i} className="h-36" />
+            ))}
           </div>
         ) : symbols.length === 0 ? (
-          <div className="text-center text-muted-foreground py-12">
-            {t('noSymbols')}
-          </div>
+          <EmptyState
+            icon={<ImageIcon className="w-8 h-8 text-muted-foreground" />}
+            title={hasActiveFilters ? t('noSymbolsFound') : t('noSymbols')}
+            description={hasActiveFilters ? undefined : t('noSymbolsHint')}
+            action={hasActiveFilters ? undefined : { label: t('newSymbol'), onClick: () => { resetForm(); setEditingId(null); } }}
+          />
         ) : (
           <SymbolGrid
             symbols={symbols}

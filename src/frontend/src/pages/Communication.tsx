@@ -32,6 +32,8 @@ import { useToastStore } from '../store/toastStore';
 import { BoardsAndTopicsSidebar } from '../components/learning/BoardsAndTopicsSidebar';
 import { TopicPicker, type PickerTopic } from '../components/learning/TopicPicker';
 import { useTopicPickerPool } from '../hooks/useTopicPickerPool';
+import { Skeleton } from '../components/ui/Skeleton';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { cn } from '../lib/utils';
 
 const EMPTY_BOARD_SYMBOLS: BoardSymbol[] = [];
@@ -87,6 +89,8 @@ export function Communication() {
   }, [user?.id, user?.settings?.voice_mode_enabled]);
   const [history, setHistory] = useState<number[]>([]);
   const addToast = useToastStore((state) => state.addToast);
+  // Browser-tab title: the board name when one is active, the page name otherwise.
+  usePageTitle(currentBoard?.name || t('common:communication'));
   const [isStartingSession, setIsStartingSession] = useState(false);
   const lastClickRef = useRef<{ id: number; time: number } | null>(null);
   const voicePreferenceRequestRef = useRef(0);
@@ -219,6 +223,24 @@ export function Communication() {
     };
   }, []);
 
+  // First speech attempt on this page: when the selected engine can never
+  // speak (Kokoro unavailable, or the browser has no speech synthesis) say so
+  // once instead of failing silently. An unknown capability stays silent —
+  // the startup warm-up probe usually resolves it before the first utterance.
+  const ttsWarningShownRef = useRef(false);
+  useEffect(() => {
+    const unsubscribe = tts.onStatusChange((status) => {
+      if (status !== 'speaking' || ttsWarningShownRef.current) return;
+      if (tts.canSpeak() === false) {
+        ttsWarningShownRef.current = true;
+        addToast(t('boards:ttsUnavailable'), 'warning');
+      }
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [addToast, t]);
+
   // Handle fullscreen
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -313,6 +335,30 @@ export function Communication() {
   // button while speaking so a too-long/too-fast sentence can be silenced.
   const handleStopSpeaking = useCallback(() => {
     tts.cancelAll();
+  }, []);
+
+  // Latest-handler ref so the global shortcut below never goes stale when the
+  // sentence strip changes between renders.
+  const speakSentenceRef = useRef(handleSpeakSentence);
+  speakSentenceRef.current = handleSpeakSentence;
+
+  // Page shortcuts: Ctrl/Cmd+Enter speaks the sentence strip, Escape stops
+  // any in-progress speech. Kept on window (not per-input) so the shortcut
+  // works while any control has focus; dialog inputs handle their own Enter
+  // and the base-ui dialog already consumes Escape for closing.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+        event.preventDefault();
+        speakSentenceRef.current();
+        return;
+      }
+      if (event.key === 'Escape' && tts.getStatus() === 'speaking' && !event.defaultPrevented) {
+        tts.cancelAll();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
   const handleSendToChat = useCallback(async () => {
@@ -736,8 +782,10 @@ export function Communication() {
           </div>
 
           {isListLoading && availableBoards.length === 0 && !hasActiveSearch ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton key={i} className="h-48" />
+              ))}
             </div>
           ) : hasActiveSearch && filteredBoards.length === 0 ? (
             <div className="text-center py-12 bg-surface rounded-xl border border-border">

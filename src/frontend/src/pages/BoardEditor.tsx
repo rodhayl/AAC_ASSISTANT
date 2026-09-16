@@ -251,6 +251,21 @@ export function BoardEditor() {
     }
   }, [addToast, batchUpdateSymbols, clearOverrides, currentBoard, editorContextKey, editorContextKeyRef, hasChanges, localSymbols, setHasChanges, t]);
 
+  // Warn before closing/reloading the tab with unsaved layout changes: the
+  // repositioned symbols would be lost silently. The browser renders its own
+  // confirmation copy; in-page navigation keeps its normal flow (the save
+  // button already highlights pending changes).
+  useEffect(() => {
+    if (!hasChanges) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      // Chrome requires returnValue to trigger the dialog.
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasChanges]);
+
   const handleGridChange = useCallback(async (preset: string) => {
     const [r, c] = preset.split('x').map(Number)
     if (!currentBoard) return

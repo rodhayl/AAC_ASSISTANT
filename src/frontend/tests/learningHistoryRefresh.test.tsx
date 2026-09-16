@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { Learning } from '../src/pages/Learning';
 import { useLearningStore } from '../src/store/learningStore';
 
@@ -96,7 +97,11 @@ describe('Learning history refresh', () => {
   });
 
   it('refetches and renders sessions when Show History opens', async () => {
-    render(<Learning />);
+    render(
+      <MemoryRouter>
+        <Learning />
+      </MemoryRouter>,
+    );
 
     await waitFor(() => {
       expect(historyApi.get.mock.calls.filter(([url]) => url === '/learning/history/1')).toHaveLength(1);
@@ -110,5 +115,23 @@ describe('Learning history refresh', () => {
       expect(screen.getByText('Fresh session')).toBeInTheDocument();
       expect(screen.getByText('score 75%')).toBeInTheDocument();
     });
+  });
+
+  it('loads the session from the ?session= deep link once', async () => {
+    render(
+      <MemoryRouter initialEntries={['/learning?session=42']}>
+        <Learning />
+      </MemoryRouter>,
+    );
+
+    // The dashboard activity deep link must trigger exactly one load of the
+    // referenced conversation (id 42 from the history fixture is unrelated to
+    // the link; the progress endpoint is what loadSession fetches).
+    await waitFor(() => {
+      expect(historyApi.get.mock.calls.filter(([url]) => url === '/learning/42/progress')).toHaveLength(1);
+    });
+    // Strict-mode double effects and rerenders must not reload it.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(historyApi.get.mock.calls.filter(([url]) => url === '/learning/42/progress')).toHaveLength(1);
   });
 });

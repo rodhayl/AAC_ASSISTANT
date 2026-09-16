@@ -14,6 +14,7 @@ import { walkPages } from '../lib/pagination'
 import type { User } from '../types'
 import { useAuthStore } from '../store/authStore'
 import { useToastStore } from '../store/toastStore'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { Button } from '../components/ui/button'
 
 export type ManagedUserRole = 'teacher' | 'admin'
@@ -42,6 +43,7 @@ export function UserManagementPage({ role }: UserManagementPageProps) {
   const addToast = useToastStore((state) => state.addToast)
   const namespace = role === 'teacher' ? 'teachers' : 'admins'
   const { t } = useTranslation([namespace, 'settings'])
+  usePageTitle(t('title'))
   const [managedUsers, setManagedUsers] = useState<User[]>([])
   const [managedUsersContextKey, setManagedUsersContextKey] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
