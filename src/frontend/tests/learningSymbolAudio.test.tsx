@@ -108,6 +108,7 @@ class MockMediaRecorder {
 }
 
 // Import after mocks
+import { MemoryRouter } from 'react-router';
 import { Learning } from '../src/pages/Learning';
 import { __startSession, __submitAnswer } from '../src/store/learningStore';
 
@@ -184,7 +185,7 @@ describe('Learning symbol-first and audio-first flows', () => {
   });
 
   it('symbol-first: clicking symbol starts session when none active', async () => {
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     await act(async () => {
       fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });
@@ -210,7 +211,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     const store = (await import('../src/store/learningStore')).__mockStore;
     store.currentSession = { session_id: 99, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
 
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     await act(async () => {
       fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });
@@ -240,7 +241,7 @@ describe('Learning symbol-first and audio-first flows', () => {
   });
 
   it('symbol-first: Speak only uses the shared TTS queue with the active locale', async () => {
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     await act(async () => {
       fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });
@@ -260,7 +261,7 @@ describe('Learning symbol-first and audio-first flows', () => {
 
   it('symbol-first: Speak only passes the Spanish locale to the shared TTS queue', async () => {
     mockLanguage.value = 'es';
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     await act(async () => {
       fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });
@@ -280,7 +281,7 @@ describe('Learning symbol-first and audio-first flows', () => {
   });
 
   it('audio-first: clicking mic starts default session when none active', async () => {
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     // Click mic button
     const micBtn = screen.getByLabelText(/startRecordingLabel/i);
     await act(async () => {
@@ -294,7 +295,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     const store = (await import('../src/store/learningStore')).__mockStore;
     store.currentSession = { session_id: 99, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
 
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     const input = screen.getByPlaceholderText('typeAnswer');
     fireEvent.change(input, { target: { value: 'Red and blue' } });
     fireEvent.submit(input.closest('form') as HTMLFormElement);
@@ -303,7 +304,7 @@ describe('Learning symbol-first and audio-first flows', () => {
   });
 
   it('chat: asks to start a session first when none is active', async () => {
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     const input = screen.getByPlaceholderText('typeAnswer');
     fireEvent.change(input, { target: { value: 'Hello' } });
     fireEvent.submit(input.closest('form') as HTMLFormElement);
@@ -316,7 +317,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     const store = (await import('../src/store/learningStore')).__mockStore;
     store.currentSession = { session_id: 99, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
 
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'newQuestion' }));
 
     await waitFor(() => expect(store.askQuestion).toHaveBeenCalledWith(99, undefined));
@@ -326,7 +327,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     const store = (await import('../src/store/learningStore')).__mockStore;
     store.currentSession = { session_id: 99, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
 
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'endSession' }));
     await screen.findByRole('dialog');
     fireEvent.click(screen.getAllByRole('button', { name: 'endSession' })[1]);
@@ -346,7 +347,7 @@ describe('Learning symbol-first and audio-first flows', () => {
       },
     ];
 
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     fireEvent.click(screen.getByText('showHistory'));
     fireEvent.click(await screen.findByTestId('learning-history-item'));
 
@@ -357,7 +358,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     const store = (await import('../src/store/learningStore')).__mockStore;
     store.providerHistory = [{ provider: 'openrouter', model: 'gpt-4o-mini' }];
 
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
 
     expect(await screen.findByText('providerSwitched')).toBeInTheDocument();
   });
@@ -370,7 +371,7 @@ describe('Learning symbol-first and audio-first flows', () => {
       store.messages = [{ role: 'assistant', content: welcome }];
     });
 
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     // The empty state is now the topic picker; pick a topic to start.
     fireEvent.click(await screen.findByTestId('topic-card-general'));
 
@@ -393,7 +394,7 @@ describe('Learning symbol-first and audio-first flows', () => {
       ];
     });
 
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
 
     fireEvent.click(await screen.findByTestId('topic-card-general'));
 
@@ -406,7 +407,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     store.currentSession = { session_id: 12, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
     store.messages = [{ role: 'assistant', content: 'Hello there' }];
 
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
 
     await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledWith('Hello there', { rate: 0.9 }));
   });
@@ -416,7 +417,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     store.currentSession = { session_id: 12, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
     store.messages = [{ role: 'assistant', content: 'Question' }];
 
-    const { rerender } = render(<Learning />);
+    const { rerender } = render(<MemoryRouter><Learning /></MemoryRouter>);
     await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledWith('Question', { rate: 0.9 }));
     mockTtsEnqueue.mockReset();
 
@@ -425,7 +426,7 @@ describe('Learning symbol-first and audio-first flows', () => {
       { role: 'user', content: 'Gracias' },
       { role: 'assistant', content: '¡Gracias por intentar comunicarte!' },
     ];
-    rerender(<Learning />);
+    rerender(<MemoryRouter><Learning /></MemoryRouter>);
 
     await waitFor(() => {
       expect(mockTtsEnqueue).toHaveBeenCalledWith('¡Gracias por intentar comunicarte!', { rate: 0.9 });
@@ -437,12 +438,12 @@ describe('Learning symbol-first and audio-first flows', () => {
     store.currentSession = { session_id: 1, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
     store.messages = [{ role: 'assistant', content: 'Hello there' }];
 
-    const { rerender } = render(<Learning />);
+    const { rerender } = render(<MemoryRouter><Learning /></MemoryRouter>);
     await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledTimes(1));
 
     store.currentSession = { session_id: 2, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
     store.messages = [{ role: 'assistant', content: 'Hello there' }];
-    rerender(<Learning />);
+    rerender(<MemoryRouter><Learning /></MemoryRouter>);
     await waitFor(() => expect(mockTtsEnqueue).toHaveBeenCalledTimes(2));
   });
 
@@ -450,7 +451,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     const store = (await import('../src/store/learningStore')).__mockStore;
     store.messages = [{ role: 'user', content: 'Hello there' }];
 
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
 
     await waitFor(() => expect(screen.getByText('Hello there')).toBeInTheDocument());
     expect(mockTtsEnqueue).not.toHaveBeenCalled();
@@ -460,7 +461,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     const store = (await import('../src/store/learningStore')).__mockStore;
     store.currentSession = { session_id: 99, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
 
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     const input = screen.getByPlaceholderText('typeAnswer');
     fireEvent.change(input, { target: { value: '   ' } });
     fireEvent.submit(input.closest('form') as HTMLFormElement);
@@ -473,7 +474,7 @@ describe('Learning symbol-first and audio-first flows', () => {
     store.currentSession = { session_id: 99, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
     store.isLoading = true;
 
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'newQuestion' }));
 
     expect(store.askQuestion).not.toHaveBeenCalled();
@@ -484,14 +485,14 @@ describe('Learning symbol-first and audio-first flows', () => {
     store.currentSession = { session_id: 99, success: true, welcome_message: '' } as unknown as LearningSessionResponse;
     store.isLoading = true;
 
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'endSession' }));
 
     expect(store.endSession).not.toHaveBeenCalled();
   });
 
   it('symbol-first: shows a failure when the session does not start', async () => {
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     fireEvent.click(screen.getByTitle('toggleSymbolView'));
     const hello = await screen.findByText('Hello');
     fireEvent.click(hello);
@@ -506,7 +507,7 @@ describe('Learning symbol-first and audio-first flows', () => {
       if (url === '/boards/symbols') return Promise.reject(new Error('offline'));
       return Promise.resolve({ data: [] });
     });
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     await act(async () => {
       fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });
@@ -529,7 +530,7 @@ describe('Learning symbol-first and audio-first flows', () => {
       }
       return Promise.resolve({ data: [] });
     });
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     await act(async () => {
       fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });
@@ -545,7 +546,7 @@ describe('Learning symbol-first and audio-first flows', () => {
   });
 
   it('symbol-first: removes and clears symbols from the utterance', async () => {
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     await act(async () => {
       fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });
@@ -570,7 +571,7 @@ describe('Learning symbol-first and audio-first flows', () => {
   });
 
   it('header: toggles voice input', async () => {
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
 
     fireEvent.click(await screen.findByTitle('disableVoice'));
 
@@ -591,7 +592,7 @@ describe('Learning symbol-first and audio-first flows', () => {
       }
       return Promise.resolve({ data: [] });
     });
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     await act(async () => {
       fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });
@@ -617,7 +618,7 @@ describe('Learning symbol-first and audio-first flows', () => {
       return Promise.resolve({ data: [] });
     });
 
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
 
     // The library is fetched in the background as soon as the page mounts,
     // before the symbol view is ever opened.
@@ -643,7 +644,7 @@ describe('Learning symbol-first and audio-first flows', () => {
       return Promise.resolve({ data: [] });
     });
 
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/boards/symbols', expect.anything()));
 
     // Opening the view uses the prefetched data: the library is requested
@@ -670,7 +671,7 @@ describe('Learning symbol-first and audio-first flows', () => {
       }
       return Promise.resolve({ data: [] });
     });
-    render(<Learning />);
+    render(<MemoryRouter><Learning /></MemoryRouter>);
     await act(async () => {
       fireEvent.click(screen.getByTitle('toggleSymbolView'));
     });

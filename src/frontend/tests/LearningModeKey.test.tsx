@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router'
 import { Learning } from '../src/pages/Learning'
 
 const getApi = vi.hoisted(() => vi.fn())
@@ -143,7 +144,7 @@ describe('Learning mode dropdown', () => {
 
   it('uses the persisted default mode in the dropdown and session payload', async () => {
     authStoreMock.user.settings.default_learning_mode = 'andalusian'
-    render(<Learning />)
+    render(<MemoryRouter><Learning /></MemoryRouter>)
 
     const select = await screen.findByRole('combobox', { name: 'Mode:' })
     expect(select).toHaveValue('andalusian')
@@ -174,7 +175,7 @@ describe('Learning mode dropdown', () => {
       return Promise.resolve({ data: { sessions: [] } })
     })
 
-    render(<Learning />)
+    render(<MemoryRouter><Learning /></MemoryRouter>)
     const select = await screen.findByRole('combobox', { name: 'Mode:' })
 
     act(() => {
@@ -191,7 +192,7 @@ describe('Learning mode dropdown', () => {
   })
 
   it('sends the mode key selected in the dropdown to the session start endpoint', async () => {
-    render(<Learning />)
+    render(<MemoryRouter><Learning /></MemoryRouter>)
 
     const select = await screen.findByRole('combobox', { name: 'Mode:' })
     await screen.findByRole('option', { name: 'Andaluz' })
@@ -209,7 +210,7 @@ describe('Learning mode dropdown', () => {
   })
 
   it('sends the default mode key when the dropdown is untouched', async () => {
-    render(<Learning />)
+    render(<MemoryRouter><Learning /></MemoryRouter>)
 
     await screen.findByRole('combobox', { name: 'Mode:' })
     fireEvent.click(screen.getByTestId('topic-card-general'))
@@ -224,7 +225,7 @@ describe('Learning mode dropdown', () => {
   })
 
   it('includes the topic/purpose alongside the mode key in the payload', async () => {
-    render(<Learning />)
+    render(<MemoryRouter><Learning /></MemoryRouter>)
 
     await screen.findByRole('combobox', { name: 'Mode:' })
     fireEvent.click(screen.getByTestId('topic-card-general'))
@@ -244,7 +245,7 @@ describe('Learning mode dropdown', () => {
   })
 
   it('sends a fixed difficulty selected in the header when starting a session', async () => {
-    render(<Learning />)
+    render(<MemoryRouter><Learning /></MemoryRouter>)
 
     await screen.findByRole('combobox', { name: 'Difficulty:' })
     fireEvent.change(screen.getByRole('combobox', { name: 'Difficulty:' }), {
