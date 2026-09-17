@@ -20,15 +20,22 @@
 #     -ExePath dist\AAC_Assistant\AAC_Assistant.exe ^
 #     -InstallerPath dist\AAC_Assistant_Setup_2.0.0.exe
 #
+# CI usage: the release workflow imports the secret PFX into
+# Cert:\CurrentUser\My itself and calls this script with
+# AAC_SIGNING_THUMBPRINT, so no certificate is ever created in CI.
+#
 # Environment overrides:
-#   AAC_SIGNING_SUBJECT   certificate subject (default "AAC Assistant Team")
-#   AAC_SIGNING_PFX       path to export a backup PFX copy of the certificate
-#   AAC_SIGNING_PFX_PASS  password for the exported PFX (default: random, printed)
+#   AAC_SIGNING_SUBJECT     certificate subject (default "AAC Assistant Team")
+#   AAC_SIGNING_THUMBPRINT  use an existing certificate by thumbprint (CI path:
+#                           the workflow imports the secret PFX, then passes this)
+#   AAC_SIGNING_PFX         path to export a backup PFX copy of the certificate
+#   AAC_SIGNING_PFX_PASS    password for the exported PFX (default: random, printed)
 
 param(
     [Parameter(Mandatory = $true)][string]$ExePath,
     [Parameter(Mandatory = $false)][string]$InstallerPath,
     [string]$Subject = $(if ($env:AAC_SIGNING_SUBJECT) { $env:AAC_SIGNING_SUBJECT } else { "AAC Assistant Team" }),
+    [string]$Thumbprint = $(if ($env:AAC_SIGNING_THUMBPRINT) { $env:AAC_SIGNING_THUMBPRINT } else { "" }),
     [switch]$SkipTrustImport
 )
 
@@ -39,10 +46,23 @@ if (-not (Test-Path -LiteralPath $ExePath)) {
 }
 
 # --- Locate or create the signing certificate -------------------------------
-$existing = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert |
-    Where-Object { $_.Subject -like "*CN=$Subject*" } |
-    Sort-Object NotAfter -Descending |
-    Select-Object -First 1
+# Resolution order: explicit thumbprint (CI imports the secret PFX itself),
+# then an existing certificate with the configured subject, then create one.
+$existing = $null
+if ($Thumbprint) {
+    $existing = Get-ChildItem Cert:\CurrentUser\My |
+        Where-Object Thumbprint -eq $Thumbprint |
+        Select-Object -First 1
+    if (-not $existing) {
+        Write-Error "No certificate with thumbprint $Thumbprint found in Cert:\CurrentUser\My"
+    }
+}
+else {
+    $existing = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert |
+        Where-Object { $_.Subject -like "*CN=$Subject*" } |
+        Sort-Object NotAfter -Descending |
+        Select-Object -First 1
+}
 
 if ($existing) {
     $cert = $existing
