@@ -189,6 +189,20 @@ winget install --id JRSoftware.InnoSetup --version 6.7.3 --scope user
 
 or point `INNO_SETUP_PATH` at an existing `ISCC.exe`.
 
+### Code signing the release binaries (free, self-signed)
+
+`build_package.bat` signs the packaged exe and installer with Authenticode when
+`AAC_SIGN_RELEASE=1` is set (step 6/6). The signature is created by
+`scripts/sign_release.ps1`, which manages a free self-signed code-signing
+certificate in your user certificate store: it is created on first use, reused
+afterwards, and a backup PFX can be exported via `AAC_SIGNING_PFX` /
+`AAC_SIGNING_PFX_PASS`. Because a self-signed chain has no third-party
+reputation, Smart App Control still blocks the binaries on SAC-enabled
+machines; the signature becomes trusted on machines where the certificate was
+imported into the user trust stores (done automatically at signing time for
+the current user) or distributed to via the exported PFX. A paid Authenticode
+certificate remains the only durable SAC fix.
+
 ### Source checkout (Linux / macOS)
 
 `start.sh` bootstraps `uv` when it is missing, creates/updates `.venv`, installs

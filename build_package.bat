@@ -1,6 +1,8 @@
 @echo off
 REM AAC Assistant - reproducible PyInstaller + Inno Setup release build.
 REM Requires uv, npm, and Inno Setup 6.7.3 (per-user install is supported).
+REM Set AAC_SIGN_RELEASE=1 to also Authenticode-sign the binaries with the
+REM free self-signed certificate managed by scripts\sign_release.ps1.
 
 setlocal
 cd /d "%~dp0"
@@ -49,21 +51,21 @@ exit /b 1
 
 :iscc_validated
 
-echo [1/5] Syncing Python dependencies (voice and TTS extras)...
+echo [1/6] Syncing Python dependencies (voice and TTS extras)...
 call uv sync --extra voice --extra tts
 if errorlevel 1 (
     echo ERROR: uv sync failed.
     exit /b 1
 )
 
-echo [2/5] Downloading offline AI models into the bundle...
+echo [2/6] Downloading offline AI models into the bundle...
 call uv run python scripts\bundle_models.py
 if errorlevel 1 (
     echo ERROR: Model download failed.
     exit /b 1
 )
 
-echo [3/5] Installing frontend dependencies and building...
+echo [3/6] Installing frontend dependencies and building...
 if not exist "src\frontend\node_modules" (
     call npm --prefix src\frontend ci --prefer-offline --no-audit --no-fund
     if errorlevel 1 (
@@ -77,7 +79,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [4/5] Building the PyInstaller onedir package...
+echo [4/6] Building the PyInstaller onedir package...
 if exist "%APP_DIR%\.env" (
     echo ERROR: Existing runtime config found under %APP_DIR%.
     echo Stop using this portable copy and move .env before rebuilding.
@@ -119,7 +121,7 @@ if not exist "%APP_DIR%\AAC_Assistant.exe" (
 for /f %%S in ('powershell -NoProfile -Command "(Get-ChildItem -LiteralPath %APP_DIR% -Recurse -File | Measure-Object -Property Length -Sum).Sum"') do set "DIST_BYTES=%%S"
 echo       Onedir output bytes: %DIST_BYTES%
 
-echo [5/5] Compiling the Inno Setup installer...
+echo [5/6] Compiling the Inno Setup installer...
 call "%ISCC_EXE%" installer.iss
 if errorlevel 1 (
     echo ERROR: Inno Setup compilation failed.
@@ -132,7 +134,17 @@ if not exist "%INSTALLER%" (
 
 for %%F in ("%INSTALLER%") do echo       Installer bytes: %%~zF
 
-echo [5/5] Package build complete.
+if "%AAC_SIGN_RELEASE%"=="1" (
+    echo [6/6] Signing release binaries with Authenticode...
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts\sign_release.ps1 -ExePath "%APP_DIR%\AAC_Assistant.exe" -InstallerPath "%INSTALLER%"
+    if errorlevel 1 (
+        echo WARNING: Code signing failed; continuing with unsigned binaries.
+    )
+) else (
+    echo [6/6] Skipping code signing ^(set AAC_SIGN_RELEASE=1 to enable^).
+)
+
+echo [6/6] Package build complete.
 echo       App: %APP_DIR%
 echo       Installer: %INSTALLER%
 exit /b 0
