@@ -617,8 +617,14 @@ html.high-contrast .skip-to-main {
 }
 
 /* Toast palette (sonner via .aac-toast, mounted by <AppToaster />). */
+/* Sonner paints its own toast background (light #fff) above stylesheet rules
+   of equal or higher specificity, so the palette background must be forced:
+   without !important the toast keeps a white surface in dark mode (amber text
+   on white = 1.45:1) and in high-contrast-dark (1.00:1, invisible). */
 [data-sonner-toast].aac-toast {
-  @apply rounded-lg border p-4 shadow-lg max-w-md text-sm font-medium bg-surface text-foreground border-border;
+  @apply rounded-lg border p-4 shadow-lg max-w-md text-sm font-medium border-border;
+  background-color: rgb(var(--bg-surface)) !important;
+  color: var(--foreground);
 }
 
 [data-sonner-toast].aac-toast[data-type='success'] {
@@ -635,4 +641,14 @@ html.high-contrast .skip-to-main {
 
 [data-sonner-toast].aac-toast[data-type='warning'] {
   @apply border-amber-600/40 text-amber-700 dark:text-amber-300;
+}
+
+/* Sonner hardcodes the description color to a mid gray (#3f3f3f); its dark
+   variant only applies to sonner's own theme attribute, which we do not use
+   (we theme via the .dark / .high-contrast classes). Left alone, descriptions
+   measure 1.45:1 on dark surfaces and 1.00:1 (invisible) on
+   high-contrast-dark. Inherit the toast's palette color instead so every
+   toast type stays WCAG AA on all four appearance modes. */
+[data-sonner-toast].aac-toast [data-description] {
+  color: inherit !important;
 }

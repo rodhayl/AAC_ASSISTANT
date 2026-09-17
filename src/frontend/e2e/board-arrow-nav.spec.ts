@@ -75,11 +75,13 @@ test.describe('Communication board arrow-key navigation', () => {
       expect(createRes.ok()).toBeTruthy();
       boardId = ((await createRes.json()) as { id: number }).id;
 
-      // 3x3 layout with holes: Alpha(0,0) hole(1,0) Bravo(2,0) Charlie(0,1).
+      // 3x3 layout with holes. custom_text values are language-neutral so the
+      // server-side board localization (custom_text is translated to the user's
+      // profile language) cannot mutate them between POST and assert.
       const placements = [
-        { symbol_id: symbols[0].id, position_x: 0, position_y: 0, custom_text: 'Alpha' },
-        { symbol_id: symbols[1].id, position_x: 2, position_y: 0, custom_text: 'Bravo' },
-        { symbol_id: symbols[2].id, position_x: 0, position_y: 1, custom_text: 'Charlie' },
+        { symbol_id: symbols[0].id, position_x: 0, position_y: 0, custom_text: 'K7' },
+        { symbol_id: symbols[1].id, position_x: 2, position_y: 0, custom_text: 'K9' },
+        { symbol_id: symbols[2].id, position_x: 0, position_y: 1, custom_text: 'K4' },
       ];
       for (const placement of placements) {
         const res = await apiContext.post(`/api/boards/${boardId}/symbols`, {
@@ -93,7 +95,9 @@ test.describe('Communication board arrow-key navigation', () => {
       const firstCard = page.locator('[data-cell-index="0"] button');
       await expect(firstCard).toBeVisible({ timeout: 20000 });
 
-      await firstCard.click();
+      // Programmatic focus, not click: clicking a card button activates it and
+      // would seed the sentence strip before the keyboard walk even starts.
+      await firstCard.focus();
       expect(await focusedCellIndex(page)).toBe('0');
 
       // Right: cell 0 -> skips the hole at (1,0) -> lands on cell 2.
@@ -120,7 +124,20 @@ test.describe('Communication board arrow-key navigation', () => {
       // Enter activates the focused card: the symbol joins the sentence strip.
       await page.locator('[data-cell-index="0"] button').focus();
       await page.keyboard.press('Enter');
-      await expect(page.getByTestId('sentence-strip')).toContainText('Alpha');
+      // The server localizes board content to the user's profile language
+      // (serialize_board translates custom_text, e.g. Alpha -> "Alfa" for an
+      // es-ES profile), so assert against the label the API actually serves
+      // instead of the literal this spec posted.
+      const detailRes = await apiContext.get(`/api/boards/${boardId}`, { headers });
+      expect(detailRes.ok()).toBeTruthy();
+      const detail = (await detailRes.json()) as {
+        symbols?: Array<{ position_x: number; position_y: number; custom_text: string | null }>;
+      };
+      const originLabel = (detail.symbols ?? []).find(
+        (s) => s.position_x === 0 && s.position_y === 0,
+      )?.custom_text;
+      expect(originLabel, 'server-served label for the origin cell').toBeTruthy();
+      await expect(page.getByTestId('sentence-strip')).toContainText(originLabel as string);
     } finally {
       if (boardId != null) {
         await apiContext.delete(`/api/boards/${boardId}`, { headers });
