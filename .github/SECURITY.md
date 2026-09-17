@@ -5,12 +5,12 @@ security reports seriously. Thank you for helping keep users safe.
 
 ## Supported versions
 
-We support the most recent release (`v2.0.0`) and the tip of the `main` default
+We support the most recent release (`v2.0.1`) and the tip of the `main` default
 branch. Older releases receive fixes only when a maintainer backports them.
 
 | Version | Supported |
 | ------- | --------- |
-| `v2.0.0` (latest release, see [releases](https://github.com/rodhayl/AAC_ASSISTANT/releases)) | :white_check_mark: |
+| `v2.0.1` (latest release, see [releases](https://github.com/rodhayl/AAC_ASSISTANT/releases)) | :white_check_mark: |
 | `main` (default branch) | :white_check_mark: |
 | Older releases / unmerged branches | :x: |
 

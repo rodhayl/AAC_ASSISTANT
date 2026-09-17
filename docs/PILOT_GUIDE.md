@@ -26,7 +26,7 @@ The goal of an AAC Assistant pilot evaluation is to assess:
 ## 3. Pre-Pilot Setup Checklist
 
 1. **Hardware Preparation:** Standard Windows 10/11 laptop, desktop, or touchscreen tablet (or Linux/macOS source installation).
-2. **Installation:** Install via `AAC_Assistant_Setup_2.0.0.exe` or portable onedir distribution.
+2. **Installation:** Install via `AAC_Assistant_Setup_2.0.1.exe` or portable onedir distribution.
 3. **Initial Security Setup:**
    - Launch application on first run (`http://127.0.0.1:8086/setup`).
    - Create a strong administrator password.

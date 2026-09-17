@@ -1,5 +1,57 @@
 # Release notes
 
+## v2.0.1 (2026-09-17)
+
+Maintenance release focused on Windows launch reliability, release
+infrastructure, and accumulated security, accessibility, and test-suite
+improvements from the `main` line.
+
+### Highlights
+
+- **Windows launchers fixed** — `start.bat` / `install_dependencies.bat` now
+  find `uv` installed by winget without a new terminal, pin the project venv
+  to Python 3.13, and survive Smart App Control blocking uv's runtime-generated
+  venv launcher (os error 4551) by pre-seeding the venv with the standard
+  library.
+- **Signed releases** — the packaged executable and installer can be
+  Authenticode-signed for free (`AAC_SIGN_RELEASE=1`); pushing a `v*` tag
+  triggers a workflow that builds, signs, verifies, smokes, and publishes the
+  installer, portable zip, and SHA256 checksums to GitHub Releases.
+- **Verified quality** — 253/253 Playwright end-to-end tests, the full
+  packaging suite, and a frozen-environment check that every offline
+  capability (Kokoro TTS, faster-whisper, fastembed, sqlite-vec) loads from
+  the bundled models.
+
+### Security
+
+- Logout awaits server-side token revocation before clearing local auth
+  state, so a captured token can no longer be reused after sign-out.
+- Release artifacts are Authenticode-signed with a self-signed certificate.
+  The signature is trusted on machines where the certificate was imported;
+  Smart App Control still requires a paid CA certificate for unconditional
+  trust, which remains a documented limitation.
+
+### Fixed
+
+- Data export/import checksum normalizes whole-number floats so a browser
+  JSON round-trip no longer fails re-import with `400`.
+- Voice-mode toggle color contrast and the learning-mode delete button's
+  accessible name (Axe `button-name`).
+
+### Changed
+
+- Symbol-usage analytics consolidated onto the canonical `/analytics/usage`
+  endpoint instead of split across `/analytics/log` and `/analytics/usage`.
+- Overlapping backend test suites consolidated by domain; frontend Vitest
+  suites merged and coverage gates raised.
+
+### Upgrading
+
+Run `AAC_Assistant_Setup_2.0.1.exe`. The installer detects the existing
+installation and preserves your database, settings, and uploads. Portable
+users should replace the `AAC_Assistant` folder, keeping `data/`, `logs/`,
+and `uploads/`.
+
 ## v2.0.0 (2026-08-14)
 
 The repository has carried version `2.0.0` throughout its configuration,

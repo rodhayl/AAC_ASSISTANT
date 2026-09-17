@@ -31,7 +31,7 @@ For high-level project overview and quick-start instructions, see the root [READ
 ### 4. Packaging & Releases
 
 - **[Release Readiness Runbook](RELEASE_READINESS.md)** — Operational checklist, automated gate requirements, and recovery procedures.
-- **[Release Notes](RELEASE_NOTES.md)** — Detailed release notes for v2.0.0.
+- **[Release Notes](RELEASE_NOTES.md)** — Detailed release notes for v2.0.1.
 - **[Changelog](../CHANGELOG.md)** — High-level release history across versions.
 - **[Project Roadmap](ROADMAP.md)** — Planned features, technical milestones, and future work.
 
