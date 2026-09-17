@@ -1,5 +1,29 @@
 # CONTINUE_PROMPT — 17/09/2026 (sesión: fix del pipeline de main)
 
+## ⚠️ ACTUALIZACIÓN CRÍTICA — todos los jobs de CI fallan en 3–4 s (mismo día)
+
+El usuario reportó que en la pipeline fallan TODOS los jobs tanto en `pull_request` como en `push`, en 3–4 segundos cada uno: `secret-scan`, `backend`, `frontend`, `codeql (js+py)`, `dependency-review`, `e2e-clean`, `e2e-production-compat`, `e2e-production-gate`, `packaging-windows`.
+
+**Esto NO puede ser culpa del código de la rama** (secret-scan/codeql no ejecutan tests; 3–4 s no basta ni para instalar dependencias). Diagnóstico local ya hecho:
+
+- `ci.yml` es YAML válido (parseado con PyYAML), triggers `push`/`pull_request` estándar, `permissions: contents: read` — el archivo NO es el problema.
+- Un único workflow (`ci.yml`), acciones ancladas por SHA.
+
+**Hipótesis ordenadas (ninguna verificable sin la UI de GitHub — el agente no tiene token):**
+
+1. **Minutos de Actions agotados** (repo privado, plan free = 2000 min/mes) — el fallo en arranque de TODOS los jobs es el síntoma clásico.
+2. Actions deshabilitado o con spending limit alcanzado (Settings → Actions / Billing).
+3. Incidencia de GitHub (githubstatus.com) o del pool de runners.
+
+**Qué debe hacer el siguiente agente:**
+
+- Pedir al usuario que abra UNA corrida fallida (Actions → cualquier run) y lea el error a nivel de job (aparece ANTES de cualquier step; suele decir algo tipo "payment issue", "minutes exhausted", "waiting for a runner" o una anotación de workflow). Ese mensaje nombra la causa.
+- Si es facturación: Settings → Billing → revisar minutos incluidos y spending limit. No hay nada que arreglar en el repo.
+- NO quemar pushes de diagnóstico: cada push gasta minutos y dispara la misma pared de fallos. Validar todo en local (la receta está más abajo) y empujar solo una vez.
+- Importante: este fallo sistémico es INDEPENDIENTE de los 2 fixes reales de esta rama (253/253 E2E ×2 validados en local). La PR puede crearse igualmente; el merge debe esperar a que la infra de Actions funcione para poder confirmar main en verde.
+
+---
+
 ## Misión
 
 El siguiente agente debe **terminar el trabajo de la rama `fix/ci-toast-contrast-e2e`**: validar todo en local (SIN empujar nada más a GitHub hasta tener el gate completo en verde, para no gastar minutos de CI), guiar la creación de la PR (la crea el usuario con 1 clic) y merge­arla, verificando después que el pipeline de `main` queda verde.
