@@ -137,6 +137,46 @@ them; declining keeps the production environment minimal.
 
 and open `http://127.0.0.1:8086/`.
 
+### Windows launch troubleshooting
+
+**"A directive de Control de aplicaciones bloqueó este archivo" / os error 4551**
+
+Windows Smart App Control (SAC) blocks executables and native DLLs that were
+written at runtime rather than installed through a trusted chain. Two symptoms
+appear on SAC-enabled machines:
+
+- `\.venv\Scripts\python.exe` fails with os error 4551: uv writes its own tiny
+  launcher binary into the venv, which SAC distrusts. `start.bat` and
+  `install_dependencies.bat` work around this automatically: when `.venv` is
+  absent they pre-seed it with the standard library's `venv` module (which
+  copies the real signed `python.exe`) and then let `uv sync` fill it. Nothing
+  to do on your side; just delete a broken `.venv` and rerun the launcher.
+- First-time imports of native wheels (faster-whisper/PyAV `av._core`,
+  onnxruntime) can be blocked once while SAC awaits a cloud verdict; retries
+  usually succeed because the verdict is cached. If a native DLL stays blocked,
+  the machine owner must decide: SAC has no per-app exclusions, and turning it
+  off (`Windows Security > App & browser control`) is a permanent, one-way
+  setting — prefer the packaged installer or another machine when possible.
+
+**"uv is not installed or not on PATH" after an automatic bootstrap**
+
+Winget installs uv under `%LOCALAPPDATA%\Microsoft\WinGet\Packages` and
+updates the registry PATH, which the already-open shell does not see. The
+launchers now probe that directory and prepend it to the session PATH, so no
+new terminal is required.
+
+**"Inno Setup compiler was not found" when building the installer**
+
+`build_package.bat` looks for ISCC.exe in `%LOCALAPPDATA%\Programs\Inno Setup
+6`, both `Program Files` locations, and `PATH`. Install it per-user (no admin
+required) with:
+
+```bat
+winget install --id JRSoftware.InnoSetup --version 6.7.3 --scope user
+```
+
+or point `INNO_SETUP_PATH` at an existing `ISCC.exe`.
+
 ### Source checkout (Linux / macOS)
 
 `start.sh` bootstraps `uv` when it is missing, creates/updates `.venv`, installs
