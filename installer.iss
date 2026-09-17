@@ -3,7 +3,7 @@
 ; Portable copies keep data/, logs/, and uploads/ beside AAC_Assistant.exe.
 
 #define MyAppName "AAC Assistant"
-#define MyAppVersion "2.0.0"
+#define MyAppVersion "2.0.1"
 #define MyAppId "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
 #define MyAppPublisher "AAC Assistant Team"
 #define MyAppURL "https://github.com/rodhayl/AAC_ASSISTANT"

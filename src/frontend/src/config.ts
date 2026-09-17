@@ -19,7 +19,7 @@ const defaults = {
     ? Number(import.meta.env.VITE_AUTOGEN_DAILY_CAP)
     : -1,
   APP_NAME: import.meta.env.VITE_APP_NAME || 'AAC Assistant',
-  APP_VERSION: import.meta.env.VITE_APP_VERSION || '2.0.0',
+  APP_VERSION: import.meta.env.VITE_APP_VERSION || '2.0.1',
 };
 
 function getDefaultApiBaseUrl() {

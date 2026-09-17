@@ -22,7 +22,7 @@ jobs:
   release-windows:
     runs-on: windows-latest
     env:
-      APP_VERSION: "2.0.0"
+      APP_VERSION: "2.0.1"
       ENVIRONMENT: test
       # Deliberately no TESTING=1: the smoke step exercises the rate limiter,
       # mirroring the packaging-windows job in ci.yml.

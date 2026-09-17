@@ -6,10 +6,15 @@ All notable changes to this project are documented here. The project follows
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-09-17
+
 ### Security
 
 - Logout now awaits server-side token revocation before clearing local auth
   state, so a captured token can no longer be reused after sign-out.
+- Release artifacts can now be Authenticode-signed: `build_package.bat` gains
+  an optional signing step and a tag-triggered workflow signs and verifies the
+  installer before publishing.
 
 ### Fixed
 
@@ -17,6 +22,17 @@ All notable changes to this project are documented here. The project follows
   JSON round-trip no longer fails re-import with `400`.
 - Voice-mode toggle color contrast and the learning-mode delete button's
   accessible name (Axe `button-name`).
+- Windows launchers resolve `uv` installed by winget without requiring a new
+  terminal, pin the project venv to Python 3.13, and survive Smart App
+  Control's blocking of runtime-generated venv launchers (os error 4551) by
+  pre-seeding the venv with the standard library.
+
+### Added
+
+- Optional free Authenticode code signing for the packaged exe and installer
+  (`scripts/sign_release.ps1`, `AAC_SIGN_RELEASE=1`), with a tag-triggered
+  release workflow that verifies signatures and publishes the installer,
+  portable zip, and SHA256 checksums to GitHub Releases.
 
 ### Changed
 

@@ -46,7 +46,7 @@ describe('Setup Page', () => {
       error: null,
     });
     vi.mocked(api.get).mockResolvedValue({
-      data: { setup_required: true, has_admin: false, app_name: 'AAC Assistant', app_version: '2.0.0' },
+      data: { setup_required: true, has_admin: false, app_name: 'AAC Assistant', app_version: '2.0.1' },
     });
   });
 
@@ -123,7 +123,7 @@ describe('Setup Page', () => {
 
   it('redirects to /login when setup is not required', async () => {
     vi.mocked(api.get).mockResolvedValue({
-      data: { setup_required: false, has_admin: true, app_name: 'AAC Assistant', app_version: '2.0.0' },
+      data: { setup_required: false, has_admin: true, app_name: 'AAC Assistant', app_version: '2.0.1' },
     });
 
     render(
@@ -256,7 +256,7 @@ describe('Setup Page', () => {
 
   it('automatically redirects Login to /setup when setup is required', async () => {
     vi.mocked(api.get).mockResolvedValue({
-      data: { setup_required: true, has_admin: false, app_name: 'AAC Assistant', app_version: '2.0.0' },
+      data: { setup_required: true, has_admin: false, app_name: 'AAC Assistant', app_version: '2.0.1' },
     });
 
     render(

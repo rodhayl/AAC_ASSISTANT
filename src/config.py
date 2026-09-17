@@ -156,7 +156,7 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = ""
 
     APP_NAME: str = "AAC Assistant"
-    APP_VERSION: str = "2.0.0"
+    APP_VERSION: str = "2.0.1"
     ENVIRONMENT: str = "development"
     DEFAULT_LOCALE: str = "es"
     # Localized UI values accepted by the preferences API. Short codes remain
