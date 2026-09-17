@@ -153,10 +153,22 @@ appear on SAC-enabled machines:
   to do on your side; just delete a broken `.venv` and rerun the launcher.
 - First-time imports of native wheels (faster-whisper/PyAV `av._core`,
   onnxruntime) can be blocked once while SAC awaits a cloud verdict; retries
-  usually succeed because the verdict is cached. If a native DLL stays blocked,
-  the machine owner must decide: SAC has no per-app exclusions, and turning it
+  usually succeed because the verdict is cached. The packaged installer and
+  `AAC_Assistant.exe` are also unsigned, so SAC blocks them the same way once
+  their verdict lands. SAC has no per-app exclusions; the durable fix is an
+  Authenticode code-signing certificate for the release binaries. Turning SAC
   off (`Windows Security > App & browser control`) is a permanent, one-way
-  setting — prefer the packaged installer or another machine when possible.
+  setting — decide deliberately at the machine-owner level.
+
+**Dependencies inside the package**
+
+The installer ships everything the app needs at runtime: the Python runtime,
+all native wheels (CTranslate2, onnxruntime, PyAV, sqlite-vec), the built
+frontend, the offline model weights (fastembed, faster-whisper-tiny, Kokoro),
+and the Visual C++ runtime DLLs. The host machine needs nothing beyond
+Windows itself. What is intentionally not bundled: LLM provider access —
+configure a Groq API key (or local Ollama/LM Studio) in the runtime `.env` on
+first run.
 
 **"uv is not installed or not on PATH" after an automatic bootstrap**
 
