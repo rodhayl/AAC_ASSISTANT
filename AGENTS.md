@@ -45,6 +45,59 @@ Full local PR gate: `uv run python scripts/verify_pr.py` executes the consolidat
 
 Always run `git diff --check` and inspect production references separately from tests. Never claim browser or live-server validation unless it was actually run.
 
+## Releases without GitHub Actions
+
+State as of 2026-09-18: hosted Actions minutes are exhausted, so every workflow
+job dies a few seconds after it starts no matter what changed. Do not re-run or
+"fix" those checks — the cause is billing (minutes or spending limit in GitHub
+billing settings) and nothing in the repository changes it. The merge signal is
+the local gates: `scripts/verify_pr.py`, the targeted Playwright recipes, and a
+signed `build_package.bat` run. `Dockerfile.checks` runs the same gate in Linux
+when a non-Windows environment is needed (see `docs/MAINTAINER_GUIDE.md` §1c); it
+requires a Docker engine, which on Windows means Docker Desktop with WSL2
+(`wsl --install --no-distribution` in an elevated shell plus a reboot).
+
+Publish a release without hosted runners:
+
+1. `build_package.bat` with `AAC_SIGN_RELEASE=1` (builds, then signs the exe and
+   installer).
+2. `uv run python scripts/generate_sbom.py` — the documented release step that
+   writes `dist/SBOM.json` and `dist/SHA256SUMS.txt` for every artifact in
+   `dist/`. Never hand-roll the checksum list; skipping this step is how the
+   v2.0.1 release initially shipped without an SBOM.
+3. `AAC_SIGNING_TOKEN=... uv run python scripts/publish_release.py vX.Y.Z <assets...>`
+   creates the release for an existing tag and uploads the assets. The token is
+   never printed: read it from the git credential helper (`git credential fill`,
+   strip the trailing CR) or Windows Credential Manager.
+4. Make the tag point at the commit the artifacts were built from. If the source
+   changed after the tag was pushed, delete and re-push it before publishing; a
+   release whose tag does not match its binaries is misleading.
+
+Version bumps must be atomic. `tests/test_config_pydantic.py::test_release_version_defaults_are_aligned`
+is the guard: `pyproject.toml`, `installer.iss`, `uv.lock`, `src/config.py`,
+`src/frontend/src/config.ts`, `.env.example`, `env.properties.example`, and the
+versions pinned in `.github/workflows/ci.yml` must all move together. The two
+`.example` templates matter most: `installer.iss` copies `.env.example` into
+`{app}`, `AAC_Assistant.spec` bundles a second copy into `_internal/`, and that
+is the file a fresh install copies on first run — a stale `APP_VERSION` there
+makes a brand-new 2.0.1 install report `2.0.0` from `/api/health`.
+
+Packaged-app smokes must run with a clean environment. The working shell leaks
+app configuration (`APP_VERSION`, `JWT_SECRET_KEY`, `ENVIRONMENT`, `DATA_DIR`),
+so a smoke started plainly inherits it: with `JWT_SECRET_KEY` set the app
+correctly skips creating `.env` from the bundled template, and a stale
+`APP_VERSION` overrides the build. Use
+`env -i SystemRoot=... SYSTEMROOT=... PATH=... TEMP=... TMP=... USERPROFILE=... AAC_ASSISTANT_NO_BROWSER=1 ./AAC_Assistant.exe`
+to exercise the first-run path a user actually gets, then delete the `.env`,
+`data/`, `logs/` and `uploads/` it creates — otherwise `build_package.bat`
+refuses to rebuild ("Existing runtime data found").
+
+Repository rules: `main` is protected. Land every change through a branch and a
+pull request (`gh` is not installed; the REST API with the credential-helper
+token works), rebase-merge, then delete the merged branch locally and on origin.
+`v*` tag pushes trigger the release workflow, which fails while minutes are
+exhausted — publish manually per the steps above.
+
 ## Task and process lifecycle
 
 Never leave background tasks, orphaned servers, subagents, or dangling test runners running when completing a turn or validation pass. Always audit active tasks (`manage_task` list) and kill unneeded background processes immediately.
