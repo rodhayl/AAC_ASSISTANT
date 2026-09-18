@@ -38,6 +38,9 @@ a = Analysis(
         ),
         (str(bundled_models), "models"),
         (".env.example", "."),
+        # Single source of the release version for the frozen app; without it
+        # src.config.read_project_version() cannot report the real version.
+        ("pyproject.toml", "."),
     ]
     + collect_data_files("faster_whisper"),
     hiddenimports=collect_submodules("src.aac_app")

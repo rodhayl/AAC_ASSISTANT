@@ -2,8 +2,14 @@
 ; The application stores installed user data in %APPDATA%\AACAssistant.
 ; Portable copies keep data/, logs/, and uploads/ beside AAC_Assistant.exe.
 
+; The release version is not duplicated here: build_package.bat reads it from
+; pyproject.toml and passes it with /DMyAppVersion, so a version bump cannot
+; leave the installer behind. A direct ISCC run must supply it too.
+#ifndef MyAppVersion
+  #error MyAppVersion is undefined: build with build_package.bat, which passes it from pyproject.toml
+#endif
+
 #define MyAppName "AAC Assistant"
-#define MyAppVersion "2.0.1"
 #define MyAppId "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
 #define MyAppPublisher "AAC Assistant Team"
 #define MyAppURL "https://github.com/rodhayl/AAC_ASSISTANT"

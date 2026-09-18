@@ -22,7 +22,6 @@ jobs:
   release-windows:
     runs-on: windows-latest
     env:
-      APP_VERSION: "2.0.1"
       ENVIRONMENT: test
       # Deliberately no TESTING=1: the smoke step exercises the rate limiter,
       # mirroring the packaging-windows job in ci.yml.
@@ -44,6 +43,13 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Read the release version from pyproject.toml
+        # Single source of truth: installer/portable names, the packaged smoke
+        # assertion and the signing paths all read this value.
+        shell: pwsh
+        run: |
+          "APP_VERSION=$(uv version --short)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Install Inno Setup
         shell: powershell

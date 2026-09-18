@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The project follows
 
 ## [Unreleased]
 
+### Changed
+
+- The release version now has a single source, `pyproject.toml`: the backend
+  reads it from that file (which the spec also bundles into the frozen app),
+  the frontend build injects it into `VITE_APP_VERSION`, `build_package.bat`
+  passes it to Inno Setup with `/DMyAppVersion`, and the workflows derive it at
+  run time. The shipped `.env.example` and `env.properties.example` templates no
+  longer pin `APP_VERSION`, which is how a fresh 2.0.1 install could still
+  report `2.0.0`. `tests/test_config_pydantic.py` now fails if the literal
+  reappears in any of those layers.
+
 ## [2.0.1] - 2026-09-18
 
 ### Security

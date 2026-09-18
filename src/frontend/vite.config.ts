@@ -2,13 +2,21 @@ import path from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { readProjectVersion } from './scripts/project-version'
 
 // Backend port is configurable via VITE_BACKEND_PORT (see src/config.ts and
 // .env.example); the dev proxy must follow it instead of hardcoding 8086.
 const backendPort = process.env.VITE_BACKEND_PORT || '8086'
 
+// Injected so src/config.ts never carries a second copy of the release
+// version; the value comes from pyproject.toml (see the Vitest config too).
+const appVersion = readProjectVersion()
+
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
+  },
   plugins: [
     react(),
     tailwindcss(),

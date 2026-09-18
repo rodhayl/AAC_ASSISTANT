@@ -155,8 +155,9 @@ want coverage reports and build outputs written back to the host.
 When preparing an official semantic-versioned release (e.g. `v2.x.y`):
 
 1. **Version Alignment:**
-   - Confirm version constants in `pyproject.toml`, `src/config.py`, `src/frontend/src/config.ts`, `installer.iss` (repo root), `.env.example`, and `docs/RELEASE_NOTES.md` are aligned.
-   - Verify alignment using test suite: `uv run pytest tests/test_config_pydantic.py`.
+   - Bump `[project].version` in `pyproject.toml`: that is the single source the backend (`src/config.py` reads the file, also bundled into the frozen app), the frontend build (injected into `VITE_APP_VERSION`), the installer (`build_package.bat` passes it with `/DMyAppVersion`), and the CI workflows (derived at run time) all use. No other file needs editing, and none may hold a copy of the number.
+   - Refresh the lockfile and the release docs: `uv lock`, then `CHANGELOG.md`, `docs/RELEASE_NOTES.md`, and `docs/PROJECT_METRICS.md`.
+   - Verify with `uv run pytest tests/test_config_pydantic.py`, which fails if any layer duplicates the version literal.
 
 2. **Documentation & Changelog:**
    - Update `CHANGELOG.md` with release date and categorized changes.

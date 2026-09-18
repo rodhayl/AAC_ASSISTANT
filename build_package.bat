@@ -7,9 +7,11 @@ REM free self-signed certificate managed by scripts\sign_release.ps1.
 setlocal
 cd /d "%~dp0"
 
-for /f "tokens=3" %%V in ('findstr /r /b /c:"#define MyAppVersion " installer.iss') do set "VERSION=%%~V"
+REM The release version has a single source, pyproject.toml. It is passed to
+REM Inno Setup below so installer.iss never duplicates the number.
+for /f "delims=" %%V in ('uv version --short') do set "VERSION=%%V"
 if not defined VERSION (
-    echo ERROR: Could not read MyAppVersion from installer.iss.
+    echo ERROR: Could not read the project version from pyproject.toml via uv.
     exit /b 1
 )
 set "APP_DIR=dist\AAC_Assistant"
@@ -122,7 +124,7 @@ for /f %%S in ('powershell -NoProfile -Command "(Get-ChildItem -LiteralPath %APP
 echo       Onedir output bytes: %DIST_BYTES%
 
 echo [5/6] Compiling the Inno Setup installer...
-call "%ISCC_EXE%" installer.iss
+call "%ISCC_EXE%" /DMyAppVersion=%VERSION% installer.iss
 if errorlevel 1 (
     echo ERROR: Inno Setup compilation failed.
     exit /b 1

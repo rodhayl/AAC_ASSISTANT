@@ -3,67 +3,68 @@ import re
 import tomllib
 from pathlib import Path
 
+from src import config
 from src.aac_app.services.auth_service import password_strength_error
 from src.config import Settings, ensure_env_file, ensure_jwt_secret, load_settings
 
 REPO_ROOT = Path(__file__).parents[1]
 
 
-def test_release_version_defaults_are_aligned(monkeypatch):
-    env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
-    legacy_example = (REPO_ROOT / "env.properties.example").read_text(encoding="utf-8")
+def test_release_version_has_a_single_source(monkeypatch):
+    """pyproject.toml is the only place the release version may be written."""
     installer = (REPO_ROOT / "installer.iss").read_text(encoding="utf-8")
-    pyproject_path = REPO_ROOT / "pyproject.toml"
-    pyproject = pyproject_path.read_text(encoding="utf-8")
+    pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     uv_lock = (REPO_ROOT / "uv.lock").read_text(encoding="utf-8")
-    frontend_config = (REPO_ROOT / "src/frontend/src/config.ts").read_text(encoding="utf-8")
     frontend_package = json.loads(
         (REPO_ROOT / "src/frontend/package.json").read_text(encoding="utf-8")
     )
+    version = tomllib.loads(pyproject)["project"]["version"]
+    assert re.fullmatch(r"\d+\.\d+\.\d+", version)
 
-    package_version = tomllib.loads(pyproject)["project"]["version"]
-    installer_version = re.search(r'#define MyAppVersion "([^"]+)"', installer)
     lock_version = re.search(r'name = "aac-assistant"\s+version = "([^"]+)"', uv_lock)
-    frontend_version = re.search(
-        r"APP_VERSION: import\.meta\.env\.VITE_APP_VERSION \|\| '([^']+)'", frontend_config
-    )
-    assert installer_version is not None
     assert lock_version is not None
-    assert frontend_version is not None
-
-    versions = {
-        package_version,
-        installer_version.group(1),
-        lock_version.group(1),
-        frontend_version.group(1),
-    }
-    assert len(versions) == 1
-    version = package_version
-
-    monkeypatch.delenv("APP_VERSION", raising=False)
-    assert [line for line in env_example.splitlines() if line.startswith("APP_VERSION=")] == [
-        f"APP_VERSION={version}"
-    ]
-    assert [line for line in legacy_example.splitlines() if line.startswith("APP_VERSION=")] == [
-        f"APP_VERSION={version}"
-    ]
-    assert f'version = "{version}"' in pyproject
+    assert lock_version.group(1) == version, "uv.lock is stale; run uv lock"
     assert frontend_package["version"] == "0.0.0"
-    assert version == Settings(_env_file=None).APP_VERSION
 
-    # CI pins the release version in APP_VERSION env vars, installer artifact
-    # names, and packaged-version assertions; every pinned copy must match
-    # the canonical pyproject version (IP addresses excluded).
-    ci_workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    ci_versions = {
-        match.group(1)
-        for line in ci_workflow.splitlines()
-        if "127.0.0.1" not in line
-        for match in [re.search(r"\b(\d+\.\d+\.\d+)\b", line)]
-        if match is not None
-    }
-    assert ci_versions, "expected pinned release versions in the CI workflow"
-    assert ci_versions == {version}
+    # The runtime derives the version from pyproject.toml (a source checkout or
+    # the frozen bundle both ship the file); an APP_VERSION variable is the
+    # only intended override.
+    monkeypatch.delenv("APP_VERSION", raising=False)
+    assert version == Settings(_env_file=None).APP_VERSION
+    assert config.read_project_version() == version
+
+    # Every layer that once kept its own copy now derives the value from that
+    # single source, so the literal must not reappear in any of them.
+    duplicated = [
+        relative
+        for relative in (
+            ".env.example",
+            "env.properties.example",
+            "installer.iss",
+            "build_package.bat",
+            "src/config.py",
+            "src/frontend/src/config.ts",
+            ".github/workflows/ci.yml",
+            ".github/workflows/release.yml",
+        )
+        if version in (REPO_ROOT / relative).read_text(encoding="utf-8")
+    ]
+    assert duplicated == [], f"these files still duplicate the release version: {duplicated}"
+
+    # The plumbing each layer needs to read that single source.
+    spec = (REPO_ROOT / "AAC_Assistant.spec").read_text(encoding="utf-8")
+    assert '("pyproject.toml", ".")' in spec
+    build = (REPO_ROOT / "build_package.bat").read_text(encoding="utf-8")
+    assert "uv version --short" in build
+    assert "/DMyAppVersion=%VERSION%" in build
+    assert "{#MyAppVersion}" in installer
+    assert "#ifndef MyAppVersion" in installer
+    for relative in (
+        "src/frontend/src/config.ts",
+        "src/frontend/vite.config.ts",
+        "src/frontend/vitest.config.ts",
+    ):
+        assert "VITE_APP_VERSION" in (REPO_ROOT / relative).read_text(encoding="utf-8")
 
 
 def test_production_bootstrap_password_uses_shared_strength_policy():

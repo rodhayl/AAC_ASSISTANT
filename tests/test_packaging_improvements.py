@@ -554,8 +554,12 @@ class TestFrozenRuntime:
         assert "taskkill /f /im python.exe" not in build
         assert "c:\\users\\rulfe" not in build
         assert "inno_setup_path" in build
-        assert "findstr /r /b /c:\"#define myappversion \" installer.iss" in build
-        assert "set \"version=%%~v\"" in build
+        # The release version comes from pyproject.toml and is passed to Inno
+        # Setup on the command line, so installer.iss holds no copy of it.
+        assert "uv version --short" in build
+        assert "set \"version=%%v\"" in build
+        assert '/dmyappversion=%version%' in build
+        assert '#define myappversion "' not in installer
         assert "existing runtime config found" in build
         assert "existing runtime data found" in build
         assert "iscc_exe=%inno_setup_path:\"=%" in build
