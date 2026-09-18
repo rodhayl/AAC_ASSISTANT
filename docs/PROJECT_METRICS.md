@@ -18,7 +18,7 @@ Snapshot date: **2026-08-17**
 | Forks | 0 | GitHub API (measured) |
 | Open roadmap issues | 3 ([#5](https://github.com/rodhayl/AAC_ASSISTANT/issues/5), [#6](https://github.com/rodhayl/AAC_ASSISTANT/issues/6), [#9](https://github.com/rodhayl/AAC_ASSISTANT/issues/9) in milestone `v2.1.0`) | GitHub API (measured) |
 | Closed roadmap issues | 2 ([#7](https://github.com/rodhayl/AAC_ASSISTANT/issues/7), [#8](https://github.com/rodhayl/AAC_ASSISTANT/issues/8) in milestone `v2.1.0`) | GitHub API (measured) |
-| Published releases | 1 ([`v2.0.0`](https://github.com/rodhayl/AAC_ASSISTANT/releases/tag/v2.0.0)) | GitHub API (measured) |
+| Published releases | 2 ([`v2.0.0`](https://github.com/rodhayl/AAC_ASSISTANT/releases/tag/v2.0.0), [`v2.0.1`](https://github.com/rodhayl/AAC_ASSISTANT/releases/tag/v2.0.1) published 2026-09-18 with installer, portable zip and SHA256 checksums) | GitHub API (measured 2026-09-18) |
 | Contributors (GitHub) | 1 (`rodhayl`) | GitHub API (measured) |
 | Watchers | 0 | GitHub API (measured) |
 

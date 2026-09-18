@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The project follows
 
 ## [Unreleased]
 
-## [2.0.1] - 2026-09-17
+## [2.0.1] - 2026-09-18
 
 ### Security
 
@@ -26,6 +26,11 @@ All notable changes to this project are documented here. The project follows
   terminal, pin the project venv to Python 3.13, and survive Smart App
   Control's blocking of runtime-generated venv launchers (os error 4551) by
   pre-seeding the venv with the standard library.
+- The shipped configuration templates (`.env.example`,
+  `env.properties.example`) still pinned `APP_VERSION=2.0.0`, and the installer
+  ships that template as the file a fresh install copies on first run. New
+  installs therefore reported `2.0.0` from `/api/health` and the auth payload
+  while running the 2.0.1 build.
 
 ### Added
 
@@ -33,6 +38,9 @@ All notable changes to this project are documented here. The project follows
   (`scripts/sign_release.ps1`, `AAC_SIGN_RELEASE=1`), with a tag-triggered
   release workflow that verifies signatures and publishes the installer,
   portable zip, and SHA256 checksums to GitHub Releases.
+- `scripts/publish_release.py` publishes a release without GitHub Actions by
+  creating it for an existing tag and uploading the installer, portable zip,
+  and checksums under the same asset names the release workflow uses.
 
 ### Changed
 
