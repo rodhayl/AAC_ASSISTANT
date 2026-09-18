@@ -19,6 +19,7 @@ import mimetypes
 import os
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -47,8 +48,15 @@ def api(
             "Content-Type": content_type,
         },
     )
-    with urllib.request.urlopen(request, timeout=3600) as response:
-        body = response.read()
+    try:
+        with urllib.request.urlopen(request, timeout=3600) as response:
+            body = response.read()
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            # Absent resources (no release for the tag yet) are expected.
+            return {}
+        detail = error.read().decode("utf-8", "replace")
+        raise SystemExit(f"{method} {path} failed: HTTP {error.code} {detail}") from error
     if not body:
         return {}
     try:
@@ -79,7 +87,7 @@ def ensure_release(tag: str, notes: str) -> dict:
 
 def upload_asset(release_id: int, file_path: Path, label: str = "") -> None:
     name = file_path.name
-    for asset in api(f"/releases/{release_id}/assets").get("assets", []) or []:
+    for asset in api(f"/releases/{release_id}/assets") or []:
         if asset.get("name") == name:
             print(f"Asset already present, skipping: {name} ({asset.get('size')} bytes)")
             return
@@ -119,7 +127,7 @@ def main() -> int:
     for path in files:
         upload_asset(release["id"], path)
 
-    names = sorted(a["name"] for a in api(f"/releases/{release['id']}/assets")["assets"])
+    names = sorted(a["name"] for a in api(f"/releases/{release['id']}/assets") or [])
     print(f"Release assets now: {names}")
     print(f"Published: https://github.com/{REPO}/releases/tag/{tag}")
     return 0
