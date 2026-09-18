@@ -5,11 +5,14 @@ so the maintainer builds locally (build_package.bat with AAC_SIGN_RELEASE=1)
 and this script publishes the artifacts with the same result the release
 workflow would produce.
 
+Run ``scripts/generate_sbom.py`` first so the CycloneDX SBOM and the
+checksums for every artifact exist, then publish all four files:
+
 Usage (token needs repo scope; never printed):
     AAC_SIGNING_TOKEN=... python scripts/publish_release.py v2.0.1 \
         dist/AAC_Assistant_Setup_2.0.1.exe \
         dist/AAC_Assistant_Portable_2.0.1.zip \
-        dist/SHA256SUMS.txt
+        dist/SBOM.json dist/SHA256SUMS.txt
 """
 
 from __future__ import annotations
@@ -149,6 +152,13 @@ improvements. Full details in [docs/RELEASE_NOTES.md](https://github.com/rodhayl
   imported (see README "Code signing").
 - **Offline capability verified** — Kokoro TTS, faster-whisper, fastembed and
   sqlite-vec all load from the bundled models; 253/253 browser E2E tests pass.
+
+### Assets
+
+- `AAC_Assistant_Setup_2.0.1.exe` — Authenticode-signed installer
+- `AAC_Assistant_Portable_2.0.1.zip` — signed portable build
+- `SBOM.json` — CycloneDX 1.4 bill of materials
+- `SHA256SUMS.txt` — SHA-256 checksums for both binaries
 
 ### Upgrading
 

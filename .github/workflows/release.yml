@@ -165,19 +165,12 @@ jobs:
             if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
           }
 
-      - name: Generate SHA256 checksums
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $files = @(
-            "dist\AAC_Assistant_Setup_$env:APP_VERSION.exe",
-            "dist\AAC_Assistant_Portable_$env:APP_VERSION.zip"
-          )
-          $lines = foreach ($f in $files) {
-            "{0}  {1}" -f (Get-FileHash $f -Algorithm SHA256).Hash, (Split-Path $f -Leaf)
-          }
-          $lines | Out-File -FilePath 'dist\SHA256SUMS.txt' -Encoding ascii
-          Get-Content 'dist\SHA256SUMS.txt'
+      - name: Generate SBOM and SHA256 checksums
+        # scripts/generate_sbom.py is the documented release step: it writes the
+        # CycloneDX SBOM from the lockfiles and checksums every artifact in
+        # dist/, so the automated release ships the same files as the runbook
+        # (see docs/MAINTAINER_GUIDE.md, release checklist step 4).
+        run: uv run python scripts/generate_sbom.py
 
       - name: Publish GitHub Release
         shell: bash
@@ -187,6 +180,7 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             "dist/AAC_Assistant_Setup_${APP_VERSION}.exe" \
             "dist/AAC_Assistant_Portable_${APP_VERSION}.zip" \
+            "dist/SBOM.json" \
             "dist/SHA256SUMS.txt" \
             --title "AAC Assistant ${GITHUB_REF_NAME}" \
             --generate-notes
