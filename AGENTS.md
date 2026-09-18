@@ -73,14 +73,17 @@ Publish a release without hosted runners:
    changed after the tag was pushed, delete and re-push it before publishing; a
    release whose tag does not match its binaries is misleading.
 
-Version bumps must be atomic. `tests/test_config_pydantic.py::test_release_version_defaults_are_aligned`
-is the guard: `pyproject.toml`, `installer.iss`, `uv.lock`, `src/config.py`,
-`src/frontend/src/config.ts`, `.env.example`, `env.properties.example`, and the
-versions pinned in `.github/workflows/ci.yml` must all move together. The two
-`.example` templates matter most: `installer.iss` copies `.env.example` into
-`{app}`, `AAC_Assistant.spec` bundles a second copy into `_internal/`, and that
-is the file a fresh install copies on first run — a stale `APP_VERSION` there
-makes a brand-new 2.0.1 install report `2.0.0` from `/api/health`.
+Version bumps touch one file: `[project].version` in `pyproject.toml`, plus
+`uv lock` and the release docs. Every other layer derives that value at run
+time — `src/config.py` reads the file (and `AAC_Assistant.spec` bundles it into
+the frozen app), the frontend build injects `VITE_APP_VERSION`
+(`src/frontend/scripts/project-version.ts`), `build_package.bat` passes
+`/DMyAppVersion` to Inno Setup, and the workflows resolve it in a step. Do not
+write the number anywhere else: `tests/test_config_pydantic.py` fails when the
+literal reappears in any of those layers. The shipped `.env.example`, which
+`installer.iss` copies into `{app}` and a fresh install then copies to its
+runtime root, deliberately no longer pins `APP_VERSION` — a stale copy there is
+what made a brand-new 2.0.1 install report `2.0.0` from `/api/health`.
 
 Packaged-app smokes must run with a clean environment. The working shell leaks
 app configuration (`APP_VERSION`, `JWT_SECRET_KEY`, `ENVIRONMENT`, `DATA_DIR`),
