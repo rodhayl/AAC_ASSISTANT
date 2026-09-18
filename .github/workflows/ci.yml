@@ -477,7 +477,7 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           queries: security-extended
-      - uses: github/codeql-action/analyze@be7a3dbb8147b82cd6d27e0707105b36aa190fc1 # v3
+      - uses: github/codeql-action/analyze@a0cc01096a24026610f4adb239c336ec0a1e4bd2 # v3
 
   dependency-review:
     runs-on: ubuntu-latest
