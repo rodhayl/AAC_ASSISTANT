@@ -18,7 +18,7 @@
 # Usage:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\sign_release.ps1 ^
 #     -ExePath dist\AAC_Assistant\AAC_Assistant.exe ^
-#     -InstallerPath dist\AAC_Assistant_Setup_2.0.0.exe
+#     -InstallerPath dist\AAC_Assistant_Setup_2.0.1.exe
 #
 # CI usage: the release workflow imports the secret PFX into
 # Cert:\CurrentUser\My itself and calls this script with
