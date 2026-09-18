@@ -1,8 +1,16 @@
 import path from 'node:path'
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+import { readProjectVersion } from './scripts/project-version'
+
+// Tests import src/config.ts, which expects the build-time version injection
+// that vite.config.ts performs (see scripts/project-version.ts).
+const appVersion = readProjectVersion()
 
 export default defineConfig({
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
+  },
   plugins: [react()],
   resolve: {
     alias: {

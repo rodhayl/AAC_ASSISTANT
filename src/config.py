@@ -11,6 +11,7 @@ import os
 import secrets
 import shutil
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,29 @@ if IS_FROZEN:
 else:
     PROJECT_ROOT = Path(__file__).parent.parent.absolute()
     BUNDLE_DIR = PROJECT_ROOT
+
+
+def read_project_version() -> str:
+    """
+    Return the release version from its single source, ``pyproject.toml``.
+
+    The API, the auth payload, the packaged installer, and the frontend build
+    all derive the version from this one file, so a release bump cannot leave
+    one of them behind (the shipped ``.env.example`` used to pin its own copy,
+    which made a fresh install report the previous version). A source checkout
+    reads the repository file; a frozen bundle reads the copy the spec adds to
+    ``_internal``. Both are expected to exist, so a missing or unreadable file
+    yields an obviously unknown version instead of a plausible stale one.
+    """
+    for candidate in (PROJECT_ROOT / "pyproject.toml", BUNDLE_DIR / "pyproject.toml"):
+        try:
+            with candidate.open("rb") as handle:
+                return tomllib.load(handle)["project"]["version"]
+        except (OSError, KeyError, tomllib.TOMLDecodeError):
+            continue
+    logger.warning("pyproject.toml not found; reporting an unknown app version")
+    return "0.0.0"
+
 
 def _is_program_files_path(path: Path) -> bool:
     """Return whether a path is under a standard Windows Program Files folder."""
@@ -156,7 +180,9 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = ""
 
     APP_NAME: str = "AAC Assistant"
-    APP_VERSION: str = "2.0.1"
+    # Derived from pyproject.toml; an APP_VERSION environment variable still
+    # overrides it for deployments that pin a version explicitly.
+    APP_VERSION: str = read_project_version()
     ENVIRONMENT: str = "development"
     DEFAULT_LOCALE: str = "es"
     # Localized UI values accepted by the preferences API. Short codes remain
