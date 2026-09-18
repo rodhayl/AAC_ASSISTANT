@@ -1,0 +1,43 @@
+# syntax=docker/dockerfile:1
+# Linux check runner for the AAC Assistant repository.
+#
+# Hosted GitHub Actions minutes are exhausted, so this image reproduces the
+# checks that `scripts/verify_pr.py` runs (ruff, compileall, import and
+# dependency audits, pip-audit, i18n keys, pytest with coverage, frontend
+# typecheck/lint/vitest/build) inside a reproducible Linux environment that
+# matches the CI runners' Python 3.13 and Node 22.
+#
+#   docker build -f Dockerfile.checks -t aac-checks .
+#   docker run --rm aac-checks                                  # full gate
+#   docker run --rm aac-checks uv run pytest tests/test_config_pydantic.py -q
+#
+# The host needs no Python, Node or uv installation, only a running Docker
+# engine (on Windows, Docker Desktop with the WSL2 backend).
+
+FROM python:3.13-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    PATH=/root/.local/bin:$PATH
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl git gnupg \
+ && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+ && apt-get install -y --no-install-recommends nodejs \
+ && curl -LsSf https://astral.sh/uv/install.sh | sh \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# Dependencies first so source edits do not invalidate the dependency layers.
+COPY pyproject.toml uv.lock requirements.txt ./
+COPY src/frontend/package.json src/frontend/package-lock.json ./src/frontend/
+RUN uv sync --locked --group dev \
+ && cd src/frontend && npm ci
+
+COPY . .
+
+CMD ["uv", "run", "python", "scripts/verify_pr.py"]

@@ -34,6 +34,15 @@ Before merging any pull request into `main`:
 3. **CI Gate Completion:**
    Confirm all required GitHub Actions jobs (`backend`, `frontend`, `packaging-windows`, `e2e-clean`, `e2e-production-gate`, `e2e-production-compat`, `secret-scan`, `dependency-review`, `codeql`) pass 100% green on the pull request.
 
+   When hosted runner minutes are exhausted, every one of those jobs dies a
+   few seconds after it starts regardless of the change. In that case the
+   repository gates are the local suites instead: `scripts/verify_pr.py` (§1),
+   the targeted Playwright recipes (§1b), and `build_package.bat` with
+   `AAC_SIGN_RELEASE=1` for packaging (§2). §1c runs the same gate inside a
+   Linux container when a non-Windows environment is required. Restore CI by
+   adding minutes or raising the spending limit in GitHub billing settings;
+   nothing in the repository has to change.
+
 ---
 
 ## 1b. Test Suite Structure
@@ -119,6 +128,25 @@ on the container (`saved-topics-list`).
 * **Match labels bilingually.** The signed-in account's persisted UI language
 can override the `localStorage` hint, so use `/new board|nuevo tablero/i`
 patterns for user-visible controls.
+
+---
+
+## 1c. Reproducible Linux checks in a container
+
+`Dockerfile.checks` runs the same gate as §1 inside a Linux image matching the
+CI runners (Python 3.13, Node 22, `uv`). Use it when a change may behave
+differently outside Windows, or when the hosted jobs are unavailable:
+
+```bash
+docker build -f Dockerfile.checks -t aac-checks .
+docker run --rm aac-checks                                  # full gate
+docker run --rm aac-checks uv run pytest tests/<file> -q    # a single file
+```
+
+Dependencies come from the lockfiles and the sources arrive through the build
+context, so the host needs no Python, Node or `uv`; on Windows this requires
+Docker Desktop with the WSL2 backend. Add `-v "$PWD:/workspace"` only when you
+want coverage reports and build outputs written back to the host.
 
 ---
 
