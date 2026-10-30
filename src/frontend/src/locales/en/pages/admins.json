@@ -1,0 +1,57 @@
+{
+  "title": "Admins",
+  "subtitle": "Manage admin accounts",
+  "create": "+ Create Admin",
+  "deleteConfirm": "Are you sure you want to delete this admin? This action cannot be undone.",
+  "table": {
+    "name": "Name",
+    "username": "Username",
+    "email": "Email",
+    "actions": "Actions"
+  },
+  "edit": "Edit",
+  "delete": "Delete",
+  "noAdmins": "No admins found",
+  "createTitle": "Create New Admin",
+  "resetPasswordTitle": "Reset Password for {{name}}",
+  "labels": {
+    "username": "Username *",
+    "displayName": "Display Name *",
+    "email": "Email",
+    "password": "Password *",
+    "passwordHint": "Minimum 8 chars, 1 upper, 1 lower, 1 digit",
+    "confirmPassword": "Confirm Password *",
+    "newPassword": "New Password"
+  },
+  "cancel": "Cancel",
+  "createBtn": "Create Admin",
+  "you": "You",
+  "roles": {
+    "student": "Student",
+    "teacher": "Teacher",
+    "admin": "Admin"
+  },
+  "placeholders": {
+    "username": "e.g., admin1",
+    "displayName": "e.g., Administrator",
+    "email": "e.g., admin@example.com"
+  },
+  "errors": {
+    "loadFailed": "Failed to load admins",
+    "updateFailed": "Failed to update",
+    "createFailed": "Failed to create admin",
+    "deleteFailed": "Failed to delete",
+    "deleteSelf": "You cannot delete your own account",
+    "resetPasswordFailed": "Failed to reset password",
+    "passwordsDoNotMatch": "Passwords do not match"
+  },
+  "actions": {
+    "editAria": "Edit {{name}}",
+    "editTitle": "Edit admin",
+    "deleteAria": "Delete {{name}}",
+    "deleteTitle": "Delete admin",
+    "resetPassword": "Reset Pwd",
+    "resetPasswordAria": "Reset password for {{name}}",
+    "resetPasswordTitle": "Reset Password"
+  }
+}

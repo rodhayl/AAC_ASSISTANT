@@ -1,0 +1,126 @@
+{
+  "title": "Settings",
+  "subtitle": "Manage your account and application preferences",
+  "profile": {
+    "edit": "Edit",
+    "cancel": "Cancel",
+    "save": "Save",
+    "updated": "Profile updated successfully",
+    "username": "Username",
+    "displayName": "Display Name",
+    "email": "Email",
+    "emailPlaceholder": "Enter email",
+    "noEmail": "No email set"
+  },
+  "preferences": {
+    "title": "Preferences",
+    "saved": "Saved",
+    "savePrefs": "Save Preferences",
+    "language": "Interface Language",
+    "languageHelp": "Choose your preferred language",
+    "languages": {
+      "en-US": "English",
+      "es-ES": "Spanish"
+    },
+    "tts": "Text-to-Speech Voice",
+    "ttsHelp": "Choose the voice for reading symbols",
+    "voiceMode": "Voice Mode",
+    "voiceModeHelp": "Enable/disable voice features",
+    "notifications": "Notifications",
+    "notificationsHelp": "Receive updates about your progress",
+    "dark": "Dark Mode",
+    "darkHelp": "Switch between light and dark themes",
+    "voices": {
+      "default": "Default (Spanish)",
+      "female": "Female (Spanish)",
+      "male": "Male (Spanish)"
+    },
+    "dwellTime": "Dwell Time",
+    "dwellTimeHelp": "Auto-select after hovering (0 = disabled)",
+    "ignoreRepeats": "Ignore Repeat Clicks",
+    "ignoreRepeatsHelp": "Debounce period for same symbol",
+    "highContrast": "High Contrast Mode",
+    "highContrastHelp": "Improve visibility for visual impairments"
+  },
+  "languages": {
+    "es-ES": "Spanish",
+    "en-US": "English"
+  },
+  "security": {
+    "title": "Security",
+    "change": "Change Password",
+    "current": "Current password",
+    "new": "New password",
+    "confirm": "Confirm new password",
+    "saving": "Saving...",
+    "save": "Save"
+  },
+  "data": {
+    "title": "Data Management",
+    "subtitle": "Export and import your boards and settings",
+    "exportClient": "Export My Data",
+    "exportClientTitle": "Export data from browser (client-side)",
+    "exportServer": "Server Export",
+    "exportServerTitle": "Export data from server (server-side)",
+    "exportServerFailed": "Failed to export from server",
+    "importBoards": "Import Boards",
+    "importSuccess": "Import completed successfully",
+    "importFailed": "Import failed: ",
+    "close": "Close"
+  },
+  "ai": {
+    "title": "AI Provider Configuration",
+    "subtitle": "Configure AI model for all users (Admin only)",
+    "primary": "Primary AI Provider",
+    "ollama": "Ollama",
+    "ollamaDesc": "Local LLM",
+    "openrouter": "OpenRouter",
+    "openrouterDesc": "Cloud API",
+    "saveOk": "Settings saved!",
+    "ollamaUrl": "Ollama Base URL",
+    "models": "Available Models",
+    "refresh": "Refresh",
+    "searchModels": "Search models...",
+    "selected": "Selected:",
+    "apiKey": "OpenRouter API Key",
+    "getKey": "Get your key at",
+    "maxTokens": "Max tokens per reply",
+    "presets": "Presets:",
+    "short": "Short (256)",
+    "medium": "Medium (512)",
+    "long": "Long (1024)",
+    "maxTokensHelp": "Controls how long responses can be.",
+    "temperature": "Temperature",
+    "temperatureHelp": "Lower values are recommended for tutoring.",
+    "health": "Check Provider Health",
+    "ollamaStatus": "Ollama:",
+    "openrouterStatus": "OpenRouter:",
+    "voiceDeps": "Voice / STT Dependencies",
+    "voiceDepsHelp": "Install missing items and restart start.bat to enable mic.",
+    "installed": "Installed",
+    "notInstalled": "Not installed",
+    "howToInstall": "How to install",
+    "dependencies": {
+      "ffmpeg": {
+        "label": "ffmpeg (required)",
+        "help": "Install ffmpeg and add ffmpeg.exe to PATH"
+      },
+      "whisper": {
+        "label": "openai-whisper (required)",
+        "help": "Installed via pip; rerun start.bat after installing any missing system tools"
+      },
+      "sounddevice": {
+        "label": "sounddevice (required for mic input)",
+        "help": "Required for live microphone recording; install via pip"
+      },
+      "soundfile": {
+        "label": "soundfile (required for mic input)",
+        "help": "Required for saving recorded audio; install via pip"
+      },
+      "webrtcvad": {
+        "label": "webrtcvad (optional)",
+        "help": "Optional VAD; requires Microsoft C++ Build Tools if you want it"
+      }
+    }
+  }
+}

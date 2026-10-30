@@ -1,0 +1,19 @@
+{
+  "symbolHunt": {
+    "title": "Symbol Hunt",
+    "selectBoard": "Select a board to start playing",
+    "notEnoughSymbols": "This board needs at least 2 symbols to play.",
+    "notEnoughSymbolsTitle": "Needs more symbols",
+    "minSymbolsRequired": "At least 2 symbols required",
+    "playNow": "Play Now",
+    "find": "Find {{label}}",
+    "correct": "Correct!",
+    "tryAgain": "Try again",
+    "greatJob": "Great Job!",
+    "scoreMessage": "You found {{score}} symbols!",
+    "playAgain": "Play Again",
+    "chooseDifferent": "Choose Different Board",
+    "score": "Score",
+    "round": "Round {{current}}/{{total}}"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "hero": {
+    "welcome": "¡Bienvenido de nuevo, {{name}}!",
+    "subtitle": "¿Listo para continuar tu aprendizaje?"
+  },
+  "cards": {
+    "myBoards": "Mis Tableros",
+    "activeBoards": "Tableros de comunicación activos",
+    "manageBoards": "Administrar tableros",
+    "assignedBoards": "Tableros Asignados",
+    "assignedSubtitle": "Tableros asignados por tus profesores",
+    "viewBoards": "Ver tableros",
+    "learningStreak": "Racha de Aprendizaje",
+    "days": "{{count}} días",
+    "keepWorking": "¡Sigue con el gran trabajo!",
+    "startStreak": "¡Comienza tu racha hoy!",
+    "continueLearning": "Continuar aprendiendo",
+    "achievements": "Logros",
+    "badgesEarned": "Insignias obtenidas",
+    "noBadges": "Aún no hay insignias",
+    "viewAll": "Ver todo"
+  },
+  "assigned": {
+    "title": "Tus Tableros Asignados",
+    "subtitle": "Acceso rápido a tableros asignados por tu profesor",
+    "noDescription": "Sin descripción",
+    "open": "Abrir",
+    "none": "Aún no hay tableros asignados"
+  },
+  "activity": {
+    "recent": "Actividad Reciente",
+    "none": "Sin actividad reciente"
+  }
+}

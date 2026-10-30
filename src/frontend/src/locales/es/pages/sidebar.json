@@ -1,0 +1,16 @@
+{
+  "appName": "AAC Assistant",
+  "links": {
+    "dashboard": "Panel",
+    "communication": "Comunicación",
+    "boards": "Tableros",
+    "symbols": "Símbolos",
+    "learning": "Aprendizaje",
+    "achievements": "Logros",
+    "students": "Estudiantes",
+    "teachers": "Profesores",
+    "admins": "Administradores",
+    "settings": "Ajustes"
+  },
+  "signOut": "Cerrar sesión"
+}

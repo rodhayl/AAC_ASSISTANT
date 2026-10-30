@@ -1,0 +1,15 @@
+{
+  "title": "Crear Cuenta",
+  "subtitle": "Únete a AAC Assistant",
+  "username": "Usuario",
+  "password": "Contraseña",
+  "displayName": "Nombre para mostrar",
+  "teacherNote": "Las cuentas de profesor deben ser creadas por un administrador.",
+  "create": "Crear Cuenta",
+  "back": "Volver al inicio de sesión",
+  "placeholders": {
+    "username": "Ingresa un usuario",
+    "password": "Ingresa una contraseña",
+    "displayName": "Tu nombre"
+  }
+}

@@ -1,0 +1,93 @@
+/**
+ * Mobile responsiveness helpers.
+ * Keep this file scoped and avoid overriding shared Tailwind utility classes.
+ */
+
+@media (max-width: 768px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="search"],
+  select,
+  textarea {
+    min-height: 44px;
+    font-size: 16px; /* Prevents iOS zoom on focus */
+    padding: 10px 12px;
+  }
+
+  [data-touch-target="true"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .modal-close,
+  [aria-label*="Close"],
+  [aria-label*="close"] {
+    min-height: 48px;
+    min-width: 48px;
+  }
+
+  [data-mobile-dialog="true"] {
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 374px) {
+  [data-touch-target="true"] {
+    font-size: 14px;
+    padding: 8px 12px;
+  }
+}
+
+@media (prefers-contrast: high) {
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    border-width: 2px;
+  }
+
+  button:focus,
+  a:focus,
+  input:focus,
+  select:focus,
+  textarea:focus {
+    outline-width: 3px;
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.skip-to-main {
+  position: absolute;
+  left: -9999px;
+  z-index: 999;
+  padding: 1rem;
+  background-color: #4f46e5;
+  color: white;
+  text-decoration: none;
+}
+
+.skip-to-main:focus {
+  left: 50%;
+  transform: translateX(-50%);
+  top: 0;
+}

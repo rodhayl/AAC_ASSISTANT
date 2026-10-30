@@ -1,0 +1,34 @@
+{
+  "hero": {
+    "welcome": "Welcome back, {{name}}!",
+    "subtitle": "Ready to continue your learning journey?"
+  },
+  "cards": {
+    "myBoards": "My Boards",
+    "activeBoards": "Active communication boards",
+    "manageBoards": "Manage boards",
+    "assignedBoards": "Assigned Boards",
+    "assignedSubtitle": "Boards assigned to you by teachers",
+    "viewBoards": "View boards",
+    "learningStreak": "Learning Streak",
+    "days": "{{count}} Days",
+    "keepWorking": "Keep up the great work!",
+    "startStreak": "Start your streak today!",
+    "continueLearning": "Continue learning",
+    "achievements": "Achievements",
+    "badgesEarned": "Badges earned so far",
+    "noBadges": "No badges yet",
+    "viewAll": "View all"
+  },
+  "assigned": {
+    "title": "Your Assigned Boards",
+    "subtitle": "Quick access to boards assigned by your teacher",
+    "noDescription": "No description",
+    "open": "Open",
+    "none": "No boards assigned yet"
+  },
+  "activity": {
+    "recent": "Recent Activity",
+    "none": "No recent activity"
+  }
+}

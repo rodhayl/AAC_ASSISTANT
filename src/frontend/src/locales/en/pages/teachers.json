@@ -1,0 +1,55 @@
+{
+  "title": "Teachers",
+  "subtitle": "Manage teacher accounts",
+  "create": "+ Create Teacher",
+  "deleteConfirm": "Are you sure you want to delete this teacher? This action cannot be undone.",
+  "table": {
+    "name": "Name",
+    "username": "Username",
+    "email": "Email",
+    "actions": "Actions"
+  },
+  "edit": "Edit",
+  "delete": "Delete",
+  "noTeachers": "No teachers found",
+  "createTitle": "Create New Teacher",
+  "resetPasswordTitle": "Reset Password for {{name}}",
+  "labels": {
+    "username": "Username *",
+    "displayName": "Display Name *",
+    "email": "Email",
+    "password": "Password *",
+    "passwordHint": "Minimum 8 chars, 1 upper, 1 lower, 1 digit",
+    "confirmPassword": "Confirm Password *",
+    "newPassword": "New Password"
+  },
+  "cancel": "Cancel",
+  "createBtn": "Create Teacher",
+  "roles": {
+    "student": "Student",
+    "teacher": "Teacher",
+    "admin": "Admin"
+  },
+  "placeholders": {
+    "username": "e.g., teacher1",
+    "displayName": "e.g., Mr. Smith",
+    "email": "e.g., teacher@example.com"
+  },
+  "errors": {
+    "loadFailed": "Failed to load teachers",
+    "updateFailed": "Failed to update",
+    "createFailed": "Failed to create teacher",
+    "deleteFailed": "Failed to delete",
+    "resetPasswordFailed": "Failed to reset password",
+    "passwordsDoNotMatch": "Passwords do not match"
+  },
+  "actions": {
+    "editAria": "Edit {{name}}",
+    "editTitle": "Edit teacher",
+    "deleteAria": "Delete {{name}}",
+    "deleteTitle": "Delete teacher",
+    "resetPassword": "Reset Pwd",
+    "resetPasswordAria": "Reset password for {{name}}",
+    "resetPasswordTitle": "Reset Password"
+  }
+}

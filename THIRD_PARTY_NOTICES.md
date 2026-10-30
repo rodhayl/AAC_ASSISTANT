@@ -1,18 +1,12 @@
 # Third-party notices
 
-The historical UI controls use shadcn-style component code and conventions.
-To preserve upstream notice conservatively, the shadcn/ui MIT notice is included
-below. This does not claim the entire AAC frontend was authored from scratch.
-Upstream source: https://github.com/shadcn-ui/ui/blob/main/LICENSE.md (checked
-30 October 2026). External package imports remain governed by their respective
-licenses; no package implementations, ARASAAC pictograms, model weights or
-recordings are bundled here. The original project MIT notice remains in LICENSE.
-
-## shadcn/ui
+The retained Vite template logo (`src/frontend/public/vite.svg`) is used by the
+historical favicon. Vite upstream:
+https://github.com/vitejs/vite — https://github.com/vitejs/vite/blob/main/LICENSE
 
 MIT License
 
-Copyright (c) 2023 shadcn
+Copyright (c) 2019-present, VoidZero Inc. and Vite contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -31,4 +25,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-

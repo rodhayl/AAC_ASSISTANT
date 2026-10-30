@@ -1,0 +1,18 @@
+from . import (
+    achievements,
+    admin,
+    analytics,
+    arasaac,
+    auth,
+    boards,
+    collab,
+    config,
+    export_import,
+    guardian_profiles,
+    learning,
+    learning_modes,
+    notifications,
+    providers,
+    settings,
+    users,
+)

@@ -1,0 +1,15 @@
+{
+  "title": "Create Account",
+  "subtitle": "Join the AAC Assistant",
+  "username": "Username",
+  "password": "Password",
+  "displayName": "Display Name",
+  "teacherNote": "Teacher accounts must be created by an administrator.",
+  "create": "Create Account",
+  "back": "Back to login",
+  "placeholders": {
+    "username": "Enter a username",
+    "password": "Enter a password",
+    "displayName": "Your name"
+  }
+}

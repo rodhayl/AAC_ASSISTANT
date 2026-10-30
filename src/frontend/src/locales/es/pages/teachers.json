@@ -1,0 +1,55 @@
+{
+  "title": "Profesores",
+  "subtitle": "Gestionar cuentas de profesores",
+  "create": "+ Crear Profesor",
+  "deleteConfirm": "¿Está seguro de que desea eliminar este profesor? Esta acción no se puede deshacer.",
+  "table": {
+    "name": "Nombre",
+    "username": "Usuario",
+    "email": "Correo",
+    "actions": "Acciones"
+  },
+  "edit": "Editar",
+  "delete": "Eliminar",
+  "noTeachers": "No se encontraron profesores",
+  "createTitle": "Crear Nuevo Profesor",
+  "resetPasswordTitle": "Restablecer contraseña para {{name}}",
+  "labels": {
+    "username": "Usuario *",
+    "displayName": "Nombre *",
+    "email": "Correo",
+    "password": "Contraseña *",
+    "passwordHint": "Mínimo 8 caracteres, 1 mayúscula, 1 minúscula, 1 número",
+    "confirmPassword": "Confirmar Contraseña *",
+    "newPassword": "Nueva Contraseña"
+  },
+  "cancel": "Cancelar",
+  "createBtn": "Crear Profesor",
+  "roles": {
+    "student": "Estudiante",
+    "teacher": "Profesor",
+    "admin": "Administrador"
+  },
+  "placeholders": {
+    "username": "ej., profesor1",
+    "displayName": "ej., Sr. Pérez",
+    "email": "ej., profesor@ejemplo.com"
+  },
+  "errors": {
+    "loadFailed": "Error al cargar profesores",
+    "updateFailed": "Error al actualizar",
+    "createFailed": "Error al crear profesor",
+    "deleteFailed": "Error al eliminar",
+    "resetPasswordFailed": "Error al restablecer contraseña",
+    "passwordsDoNotMatch": "Las contraseñas no coinciden"
+  },
+  "actions": {
+    "editAria": "Editar {{name}}",
+    "editTitle": "Editar profesor",
+    "deleteAria": "Eliminar {{name}}",
+    "deleteTitle": "Eliminar profesor",
+    "resetPassword": "Resetear Pass",
+    "resetPasswordAria": "Restablecer contraseña para {{name}}",
+    "resetPasswordTitle": "Restablecer Contraseña"
+  }
+}

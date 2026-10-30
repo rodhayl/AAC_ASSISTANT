@@ -1,0 +1,16 @@
+{
+  "title": "AAC Assistant",
+  "subtitle": "Sign in to continue learning",
+  "username": "Username",
+  "password": "Password",
+  "placeholderUser": "Enter your username",
+  "placeholderPass": "Enter your password",
+  "login": "Login",
+  "defaults": {
+    "title": "First-time setup:",
+    "student": "Create an account to start using the app.",
+    "teacher": "Teacher and admin accounts are managed after signup.",
+    "admin": "Demo accounts are optional and disabled by default."
+  },
+  "register": "Create an account"
+}
